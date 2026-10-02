@@ -14,7 +14,18 @@ import { apiFetch } from '@/lib/api';
 import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
+
+// The Total row sticks to the bottom of the table's scroller (the first column
+// is already sticky-left, so `bottom` is added to its sticky position) and is
+// opaque so rows scrolling under it do not show through.
+const TOTAL_CELL: React.CSSProperties = {
+  position: 'sticky',
+  bottom: 0,
+  background: 'var(--bg4)',
+  zIndex: 2,
+};
 
 interface BackupStat {
   table: string;
@@ -92,7 +103,9 @@ function BackupPage(): React.JSX.Element {
   const collections = data?.collections ?? [];
 
   return (
-    <div>
+    // `page-fill` (ADR-202): Export Options is chrome at its natural height;
+    // the Records per Document panel fills the rest of the screen.
+    <div className="page-fill">
       <div
         style={{
           display: 'flex',
@@ -141,11 +154,11 @@ function BackupPage(): React.JSX.Element {
         ) : null}
       </div>
 
-      {/* Records per document */}
-      <div className="panel">
-        <div style={{ padding: '10px 14px', background: 'var(--bg4)' }}>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>Records per Document</span>
-        </div>
+      {/* Records per document — the page's ONE table (ADR-202/203): a filled
+          panel, so the .panel--fill > .panel-bd--fill > .tbl-wrap chain makes
+          the table the only scrollbar, header frozen. The Total row is pinned
+          to the bottom of that scroller so it never scrolls out of view. */}
+      <Panel fill bodyPadding="none" title="Records per Document">
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
@@ -184,14 +197,16 @@ function BackupPage(): React.JSX.Element {
               )}
             </tbody>
             <tfoot>
-              <tr style={{ fontWeight: 700, background: 'var(--bg4)' }}>
-                <td>Total</td>
-                <td className="td-ctr mono">{total.toLocaleString('en-IN')}</td>
+              <tr style={{ fontWeight: 700 }}>
+                <td style={TOTAL_CELL}>Total</td>
+                <td className="td-ctr mono" style={TOTAL_CELL}>
+                  {total.toLocaleString('en-IN')}
+                </td>
               </tr>
             </tfoot>
           </table>
         </div>
-      </div>
+      </Panel>
     </div>
   );
 }

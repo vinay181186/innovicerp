@@ -1,22 +1,21 @@
 // Job Queue — mirrors legacy renderJobQueue (HTML L10363).
 //
-// Pending ops per machine, each machine panel its own shared fit table (ADR-199
-// table standard 2026-10-01): every panel renders a <DataTable tableKey={
-// TABLE_KEYS.jobQueue}> with the SAME columns, so all machines share one
-// remembered column layout. The eight on-sheet columns and the ▸ detail columns
-// (and the ▲/▼ reorder controls + ⋯ op-entry menu in the Action column) live in
+// Pending ops per machine in ONE shared fit table (ADR-203 frozen header): the
+// former per-machine panels are full-width group headings inside the one table
+// ("VMC-1 · 9 jobs · 12.5 h · Busy"), so the page has one scrollbar and one
+// column header that never scrolls away (`page-fill` + `<Panel fill>`, ADR-202).
+// The eight on-sheet columns and the ▸ detail columns (and the ▲/▼ reorder
+// controls + ⋯ op-entry menu in the Action column) live in
 // ../components/job-queue-columns. Same jc_create / op_entry access.
 //
 // 25 rows per page (ADR-201): the machine picker, the search and the paging run
 // on the SERVER over the whole queue (machines by code, each in its saved
-// order); the page's rows are grouped into machine panels. Panel figures
+// order); the page's rows are grouped under machine headings. Heading figures
 // (pending jobs / hours) and the picker counts are whole-queue figures from
 // the server. Up/down asks the server to swap the row with its neighbour in the
 // machine's FULL queue, so a move on page 2 never disturbs another page.
 
-import type { JobQueueRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -25,13 +24,16 @@ import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
+  flattenQueue,
   JOB_QUEUE_HIDDEN_IDS,
+  type JobQueueSheetRow,
   jobQueueColumns,
+  MachineGroupHeading,
   jobQueueRowActions,
   jobQueueRowTint,
 } from '../components/job-queue-columns';
@@ -125,15 +127,21 @@ function JobQueuePage(): React.JSX.Element {
   );
   useClampPage(search.page, total, setPage);
 
-  // The page's rows, grouped into machine panels (machines in code order). A
-  // picked machine with nothing pending still shows its "no pending" panel.
-  const shownMachines = waitingForMachineId
-    ? []
-    : selectedMachine
-      ? [selectedMachine]
-      : machines.filter((m) => m.rows.length > 0);
+  // The page's rows as ONE list, grouped under machine headings (machines in
+  // code order). A picked machine with nothing pending shows its own
+  // "no pending jobs" empty state.
+  const sheetRows = useMemo(
+    () => (waitingForMachineId ? [] : flattenQueue(selectedMachine ? [selectedMachine] : machines)),
+    [waitingForMachineId, selectedMachine, machines],
+  );
 
   const today = todayIst();
+  const columns = useMemo(() => jobQueueColumns({ today }), [today]);
+  const emptyText = selectedMachine
+    ? `✓ No pending jobs for ${selectedMachine.machineCode}`
+    : searching
+      ? 'No pending operations match.'
+      : 'No pending operations.';
 
   const setMachine = (code: string | null): void => {
     void navigate({ search: (prev) => ({ ...prev, machine: code ?? undefined, page: 1 }) });
@@ -144,7 +152,7 @@ function JobQueuePage(): React.JSX.Element {
   };
 
   return (
-    <div>
+    <div className="page-fill">
       <ListHeader
         title="Job Queue"
         icon="⬛"
@@ -203,15 +211,7 @@ function JobQueuePage(): React.JSX.Element {
         }
       />
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        </div>
-      ) : isError ? (
+      {isError ? (
         <div className="panel">
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red2)' }}>
@@ -219,94 +219,32 @@ function JobQueuePage(): React.JSX.Element {
             </div>
           </div>
         </div>
-      ) : shownMachines.length === 0 ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 32 }}>
-            {searching ? 'No pending operations match.' : 'No pending operations.'}
-          </div>
-        </div>
       ) : (
-        shownMachines.map((m) => {
-          // Position in the machine's FULL queue (from the server), so Sr No and
-          // the up/down limits stay true on any page and while a search narrows it.
-          const posById = new Map(m.rows.map((r, i) => [r.jcOpId, r.queueIndex ?? i]));
-          const machineRows = m.rows;
-          return (
-            <div key={m.machineId} className="panel" style={{ marginBottom: 14 }}>
-              <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
-                  <span className="mono fw-700" style={{ fontSize: 15 }}>
-                    {m.machineCode}
-                  </span>
-                  <span className="text2" style={{ fontSize: 12 }}>
-                    {m.machineName ?? ''}
-                  </span>
-                  <span className="mono text3" style={{ fontSize: 11 }}>
-                    {m.pendingHrs}h pending
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span
-                    style={{
-                      padding: '2px 8px',
-                      borderRadius: 10,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      background:
-                        m.pendingHrs > 80
-                          ? 'rgba(239,68,68,0.10)'
-                          : m.pendingHrs > 40
-                            ? 'rgba(245,158,11,0.10)'
-                            : 'rgba(34,197,94,0.10)',
-                      color:
-                        m.pendingHrs > 80
-                          ? 'var(--red)'
-                          : m.pendingHrs > 40
-                            ? 'var(--amber)'
-                            : 'var(--green)',
-                    }}
-                  >
-                    {m.pendingHrs > 80 ? 'Overloaded' : m.pendingHrs > 40 ? 'Busy' : 'Clear'}
-                  </span>
-                  <span className="mono amber" style={{ fontSize: 11 }}>
-                    {m.pendingCount} jobs
-                  </span>
-                </div>
-              </div>
-              {machineRows.length === 0 ? (
-                <div className="empty-state" style={{ padding: 18 }}>
-                  ✓ No pending jobs for this machine
-                </div>
-              ) : (
-                <DataTable<JobQueueRow>
-                  tableKey={TABLE_KEYS.jobQueue}
-                  columns={jobQueueColumns({ machine: m, posById, today })}
-                  rows={machineRows}
-                  rowKey={(r) => r.jcOpId}
-                  defaultHidden={JOB_QUEUE_HIDDEN_IDS}
-                  // Manual queue order must stay — no browser sort/filter on top
-                  // of the ▲/▼ reorder (the page's own search already narrows).
-                  sortFilter={false}
-                  rowClassName={(r) => jobQueueRowTint(r, today)}
-                  onRowClick={(r) =>
-                    void navigate({ to: '/job-cards/$id', params: { id: r.jcId } })
-                  }
-                  rowActions={(r) =>
-                    jobQueueRowActions({
-                      row: r,
-                      machine: m,
-                      posById,
-                      canReorder,
-                      canOpEntry,
-                      searching,
-                      onMove,
-                    })
-                  }
-                />
-              )}
-            </div>
-          );
-        })
+        <Panel fill bodyPadding="none">
+          <DataTable<JobQueueSheetRow>
+            tableKey={TABLE_KEYS.jobQueue}
+            columns={columns}
+            rows={sheetRows}
+            rowKey={(r) => `${r.queueMachine.machineId}:${r.jcOpId}`}
+            loading={isLoading || waitingForMachineId}
+            emptyText={emptyText}
+            defaultHidden={JOB_QUEUE_HIDDEN_IDS}
+            // Manual queue order must stay — no browser sort/filter on top
+            // of the ▲/▼ reorder (the page's own search already narrows).
+            sortFilter={false}
+            frozen
+            groupRow={(r, _i, prev) =>
+              prev && prev.queueMachine.machineId === r.queueMachine.machineId ? null : (
+                <MachineGroupHeading m={r.queueMachine} />
+              )
+            }
+            rowClassName={(r) => jobQueueRowTint(r, today)}
+            onRowClick={(r) => void navigate({ to: '/job-cards/$id', params: { id: r.jcId } })}
+            rowActions={(r) =>
+              jobQueueRowActions({ row: r, canReorder, canOpEntry, searching, onMove })
+            }
+          />
+        </Panel>
       )}
 
       <ListFooter

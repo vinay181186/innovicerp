@@ -27,7 +27,12 @@
 // ADR-201 (2026-10-02): level 1 shows 25 orders a page with Prev / Next (?page=).
 // The SO / JWSO source, the search and Sort & Filter run on the server over
 // every open order; the header count is the server's total. The line search
-// under the list covers the orders on the page shown.
+// covers the orders on the page shown.
+//
+// ADR-203 (frozen header): level 1 is `page-fill` — the ONE table on screen
+// fills the rest and is the only scrollbar. With no search the order list
+// fills; while a term is set an "Orders | Matching lines" TabStrip appears
+// (?tab=lines) and only the active tab's table renders. Level 2 is unchanged.
 
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
@@ -40,12 +45,13 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { usePlan } from '@/modules/plans/api';
 import { soPlanningKeys, usePlanningSoList } from '../api';
 import { EditPlanModal } from '../components/edit-plan-modal';
 import { OrderDetail } from '../components/order-detail';
 import { OrderList } from '../components/order-list';
-import { SearchResults } from '../components/search-results';
+import { SearchResults, useMatchingLines } from '../components/search-results';
 import { type ModalState, type Source } from '../components/planning-shared';
 
 const searchSchema = z.object({
@@ -55,6 +61,8 @@ const searchSchema = z.object({
   src: z.enum(['so', 'jw']).optional(),
   /** Level-1 page (ADR-201). */
   page: pageSearchParam,
+  /** Level-1 tab while a search term is set (ADR-203); absent = Orders. */
+  tab: z.enum(['orders', 'lines']).optional(),
 });
 
 export const soPlanningWorkflowRoute = createRoute({
@@ -66,7 +74,13 @@ export const soPlanningWorkflowRoute = createRoute({
 
 function PlanningWorkflowPage(): JSX.Element {
   const navigate = useNavigate();
-  const { soId, openPlan, src: srcParam, page } = soPlanningWorkflowRoute.useSearch();
+  const {
+    soId,
+    openPlan,
+    src: srcParam,
+    page,
+    tab: tabParam,
+  } = soPlanningWorkflowRoute.useSearch();
   const src: Source = srcParam ?? 'so';
   const qc = useQueryClient();
   // Page + write gate (plan_create, Planning dept). Writes on this page (create
@@ -115,10 +129,16 @@ function PlanningWorkflowPage(): JSX.Element {
     if (next === searchTerm) return;
     const id = window.setTimeout(() => {
       setSearchTerm(next);
-      gotoPage(1);
+      // Back to page 1; a cleared search also drops the Matching-lines tab, so
+      // the next search opens on Orders (one navigate, no clash).
+      void navigate({
+        to: '/planning',
+        search: (prev) => ({ ...prev, page: 1, ...(next === '' ? { tab: undefined } : {}) }),
+        replace: true,
+      });
     }, 300);
     return () => window.clearTimeout(id);
-  }, [soSearch, searchTerm, gotoPage]);
+  }, [soSearch, searchTerm, navigate]);
   const sf = useServerSortFilter(TABLE_KEYS.planningList, () => gotoPage(1));
   const soList = usePlanningSoList({
     src,
@@ -131,6 +151,19 @@ function PlanningWorkflowPage(): JSX.Element {
   const visibleSos = soList.data?.items ?? [];
   const total = soList.data?.total ?? 0;
 
+  // Matching lines (ADR-203 tab): looked up only while a term is set on level 1,
+  // so the tab can carry its count whichever tab is open.
+  const searching = searchTerm !== '' && !soId;
+  const match = useMatchingLines(searchTerm, searching ? visibleSos : []);
+  const tab = searching && tabParam === 'lines' ? 'lines' : 'orders';
+  const setTab = (t: string): void => {
+    void navigate({
+      to: '/planning',
+      search: (prev) => ({ ...prev, tab: t === 'lines' ? 'lines' : undefined }),
+      replace: true,
+    });
+  };
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
   // only while access is still loading — don't block then.
@@ -139,7 +172,8 @@ function PlanningWorkflowPage(): JSX.Element {
   }
 
   return (
-    <div>
+    // Level 1 is `page-fill` (ADR-202/203); level 2 keeps its own layout.
+    <div className={soId ? undefined : 'page-fill'}>
       {soId ? (
         <OrderDetail
           soId={soId}
@@ -185,14 +219,47 @@ function PlanningWorkflowPage(): JSX.Element {
             filtersActive={soSearch !== '' || src !== 'so' || sf.filtering}
           />
 
-          <OrderList
-            src={src}
-            items={visibleSos}
-            loading={soList.isLoading}
-            error={soList.error instanceof Error ? soList.error.message : null}
-            onOpen={openOrder}
-            sf={sf}
-          />
+          {searching ? (
+            <TabStrip
+              label="Planning search"
+              tabs={[
+                { key: 'orders', label: 'Orders', count: soList.data ? total : null },
+                {
+                  key: 'lines',
+                  label: 'Matching lines',
+                  count: match.anyLoading ? null : match.rows.length,
+                },
+              ]}
+              activeKey={tab}
+              onChange={setTab}
+            />
+          ) : null}
+
+          {/* Only the active tab's table renders and fills. The pager stays
+              under both: the matching lines are the lines of the orders on the
+              page shown, so Next moves both. */}
+          {tab === 'lines' ? (
+            visibleSos.length > 0 ? (
+              <SearchResults
+                term={searchTerm}
+                sos={visibleSos}
+                totalOrders={total}
+                onPick={openOrder}
+                match={match}
+              />
+            ) : (
+              <PageState state="empty" message={`No lines match “${searchTerm}”`} />
+            )
+          ) : (
+            <OrderList
+              src={src}
+              items={visibleSos}
+              loading={soList.isLoading}
+              error={soList.error instanceof Error ? soList.error.message : null}
+              onOpen={openOrder}
+              sf={sf}
+            />
+          )}
           <ListFooter
             total={total}
             noun={src === 'jw' ? 'JWSO' : 'SO'}
@@ -200,17 +267,6 @@ function PlanningWorkflowPage(): JSX.Element {
             pageSize={LIST_PAGE_SIZE}
             onPage={gotoPage}
           />
-
-          {/* Cross-order line search: while a term is typed, every LINE the
-              term hits across the orders on this page, under the order list. */}
-          {searchTerm !== '' && visibleSos.length > 0 ? (
-            <SearchResults
-              term={searchTerm}
-              sos={visibleSos}
-              totalOrders={total}
-              onPick={openOrder}
-            />
-          ) : null}
         </>
       )}
 

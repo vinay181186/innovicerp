@@ -5,6 +5,11 @@
 // "first 20 orders" cap is gone — the page is the cap). Loads each SO's detail through the same query the single-SO view
 // uses, so clicking a row opens that SO from cache with no second fetch. Split
 // out of routes/workflow.tsx so that file stays under the 400-line rule.
+//
+// ADR-203: the matching lines are the "Matching lines" TAB beside "Orders"
+// (shown only while a term is typed). The lookup is the `useMatchingLines` hook
+// so the page can put the line count on the tab even while Orders is open; the
+// <SearchResults> panel only draws its answer, filling the screen.
 
 import type { PlanningSoListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
@@ -16,24 +21,23 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { usePlanningSoDetails } from '../api';
 import { lineRowTint, lineSearchColumns, type LineSearchRow } from './line-search-columns';
 
-export function SearchResults({
-  term,
-  sos,
-  totalOrders,
-  onPick,
-}: {
-  term: string;
-  /** The orders on the list page shown. */
-  sos: PlanningSoListItem[];
-  /** Every order the search matched (server total). */
-  totalOrders: number;
-  onPick: (soId: string) => void;
-}): JSX.Element {
+export interface MatchingLines {
+  rows: LineSearchRow[];
+  /** How many orders contributed a line. */
+  orderCount: number;
+  anyLoading: boolean;
+  failedCount: number;
+  failedMsg: string;
+}
+
+/** Every SO line the term hits across `sos` (pass `[]` when there is no term —
+ *  nothing is fetched then). */
+export function useMatchingLines(term: string, sos: PlanningSoListItem[]): MatchingLines {
   // One detail fetch per order on the page (at most 25).
   const details = usePlanningSoDetails(sos.map((so) => so.soId));
   const anyLoading = details.some((d) => d.isLoading);
   // A failed detail (expired session, 500, network) must not silently drop its
-  // SO — the list above still shows it, so a quiet "no lines match" would be a
+  // SO — the list still shows it, so a quiet "no lines match" would be a
   // confident wrong answer. Surface it the way the single-SO view does.
   const failed = details.filter((d) => d.isError);
   const firstError = failed[0]?.error;
@@ -71,21 +75,38 @@ export function SearchResults({
   });
 
   // Flatten to one row per (SO × line) for the FIT table.
-  const rows = useMemo<LineSearchRow[]>(
-    () => groups.flatMap((g) => g.lines.map((line) => ({ so: g.so, line }))),
-    [groups],
-  );
+  const rows = groups.flatMap((g) => g.lines.map((line) => ({ so: g.so, line })));
+  return { rows, orderCount: groups.length, anyLoading, failedCount: failed.length, failedMsg };
+}
+
+export function SearchResults({
+  term,
+  sos,
+  totalOrders,
+  onPick,
+  match,
+}: {
+  term: string;
+  /** The orders on the list page shown. */
+  sos: PlanningSoListItem[];
+  /** Every order the search matched (server total). */
+  totalOrders: number;
+  onPick: (soId: string) => void;
+  /** The page's `useMatchingLines(term, sos)` answer. */
+  match: MatchingLines;
+}): JSX.Element {
+  const { rows, orderCount, anyLoading, failedCount, failedMsg } = match;
   const lineCount = rows.length;
   const columns = useMemo(() => lineSearchColumns(), []);
 
   return (
     <Panel
-      style={{ marginTop: 14 }}
+      fill
       bodyPadding="none"
       title={
         <>
-          Matching lines: {lineCount} line{lineCount === 1 ? '' : 's'} in {groups.length} order
-          {groups.length === 1 ? '' : 's'} for “{term}”
+          Matching lines: {lineCount} line{lineCount === 1 ? '' : 's'} in {orderCount} order
+          {orderCount === 1 ? '' : 's'} for “{term}”
           {totalOrders > sos.length ? (
             <span
               className="text3"
@@ -103,12 +124,12 @@ export function SearchResults({
           <Loader2 className="inline-block animate-spin" /> Loading…
         </div>
       ) : null}
-      {failed.length > 0 ? (
+      {failedCount > 0 ? (
         <div className="empty-state" style={{ color: 'var(--red2)', padding: 12 }}>
-          Could not load {failed.length} of {sos.length} orders — {failedMsg}
+          Could not load {failedCount} of {sos.length} orders — {failedMsg}
         </div>
       ) : null}
-      {!anyLoading && failed.length === 0 && lineCount === 0 ? (
+      {!anyLoading && failedCount === 0 && lineCount === 0 ? (
         <div className="empty-state">No lines match “{term}”</div>
       ) : null}
       {lineCount > 0 ? (

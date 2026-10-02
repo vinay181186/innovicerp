@@ -1,7 +1,7 @@
 // QC History & Tracking (QC Wave 2). Ports legacy renderQCHistory (HTML
-// L23531): All/Pending/Completed status + 2 KPI tiles + SO/JC/Item + date
-// filters + pending QC table + completed QC-entries table + Excel export.
-// Read-only, legacy chrome.
+// L23531): 2 KPI tiles + SO/JC/Item + date filters + Excel export, then the
+// QC Pending | QC Entries tabs (ADR-203) — one filled table at a time, its
+// column header frozen. The tab lives in the URL (`tab`). Read-only.
 //
 // ADR-201: each table shows 25 rows per page (`page` / `logPage` in the URL)
 // and loads only that page. Search, the QC date range and Sort & Filter (▾)
@@ -23,10 +23,11 @@ import {
   useClampPage,
 } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, StatStrip } from '@/ui/data';
+import { DataTable, Panel, StatStrip } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ActionMenu, ListFooter, ListHeader } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import {
   fetchQcLogs,
   fetchQcPending,
@@ -44,23 +45,26 @@ import { exportCompletedQc, exportPendingQc } from '../lib/export';
 export const qcHistoryRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'qc-history',
-  validateSearch: z.object({ page: pageSearchParam, logPage: pageSearchParam }),
+  validateSearch: z.object({
+    page: pageSearchParam,
+    logPage: pageSearchParam,
+    /** Active tab (ADR-203); absent = QC Pending. */
+    tab: z.enum(['pending', 'entries']).optional(),
+  }),
   component: QcHistoryPage,
 });
 
-type Tab = 'all' | 'pending' | 'completed';
-
-// Legacy L23599-23601 tabs, now the Status dropdown in the filter bar.
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'completed', label: 'Completed' },
-];
+type Tab = 'pending' | 'entries';
 
 function QcHistoryPage(): React.JSX.Element {
   const search = qcHistoryRoute.useSearch();
   const navigate = qcHistoryRoute.useNavigate();
-  const [tab, setTab] = useState<Tab>('all');
+  const tab: Tab = search.tab ?? 'pending';
+  const setTab = (t: string): void =>
+    void navigate({
+      search: (prev) => ({ ...prev, tab: t === 'entries' ? 'entries' : undefined }),
+      replace: true,
+    });
   const [term, setTerm] = useState('');
   const [q, setQ] = useState<string | undefined>(undefined);
   const [dateFrom, setDateFrom] = useState('');
@@ -119,28 +123,19 @@ function QcHistoryPage(): React.JSX.Element {
   const error = pendQ.error ?? logsQ.error;
   const loaded = pendQ.data !== undefined && logsQ.data !== undefined;
 
-  const showPend = tab === 'all' || tab === 'pending';
-  const showComp = tab === 'all' || tab === 'completed';
-
   function clearFilters(): void {
     setTerm('');
     setQ(undefined);
     setDateFrom('');
     setDateTo('');
-    setTab('all');
     sfPend.clearFilters();
     sfLogs.clearFilters();
     firstPages();
   }
 
-  // Row counts per status over the searched / dated rows (server totals) —
-  // the Status dropdown's option labels.
-  const tabCount: Record<Tab, number> = {
-    all: pendTotal + logsTotal,
-    pending: pendTotal,
-    completed: logsTotal,
-  };
-  const shownCount = (showPend ? pendTotal : 0) + (showComp ? logsTotal : 0);
+  // Tab counts = the two lists' server totals over the searched / dated rows
+  // (both lists load whichever tab is open, so both counts are always live).
+  const shownCount = tab === 'pending' ? pendTotal : logsTotal;
 
   // Excel: EVERY row matching the filters, not just the page on screen.
   async function exportLogs(): Promise<void> {
@@ -157,32 +152,21 @@ function QcHistoryPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202/203): title, filters, KPI strip and tabs are fixed
+    // chrome; the active tab's ONE table fills the rest and is the only thing
+    // that scrolls, so its column header never leaves the screen.
+    <div className="page-fill">
       <ListHeader
         title="QC History"
         icon="📊"
         count={loaded ? shownCount : undefined}
         noun="row"
-        filterNote={tab === 'all' ? undefined : TABS.find((tb) => tb.key === tab)?.label}
         search={term}
         onSearch={setTerm}
         searchPlaceholder="Search SO, JC, POL, item code, item name…"
         updating={isFetching && !isLoading}
         filters={
           <>
-            <select
-              className="innovic-select"
-              aria-label="QC status"
-              title="QC status"
-              value={tab}
-              onChange={(e) => setTab(e.target.value as Tab)}
-            >
-              {TABS.map((tb) => (
-                <option key={tb.key} value={tb.key}>
-                  {`${tb.label} (${tabCount[tb.key]})`}
-                </option>
-              ))}
-            </select>
             <input
               type="date"
               className="innovic-input"
@@ -209,7 +193,6 @@ function QcHistoryPage(): React.JSX.Element {
         }
         onClearFilters={clearFilters}
         filtersActive={
-          tab !== 'all' ||
           term.trim() !== '' ||
           dateFrom !== '' ||
           dateTo !== '' ||
@@ -255,6 +238,16 @@ function QcHistoryPage(): React.JSX.Element {
         ) : null}
       </ListHeader>
 
+      <TabStrip
+        label="QC History"
+        tabs={[
+          { key: 'pending', label: 'QC Pending', count: loaded ? pendTotal : null },
+          { key: 'entries', label: 'QC Entries', count: loaded ? logsTotal : null },
+        ]}
+        activeKey={tab}
+        onChange={setTab}
+      />
+
       {isLoading ? (
         <div className="panel">
           <div className="empty-state">
@@ -267,77 +260,65 @@ function QcHistoryPage(): React.JSX.Element {
             {error instanceof Error ? error.message : 'Could not load QC History. Try again.'}
           </div>
         </div>
+      ) : tab === 'pending' ? (
+        <>
+          <Panel fill bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.qcHistoryPending}
+              columns={pendingColumns}
+              rows={pending}
+              rowKey={(o) => o.jcOpId}
+              sortFilterServer={sfPend}
+              rowClassName={(o) => (o.overdue ? 'qc-alert-blink' : undefined)}
+              emptyText={
+                q || sfPend.filtering ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'
+              }
+              defaultPinned={QC_HISTORY_DEFAULT_PINNED}
+              rowMenu={() => [
+                {
+                  key: 'open-qc',
+                  label: 'Open QC',
+                  icon: 'search',
+                  group: 'workflow',
+                  to: '/qc-call-register',
+                },
+              ]}
+              renderLink={(p) => <Link {...p} />}
+            />
+          </Panel>
+          <ListFooter
+            total={pendTotal}
+            noun="pending op"
+            page={search.page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={(p) => gotoPages({ page: p })}
+          />
+        </>
       ) : (
         <>
-          {showPend ? (
-            <div className="panel" style={{ marginBottom: 14 }}>
-              <div className="panel-hdr">
-                <span className="panel-title" style={{ color: 'var(--amber2)' }}>
-                  ⏳ QC Pending ({pendTotal})
-                </span>
-              </div>
-              <DataTable
-                tableKey={TABLE_KEYS.qcHistoryPending}
-                columns={pendingColumns}
-                rows={pending}
-                rowKey={(o) => o.jcOpId}
-                sortFilterServer={sfPend}
-                rowClassName={(o) => (o.overdue ? 'qc-alert-blink' : undefined)}
-                emptyText={
-                  q || sfPend.filtering ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'
-                }
-                defaultPinned={QC_HISTORY_DEFAULT_PINNED}
-                rowMenu={() => [
-                  {
-                    key: 'open-qc',
-                    label: 'Open QC',
-                    icon: 'search',
-                    group: 'workflow',
-                    to: '/qc-call-register',
-                  },
-                ]}
-                renderLink={(p) => <Link {...p} />}
-              />
-              <ListFooter
-                total={pendTotal}
-                noun="pending op"
-                page={search.page}
-                pageSize={LIST_PAGE_SIZE}
-                onPage={(p) => gotoPages({ page: p })}
-              />
-            </div>
-          ) : null}
-
-          {showComp ? (
-            <div className="panel">
-              <div className="panel-hdr">
-                <span className="panel-title" style={{ color: 'var(--green2)' }}>
-                  ✅ QC Entries ({logsTotal})
-                </span>
-              </div>
-              <DataTable
-                tableKey={TABLE_KEYS.qcHistoryEntries}
-                columns={entryColumns}
-                rows={logs}
-                sortFilterServer={sfLogs}
-                rowKey={(l) => l.logId}
-                emptyText={
-                  q || dateFrom || dateTo || sfLogs.filtering
-                    ? 'No QC entries match.'
-                    : 'No QC entries yet.'
-                }
-                defaultPinned={QC_HISTORY_DEFAULT_PINNED}
-              />
-              <ListFooter
-                total={logsTotal}
-                noun="QC entry"
-                nounPlural="QC entries"
-                page={search.logPage}
-                pageSize={LIST_PAGE_SIZE}
-                onPage={(p) => gotoPages({ logPage: p })}
-              />
-            </div>
-          ) : null}
+          <Panel fill bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.qcHistoryEntries}
+              columns={entryColumns}
+              rows={logs}
+              sortFilterServer={sfLogs}
+              rowKey={(l) => l.logId}
+              emptyText={
+                q || dateFrom || dateTo || sfLogs.filtering
+                  ? 'No QC entries match.'
+                  : 'No QC entries yet.'
+              }
+              defaultPinned={QC_HISTORY_DEFAULT_PINNED}
+            />
+          </Panel>
+          <ListFooter
+            total={logsTotal}
+            noun="QC entry"
+            nounPlural="QC entries"
+            page={search.logPage}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={(p) => gotoPages({ logPage: p })}
+          />
         </>
       )}
     </div>

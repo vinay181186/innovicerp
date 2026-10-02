@@ -14,7 +14,6 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { pageSearchParam } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListHeader } from '@/ui/layout';
 import { MatrixView } from '../components/matrix-view';
 import { RegisterView } from '../components/register-view';
 import { SoStatusView } from '../components/so-status-view';
@@ -81,10 +80,5 @@ function QcDocumentsPage(): React.JSX.Element {
 
   if (view === 'matrix') return <MatrixView toggle={toggle} />;
   if (view === 'register') return <RegisterView toggle={toggle} />;
-  return (
-    <div>
-      <ListHeader title="QC Documents" icon="🗃" tools={toggle} />
-      <SoStatusView />
-    </div>
-  );
+  return <SoStatusView toggle={toggle} />;
 }
