@@ -16,6 +16,7 @@ import { ListFooter } from '../../layout/ListFooter';
 import { ListHeader } from '../../layout/ListHeader';
 import { DataTable } from '../DataTable';
 import type { DataTableColumn } from '../data-table-types';
+import type { SfState } from './filter-model';
 import { SfScopeStore, SortFilterProvider } from './scope';
 
 interface Row {
@@ -189,5 +190,57 @@ describe('Sort & Filter', () => {
     fireEvent.click(screen.getByLabelText('Closed'));
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
     expect(screen.queryByText('ALL-ROWS-TOTAL')).toBeNull();
+  });
+
+  it('server mode: hands the filter to the page by field, keeps rows, works on a capped list', () => {
+    let last: SfState = { sort: null, filters: {} };
+    const server = {
+      value: last,
+      onChange: (next: SfState | ((p: SfState) => SfState)) => {
+        last = typeof next === 'function' ? next(last) : next;
+      },
+      param: undefined,
+    };
+    const cols: Array<DataTableColumn<Row>> = [
+      { id: 'code', header: 'JC No.', render: (r) => r.code, sortFilterField: 'jcCode' },
+      {
+        id: 'status',
+        header: 'Status',
+        kind: 'badge',
+        key: 'status',
+        sortFilterField: 'status',
+        filterOptions: [
+          { value: 'open', label: 'Open' },
+          { value: 'closed', label: 'Closed' },
+        ],
+      },
+      { id: 'qty', header: 'Order Qty', align: 'right', render: (r) => r.qty },
+    ];
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SortFilterProvider store={new SfScopeStore()}>
+          <ListHeader title="T" search="" onSearch={() => undefined} />
+          <DataTable columns={cols} rows={ROWS} sortFilterServer={server} />
+          <ListFooter total={400} limit={200} />
+        </SortFilterProvider>
+      </QueryClientProvider>,
+    );
+    const btn = screen.getByRole('button', { name: /Sort & Filter/ });
+    expect(btn.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(btn);
+    // A column without a server field has no ▾.
+    expect(screen.queryByRole('button', { name: 'Sort or filter Order Qty' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Sort or filter Status' }));
+    const dlg = screen.getByRole('dialog', { name: 'Sort and filter Status' });
+    fireEvent.click(within(dlg).getByLabelText('Closed'));
+    fireEvent.click(within(dlg).getByRole('button', { name: 'OK' }));
+    expect(last.filters).toEqual({ status: { kind: 'values', values: ['open'] } });
+    expect(codes()).toHaveLength(3);
+    // Text columns: conditions only, no tick list of a partial page.
+    fireEvent.click(screen.getByRole('button', { name: 'Sort or filter JC No.' }));
+    const t = screen.getByRole('dialog', { name: 'Sort and filter JC No.' });
+    expect(within(t).queryByRole('searchbox')).toBeNull();
+    fireEvent.click(within(t).getByRole('button', { name: /Z → A/ }));
+    expect(last.sort).toEqual({ id: 'jcCode', dir: 'desc' });
   });
 });

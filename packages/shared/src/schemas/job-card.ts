@@ -16,6 +16,7 @@
 
 import { z } from 'zod';
 import { jcOpPoLinkViewSchema } from './jc-op-po-line';
+import { sfRawParamSchema } from './list-query';
 import { JC_COMPUTED_STATUSES } from '../enums/jc-computed-status';
 import { JC_PRIORITIES } from '../enums/jc-priority';
 import { machineSplitSchema } from './machine-split';
@@ -218,6 +219,8 @@ export const listJobCardsQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -29,6 +29,10 @@ export interface MenuBodyProps {
   sortOff?: boolean | undefined;
   filter: ColumnFilter | undefined;
   values: string[];
+  /** The text shown for a tick-list value (server lists tick stored codes). */
+  labelOf?: ((v: string) => string) | undefined;
+  /** No tick list (server mode, text columns — the values are not all loaded). */
+  noTicks?: boolean | undefined;
   onSort: (dir: SortDir | null) => void;
   onFilter: (f: ColumnFilter | null) => void;
   onClose: () => void;
@@ -85,8 +89,9 @@ export function MenuBody(p: MenuBodyProps): ReactElement {
 
   const shown = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return s ? p.values.filter((v) => v.toLowerCase().includes(s)) : p.values;
-  }, [p.values, search]);
+    const lab = p.labelOf ?? ((v: string) => v);
+    return s ? p.values.filter((v) => lab(v).toLowerCase().includes(s)) : p.values;
+  }, [p.values, p.labelOf, search]);
   const allShownTicked = shown.length > 0 && shown.every((v) => checked.has(v));
 
   const condition = (): ColumnFilter | null => {
@@ -285,7 +290,7 @@ export function MenuBody(p: MenuBodyProps): ReactElement {
         </div>
       ) : null}
 
-      <div className="sf-sec">
+      <div className="sf-sec" hidden={p.noTicks}>
         <input
           type="search"
           className="sf-search"
@@ -325,7 +330,7 @@ export function MenuBody(p: MenuBodyProps): ReactElement {
                   setMode('values');
                 }}
               />
-              <span>{v}</span>
+              <span>{p.labelOf ? p.labelOf(v) : v}</span>
             </label>
           ))}
           {shown.length > MAX_TICKS ? (

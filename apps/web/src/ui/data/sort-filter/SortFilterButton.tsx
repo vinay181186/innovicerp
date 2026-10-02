@@ -44,7 +44,7 @@ export function SortFilterButton({ inTable = false }: { inTable?: boolean }): Re
 
   if (!store || snap.tables.length === 0) return null;
   const n = snap.activeTotal;
-  const off = snap.partial;
+  const off = snap.partial && snap.serverTables === 0;
 
   const click = (): void => {
     if (off) return;

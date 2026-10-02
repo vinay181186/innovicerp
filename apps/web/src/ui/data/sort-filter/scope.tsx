@@ -23,13 +23,15 @@ export interface SfScopeSnapshot {
   hasHeaderButton: boolean;
   /** A list on the page shows only part of its data — client filtering is off. */
   partial: boolean;
+  /** Tables that sort / filter on the server — a partial footer does not stop them. */
+  serverTables: number;
   /** Bumped by "Clear filters" — every table resets when it changes. */
   clearToken: number;
 }
 
 export class SfScopeStore {
   private enabled = false;
-  private tables = new Map<string, number>();
+  private tables = new Map<string, { active: number; server: boolean }>();
   private headerButtons = new Set<string>();
   private partials = new Set<string>();
   private clearToken = 0;
@@ -42,13 +44,18 @@ export class SfScopeStore {
 
   private build(): SfScopeSnapshot {
     let activeTotal = 0;
-    for (const n of this.tables.values()) activeTotal += n;
+    let serverTables = 0;
+    for (const t of this.tables.values()) {
+      activeTotal += t.active;
+      if (t.server) serverTables += 1;
+    }
     return {
       enabled: this.enabled,
       tables: [...this.tables.keys()],
       activeTotal,
       hasHeaderButton: this.headerButtons.size > 0,
       partial: this.partials.size > 0,
+      serverTables,
       clearToken: this.clearToken,
     };
   }
@@ -76,9 +83,10 @@ export class SfScopeStore {
     this.emit();
   }
 
-  setTable(id: string, active: number): void {
-    if (this.tables.get(id) === active) return;
-    this.tables.set(id, active);
+  setTable(id: string, active: number, server = false): void {
+    const had = this.tables.get(id);
+    if (had && had.active === active && had.server === server) return;
+    this.tables.set(id, { active, server });
     this.emit();
   }
 
@@ -135,6 +143,7 @@ const NO_SCOPE: SfScopeSnapshot = {
   activeTotal: 0,
   hasHeaderButton: false,
   partial: false,
+  serverTables: 0,
   clearToken: 0,
 };
 const noop = (): (() => void) => () => undefined;

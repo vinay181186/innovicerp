@@ -83,6 +83,8 @@ import type {
   ListJobCardsResponse,
 } from './schema';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { JC_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -161,6 +163,11 @@ export async function listJobCards(
     const fromFrag = input.fromDate ? sql`AND jc.jc_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND jc.jc_date <= ${input.toDate}::date` : sql``;
     // Machine filter: JC has at least one op assigned to this machine.
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(JC_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(JC_SF_COLUMNS, sf, sql`jc.jc_date DESC, jc.code DESC`);
     const machineFrag = input.machineId
       ? sql`AND EXISTS (
           SELECT 1 FROM public.jc_ops jo
@@ -342,7 +349,8 @@ export async function listJobCards(
         ${toFrag}
         ${machineFrag}
         ${operatorFrag}
-      ORDER BY jc.jc_date DESC, jc.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -385,6 +393,7 @@ export async function listJobCards(
         ${toFrag}
         ${machineFrag}
         ${operatorFrag}
+        ${sfFrag}
     `);
     const total = Number((countResult as unknown as Array<{ count: number }>)[0]?.count ?? 0);
 

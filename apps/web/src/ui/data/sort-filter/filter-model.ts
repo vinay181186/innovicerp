@@ -6,6 +6,8 @@
 // sort. Everything here is pure, so it is unit-tested without a browser
 // (filter-model.test.ts) and the server mode can reuse the same names.
 
+import { sfDateRange, sfPresetRange } from '@innovic/shared';
+
 export type SfType = 'text' | 'num' | 'date' | 'list';
 export type SortDir = 'asc' | 'desc';
 
@@ -132,49 +134,9 @@ export function detectType(kind: string | undefined, values: Array<string | null
 
 // ── dates (India time) ──────────────────────────────────────────────────────
 
-function addDays(day: string, n: number): string {
-  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
-  const t = new Date(Date.UTC(y, m - 1, d) + n * 86_400_000);
-  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
-}
-
-/** Monday of the week holding `day`. */
-function weekStart(day: string): string {
-  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
-  return addDays(day, -((dow + 6) % 7));
-}
-
-function monthEnd(y: number, m: number): string {
-  return `${y}-${pad2(m)}-${pad2(new Date(Date.UTC(y, m, 0)).getUTCDate())}`;
-}
-
 /** Inclusive [from, to] of a preset, counted from `today` (an IST `YYYY-MM-DD`). */
 export function presetRange(p: DatePreset, today: string): [string, string] {
-  const [y, m] = today.split('-').map(Number) as [number, number];
-  switch (p) {
-    case 'today':
-      return [today, today];
-    case 'yesterday': {
-      const d = addDays(today, -1);
-      return [d, d];
-    }
-    case 'thisWeek': {
-      const s = weekStart(today);
-      return [s, addDays(s, 6)];
-    }
-    case 'lastWeek': {
-      const s = addDays(weekStart(today), -7);
-      return [s, addDays(s, 6)];
-    }
-    case 'thisMonth':
-      return [`${y}-${pad2(m)}-01`, monthEnd(y, m)];
-    case 'lastMonth': {
-      const py = m === 1 ? y - 1 : y;
-      const pm = m === 1 ? 12 : m - 1;
-      return [`${py}-${pad2(pm)}-01`, monthEnd(py, pm)];
-    }
-  }
+  return sfPresetRange(p, today);
 }
 
 export const DATE_PRESETS: Array<{ op: DatePreset; label: string }> = [
@@ -218,20 +180,8 @@ export function matches(f: ColumnFilter, text: string | null, today: string): bo
     case 'date': {
       const d = parseDate(text);
       if (d === null) return false;
-      let from = f.from;
-      // Only a range has a "to"; a stale one under on / before / after is ignored.
-      let to = f.op === 'between' ? f.to : undefined;
-      if (f.op === 'on') to = from;
-      else if (f.op === 'before') {
-        to = from ? addDays(from, -1) : undefined;
-        from = undefined;
-      } else if (f.op === 'after') {
-        from = f.from ? addDays(f.from, 1) : undefined;
-      } else if (f.op !== 'between') {
-        [from, to] = presetRange(f.op, today);
-      }
-      // A reversed range is read the way the user meant it.
-      if (from && to && from > to) [from, to] = [to, from];
+      // The same range the server applies (packages/shared list-query.ts).
+      const { from, to } = sfDateRange(f.op, f.from, f.to, today);
       return (!from || d >= from) && (!to || d <= to);
     }
   }

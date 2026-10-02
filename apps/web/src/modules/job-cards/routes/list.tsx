@@ -60,6 +60,7 @@ import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteJobCard, useJobCardsList } from '../api';
@@ -145,6 +146,13 @@ function JobCardsListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is capped at
+  // LIST_LIMIT, so filtering only the loaded rows would miss cards. Every
+  // change goes back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.jobCardsList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListJobCardsQuery = useMemo(
     () => ({
       search: search.search,
@@ -153,10 +161,12 @@ function JobCardsListPage(): React.JSX.Element {
       operatorId: search.operatorId,
       fromDate: search.fromDate,
       toDate: search.toDate,
+      sf: sf.param,
       limit: LIST_LIMIT,
       offset: 0,
     }),
     [
+      sf.param,
       search.search,
       search.status,
       search.machineId,
@@ -349,6 +359,7 @@ function JobCardsListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.jobCardsList}
+            sortFilterServer={sf}
             columns={columns}
             defaultHidden={[...JC_LIST_HIDDEN_COLUMNS]}
             rows={pagedRows}
