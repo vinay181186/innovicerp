@@ -3,6 +3,7 @@ export {
   createOperatorInputSchema,
   listOperatorsQuerySchema,
   operatorSchema,
+  updateOperatorImportRowSchema,
   updateOperatorInputSchema,
 } from '@innovic/shared';
 export type {

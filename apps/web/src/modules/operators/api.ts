@@ -82,10 +82,26 @@ export function useCreateOperator(saveKey?: SaveKey) {
  *  the vendors import (same code shape) at about one row per second. */
 export function useBulkCreateOperators() {
   const qc = useQueryClient();
-  return useMutation<BulkCreateOperatorsResponse, Error, BulkCreateOperatorsInput>({
-    mutationFn: (input) =>
-      apiFetch<BulkCreateOperatorsResponse>('/operators/bulk', { method: 'POST', json: input }),
-    onSuccess: () => {
+  return useMutation<
+    BulkCreateOperatorsResponse,
+    Error,
+    BulkCreateOperatorsInput & { saveKey?: SaveKey | undefined }
+  >({
+    // A big sheet can take over a minute — give it three. Only the real import
+    // (dryRun: false) carries the dialog's save key; a preview is not a save,
+    // and sharing the key would make the server replay the preview's answer.
+    mutationFn: ({ saveKey, ...input }) =>
+      withSaveKey(input.dryRun ? undefined : saveKey, (headers) =>
+        apiFetch<BulkCreateOperatorsResponse>('/operators/bulk', {
+          method: 'POST',
+          json: input,
+          timeoutMs: 180_000,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (_res, input) => {
+      // A preview (dryRun) writes nothing — nothing to reload.
+      if (input.dryRun) return;
       void qc.invalidateQueries({ queryKey: operatorsKeys.lists() });
     },
   });
