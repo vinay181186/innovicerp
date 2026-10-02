@@ -40,7 +40,9 @@ function lineColumns(): DataTableColumn<CustomerMaterialReturnLine>[] {
       className: 'mono',
       nowrap: true,
       render: (l) => (
-        <span style={{ color: 'var(--purple)' }}>{l.jwLineNo != null ? `L${l.jwLineNo}` : '—'}</span>
+        <span style={{ color: 'var(--purple)' }}>
+          {l.jwLineNo != null ? `L${l.jwLineNo}` : '—'}
+        </span>
       ),
     },
     {

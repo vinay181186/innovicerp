@@ -55,11 +55,7 @@ export type PartyMaterialListItem = z.infer<typeof partyMaterialListItemSchema>;
 export const createPartyMaterialInputSchema = z.object({
   /** ADR-203: server-assigned (PM-#### under the party_materials series lock).
    *  Accepted for old callers but ignored. */
-  code: z
-    .string()
-    .trim()
-    .max(32)
-    .optional(),
+  code: z.string().trim().max(32).optional(),
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(500).optional(),
   material: z.string().trim().max(100).optional(),
@@ -81,7 +77,6 @@ export const updatePartyMaterialInputSchema = z.object({
   itemId: z.string().uuid().optional(),
 });
 export type UpdatePartyMaterialInput = z.infer<typeof updatePartyMaterialInputSchema>;
-
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

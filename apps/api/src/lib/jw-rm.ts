@@ -39,7 +39,13 @@ export async function ensureRmItemForOrderItem(
     SELECT id, code, name, material, item_type::text AS "itemType"
       FROM public.items
      WHERE id = ${orderItemId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-  `)) as unknown as Array<{ id: string; code: string; name: string; material: string | null; itemType: string }>;
+  `)) as unknown as Array<{
+    id: string;
+    code: string;
+    name: string;
+    material: string | null;
+    itemType: string;
+  }>;
   const parent = parents[0];
   if (!parent) throw new NotFoundError('Item not found in the Item Master.');
   if (ITEM_TYPE_RULES[parent.itemType as ItemType]?.partyOwned) {
@@ -59,7 +65,12 @@ export async function ensureRmItemForOrderItem(
        AND deleted_at IS NULL
   `)) as unknown as Array<{ id: string; code: string; name: string }>;
   if (linked[0]) {
-    return { rmItemId: linked[0].id, rmItemCode: linked[0].code, rmItemName: linked[0].name, created: false };
+    return {
+      rmItemId: linked[0].id,
+      rmItemCode: linked[0].code,
+      rmItemName: linked[0].name,
+      created: false,
+    };
   }
 
   // 2. An item already carries the code (any letter case): adopt it if it is a
@@ -69,7 +80,13 @@ export async function ensureRmItemForOrderItem(
     SELECT id, code, name, item_type::text AS "itemType", parent_item_id AS "parentItemId"
       FROM public.items
      WHERE company_id = ${companyId}::uuid AND lower(code) = lower(${code}) AND deleted_at IS NULL
-  `)) as unknown as Array<{ id: string; code: string; name: string; itemType: string; parentItemId: string | null }>;
+  `)) as unknown as Array<{
+    id: string;
+    code: string;
+    name: string;
+    itemType: string;
+    parentItemId: string | null;
+  }>;
   const existing = byCode[0];
   if (existing) {
     if (existing.itemType !== 'party_supplied_material') {
@@ -84,7 +101,12 @@ export async function ensureRmItemForOrderItem(
       UPDATE public.items SET parent_item_id = ${orderItemId}::uuid, updated_at = now(), updated_by = ${userId}::uuid
        WHERE id = ${existing.id}::uuid AND parent_item_id IS NULL
     `);
-    return { rmItemId: existing.id, rmItemCode: existing.code, rmItemName: existing.name, created: false };
+    return {
+      rmItemId: existing.id,
+      rmItemCode: existing.code,
+      rmItemName: existing.name,
+      created: false,
+    };
   }
 
   // 3. Create it — same name, NOS, Party Supplied Material, no user input.
@@ -125,7 +147,12 @@ export async function ensurePartyMaterial(
      WHERE i.id = ${rmItemId}::uuid AND i.company_id = ${companyId}::uuid AND i.deleted_at IS NULL
        AND i.item_type = 'party_supplied_material'
        AND c.id = ${clientId}::uuid AND c.company_id = ${companyId}::uuid AND c.deleted_at IS NULL
-  `)) as unknown as Array<{ itemCode: string; itemName: string; material: string | null; clientCode: string }>;
+  `)) as unknown as Array<{
+    itemCode: string;
+    itemName: string;
+    material: string | null;
+    clientCode: string;
+  }>;
   const i = info[0];
   if (!i) throw new ValidationError('Customer material or customer not found.');
 
