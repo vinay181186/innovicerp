@@ -12,10 +12,15 @@ export const approvalConfigSchema = z.object({
   prApproval: z.boolean(),
   invoiceApproval: z.boolean(),
   /** ADR-130. On: an operator's op-entry date/time correction waits for a
-   *  manager. Off: it applies on save (ADR-127 behaviour). Unlike prApproval
-   *  and invoiceApproval, this flag is actually consumed — see
-   *  op-entry/service.ts updateOpLogTiming. */
+   *  manager. Off: it applies on save (ADR-127 behaviour). Consumed by
+   *  op-entry/service.ts updateOpLogTiming. (prApproval is likewise consumed by
+   *  purchase-orders; only invoiceApproval is currently unread.) */
   opEntryEditApproval: z.boolean(),
+  /** ADR-202 edit-approval master switch. On: every edit to a LIVE enrolled
+   *  document is staged and goes for per-change approval. Off: edits save
+   *  straight through (today's behaviour) — the instant rollback lever.
+   *  Consumed by document-edits/service.ts isDocEditApprovalOn. */
+  docEditApproval: z.boolean(),
   poApprovers: z.array(z.string().uuid()),
 });
 export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
@@ -29,6 +34,7 @@ export const APPROVAL_CONFIG_DEFAULTS: ApprovalConfig = {
   prApproval: true,
   invoiceApproval: false,
   opEntryEditApproval: true,
+  docEditApproval: false,
   poApprovers: [],
 };
 

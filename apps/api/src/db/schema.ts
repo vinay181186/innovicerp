@@ -4,6 +4,7 @@ import {
   CUSTOMER_DISPATCH_STATUSES,
   DAILY_REPORT_LINE_STATUSES,
   DC_STATUSES,
+  DOCUMENT_EDIT_STATUSES,
   GRN_QC_STATUSES,
   INVOICE_STATUSES,
   ITEM_TYPES,
@@ -93,6 +94,8 @@ export const itemTypeEnum = pgEnum('item_type', ITEM_TYPES);
 export const opTypeEnum = pgEnum('op_type', OP_TYPES);
 export const opLogTypeEnum = pgEnum('op_log_type', OP_LOG_TYPES);
 export const opLogChangeStatusEnum = pgEnum('op_log_change_status', OP_LOG_CHANGE_STATUSES);
+// ADR-202 — lifecycle of a staged document-edit request (edit-approval).
+export const documentEditStatusEnum = pgEnum('document_edit_status', DOCUMENT_EDIT_STATUSES);
 export const outsourceStatusEnum = pgEnum('outsource_status', OUTSOURCE_STATUSES);
 export const runningOpStatusEnum = pgEnum('running_op_status', RUNNING_OP_STATUSES);
 export const shiftEnum = pgEnum('shift', SHIFTS);
@@ -1474,6 +1477,90 @@ export const opLogTimeChangeRequests = pgTable(
     }),
   ],
 ).enableRLS();
+
+// ─── Edit-approval (ADR-202) ────────────────────────────────────────────────
+// Every edit to a LIVE document (Phase 1: Purchase Order only) is STAGED here
+// and goes for per-change approval. Modeled on op_log_time_change_requests: the
+// live document is untouched while a request is 'pending'; approving applies the
+// approved + still-fresh changes, rejecting applies nothing. Who decided is
+// recorded on the document's own History tab (entity = 'PurchaseOrder'), not a
+// new view. The document's business status keeps its single writer (§20.1).
+export const documentEditRequests = pgTable(
+  'document_edit_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    // The ActivityLog entity name (e.g. 'PurchaseOrder') + the document's uuid.
+    entity: text('entity').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    // Snapshot of the document code (IN-MPO-00042) for the inbox, so a request
+    // reads without joining back to a table only this entity's module knows.
+    docCode: text('doc_code').notNull(),
+    // The updated_at the edit form carried (R5 / §20.4). The engine refuses a
+    // decision if the document moved under the request.
+    expectedUpdatedAt: timestamp('expected_updated_at', { withTimezone: true }).notNull(),
+    // The full proposed edit input (e.g. UpdatePurchaseOrderInput), replayed
+    // field-by-field at approval — only approved + still-fresh fields are kept.
+    proposedPayload: jsonb('proposed_payload').notNull(),
+    // The before → after list the approver ticks (ADR-197 change shape + id).
+    changes: jsonb('changes').notNull(),
+    // Per-change outcome once decided (approved / rejected / superseded).
+    decisions: jsonb('decisions').notNull().default([]),
+    status: documentEditStatusEnum('status').notNull().default('pending'),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionReason: text('decision_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    // One open edit per document — a second edit before the first is decided
+    // would stage two conflicting payloads and the last approval would win.
+    uniqueIndex('document_edit_pending_uq')
+      .on(t.entity, t.entityId)
+      .where(sql`${t.status} = 'pending' and ${t.deletedAt} is null`),
+    index('document_edit_company_status_idx')
+      .on(t.companyId, t.status, t.requestedAt)
+      .where(sql`${t.deletedAt} is null`),
+    index('document_edit_entity_idx')
+      .on(t.entity, t.entityId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('document_edit_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // Insert = whoever may edit SOME document; the service's requireFormAccess
+    // is the real per-form gate, this is the coarse RLS backstop.
+    pgPolicy('document_edit_request_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`company_id = current_company_id() AND current_user_role() IN ('admin', 'manager', 'operator', 'qc', 'procurement', 'dispatch', 'design')`,
+    }),
+    pgPolicy('document_edit_decide', {
+      for: 'update',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND current_user_role() IN ('admin', 'manager')`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type DocumentEditRequestRow = typeof documentEditRequests.$inferSelect;
 
 export const runningOps = pgTable(
   'running_ops',
@@ -7211,6 +7298,9 @@ export const approvalConfig = pgTable(
     // Unlike prApproval / invoiceApproval, this flag is actually read — see
     // op-entry/service.ts updateOpLogTiming.
     opEntryEditApproval: boolean('op_entry_edit_approval').notNull().default(true),
+    // 0191 / ADR-202. On: an edit to a LIVE Purchase Order is staged and goes
+    // for per-change approval (Phase 1). Off (default): edits apply on save.
+    docEditApproval: boolean('doc_edit_approval').notNull().default(false),
     poApprovers: jsonb('po_approvers').notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

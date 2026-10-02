@@ -53,6 +53,7 @@ import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
 import { PO_TYPE_LABELS, toPoTaxType } from '../lib/po-labels';
 import { PoFormLine } from './po-form-line';
@@ -113,6 +114,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // R5 — the PO's version as it was when this edit form opened.
   const opened = useOpenedVersion(props.mode === 'edit' ? props.detail.updatedAt : undefined);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE PO is staged for approval instead of
+  // applied. Shown as a neutral success banner before we return to the PO.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // Where Cancel goes — and therefore where ESC → Exit goes too. The exit guard
   // asks "Are you sure?" on every other way off this screen (Back link,
   // breadcrumb, browser Back); Save and Cancel pass through `exit.leave`.
@@ -631,8 +635,23 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           expectedUpdatedAt: opened.expected(),
         };
         const saved = await updatePo.mutateAsync(payload);
-        opened.saved(saved?.updatedAt);
         const editedId = props.detail.id;
+        if (isStagedResult(saved)) {
+          // The edit-approval gate is on and this PO is live: nothing was
+          // changed on the PO — the edit is now waiting for approval. Say so,
+          // then return to the PO (its fields now carry the pending-change chip).
+          setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+          exit.leave(
+            () =>
+              void navigate({
+                to: '/purchase-orders/$id',
+                params: { id: editedId },
+                replace: true,
+              }),
+          );
+          return;
+        }
+        opened.saved(saved.updatedAt);
         exit.leave(
           () =>
             void navigate({ to: '/purchase-orders/$id', params: { id: editedId }, replace: true }),
@@ -734,6 +753,11 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
       {/* The ONE blocking message sits under the header, beside Save — first
           problem wins, so the buyer is told what to do next. */}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       {submitError ? (
         <Banner tone="error" role="alert">
           {submitError}
