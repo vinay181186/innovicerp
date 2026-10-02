@@ -1,12 +1,15 @@
 // SO Master expand — a COMPONENT order's line items, revealed under its row.
-// Moved out of routes/list.tsx (ADR-199 split). Unchanged behaviour: the line
-// table with Edit / Delete per line, and a line delete that re-sends the
-// surviving lines through the one update mutation.
+// Moved out of routes/list.tsx (ADR-199 split). The line table with a ⋯ per
+// line (Edit line · Delete line), and a line delete that re-sends the surviving
+// lines through the one update mutation, carrying the SO's updatedAt so the
+// server refuses it when the SO changed since this panel loaded.
 
 import type { SalesOrderDetail, SalesOrderLine, SalesOrderLineInput } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { useSession } from '@/lib/session';
+import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import {
   ItemBadge,
@@ -53,6 +56,10 @@ export function ComponentSoExpand({
   canEdit: boolean;
 }): React.JSX.Element {
   const update = useUpdateSalesOrder(so.id);
+  const { data: me } = useSession();
+  // PATCH /sales-orders/:id is admin-only on the server (requireAdminRole) on
+  // top of so_create edit, so the line ⋯ is shown only to an admin editor.
+  const canEditLines = canEdit && me?.role === 'admin';
   // Line delete asks through ConfirmDialog, not window.confirm. Same update
   // call as before: re-send the surviving lines.
   const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
@@ -107,14 +114,14 @@ export function ComponentSoExpand({
           <col style={{ width: '4%' }} />
           <col style={{ width: '7%' }} />
           <col style={{ width: THUMBNAIL_COL_WIDTH }} />
-          <col style={{ width: canEdit ? '27%' : '33%' }} />
+          <col style={{ width: canEditLines ? '29%' : '33%' }} />
           <col style={{ width: '7%' }} />
           <col style={{ width: '8%' }} />
           <col style={{ width: '8%' }} />
           <col style={{ width: '8%' }} />
           <col style={{ width: '9%' }} />
           <col style={{ width: '8%' }} />
-          {canEdit ? <col style={{ width: '6%' }} /> : null}
+          {canEditLines ? <col style={{ width: '4%' }} /> : null}
         </colgroup>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
@@ -134,13 +141,13 @@ export function ComponentSoExpand({
             </th>
             <th>Due Date</th>
             <th>SO Status</th>
-            {canEdit ? <th /> : null}
+            {canEditLines ? <th aria-label="Actions" /> : null}
           </tr>
         </thead>
         <tbody>
           {so.lines.length === 0 ? (
             <tr>
-              <td colSpan={canEdit ? 11 : 10} className="empty-state">
+              <td colSpan={canEditLines ? 11 : 10} className="empty-state">
                 No lines yet
               </td>
             </tr>
@@ -224,25 +231,28 @@ export function ComponentSoExpand({
                       />
                     </div>
                   </td>
-                  {canEdit ? (
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <Link
-                          to="/sales-orders/$id/edit"
-                          params={{ id: so.id }}
-                          className="btn btn-ghost btn-sm"
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          disabled={update.isPending}
-                          onClick={() => onDeleteLine(l.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
+                  {canEditLines ? (
+                    <td className="td-ctr">
+                      <RowMenu
+                        label={`Actions for line ${l.lineNo}`}
+                        renderLink={(p) => <Link {...p} />}
+                        items={[
+                          {
+                            key: 'edit',
+                            label: 'Edit line',
+                            icon: 'pencil',
+                            to: `/sales-orders/${so.id}/edit`,
+                          },
+                          {
+                            key: 'delete',
+                            label: 'Delete line',
+                            icon: 'trash-2',
+                            group: 'danger',
+                            disabledReason: update.isPending ? 'Saving…' : undefined,
+                            onSelect: () => onDeleteLine(l.id),
+                          },
+                        ]}
+                      />
                     </td>
                   ) : null}
                 </tr>
@@ -268,7 +278,16 @@ export function ComponentSoExpand({
           const reason = lineDeleteReason.trim();
           if (!reason) throw new Error(REASON_REQUIRED_MESSAGE);
           const surviving = so.lines.filter((l) => l.id !== deletingLineId).map(lineToInput);
-          await update.mutateAsync({ header: {}, lines: surviving, reason });
+          // updatedAt from the same snapshot as the surviving lines: the server
+          // refuses (409 edit conflict, shown in this dialog) when the SO moved
+          // on, instead of silently dropping a line someone added after this
+          // panel loaded. The update schema requires the header's clientId.
+          await update.mutateAsync({
+            header: so.clientId ? { clientId: so.clientId } : {},
+            lines: surviving,
+            reason,
+            expectedUpdatedAt: so.updatedAt,
+          });
           setDeletingLineId(null);
         }}
       />

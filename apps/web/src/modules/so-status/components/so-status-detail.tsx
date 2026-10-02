@@ -14,11 +14,16 @@ import {
   type SoStatusOutsourceAlert,
   opSrNo,
 } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { DataTable, type DataTableColumn, ROW_TINT } from '@/ui/data';
+import { useSession } from '@/lib/session';
+import { DataTable, type DataTableColumn, ROW_TINT, type RowMenuItem } from '@/ui/data';
+import { ToastProvider, useToast } from '@/ui/feedback';
+import { useGenerateOspPr } from '@/modules/op-entry/api';
 import { usePlan } from '@/modules/plans/api';
 import { usePlanningSoDetail } from '@/modules/so-planning/api';
 import { BomPlanningModal } from '@/modules/so-planning/components/bom-planning-modal';
@@ -27,7 +32,7 @@ import { EditPlanModal } from '@/modules/so-planning/components/edit-plan-modal'
 import { useSoTimeline } from '@/modules/so-timeline/api';
 import { fmtDate, todayIst } from '@/lib/date';
 import { SoTimelineBody } from '@/modules/so-timeline/components/timeline-body';
-import { useSoStatus } from '../api';
+import { soStatusKeys, useSoStatus } from '../api';
 import { exportSoStatusExcel } from '../lib/export';
 
 // Inline component-planning modal state — lets the planner create/plan
@@ -79,6 +84,16 @@ function todayStr(): string {
 }
 
 export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Element {
+  // No app-wide toast provider is mounted, so this view carries its own for
+  // the "Raise PR for Op n" result (PR code).
+  return (
+    <ToastProvider>
+      <SoStatusDetailBody soId={soId} />
+    </ToastProvider>
+  );
+}
+
+function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
   const { data, isLoading, isError, error, refetch } = useSoStatus(soId);
   // Planning detail powers the inline plan actions (remaining qty, BOM flags).
   const planning = usePlanningSoDetail(soId);
@@ -639,6 +654,18 @@ function LinePanel({
   onAssemblyBom: () => void;
 }): React.JSX.Element {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const toast = useToast();
+  // Raise PR for a pending outsource op = the JC Ops board's flow:
+  // POST /op-entry/osp-pr { jcOpId }. Server rule (op-entry generateOspPr):
+  // admin / manager always, everyone else needs pr_create entry.
+  const { data: eff } = useMyAccess();
+  const { data: me } = useSession();
+  const canRaisePr =
+    me?.role === 'admin' || me?.role === 'manager' || effectiveFormPerms(eff, 'pr_create').entry;
+  const generatePr = useGenerateOspPr();
+  // Ops raised from this screen, greyed at once until the status refetch drops them.
+  const [raisedOpIds, setRaisedOpIds] = useState<Set<string>>(new Set());
   const jcIssuedQty = line.chips.jcIssued.qty;
   const lineBalance = Math.max(0, line.orderQty - jcIssuedQty);
   // Plan-first flow: this line plans through "+ Plan" (no direct Job Card).
@@ -661,8 +688,9 @@ function LinePanel({
 
   // Linked Job Cards table — shared FIT columns (ADR-199). Numbers right-align
   // (Order Qty / Completed / Pending), text centres, codes/dates/badges never
-  // cut; the Operations cell is a `control` column so its op chips and PR
-  // buttons are never clipped or dropped into the ▸ detail row.
+  // cut; the Operations cell is a `control` column so its op chips are never
+  // clipped or dropped into the ▸ detail row. Raise PR per pending outsource
+  // op sits in the row's ⋯ (jcRowMenu below).
   const jcColumns = useMemo<DataTableColumn<SoStatusJc>[]>(
     () => [
       {
@@ -809,7 +837,6 @@ function LinePanel({
         kind: 'control',
         align: 'left',
         render: (jc) => {
-          const pendingOpsForJc = line.outsourceAlert.pendingOps.filter((p) => p.jcId === jc.id);
           return (
             <div style={{ whiteSpace: 'nowrap' }}>
               {jc.ops.map((op) => (
@@ -820,41 +847,50 @@ function LinePanel({
                   No operations
                 </span>
               ) : null}
-              {pendingOpsForJc.length > 0 ? (
-                <div style={{ marginTop: 2 }}>
-                  {pendingOpsForJc.map((p) => (
-                    <button
-                      key={`${p.jcId}-${p.opSeq}`}
-                      type="button"
-                      className="btn btn-sm"
-                      style={{
-                        background: 'rgba(255,176,32,0.1)',
-                        color: 'var(--amber2)',
-                        border: '1px solid rgba(255,176,32,0.3)',
-                        fontSize: 11,
-                        padding: '2px 8px',
-                        margin: 1,
-                      }}
-                      title={`Raise PR for Op ${opSrNo(p.opSeq)} — ${p.operation}`}
-                      onClick={() =>
-                        navigate({
-                          to: '/purchase-requests',
-                          search: { jc: p.jcCode, op: p.opSeq } as never,
-                        })
-                      }
-                    >
-                      📋 PR Op {opSrNo(p.opSeq)}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
             </div>
           );
         },
       },
     ],
-    [line.outsourceAlert, navigate],
+    [],
   );
+
+  // ⋯ per JC: one "Raise PR · Op n" per pending outsource op on that card.
+  // Hidden without the right (or on an older payload with no jcOpId); greyed
+  // once the op already has a PR. Returning the promise keeps the ⋯ busy, so
+  // a double click cannot raise twice (the server also refuses a duplicate).
+  const jcRowMenu = (jc: SoStatusJc): RowMenuItem[] =>
+    line.outsourceAlert.pendingOps
+      .filter((p) => p.jcId === jc.id)
+      .map((p) => {
+        const jcOpId = p.jcOpId;
+        const alreadyRaised =
+          (jcOpId !== undefined && raisedOpIds.has(jcOpId)) ||
+          (!!p.outsourceStatus && p.outsourceStatus !== 'pending');
+        return {
+          key: `pr-${p.jcId}-${p.opSeq}`,
+          label: `Raise PR · Op ${opSrNo(p.opSeq)}`,
+          icon: 'plus',
+          group: 'workflow',
+          hidden: !canRaisePr || !jcOpId,
+          disabledReason: alreadyRaised ? 'PR already raised' : undefined,
+          onSelect: async () => {
+            if (!jcOpId) return;
+            try {
+              const res = await generatePr.mutateAsync({ jcOpId });
+              setRaisedOpIds((prev) => new Set(prev).add(jcOpId));
+              void qc.invalidateQueries({ queryKey: soStatusKeys.all });
+              toast.ok(
+                res.poCode
+                  ? `PR ${res.prCode} raised for ${p.jcCode} Op ${opSrNo(p.opSeq)} — PO ${res.poCode} created`
+                  : `PR ${res.prCode} raised for ${p.jcCode} Op ${opSrNo(p.opSeq)}`,
+              );
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : 'Could not raise PR. Try again.');
+            }
+          },
+        };
+      });
 
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
@@ -996,6 +1032,7 @@ function LinePanel({
         columns={jcColumns}
         rows={line.jobCards}
         rowKey={(jc) => jc.id}
+        rowMenu={jcRowMenu}
         density="compact"
         rowClassName={(jc) =>
           jc.status === 'complete'
