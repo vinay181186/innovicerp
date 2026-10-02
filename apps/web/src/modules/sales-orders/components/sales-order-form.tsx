@@ -272,6 +272,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const watchedLines = watch('lines');
   const gstPercent = Number(watch('header.gstPercent')) || 0;
 
+  // A draft being edited: the primary button releases it, so it says so.
+  const isDraft = watch('header.status') === 'draft';
+
   // ── SO No.: reusable document-number field (prefill + live duplicate check) ──
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
@@ -545,9 +548,22 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const gstAmt = subtotal * (gstPercent / 100);
   const grand = subtotal + gstAmt;
 
-  // `asDraft` (#3): the "Save as draft" button submits with status 'draft';
-  // the normal submit keeps the header status (defaults to 'open'). Captured
-  // per-handler so there is no shared mutable flag to leak across submits.
+  // `asDraft` (#3): the "Save as draft" button submits with status 'draft'.
+  //
+  // The normal submit RELEASES a draft — it sends 'open' when the form is
+  // holding 'draft'. It used to send `values.header.status` unchanged, which on
+  // an edit is whatever the record already had (the form seeds itself from
+  // `detail.status`). So pressing Save on a draft re-saved 'draft', and because
+  // "Save as Draft" is only rendered on the CREATE screen, a draft SO had no
+  // way out at all: no Release action, and Close is offered only from Open /
+  // Dispatched / Closed. IN-SO-00517 sat stuck that way on production
+  // (2026-10-02) with 30 lines on it. The server always allowed the move —
+  // SO_STATUS_MOVES.draft is ['open', 'cancelled'] — only the form never asked.
+  //
+  // Any other status passes through untouched, so Save on an open SO stays
+  // open, and the server still refuses the moves its rule table forbids.
+  // Captured per-handler so there is no shared mutable flag to leak across
+  // submits.
   const onValid =
     (asDraft: boolean) =>
     async (values: FormValues): Promise<void> => {
@@ -609,7 +625,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
       const headerOut = {
         ...values.header,
-        status: asDraft ? ('draft' as SoStatus) : values.header.status,
+        status: asDraft
+          ? ('draft' as SoStatus)
+          : values.header.status === 'draft'
+            ? ('open' as SoStatus)
+            : values.header.status,
         code: docCodeToSend(values.header.code, suggestedCode),
         customerName: undefined,
         clientId: values.header.clientId || undefined,
@@ -826,11 +846,24 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             ) : null}
             {/* Legacy footer: addSO L12427 / _editFullSO L12619 reach showModalLg
                 with no explicit saveLabel, so the label is "Save SO". */}
-            <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
+            {/* On a DRAFT the label says what the button does, because it does
+                more than save: it releases the order to planning. Every other
+                status reads "Save Changes" and the status is left alone. */}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={saveDisabled}
+              title={
+                isDraft
+                  ? 'Save and release this draft to planning (status becomes Open)'
+                  : undefined
+              }
+            >
               {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
               {formState.isSubmitting
                 ? 'Saving…'
-                : (props.submitLabel ?? (isCreate ? 'Save SO' : 'Save Changes'))}
+                : (props.submitLabel ??
+                  (isCreate ? 'Save SO' : isDraft ? 'Save & Release' : 'Save Changes'))}
             </button>
           </>
         }
