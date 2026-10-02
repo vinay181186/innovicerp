@@ -131,7 +131,9 @@ function BomMastersListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, primary action and the filter
           bar stay put while the rows scroll underneath. */}
       <ListHeader
@@ -186,7 +188,7 @@ function BomMastersListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load BOMs. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.bomMasterList}
             columns={columns}

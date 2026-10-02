@@ -323,7 +323,9 @@ function UsersListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, search, the two filters and the
           primary action stay put while the rows scroll underneath. */}
       <ListHeader
@@ -402,7 +404,7 @@ function UsersListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load users. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.usersList}
             sortFilterServer={sf}

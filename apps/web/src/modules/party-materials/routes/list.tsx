@@ -133,7 +133,9 @@ function PartyMaterialsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + Add Material. */}
       <ListHeader
@@ -161,7 +163,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.partyMaterials}
             sortFilterServer={sf}

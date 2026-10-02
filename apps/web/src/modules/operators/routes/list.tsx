@@ -155,7 +155,10 @@ function OperatorsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, search, the status filter and
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
@@ -247,7 +250,7 @@ function OperatorsListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load operators. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.operatorsList}
             sortFilterServer={sf}

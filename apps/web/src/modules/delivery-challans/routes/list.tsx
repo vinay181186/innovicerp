@@ -157,7 +157,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): both tabs fill the content area so the TABLE is
+    // the only thing that scrolls — the At-Vendor register (osp-wip) now opts
+    // its own Panel in with `fill`, so the page no longer has to scroll for it.
+    <div className="page-fill">
       {/* Outward DC | At-Vendor Register tabs (the At-Vendor register is the
           former standalone /osp-wip screen). */}
       <div
@@ -308,7 +311,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             // click opens the DC, and the only per-row action is Receive while
             // the DC is still out at the vendor (status === 'issued') — the same
             // gate the card carried.
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.ospOutwardDc}
                 sortFilterServer={sf}

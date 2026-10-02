@@ -235,7 +235,10 @@ function QcProcessesListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the TABLE is the page's only
+    // scrollbar, so the column header stays on screen at the last row. The
+    // other tab is a different, self-sizing view and keeps the page scroll.
+    <div className={tab === 'reports' ? undefined : 'page-fill'}>
       {/* QC Processes | Report Types tabs (Report Types is the former standalone
           Report / Document Master screen). */}
       <TabStrip
@@ -329,7 +332,7 @@ function QcProcessesListPage(): React.JSX.Element {
               }
             />
           ) : (
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.qcProcessesList}
                 sortFilterServer={sf}

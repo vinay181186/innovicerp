@@ -125,7 +125,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
         />
       ) : isLoading || data ? (
         <>
-          <Panel bodyPadding="none">
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.ospAtVendorRegister}
               columns={columns}

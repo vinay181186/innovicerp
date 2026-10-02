@@ -146,7 +146,10 @@ function InboxSection({
   const filtering = q !== undefined || sf.filtering;
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the inbox fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header and the section tabs
+    // stay on screen down to the last row.
+    <div className="page-fill">
       <ListHeader
         title={SECTION_TITLE[section]}
         icon="✅"
@@ -168,7 +171,7 @@ function InboxSection({
       {list.isError ? (
         <PageState state="error" message={list.error.message} />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.approvalsPrPo}
             columns={columns}

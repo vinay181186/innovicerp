@@ -173,7 +173,10 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     sf.filtering || search.search || search.status ? 'No JWSOs match.' : 'No JWSOs yet.';
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header stays on screen down
+    // to the last row.
+    <div className="page-fill">
       {/* The ONE list header (ui/layout ListHeader) — same URL params, same
           query as before; the status filter stays a select. */}
       <ListHeader
@@ -234,7 +237,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load JWSOs. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.jwsoList}
             columns={columns}

@@ -152,7 +152,10 @@ function ProductionOrdersListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header can never ride off the
+    // top of the screen at the last row.
+    <div className="page-fill">
       {/* Frozen header band — title + count + New PO + the filter bar stay
           pinned; the table scrolls under them. */}
       <ListHeader
@@ -215,7 +218,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable<ProductionOrderListItem>
             tableKey={TABLE_KEYS.productionOrders}
             columns={columns}

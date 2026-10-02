@@ -27,7 +27,7 @@ import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, ROW_TINT } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -104,7 +104,10 @@ function StoreInventoryPage(): React.JSX.Element {
   );
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the page fills the content area and the
+    // TABLE is the only scrollbox, so the column header cannot ride off the top at the
+    // last row. The Stock Ledger tab is its own screen and keeps today's page scroll.
+    <div className={tab === 'ledger' ? undefined : 'page-fill'}>
       {/* Inventory | Stock Ledger tabs (Stock Ledger is the former standalone screen). */}
       <div
         style={{
@@ -207,10 +210,7 @@ function StoreInventoryPage(): React.JSX.Element {
               }
             />
           ) : (
-            <div className="panel">
-              <div className="panel-hdr">
-                <span className="panel-title">Stock Levels</span>
-              </div>
+            <Panel fill bodyPadding="none" title="Stock Levels">
               <DataTable
                 tableKey={TABLE_KEYS.storeInventory}
                 columns={columns}
@@ -258,7 +258,7 @@ function StoreInventoryPage(): React.JSX.Element {
                   },
                 ]}
               />
-            </div>
+            </Panel>
           )}
 
           <ListFooter

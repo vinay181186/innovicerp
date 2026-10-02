@@ -183,6 +183,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
   return (
     <>
       <Panel
+        fill
         bodyPadding="none"
         title={<span style={{ color: 'var(--red2)' }}>⚠ Needs Planning ({total} SO lines)</span>}
         actions={

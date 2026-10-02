@@ -196,7 +196,9 @@ function AlertsDashboardPage() {
   ];
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Alerts"
         icon="🔔"
@@ -283,7 +285,7 @@ function AlertsDashboardPage() {
         </div>
       ) : (
         <>
-          <Panel bodyPadding="none">
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.alertsDashboard}
               columns={columns}

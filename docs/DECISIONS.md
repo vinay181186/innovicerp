@@ -10724,3 +10724,84 @@ Only four screens could sort, date filters existed on six screens and only on th
 - **Page address (URL) state** — deferred: route search schemas strip unknown keys; per-tab storage gives the same Refresh/Back behaviour without touching ~75 route schemas.
 - **Filtering the loaded page of a paged list** — rejected: silently wrong answers.
 - **Per-screen accessor wiring** — rejected for the first pass; reading the displayed text covers every table at once.
+
+## ADR-202: A list page fills the screen and the table is the only thing that scrolls
+
+**Date:** 2026-10-02 · **Status:** Accepted · **Migrations:** none
+
+### Context
+
+Scrolling any list to its last row lost the column header. The header was never missing a
+rule: `.innovic-table th` has been `position: sticky; top: 0` throughout. Sticky anchors to the
+nearest SCROLLING box, which is `.tbl-wrap` — and `.tbl-wrap` was capped at
+`max-height: calc(100vh - 220px)`, a guess at how much chrome sits above the table.
+
+The guess is wrong on every screen: app header + tab strip + breadcrumb, then the page's own
+title, record count, search box and filter row. Measured on SO Master the panel alone is about
+`100vh − 180` while the space available is about `100vh − 110`, so `#content` (itself
+`flex: 1; overflow-y: auto`) over-scrolled by roughly 50px — more wherever a KPI strip sits.
+Two scrollbars, and the header let go exactly when the user reached the last row. Because the
+cause was in the shared shell, it reproduced on all 56 full-page lists.
+
+### Decision
+
+A list page takes the height that is actually LEFT — measured by the browser, never guessed —
+and the table is the only thing that scrolls. Everything above it becomes fixed chrome, so the
+title, count, search and filters stop scrolling away as well.
+
+Opt in per page, two lines: `page-fill` on the page root and `fill` on the table's `Panel`.
+A page that does not opt in behaves exactly as before, so this lands screen by screen.
+
+Three engine pieces:
+
+- **`innovic-theme.css`** — the `.page-fill` / `.panel--fill` chain. `min-height: 0` at every
+  link is load-bearing: a flex child defaults to `min-height: auto` and refuses to shrink below
+  its content, which is the usual reason "we added `overflow: auto` and nothing happened".
+- **`Panel.tsx`** — a `fill` prop. With `bodyPadding="none"`, the mode every full-bleed list
+  uses, the body wrapper carried NO class at all, so CSS could not reach it. This is why a
+  pure-stylesheet fix was not possible.
+- **`data-table-fit.css`** — the chain continues through `.dt-fit-root`, which `FitDataTable`
+  renders BETWEEN the panel body and the scrolling wrapper. Found by three independent agents
+  during the rollout: without it every fit table kept the 220px guess and its last rows could
+  be CLIPPED with nothing left to scroll — worse than the bug being fixed.
+
+Two safety properties, both added after the code review:
+
+- **`#content` keeps its own scrollbar as the fallback**, and `.page-fill` asks for
+  `min-height: 100%`, not `height: 100%`. When the chrome genuinely cannot fit — a banner that
+  lists every skipped row, a phone, 200% browser zoom — the page scrolls again rather than
+  trapping the user behind a table squeezed to nothing. An earlier draft set `overflow: hidden`
+  on `#content` and removed that escape. Never trap the user to keep a header still.
+- **The filling `.tbl-wrap` has a six-row floor** (`calc(var(--tbl-row-h) * 6)`), so it can
+  never collapse to zero.
+  There is no `:has()` dependency, so no browser is left worse off than before.
+
+### Scope
+
+48 screens opted in. 11 are deliberately NOT converted — Job Queue, Machine Loading, Production
+Dashboard, Supply Chain Dashboard, Incoming QC, QC History, Design Work Log, Backup & Export,
+SO/JWSO Planning, the dev UI Kit — because they stack several panels and growing one squashes
+the rest. A tabbed list opts in on its list tab only where the other tab renders a foreign
+component that has not opted in; once that component takes `fill` the condition is dropped.
+Tables inside a modal or a dashboard card keep their own capped `maxHeight` and must NOT take
+`fill` (29 files set one deliberately).
+
+### Alternatives Considered
+
+- **Let the page scroll and anchor the header to `#content`** — rejected: `overflow-x: auto` on
+  `.tbl-wrap` forces its vertical axis to be a scrollport too, so the header could not reach
+  `#content`; and `.panel { overflow: hidden }` would have become the anchor instead, putting
+  the original bug straight back.
+- **Pick a better number than 220px** — rejected: no single value is right for ~90 screens with
+  different chrome, and the next screen added would break it again.
+- **A CSS-only fix keyed on `:has()`** — rejected: it would have applied silently on some pages
+  and not others, with no way to tell which, and left non-`:has()` engines worse off.
+
+### Consequences
+
+- Positive: the header holds on every converted list, one scrollbar instead of two, and the
+  search box and filters stay reachable at the last row.
+- Negative: a list page now owns the full content height, so a page with unbounded chrome above
+  the table relies on the fallback scroll; `available`-style banners should be kept short.
+- Risks: a future screen that adds a second panel below a filling one will squeeze it. The
+  pattern is two lines, so the fix is to drop `fill` from that page.

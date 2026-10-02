@@ -18,7 +18,7 @@ import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view'
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, StatStrip, type StatStripItem } from '@/ui/data';
+import { DataTable, Panel, StatStrip, type StatStripItem } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -186,7 +186,10 @@ function InvoiceListPage(): React.JSX.Element {
   const columns = invoiceListColumns(priceHidden);
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the SO invoice tab fills the content area and the
+    // TABLE is the only thing that scrolls, so the column header stays on
+    // screen down to the last row.
+    <div className="page-fill">
       {tabs}
       <ListHeader
         title="Invoices"
@@ -219,7 +222,11 @@ function InvoiceListPage(): React.JSX.Element {
         />
       ) : (
         <>
-          <div className="panel">
+          {/* Was a hand-written `<div className="panel">`; it is the shared
+              <Panel> now so the ADR-201 `fill` classes come from the one
+              component instead of being hand-copied here. Same look: a flush,
+              unpadded panel around the table. */}
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.invoicesList}
               columns={columns}
@@ -248,7 +255,7 @@ function InvoiceListPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
+          </Panel>
           {data ? (
             <ListFooter
               total={data.total}

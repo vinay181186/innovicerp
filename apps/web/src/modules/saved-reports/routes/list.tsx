@@ -160,7 +160,10 @@ function SavedReportsListPage(): React.JSX.Element {
   );
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
+    // the only thing that scrolls, so the column header stays on screen down
+    // to the last row.
+    <div className="page-fill">
       <ListHeader
         title="Saved Reports"
         icon="✨"
@@ -190,7 +193,7 @@ function SavedReportsListPage(): React.JSX.Element {
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.savedReportsList}
             columns={columns}

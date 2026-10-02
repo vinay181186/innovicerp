@@ -89,7 +89,9 @@ function AlertDrillPage() {
   const notFound = error?.message?.toLowerCase().includes('not found') ?? false;
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       {/* Header — legacy's modal title bar (L22418). The Back link has no legacy
           counterpart (the modal had a close button); kept as the port's only
           in-page route back to the dashboard. */}
@@ -124,7 +126,7 @@ function AlertDrillPage() {
         </div>
       ) : (
         <>
-          <Panel bodyPadding="none">
+          <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.alertDrill}
               columns={buildColumns(data.columns)}

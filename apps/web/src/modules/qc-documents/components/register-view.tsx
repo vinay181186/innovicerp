@@ -80,7 +80,9 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
   const [pendingDelete, setPendingDelete] = useState<QcDocument | null>(null);
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
+    // only thing that scrolls, so the sticky column header holds at the last row.
+    <div className="page-fill">
       <ListHeader
         title="QC Documents"
         icon="🗃"
@@ -152,7 +154,7 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
           }
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.qcDocsRegister}
             columns={columns}

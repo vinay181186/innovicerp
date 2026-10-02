@@ -31,7 +31,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -129,7 +129,9 @@ function AccessControlListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
+    // column header cannot ride off the top of the screen at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Access Control"
         icon="🔒"
@@ -146,7 +148,7 @@ function AccessControlListPage(): React.JSX.Element {
         filtersActive={sf.filtering || term !== ''}
       />
 
-      <div className="panel">
+      <Panel fill bodyPadding="none">
         <DataTable
           tableKey={TABLE_KEYS.accessControlList}
           columns={columns}
@@ -171,7 +173,7 @@ function AccessControlListPage(): React.JSX.Element {
             )
           }
         />
-      </div>
+      </Panel>
 
       <ListFooter
         total={total}

@@ -132,7 +132,10 @@ function StoreIssuesListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the page fills the content area and the
+    // TABLE is the only scrollbox, so the column header cannot ride off the top at the
+    // last row. The Tool Issues tab is its own screen and keeps today's page scroll.
+    <div className={tab === 'tools' ? undefined : 'page-fill'}>
       <div
         style={{
           display: 'flex',
@@ -198,7 +201,7 @@ function StoreIssuesListPage(): React.JSX.Element {
               message={error instanceof Error ? error.message : 'Could not load issues. Try again.'}
             />
           ) : (
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.issueRegister}
                 sortFilterServer={sf}

@@ -588,6 +588,89 @@ body.density-compact {
   max-height: calc(100vh - 220px);
   position: relative;
 }
+
+/* ── LIST FILL: one scrollport per list page ─────────────────────────────────
+   The sticky header above (`.innovic-table th { position: sticky; top: 0 }`)
+   anchors to the nearest SCROLLING box, which is `.tbl-wrap`. That worked
+   inside the table and failed outside it: `#content` is a scrollport too
+   (flex:1 + overflow-y:auto), and `max-height: calc(100vh - 220px)` is a
+   GUESS at the chrome above the table. The guess is wrong on every screen —
+   app header + tab strip + breadcrumb, then the page's own title, count,
+   search and filter rows — so the box hung below the fold, `#content`
+   scrolled too, and the frozen header rode away with it. Two scrollbars, and
+   the header let go exactly when the user reached the last row.
+
+   Fix: on a list page the table takes the height that is actually LEFT —
+   measured by the browser, never guessed — and is the only thing that
+   scrolls. Everything above it becomes fixed chrome, so the title, the record
+   count, the search box and the filters stop scrolling away as well.
+
+   `min-height: 0` on every link of the chain is load-bearing: a flex child
+   defaults to `min-height: auto` and refuses to shrink below its content, so
+   without it the inner scrollport never engages and nothing appears to
+   happen. `max-height: none` retires the 220px guess.
+
+   Opt in per page: `page-fill` on the page root + `<Panel fill>`. A page that
+   does not opt in keeps today's behaviour exactly, so this can land screen by
+   screen. Tables inside a modal or a dashboard card keep their own capped
+   `maxHeight` and must NOT take `fill`. */
+/* `#content` KEEPS its own `overflow-y: auto` (above) as the fallback, and
+   `.page-fill` asks for `min-height`, not `height`. In the ordinary case the
+   page is exactly as tall as `#content`, so `#content` has nothing to scroll —
+   one scrollbar, inside the table, and the header holds.
+   When the chrome above the table genuinely cannot fit — a banner that lists
+   every skipped row, a phone or 200% zoom where the module buttons wrap onto
+   several bands — the page grows past `#content` and `#content` scrolls again.
+   The header then behaves as it did before this change, which is the right
+   trade: an earlier draft set `overflow: hidden` here and killed that fallback,
+   so a long banner could squeeze the table to nothing with no way to scroll to
+   either the rest of the banner or the rows. Never trap the user to keep a
+   header still.
+   Not using `:has()` also means no engine without it is left worse off. */
+.page-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+/* Title, count, search, filters, KPI strip: fixed chrome, natural height. */
+.page-fill > * {
+  flex-shrink: 0;
+}
+.page-fill > .panel--fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* A filling panel is the page's last block, so its bottom gap would show as
+     dead space under the table. */
+  margin-bottom: 0;
+}
+.panel--fill > .panel-hdr {
+  flex-shrink: 0;
+}
+.panel--fill > .panel-bd--fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.panel--fill .panel-bd--fill > .tbl-wrap,
+.panel--fill > .panel-bd--fill.tbl-wrap {
+  flex: 1;
+  /* A FLOOR, not 0: `min-height: 0` alone lets the box be squeezed to nothing,
+     which shows no rows, no header, and nothing to scroll. Six rows' worth is
+     always enough to see the header and start scrolling; past that the page
+     overflows and `#content` takes over. */
+  min-height: calc(var(--tbl-row-h) * 6);
+  max-height: none;
+}
+/* Everything else the panel body holds beside the table — a selection bar, a
+   "3 PRs raised" banner — is chrome at its natural height. `.dt-fit-root` is
+   excluded: it is the fit engine's own wrapper and data-table-fit.css grows it
+   so the chain reaches the `.tbl-wrap` inside it. */
+.panel--fill > .panel-bd--fill > :not(.tbl-wrap):not(.dt-fit-root) {
+  flex-shrink: 0;
+}
 /* `separate` + zero spacing, not `collapse`: with collapsed borders a sticky
    header / pinned column loses its gridlines as soon as it scrolls. Each cell
    draws its own right + bottom line instead. */

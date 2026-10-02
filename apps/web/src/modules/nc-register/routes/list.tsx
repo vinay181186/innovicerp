@@ -211,7 +211,10 @@ function NcRegisterListPage(): React.JSX.Element {
   );
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the TABLE is the page's only
+    // scrollbar, so the column header stays on screen at the last row. The
+    // other tab is a different, self-sizing view and keeps the page scroll.
+    <div className={tab === 'capa' ? undefined : 'page-fill'}>
       {tabBar}
       {tab === 'capa' ? (
         // key: a new ?capa landing while already on this page remounts the
@@ -267,7 +270,7 @@ function NcRegisterListPage(): React.JSX.Element {
               message={error instanceof Error ? error.message : 'Could not load NCs. Try again.'}
             />
           ) : (
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.ncRegister}
                 columns={columns}

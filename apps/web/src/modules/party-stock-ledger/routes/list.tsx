@@ -18,6 +18,7 @@ import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { usePartyStockLedgerList } from '../api';
 
@@ -89,7 +90,9 @@ function PartyStockLedgerListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       <ListHeader
         title="Customer Material Stock Ledger"
         icon="📒"
@@ -101,7 +104,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
         updating={isFetching && !isLoading}
       />
 
-      <div className="panel">
+      <Panel fill bodyPadding="none">
         {isLoading ? (
           <div className="panel-body">
             <div className="text3" style={{ fontSize: 12 }}>
@@ -195,7 +198,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
             </table>
           </div>
         )}
-      </div>
+      </Panel>
 
       <ListFooter
         total={total}

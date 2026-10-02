@@ -202,7 +202,11 @@ function StuckDashboardPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): one table panel on this page, so it fills the
+    // content area and the TABLE is the only thing that scrolls — the column
+    // header can never ride off the top of the screen at the last row. The
+    // KPI strip in the header and the thresholds hint stay fixed chrome.
+    <div className="page-fill">
       <ListHeader
         title="Stuck Dashboard"
         icon="⚠"
@@ -253,7 +257,7 @@ function StuckDashboardPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          <Panel bodyPadding="none">
+          <Panel fill bodyPadding="none">
             <DataTable<StuckItem>
               tableKey={TABLE_KEYS.stuckDashboard}
               columns={columns}
@@ -287,7 +291,16 @@ function StuckDashboardPage(): React.JSX.Element {
           {/* Thresholds on demand — a "?" with the day limits in its tooltip. */}
           <div
             className="text3"
-            style={{ fontSize: 11, marginTop: 12, cursor: 'help', display: 'inline-block' }}
+            /* alignSelf keeps it label-width: as a flex item of `.page-fill` an
+                inline-block is blockified, which stretched the `help` cursor and
+                the tooltip across the whole page. */
+            style={{
+              fontSize: 11,
+              marginTop: 12,
+              cursor: 'help',
+              display: 'inline-block',
+              alignSelf: 'flex-start',
+            }}
             title={`Thresholds (days): design ${data.thresholds.design} · plan ${data.thresholds.planToJc} · material ${data.thresholds.materialProc} · production op ${data.thresholds.productionOp} · QC ${data.thresholds.qc} · assembly ${data.thresholds.assembly}`}
           >
             ? Thresholds

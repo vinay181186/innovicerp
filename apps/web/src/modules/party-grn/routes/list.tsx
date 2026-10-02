@@ -145,7 +145,10 @@ function PartyGrnListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): on the list tab the page fills the content area and the
+    // TABLE is the only scrollbox, so the column header cannot ride off the top at the
+    // last row. The Issue tab is its own screen and keeps today's page scroll.
+    <div className={tab === 'issue' ? undefined : 'page-fill'}>
       {/* Receive (GRN) | Issue tabs (Issue is the former standalone Party Material
           Issue screen). */}
       <div
@@ -238,7 +241,7 @@ function PartyGrnListPage(): React.JSX.Element {
             // GRN is soft-deleted and filtered out by the API), so the only tint
             // is the defensive cancelled wash. The one per-row action is Cancel,
             // gated by canCancel exactly as the card's button was.
-            <Panel bodyPadding="none">
+            <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.partyGrn}
                 sortFilterServer={sf}

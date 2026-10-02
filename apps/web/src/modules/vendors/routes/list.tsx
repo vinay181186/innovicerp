@@ -187,7 +187,9 @@ function VendorsListPage(): React.JSX.Element {
   }
 
   return (
-    <div>
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
+    // only scrollbox, so the column header cannot ride off the top at the last row.
+    <div className="page-fill">
       {/* The frozen header band: title, count, primary action and the filter
           bar stay put while the rows scroll underneath. */}
       <ListHeader
@@ -272,7 +274,7 @@ function VendorsListPage(): React.JSX.Element {
           message={error instanceof Error ? error.message : 'Could not load vendors. Try again.'}
         />
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.vendorsList}
             columns={columns}
