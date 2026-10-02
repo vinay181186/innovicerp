@@ -14,14 +14,18 @@
 //     legacy badge's cursor:pointer + title="Click for details" are deliberately
 //     NOT copied — there is no scorecard to open.
 //
-// PHASE 4 — composed exactly like the reference list
-// (modules/clients/routes/list.tsx), which this screen is the twin of:
+// PHASE 4 — composed like the reference list
+// (modules/clients/routes/list.tsx), which this screen is the twin of, with one
+// owner-approved change (2026-10-02): the two Excel buttons moved out of the
+// footer into the header's `tools` slot, so they are visible when the page
+// opens instead of below every row:
 //
-//   <ListHeader>            title · count · ⟳ Updating… · primary, then the
+//   <ListHeader>            title · count · ⟳ Updating… · tools (Excel Template ·
+//                           Import from Excel) · primary, then the
 //                           filter bar: SearchInput · status (with counts) · Clear
 //   <MasterImportDialog>    Excel import: Import Type → preview → import
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
-//   <ListFooter>            count line · 💡 hint · Excel template / import
+//   <ListFooter>            count line · 💡 hint
 //   <PageState>             no-access and load-failure
 //
 // Everything this file used to draw by hand — the sticky band, the search box,
@@ -181,6 +185,36 @@ function VendorsListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search code, vendor, contact, phone, email, GST, address…"
         updating={isFetching && !isLoading}
+        // Excel template + import sit on the title row, before the primary
+        // action (owner decision 2026-10-02 — legacy L27776-27779 had them
+        // under the count line, out of sight on a long list). Order is the
+        // order of use: download the template, fill it, import it. Import
+        // opens the shared import dialog; Insert new needs Add, Update
+        // existing needs Edit.
+        tools={
+          canAdd || canEdit ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="download" size={12} />}
+                onClick={() => downloadVendorTemplate()}
+                title="Download a blank Excel template for Vendor Master"
+              >
+                Excel Template
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="upload" size={12} />}
+                onClick={() => setImportOpen(true)}
+                title="Add or update vendors from a filled template"
+              >
+                Import from Excel
+              </Button>
+            </>
+          ) : null
+        }
         filters={
           // Status with its counts in the option labels (owner decision
           // 2026-09-26: one filter bar, no capsule row). Counts are the same
@@ -261,37 +295,7 @@ function VendorsListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter
-        total={total}
-        shown={visibleRows.length}
-        noun="vendor"
-        limit={LIST_LIMIT}
-        // Legacy L27776-27779: Excel template + import sit below the count
-        // line. Import opens the shared import dialog; Insert new needs Add,
-        // Update existing needs Edit.
-        actions={
-          canAdd || canEdit ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="download" size={12} />}
-                onClick={() => downloadVendorTemplate()}
-              >
-                Download Excel Template
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="upload" size={12} />}
-                onClick={() => setImportOpen(true)}
-              >
-                Import from Excel
-              </Button>
-            </>
-          ) : null
-        }
-      />
+      <ListFooter total={total} shown={visibleRows.length} noun="vendor" limit={LIST_LIMIT} />
       {importOpen ? (
         <MasterImportDialog
           title="Import Vendors from Excel"
