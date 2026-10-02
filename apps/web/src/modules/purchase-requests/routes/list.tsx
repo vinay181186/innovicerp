@@ -264,7 +264,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   }
 
   return (
-    // `page-fill` (ADR-201): on the list tab the page fills the content area and the
+    // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Outsource Jobs tab is its own screen and keeps today's page scroll.
     <div className={tab === 'osp' ? undefined : 'page-fill'}>

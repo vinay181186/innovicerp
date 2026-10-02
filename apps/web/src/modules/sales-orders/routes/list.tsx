@@ -187,7 +187,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   }
 
   return (
-    // `page-fill` (ADR-201): this page fills the content area and the TABLE is
+    // `page-fill` (ADR-202): this page fills the content area and the TABLE is
     // the only thing that scrolls, so the column header — sticky to the table's
     // own scroll box — can never ride off the top of the screen, and the
     // search / filters stay reachable at the last row.

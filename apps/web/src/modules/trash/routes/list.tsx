@@ -126,7 +126,7 @@ function TrashListPage(): React.JSX.Element {
   }
 
   return (
-    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
     // the only thing that scrolls, so the column header and the pager stay on
     // screen down to the last row.
     <div className="page-fill">

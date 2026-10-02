@@ -222,7 +222,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   }
 
   return (
-    // `page-fill` (ADR-201): the page fills the content area and the Dispatch
+    // `page-fill` (ADR-202): the page fills the content area and the Dispatch
     // Log table is the only thing that scrolls, so its column header stays on
     // screen down to the last row.
     <div className="page-fill">

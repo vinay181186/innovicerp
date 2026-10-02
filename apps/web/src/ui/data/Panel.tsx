@@ -33,7 +33,7 @@ export interface PanelProps {
   /** Extra class on the body wrapper (e.g. `tbl-wrap` for a scrolling table). */
   bodyClassName?: string | undefined;
   /** Take the height left in the page and let the TABLE inside do the
-   *  scrolling (ADR-201 list-fill). Pair with `page-fill` on the page root.
+   *  scrolling (ADR-202 list-fill). Pair with `page-fill` on the page root.
    *
    *  Needed because a flex chain only works if every link opts in: without a
    *  class on the body wrapper there is nothing for CSS to grab, and with

@@ -154,11 +154,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
   }
 
   return (
-    // `page-fill` (ADR-201): the Outward DC tab fills the content area so the
-    // DC table is the only thing that scrolls. The At-Vendor tab renders
-    // another module's component (osp-wip), which has not opted in yet, so it
-    // keeps today's page scroll.
-    <div className={tab === 'at_vendor' ? undefined : 'page-fill'}>
+    // `page-fill` (ADR-202): both tabs fill the content area so the TABLE is
+    // the only thing that scrolls — the At-Vendor register (osp-wip) now opts
+    // its own Panel in with `fill`, so the page no longer has to scroll for it.
+    <div className="page-fill">
       {/* Outward DC | At-Vendor Register tabs (the At-Vendor register is the
           former standalone /osp-wip screen). */}
       <div

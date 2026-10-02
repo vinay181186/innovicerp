@@ -146,7 +146,7 @@ function InboxSection({
   const filtering = q !== undefined || sf.filtering;
 
   return (
-    // `page-fill` (ADR-201): the inbox fills the content area and the TABLE is
+    // `page-fill` (ADR-202): the inbox fills the content area and the TABLE is
     // the only thing that scrolls, so the column header and the section tabs
     // stay on screen down to the last row.
     <div className="page-fill">

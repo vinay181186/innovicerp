@@ -157,7 +157,7 @@ function ReorderListPage(): React.JSX.Element {
   }, [ticked, draftOf, raise]);
 
   return (
-    // `page-fill` (ADR-201): the page fills the content area and the TABLE is the
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
     // only scrollbox, so the column header cannot ride off the top at the last row.
     <div className="page-fill">
       <ListHeader

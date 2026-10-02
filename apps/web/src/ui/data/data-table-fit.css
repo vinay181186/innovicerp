@@ -11,7 +11,7 @@
   min-width: 0;
 }
 
-/* ADR-201 list fill — the chain has to continue THROUGH this root.
+/* ADR-202 list fill — the chain has to continue THROUGH this root.
    Inside a filling panel the scrolling box is a GRANDCHILD:
    `.panel-bd--fill > .dt-fit-root > .tbl-wrap`. The theme's fill rules only
    reach a direct child, so without these two the fit table silently kept

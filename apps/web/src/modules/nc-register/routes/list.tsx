@@ -211,7 +211,7 @@ function NcRegisterListPage(): React.JSX.Element {
   );
 
   return (
-    // `page-fill` (ADR-201): on the list tab the TABLE is the page's only
+    // `page-fill` (ADR-202): on the list tab the TABLE is the page's only
     // scrollbar, so the column header stays on screen at the last row. The
     // other tab is a different, self-sizing view and keeps the page scroll.
     <div className={tab === 'capa' ? undefined : 'page-fill'}>

@@ -186,7 +186,7 @@ function InvoiceListPage(): React.JSX.Element {
   const columns = invoiceListColumns(priceHidden);
 
   return (
-    // `page-fill` (ADR-201): the SO invoice tab fills the content area and the
+    // `page-fill` (ADR-202): the SO invoice tab fills the content area and the
     // TABLE is the only thing that scrolls, so the column header stays on
     // screen down to the last row.
     <div className="page-fill">

@@ -205,7 +205,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
   ];
 
   return (
-    // `page-fill` (ADR-201): the TABLE is this page's only scrollbar, so the
+    // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
     // column header cannot ride off the top of the screen at the last row.
     <div className="page-fill">
       <ListHeader

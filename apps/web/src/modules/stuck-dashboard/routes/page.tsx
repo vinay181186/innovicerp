@@ -202,7 +202,7 @@ function StuckDashboardPage(): React.JSX.Element {
   }
 
   return (
-    // `page-fill` (ADR-201): one table panel on this page, so it fills the
+    // `page-fill` (ADR-202): one table panel on this page, so it fills the
     // content area and the TABLE is the only thing that scrolls — the column
     // header can never ride off the top of the screen at the last row. The
     // KPI strip in the header and the thresholds hint stay fixed chrome.

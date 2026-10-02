@@ -150,7 +150,7 @@ function OpLogListPage(): React.JSX.Element {
   }
 
   return (
-    // `page-fill` (ADR-201): the page fills the content area and the TABLE is
+    // `page-fill` (ADR-202): the page fills the content area and the TABLE is
     // the only thing that scrolls, so the column header can never ride off the
     // top of the screen at the last row.
     <div className="page-fill">
