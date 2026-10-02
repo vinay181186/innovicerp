@@ -19,7 +19,15 @@ import { activityLogKeys } from '@/modules/activity-log/api';
 export const toolIssuesKeys = {
   all: ['tool-issues'] as const,
   list: (q: ListToolIssuesQuery) =>
-    [...toolIssuesKeys.all, 'list', q.search ?? null, q.filter, q.limit, q.offset] as const,
+    [
+      ...toolIssuesKeys.all,
+      'list',
+      q.search ?? null,
+      q.filter,
+      q.sf ?? null,
+      q.limit,
+      q.offset,
+    ] as const,
   detail: (id: string) => [...toolIssuesKeys.all, 'detail', id] as const,
   holders: () => [...toolIssuesKeys.all, 'holders'] as const,
   writeoffs: (q: ListToolWriteoffsQuery) =>
@@ -30,6 +38,7 @@ function buildSearch(q: ListToolIssuesQuery): string {
   const p = new URLSearchParams();
   if (q.search) p.set('search', q.search);
   p.set('filter', q.filter);
+  if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
   return p.toString();

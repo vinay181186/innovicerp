@@ -66,6 +66,8 @@ import {
   readSoLineCommitments,
 } from './line-commitments';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { SO_SF_COLUMNS } from './sf-columns';
 import { logSoEdit } from './edit-log';
 import {
   assertBomLinkable,
@@ -506,6 +508,11 @@ export async function listSalesOrders(
     const clientFrag = input.clientId ? sql`AND so.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND so.so_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND so.so_date <= ${input.toDate}::date` : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(SO_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(SO_SF_COLUMNS, sf, sql`so.so_date DESC, so.code DESC`);
 
     // Single query: headers LEFT JOIN line totals LEFT JOIN JC totals,
     // pagination + ordering inlined. jc_qty is the sum of order_qty across
@@ -599,13 +606,15 @@ export async function listSalesOrders(
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
       -- Newest first: today's order is the one being worked, and ordering by
       -- code ASC buried it at the bottom under every order ever raised. Sorted
       -- on so_date (not code) so a back-dated or imported order still lands by
       -- when it was placed; code DESC breaks same-day ties into a stable,
       -- newest-first order — a total ordering, which pagination needs to avoid
       -- rows shifting between pages. Covered by the (company_id, so_date) index.
-      ORDER BY so.so_date DESC, so.code DESC
+      -- A Sort & Filter sort goes first, with this order as its tie-breaker.
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -631,6 +640,7 @@ export async function listSalesOrders(
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,

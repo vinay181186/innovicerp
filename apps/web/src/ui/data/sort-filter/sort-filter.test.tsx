@@ -200,6 +200,9 @@ describe('Sort & Filter', () => {
         last = typeof next === 'function' ? next(last) : next;
       },
       param: undefined,
+      filtering: false,
+      clearFilters: () => undefined,
+      paramWithout: () => undefined,
     };
     const cols: Array<DataTableColumn<Row>> = [
       { id: 'code', header: 'JC No.', render: (r) => r.code, sortFilterField: 'jcCode' },

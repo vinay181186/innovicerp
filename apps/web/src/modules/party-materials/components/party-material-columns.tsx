@@ -5,16 +5,24 @@
 // Issued. The ▸ detail row carries the fields the master line does not show:
 // Description, Grade, Recorded By / On — plus Total Received and Returned, kept
 // here so the conversion drops no data the old wide table used to show.
+//
+// Sort & Filter runs on the SERVER (ADR-200): `sortFilterField` names the field
+// in api party-materials/sf-columns.ts.
 
 import type { PartyMaterialListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 
-/** The six master columns. Code is column 0 and so always pinned. */
+/** Columns off by default (DataTable `defaultHidden`); Columns ▾ shows them. */
+export const PARTY_MATERIAL_HIDDEN_COLUMNS = ['created_on'] as const;
+
+/** The six master columns (+ Created On, off by default). Code is column 0 and
+ *  so always pinned. */
 export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[] {
   return [
     {
       id: 'code',
+      sortFilterField: 'code',
       header: 'Code',
       kind: 'code',
       nowrap: true,
@@ -26,6 +34,7 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
     },
     {
       id: 'name',
+      sortFilterField: 'name',
       header: 'Material Name',
       align: 'left',
       className: 'fw-700',
@@ -35,6 +44,8 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
     },
     {
       id: 'uom',
+      sortFilterField: 'uom',
+      filterType: 'text',
       header: 'UOM',
       kind: 'badge',
       nowrap: true,
@@ -46,6 +57,7 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
     },
     {
       id: 'customer',
+      sortFilterField: 'customer',
       header: 'Customer',
       align: 'left',
       className: 'fw-700',
@@ -55,6 +67,7 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
     },
     {
       id: 'in_stock',
+      sortFilterField: 'stockQty',
       header: 'In Stock',
       kind: 'num',
       nowrap: true,
@@ -70,6 +83,7 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
     },
     {
       id: 'issued',
+      sortFilterField: 'issuedQty',
       header: 'Issued',
       kind: 'num',
       nowrap: true,
@@ -79,6 +93,16 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
           {pm.issuedQty}
         </span>
       ),
+    },
+    {
+      // When the material was recorded (IST day). Off by default; Columns ▾
+      // shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      header: 'Created On',
+      kind: 'date',
+      nowrap: true,
+      render: (pm) => fmtDate(pm.createdAt),
     },
   ];
 }

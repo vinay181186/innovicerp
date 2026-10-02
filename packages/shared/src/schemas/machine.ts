@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
 
@@ -55,6 +56,8 @@ export type UpdateMachineInput = z.infer<typeof updateMachineInputSchema>;
 export const listMachinesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   status: z.string().max(32).optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

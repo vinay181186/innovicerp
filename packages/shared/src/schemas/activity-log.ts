@@ -7,6 +7,7 @@
 // emitter ships.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 
 export const activityLogEntrySchema = z.object({
   id: z.string().uuid(),
@@ -42,10 +43,12 @@ export const listActivityLogQuerySchema = z.object({
   action: z.string().max(64).optional(),
   /** Filter by user id. */
   userId: z.string().uuid().optional(),
-  /** Inclusive lower-bound for `ts` (ISO date or datetime). */
+  /** First India-time day of `ts` to include (YYYY-MM-DD). */
   fromDate: z.string().optional(),
-  /** Inclusive upper-bound for `ts` (ISO date or datetime). */
+  /** Last India-time day of `ts` to include — the WHOLE day (YYYY-MM-DD). */
   toDate: z.string().optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

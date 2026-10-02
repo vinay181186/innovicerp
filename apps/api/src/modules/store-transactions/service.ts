@@ -9,6 +9,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type {
   ItemBalance,
   ListStoreTransactionsQuery,
@@ -16,6 +17,7 @@ import type {
   StoreTransaction,
   StoreTransactionListItem,
 } from './schema';
+import { STOCK_LEDGER_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -25,6 +27,14 @@ const requireCompany = (user: AuthContext): string => {
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
+}
+
+/** Escape the ILIKE metacharacters in a user's search term; pair with
+ *  ESCAPE '\\'. Without it a "%" or "_" typed in the search box is a
+ *  wildcard, so "%" matches every row. A local copy of the job-cards helper:
+ *  each list owns its own search. */
+function escapeLikeTerm(raw: string): string {
+  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 function tsLike(v: unknown): string {
@@ -47,11 +57,11 @@ export function buildStoreTxnWhere(companyId: string, query: ListStoreTransactio
     // Search matches the item too: i.code/i.name cover id-resolved rows
     // (grn_qc, dispatch, … which leave item_code_text null), st.item_code_text
     // covers free-text rows.
-    const term = `%${query.search}%`;
+    const term = `%${escapeLikeTerm(query.search)}%`;
     conditions.push(
-      sql`(st.source_ref ILIKE ${term} OR st.remarks ILIKE ${term}
-           OR i.code ILIKE ${term} OR i.name ILIKE ${term}
-           OR st.item_code_text ILIKE ${term})`,
+      sql`(st.source_ref ILIKE ${term} ESCAPE '\\' OR st.remarks ILIKE ${term} ESCAPE '\\'
+           OR i.code ILIKE ${term} ESCAPE '\\' OR i.name ILIKE ${term} ESCAPE '\\'
+           OR st.item_code_text ILIKE ${term} ESCAPE '\\')`,
     );
   }
   if (query.itemId) conditions.push(sql`st.item_id = ${query.itemId}::uuid`);
@@ -76,7 +86,17 @@ export async function listStoreTransactions(
     // and totals always agree with the visible rows (search + date range
     // included). Both consuming queries LEFT JOIN public.items i, which the
     // search fragment references.
-    const whereClause = sql.join(buildStoreTxnWhere(companyId, input), sql` AND `);
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through
+    // the list's own field whitelist (sf-columns.ts). `sfFrag` is `AND (…)`
+    // or empty, and rides on all three WHEREs so the KPIs follow it too.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(STOCK_LEDGER_SF_COLUMNS, sf);
+    const whereClause = sql`${sql.join(buildStoreTxnWhere(companyId, input), sql` AND `)} ${sfFrag}`;
+    const orderBy = sfOrderBy(
+      STOCK_LEDGER_SF_COLUMNS,
+      sf,
+      sql`st.txn_date DESC, st.created_at DESC`,
+    );
 
     const result = await tx.execute(sql`
       SELECT
@@ -96,7 +116,7 @@ export async function listStoreTransactions(
       FROM public.store_transactions st
       LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
       WHERE ${whereClause}
-      ORDER BY st.txn_date DESC, st.created_at DESC
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 

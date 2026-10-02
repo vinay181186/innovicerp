@@ -13,9 +13,11 @@ import type {
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
 import { dateOut, tsOut } from '../instruments/common';
 import { ISSUE_SELECT, readIssue, requireCompany, todayIst, toListItem } from './common';
+import { TOOL_ISSUE_SF_COLUMNS } from './sf-columns';
 
 const OUT = sql`x.return_status IN ('issued', 'partial')`;
 
@@ -48,15 +50,21 @@ export async function listToolIssues(
       ${ISSUE_SELECT}
       WHERE ti.company_id = ${companyId}::uuid AND ti.deleted_at IS NULL
     ) x`;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count;
+    // the summary tiles stay whole-company, as before.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(TOOL_ISSUE_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(TOOL_ISSUE_SF_COLUMNS, sf, sql`x.issue_date DESC, x.code DESC`);
 
     const rows = (await tx.execute(sql`
       SELECT x.* FROM ${base}
-      WHERE true ${searchFrag} ${filterFrag}
-      ORDER BY x.issue_date DESC, x.code DESC
+      WHERE true ${searchFrag} ${filterFrag} ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `)) as unknown as Array<Record<string, unknown>>;
     const totals = (await tx.execute(sql`
-      SELECT COUNT(*)::int AS total FROM ${base} WHERE true ${searchFrag} ${filterFrag}
+      SELECT COUNT(*)::int AS total FROM ${base} WHERE true ${searchFrag} ${filterFrag} ${sfFrag}
     `)) as unknown as Array<{ total: number }>;
     // Tiles count every live issue of the company (not the search / filter).
     const sums = (await tx.execute(sql`

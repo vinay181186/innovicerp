@@ -1,0 +1,71 @@
+// Sort & Filter (ADR-200) — the OSP Outward DC list's sortable / filterable
+// fields. Each expression is the value listDeliveryChallans SELECTs for that
+// column (same table aliases), and is the text the column's cell shows: the
+// Vendor cell reads vendorName ?? vendorCodeText, the PO cell "NC <code>" on a
+// return-to-vendor challan else poCode ?? poCodeText, the SO cell
+// soCode ?? soRefText. The aliases beyond `dc` + `v` are reached through
+// DC_SF_JOINS, which the count and KPI-summary queries add when a filter is on.
+
+import { sql } from 'drizzle-orm';
+
+import type { SfColumnMap } from '../../lib/list-query';
+
+export const DC_SF_COLUMNS: SfColumnMap = {
+  dcCode: { sql: sql`dc.code`, type: 'text' },
+  dcDate: { sql: sql`dc.dc_date`, type: 'date' },
+  vendor: { sql: sql`COALESCE(v.name, dc.vendor_code_text)`, type: 'text' },
+  poCode: {
+    sql: sql`(CASE WHEN dc.nc_id IS NOT NULL
+                   THEN 'NC ' || COALESCE(nc.code, dc.po_code_text)
+                   ELSE COALESCE(po.code, dc.po_code_text) END)`,
+    type: 'text',
+  },
+  soCode: { sql: sql`COALESCE(so.code, po_so.so_code, dc.so_ref_text)`, type: 'text' },
+  totalQty: { sql: sql`COALESCE(line_agg.total_qty, 0)`, type: 'num' },
+  lineCount: { sql: sql`COALESCE(line_agg.line_count, 0)::int`, type: 'num' },
+  status: { sql: sql`dc.status`, type: 'list' },
+  jobCardCode: { sql: sql`njc.code`, type: 'text' },
+  drawingRev: {
+    sql: sql`COALESCE(sol.revision::text, po_so.so_revision, njc_jwl.revision::text)`,
+    type: 'text',
+  },
+  transport: { sql: sql`dc.transport`, type: 'text' },
+  createdOn: { sql: sql`(dc.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+};
+
+/**
+ * The page query's joins beyond `dc` + `v` — word for word — for the count and
+ * the KPI-summary queries, so every DC_SF_COLUMNS expression is valid there
+ * too. Each is one row per DC (FK lookups and single-row LATERAL aggregates),
+ * so none can change which DCs, or how many DC lines, are counted.
+ */
+export const DC_SF_JOINS = sql`
+      LEFT JOIN public.purchase_orders po
+        ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
+      LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
+      LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines njc_jwl
+        ON njc_jwl.id = njc.source_jw_line_id AND njc_jwl.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code,
+          CASE WHEN COUNT(DISTINCT sol2.revision) = 1
+               THEN MIN(sol2.revision)::text END AS so_revision
+        FROM public.purchase_order_lines pol
+        JOIN public.sales_order_lines sol2
+          ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
+        JOIN public.sales_orders so2
+          ON so2.id = sol2.sales_order_id AND so2.deleted_at IS NULL
+        WHERE pol.purchase_order_id = dc.purchase_order_id
+          AND pol.deleted_at IS NULL
+      ) po_so ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) AS line_count,
+          COALESCE(SUM(qty), 0) AS total_qty
+        FROM public.delivery_challan_lines dcl
+        WHERE dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL
+      ) line_agg ON TRUE`;

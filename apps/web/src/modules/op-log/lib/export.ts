@@ -1,4 +1,5 @@
-// Op Log → Excel, for the CURRENT filter (JC No., log type, shift, date range).
+// Op Log → Excel, for the CURRENT filter (JC No., log type, shift, date range,
+// and the columns' Sort & Filter — ADR-200).
 //
 // The screen is server-paged (50 a page), so the export pages through the same
 // GET /op-log with the API's largest page (200) until it has every matching

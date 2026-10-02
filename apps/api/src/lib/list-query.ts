@@ -47,15 +47,16 @@ export interface SfOptions {
   canSeePrice?: boolean;
 }
 
-/** Escape ILIKE metacharacters; pair with ESCAPE '\'. */
-function likeEscape(raw: string): string {
+/** Escape ILIKE metacharacters in a user's term; pair with ESCAPE '\'. */
+export function likeEscape(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 function column(map: SfColumnMap, field: string, opts: SfOptions | undefined): SfColumnDef {
   const def = Object.prototype.hasOwnProperty.call(map, field) ? map[field] : undefined;
   if (!def) throw new ValidationError(`This list cannot be sorted or filtered by "${field}".`);
-  if (def.price && opts?.canSeePrice === false) {
+  // Fails closed: a money column needs the caller to say the user may see prices.
+  if (def.price && opts?.canSeePrice !== true) {
     throw new ValidationError(`You cannot sort or filter by "${field}".`);
   }
   return def;
@@ -69,6 +70,10 @@ function filterSql(def: SfColumnDef, f: SfFilter, today: string): SQL | null {
   const e = def.sql;
   switch (f.kind) {
     case 'values': {
+      // A tick list is of stored codes / texts — a number or date column's
+      // ::text form never equals what the screen shows.
+      if (def.type !== 'list' && def.type !== 'text')
+        throw new ValidationError('A tick-list filter needs a text or list column.');
       const real = f.values.filter((v) => v !== SF_BLANK);
       const blank = f.values.includes(SF_BLANK);
       const parts: SQL[] = [];
@@ -85,6 +90,8 @@ function filterSql(def: SfColumnDef, f: SfFilter, today: string): SQL | null {
       return parts.length > 0 ? sql`(${sql.join(parts, sql` OR `)})` : sql`FALSE`;
     }
     case 'text': {
+      // A list column stores codes ('qc_pending'), not the labels shown.
+      if (def.type !== 'text') throw new ValidationError('A text filter needs a text column.');
       const q = f.q.trim();
       if (q === '') return null;
       if (f.op === 'equals') return sql`lower(${e}::text) = lower(${q})`;
@@ -96,23 +103,25 @@ function filterSql(def: SfColumnDef, f: SfFilter, today: string): SQL | null {
     }
     case 'num': {
       if (def.type !== 'num') throw new ValidationError('A number filter needs a number column.');
+      // Bound as ::numeric — an untyped parameter takes the column's type, so
+      // "> 2.5" on an integer column would be a database error.
       const a = f.a;
       switch (f.op) {
         case 'eq':
-          return sql`${e} = ${a}`;
+          return sql`${e} = ${a}::numeric`;
         case 'ne':
-          return sql`${e} <> ${a}`;
+          return sql`${e} <> ${a}::numeric`;
         case 'gt':
-          return sql`${e} > ${a}`;
+          return sql`${e} > ${a}::numeric`;
         case 'gte':
-          return sql`${e} >= ${a}`;
+          return sql`${e} >= ${a}::numeric`;
         case 'lt':
-          return sql`${e} < ${a}`;
+          return sql`${e} < ${a}::numeric`;
         case 'lte':
-          return sql`${e} <= ${a}`;
+          return sql`${e} <= ${a}::numeric`;
         case 'between': {
           const b = f.b ?? a;
-          return sql`${e} BETWEEN ${Math.min(a, b)} AND ${Math.max(a, b)}`;
+          return sql`${e} BETWEEN ${Math.min(a, b)}::numeric AND ${Math.max(a, b)}::numeric`;
         }
       }
       return null;

@@ -14,10 +14,14 @@ import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useStoreIssuesList } from '../api';
-import { issueRegisterColumns } from '../components/issue-register-columns';
+import {
+  ISSUE_REGISTER_HIDDEN_COLUMNS,
+  issueRegisterColumns,
+} from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
 
@@ -73,8 +77,14 @@ function StoreIssuesListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'issue_create');
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the register is paged, so
+  // filtering only the loaded page would miss slips. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.issueRegister, () => setPage(1));
+
   const { data, isLoading, isError, error } = useStoreIssuesList({
     search: search.trim() || undefined,
+    sf: sf.param,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
@@ -176,11 +186,13 @@ function StoreIssuesListPage(): React.JSX.Element {
             <Panel bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.issueRegister}
+                sortFilterServer={sf}
+                defaultHidden={[...ISSUE_REGISTER_HIDDEN_COLUMNS]}
                 columns={columns}
                 rows={data?.items ?? []}
                 rowKey={(iss) => iss.id}
                 loading={isLoading}
-                empty={search.trim() ? 'No issues match.' : 'No issues yet.'}
+                empty={search.trim() || sf.param ? 'No issues match.' : 'No issues yet.'}
                 onRowClick={(iss) => setViewId(iss.id)}
                 // A reversed slip washes the whole row and strikes its items.
                 rowClassName={(iss) => (iss.reversedAt ? ROW_TINT.cancelled : undefined)}

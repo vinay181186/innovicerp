@@ -9,6 +9,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { supabaseAdmin } from '../../lib/supabase-admin';
 import type {
   CreateUserInput,
@@ -19,6 +20,7 @@ import type {
   User,
 } from './schema';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { USER_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -84,6 +86,11 @@ export async function listUsers(
     if (input.role) conditions.push(eq(users.role, input.role));
     if (input.isActive !== undefined) conditions.push(eq(users.isActive, input.isActive));
 
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    conditions.push(sql`TRUE ${sfWhere(USER_SF_COLUMNS, sf)}`);
+
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
@@ -91,7 +98,7 @@ export async function listUsers(
         .select()
         .from(users)
         .where(where)
-        .orderBy(asc(users.email))
+        .orderBy(sfOrderBy(USER_SF_COLUMNS, sf, asc(users.email)))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(users).where(where),

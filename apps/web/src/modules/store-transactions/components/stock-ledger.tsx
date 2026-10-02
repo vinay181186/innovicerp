@@ -4,11 +4,10 @@
 // state for its filters (the standalone route drove them off the URL).
 //
 // ADR-199 (table standard 2026-10-01): renders on the shared FIT table
-// (<DataTable tableKey={TABLE_KEYS.stockLedger}>). The visible page of rows is
-// already loaded, so columns sort in memory via useClientSort (no server
-// round-trip), exactly as the old client-side TanStack sort did. The public
-// signature is unchanged — this component still takes NO props, so both call
-// sites (store-inventory, party-stock-ledger) keep working untouched.
+// (<DataTable tableKey={TABLE_KEYS.stockLedger}>). Sorting and column filters
+// run on the SERVER (ADR-200, the ▾ on each header): the ledger is paged 50 at
+// a time, so the old in-memory sort only reordered the visible page. The
+// public signature is unchanged — this component still takes NO props.
 
 import {
   type ListStoreTransactionsQuery,
@@ -19,13 +18,14 @@ import {
 } from '@innovic/shared';
 import { useEffect, useMemo, useState } from 'react';
 
-import { StatStrip, DataTable, Panel, useClientSort } from '@/ui/data';
+import { StatStrip, DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 
 import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
-import { stockLedgerColumns } from './stock-ledger-columns';
+import { STOCK_LEDGER_HIDDEN_COLUMNS, stockLedgerColumns } from './stock-ledger-columns';
 
 const PAGE_SIZE = 50;
 
@@ -48,28 +48,25 @@ export function StockLedger(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search]);
 
+  // Sort & Filter on the SERVER (ADR-200) — every change goes back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.stockLedger, () => setPage(1));
+
   const query: ListStoreTransactionsQuery = useMemo(
     () => ({
       search,
       txnType,
       sourceType,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (page - 1) * PAGE_SIZE,
     }),
-    [search, txnType, sourceType, page],
+    [search, txnType, sourceType, sf.param, page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useStoreTransactionsList(query);
 
   const columns = useMemo(() => stockLedgerColumns(), []);
-  const items = useMemo(() => data?.items ?? [], [data?.items]);
-
-  // Client-side sort over the loaded page — same behaviour the old TanStack
-  // getSortedRowModel gave, without a server round-trip. The Source column sorts
-  // by its displayed label, not the raw enum key.
-  const { rows, sortBy, sortDir, onSort } = useClientSort(items, {
-    accessors: { sourceType: (r) => STORE_TXN_SOURCE_LABELS[r.sourceType] },
-  });
+  const rows = data?.items ?? [];
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -137,12 +134,15 @@ export function StockLedger(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           setTxnType(undefined);
           setSourceType(undefined);
           setPage(1);
         }}
-        filtersActive={txnType !== undefined || sourceType !== undefined || searchInput !== ''}
+        filtersActive={
+          sf.filtering || txnType !== undefined || sourceType !== undefined || searchInput !== ''
+        }
       >
         {data?.summary ? (
           <StatStrip
@@ -194,15 +194,13 @@ export function StockLedger(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.stockLedger}
+            sortFilterServer={sf}
             columns={columns}
-            defaultHidden={['remarks']}
+            defaultHidden={[...STOCK_LEDGER_HIDDEN_COLUMNS]}
             rows={rows}
             loading={isLoading}
-            sortBy={sortBy}
-            sortDir={sortDir}
-            onSort={onSort}
             empty={
-              search || txnType || sourceType
+              search || txnType || sourceType || sf.filtering
                 ? 'No stock movements match.'
                 : 'No stock movements yet.'
             }

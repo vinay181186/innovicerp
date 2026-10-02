@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
+import { sfRawParamSchema } from './list-query';
 import { SO_STATUSES } from '../enums/so-status';
 import { SO_TYPES } from '../enums/so-type';
 import { uomSchema } from './item';
@@ -397,6 +398,8 @@ export const listSalesOrdersQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

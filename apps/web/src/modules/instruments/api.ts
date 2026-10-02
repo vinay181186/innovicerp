@@ -26,6 +26,7 @@ export const instrumentsKeys = {
       q.itemId ?? null,
       q.status ?? null,
       q.due ?? null,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -39,6 +40,7 @@ function buildSearch(q: ListInstrumentsQuery): string {
   if (q.itemId) p.set('itemId', q.itemId);
   if (q.status) p.set('status', q.status);
   if (q.due) p.set('due', q.due);
+  if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
   return p.toString();

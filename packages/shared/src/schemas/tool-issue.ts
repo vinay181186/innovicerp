@@ -8,6 +8,7 @@
 // while nothing was returned. Numbering: TIS-NNNNN.
 
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { STORE_ISSUE_REF_TYPES } from './store-issue';
 
 // Kept for older imports (no longer used by the Tool Issue form).
@@ -235,6 +236,8 @@ export const listToolIssuesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   /** all | out (issued + partial) | overdue | returned | cancelled */
   filter: z.enum(['all', 'out', 'overdue', 'returned', 'cancelled']).default('all'),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

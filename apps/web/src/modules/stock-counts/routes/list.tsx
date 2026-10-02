@@ -18,12 +18,23 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStockCounts } from '../api';
 
 const PAGE_SIZE = 25;
+
+// Sort & Filter tick lists (ADR-200): the stored code + the label shown.
+const PURPOSE_OPTIONS = Object.entries(STOCK_COUNT_PURPOSE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+const STATUS_OPTIONS = STOCK_COUNT_STATUSES.map((s) => ({
+  value: s,
+  label: STOCK_COUNT_STATUS_LABELS[s],
+}));
 
 export const STATUS_BADGE: Record<StockCountStatus, string> = {
   draft: 'b-grey',
@@ -45,15 +56,20 @@ function StockCountsListPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<StockCountStatus | ''>('');
   const [page, setPage] = useState(1);
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss counts. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.stockCounts, () => setPage(1));
   const { data, isLoading, isError, error } = useStockCounts({
     search: search.trim() || undefined,
     status: status || undefined,
+    sf: sf.param,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
 
   const rows = data?.items ?? [];
-  const filtered = Boolean(search.trim() || status);
+  const filtered = Boolean(search.trim() || status || sf.param);
 
   // The ruled sheet's columns. Count No. is the pinned first column; Items is a
   // right-aligned number; Count Status is a badge; Remarks is long free text
@@ -62,6 +78,8 @@ function StockCountsListPage(): React.JSX.Element {
     () => [
       {
         id: 'code',
+        sortFilterField: 'code',
+        filterType: 'text',
         header: 'Count No.',
         nowrap: true,
         render: (c) => (
@@ -78,6 +96,7 @@ function StockCountsListPage(): React.JSX.Element {
       },
       {
         id: 'count_date',
+        sortFilterField: 'countDate',
         header: 'Count Date',
         kind: 'date',
         nowrap: true,
@@ -85,11 +104,15 @@ function StockCountsListPage(): React.JSX.Element {
       },
       {
         id: 'purpose',
+        sortFilterField: 'purpose',
+        filterType: 'list',
+        filterOptions: PURPOSE_OPTIONS,
         header: 'Purpose',
         render: (c) => STOCK_COUNT_PURPOSE_LABELS[c.purpose],
       },
       {
         id: 'line_count',
+        sortFilterField: 'lineCount',
         header: 'Items',
         kind: 'num',
         align: 'right',
@@ -98,6 +121,8 @@ function StockCountsListPage(): React.JSX.Element {
       },
       {
         id: 'status',
+        sortFilterField: 'status',
+        filterOptions: STATUS_OPTIONS,
         header: 'Count Status',
         kind: 'badge',
         nowrap: true,
@@ -109,6 +134,7 @@ function StockCountsListPage(): React.JSX.Element {
       },
       {
         id: 'counted_by',
+        sortFilterField: 'countedBy',
         header: 'Counted By',
         ellipsis: true,
         render: (c) => c.createdByName ?? '—',
@@ -116,6 +142,7 @@ function StockCountsListPage(): React.JSX.Element {
       },
       {
         id: 'approved_by',
+        sortFilterField: 'approvedBy',
         header: 'Approved By',
         ellipsis: true,
         render: (c) => c.approvedByName ?? '—',
@@ -123,12 +150,22 @@ function StockCountsListPage(): React.JSX.Element {
       },
       {
         id: 'remarks',
+        sortFilterField: 'remarks',
         header: 'Remarks',
         align: 'left',
         className: 'text3',
         ellipsis: true,
         render: (c) => c.remarks ?? '—',
         title: (c) => c.remarks ?? '',
+      },
+      {
+        // When the count was entered (IST day). Off by default; Columns ▾ shows it.
+        id: 'created_on',
+        sortFilterField: 'createdOn',
+        header: 'Created On',
+        kind: 'date',
+        nowrap: true,
+        render: (c) => fmtDate(c.createdAt),
       },
     ],
     [],
@@ -185,6 +222,8 @@ function StockCountsListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.stockCounts}
+            sortFilterServer={sf}
+            defaultHidden={['created_on']}
             columns={columns}
             rows={rows}
             loading={isLoading}

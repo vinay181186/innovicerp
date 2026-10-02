@@ -27,6 +27,7 @@ function toQueryString(q: ListMachinesQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.status) params.set('status', q.status);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -131,7 +132,8 @@ export function useMachineGroupsList(
 ) {
   return useQuery<ListMachineGroupsResponse>({
     queryKey: machineGroupsKeys.list(query),
-    queryFn: () => apiFetch<ListMachineGroupsResponse>(`/machine-groups?${groupsToQueryString(query)}`),
+    queryFn: () =>
+      apiFetch<ListMachineGroupsResponse>(`/machine-groups?${groupsToQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
   });

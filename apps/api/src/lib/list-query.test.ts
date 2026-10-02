@@ -89,3 +89,35 @@ describe('sfOrderBy', () => {
     expect(render(sfOrderBy(MAP, undefined, sql`jc.code`)).sql).toBe('jc.code');
   });
 });
+
+describe('review fixes', () => {
+  it('money columns are closed unless the caller allows prices', () => {
+    expect(() =>
+      sfWhere(MAP, { sort: null, filters: [{ field: 'value', kind: 'num', op: 'gt', a: 1 }] }),
+    ).toThrow(/cannot sort or filter/);
+    expect(
+      render(
+        sfWhere(
+          MAP,
+          { sort: null, filters: [{ field: 'value', kind: 'num', op: 'gt', a: 1 }] },
+          { canSeePrice: true },
+        ),
+      ).sql,
+    ).toContain('::numeric');
+  });
+  it('numbers are bound as numeric; text ops only on text; tick list not on dates', () => {
+    const q = render(
+      sfWhere(MAP, { sort: null, filters: [{ field: 'qty', kind: 'num', op: 'gt', a: 2.5 }] }),
+    );
+    expect(q.sql).toContain('> $1::numeric');
+    expect(() =>
+      sfWhere(MAP, {
+        sort: null,
+        filters: [{ field: 'status', kind: 'text', op: 'contains', q: 'QC' }],
+      }),
+    ).toThrow(/text column/);
+    expect(() =>
+      sfWhere(MAP, { sort: null, filters: [{ field: 'due', kind: 'values', values: ['x'] }] }),
+    ).toThrow(/tick-list/);
+  });
+});

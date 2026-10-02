@@ -10,14 +10,22 @@
 // Order Qty, JC Qty, Dispatched, Pending, Due Date). Fulfilment is the ADR-196
 // badge, given its own column here.
 
-import type { SalesOrderListItem } from '@innovic/shared';
+import { SO_STATUSES, SO_TYPES, type SalesOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
-import { SO_TYPE_LABEL } from '../lib/so-status-label';
+import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { SoStatusBadge } from './so-status-badge';
 import { SoFulfilmentBadge } from './so-fulfilment-badge';
+
+/** Sort & Filter (ADR-200, server mode) tick lists: stored code + the label shown. */
+const SO_TYPE_OPTIONS = SO_TYPES.map((value) => ({ value, label: SO_TYPE_LABEL[value] }));
+const SO_STATUS_OPTIONS = SO_STATUSES.map((value) => ({ value, label: SO_STATUS_LABEL[value] }));
+
+/** Columns off by default on the SO Master sheet — passed to the DataTable's
+ *  `defaultHidden`. They stay reachable in ▸ / the Columns menu. */
+export const SO_LIST_HIDDEN_COLUMNS = ['created_on'];
 
 /** Pieces still owed on the order (NAMING.md "Pending"): ordered − dispatched −
  *  the qty dropped by closing lines short (ADR-196). Never below zero. */
@@ -63,6 +71,7 @@ export function soListColumns(opts: {
   return [
     {
       id: 'so_no',
+      sortFilterField: 'soCode',
       header: 'SO No.',
       nowrap: true,
       // The row's ▸ (fit engine) opens the lines; the SO No. link opens the
@@ -82,6 +91,7 @@ export function soListColumns(opts: {
     },
     {
       id: 'so_date',
+      sortFilterField: 'soDate',
       kind: 'date',
       header: 'SO Date',
       className: 'mono text2',
@@ -90,6 +100,8 @@ export function soListColumns(opts: {
     },
     {
       id: 'so_type',
+      sortFilterField: 'type',
+      filterOptions: SO_TYPE_OPTIONS,
       kind: 'badge',
       header: 'SO Type',
       nowrap: true,
@@ -121,6 +133,7 @@ export function soListColumns(opts: {
     },
     {
       id: 'customer',
+      sortFilterField: 'customerName',
       kind: 'text',
       header: 'Customer',
       align: 'left',
@@ -131,6 +144,7 @@ export function soListColumns(opts: {
     },
     {
       id: 'client_po_no',
+      sortFilterField: 'clientPoNo',
       header: 'Client PO No.',
       headColor: 'var(--purple)',
       nowrap: true,
@@ -165,6 +179,8 @@ export function soListColumns(opts: {
     },
     {
       id: 'order_qty',
+      sortFilterField: 'totalQty',
+      filterType: 'num',
       header: 'Order Qty',
       align: 'right',
       className: 'mono fw-700',
@@ -173,6 +189,8 @@ export function soListColumns(opts: {
     },
     {
       id: 'jc_qty',
+      sortFilterField: 'jcQty',
+      filterType: 'num',
       header: 'JC Qty',
       align: 'right',
       className: 'mono fw-700',
@@ -181,6 +199,8 @@ export function soListColumns(opts: {
     },
     {
       id: 'dispatched_qty',
+      sortFilterField: 'dispatchedQty',
+      filterType: 'num',
       header: 'Dispatched',
       align: 'right',
       className: 'mono fw-700',
@@ -200,6 +220,8 @@ export function soListColumns(opts: {
     },
     {
       id: 'due_date',
+      // The earliest line Due Date (the server's MIN over the SO's lines).
+      sortFilterField: 'earliestDueDate',
       kind: 'date',
       header: 'Due Date',
       className: 'mono',
@@ -223,6 +245,8 @@ export function soListColumns(opts: {
     },
     {
       id: 'status',
+      sortFilterField: 'status',
+      filterOptions: SO_STATUS_OPTIONS,
       kind: 'badge',
       header: 'SO Status',
       nowrap: true,
@@ -241,6 +265,17 @@ export function soListColumns(opts: {
         ) : (
           <span className="text3">—</span>
         ),
+    },
+    {
+      // When the SO record was entered (IST day) — Sort & Filter can pick a
+      // range of it (ADR-200). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      kind: 'date',
+      header: 'Created On',
+      className: 'mono',
+      nowrap: true,
+      render: (so) => fmtDate(so.createdAt),
     },
   ];
 }

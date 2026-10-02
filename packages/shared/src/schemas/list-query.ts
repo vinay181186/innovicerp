@@ -72,8 +72,9 @@ export const sfQuerySchema = z.object({
 export type SfQuery = z.infer<typeof sfQuerySchema>;
 
 /**
- * The `sf` query param: JSON text → SfQuery. Add `sf: sfParamSchema` to a
- * list endpoint's query schema. A malformed value is a 400, never a crash.
+ * JSON text → SfQuery. INTERNAL to the server's `readSf()` — a list endpoint's
+ * query schema declares `sf: sfRawParamSchema` (a plain string, so the screen
+ * and the server share one query type) and the service calls `readSf(input.sf)`.
  */
 export const sfParamSchema = z
   .string()

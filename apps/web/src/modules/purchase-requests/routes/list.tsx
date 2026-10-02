@@ -26,6 +26,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
@@ -89,14 +90,21 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss PRs. Every change goes to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.prList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListPurchaseRequestsQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [sf.param, search.search, search.status, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
@@ -162,12 +170,13 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   );
 
   const clearFilters = useCallback((): void => {
+    sf.clearFilters();
     setSearchInput('');
     void navigate({
       search: (prev) => ({ ...prev, search: undefined, status: undefined, page: 1 }),
       replace: true,
     });
-  }, [navigate]);
+  }, [navigate, sf]);
 
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
@@ -281,7 +290,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               </select>
             }
             onClearFilters={clearFilters}
-            filtersActive={search.status !== undefined || searchInput !== ''}
+            filtersActive={sf.filtering || search.status !== undefined || searchInput !== ''}
             primary={
               perms.entry ? (
                 <Link to="/purchase-requests/new" className="btn btn-primary">
@@ -319,8 +328,11 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                defaultHidden={['sr_no']}
-                emptyText={search.search || search.status ? 'No PRs match.' : 'No PRs yet.'}
+                defaultHidden={['sr_no', 'created_on']}
+                sortFilterServer={sf}
+                emptyText={
+                  sf.filtering || search.search || search.status ? 'No PRs match.' : 'No PRs yet.'
+                }
                 onRowClick={(pr) =>
                   void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
                 }

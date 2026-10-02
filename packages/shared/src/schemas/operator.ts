@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
@@ -75,6 +76,8 @@ export interface BulkCreateOperatorsResponse {
 export const listOperatorsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   isActive: queryBoolean().optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

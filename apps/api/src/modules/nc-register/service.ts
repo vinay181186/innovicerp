@@ -40,6 +40,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import { requireOpEntryRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
@@ -59,6 +60,7 @@ import { autoCloseLinkedTasks } from '../tasks/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { type DisposeNcContext, disposeNcCascade, nextNcCode, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
+import { NC_SF_COLUMNS } from './sf-columns';
 import type {
   CloseNcReworkInput,
   CreateNcDcInput,
@@ -420,6 +422,11 @@ export async function listNcRegister(
             AND nc.status = 'disposed'::nc_status
             AND nc.delivery_challan_id IS NULL`
       : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(NC_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(NC_SF_COLUMNS, sf, sql`nc.nc_date DESC, nc.code DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -571,7 +578,8 @@ export async function listNcRegister(
         ${fromFrag}
         ${toFrag}
         ${pendingRtvChallanFrag}
-      ORDER BY nc.nc_date DESC, nc.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -611,6 +619,7 @@ export async function listNcRegister(
         ${fromFrag}
         ${toFrag}
         ${pendingRtvChallanFrag}
+        ${sfFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,

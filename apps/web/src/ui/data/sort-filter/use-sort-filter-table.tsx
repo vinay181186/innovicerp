@@ -14,12 +14,10 @@ import { colId, colKind, colLabel, cx } from '../data-table-cells';
 import type { DataTableColumn, DataTableProps } from '../data-table-types';
 import { cellText, isFilterableColumn } from './cell-text';
 import {
-  EMPTY_STATE,
   activeFilterCount,
   applySortFilter,
   detectType,
   distinctValues,
-  sanitizeState,
   type ColumnFilter,
   type SfColumn,
   type SfState,
@@ -27,32 +25,12 @@ import {
   type SortDir,
 } from './filter-model';
 import { HeadMenu } from './HeadMenu';
+import { loadSf, saveSf } from './sf-storage';
 import { useSfSnapshot, useSfStore } from './scope';
 import { SortFilterButton } from './SortFilterButton';
 import './sort-filter.css';
 
 const STORE_PREFIX = 'innovic.sf:';
-
-function load(key: string | null): SfState {
-  if (!key) return EMPTY_STATE;
-  try {
-    const raw = window.sessionStorage.getItem(key);
-    return raw ? sanitizeState(JSON.parse(raw)) : EMPTY_STATE;
-  } catch {
-    return EMPTY_STATE;
-  }
-}
-
-function save(key: string | null, s: SfState): void {
-  if (!key) return;
-  try {
-    if (s.sort === null && Object.keys(s.filters).length === 0)
-      window.sessionStorage.removeItem(key);
-    else window.sessionStorage.setItem(key, JSON.stringify(s));
-  } catch {
-    // Storage blocked (private window) — the filters still work, just not across a refresh.
-  }
-}
 
 function isEmpty(s: SfState): boolean {
   return s.sort === null && Object.keys(s.filters).length === 0;
@@ -82,14 +60,14 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
   const identity = `${window.location.pathname}:${input.tableKey ?? ''}`;
   const storageKey = on && input.tableKey ? `${STORE_PREFIX}${identity}` : null;
 
-  const [localState, setLocalState] = useState<SfState>(() => load(storageKey));
+  const [localState, setLocalState] = useState<SfState>(() => loadSf(storageKey));
   const [stateFor, setStateFor] = useState(identity);
   if (stateFor !== identity) {
     setStateFor(identity);
-    setLocalState(load(storageKey));
+    setLocalState(loadSf(storageKey));
   }
   useEffect(() => {
-    if (stateFor === identity && !server) save(storageKey, localState);
+    if (stateFor === identity && !server) saveSf(storageKey, localState);
   }, [storageKey, localState, stateFor, identity, server]);
   const state = server ? server.value : localState;
   const serverChange = server?.onChange;
@@ -100,8 +78,10 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
   useEffect(() => {
     if (snap.clearToken === clearSeen.current) return;
     clearSeen.current = snap.clearToken;
+    // Server mode: the page's useServerSortFilter answers the Clear itself.
+    if (server) return;
     setState((s) => (Object.keys(s.filters).length === 0 ? s : { ...s, filters: {} }));
-  }, [snap.clearToken, setState]);
+  }, [snap.clearToken, setState, server]);
 
   // The screen's own header sort was used → the ▾ sort gives way, so the
   // table is never ordered by one column while another shows as sorted.
@@ -115,16 +95,20 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
 
   const activeCount = live ? activeFilterCount(state) : 0;
   const isServer = server !== undefined;
-  const countRef = useRef(activeCount);
-  countRef.current = activeCount;
+  // In server mode the page's useServerSortFilter counts the filters (it stays
+  // registered while the table is gone, e.g. after the server refused a
+  // filter) — the table registers 0 so the button never counts them twice.
+  const registered = isServer ? 0 : activeCount;
+  const countRef = useRef(registered);
+  countRef.current = registered;
   useEffect(() => {
     if (!store || !on) return;
     store.setTable(id, countRef.current, isServer);
     return () => store.removeTable(id);
   }, [store, on, id, isServer]);
   useEffect(() => {
-    if (store && on) store.setTable(id, activeCount, isServer);
-  }, [store, on, id, activeCount, isServer]);
+    if (store && on) store.setTable(id, registered, isServer);
+  }, [store, on, id, registered, isServer]);
 
   const { columns, rows, onSort: callerSort } = input;
   const work = live && (snap.enabled || !isEmpty(state));
@@ -267,7 +251,7 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
           // under filtered rows, so it is hidden while a filter applies.
           // (`showTotals` totals are summed from the rows shown, and stay.)
           ...(filteredOut ? { footer: undefined } : {}),
-          ...(filteredOut && outRows.length === 0 && rows.length > 0
+          ...(filteredOut && outRows.length === 0 && (isServer || rows.length > 0)
             ? { empty: 'No rows match the filters.' }
             : {}),
         };

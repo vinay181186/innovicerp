@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { queryBoolean } from '../lib/query-boolean';
 import { PR_STATUSES, PR_TYPES } from '../enums/pr-status';
+import { sfRawParamSchema } from './list-query';
 
 export const prStatusSchema = z.enum(PR_STATUSES);
 export const prTypeSchema = z.enum(PR_TYPES);
@@ -283,6 +284,8 @@ export const listPurchaseRequestsQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
+  sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

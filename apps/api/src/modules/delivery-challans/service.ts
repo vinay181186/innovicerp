@@ -23,6 +23,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
@@ -45,6 +46,7 @@ import {
   reverseOutwardFromJcOp,
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
+import { DC_SF_COLUMNS, DC_SF_JOINS } from './sf-columns';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import {
   ActivityAction,
@@ -179,6 +181,14 @@ export async function listDeliveryChallans(
       : sql``;
     const fromFrag = input.fromDate ? sql`AND dc.dc_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND dc.dc_date <= ${input.toDate}::date` : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to the list, the count
+    // AND the KPI summary — the latter two add the page query's other joins
+    // (DC_SF_JOINS, one row per DC) only while a filter needs them.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(DC_SF_COLUMNS, sf);
+    const sfJoins = sf && sf.filters.length > 0 ? DC_SF_JOINS : sql``;
+    const orderBy = sfOrderBy(DC_SF_COLUMNS, sf, sql`dc.dc_date DESC, dc.code DESC`);
 
     const result = await tx.execute(sql`
       SELECT
@@ -265,7 +275,8 @@ export async function listDeliveryChallans(
         ${poFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY dc.dc_date DESC, dc.code DESC
+        ${sfFrag}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
@@ -279,6 +290,7 @@ export async function listDeliveryChallans(
       SELECT COUNT(*)::int AS total
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
+      ${sfJoins}
       WHERE dc.company_id = ${companyId}::uuid
         AND dc.deleted_at IS NULL
         ${searchFrag}
@@ -287,6 +299,7 @@ export async function listDeliveryChallans(
         ${poFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `);
     const total = Number(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
@@ -302,6 +315,7 @@ export async function listDeliveryChallans(
         COUNT(DISTINCT dcl.item_id)::int       AS item_count
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
+      ${sfJoins}
       LEFT JOIN public.delivery_challan_lines dcl
         ON dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL
       WHERE dc.company_id = ${companyId}::uuid
@@ -312,6 +326,7 @@ export async function listDeliveryChallans(
         ${poFrag}
         ${fromFrag}
         ${toFrag}
+        ${sfFrag}
     `);
     const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
     const summary = {

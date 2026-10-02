@@ -22,6 +22,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
@@ -36,6 +37,11 @@ import { DUE_COLOUR, INSTRUMENT_STATUS_BADGE, dueTone } from '../lib/instrument-
 
 const PAGE_SIZE = 50;
 type DueFilter = '' | 'week' | 'overdue';
+// Sort & Filter tick list (ADR-200): the stored status + the label shown.
+const STATUS_OPTIONS = INSTRUMENT_STATUSES.map((s) => ({
+  value: s,
+  label: INSTRUMENT_STATUS_LABELS[s],
+}));
 
 export const instrumentsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -57,9 +63,14 @@ function InstrumentsListPage(): React.JSX.Element {
   const [viewId, setViewId] = useState<string | null>(null);
 
   const allowed = !eff || perms.view;
+  // Sort & Filter runs on the SERVER here (ADR-200): the register is paged, so
+  // filtering only the loaded page would miss instruments. Every change goes
+  // back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.instruments, () => setPage(1));
   const { data, isLoading, isError, error } = useInstrumentsList(
     {
       search: search.trim() || undefined,
+      sf: sf.param,
       status: status || undefined,
       due: due || undefined,
       limit: PAGE_SIZE,
@@ -70,7 +81,7 @@ function InstrumentsListPage(): React.JSX.Element {
   const { data: unregistered } = useUnregisteredInstruments();
   const pending = (unregistered ?? []).filter((u) => u.unregisteredQty > 0);
 
-  const filtered = Boolean(search.trim() || status || due);
+  const filtered = Boolean(search.trim() || status || due || sf.param);
 
   // The ruled sheet's columns. Serial No. is the pinned first column (ADR-199
   // #4). Instrument Status is a badge; Calibration Due keeps its amber/red
@@ -79,6 +90,7 @@ function InstrumentsListPage(): React.JSX.Element {
     () => [
       {
         id: 'serial_no',
+        sortFilterField: 'serialNo',
         header: 'Instrument Serial No.',
         nowrap: true,
         className: 'mono fw-700',
@@ -86,6 +98,8 @@ function InstrumentsListPage(): React.JSX.Element {
       },
       {
         id: 'item_code',
+        sortFilterField: 'itemCode',
+        filterType: 'text',
         header: 'Item Code',
         nowrap: true,
         render: (ins) => (
@@ -96,6 +110,7 @@ function InstrumentsListPage(): React.JSX.Element {
       },
       {
         id: 'item_name',
+        sortFilterField: 'itemName',
         header: 'Item Name',
         align: 'left',
         ellipsis: true,
@@ -104,6 +119,8 @@ function InstrumentsListPage(): React.JSX.Element {
       },
       {
         id: 'status',
+        sortFilterField: 'status',
+        filterOptions: STATUS_OPTIONS,
         header: 'Instrument Status',
         kind: 'badge',
         nowrap: true,
@@ -122,6 +139,7 @@ function InstrumentsListPage(): React.JSX.Element {
       },
       {
         id: 'calibration_due',
+        sortFilterField: 'calibrationDueOn',
         header: 'Calibration Due',
         kind: 'date',
         nowrap: true,
@@ -142,6 +160,7 @@ function InstrumentsListPage(): React.JSX.Element {
       },
       {
         id: 'last_calibrated',
+        sortFilterField: 'lastCalibratedOn',
         header: 'Last Calibrated',
         kind: 'date',
         nowrap: true,
@@ -149,6 +168,7 @@ function InstrumentsListPage(): React.JSX.Element {
       },
       {
         id: 'location',
+        sortFilterField: 'location',
         header: 'Location',
         ellipsis: true,
         render: (ins) => ins.location || '—',
@@ -156,6 +176,8 @@ function InstrumentsListPage(): React.JSX.Element {
       },
       {
         id: 'held_by',
+        sortFilterField: 'heldBy',
+        filterType: 'text',
         header: 'Held By',
         nowrap: true,
         render: (ins) => (
@@ -276,6 +298,7 @@ function InstrumentsListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.instruments}
+            sortFilterServer={sf}
             columns={columns}
             rows={data?.items ?? []}
             loading={isLoading}

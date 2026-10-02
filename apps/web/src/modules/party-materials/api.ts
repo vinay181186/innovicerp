@@ -18,6 +18,7 @@ export const partyMaterialsKeys = {
       'list',
       q.search ?? null,
       q.clientId ?? null,
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
@@ -28,6 +29,7 @@ function buildSearch(q: ListPartyMaterialsQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.clientId) params.set('clientId', q.clientId);
+  if (q.sf) params.set('sf', q.sf);
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

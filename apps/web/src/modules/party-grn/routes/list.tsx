@@ -29,12 +29,13 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnList } from '../api';
 import { CancelPartyGrnModal } from '../components/cancel-party-grn-modal';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
-import { partyGrnColumns } from '../components/party-grn-columns';
+import { PARTY_GRN_HIDDEN_COLUMNS, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
 
@@ -85,8 +86,14 @@ function PartyGrnListPage(): React.JSX.Element {
   // Receive | Issue tabs — Issue is the former standalone Party Material Issue screen.
   const [tab, setTab] = useState<'receive' | 'issue'>(() => routeSearch.tab ?? 'receive');
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss GRNs. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.partyGrn, () => setPage(1));
+
   const { data, isLoading, isError, error } = usePartyGrnList({
     search: search.trim() || undefined,
+    sf: sf.param,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
@@ -219,11 +226,15 @@ function PartyGrnListPage(): React.JSX.Element {
             <Panel bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.partyGrn}
+                sortFilterServer={sf}
+                defaultHidden={[...PARTY_GRN_HIDDEN_COLUMNS]}
                 columns={columns}
                 rows={rows}
                 rowKey={(g) => g.id}
                 loading={isLoading}
-                emptyText={search.trim() ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
+                emptyText={
+                  search.trim() || sf.param ? 'No Party GRNs match.' : 'No Party GRNs yet.'
+                }
                 rowClassName={(g) => (g.deletedAt ? ROW_TINT.cancelled : undefined)}
                 renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
                 onToggleExpanded={(g) => toggleExpand(g.id)}

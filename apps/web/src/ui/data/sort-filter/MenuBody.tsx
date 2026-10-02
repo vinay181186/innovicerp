@@ -279,6 +279,7 @@ export function MenuBody(p: MenuBodyProps): ReactElement {
           </select>
           <input
             type="text"
+            maxLength={200}
             aria-label="Text"
             value={q}
             onChange={(e) => {

@@ -18,11 +18,16 @@ import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyMaterialsList } from '../api';
 import { AddPartyMaterialModal } from '../components/add-party-material-modal';
-import { PartyMaterialDetails, partyMaterialColumns } from '../components/party-material-columns';
+import {
+  PARTY_MATERIAL_HIDDEN_COLUMNS,
+  PartyMaterialDetails,
+  partyMaterialColumns,
+} from '../components/party-material-columns';
 import { DeletePartyMaterialModal } from '../components/delete-party-material-modal';
 import { EditPartyMaterialModal } from '../components/edit-party-material-modal';
 import { ReturnPartyMaterialModal } from '../components/return-party-material-modal';
@@ -65,8 +70,14 @@ function PartyMaterialsListPage(): React.JSX.Element {
   // Which rows have their ▸ detail open (the fit table's one expand control).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss materials. Every change goes back
+  // to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.partyMaterials, () => setPage(1));
+
   const { data, isLoading, isError, error } = usePartyMaterialsList({
     search: search.trim() || undefined,
+    sf: sf.param,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
@@ -131,11 +142,15 @@ function PartyMaterialsListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.partyMaterials}
+            sortFilterServer={sf}
+            defaultHidden={[...PARTY_MATERIAL_HIDDEN_COLUMNS]}
             columns={columns}
             rows={rows}
             loading={isLoading}
             emptyText={
-              search.trim() ? 'No customer materials match.' : 'No customer materials yet.'
+              search.trim() || sf.param
+                ? 'No customer materials match.'
+                : 'No customer materials yet.'
             }
             // No row click — there is no Customer Material detail page.
             renderExpanded={(pm) => (expanded.has(pm.id) ? <PartyMaterialDetails pm={pm} /> : null)}

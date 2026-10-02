@@ -9,15 +9,22 @@
 // its ellipsis + tooltip, the JWSO its purple, and the Received / Lines metrics
 // their mono weight. Received By, Remarks and the per-line QC split move into the
 // ▸ expand (party-grn-expand.tsx).
+//
+// Sort & Filter runs on the SERVER (ADR-200): `sortFilterField` names the field
+// in api party-grn/sf-columns.ts.
 
 import type { PartyGrnListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 
+/** Columns off by default (DataTable `defaultHidden`); Columns ▾ shows them. */
+export const PARTY_GRN_HIDDEN_COLUMNS = ['created_on'] as const;
+
 export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
   return [
     {
       id: 'grn_code',
+      sortFilterField: 'code',
       header: 'GRN No.',
       kind: 'code',
       nowrap: true,
@@ -29,6 +36,7 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       id: 'grn_date',
+      sortFilterField: 'grnDate',
       header: 'GRN Date',
       kind: 'date',
       className: 'mono',
@@ -37,6 +45,7 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       id: 'customer',
+      sortFilterField: 'customer',
       header: 'Customer',
       align: 'left',
       ellipsis: true,
@@ -46,6 +55,7 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       id: 'jwso_code',
+      sortFilterField: 'jwCode',
       header: 'JWSO No.',
       kind: 'code',
       nowrap: true,
@@ -57,6 +67,7 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       id: 'client_po_no',
+      sortFilterField: 'clientPoNo',
       header: 'Client PO No.',
       kind: 'code',
       nowrap: true,
@@ -64,6 +75,7 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       id: 'customer_challan_no',
+      sortFilterField: 'dcNo',
       header: 'Customer Challan No.',
       kind: 'code',
       nowrap: true,
@@ -71,6 +83,7 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       id: 'received_qty',
+      sortFilterField: 'receivedQty',
       header: 'Received Qty',
       kind: 'num',
       align: 'right',
@@ -84,11 +97,22 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       id: 'lines',
+      sortFilterField: 'linesCount',
       header: 'Lines',
       kind: 'num',
       align: 'right',
       nowrap: true,
       render: (g) => <span className="mono">{g.linesCount}</span>,
+    },
+    {
+      // When the receipt was entered (IST day). Off by default; Columns ▾ shows it.
+      id: 'created_on',
+      sortFilterField: 'createdOn',
+      header: 'Created On',
+      kind: 'date',
+      className: 'mono',
+      nowrap: true,
+      render: (g) => fmtDate(g.createdAt),
     },
   ];
 }

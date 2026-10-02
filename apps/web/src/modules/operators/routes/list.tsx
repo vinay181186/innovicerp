@@ -39,6 +39,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { operatorListColumns } from '../components/operator-list-columns';
 import { Banner } from '@/ui/feedback';
@@ -108,14 +109,22 @@ function OperatorsListPage(): React.JSX.Element {
   const isActiveFilter =
     search.status === 'active' ? true : search.status === 'inactive' ? false : undefined;
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss rows. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.operatorsList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListOperatorsQuery = useMemo(
     () => ({
       search: search.search,
       isActive: isActiveFilter,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, isActiveFilter, search.page],
+    [search.search, isActiveFilter, sf.param, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useOperatorsList(query);
@@ -251,10 +260,15 @@ function OperatorsListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.operatorsList}
+            sortFilterServer={sf}
             columns={columns}
             rows={rows}
             loading={isLoading}
-            empty={search.search || search.status ? 'No Operators match.' : 'No Operators yet.'}
+            empty={
+              search.search || search.status || sf.param
+                ? 'No Operators match.'
+                : 'No Operators yet.'
+            }
             onRowClick={(op) => void navigate({ to: '/operators/$id', params: { id: op.id } })}
             rowActionsWidth="1%"
             rowActions={(op) => (

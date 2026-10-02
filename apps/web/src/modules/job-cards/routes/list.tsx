@@ -201,6 +201,7 @@ function JobCardsListPage(): React.JSX.Element {
   // Overdue is filtered in the browser, so its total is the rows shown.
   const total = search.overdue ? rows.length : (data?.total ?? 0);
   const filtered =
+    sf.filtering ||
     !!search.search ||
     !!search.status ||
     !!search.overdue ||
@@ -226,7 +227,12 @@ function JobCardsListPage(): React.JSX.Element {
   // picking "Closed" does not turn every other option into "(0)". While no
   // status is picked this is the very same query as the list — one fetch,
   // shared cache entry. Like the old strip, it counts the LOADED set (cap 200).
-  const countQuery: ListJobCardsQuery = useMemo(() => ({ ...query, status: undefined }), [query]);
+  // …and without a JC Status ▾ filter either, for the same reason.
+  const sfNoStatus = sf.paramWithout('status');
+  const countQuery: ListJobCardsQuery = useMemo(
+    () => ({ ...query, status: undefined, sf: sfNoStatus }),
+    [query, sfNoStatus],
+  );
   const { data: countData } = useJobCardsList(countQuery);
   const statusCounts = useMemo(() => {
     const c: Record<JcComputedStatus, number> = {
@@ -257,6 +263,7 @@ function JobCardsListPage(): React.JSX.Element {
   };
 
   const filtersActive =
+    sf.filtering ||
     searchInput.trim() !== '' ||
     search.status != null ||
     search.overdue === true ||
@@ -265,6 +272,7 @@ function JobCardsListPage(): React.JSX.Element {
     search.fromDate != null ||
     search.toDate != null;
   const clearFilters = (): void => {
+    sf.clearFilters();
     setSearchInput('');
     void navigate({
       search: (prev) => ({
@@ -350,10 +358,24 @@ function JobCardsListPage(): React.JSX.Element {
       />
 
       {isError ? (
-        <PageState
-          state="error"
-          message={error instanceof Error ? error.message : 'Could not load Job Cards. Try again.'}
-        />
+        <>
+          <PageState
+            state="error"
+            message={
+              error instanceof Error ? error.message : 'Could not load Job Cards. Try again.'
+            }
+          />
+          {/* A sort / filter the server refused is kept for the tab — offer the way out. */}
+          {sf.param ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => sf.onChange({ sort: null, filters: {} })}
+            >
+              Clear Sort &amp; Filter
+            </button>
+          ) : null}
+        </>
       ) : (
         // ── THE SHEET (ADR-199 fit table — the sole view) ────────────────────
         <Panel bodyPadding="none">

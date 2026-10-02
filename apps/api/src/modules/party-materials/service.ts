@@ -22,7 +22,7 @@ const PARTY_MATERIAL_FIELDS: readonly DiffField[] = [
   { key: 'clientCodeText', label: 'Customer' },
   { key: 'itemCodeText', label: 'Item Code' },
 ];
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyMaterialInput,
   ListPartyMaterialsQuery,
@@ -42,7 +42,9 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
+import { PARTY_MATERIAL_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -241,6 +243,20 @@ export async function listPartyMaterials(
         )`
       : sql``;
     const clientFrag = input.clientId ? sql`AND pm.client_id = ${input.clientId}::uuid` : sql``;
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(input.sf);
+    const sfFrag = sfWhere(PARTY_MATERIAL_SF_COLUMNS, sf);
+    const orderBy = sfOrderBy(PARTY_MATERIAL_SF_COLUMNS, sf, sql`pm.code ASC`);
+    const fromWhere = sql`
+      FROM public.party_materials pm
+      LEFT JOIN public.clients c ON c.id = pm.client_id AND c.deleted_at IS NULL
+      LEFT JOIN public.items i ON i.id = pm.item_id AND i.deleted_at IS NULL
+      WHERE pm.company_id = ${companyId}::uuid
+        AND pm.deleted_at IS NULL
+        ${searchFrag}
+        ${clientFrag}
+        ${sfFrag}`;
 
     const result = await tx.execute(sql`
       SELECT
@@ -260,23 +276,18 @@ export async function listPartyMaterials(
         c.name AS "clientName",
         i.code AS "itemCode",
         i.name AS "itemName"
-      FROM public.party_materials pm
-      LEFT JOIN public.clients c ON c.id = pm.client_id AND c.deleted_at IS NULL
-      LEFT JOIN public.items i ON i.id = pm.item_id AND i.deleted_at IS NULL
-      WHERE pm.company_id = ${companyId}::uuid
-        AND pm.deleted_at IS NULL
-        ${searchFrag}
-        ${clientFrag}
-      ORDER BY pm.code ASC
+      ${fromWhere}
+      ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(partyMaterials.companyId, companyId), isNull(partyMaterials.deletedAt)];
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(partyMaterials)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // The pager total counts under the SAME filters (search, customer and
+    // Sort & Filter) as the page. It used to count every live material,
+    // whatever was searched, so the pager ran past the matching rows.
+    const totalRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS total ${fromWhere}
+    `)) as unknown as Array<{ total: number }>;
+    const total = Number(totalRows[0]?.total ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };

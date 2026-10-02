@@ -31,11 +31,17 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
-import { soListColumns, soRowMenu, soRowTint } from '../components/so-list-columns';
+import {
+  SO_LIST_HIDDEN_COLUMNS,
+  soListColumns,
+  soRowMenu,
+  soRowTint,
+} from '../components/so-list-columns';
 import { SoExpandedPanel } from '../components/so-expanded-panel';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
@@ -86,15 +92,22 @@ function SalesOrdersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER (ADR-200): the list is capped at LIST_LIMIT,
+  // so filtering the loaded rows only would miss orders. A change → page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.soMaster, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListSalesOrdersQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
       type: search.type,
+      sf: sf.param,
       limit: LIST_LIMIT,
       offset: 0,
     }),
-    [search.search, search.status, search.type],
+    [sf.param, search.search, search.status, search.type],
   );
 
   const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query);
@@ -147,6 +160,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         search: search.search,
         status: search.status,
         type: search.type,
+        sf: sf.param,
         limit: 10000,
         offset: 0,
       });
@@ -236,6 +250,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({
@@ -249,6 +264,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           });
         }}
         filtersActive={
+          sf.filtering ||
           search.search != null ||
           search.status != null ||
           search.type != null ||
@@ -307,10 +323,16 @@ function SalesOrdersListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable<SalesOrderListItem>
             tableKey={TABLE_KEYS.soMaster}
+            sortFilterServer={sf}
             columns={columns}
+            defaultHidden={SO_LIST_HIDDEN_COLUMNS}
             rows={rows}
             loading={isLoading}
-            empty={search.search || search.status || search.type ? 'No SOs match.' : 'No SOs yet.'}
+            empty={
+              sf.filtering || search.search || search.status || search.type
+                ? 'No SOs match.'
+                : 'No SOs yet.'
+            }
             rowClassName={(so) => soRowTint(so, today)}
             onRowClick={(so) => void navigate({ to: '/sales-orders/$id', params: { id: so.id } })}
             // The fit table's ▸ is the row's one expand control: it opens the

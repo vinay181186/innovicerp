@@ -41,6 +41,7 @@ import { ReportTypesPanel } from '@/modules/report-types/components/report-types
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
@@ -49,6 +50,12 @@ import { TabStrip } from '@/ui/navigation';
 import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 
 const PAGE_SIZE = 25;
+
+// Sort & Filter tick list (ADR-200): the stored boolean as text.
+const ACTIVE_OPTIONS = [
+  { value: 'true', label: 'Active' },
+  { value: 'false', label: 'Inactive' },
+];
 
 const TABS = [
   { key: 'processes', label: 'QC Processes' },
@@ -111,14 +118,22 @@ function QcProcessesListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is paged, so
+  // filtering only the loaded page would miss rows. Every change goes back to
+  // page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.qcProcessesList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListQcProcessesQuery = useMemo(
     () => ({
       search: search.search,
       isActive: search.isActive,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.isActive, search.page],
+    [search.search, search.isActive, sf.param, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useQcProcessesList(query);
@@ -145,7 +160,9 @@ function QcProcessesListPage(): React.JSX.Element {
         render: (_p, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
       },
       {
+        // The QC Process Name IS the stored code.
         id: 'name',
+        sortFilterField: 'code',
         header: 'QC Process Name',
         width: '24%',
         align: 'left',
@@ -170,6 +187,7 @@ function QcProcessesListPage(): React.JSX.Element {
       },
       {
         id: 'description',
+        sortFilterField: 'description',
         header: 'Description',
         width: '40%',
         className: 'text2',
@@ -179,6 +197,8 @@ function QcProcessesListPage(): React.JSX.Element {
       },
       {
         id: 'default_cycle_time',
+        sortFilterField: 'defaultCycleTimeMin',
+        filterType: 'num',
         header: 'Default Cycle Time (min)',
         width: '11%',
         className: 'mono',
@@ -188,6 +208,8 @@ function QcProcessesListPage(): React.JSX.Element {
       },
       {
         id: 'is_active',
+        sortFilterField: 'isActive',
+        filterOptions: ACTIVE_OPTIONS,
         kind: 'badge',
         header: 'Active',
         width: '10%',
@@ -310,11 +332,12 @@ function QcProcessesListPage(): React.JSX.Element {
             <Panel bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.qcProcessesList}
+                sortFilterServer={sf}
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
                 emptyText={
-                  search.search || search.isActive !== undefined
+                  search.search || search.isActive !== undefined || sf.param
                     ? 'No QC Processes match.'
                     : 'No QC Processes yet.'
                 }

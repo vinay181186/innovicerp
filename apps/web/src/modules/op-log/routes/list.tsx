@@ -20,10 +20,16 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useOpLog, type ListOpLogQuery, type OpLogListItem } from '../api';
-import { isReversalRow, OP_LOG_DEFAULT_PINNED, opLogColumns } from '../components/op-log-columns';
+import {
+  isReversalRow,
+  OP_LOG_DEFAULT_PINNED,
+  OP_LOG_HIDDEN_COLUMNS,
+  opLogColumns,
+} from '../components/op-log-columns';
 import { ReverseOpLogModal } from '../components/reverse-op-log-modal';
 import { exportOpLog } from '../lib/export';
 
@@ -81,6 +87,13 @@ function OpLogListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [jcInput, search.jcNo, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the log is paged 50 at a
+  // time, so sorting / filtering only the loaded page would miss entries.
+  // Every change goes back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.opLogList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListOpLogQuery = useMemo(
     () => ({
       jcNo: search.jcNo,
@@ -88,10 +101,19 @@ function OpLogListPage(): React.JSX.Element {
       shift: search.shift,
       fromDate: search.fromDate,
       toDate: search.toDate,
+      sf: sf.param,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.jcNo, search.logType, search.shift, search.fromDate, search.toDate, search.page],
+    [
+      sf.param,
+      search.jcNo,
+      search.logType,
+      search.shift,
+      search.fromDate,
+      search.toDate,
+      search.page,
+    ],
   );
 
   const { data, isLoading, isFetching, isError, error } = useOpLog(query);
@@ -109,6 +131,7 @@ function OpLogListPage(): React.JSX.Element {
         shift: search.shift,
         fromDate: search.fromDate,
         toDate: search.toDate,
+        sf: sf.param,
       });
       if (written < all) {
         window.alert(
@@ -202,6 +225,7 @@ function OpLogListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setJcInput('');
           void navigate({
             search: (prev) => ({
@@ -217,6 +241,7 @@ function OpLogListPage(): React.JSX.Element {
           });
         }}
         filtersActive={
+          sf.filtering ||
           !!search.logType ||
           !!search.shift ||
           !!search.fromDate ||
@@ -247,7 +272,9 @@ function OpLogListPage(): React.JSX.Element {
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.opLogList}
+            sortFilterServer={sf}
             columns={columns}
+            defaultHidden={[...OP_LOG_HIDDEN_COLUMNS]}
             rows={items}
             loading={isLoading}
             emptyText="No log entries match these filters."

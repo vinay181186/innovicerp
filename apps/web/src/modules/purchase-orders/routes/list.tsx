@@ -40,6 +40,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
@@ -102,15 +103,23 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
+  // Sort & Filter runs on the SERVER here (ADR-200): the list is capped at
+  // LIST_LIMIT, so filtering only the loaded rows would miss POs. Every change
+  // goes back to page 1.
+  const sf = useServerSortFilter(TABLE_KEYS.poList, () => {
+    void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
+  });
+
   const query: ListPurchaseOrdersQuery = useMemo(
     () => ({
       search: search.search,
       status: search.status,
       poType: search.poType,
+      sf: sf.param,
       limit: LIST_LIMIT,
       offset: 0,
     }),
-    [search.search, search.status, search.poType],
+    [sf.param, search.search, search.status, search.poType],
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query);
@@ -140,7 +149,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     });
   }, []);
 
-  const columns = useMemo(() => purchaseOrderListColumns(), []);
+  const columns = useMemo(
+    () => purchaseOrderListColumns({ canSeePrice: perms.price }),
+    [perms.price],
+  );
 
   // Row actions — Edit · Create DC · Assign, with the gates the retired card and
   // sheet used, unchanged. No View button: the row click opens the PO.
@@ -192,7 +204,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   }
 
   const emptyText =
-    search.search || search.status || search.poType ? 'No POs match.' : 'No POs yet.';
+    sf.filtering || search.search || search.status || search.poType
+      ? 'No POs match.'
+      : 'No POs yet.';
 
   return (
     <div>
@@ -260,6 +274,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           </>
         }
         onClearFilters={() => {
+          sf.clearFilters();
           setSearchInput('');
           void navigate({
             search: (prev) => ({
@@ -273,7 +288,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           });
         }}
         filtersActive={
-          search.status !== undefined || search.poType !== undefined || searchInput !== ''
+          sf.filtering ||
+          search.status !== undefined ||
+          search.poType !== undefined ||
+          searchInput !== ''
         }
         primary={
           canAdd ? (
@@ -299,6 +317,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             rows={rows}
             loading={isLoading}
             emptyText={emptyText}
+            defaultHidden={['created_on']}
+            sortFilterServer={sf}
             onRowClick={(po) =>
               void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
             }

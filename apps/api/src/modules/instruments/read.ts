@@ -15,8 +15,10 @@ import { sql, type SQL } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { NotFoundError } from '../../lib/errors';
+import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
 import { addDays, dateOut, requireCompany, todayIst } from './common';
+import { INSTRUMENT_SF_COLUMNS } from './sf-columns';
 
 // Holder of an Issued instrument = the latest issue it went out on.
 const SELECT = sql`
@@ -98,17 +100,21 @@ export async function listInstruments(
         q.due === 'overdue' ? sql`< ${today}::date` : sql`<= ${addDays(today, 7)}::date`;
       parts.push(sql`ins.status NOT IN ('lost', 'scrapped') AND ins.calibration_due_on ${limit}`);
     }
-    const where = sql.join(parts, sql` AND `);
+    // Sort & Filter (ADR-200): the screen's column filters + sort, through the
+    // list's own field whitelist (sf-columns.ts). Applied to list AND count.
+    const sf = readSf(q.sf);
+    const where = sql`${sql.join(parts, sql` AND `)} ${sfWhere(INSTRUMENT_SF_COLUMNS, sf)}`;
+    const orderBy = sfOrderBy(INSTRUMENT_SF_COLUMNS, sf, sql`i.code, lower(ins.serial_no)`);
     const rows = (await tx.execute(sql`
       ${SELECT}
       WHERE ${where}
-      ORDER BY i.code, lower(ins.serial_no)
+      ORDER BY ${orderBy}
       LIMIT ${q.limit} OFFSET ${q.offset}
     `)) as unknown as Array<Record<string, unknown>>;
+    // Counted over the very SELECT the page reads, so the holder lateral (the
+    // Held By filter) is there too.
     const totals = (await tx.execute(sql`
-      SELECT COUNT(*)::int AS total
-      FROM public.instruments ins JOIN public.items i ON i.id = ins.item_id
-      WHERE ${where}
+      SELECT COUNT(*)::int AS total FROM (${SELECT} WHERE ${where}) z
     `)) as unknown as Array<{ total: number }>;
     return {
       items: rows.map((r) => toListItem(r, today)),
