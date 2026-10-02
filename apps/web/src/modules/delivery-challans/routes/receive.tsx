@@ -65,9 +65,12 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   const saveKey = useSaveKey();
   const receive = useReceiveDeliveryChallan(saveKey);
   // Booking material back is `entry` on ospdc_create (Purchase) — the same right
-  // that raised the DC. Checked here too because the route is reachable by URL.
+  // that raised the DC — OR `entry` on grn_create (a GRN storekeeper), exactly
+  // as the server's receiveAgainstDeliveryChallan accepts. Checked here too
+  // because the route is reachable by URL.
   const { data: eff } = useMyAccess();
-  const perms = effectiveFormPerms(eff, 'ospdc_create');
+  const canReceive =
+    effectiveFormPerms(eff, 'ospdc_create').entry || effectiveFormPerms(eff, 'grn_create').entry;
   // Where the Cancel link goes, and where ESC -> Exit goes. Every other way
   // off the screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
   const goBack = useCallback(
@@ -169,7 +172,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     const el = document.getElementById(RECEIVE_FORM_ID);
     if (el instanceof HTMLFormElement) el.requestSubmit();
   }, []);
-  useSaveShortcut(submitForm, canSubmit && perms.entry);
+  useSaveShortcut(submitForm, canSubmit && canReceive);
   const dirty =
     vendorInvoiceText !== '' || remarks !== '' || lineDrafts.some((d) => d.receivedQty !== '');
 
@@ -182,7 +185,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     );
   };
 
-  if (!perms.entry) {
+  if (!canReceive) {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
