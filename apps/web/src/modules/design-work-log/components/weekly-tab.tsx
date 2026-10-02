@@ -9,6 +9,17 @@ import { Panel } from '@/ui/data';
 import { useDesignWorkLogList } from '../api';
 import { addDays, dayName, localYmd, todayStr } from './work-log-shared';
 
+// The TOTAL row sticks to the bottom of the scroller (as on Backup), opaque so
+// rows scrolling under it do not show through, above the body's pinned first
+// column (z 4). Its first cell is pinned left too and sits one higher.
+const TOTAL_CELL: React.CSSProperties = {
+  position: 'sticky',
+  bottom: 0,
+  background: 'var(--bg4)',
+  zIndex: 5,
+};
+const TOTAL_LABEL_CELL: React.CSSProperties = { ...TOTAL_CELL, left: 0, zIndex: 6 };
+
 export function WeeklyTab(): React.JSX.Element {
   const [refDate, setRefDate] = useState(todayStr());
   const weekDates = useMemo(() => {
@@ -130,18 +141,18 @@ export function WeeklyTab(): React.JSX.Element {
                 );
               })}
               <tr style={{ background: 'var(--bg4)' }}>
-                <td className="fw-700" style={{ color: 'var(--blue)' }}>
+                <td className="fw-700" style={{ ...TOTAL_LABEL_CELL, color: 'var(--blue)' }}>
                   TOTAL
                 </td>
                 {weekDates.map((dt) => {
                   const ct = engineers.reduce((s, eng) => s + getHrs(eng, dt), 0);
                   return (
-                    <td key={dt} className="mono fw-700">
+                    <td key={dt} className="mono fw-700" style={TOTAL_CELL}>
                       {ct.toFixed(1)}
                     </td>
                   );
                 })}
-                <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                <td className="mono fw-700" style={{ ...TOTAL_CELL, color: 'var(--blue)' }}>
                   {gt.toFixed(1)}h
                 </td>
               </tr>

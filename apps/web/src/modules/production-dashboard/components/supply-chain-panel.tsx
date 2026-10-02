@@ -109,7 +109,6 @@ export function SupplyChainPanel({
           emptyText={
             allZero ? 'Nothing to report in the supply chain.' : 'No items below reorder level.'
           }
-          frozen
         />
       </Panel>
     </>

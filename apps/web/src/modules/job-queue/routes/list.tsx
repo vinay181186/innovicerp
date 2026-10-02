@@ -91,18 +91,25 @@ function JobQueuePage(): React.JSX.Element {
   // the last response (a cold deep link first asks for a 1-row page to learn it).
   const [machineIdByCode, setMachineIdByCode] = useState<Map<string, string>>(new Map());
   const machineId = selectedMachineCode ? machineIdByCode.get(selectedMachineCode) : undefined;
-  const waitingForMachineId = selectedMachineCode !== '' && machineId === undefined;
+  const resolvingMachine = selectedMachineCode !== '' && machineId === undefined;
 
   const { data, isLoading, isError, error } = useJobQueue({
     machineId,
     search: search.search,
-    limit: waitingForMachineId ? 1 : LIST_PAGE_SIZE,
-    offset: waitingForMachineId ? 0 : pageOffset(search.page),
+    limit: resolvingMachine ? 1 : LIST_PAGE_SIZE,
+    offset: resolvingMachine ? 0 : pageOffset(search.page),
   });
   const moveMut = useMoveJobQueueOp();
   const backfillMut = useBackfillMachineIds();
 
   const machines = useMemo(() => data?.machines ?? [], [data?.machines]);
+  // The lookup answered (every response carries ALL machines) and the URL's
+  // code is not among them: stop waiting and say so, never spin forever.
+  const machineNotFound =
+    resolvingMachine &&
+    data !== undefined &&
+    !machines.some((m) => m.machineCode === selectedMachineCode);
+  const waitingForMachineId = resolvingMachine && !machineNotFound;
   useEffect(() => {
     if (machines.length === 0) return;
     setMachineIdByCode((prev) => {
@@ -117,7 +124,7 @@ function JobQueuePage(): React.JSX.Element {
         : null,
     [machines, selectedMachineCode],
   );
-  const total = waitingForMachineId ? undefined : data?.total;
+  const total = waitingForMachineId ? undefined : machineNotFound ? 0 : data?.total;
 
   const setPage = useCallback(
     (p: number): void => {
@@ -131,17 +138,22 @@ function JobQueuePage(): React.JSX.Element {
   // code order). A picked machine with nothing pending shows its own
   // "no pending jobs" empty state.
   const sheetRows = useMemo(
-    () => (waitingForMachineId ? [] : flattenQueue(selectedMachine ? [selectedMachine] : machines)),
-    [waitingForMachineId, selectedMachine, machines],
+    () =>
+      waitingForMachineId || machineNotFound
+        ? []
+        : flattenQueue(selectedMachine ? [selectedMachine] : machines),
+    [waitingForMachineId, machineNotFound, selectedMachine, machines],
   );
 
   const today = todayIst();
   const columns = useMemo(() => jobQueueColumns({ today }), [today]);
-  const emptyText = selectedMachine
-    ? `✓ No pending jobs for ${selectedMachine.machineCode}`
-    : searching
-      ? 'No pending operations match.'
-      : 'No pending operations.';
+  const emptyText = machineNotFound
+    ? `Machine ${selectedMachineCode} not found.`
+    : selectedMachine
+      ? `✓ No pending jobs for ${selectedMachine.machineCode}`
+      : searching
+        ? 'No pending operations match.'
+        : 'No pending operations.';
 
   const setMachine = (code: string | null): void => {
     void navigate({ search: (prev) => ({ ...prev, machine: code ?? undefined, page: 1 }) });
@@ -232,7 +244,6 @@ function JobQueuePage(): React.JSX.Element {
             // Manual queue order must stay — no browser sort/filter on top
             // of the ▲/▼ reorder (the page's own search already narrows).
             sortFilter={false}
-            frozen
             groupRow={(r, _i, prev) =>
               prev && prev.queueMachine.machineId === r.queueMachine.machineId ? null : (
                 <MachineGroupHeading m={r.queueMachine} />

@@ -208,32 +208,34 @@ export function AlertsTab({
 
       <Panel fill bodyPadding="none">
         {sub === 'unlogged' ? (
+          // Own `key` per sub-tab: each table is a fresh instance, so one
+          // tab's sort / filter never carries over to the next.
           <DataTable<DayRow>
+            key="unlogged"
             columns={DATE_COLS}
             // The list has always shown the first 30 (the count is the full one).
             rows={unlogged.slice(0, 30)}
             rowKey={(u) => `${u.date}:${u.engineer}`}
             loading={isLoading}
             emptyText="No unlogged working days."
-            frozen
           />
         ) : sub === 'low' ? (
           <DataTable<DayRow>
+            key="low"
             columns={LOW_COLS}
             rows={lowHours}
             rowKey={(u) => `${u.date}:${u.engineer}`}
             loading={isLoading}
             emptyText="No low-hour days."
-            frozen
           />
         ) : (
           <DataTable<UtilRow>
+            key="util"
             columns={UTIL_COLS}
             rows={utilisation}
             rowKey={(u) => u.engineer}
             loading={isLoading}
             emptyText="No work logged in the last 10 working days."
-            frozen
           />
         )}
       </Panel>

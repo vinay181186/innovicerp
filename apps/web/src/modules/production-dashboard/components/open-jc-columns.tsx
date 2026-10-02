@@ -106,8 +106,15 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
   ];
 }
 
-/** The card's click, now the row's ⋯: open Op Entry for this job card. */
-export function OpenJcRowMenu({ jc }: { jc: ProductionDashboardJc }): React.JSX.Element {
+/** The card's click, now the row's ⋯: open Op Entry for this job card.
+ *  Hidden without op_entry entry rights (`canOpEntry`, the page's gate). */
+export function OpenJcRowMenu({
+  jc,
+  canOpEntry,
+}: {
+  jc: ProductionDashboardJc;
+  canOpEntry: boolean;
+}): React.JSX.Element {
   return (
     <RowMenu
       renderLink={renderJcOpsLink}
@@ -118,6 +125,7 @@ export function OpenJcRowMenu({ jc }: { jc: ProductionDashboardJc }): React.JSX.
           icon: 'play',
           group: 'workflow',
           to: `/op-entry?${new URLSearchParams({ jc: jc.code }).toString()}`,
+          hidden: !canOpEntry,
         },
       ]}
     />

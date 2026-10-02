@@ -154,7 +154,6 @@ export function EntryTab(): React.JSX.Element {
           rowKey={(l) => l.id}
           loading={isLoading}
           emptyText="No work logged yet."
-          frozen
           groupRow={(l, _i, prev) => {
             if (prev && prev.logDate === l.logDate) return null;
             const h = dayHrs.get(l.logDate) ?? 0;

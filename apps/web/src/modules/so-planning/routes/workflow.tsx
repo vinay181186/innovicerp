@@ -156,6 +156,17 @@ function PlanningWorkflowPage(): JSX.Element {
   const searching = searchTerm !== '' && !soId;
   const match = useMatchingLines(searchTerm, searching ? visibleSos : []);
   const tab = searching && tabParam === 'lines' ? 'lines' : 'orders';
+  // The term lives only in page state, so a Refresh starts with none: a
+  // leftover ?tab=lines is dropped so the URL never names a tab not shown.
+  useEffect(() => {
+    if (searchTerm === '' && tabParam === 'lines') {
+      void navigate({
+        to: '/planning',
+        search: (prev) => ({ ...prev, tab: undefined }),
+        replace: true,
+      });
+    }
+  }, [searchTerm, tabParam, navigate]);
   const setTab = (t: string): void => {
     void navigate({
       to: '/planning',
@@ -239,7 +250,11 @@ function PlanningWorkflowPage(): JSX.Element {
               under both: the matching lines are the lines of the orders on the
               page shown, so Next moves both. */}
           {tab === 'lines' ? (
-            visibleSos.length > 0 ? (
+            // The term's orders are still loading (or the list still shows the
+            // last term's page): never claim "no lines match" yet.
+            soList.isLoading || soList.isPlaceholderData ? (
+              <PageState state="loading" message="Loading…" />
+            ) : visibleSos.length > 0 ? (
               <SearchResults
                 term={searchTerm}
                 sos={visibleSos}

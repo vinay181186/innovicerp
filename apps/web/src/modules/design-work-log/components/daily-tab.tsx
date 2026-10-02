@@ -216,7 +216,6 @@ export function DailyTab(): React.JSX.Element {
           rowKey={(l) => l.id}
           loading={isLoading}
           emptyText="No entries yet."
-          frozen
           groupRow={(l, _i, prev) => {
             if (prev && prev.engineerText === l.engineerText) return null;
             const et = engHrs.get(l.engineerText) ?? 0;

@@ -10,7 +10,6 @@
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { MachineLoadOp } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { useMemo } from 'react';
 import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DataTable, Panel } from '@/ui/data';
@@ -26,7 +25,7 @@ export interface PendingMachine {
   name: string;
 }
 
-interface PendingRow {
+export interface PendingRow {
   op: MachineLoadOp;
   machine: PendingMachine;
   /** Ops in this machine's group / how many of them are running — the
@@ -37,10 +36,12 @@ interface PendingRow {
 
 /** Machines (in their own order) → their pending ops, flattened for the one
  *  table; plus the machines with nothing pending. */
-export function groupPendingOps(
-  machines: PendingMachine[],
-  ops: MachineLoadOp[],
-): { rows: PendingRow[]; idle: PendingMachine[] } {
+export interface PendingGroups {
+  rows: PendingRow[];
+  idle: PendingMachine[];
+}
+
+export function groupPendingOps(machines: PendingMachine[], ops: MachineLoadOp[]): PendingGroups {
   const byMachine = new Map<string, MachineLoadOp[]>();
   for (const op of ops) {
     if (!op.machineId) continue;
@@ -156,23 +157,21 @@ function MachineHeading({ row }: { row: PendingRow }): React.JSX.Element {
 }
 
 /** Machines that have at least one pending op — the tab's count. */
-export function countBusyMachines(machines: PendingMachine[], ops: MachineLoadOp[]): number {
-  return groupPendingOps(machines, ops).rows.reduce(
-    (seen, r) => seen.add(r.machine.machineId),
-    new Set<string>(),
-  ).size;
+export function countBusyMachines(rows: PendingRow[]): number {
+  return rows.reduce((seen, r) => seen.add(r.machine.machineId), new Set<string>()).size;
 }
 
+/** `grouped` is the page's one `groupPendingOps` result (also its tab count). */
 export function MachinePendingPanel({
-  machines,
-  ops,
+  grouped,
+  machineCount,
   isLoading,
 }: {
-  machines: PendingMachine[];
-  ops: MachineLoadOp[];
+  grouped: PendingGroups;
+  machineCount: number;
   isLoading: boolean;
 }): React.JSX.Element {
-  const { rows, idle } = useMemo(() => groupPendingOps(machines, ops), [machines, ops]);
+  const { rows, idle } = grouped;
   return (
     <>
       {idle.length > 0 && rows.length > 0 ? (
@@ -195,9 +194,8 @@ export function MachinePendingPanel({
           columns={COLUMNS}
           rows={rows}
           rowKey={(r) => `${r.machine.machineId}:${r.op.jcOpId}`}
-          loading={isLoading && machines.length === 0}
-          emptyText={machines.length === 0 ? 'No Machines yet.' : 'No pending work on any machine.'}
-          frozen
+          loading={isLoading && machineCount === 0}
+          emptyText={machineCount === 0 ? 'No Machines yet.' : 'No pending work on any machine.'}
           groupRow={(r, _i, prev) =>
             prev && prev.machine.machineId === r.machine.machineId ? null : (
               <MachineHeading row={r} />

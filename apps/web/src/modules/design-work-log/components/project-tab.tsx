@@ -110,7 +110,6 @@ export function ProjectTab(): React.JSX.Element {
           rowKey={(p) => p.id}
           loading={isLoading}
           emptyText="No work logged."
-          frozen
         />
       </Panel>
     </>

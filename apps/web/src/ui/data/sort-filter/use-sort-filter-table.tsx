@@ -49,7 +49,11 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
   const on =
     store !== null &&
     input.sortFilter !== false &&
-    (input.sortFilter === true || (!input.editable && input.density !== 'compact'));
+    (input.sortFilter === true || (!input.editable && input.density !== 'compact')) &&
+    // Group headings (ADR-203) follow the row order the screen gave; a browser
+    // sort / filter would split the groups and repeat their headings. A
+    // grouped table sorts and filters on the server or not at all.
+    (input.groupRow === undefined || input.sortFilterServer !== undefined);
   // SERVER mode: the page owns the state and the rows are already the
   // server's answer — a partial footer (more pages / a cap) does not matter.
   const server = on ? input.sortFilterServer : undefined;

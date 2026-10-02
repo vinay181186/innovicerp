@@ -23,8 +23,8 @@
 //    are grouped by machine for display only.
 //  - "Supply Snapshot" reads supplyChain on GET /production-dashboard.
 
-import { createRoute } from '@tanstack/react-router';
-import { useCallback, useState } from 'react';
+import { createRoute, Link } from '@tanstack/react-router';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -37,7 +37,11 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation/TabStrip';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { useMachineLoading } from '@/modules/machine-loading/api';
-import { countBusyMachines, MachinePendingPanel } from '../components/machine-pending-panel';
+import {
+  countBusyMachines,
+  groupPendingOps,
+  MachinePendingPanel,
+} from '../components/machine-pending-panel';
 import { OpenJcRowMenu, openJcColumns } from '../components/open-jc-columns';
 import {
   PROD_READY_DEFAULT_HIDDEN,
@@ -101,13 +105,18 @@ function ProductionDashboardPage(): React.JSX.Element {
   useClampPage(readyPage, ready.data?.total, onReadyPage);
   const readyToProcess = ready.data?.items ?? [];
   const readyTotal = ready.data?.total ?? 0;
-  // ▶ Start / ✚ Log on the Ready rows open Op Entry — the same gate the Job
-  // Queue uses for the same two links.
+  // ▶ Start / ✚ Log on the Ready rows and the Open JC ⋯ Op Entry open Op
+  // Entry — the same gate the Job Queue uses for the same links.
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
 
-  const machines = machine.data?.machines ?? [];
-  const machineOps = machine.data?.ops ?? [];
+  // Grouped ONCE per machine-loading response: the tab count and the panel
+  // both read this result.
+  const machineCount = machine.data?.machines.length ?? 0;
+  const machineGroups = useMemo(
+    () => groupPendingOps(machine.data?.machines ?? [], machine.data?.ops ?? []),
+    [machine.data],
+  );
 
   return (
     <div className="page-fill">
@@ -166,7 +175,7 @@ function ProductionDashboardPage(): React.JSX.Element {
               {
                 key: 'machines',
                 label: 'Machine Pending',
-                count: machine.data ? countBusyMachines(machines, machineOps) : null,
+                count: machine.data ? countBusyMachines(machineGroups.rows) : null,
               },
               { key: 'supply', label: 'Supply Snapshot' },
             ]}
@@ -190,7 +199,6 @@ function ProductionDashboardPage(): React.JSX.Element {
                   rowClassName={prodReadyRowTint}
                   rowMenu={(op) => prodReadyRowMenu(op, canOpEntry)}
                   renderLink={renderJcOpsLink}
-                  frozen
                 />
               </Panel>
               <ListFooter
@@ -203,7 +211,15 @@ function ProductionDashboardPage(): React.JSX.Element {
             </>
           ) : tab === 'jcs' ? (
             <>
-              <Panel fill bodyPadding="none">
+              <Panel
+                fill
+                bodyPadding="none"
+                actions={
+                  <Link to="/job-cards" className="btn btn-ghost btn-sm">
+                    All JCs →
+                  </Link>
+                }
+              >
                 <DataTable
                   tableKey={TABLE_KEYS.prodDashboardOpenJcs}
                   columns={JC_COLUMNS}
@@ -215,8 +231,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                     void navigate({ to: '/job-cards/$id', params: { id: jc.jobCardId } })
                   }
                   rowActionsWidth="1%"
-                  rowActions={(jc) => <OpenJcRowMenu jc={jc} />}
-                  frozen
+                  rowActions={(jc) => <OpenJcRowMenu jc={jc} canOpEntry={canOpEntry} />}
                 />
               </Panel>
               <ListFooter
@@ -229,8 +244,8 @@ function ProductionDashboardPage(): React.JSX.Element {
             </>
           ) : tab === 'machines' ? (
             <MachinePendingPanel
-              machines={machines}
-              ops={machineOps}
+              grouped={machineGroups}
+              machineCount={machineCount}
               isLoading={machine.isLoading}
             />
           ) : (

@@ -17,14 +17,20 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 
-// The Total row sticks to the bottom of the table's scroller (the first column
-// is already sticky-left, so `bottom` is added to its sticky position) and is
-// opaque so rows scrolling under it do not show through.
+// The Total row sticks to the bottom of the table's scroller and is opaque so
+// rows scrolling under it do not show through. It sits above the body's pinned
+// first column (z 4), like the header (5–6). The theme pins only thead/tbody
+// first cells, so the "Total" label pins itself left and sits one higher.
 const TOTAL_CELL: React.CSSProperties = {
   position: 'sticky',
   bottom: 0,
   background: 'var(--bg4)',
-  zIndex: 2,
+  zIndex: 5,
+};
+const TOTAL_LABEL_CELL: React.CSSProperties = {
+  ...TOTAL_CELL,
+  left: 0,
+  zIndex: 6,
 };
 
 interface BackupStat {
@@ -198,7 +204,7 @@ function BackupPage(): React.JSX.Element {
             </tbody>
             <tfoot>
               <tr style={{ fontWeight: 700 }}>
-                <td style={TOTAL_CELL}>Total</td>
+                <td style={TOTAL_LABEL_CELL}>Total</td>
                 <td className="td-ctr mono" style={TOTAL_CELL}>
                   {total.toLocaleString('en-IN')}
                 </td>
