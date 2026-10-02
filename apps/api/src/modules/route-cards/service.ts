@@ -86,6 +86,9 @@ import {
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { emitActivityLog } from '../activity-log/service';
+// T2 — push a new card's raw material onto that item's blank, waiting plans.
+// The lookup is shared with the plan side's T1 default (ONE route-card query).
+import { backfillPlansFromRouteCard, readRouteCardRawMaterial } from '../plans/rm-backfill';
 import type {
   CreateRouteCardInput,
   CreateRouteCardOpInput,
@@ -945,6 +948,21 @@ export async function createRouteCard(
       companyId,
       user,
     );
+
+    // T2 (plan-rm-backfill) — the trigger that closes the designed
+    // `route_card_pending` path: a plan may be made FIRST and this card AFTER,
+    // and until now nothing carried the card's raw material back to the
+    // waiting plan. The plan kept its blanks for ever, so Create Production
+    // Order (which reads the PLAN's stored snapshot) showed nothing even
+    // though the card had EN24 / DIA 32.
+    //
+    // Fills BLANKS only, never a plan whose Job Card exists, inside THIS
+    // transaction — a failed backfill rolls the new card back with it. The
+    // raw material is read back through the one shared lookup (newest card
+    // first, which is the card just inserted above), so plan and card can
+    // never be filled from two different queries.
+    const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId);
+    if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
 
     return loadRouteCardDetail(tx, header.id, companyId);
   });

@@ -156,12 +156,30 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const NO_RAW_MATERIAL =
     'Raw Material Available is required. Tick it once the store confirms the material.';
 
+  // The PLAN is the only source of raw material for this order: the Production
+  // Order and its Job Card copy the Grade and Size off the plan, never off the
+  // route card. A plan saved before its route card existed can carry neither
+  // (PLN-0001 on production: both null) and the recap below showed that as a
+  // bare "—" with no explanation — the material simply looked like it had not
+  // loaded. Say it instead, and refuse the confirmation tick: "material is in
+  // the store" against a plan that names no material confirms nothing.
+  const planHasRmGrade = Boolean(
+    plan && (plan.rawMaterialGradeText?.trim() || plan.rawMaterialGradeId),
+  );
+  const planHasRmSize = Boolean(
+    plan && (plan.rawMaterialSizeText?.trim() || plan.rawMaterialSizeId),
+  );
+  const planHasNoRawMaterial = Boolean(plan) && !planHasRmGrade && !planHasRmSize;
+  const NO_PLAN_RAW_MATERIAL =
+    'This plan has no raw material — set the Grade and Size on the plan first.';
+
   const canSubmit =
     Boolean(plan) &&
     Boolean(routeCardId) &&
     /^\d{4}-\d{2}-\d{2}$/.test(targetDate) &&
     orderQtyValid &&
     rawMaterialAvailable &&
+    !planHasNoRawMaterial &&
     !noRouteCard &&
     !directPurchase;
 
@@ -206,9 +224,11 @@ function ProductionOrderNewPage(): React.JSX.Element {
             ? 'PRO Target Date is required.'
             : orderQtyError
               ? orderQtyError
-              : !rawMaterialAvailable
-                ? NO_RAW_MATERIAL
-                : undefined;
+              : planHasNoRawMaterial
+                ? NO_PLAN_RAW_MATERIAL
+                : !rawMaterialAvailable
+                  ? NO_RAW_MATERIAL
+                  : undefined;
 
   // FLOW FIX: "create it" opens the Route Card form already on this plan's
   // item (route-cards/new reads ?itemId=&itemCode=&itemName=), so the planner
@@ -464,17 +484,28 @@ function ProductionOrderNewPage(): React.JSX.Element {
                 alignItems: 'center',
                 gap: 8,
                 color: 'var(--text)',
-                cursor: 'pointer',
+                cursor: planHasNoRawMaterial ? 'not-allowed' : 'pointer',
               }}
             >
               <input
                 id="po-rm-available"
                 type="checkbox"
                 checked={rawMaterialAvailable}
+                disabled={planHasNoRawMaterial}
+                title={planHasNoRawMaterial ? NO_PLAN_RAW_MATERIAL : undefined}
                 onChange={(e) => setRawMaterialAvailable(e.target.checked)}
               />
               The material for this order is in the store
             </label>
+            {/* Said here, beside the control it blocks, rather than left as an
+                empty RM Grade / RM Size in the recap above. */}
+            {planHasNoRawMaterial ? (
+              <div style={{ marginTop: 6 }}>
+                <Banner tone="warn" role="alert" flush>
+                  ⚠ {NO_PLAN_RAW_MATERIAL}
+                </Banner>
+              </div>
+            ) : null}
           </div>
 
           <div className="form-grp f-full">
