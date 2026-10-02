@@ -161,12 +161,12 @@ export const jobCardListItemSchema = z.object({
   rawMaterialItemId: z.string().uuid().nullable().default(null),
   rawMaterialItemCode: z.string().nullable().default(null),
   rmQtyPerPiece: z.number().nullable().default(null),
-  // R1 (ADR-194): customer-material roll-up for a JW-sourced JC. Null on a
-  // regular (own-material) JC. Needed = rmQtyPerPiece × orderQty (from the
-  // ADR-193 route-card RM); Received/Issued/Returned come from the party store
-  // ledger for this JWSO line; Balance = received − issued − returned.
-  // Fix wave 2 (S9): up to 3 decimals — customer material is often KG / MTR,
-  // and "RM needed" was rounded to a whole number (2.4 KG → 2).
+  // R1 (ADR-194) + ADR-203: customer-material roll-up for a JW-sourced JC. Null
+  // on a regular (own-material) JC. `needed` = this JC's qty (owner D1: one RM
+  // piece per finished part). received / issued / returned / balance are the
+  // JWSO LINE's totals (accepted at QC / issued net of returns to store / good
+  // pieces returned to the customer / register balance). The four *Qty fields
+  // are THIS Job Card's own figures.
   customerMaterial: z
     .object({
       needed: z.number().nonnegative().nullable(),
@@ -174,6 +174,10 @@ export const jobCardListItemSchema = z.object({
       issued: z.number().nonnegative(),
       returned: z.number().nonnegative(),
       balance: z.number(),
+      issuedToJcQty: z.number().nonnegative().default(0),
+      returnedToStoreQty: z.number().nonnegative().default(0),
+      usedQty: z.number().nonnegative().default(0),
+      onJcQty: z.number().nonnegative().default(0),
     })
     .nullable()
     .default(null),

@@ -1,6 +1,9 @@
 // Edit Customer Material modal.
-// Split out of routes/list.tsx (ADR-199 table-standard conversion, 2026-10-01).
-// Behaviour unchanged from the original in-file EditPartyMaterialModal.
+//
+// ADR-203: only the fields the user actually changed are sent. Customer,
+// Customer RM item and UOM are fixed once the material has any register
+// movement (received / in stock / issued / returned) — the server refuses a
+// change then, so the screen locks those three and says why.
 
 import {
   PARTY_MATERIAL_UOMS,
@@ -11,6 +14,7 @@ import {
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useClientsList } from '../../clients/api';
+import { useItemsList } from '../../items/api';
 import { useUpdatePartyMaterial } from '../api';
 import { ErrorBox, Field, ModalActions, ModalShell } from './party-material-modal-shell';
 
@@ -21,17 +25,22 @@ export function EditPartyMaterialModal({
   row: PartyMaterialListItem;
   onClose: () => void;
 }): React.JSX.Element {
+  const initialUom = (
+    PARTY_MATERIAL_UOMS.includes(row.uom as PartyMaterialUom) ? row.uom : 'NOS'
+  ) as PartyMaterialUom;
   const [name, setName] = useState(row.name);
   const [description, setDescription] = useState(row.description ?? '');
   const [material, setMaterial] = useState(row.material ?? '');
-  const [uom, setUom] = useState<PartyMaterialUom>(
-    (PARTY_MATERIAL_UOMS.includes(row.uom as PartyMaterialUom)
-      ? row.uom
-      : 'NOS') as PartyMaterialUom,
-  );
+  const [uom, setUom] = useState<PartyMaterialUom>(initialUom);
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState<string | null>(row.clientId);
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemId, setItemId] = useState<string | null>(row.itemId);
   const [err, setErr] = useState<string | null>(null);
+
+  // Any register movement fixes Customer / Customer RM / UOM (server rule).
+  const hasMovement =
+    row.stockQty > 0 || row.receivedQty > 0 || row.issuedQty > 0 || row.returnedQty > 0;
 
   const { data: clientsData, isFetching: clientsFetching } = useClientsList({
     search: clientSearch.trim() || undefined,
@@ -50,6 +59,25 @@ export function EditPartyMaterialModal({
     return clientsData?.clients.find((c) => c.id === clientId) ?? null;
   }, [clientId, clientsData, row]);
 
+  // Customer RM — Party Supplied Material (-RM) items only.
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList(
+    {
+      ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
+      itemType: 'party_supplied_material',
+      limit: 50,
+      offset: 0,
+    },
+    { enabled: !hasMovement },
+  );
+  const itemLabel = useMemo(() => {
+    if (itemId === row.itemId) {
+      const code = row.itemCode ?? row.itemCodeText;
+      return code ? `${code}${row.itemName ? ` — ${row.itemName}` : ''}` : undefined;
+    }
+    const it = itemsData?.items.find((i) => i.id === itemId);
+    return it ? `${it.code} — ${it.name}` : undefined;
+  }, [itemId, itemsData, row]);
+
   const updateMut = useUpdatePartyMaterial();
 
   const onSave = (): void => {
@@ -63,13 +91,20 @@ export function EditPartyMaterialModal({
       setErr('Customer is required.');
       return;
     }
-    const input: UpdatePartyMaterialInput = {
-      name: nm,
-      uom,
-      clientId,
-    };
-    input.description = description.trim();
-    input.material = material.trim();
+    // Only what changed goes to the server.
+    const input: UpdatePartyMaterialInput = {};
+    if (nm !== row.name) input.name = nm;
+    if (description.trim() !== (row.description ?? '')) input.description = description.trim();
+    if (material.trim() !== (row.material ?? '')) input.material = material.trim();
+    if (!hasMovement) {
+      if (uom !== initialUom) input.uom = uom;
+      if (clientId !== row.clientId) input.clientId = clientId;
+      if (itemId && itemId !== row.itemId) input.itemId = itemId;
+    }
+    if (Object.keys(input).length === 0) {
+      onClose();
+      return;
+    }
     updateMut.mutate(
       { id: row.id, input },
       {
@@ -80,6 +115,10 @@ export function EditPartyMaterialModal({
     );
   };
 
+  const lockHint = hasMovement
+    ? 'Fixed — this material already has stock movement (received, issued or returned).'
+    : null;
+
   return (
     <ModalShell onClose={onClose} title={`Edit Customer Material ${row.code}`}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -89,14 +128,17 @@ export function EditPartyMaterialModal({
             className="innovic-input"
             value={row.code}
             readOnly
-            style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+            style={{ background: 'var(--bg4)', color: 'var(--text3)', maxWidth: '14ch' }}
           />
         </Field>
         <Field label="UOM">
           <select
             className="innovic-select"
             value={uom}
+            disabled={hasMovement}
+            title={lockHint ?? undefined}
             onChange={(e) => setUom(e.target.value as PartyMaterialUom)}
+            style={{ maxWidth: '12ch' }}
           >
             {PARTY_MATERIAL_UOMS.map((u) => (
               <option key={u} value={u}>
@@ -106,16 +148,30 @@ export function EditPartyMaterialModal({
           </select>
         </Field>
 
+        {lockHint ? (
+          <div className="text3" style={{ gridColumn: 'span 2', fontSize: 11 }}>
+            Customer, Customer RM and UOM are fixed — this material already has stock movement
+            (received, issued or returned).
+          </div>
+        ) : null}
+
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Item Code">
-            <input
-              type="text"
-              className="innovic-input"
-              value={`${row.itemCode ?? row.itemCodeText ?? '—'}${
-                row.itemName ? ` — ${row.itemName}` : ''
-              }`}
-              readOnly
-              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+          <Field label="Customer RM">
+            <SearchableSelect
+              id="pmEditItem"
+              value={itemId}
+              onChange={setItemId}
+              onSearch={setItemSearch}
+              loading={itemsFetching}
+              disabled={hasMovement}
+              options={(itemsData?.items ?? []).map((i) => ({
+                id: i.id,
+                code: i.code,
+                name: i.name,
+              }))}
+              placeholder="🔍 Type the -RM item code or name…"
+              emptyText="No Party Supplied Material item matches"
+              valueLabel={itemLabel}
             />
           </Field>
         </div>
@@ -161,6 +217,7 @@ export function EditPartyMaterialModal({
               onChange={setClientId}
               onSearch={setClientSearch}
               loading={clientsFetching}
+              disabled={hasMovement}
               options={(clientsData?.clients ?? []).map((c) => ({
                 id: c.id,
                 code: c.code,

@@ -53,18 +53,20 @@ export type PartyMaterialListItem = z.infer<typeof partyMaterialListItemSchema>;
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
 export const createPartyMaterialInputSchema = z.object({
+  /** ADR-203: server-assigned (PM-#### under the party_materials series lock).
+   *  Accepted for old callers but ignored. */
   code: z
     .string()
     .trim()
-    .min(1)
     .max(32)
-    .regex(/^PM-\d{4,}$/, 'Code must match PM-NNNN'),
+    .optional(),
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(500).optional(),
   material: z.string().trim().max(100).optional(),
   uom: partyMaterialUomSchema.default('NOS'),
   clientId: z.string().uuid(),
-  itemId: z.string().uuid().optional(),
+  /** ADR-203: REQUIRED and must be a Party Supplied Material (`-RM`) item. */
+  itemId: z.string().uuid(),
 });
 export type CreatePartyMaterialInput = z.infer<typeof createPartyMaterialInputSchema>;
 
@@ -72,21 +74,14 @@ export const updatePartyMaterialInputSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(500).optional(),
   material: z.string().trim().max(100).optional(),
+  /** ADR-203: Customer, item and UOM are fixed once the material has any
+   *  register movement — the server refuses a change then. */
   uom: partyMaterialUomSchema.optional(),
   clientId: z.string().uuid().optional(),
-  itemId: z.string().uuid().nullable().optional(),
+  itemId: z.string().uuid().optional(),
 });
 export type UpdatePartyMaterialInput = z.infer<typeof updatePartyMaterialInputSchema>;
 
-/** R7 (ADR-194): return spare customer material to the customer. Caps at the
- *  current party-store balance (stockQty); posts a 'return' (out) row to the
- *  party stock ledger and bumps returnedQty. Reuses the jw_create permission. */
-export const returnPartyMaterialInputSchema = z.object({
-  qty: z.number().int().positive(),
-  jwLineId: z.string().uuid().optional(),
-  reason: z.string().trim().min(1).max(500),
-});
-export type ReturnPartyMaterialInput = z.infer<typeof returnPartyMaterialInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

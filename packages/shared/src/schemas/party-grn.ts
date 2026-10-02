@@ -28,7 +28,12 @@ export const partyGrnLineSchema = z.object({
   rejectedQty: z.number().int().nonnegative(),
   rejectReason: z.string().nullable(),
   qcBy: z.string().uuid().nullable(),
+  /** ADR-203 (owner D4): QC is a SEPARATE step. Null = waiting for Incoming QC;
+   *  accepted/rejected are 0 until then and nothing is in the register yet. */
   qcAt: z.string().nullable(),
+  /** ADR-203 (owner D3): rejected pieces already sent back on a Customer
+   *  Material Return. Held = rejectedQty − rejectedReturnedQty. */
+  rejectedReturnedQty: z.number().int().nonnegative().default(0),
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -62,8 +67,12 @@ export type PartyGrn = z.infer<typeof partyGrnSchema>;
 export const partyGrnListItemSchema = partyGrnSchema.extend({
   /** Joined client name (from clients.name) — falls back to client_code_text. */
   clientName: z.string().nullable(),
-  /** Aggregate sum of receivedQty across all lines. */
+  /** Σ receivedQty (accepted + rejected + waiting for QC) across all lines. */
   totalReceivedQty: z.number().int().nonnegative(),
+  /** ADR-203: Σ acceptedQty across all lines (what entered the register). */
+  totalAcceptedQty: z.number().int().nonnegative().default(0),
+  /** ADR-203: lines still waiting for Incoming QC. 0 = QC done. */
+  qcPendingLines: z.number().int().nonnegative().default(0),
   /** Number of line items. */
   linesCount: z.number().int().nonnegative(),
 });
@@ -76,33 +85,36 @@ export type PartyGrnDetail = z.infer<typeof partyGrnDetailSchema>;
 
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
-export const createPartyGrnLineInputSchema = z
+export const createPartyGrnLineInputSchema = z.object({
+  /** ADR-203: the JWSO line this material is for (real id). The customer
+   *  material itself comes from that line (its `<item>-RM` party material) —
+   *  it is not picked separately, so it can never mismatch the part. */
+  jwLineId: z.string().uuid(),
+  receivedQty: z.number().int().positive(),
+  remarks: z.string().trim().max(500).optional(),
+});
+export type CreatePartyGrnLineInput = z.infer<typeof createPartyGrnLineInputSchema>;
+
+/** ADR-203 (owner D4): Incoming QC on a Party GRN — a separate step, gated by
+ *  the Incoming QC permission (qc_incoming · entry). One entry per line still
+ *  waiting; accepted + rejected must equal received; a reason when anything is
+ *  rejected. Only the accepted qty enters the customer-material register;
+ *  rejected pieces are HELD until a Customer Material Return sends them back. */
+export const partyGrnQcLineInputSchema = z
   .object({
-    partyMaterialId: z.string().uuid(),
-    receivedQty: z.number().int().positive(),
-    /** ADR-102: REQUIRED. Which JWSO line this material is for. Every downstream
-     *  check keys off it — the order-qty cap here, and the first-op material gate
-     *  in op-entry. While it was optional, leaving it blank silently disabled
-     *  both. The service additionally verifies the line exists on that JWSO. */
-    jwLineNoText: z.string().trim().min(1).max(64),
-    /** R2 (ADR-194): incoming QC is COMPULSORY on every party GRN line — the
-     *  receiver must split the received qty into accepted + rejected here.
-     *  acceptedQty + rejectedQty must equal receivedQty; only acceptedQty
-     *  enters the party store. A reason is required when anything is rejected. */
+    lineId: z.string().uuid(),
     acceptedQty: z.number().int().nonnegative(),
-    rejectedQty: z.number().int().nonnegative().default(0),
+    rejectedQty: z.number().int().nonnegative(),
     rejectReason: z.string().trim().max(500).optional(),
-    remarks: z.string().trim().max(500).optional(),
-  })
-  .refine((l) => l.acceptedQty + l.rejectedQty === l.receivedQty, {
-    message: 'Accepted + Rejected must equal Received',
-    path: ['acceptedQty'],
   })
   .refine((l) => l.rejectedQty === 0 || (l.rejectReason?.length ?? 0) > 0, {
     message: 'A reject reason is required when any quantity is rejected',
     path: ['rejectReason'],
   });
-export type CreatePartyGrnLineInput = z.infer<typeof createPartyGrnLineInputSchema>;
+export const partyGrnQcInputSchema = z.object({
+  lines: z.array(partyGrnQcLineInputSchema).min(1),
+});
+export type PartyGrnQcInput = z.infer<typeof partyGrnQcInputSchema>;
 
 export const cancelPartyGrnInputSchema = z.object({
   reason: z.string().trim().min(1).max(500),

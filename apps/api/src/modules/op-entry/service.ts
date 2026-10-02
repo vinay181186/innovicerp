@@ -758,8 +758,9 @@ async function loadAvailability(
 // direct-production Job Cards (source_jw_line_id IS NULL) are never capped.
 // Returns null when no cap applies.
 export interface MaterialCap {
-  /** Qty the cap is measured against: ISSUED for gated JCs (ADR-103), RECEIVED
-   *  for pre-cutover ones that keep the old ADR-096/097 behaviour. */
+  /** Qty the cap is measured against: ISSUED (net of returns to store) for
+   *  gated JCs (ADR-103), ACCEPTED on the JWSO line for pre-cutover ones that
+   *  keep the old ADR-096/097 behaviour (ADR-203). */
   received: number;
   orderQty: number;
   shortfall: number;
@@ -783,16 +784,12 @@ export async function loadMaterialCap(
   const minSeq = firstRows[0]?.minSeq;
   if (minSeq == null || op.opSeq !== Number(minSeq)) return null;
 
-  // The JC must be JWSO-sourced; resolve its JW line + order qty + line count.
+  // The JC must be JWSO-sourced; resolve its JW line + order qty.
   const jcRows = (await tx.execute(sql`
     SELECT jc.order_qty        AS "orderQty",
-           jwl.line_no         AS "lineNo",
-           jwl.job_work_order_id AS "jwoId",
+           jwl.id              AS "jwLineId",
            jwo.code            AS "jwCode",
-           jc.client_material_gate AS "gated",
-           (SELECT COUNT(*) FROM public.job_work_order_lines l
-              WHERE l.job_work_order_id = jwl.job_work_order_id
-                AND l.deleted_at IS NULL) AS "lineCount"
+           jc.client_material_gate AS "gated"
     FROM public.job_cards jc
     JOIN public.job_work_order_lines jwl
       ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
@@ -803,25 +800,23 @@ export async function loadMaterialCap(
     LIMIT 1
   `)) as unknown as Array<{
     orderQty: number;
-    lineNo: number;
-    jwoId: string;
+    jwLineId: string;
     jwCode: string;
     gated: boolean;
-    lineCount: number;
   }>;
   const jc = jcRows[0];
   if (!jc) return null; // SO-sourced / no JW line → no client material to gate on.
 
   const orderQty = Number(jc.orderQty);
-  const lineCount = Number(jc.lineCount);
 
   // ADR-103: gated Job Cards measure against material ISSUED to THIS job card.
   // Receiving material is no longer enough — it must be handed to the job.
   // Job Cards created before the cutover keep the ADR-096/097 received-based
   // behaviour so live work is never frozen retroactively.
+  // ADR-203: pieces put back with "Return to store" are no longer on the card.
   if (jc.gated) {
     const issRows = (await tx.execute(sql`
-      SELECT COALESCE(SUM(qty), 0)::int AS "issued"
+      SELECT COALESCE(SUM(qty - returned_to_store_qty), 0)::int AS "issued"
       FROM public.party_material_issues
       WHERE job_card_id = ${op.jobCardId}::uuid AND deleted_at IS NULL
     `)) as unknown as Array<{ issued: number }>;
@@ -834,20 +829,18 @@ export async function loadMaterialCap(
       issuedBased: true,
     };
   }
-  // Material received for THIS part. Single-line JWSO → every receipt for the
-  // order belongs to the one line (robust even if the line-no text is blank).
-  // Multi-line JWSO → match on the recorded JW line number so one part's
-  // material never covers another part.
-  const lineFilter = lineCount > 1 ? sql`AND pgl.jw_line_no_text = ${String(jc.lineNo)}` : sql``;
+  // Pre-cutover cards: material ACCEPTED for THIS part (ADR-203) — summed by
+  // the JWSO line id, never by the line-number text, and never the received
+  // qty (rejected pieces cannot be worked; a line still waiting for Incoming
+  // QC carries accepted 0). A cancelled GRN is soft-deleted, so it drops out.
   const recRows = (await tx.execute(sql`
-    SELECT COALESCE(SUM(pgl.received_qty), 0)::int AS "received"
-    FROM public.party_grn pg
-    JOIN public.party_grn_lines pgl
-      ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
-    WHERE pg.company_id = ${companyId}::uuid
-      AND pg.deleted_at IS NULL
-      AND pg.job_work_order_id = ${jc.jwoId}::uuid
-      ${lineFilter}
+    SELECT COALESCE(SUM(pgl.accepted_qty), 0)::int AS "received"
+    FROM public.party_grn_lines pgl
+    JOIN public.party_grn pg
+      ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+    WHERE pgl.company_id = ${companyId}::uuid
+      AND pgl.deleted_at IS NULL
+      AND pgl.jw_line_id = ${jc.jwLineId}::uuid
   `)) as unknown as Array<{ received: number }>;
   const received = Number(recRows[0]?.received ?? 0);
   const shortfall = Math.max(0, orderQty - received);
@@ -862,9 +855,9 @@ export async function loadMaterialCap(
 export function materialCapMessage(cap: MaterialCap, allowed: number, asked: number): string {
   if (!cap.issuedBased) {
     return (
-      `Qty (${asked}) is more than customer material received. Only ${allowed} can be worked now ` +
-      `(Received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
-      `Record a Party GRN for the rest to continue.`
+      `Qty (${asked}) is more than customer material accepted. Only ${allowed} can be worked now ` +
+      `(Accepted ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
+      `Record a Party GRN and its Incoming QC for the rest to continue.`
     );
   }
   if (allowed <= 0) {
@@ -2229,8 +2222,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
                 `Issue material from Party Material Issue first (JWSO ${cap.jwCode}).`
               : `Cannot start — all ${cap.received} issued piece(s) are already accounted for. ` +
                 `Issue more customer material to continue (JWSO ${cap.jwCode}).`
-            : `No customer material available to start. Received ${cap.received} of ${cap.orderQty} ` +
-                `for this part (JWSO ${cap.jwCode}). Record a Party GRN first.`,
+            : `No customer material available to start. Accepted ${cap.received} of ${cap.orderQty} ` +
+                `for this part (JWSO ${cap.jwCode}). Record a Party GRN and its Incoming QC first.`,
         );
       }
     }

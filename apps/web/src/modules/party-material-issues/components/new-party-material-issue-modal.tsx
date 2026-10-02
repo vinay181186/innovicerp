@@ -1,18 +1,21 @@
 // New Customer Material Issue modal (ADR-079) — issues client-supplied material
-// to a Job Card for in-house machining. Split out of party-material-issue-view.tsx
-// (ADR-199, table standard 2026-10-01). Unchanged behaviour: the JWSO → JC →
-// Customer Material cascade, the auto-pick-when-one-fits helpers, the discard
-// guard and the server-side re-checks on Save.
+// to a Job Card for in-house machining.
+//
+// ADR-203: the material is no longer a free choice. Cascade JWSO → Job Card →
+// Customer RM, where the Customer RM is READ from the JWSO line the Job Card was
+// raised against (jc.sourceLink.jobWorkOrderLineId → that line's partyMaterial).
+// It is shown read-only and sent only once resolved; the server derives and
+// checks the same thing on Save.
 
 import { type CreatePartyMaterialIssueInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrder, useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
-import { partyMaterialFitsJwLine } from '@/modules/party-materials/fits-jw-line';
 import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
 import { useCreatePartyMaterialIssue } from '../api';
 import { Field } from './modal-field';
@@ -27,8 +30,10 @@ export function NewPartyMaterialIssueModal({
   const [jobWorkOrderId, setJobWorkOrderId] = useState<string | null>(null);
   const [jcSearch, setJcSearch] = useState('');
   const [jobCardId, setJobCardId] = useState<string | null>(null);
-  const [pmSearch, setPmSearch] = useState('');
-  const [partyMaterialId, setPartyMaterialId] = useState<string | null>(null);
+  // The JWSO line the picked Job Card draws on. Normally read off the JC; only
+  // picked by hand when the JC's own line cannot be found on the JWSO.
+  const [jcLineId, setJcLineId] = useState<string | null>(null);
+  const [manualLineId, setManualLineId] = useState<string>('');
   const [qty, setQty] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -41,11 +46,9 @@ export function NewPartyMaterialIssueModal({
   });
   const jwHeaders = jwQuery.data?.items ?? [];
 
-  // Cascade JWSO → JC → Party Material (party-material-issue-create#1). The
-  // picked JWSO / JC are remembered, since the pickers' option lists change
-  // with every search. The server still makes the same checks on Save.
+  // The picked JWSO is remembered, since the picker's option list changes with
+  // every search.
   const [pickedJw, setPickedJw] = useState<{ code: string; clientId: string | null } | null>(null);
-  const [pickedJcItemId, setPickedJcItemId] = useState<string | null>(null);
 
   // Only this JWSO's job cards: the JC search also matches the source JWSO
   // code, so with no JC typed the JWSO code brings its cards.
@@ -65,38 +68,39 @@ export function NewPartyMaterialIssueModal({
     [jcQuery.data, jobWorkOrderId],
   );
 
-  // ADR-195: the JWSO's own customer material (-rm item code) — a material
-  // pinned to it is valid for every job card on this JWSO.
+  // The JWSO's lines carry each line's Customer RM (ADR-203).
   const jwDetailQ = useJobWorkOrder(jobWorkOrderId ?? undefined);
-  const jwClientMaterial =
-    jwDetailQ.data && jwDetailQ.data.id === jobWorkOrderId ? jwDetailQ.data.clientMaterial : null;
+  const jwLines = useMemo(
+    () =>
+      jwDetailQ.data && jwDetailQ.data.id === jobWorkOrderId
+        ? [...jwDetailQ.data.lines].sort((a, b) => a.lineNo - b.lineNo)
+        : [],
+    [jwDetailQ.data, jobWorkOrderId],
+  );
 
-  // Only the JWSO customer's materials, and — once a JC is picked — only the
-  // ones for the part that JC makes or the JWSO's customer material (a
-  // material with no Item Code still shows). Same rule the API enforces.
-  const {
-    data: pmData,
-    isFetching: pmFetching,
-    isPlaceholderData: pmStale,
-  } = usePartyMaterialsList(
+  // Resolve the line: the JC's own source line; failing that the JWSO's only
+  // line; failing that the line the user picks.
+  const ownLine = jcLineId ? (jwLines.find((l) => l.id === jcLineId) ?? null) : null;
+  const needsLinePick = Boolean(jobCardId) && !ownLine && jwLines.length > 1;
+  const line =
+    ownLine ??
+    (jobCardId && jwLines.length === 1 ? (jwLines[0] ?? null) : null) ??
+    (needsLinePick ? (jwLines.find((l) => l.id === manualLineId) ?? null) : null);
+  const partyMaterialId = line?.partyMaterialId ?? null;
+
+  // Available stock of that material (the customer's materials, one fetch).
+  const { data: pmData } = usePartyMaterialsList(
     {
-      search: pmSearch.trim() || undefined,
+      search: undefined,
       ...(pickedJw?.clientId ? { clientId: pickedJw.clientId } : {}),
       limit: 200,
       offset: 0,
     },
-    { enabled: Boolean(jobWorkOrderId) },
+    { enabled: Boolean(partyMaterialId) },
   );
-  const pmAll = useMemo(
-    () =>
-      (pmData?.items ?? []).filter((p) =>
-        partyMaterialFitsJwLine(p, pickedJcItemId, jwClientMaterial),
-      ),
-    [pmData, pickedJcItemId, jwClientMaterial],
-  );
-  const selectedPm = useMemo(
-    () => pmAll.find((p) => p.id === partyMaterialId) ?? null,
-    [pmAll, partyMaterialId],
+  const material = useMemo(
+    () => (pmData?.items ?? []).find((p) => p.id === partyMaterialId) ?? null,
+    [pmData, partyMaterialId],
   );
 
   const onJwChange = (id: string | null): void => {
@@ -105,17 +109,17 @@ export function NewPartyMaterialIssueModal({
     setPickedJw(jw ? { code: jw.code, clientId: jw.clientId ?? null } : null);
     setJcSearch('');
     setJobCardId(null);
-    setPickedJcItemId(null);
-    setPmSearch('');
-    setPartyMaterialId(null);
+    setJcLineId(null);
+    setManualLineId('');
   };
-  const onJcChange = (id: string | null): void => {
+  const pickJc = (id: string | null): void => {
     setJobCardId(id);
-    setPickedJcItemId(jcItems.find((jc) => jc.id === id)?.itemId ?? null);
-    setPartyMaterialId(null);
+    const jc = jcItems.find((j) => j.id === id);
+    setJcLineId(jc?.sourceLink?.type === 'jw' ? jc.sourceLink.jobWorkOrderLineId : null);
+    setManualLineId('');
   };
 
-  // Auto-pick when only one fits — once per parent pick, so clearing it by
+  // Auto-pick the JC when only one fits — once per JWSO, so clearing it by
   // hand is not undone.
   const autoJcFor = useRef<string | null>(null);
   useEffect(() => {
@@ -126,7 +130,7 @@ export function NewPartyMaterialIssueModal({
     const only = jcItems.length === 1 ? jcItems[0] : undefined;
     if (only) {
       setJobCardId(only.id);
-      setPickedJcItemId(only.itemId);
+      setJcLineId(only.sourceLink?.type === 'jw' ? only.sourceLink.jobWorkOrderLineId : null);
     }
   }, [
     jobWorkOrderId,
@@ -137,15 +141,6 @@ export function NewPartyMaterialIssueModal({
     jcQuery.isPlaceholderData,
     jcItems,
   ]);
-  const autoPmFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!jobCardId || partyMaterialId || pmSearch.trim()) return;
-    if (!pmData || pmFetching || pmStale) return;
-    if (autoPmFor.current === jobCardId) return;
-    autoPmFor.current = jobCardId;
-    const only = pmAll.length === 1 ? pmAll[0] : undefined;
-    if (only) setPartyMaterialId(only.id);
-  }, [jobCardId, partyMaterialId, pmSearch, pmData, pmFetching, pmStale, pmAll]);
 
   const dirty = Boolean(jobWorkOrderId || qty.trim() || remarks.trim());
   const guard = useDiscardGuard(dirty, onClose);
@@ -162,22 +157,27 @@ export function NewPartyMaterialIssueModal({
       setErr('JC No. is required. Work cannot start without it.');
       return;
     }
-    if (!partyMaterialId) {
-      setErr('Customer Material is required.');
+    if (needsLinePick && !line) {
+      setErr('Pick the JWSO line this Job Card is for.');
+      return;
+    }
+    if (line && !line.partyMaterialId) {
+      setErr(`JWSO line ${line.lineNo} has no customer RM — save the JWSO first.`);
       return;
     }
     const q = Number(qty);
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Issue Qty must be 1 or more.');
+    if (!Number.isInteger(q) || q <= 0) {
+      setErr('Issue Qty must be a whole number, 1 or more.');
       return;
     }
     const input: CreatePartyMaterialIssueInput = {
       issueDate,
       jobWorkOrderId,
       jobCardId,
-      partyMaterialId,
       qty: q,
     };
+    // Sent only once resolved; the server derives it from the JC's line anyway.
+    if (partyMaterialId) input.partyMaterialId = partyMaterialId;
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
@@ -228,12 +228,14 @@ export function NewPartyMaterialIssueModal({
               className="innovic-input"
               value={issueDate}
               onChange={(e) => setIssueDate(e.target.value)}
+              style={{ maxWidth: '18ch' }}
             />
           </Field>
           <Field label="Issue Qty" required>
             <input
               type="number"
               min={1}
+              step={1}
               className="innovic-input"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
@@ -243,6 +245,7 @@ export function NewPartyMaterialIssueModal({
                 fontWeight: 700,
                 border: '2px solid var(--green)',
                 borderRadius: 4,
+                maxWidth: '12ch',
               }}
             />
           </Field>
@@ -271,7 +274,7 @@ export function NewPartyMaterialIssueModal({
               <SearchableSelect
                 id="pmi-jc"
                 value={jobCardId}
-                onChange={onJcChange}
+                onChange={pickJc}
                 onSearch={setJcSearch}
                 loading={jcQuery.isFetching}
                 disabled={!jobWorkOrderId}
@@ -284,35 +287,69 @@ export function NewPartyMaterialIssueModal({
             </Field>
           </div>
 
+          {needsLinePick ? (
+            <div style={{ gridColumn: 'span 2' }}>
+              <Field label="JWSO Line" required>
+                <select
+                  className="innovic-select"
+                  value={manualLineId}
+                  onChange={(e) => setManualLineId(e.target.value)}
+                >
+                  <option value="">Pick the line this Job Card is for…</option>
+                  {jwLines.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {`L${l.lineNo} · ${itemCodeWithRev(l.itemCodeText, l.revision)} · ${l.partName}`}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          ) : null}
+
+          {/* Customer RM — read-only, from the Job Card's JWSO line. */}
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Customer Material" required>
-              <SearchableSelect
-                id="pmi-material"
-                value={partyMaterialId}
-                onChange={setPartyMaterialId}
-                onSearch={setPmSearch}
-                loading={pmFetching}
-                disabled={!jobWorkOrderId}
-                emptyText="No material of this customer for this part"
-                placeholder={
-                  jobWorkOrderId
-                    ? '🔍 Select party material — type code or name…'
-                    : 'Pick the JWSO first'
-                }
-                options={pmAll.map((p) => ({
-                  id: p.id,
-                  code: p.code,
-                  name: `${p.name} · Available ${p.stockQty}`,
-                }))}
-              />
+            <Field label="Customer RM">
+              <div
+                className="innovic-input"
+                style={{
+                  background: 'var(--bg4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  minHeight: 32,
+                }}
+              >
+                {!jobCardId ? (
+                  <span className="text3">Pick the Job Card first</span>
+                ) : jwDetailQ.isLoading ? (
+                  <span className="text3">
+                    <Loader2 size={12} className="inline animate-spin" /> Loading…
+                  </span>
+                ) : !line ? (
+                  <span className="text3">—</span>
+                ) : !line.partyMaterialId ? (
+                  <span style={{ color: 'var(--amber2)' }}>
+                    No customer RM on JWSO line {line.lineNo} — save the JWSO first
+                  </span>
+                ) : (
+                  <>
+                    <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                      {line.rmItemCode ?? line.partyMaterialCode}
+                    </span>
+                    {material ? (
+                      <span className="text3" style={{ fontSize: 11 }}>
+                        {material.code} · {material.name}
+                      </span>
+                    ) : null}
+                  </>
+                )}
+              </div>
             </Field>
-            {selectedPm ? (
+            {material ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
                 Available:{' '}
-                <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
-                  {selectedPm.stockQty}
-                </span>{' '}
-                {selectedPm.uom}
+                <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{material.stockQty}</span>{' '}
+                {material.uom}
               </div>
             ) : null}
           </div>

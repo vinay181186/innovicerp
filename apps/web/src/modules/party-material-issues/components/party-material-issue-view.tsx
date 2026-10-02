@@ -28,6 +28,7 @@ import { CancelIssueModal } from './cancel-issue-modal';
 import { NewPartyMaterialIssueModal } from './new-party-material-issue-modal';
 import { partyMaterialIssueColumns } from './party-material-issue-columns';
 import { PartyMaterialIssueExpand } from './party-material-issue-expand';
+import { ReturnToStoreModal } from './return-to-store-modal';
 
 // ADR-201: 25 issues a page with Prev / Next (the page lives in this tab's
 // state — the tab has no route of its own). The search box and the column ▾
@@ -55,6 +56,7 @@ export function PartyMaterialIssueView({
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<PartyMaterialIssueListItem | null>(null);
+  const [returnRow, setReturnRow] = useState<PartyMaterialIssueListItem | null>(null);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -154,8 +156,8 @@ export function PartyMaterialIssueView({
         // the ▸ reveals Remarks. There is no detail page for an issue, so a row
         // is not clickable. Cancelled/reversed issues are soft-deleted and
         // filtered out by the API, so the only tint is the defensive cancelled
-        // wash. The one per-row action is Cancel, gated by canCancel exactly as
-        // the old ⋯ menu was.
+        // wash. Row ⋯: Return to store (ADR-203, canIssue) and Cancel
+        // (canCancel, as before).
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.partyMaterialIssues}
@@ -175,6 +177,20 @@ export function PartyMaterialIssueView({
             }
             onToggleExpanded={(it) => toggleExpand(it.id)}
             rowMenu={(it) => [
+              {
+                // ADR-203: unused material back from the JC into the register
+                // (party_create · entry, the same gate as New Issue).
+                key: 'return-to-store',
+                label: 'Return to store',
+                icon: 'arrow-left',
+                group: 'workflow',
+                hidden: !canIssue,
+                disabledReason:
+                  it.qty - it.returnedToStoreQty <= 0
+                    ? 'All of this issue is back in store'
+                    : undefined,
+                onSelect: () => setReturnRow(it),
+              },
               {
                 key: 'cancel',
                 label: 'Cancel Issue',
@@ -200,6 +216,9 @@ export function PartyMaterialIssueView({
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
       {cancelRow ? <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
+      {returnRow && canIssue ? (
+        <ReturnToStoreModal row={returnRow} onClose={() => setReturnRow(null)} />
+      ) : null}
     </div>
   );
 }

@@ -47,6 +47,8 @@ export type DocSeries =
   | 'jw_invoices'
   | 'jw_return_challans'
   | 'party_material_issues'
+  | 'party_materials'
+  | 'customer_material_returns'
   | 'route_cards'
   | 'bom_masters';
 

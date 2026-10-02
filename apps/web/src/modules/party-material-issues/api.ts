@@ -3,6 +3,7 @@ import type {
   ListPartyMaterialIssuesQuery,
   ListPartyMaterialIssuesResponse,
   PartyMaterialIssue,
+  ReturnPartyMaterialIssueToStoreInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -75,6 +76,32 @@ export function useCancelPartyMaterialIssue() {
       void qc.invalidateQueries({ queryKey: partyMaterialIssuesKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
+      void qc.invalidateQueries({ queryKey: ['job-cards'] });
+      void qc.invalidateQueries({ queryKey: ['jc-ops'] });
+    },
+  });
+}
+
+/** ADR-203 — put unused customer material back from a Job Card into the
+ *  customer-material register (partial). The server caps it at what is still
+ *  on the JC (issued − already returned − used by the first operation). */
+export function useReturnPartyMaterialIssueToStore() {
+  const qc = useQueryClient();
+  return useMutation<
+    PartyMaterialIssue,
+    Error,
+    { id: string } & ReturnPartyMaterialIssueToStoreInput
+  >({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<PartyMaterialIssue>(`/party-material-issues/${id}/return-to-store`, {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: partyMaterialIssuesKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      void qc.invalidateQueries({ queryKey: ['party-materials'] });
+      void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
       void qc.invalidateQueries({ queryKey: ['job-cards'] });
       void qc.invalidateQueries({ queryKey: ['jc-ops'] });
     },

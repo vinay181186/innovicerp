@@ -20,9 +20,9 @@ const STATUS_OPTIONS = Object.entries(SO_STATUS_LABEL).map(([value, label]) => (
   label,
 }));
 
-/** Customer-material status as coloured text: actual Party-GRN receipts
- *  (`partyReceivedQty`) vs the header's expected client material
- *  (`clientMaterialQty`). */
+/** Customer-material status as coloured text: customer RM QC-accepted across
+ *  the lines (`partyReceivedQty`) vs what the lines need (`rmRequiredQty` —
+ *  1 RM piece per finished part on lines that have a Customer RM, ADR-203). */
 function MaterialCell({
   received,
   expected,
@@ -174,9 +174,7 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
       id: 'customer_material',
       header: 'Customer Material',
       nowrap: true,
-      render: (jw) => (
-        <MaterialCell received={jw.partyReceivedQty} expected={Number(jw.clientMaterialQty ?? 0)} />
-      ),
+      render: (jw) => <MaterialCell received={jw.partyReceivedQty} expected={jw.rmRequiredQty} />,
     },
     {
       id: 'due',

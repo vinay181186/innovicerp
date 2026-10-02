@@ -1,47 +1,44 @@
-// Add Customer Material modal — Client → SO/JWSO → Item(line) cascade.
-// Split out of routes/list.tsx (ADR-199 table-standard conversion, 2026-10-01).
-// Behaviour unchanged from the original in-file AddPartyMaterialModal.
+// Add Customer Material modal.
+//
+// ADR-203: a customer material is booked against a Customer RM item — an
+// Item Master row of type Party Supplied Material (`<item code>-RM`). The user
+// picks the Customer and that item; Material Name / Grade / Description / UOM
+// fill from the item. The PM code is assigned by the server on save ("auto"),
+// so it is no longer prefilled or sent.
+//
+// The old Customer → SO/JWSO → order-line cascade picked the PART being made,
+// not the material — it is gone with this change. A JWSO line gets its Customer
+// RM automatically when the JWSO is saved, so most materials never need this
+// screen; it is for adding one by hand.
 
-import {
-  type CreatePartyMaterialInput,
-  PARTY_MATERIAL_UOMS,
-  type PartyMaterialUom,
-} from '@innovic/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { PARTY_MATERIAL_UOMS, type PartyMaterialUom } from '@innovic/shared';
+import { useEffect, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { useClientsList } from '../../clients/api';
-import { useItem } from '../../items/api';
-import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
-import { usePlanningSoDetail } from '../../so-planning/api';
+import { useItem, useItemsList } from '../../items/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
-import { useCreatePartyMaterial, useNextPartyMaterialCode } from '../api';
+import { type NewPartyMaterialInput, useCreatePartyMaterial } from '../api';
 import { ErrorBox, Field, ModalActions, ModalShell } from './party-material-modal-shell';
 
+/** Item Master UOM → customer-material UOM (the two lists spell KG differently). */
+function toPmUom(itemUom: string | null | undefined): PartyMaterialUom | null {
+  if (!itemUom) return null;
+  const u = itemUom === 'KGS' ? 'KG' : itemUom;
+  return (PARTY_MATERIAL_UOMS as readonly string[]).includes(u) ? (u as PartyMaterialUom) : null;
+}
+
 export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  // Material code — auto, read-only (PM-NNNN from the server).
-  const [code, setCode] = useState('');
   const [uom, setUom] = useState<PartyMaterialUom>('NOS');
   const [err, setErr] = useState<string | null>(null);
-
-  // Cascade: Client → SO/JWSO → Item(line). Picking a parent resets its children.
   const [clientId, setClientId] = useState<string | null>(null);
   const [clientSearch, setClientSearch] = useState('');
-  const [orderId, setOrderId] = useState<string | null>(null);
-  const [orderSource, setOrderSource] = useState<'so' | 'jw' | null>(null);
-  const [orderSearch, setOrderSearch] = useState('');
-  const [lineId, setLineId] = useState<string | null>(null); // picked SO/JW line id
+  const [itemId, setItemId] = useState<string | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
   const [description, setDescription] = useState(''); // auto-filled from item, editable
 
   const createMut = useCreatePartyMaterial();
 
-  const nextCodeQ = useNextPartyMaterialCode();
-  useEffect(() => {
-    if (nextCodeQ.data?.code && !code) setCode(nextCodeQ.data.code);
-  }, [nextCodeQ.data, code]);
-
-  // 1) Clients — server ?search=.
+  // Customer — server ?search=.
   const { data: clientsData, isFetching: clientsFetching } = useClientsList({
     ...(clientSearch.trim() ? { search: clientSearch.trim() } : {}),
     limit: 50,
@@ -53,151 +50,58 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     name: c.name,
   }));
 
-  // 2) SO + JWSO for the picked client — server ?search= + clientId.
-  const { data: soData, isFetching: soFetching } = useSalesOrdersList(
-    {
-      ...(orderSearch.trim() ? { search: orderSearch.trim() } : {}),
-      clientId: clientId ?? undefined,
-      limit: 50,
-      offset: 0,
-    },
-    { enabled: !!clientId },
-  );
-  const { data: jwData, isFetching: jwFetching } = useJobWorkOrdersList(
-    {
-      ...(orderSearch.trim() ? { search: orderSearch.trim() } : {}),
-      clientId: clientId ?? undefined,
-      limit: 50,
-      offset: 0,
-    },
-    { enabled: !!clientId },
-  );
-  const orderSourceById = useMemo(() => {
-    const m = new Map<string, 'so' | 'jw'>();
-    (soData?.items ?? []).forEach((o) => m.set(o.id, 'so'));
-    (jwData?.items ?? []).forEach((o) => m.set(o.jwId, 'jw'));
-    return m;
-  }, [soData, jwData]);
-  const orderOptions = useMemo(
-    () => [
-      ...(soData?.items ?? []).map((o) => ({
-        id: o.id,
-        code: o.code,
-        name: o.customerName ?? 'SO',
-      })),
-      ...(jwData?.items ?? []).map((o) => ({
-        id: o.jwId,
-        code: o.code,
-        name: o.customerName ?? 'JWSO',
-      })),
-    ],
-    [soData, jwData],
-  );
+  // Customer RM — only Party Supplied Material (-RM) items, server-searched.
+  const { data: itemsData, isFetching: itemsFetching } = useItemsList({
+    ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
+    itemType: 'party_supplied_material',
+    limit: 50,
+    offset: 0,
+  });
+  const itemOptions = (itemsData?.items ?? []).map((i) => ({
+    id: i.id,
+    code: i.code,
+    name: i.name,
+  }));
 
-  // 3) Line items of the picked order (client-side filtered by the picker).
-  const soDetail = useSalesOrder(orderSource === 'so' ? (orderId ?? undefined) : undefined);
-  const jwDetail = useJobWorkOrder(orderSource === 'jw' ? (orderId ?? undefined) : undefined);
-  const orderLines = useMemo(() => {
-    if (orderSource === 'so') return soDetail.data?.lines ?? [];
-    if (orderSource === 'jw') return jwDetail.data?.lines ?? [];
-    return [];
-  }, [orderSource, soDetail.data, jwDetail.data]);
-  const itemOptions = useMemo(
-    () =>
-      orderLines.map((l) => {
-        const code = (l as { itemCode?: string | null }).itemCode ?? l.itemCodeText ?? null;
-        // CODE/REV: the row IS an order line (SO or JWSO), so the customer's
-        // drawing revision typed on that line belongs with the code wherever it
-        // is shown (user rule 2026-09-23). A line with no code stays null.
-        return {
-          id: l.id,
-          code: code
-            ? itemCodeWithRev(code, (l as { revision?: string | null }).revision, code)
-            : null,
-          name: l.partName,
-        };
-      }),
-    [orderLines],
-  );
-  const selectedLine = useMemo(
-    () => orderLines.find((l) => l.id === lineId) ?? null,
-    [orderLines, lineId],
-  );
-  const itemId = selectedLine?.itemId ?? null;
+  // The picked item's own row → Material Name / Grade / Description / UOM.
+  const itemQ = useItem(itemId ?? undefined);
+  const item = itemQ.data && itemQ.data.id === itemId ? itemQ.data : null;
+  const autoName = item?.name ?? '';
+  const autoMaterial = item?.material ?? '';
 
-  // 4) Item-master detail → auto-fetched Material Name + Material/Grade.
-  const itemDetail = useItem(itemId ?? undefined);
-  const autoName = itemDetail.data?.name ?? selectedLine?.partName ?? '';
-  const autoMaterial = itemDetail.data?.material ?? selectedLine?.material ?? '';
-
-  // Description auto-fills from the item on pick, then stays editable.
+  // Dependent fields follow the item: a new item refills them, a cleared item
+  // clears them — never a stale value from the previous pick.
   useEffect(() => {
-    if (!lineId) {
+    if (!itemId) {
       setDescription('');
+      setUom('NOS');
       return;
     }
-    setDescription(itemDetail.data?.description ?? '');
-  }, [lineId, itemDetail.data?.description]);
+    if (!item) return;
+    setDescription(item.description ?? '');
+    setUom(toPmUom(item.uom) ?? 'NOS');
+  }, [itemId, item]);
 
-  // 5) JC No linked to the selected SO/JW line (via planning detail).
-  const planningDetail = usePlanningSoDetail(orderId);
-  const jcNo = useMemo(() => {
-    if (!lineId || !planningDetail.data) return '';
-    const ln = planningDetail.data.lines.find((l) => l.soLineId === lineId);
-    if (!ln) return '';
-    const codes = [
-      ...ln.plans.map((p) => p.jcCode).filter((v): v is string => !!v),
-      ...ln.directJcCodes,
-    ];
-    return codes.join(', ');
-  }, [lineId, planningDetail.data]);
-
-  // Cascade resets: picking a parent clears its children + auto-fetched fields.
-  const onClientChange = (id: string | null): void => {
-    setClientId(id);
-    setOrderId(null);
-    setOrderSource(null);
-    setOrderSearch('');
-    setLineId(null);
-    setDescription('');
-  };
-  const onOrderChange = (id: string | null): void => {
-    setOrderId(id);
-    setOrderSource(id ? (orderSourceById.get(id) ?? null) : null);
-    setLineId(null);
-    setDescription('');
-  };
-
-  // ESC / a click outside asks before throwing away what was picked.
-  const guard = useDiscardGuard(
-    Boolean(clientId || orderId || lineId || description.trim()) || uom !== 'NOS',
-    onClose,
-  );
+  const guard = useDiscardGuard(Boolean(clientId || itemId || description.trim()), onClose);
 
   const onSave = (): void => {
     setErr(null);
-    const c = code.trim();
-    const nm = autoName.trim();
-    if (!c) {
-      setErr('Code is required.');
-      return;
-    }
     if (!clientId) {
       setErr('Customer is required.');
       return;
     }
-    if (!orderId) {
-      setErr('SO / JWSO No. is required — the Item Code is picked from its lines.');
+    if (!itemId || !item) {
+      setErr('Customer RM is required — pick the -RM item from the Item Master.');
       return;
     }
+    const nm = autoName.trim();
     if (!nm) {
-      setErr('Item Code is required. Material Name fills from it.');
+      setErr('The picked item has no name. Fix it in the Item Master first.');
       return;
     }
-    const input: CreatePartyMaterialInput = { code: c, name: nm, uom, clientId };
+    const input: NewPartyMaterialInput = { name: nm, uom, clientId, itemId };
     if (description.trim()) input.description = description.trim();
     if (autoMaterial.trim()) input.material = autoMaterial.trim();
-    if (itemId) input.itemId = itemId;
     createMut.mutate(input, {
       onSuccess: () => onClose(),
       onError: (e) =>
@@ -209,15 +113,24 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     <ModalShell onClose={guard.requestClose} title="Add Customer Material">
       {guard.dialog}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {/* 1. Material Code (auto, read-only) + UOM */}
+        {/* Code — assigned by the server on save. */}
         <Field label="Code">
-          <input type="text" className="innovic-input" value={code} readOnly disabled />
+          <input
+            type="text"
+            className="innovic-input"
+            value=""
+            placeholder="auto"
+            readOnly
+            disabled
+            style={{ maxWidth: '14ch' }}
+          />
         </Field>
         <Field label="UOM">
           <select
             className="innovic-select"
             value={uom}
             onChange={(e) => setUom(e.target.value as PartyMaterialUom)}
+            style={{ maxWidth: '12ch' }}
           >
             {PARTY_MATERIAL_UOMS.map((u) => (
               <option key={u} value={u}>
@@ -227,13 +140,13 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
           </select>
         </Field>
 
-        {/* 2. Client — who supplies the material */}
+        {/* Customer — who supplies the material */}
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Customer" required>
             <SearchableSelect
               id="pmClient"
               value={clientId}
-              onChange={onClientChange}
+              onChange={setClientId}
               onSearch={setClientSearch}
               loading={clientsFetching}
               options={clientOptions}
@@ -242,48 +155,31 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
           </Field>
         </div>
 
-        {/* 3. SO / JWSO — filtered to the picked client */}
+        {/* Customer RM — a Party Supplied Material (-RM) item */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="SO / JWSO No." required>
-            <SearchableSelect
-              id="pmOrder"
-              value={orderId}
-              onChange={onOrderChange}
-              onSearch={setOrderSearch}
-              loading={soFetching || jwFetching}
-              options={orderOptions}
-              disabled={!clientId}
-              placeholder={clientId ? '🔍 Type SO / JWSO no…' : 'Pick a customer first'}
-              emptyText="No orders for this customer"
-            />
-          </Field>
-        </div>
-
-        {/* 4. Item Code — from the picked order's line items */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Item Code" required>
+          <Field label="Customer RM" required>
             <SearchableSelect
               id="pmItem"
-              value={lineId}
-              onChange={setLineId}
-              onSearch={() => undefined}
-              loading={soDetail.isFetching || jwDetail.isFetching}
+              value={itemId}
+              onChange={setItemId}
+              onSearch={setItemSearch}
+              loading={itemsFetching}
               options={itemOptions}
-              disabled={!orderId}
-              placeholder={orderId ? '🔍 Pick an item from this order…' : 'Pick an order first'}
-              emptyText="No items on this order"
+              placeholder="🔍 Type the -RM item code or name…"
+              emptyText="No Party Supplied Material item matches"
+              valueLabel={item ? `${item.code} — ${item.name}` : undefined}
             />
           </Field>
         </div>
 
-        {/* 5. Material Name — auto-fetched from the item, read-only */}
+        {/* Material Name — from the item, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Material Name">
             <input type="text" className="innovic-input" value={autoName} readOnly disabled />
           </Field>
         </div>
 
-        {/* 6. Description — auto-filled from the item, editable */}
+        {/* Description — from the item, editable */}
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Description">
             <input
@@ -295,23 +191,10 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
           </Field>
         </div>
 
-        {/* 7. Material / Grade — auto-fetched from the item, read-only */}
+        {/* Grade — from the item, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Grade">
             <input type="text" className="innovic-input" value={autoMaterial} readOnly disabled />
-          </Field>
-        </div>
-
-        {/* 8. JC No — auto-fetched Job Card linked to the SO/JW line, read-only */}
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JC No.">
-            <input
-              type="text"
-              className="innovic-input"
-              value={lineId ? jcNo || '—' : ''}
-              readOnly
-              disabled
-            />
           </Field>
         </div>
       </div>

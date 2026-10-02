@@ -50,14 +50,11 @@ export function JwInvoiceView({
   const { data: eff } = useMyAccess();
   // Raising a JW invoice needs the write role AND Finance invoice entry — the
   // same form key the SO invoice uses (the server checks both).
-  const canWrite =
-    (me?.role === 'admin' || me?.role === 'manager') &&
-    (!eff || effectiveFormPerms(eff, 'invoice_create').entry);
-  // ADR-194 #4: cancel hits requireFormAccess(jw_create,'approve') on the server,
-  // so gate it on jw_create edit+approve — not the looser create guard — so a
-  // user without approve never sees a Cancel button that would 403.
-  const jwPerms = effectiveFormPerms(eff, 'jw_create');
-  const canCancel = jwPerms.edit && jwPerms.approve;
+  // ADR-203: create and cancel use ONE key — invoice_create — on the server
+  // (the write-role check was dropped there; form access is the rule).
+  const invPerms = effectiveFormPerms(eff, 'invoice_create');
+  const canWrite = !eff || invPerms.entry;
+  const canCancel = invPerms.edit && invPerms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(() => Boolean(initialJwId));

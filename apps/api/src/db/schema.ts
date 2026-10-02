@@ -269,6 +269,12 @@ export const items = pgTable(
      *  private bucket under `<companyId>/item-images/…`. A product picture, not
      *  a controlled drawing: shown as a thumbnail next to code · name. */
     imagePath: text('image_path'),
+    // ADR-203: a Party Supplied Material (`<code>-RM`) item points at the order
+    // item it is the customer's raw material for. One RM item per order item
+    // (unique index items_company_parent_rm_uniq); null for every other type.
+    parentItemId: uuid('parent_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'restrict',
+    }),
     /** Reorder Level (PL-SI-1 0028; numeric since 0160, ADR-193 phase 5).
      *  Below Reorder = Available + On PO < this, when > 0. */
     minStockQty: stockQty('min_stock_qty').notNull().default(0),
@@ -289,6 +295,17 @@ export const items = pgTable(
     uniqueIndex('items_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
+    // ADR-203: codes are unique regardless of letter case.
+    uniqueIndex('items_company_lower_code_uniq')
+      .on(t.companyId, sql`lower(${t.code})`)
+      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('items_company_parent_rm_uniq')
+      .on(t.companyId, t.parentItemId)
+      .where(sql`${t.deletedAt} is null AND ${t.parentItemId} is not null`),
+    check(
+      'items_parent_only_psm',
+      sql`${t.parentItemId} IS NULL OR ${t.itemType} = 'party_supplied_material'`,
+    ),
     index('items_company_id_idx')
       .on(t.companyId)
       .where(sql`${t.deletedAt} is null`),
@@ -1973,6 +1990,13 @@ export const jobWorkOrderLines = pgTable(
     uom: uomEnum('uom').notNull().default('NOS'),
     orderQty: integer('order_qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
+    // ADR-203: the customer's raw material for THIS line — the `<item>-RM` item
+    // and the per-customer party material (register) it is booked under. Set
+    // by the server on every JWSO save; never typed.
+    rmItemId: uuid('rm_item_id').references((): AnyPgColumn => items.id, { onDelete: 'restrict' }),
+    partyMaterialId: uuid('party_material_id').references((): AnyPgColumn => partyMaterials.id, {
+      onDelete: 'restrict',
+    }),
     // Job-work reconciliation counters (migration 0074): processed goods
     // returned to the customer, and quantity billed on the labour invoice.
     // Guards read these to cap returns (<= produced) and invoices (<= returned).
@@ -2015,6 +2039,16 @@ export const jobWorkOrderLines = pgTable(
       .on(t.sourceBomMasterId)
       .where(sql`${t.sourceBomMasterId} is not null`),
     check('job_work_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
+    check(
+      'job_work_order_lines_counters_check',
+      sql`${t.returnedQty} >= 0 AND ${t.invoicedQty} >= 0 AND ${t.invoicedQty} <= ${t.returnedQty}`,
+    ),
+    index('job_work_order_lines_rm_item_idx')
+      .on(t.rmItemId)
+      .where(sql`${t.deletedAt} is null AND ${t.rmItemId} is not null`),
+    index('job_work_order_lines_party_material_idx')
+      .on(t.partyMaterialId)
+      .where(sql`${t.deletedAt} is null AND ${t.partyMaterialId} is not null`),
     pgPolicy('job_work_order_lines_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -4663,6 +4697,11 @@ export const partyMaterials = pgTable(
     index('party_materials_company_client_idx')
       .on(t.companyId, t.clientId)
       .where(sql`${t.deletedAt} is null`),
+    // ADR-203: one party material per customer + RM item (was code-only).
+    uniqueIndex('party_materials_company_item_client_uniq')
+      .on(t.companyId, t.itemId, t.clientId)
+      .where(sql`${t.deletedAt} is null AND ${t.itemId} is not null`),
+    check('party_materials_returned_nonneg', sql`${t.returnedQty} >= 0`),
     index('party_materials_company_item_idx')
       .on(t.companyId, t.itemId)
       .where(sql`${t.deletedAt} is null`),
@@ -4762,7 +4801,7 @@ export const partyGrnLines = pgTable(
     jwLineNoText: text('jw_line_no_text'),
     // R4 (ADR-194): real FK to the JWSO line (replaces the typed line-no text).
     jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
-      onDelete: 'set null',
+      onDelete: 'restrict',
     }),
     // R2 (ADR-194): compulsory incoming QC — only accepted qty enters the party store.
     acceptedQty: integer('accepted_qty').notNull().default(0),
@@ -4770,6 +4809,9 @@ export const partyGrnLines = pgTable(
     rejectReason: text('reject_reason'),
     qcBy: uuid('qc_by').references(() => users.id),
     qcAt: timestamp('qc_at', { withTimezone: true }),
+    // ADR-203 (D3): rejected pieces already sent back on a Customer Material
+    // Return. Held = rejected_qty − rejected_returned_qty.
+    rejectedReturnedQty: integer('rejected_returned_qty').notNull().default(0),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -4783,6 +4825,9 @@ export const partyGrnLines = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
+    uniqueIndex('party_grn_lines_grn_line_uniq')
+      .on(t.partyGrnId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
     index('party_grn_lines_grn_idx')
       .on(t.partyGrnId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
@@ -4828,7 +4873,7 @@ export const partyStockLedger = pgTable(
       .notNull()
       .references((): AnyPgColumn => partyMaterials.id),
     jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
-      onDelete: 'set null',
+      onDelete: 'restrict',
     }),
     movement: text('movement').notNull(),
     direction: text('direction').notNull(),
@@ -4858,6 +4903,10 @@ export const partyStockLedger = pgTable(
     check(
       'party_stock_ledger_movement_check',
       sql`${t.movement} IN ('receive','issue','consume','return','reversal')`,
+    ),
+    check(
+      'party_stock_ledger_movement_direction_check',
+      sql`(${t.movement} = 'receive' AND ${t.direction} = 'in') OR (${t.movement} IN ('issue','consume','return') AND ${t.direction} = 'out') OR ${t.movement} = 'reversal'`,
     ),
     check('party_stock_ledger_direction_check', sql`${t.direction} IN ('in','out')`),
     check('party_stock_ledger_qty_positive', sql`${t.qty} > 0`),
@@ -4898,12 +4947,18 @@ export const partyMaterialIssues = pgTable(
     jwCodeText: text('jw_code_text'),
     jobCardId: uuid('job_card_id').references(() => jobCards.id, { onDelete: 'set null' }),
     jcCodeText: text('jc_code_text'),
+    // ADR-203: the JWSO line this issue draws on (the JC's source line).
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'restrict',
+    }),
     partyMaterialId: uuid('party_material_id')
       .notNull()
       .references(() => partyMaterials.id),
     partyMaterialCodeText: text('party_material_code_text'),
     partyMaterialName: text('party_material_name'),
     qty: integer('qty').notNull(),
+    // ADR-203: unused pieces put back from the Job Card into the register.
+    returnedToStoreQty: integer('returned_to_store_qty').notNull().default(0),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -4923,6 +4978,10 @@ export const partyMaterialIssues = pgTable(
     index('party_material_issues_company_jw_idx')
       .on(t.companyId, t.jobWorkOrderId)
       .where(sql`${t.deletedAt} is null`),
+    index('party_material_issues_jw_line_idx')
+      .on(t.jwLineId)
+      .where(sql`${t.deletedAt} is null AND ${t.jwLineId} is not null`),
+    check('party_material_issues_qty_positive', sql`${t.qty} > 0`),
     index('party_material_issues_company_pm_idx')
       .on(t.companyId, t.partyMaterialId)
       .where(sql`${t.deletedAt} is null`),
@@ -4932,6 +4991,123 @@ export const partyMaterialIssues = pgTable(
       using: sql`company_id = current_company_id()`,
     }),
     pgPolicy('party_material_issues_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Customer Material Return (migration 0193, ADR-203 / owner D3) ─────────
+// IN-CMR-##### — sends the CUSTOMER'S OWN material back (spare good stock from
+// the register, or pieces Incoming QC rejected and held). Not the JW Return,
+// which sends back finished parts.
+
+export const customerMaterialReturns = pgTable(
+  'customer_material_returns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    returnDate: date('return_date').notNull(),
+    jobWorkOrderId: uuid('job_work_order_id')
+      .notNull()
+      .references(() => jobWorkOrders.id, { onDelete: 'restrict' }),
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
+    vehicleNo: text('vehicle_no'),
+    remarks: text('remarks'),
+    status: text('status').notNull().default('issued'),
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('customer_material_returns_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('customer_material_returns_jw_idx')
+      .on(t.companyId, t.jobWorkOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    check('customer_material_returns_status_check', sql`${t.status} IN ('issued','cancelled')`),
+    pgPolicy('customer_material_returns_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('customer_material_returns_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const customerMaterialReturnLines = pgTable(
+  'customer_material_return_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    returnId: uuid('return_id')
+      .notNull()
+      .references((): AnyPgColumn => customerMaterialReturns.id, { onDelete: 'restrict' }),
+    lineNo: integer('line_no').notNull(),
+    kind: text('kind').notNull(),
+    jwLineId: uuid('jw_line_id')
+      .notNull()
+      .references((): AnyPgColumn => jobWorkOrderLines.id, { onDelete: 'restrict' }),
+    partyMaterialId: uuid('party_material_id')
+      .notNull()
+      .references((): AnyPgColumn => partyMaterials.id, { onDelete: 'restrict' }),
+    partyGrnLineId: uuid('party_grn_line_id').references((): AnyPgColumn => partyGrnLines.id, {
+      onDelete: 'restrict',
+    }),
+    qty: integer('qty').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('customer_material_return_lines_line_uniq')
+      .on(t.returnId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('customer_material_return_lines_jw_line_idx')
+      .on(t.jwLineId)
+      .where(sql`${t.deletedAt} is null`),
+    check('customer_material_return_lines_kind_check', sql`${t.kind} IN ('good','rejected')`),
+    check('customer_material_return_lines_qty_check', sql`${t.qty} > 0`),
+    check(
+      'customer_material_return_lines_rejected_has_grn',
+      sql`${t.kind} = 'good' OR ${t.partyGrnLineId} IS NOT NULL`,
+    ),
+    pgPolicy('customer_material_return_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('customer_material_return_lines_manager_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
@@ -4994,6 +5170,8 @@ export const jwReturnChallans = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
+    check('jw_return_challans_qty_positive', sql`${t.qty} > 0`),
+    check('jw_return_challans_status_check', sql`${t.status} IN ('issued','cancelled')`),
     uniqueIndex('jw_return_challans_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -5081,6 +5259,7 @@ export const jwInvoices = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
+    check('jw_invoices_qty_positive', sql`${t.qty} > 0`),
     uniqueIndex('jw_invoices_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),

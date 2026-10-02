@@ -120,5 +120,20 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
         </span>
       ),
     },
+    {
+      // ADR-203: unused pieces put back from the Job Card into the register.
+      // No sortFilterField: the API's sf-columns has no such field yet.
+      id: 'returned_to_store_qty',
+      header: 'Returned to Store Qty',
+      kind: 'num',
+      align: 'right',
+      nowrap: true,
+      render: (it) =>
+        it.returnedToStoreQty > 0 ? (
+          <span className="mono fw-700">{it.returnedToStoreQty}</span>
+        ) : (
+          <span className="text3">—</span>
+        ),
+    },
   ];
 }

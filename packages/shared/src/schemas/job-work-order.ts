@@ -74,6 +74,19 @@ export const jobWorkOrderLineSchema = z.object({
   shortClosedBy: z.string().uuid().nullable().default(null),
   shortCloseReason: z.string().nullable().default(null),
   sourceBomMasterId: z.string().uuid().nullable().default(null),
+  /** ADR-203: this line's customer raw material — the `<item code>-RM` item
+   *  (Party Supplied Material) and the per-customer party material it is booked
+   *  under in the customer-material register. Set by the server on save. */
+  rmItemId: z.string().uuid().nullable().default(null),
+  rmItemCode: z.string().nullable().default(null),
+  partyMaterialId: z.string().uuid().nullable().default(null),
+  partyMaterialCode: z.string().nullable().default(null),
+  /** ADR-203: QC-accepted customer material on THIS line (Σ party GRN accepted). */
+  rmAcceptedQty: z.number().int().nonnegative().default(0),
+  /** ADR-203: true once any downstream document (Job Card, plan, Party GRN,
+   *  issue, return, invoice) uses this line — item / UOM / BOM are then locked
+   *  and the line cannot be removed. Drives the edit form's locks. */
+  inUse: z.boolean().default(false),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -114,9 +127,8 @@ export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
    *  update / approve) return this shape without passing the money gate, and
    *  they always carry real figures. */
   priceVisible: z.boolean().optional(),
-  /** Actual client-material received = Σ party_grn_lines.received_qty across this
-   *  JWSO's non-deleted Party GRNs. Source of truth for the material-received
-   *  badge. */
+  /** ADR-203: customer material QC-ACCEPTED across this JWSO's lines
+   *  (Σ party_grn_lines.accepted_qty by jw_line_id). Rejected pieces never count. */
   partyReceivedQty: z.number().int().nonnegative(),
   lines: z.array(jobWorkOrderLineSchema),
 });
@@ -154,9 +166,12 @@ export const jobWorkOrderListItemSchema = z.object({
   /** Header-level client material (expected/order intent — drives the MATERIAL
    *  column's "expected" number). */
   clientMaterialQty: z.string().nullable(),
-  /** Actual client-material received = Σ party_grn_lines.received_qty across this
-   *  JWSO's non-deleted Party GRNs. The truthful "received" number for the badge. */
+  /** ADR-203: customer material QC-accepted across the JWSO's lines
+   *  (Σ party_grn_lines.accepted_qty by jw_line_id). */
   partyReceivedQty: z.number().int().nonnegative(),
+  /** ADR-203: customer material the lines need = Σ order qty of lines that
+   *  have a customer RM (1 RM piece per finished part, owner D1). */
+  rmRequiredQty: z.number().int().nonnegative().default(0),
 });
 export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 
@@ -165,11 +180,13 @@ export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 export const jobWorkOrderLineInputSchema = z
   .object({
     id: z.string().uuid().optional(),
-    lineNo: z.number().int().positive().optional(),
-    itemId: z.string().uuid().optional(),
-    itemCodeText: z.string().min(1).max(64).optional(),
+    /** ADR-203: Item Master only — every JWSO line names a master item (its
+     *  `<code>-RM` customer material is derived from it). `itemCodeText` is a
+     *  server-written snapshot and is no longer accepted. Line numbers are
+     *  assigned by the server and never reused; `status` is server-owned. */
+    itemId: z.string().uuid(),
     partName: z.string().min(1).max(255),
-    material: z.string().max(255).optional(),
+    material: z.string().max(255).nullable().optional(),
     drawingNo: z.string().max(64).nullable().optional(),
     // Compulsory on the FORM (the only layer that can ask a human), optional
     // here so the server paths that insert a JWSO line without asking anyone —
@@ -186,23 +203,22 @@ export const jobWorkOrderLineInputSchema = z
       .refine((s) => s === '' || REVISION_PATTERN.test(s), 'Rev: letters, digits, . - / only')
       .optional(),
     drawingFilePath: z.string().max(512).nullable().optional(),
-    uom: uomSchema.default('NOS'),
+    // No default: a partial update that leaves `uom` out must not reset it.
+    uom: uomSchema.optional(),
     orderQty: z.number().int().positive(), // CHECK > 0 in DB too
     rate: z.coerce.number().nonnegative().optional(),
+    /** Per line. `null` clears it. */
     dueDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
+      .nullable()
       .optional(),
-    status: jwStatusSchema.optional(),
     // BOM-8 for job work (migration 0086): when set, this line is an ASSEMBLY
     // — the cascade spawns a child Job Card per component and readiness
     // becomes weakest-component instead of this line's own output. The BOM may
     // not contain a `purchase` component (client supplies the material); the
     // service rejects that with a friendly error. See bom-master/cascade.ts.
     sourceBomMasterId: z.string().uuid().optional(),
-  })
-  .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
-    message: 'itemId or itemCodeText is required (per ADR-012 #10)',
   });
 export type JobWorkOrderLineInput = z.infer<typeof jobWorkOrderLineInputSchema>;
 
@@ -218,14 +234,14 @@ const _jwHeaderInputBase = z.object({
   jwDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'jwDate must be YYYY-MM-DD'),
   clientId: z.string().uuid().optional(),
   customerName: z.string().max(255).optional(),
-  clientPoNo: z.string().max(64).optional(),
-  status: jwStatusSchema.default('open'),
+  /** `null` clears it on edit. */
+  clientPoNo: z.string().max(64).nullable().optional(),
   // Optional on the wire — the service + DB both default it to 18 when omitted.
   gstPercent: z.coerce.number().nonnegative().max(99.99).optional(),
-  remarks: z.string().max(2000).optional(),
-  // Client material details (header-level).
-  clientMaterial: z.string().max(255).optional(),
-  clientMaterialQty: z.coerce.number().nonnegative().optional(),
+  /** `null` clears it on edit. */
+  remarks: z.string().max(2000).nullable().optional(),
+  // ADR-203: status is server-owned (a new JWSO is always 'open'), and the
+  // header-level customer material is gone — each LINE carries its own RM.
 });
 
 /** CREATE — `{header, lines}`. Header + ≥ 1 line (no Equipment exception
@@ -264,6 +280,23 @@ export const shortCloseJobWorkOrderLineInputSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
 export type ShortCloseJobWorkOrderLineInput = z.infer<typeof shortCloseJobWorkOrderLineInputSchema>;
+
+/** ADR-203: find-or-create the customer RM item for an order item. Called by
+ *  the JWSO form the moment a line's item is picked (silent, no popup — owner
+ *  option B). Idempotent: the same order item always returns the same RM. */
+export const ensureJwRmItemInputSchema = z.object({
+  itemId: z.string().uuid(),
+});
+export type EnsureJwRmItemInput = z.infer<typeof ensureJwRmItemInputSchema>;
+
+export const ensureJwRmItemResponseSchema = z.object({
+  rmItemId: z.string().uuid(),
+  rmItemCode: z.string(),
+  rmItemName: z.string(),
+  /** true when this call created it (the line shows "new"). */
+  created: z.boolean(),
+});
+export type EnsureJwRmItemResponse = z.infer<typeof ensureJwRmItemResponseSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

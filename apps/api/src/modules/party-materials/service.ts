@@ -1,12 +1,15 @@
-// Party Materials service (Store slice 1).
+// Party Materials service (Store slice 1; reworked by ADR-203).
 //
-// Catalogue of raw materials supplied by clients for Job Work orders.
-// Mirrors legacy renderPartyMaterial / addPartyMaterial / editPartyMaterial /
-// delPartyMaterial (HTML L24129–24241). Numbering: PM-NNNN.
+// The customer-material register master: one row per Party Supplied Material
+// (`<item>-RM`) item + customer (PM-####). Normally created silently by the
+// JWSO save (lib/jw-rm ensurePartyMaterial); this master screen can add one by
+// hand, under the same rules (RM item required, one per item + customer,
+// server-assigned code).
 //
-// Stock fields (`stock_qty`, `issued_qty`, `received_qty`) are mutated by
-// downstream services (Party GRN — increments stock+received; JW Issue —
-// increments issued and decrements stock). This service only reads/writes
+// Stock fields (`stock_qty`, `issued_qty`, `received_qty`, `returned_qty`) are
+// NOT written here: stock_qty by lib/party-stock-ledger (the one writer), the
+// lifetime counters by the documents that move the material (Party GRN QC,
+// issue to Job Card, Customer Material Return). This service only reads/writes
 // the master record.
 
 import { emitActivityLog } from '../activity-log/service';
@@ -29,13 +32,12 @@ import type {
   ListPartyMaterialsResponse,
   PartyMaterial,
   PartyMaterialListItem,
-  ReturnPartyMaterialInput,
   UpdatePartyMaterialInput,
 } from '@innovic/shared';
-import { ITEM_TYPE_RULES, type ItemType, PARTY_MATERIAL_UOMS } from '@innovic/shared';
-import { clients, items, jobWorkOrderLines, partyMaterials } from '../../db/schema';
+import { clients, items, partyMaterials } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import {
   AuthorizationError,
   ConflictError,
@@ -43,8 +45,12 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { PARTY_MATERIAL_SF_COLUMNS } from './sf-columns';
+
+/** ADR-203: every read of the master is gated on the Party screens' view. */
+async function requirePartyMaterialRead(user: AuthContext): Promise<void> {
+  await requireFormAccess(user, 'party_create', 'view');
+}
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -59,10 +65,10 @@ function tsLike(v: unknown): string {
 const CODE_PREFIX = 'PM-';
 const CODE_PAD = 4;
 
-async function nextPartyMaterialCode(
-  tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
-  companyId: string,
-): Promise<string> {
+/** Next PM-#### under the series lock (shared with lib/jw-rm ensurePartyMaterial,
+ *  which numbers the same series). */
+async function nextPartyMaterialCode(tx: DbTransaction, companyId: string): Promise<string> {
+  await lockDocSeries(tx, companyId, 'party_materials');
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^${sql.raw(CODE_PREFIX)}', ''), '')::int),
@@ -78,6 +84,7 @@ async function nextPartyMaterialCode(
 }
 
 export async function getNextPartyMaterialCode(user: AuthContext): Promise<{ code: string }> {
+  await requirePartyMaterialRead(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const code = await nextPartyMaterialCode(tx, companyId);
@@ -85,151 +92,11 @@ export async function getNextPartyMaterialCode(user: AuthContext): Promise<{ cod
   });
 }
 
-/** ADR-102 part-identity rule, widened for ADR-195. A party material fits a
- *  JWSO line when it is pinned to that line's part (the ADR-102 case) OR when
- *  it is pinned to the JWSO's own customer material (`clientMaterial`, the -rm
- *  item code the ADR-195 bridge created it from). Without the second arm the
- *  material the JWSO itself creates could never be received or issued.
- *  Legacy rows with no item link on either side are not checkable and pass. */
-export function partyMaterialFitsJwLine(
-  pm: { itemId: string | null; itemCodeText: string | null },
-  lineItemId: string | null,
-  jwClientMaterial: string | null,
-): boolean {
-  if (pm.itemId == null || lineItemId == null) return true;
-  if (pm.itemId === lineItemId) return true;
-  const cm = (jwClientMaterial ?? '').trim().toLowerCase();
-  const pmCode = (pm.itemCodeText ?? '').trim().toLowerCase();
-  return cm !== '' && pmCode === cm;
-}
-
-/** ADR-195 bridge — ensure a party_materials record exists for one customer +
- *  one party-supplied item, so the Party GRN / QC / party-stock chain (ADR-194)
- *  can attach to a JWSO's customer material.
- *
- *  Runs inside the CALLER's transaction (the JWSO save) and does NO permission
- *  check of its own — the caller has already gated the write. It reuses the
- *  PM-#### generator so party codes never diverge from the ones the master form
- *  assigns.
- *
- *  Returns the id of the existing or newly-created party material, or null when
- *  it cannot resolve (item code not found, not a party-supplied item, or the
- *  customer is missing). The caller treats every outcome as best-effort — a JWSO
- *  save must not fail because of the bridge.
- *
- *  Respects the (company, code) uniqueness (via the generator) and the
- *  (company, item, client) index (via the existence check before insert).
- *  Note there is NO DB-level unique on (company, item, client) — that shape is
- *  an ordinary index — so this existence check is what keeps it single. */
-export async function ensurePartyMaterialForClientItem(
-  tx: DbTransaction,
-  params: { companyId: string; clientId: string; itemCode: string; user: AuthContext },
-): Promise<string | null> {
-  const { companyId, clientId, user } = params;
-  const code = params.itemCode.trim();
-  if (!code) return null;
-
-  // The picked item must exist in this company's Item Master AND be a
-  // party-owned type (ADR-195). Anything else is left alone.
-  const itemRows = await tx
-    .select({
-      id: items.id,
-      code: items.code,
-      name: items.name,
-      uom: items.uom,
-      itemType: items.itemType,
-    })
-    .from(items)
-    .where(and(eq(items.companyId, companyId), eq(items.code, code), isNull(items.deletedAt)))
-    .limit(1);
-  const item = itemRows[0];
-  if (!item) return null;
-  if (!ITEM_TYPE_RULES[item.itemType as ItemType]?.partyOwned) return null;
-
-  // Concurrency guard: there is NO DB unique on (company, item, client), so two
-  // concurrent JWSO saves for the same trio could both pass the existence SELECT
-  // below and both INSERT, leaving duplicate PM- rows. A transaction-scoped
-  // advisory lock keyed on a stable hash of (company, client, item) serialises
-  // the bridge for that trio — the second caller blocks here, then sees the first
-  // caller's row in the existence check and reuses it. The lock releases
-  // automatically when the (JWSO) transaction commits or rolls back.
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${companyId}:${clientId}:${item.id}`}, 0))`,
-  );
-
-  // Already bridged for this (company, item, client)? Reuse it.
-  const existing = await tx
-    .select({ id: partyMaterials.id })
-    .from(partyMaterials)
-    .where(
-      and(
-        eq(partyMaterials.companyId, companyId),
-        eq(partyMaterials.itemId, item.id),
-        eq(partyMaterials.clientId, clientId),
-        isNull(partyMaterials.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (existing[0]) return existing[0].id;
-
-  // Snapshot the client's code (mirrors createPartyMaterial's client_code_text).
-  const clientRows = await tx
-    .select({ id: clients.id, code: clients.code })
-    .from(clients)
-    .where(
-      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
-    )
-    .limit(1);
-  const cl = clientRows[0];
-  if (!cl) return null;
-
-  const pmCode = await nextPartyMaterialCode(tx, companyId);
-  // The party store only knows the coarse UOM set (NOS/KG/MTR/SET/LOT); map the
-  // item's UOM onto it, falling back to NOS when it is not one of those.
-  const uom = (PARTY_MATERIAL_UOMS as readonly string[]).includes(item.uom) ? item.uom : 'NOS';
-
-  const inserted = await tx
-    .insert(partyMaterials)
-    .values({
-      companyId,
-      code: pmCode,
-      name: item.name,
-      description: null,
-      material: null,
-      uom,
-      clientId: cl.id,
-      clientCodeText: cl.code,
-      itemId: item.id,
-      itemCodeText: item.code,
-      stockQty: 0,
-      issuedQty: 0,
-      receivedQty: 0,
-      createdBy: user.id,
-      updatedBy: user.id,
-    })
-    .returning({ id: partyMaterials.id });
-  const row = inserted[0];
-  if (!row) return null;
-
-  await emitActivityLog(
-    tx,
-    {
-      action: ActivityAction.Create,
-      entity: 'PartyMaterial',
-      entityId: row.id,
-      refId: pmCode,
-      detail: `${pmCode} — ${item.name} (auto-created from JWSO customer material)`,
-    },
-    companyId,
-    user,
-  );
-  return row.id;
-}
-
 export async function listPartyMaterials(
   input: ListPartyMaterialsQuery,
   user: AuthContext,
 ): Promise<ListPartyMaterialsResponse> {
+  await requirePartyMaterialRead(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
@@ -323,6 +190,7 @@ function toListItem(r: Record<string, unknown>): PartyMaterialListItem {
 }
 
 export async function getPartyMaterial(id: string, user: AuthContext): Promise<PartyMaterial> {
+  await requirePartyMaterialRead(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // LEFT JOIN items to resolve itemCode/itemName from the FK (item_id), the
@@ -350,75 +218,129 @@ export async function getPartyMaterial(id: string, user: AuthContext): Promise<P
   });
 }
 
+/** The Party Supplied Material item a register row is for (ADR-203: required,
+ *  and it must BE a Party Supplied Material — the `<item>-RM` item). */
+async function loadRmItem(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+): Promise<{ id: string; code: string }> {
+  const rows = await tx
+    .select({ id: items.id, code: items.code, itemType: items.itemType })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+    .limit(1);
+  const itm = rows[0];
+  if (!itm)
+    throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
+  if (itm.itemType !== 'party_supplied_material') {
+    throw new ValidationError(
+      `${itm.code} is not a Party Supplied Material. Pick the customer's raw material item (the -RM code).`,
+    );
+  }
+  return { id: itm.id, code: itm.code };
+}
+
+async function loadClient(
+  tx: DbTransaction,
+  companyId: string,
+  clientId: string,
+): Promise<{ id: string; code: string }> {
+  const rows = await tx
+    .select({ id: clients.id, code: clients.code })
+    .from(clients)
+    .where(
+      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
+    )
+    .limit(1);
+  const cl = rows[0];
+  if (!cl) throw new NotFoundError('Selected Customer was not found. Please select again.');
+  return cl;
+}
+
+/** Serialise every writer of one (item, customer) pair — the same advisory key
+ *  lib/jw-rm ensurePartyMaterial takes — then refuse a second register row. */
+async function assertOnePerItemClient(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+  itemCode: string,
+  clientId: string,
+  clientCode: string,
+  exceptId: string | null,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${companyId}:${clientId}:${itemId}`}, 0))`,
+  );
+  const dup = (await tx.execute(sql`
+    SELECT code FROM public.party_materials
+     WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+       AND client_id = ${clientId}::uuid AND deleted_at IS NULL
+       ${exceptId ? sql`AND id <> ${exceptId}::uuid` : sql``}
+     LIMIT 1
+  `)) as unknown as Array<{ code: string }>;
+  if (dup[0]) {
+    throw new ConflictError(
+      `${dup[0].code} is already the customer material for ${itemCode} and ${clientCode}. ` +
+        `Use ${dup[0].code} — there is one per item and customer.`,
+    );
+  }
+}
+
+/** Is this material in use — moved in the register, OR named by a live JWSO
+ *  line or a live Party GRN line (incl. one still waiting for QC, which has no
+ *  register row yet)? Customer / item / UOM are then fixed and it cannot be
+ *  deleted (code review fix). */
+async function hasRegisterRows(tx: DbTransaction, partyMaterialId: string): Promise<boolean> {
+  const rows = (await tx.execute(sql`
+    SELECT 1 AS x FROM public.party_stock_ledger
+     WHERE party_material_id = ${partyMaterialId}::uuid
+    UNION ALL
+    SELECT 1 FROM public.job_work_order_lines
+     WHERE party_material_id = ${partyMaterialId}::uuid AND deleted_at IS NULL
+    UNION ALL
+    SELECT 1 FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+     WHERE pgl.party_material_id = ${partyMaterialId}::uuid AND pgl.deleted_at IS NULL
+    LIMIT 1
+  `)) as unknown as Array<{ x: number }>;
+  return rows.length > 0;
+}
+
 export async function createPartyMaterial(
   input: CreatePartyMaterialInput,
   user: AuthContext,
 ): Promise<PartyMaterial> {
-  // Tier gate. Adding a master record is a create, so L2 Data Entry and up.
-  // Until now this endpoint had no permission check at all — only a company-id
-  // check — so any logged-in account could add a party material.
+  // Adding a master record is a create, so L2 Data Entry and up.
   await requireFormAccess(user, 'party_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
+  if (!input.itemId) {
+    throw new ValidationError('Pick the Party Supplied Material item (the -RM code).');
+  }
+  if (!input.clientId) throw new ValidationError('Pick the Customer.');
 
   return withUserContext(user, async (tx) => {
-    const existing = await tx
-      .select({ id: partyMaterials.id })
-      .from(partyMaterials)
-      .where(
-        and(
-          eq(partyMaterials.companyId, companyId),
-          eq(partyMaterials.code, input.code),
-          isNull(partyMaterials.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing[0]) {
-      throw new ConflictError(`Party Material Code "${input.code}" already exists.`);
-    }
+    const cl = await loadClient(tx, companyId, input.clientId);
+    const itm = await loadRmItem(tx, companyId, input.itemId);
+    await assertOnePerItemClient(tx, companyId, itm.id, itm.code, cl.id, cl.code, null);
 
-    const clientRows = await tx
-      .select({ id: clients.id, code: clients.code })
-      .from(clients)
-      .where(
-        and(
-          eq(clients.id, input.clientId),
-          eq(clients.companyId, companyId),
-          isNull(clients.deletedAt),
-        ),
-      )
-      .limit(1);
-    const cl = clientRows[0];
-    if (!cl) throw new NotFoundError('Selected Customer was not found. Please select again.');
-
-    let itemCodeText: string | null = null;
-    if (input.itemId) {
-      const itemRows = await tx
-        .select({ id: items.id, code: items.code })
-        .from(items)
-        .where(
-          and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
-        )
-        .limit(1);
-      const itm = itemRows[0];
-      if (!itm)
-        throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
-      itemCodeText = itm.code;
-    }
-
+    // ADR-203: the code is the server's (PM-####, series-locked); the code the
+    // form sends is ignored.
+    const code = await nextPartyMaterialCode(tx, companyId);
     const inserted = await tx
       .insert(partyMaterials)
       .values({
         companyId,
-        code: input.code,
+        code,
         name: input.name,
         description: input.description ?? null,
         material: input.material ?? null,
         uom: input.uom,
         clientId: cl.id,
         clientCodeText: cl.code,
-        itemId: input.itemId ?? null,
-        itemCodeText,
+        itemId: itm.id,
+        itemCodeText: itm.code,
         stockQty: 0,
         issuedQty: 0,
         receivedQty: 0,
@@ -455,77 +377,82 @@ export async function updatePartyMaterial(
   const userId = user.id;
 
   return withUserContext(user, async (tx) => {
-    const existingRows = await tx
-      .select()
-      .from(partyMaterials)
-      .where(
-        and(
-          eq(partyMaterials.id, id),
-          eq(partyMaterials.companyId, companyId),
-          isNull(partyMaterials.deletedAt),
-        ),
-      )
-      .limit(1);
-    const existing = existingRows[0];
-    if (!existing)
+    const lockedRows = (await tx.execute(sql`
+      SELECT id FROM public.party_materials
+       WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+       FOR UPDATE
+    `)) as unknown as Array<{ id: string }>;
+    if (!lockedRows[0]) {
       throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
+    }
+    const existing = (
+      await tx.select().from(partyMaterials).where(eq(partyMaterials.id, id)).limit(1)
+    )[0]!;
 
-    const patch: Partial<typeof partyMaterials.$inferInsert> = {
-      updatedAt: new Date(),
-      updatedBy: userId,
-    };
-    if (input.name !== undefined) patch.name = input.name;
-    if (input.description !== undefined) patch.description = input.description;
-    if (input.material !== undefined) patch.material = input.material;
-    if (input.uom !== undefined) patch.uom = input.uom;
-    if (input.clientId !== undefined) {
-      const clientRows = await tx
-        .select({ id: clients.id, code: clients.code })
-        .from(clients)
-        .where(
-          and(
-            eq(clients.id, input.clientId),
-            eq(clients.companyId, companyId),
-            isNull(clients.deletedAt),
-          ),
-        )
-        .limit(1);
-      const cl = clientRows[0];
-      if (!cl) throw new NotFoundError('Selected Customer was not found. Please select again.');
+    // ADR-203: customer, item and UOM are fixed once the material has moved in
+    // the register — every movement was booked against them.
+    const clientChange = input.clientId !== undefined && input.clientId !== existing.clientId;
+    const itemChange = input.itemId !== undefined && input.itemId !== existing.itemId;
+    const uomChange = input.uom !== undefined && input.uom !== existing.uom;
+    if ((clientChange || itemChange || uomChange) && (await hasRegisterRows(tx, existing.id))) {
+      const what = [clientChange && 'Customer', itemChange && 'Item', uomChange && 'UOM']
+        .filter(Boolean)
+        .join(', ');
+      throw new ConflictError(
+        `${existing.code} is already used (JWSO lines, Party GRNs or register movements) — its ${what} cannot be changed.`,
+      );
+    }
+
+    // Only the fields the request carries, and only when they change.
+    const patch: Partial<typeof partyMaterials.$inferInsert> = {};
+    if (input.name !== undefined && input.name !== existing.name) patch.name = input.name;
+    if (input.description !== undefined && input.description !== (existing.description ?? '')) {
+      patch.description = input.description;
+    }
+    if (input.material !== undefined && input.material !== (existing.material ?? '')) {
+      patch.material = input.material;
+    }
+    if (uomChange && input.uom !== undefined) patch.uom = input.uom;
+
+    let clientId = existing.clientId;
+    let clientCode = existing.clientCodeText ?? '';
+    if (clientChange && input.clientId !== undefined) {
+      const cl = await loadClient(tx, companyId, input.clientId);
       patch.clientId = cl.id;
       patch.clientCodeText = cl.code;
+      clientId = cl.id;
+      clientCode = cl.code;
     }
-    if (input.itemId !== undefined) {
-      if (input.itemId === null) {
-        patch.itemId = null;
-        patch.itemCodeText = null;
-      } else {
-        const itemRows = await tx
-          .select({ id: items.id, code: items.code })
-          .from(items)
-          .where(
-            and(
-              eq(items.id, input.itemId),
-              eq(items.companyId, companyId),
-              isNull(items.deletedAt),
-            ),
-          )
-          .limit(1);
-        const itm = itemRows[0];
-        if (!itm)
-          throw new NotFoundError(
-            'Selected Item was not found. Please select the Item Code again.',
-          );
-        patch.itemId = itm.id;
-        patch.itemCodeText = itm.code;
-      }
+    let itemId = existing.itemId;
+    let itemCode = existing.itemCodeText ?? '';
+    if (itemChange && input.itemId !== undefined) {
+      const itm = await loadRmItem(tx, companyId, input.itemId);
+      patch.itemId = itm.id;
+      patch.itemCodeText = itm.code;
+      itemId = itm.id;
+      itemCode = itm.code;
+    }
+    if ((clientChange || itemChange) && itemId && clientId) {
+      await assertOnePerItemClient(
+        tx,
+        companyId,
+        itemId,
+        itemCode,
+        clientId,
+        clientCode,
+        existing.id,
+      );
     }
 
-    // ADR-197: before → after, read before the update; no row when nothing changed.
+    if (Object.keys(patch).length === 0) {
+      return rowToPartyMaterial(existing);
+    }
+
+    // ADR-197: before → after, read before the update.
     const changes = diffFields(existing, patch, PARTY_MATERIAL_FIELDS);
     const updated = await tx
       .update(partyMaterials)
-      .set(patch)
+      .set({ ...patch, updatedAt: new Date(), updatedBy: userId })
       .where(eq(partyMaterials.id, existing.id))
       .returning();
     const row = updated[0];
@@ -555,42 +482,38 @@ export async function softDeletePartyMaterial(
   /** ADR-197: why it was deleted (the route requires it). */
   reason?: string,
 ): Promise<void> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
-  // edit without approve; L4 Approver has approve without edit. Previously there
-  // was no permission check here at all.
+  // Delete needs edit AND approve (L5 Department Admin and above).
   await requireFormAccess(user, 'party_create', 'edit');
   await requireFormAccess(user, 'party_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
   await withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        id: partyMaterials.id,
-        code: partyMaterials.code,
-        stockQty: partyMaterials.stockQty,
-      })
-      .from(partyMaterials)
-      .where(
-        and(
-          eq(partyMaterials.id, id),
-          eq(partyMaterials.companyId, companyId),
-          isNull(partyMaterials.deletedAt),
-        ),
-      )
-      .limit(1);
+    // Lock the row so a receipt or issue cannot land between the check and the delete.
+    const rows = (await tx.execute(sql`
+      SELECT id, code, stock_qty::int AS "stockQty"
+        FROM public.party_materials
+       WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+       FOR UPDATE
+    `)) as unknown as Array<{ id: string; code: string; stockQty: number }>;
     const existing = rows[0];
-    if (!existing)
+    if (!existing) {
       throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
-    if (existing.stockQty > 0) {
+    }
+    if (Number(existing.stockQty) > 0) {
       throw new ConflictError(
-        `Cannot delete ${existing.code}: ${existing.stockQty} still in stock. Issue it first.`,
+        `Cannot delete ${existing.code}: ${existing.stockQty} still in the customer material register.`,
+      );
+    }
+    if (await hasRegisterRows(tx, existing.id)) {
+      throw new ConflictError(
+        `Cannot delete ${existing.code}: it is used by JWSO lines, Party GRNs or register movements, ` +
+          `and that history must keep its material.`,
       );
     }
     await tx
       .update(partyMaterials)
       .set({ ...softDeleteStamp(user), updatedAt: new Date(), updatedBy: userId })
-      .where(eq(partyMaterials.id, existing.id));
+      .where(and(eq(partyMaterials.id, existing.id), isNull(partyMaterials.deletedAt)));
     await emitActivityLog(
       tx,
       {
@@ -604,102 +527,6 @@ export async function softDeletePartyMaterial(
       companyId,
       user,
     );
-  });
-}
-
-/** R7 (ADR-194): return spare customer material to the customer.
- *
- * Spare client material — over-supplied, or left over after a short-close — is
- * handed back. This takes the qty OUT of the separate party store (a
- * 'return'/'out' ledger row, capped at the current balance by the writer) and
- * bumps the returned_qty lifetime counter. Reuses the jw_create permission — it
- * is a customer-facing job-work movement, not a store-master edit. */
-export async function returnPartyMaterial(
-  id: string,
-  input: ReturnPartyMaterialInput,
-  user: AuthContext,
-): Promise<PartyMaterial> {
-  await requireFormAccess(user, 'jw_create', 'entry');
-  const companyId = requireCompany(user);
-  const userId = user.id;
-
-  return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({ id: partyMaterials.id, code: partyMaterials.code })
-      .from(partyMaterials)
-      .where(
-        and(
-          eq(partyMaterials.id, id),
-          eq(partyMaterials.companyId, companyId),
-          isNull(partyMaterials.deletedAt),
-        ),
-      )
-      .limit(1);
-    const existing = rows[0];
-    if (!existing)
-      throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
-
-    // Validate the optional JWSO line belongs to this company before it is
-    // stamped on the ledger row (it feeds the JC customer-material roll-up).
-    if (input.jwLineId) {
-      const lineRows = await tx
-        .select({ id: jobWorkOrderLines.id })
-        .from(jobWorkOrderLines)
-        .where(
-          and(
-            eq(jobWorkOrderLines.id, input.jwLineId),
-            eq(jobWorkOrderLines.companyId, companyId),
-            isNull(jobWorkOrderLines.deletedAt),
-          ),
-        )
-        .limit(1);
-      if (!lineRows[0])
-        throw new NotFoundError('Selected JWSO line was not found. Please pick it again.');
-    }
-
-    // The writer locks the row, caps the return at the current balance and
-    // lowers stock_qty; this service bumps the returned_qty lifetime counter.
-    await postPartyStockMove(tx, {
-      companyId,
-      partyMaterialId: existing.id,
-      jwLineId: input.jwLineId ?? null,
-      movement: 'return',
-      direction: 'out',
-      qty: input.qty,
-      sourceDocType: 'party_material_return',
-      sourceDocId: existing.id,
-      remarks: `Returned to customer: ${input.reason}`,
-      userId,
-      qtyLabel: 'Return Qty',
-    });
-
-    const updated = await tx
-      .update(partyMaterials)
-      .set({
-        returnedQty: sql`${partyMaterials.returnedQty} + ${input.qty}`,
-        updatedAt: new Date(),
-        updatedBy: userId,
-      })
-      .where(eq(partyMaterials.id, existing.id))
-      .returning();
-    const row = updated[0];
-    if (!row) throw new ValidationError('Could not record the return. Try again.');
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Return,
-        entity: 'PartyMaterial',
-        entityId: row.id,
-        refId: row.code,
-        qty: input.qty,
-        reason: input.reason,
-        detail: `${row.code} — returned ${input.qty} to customer`,
-      },
-      companyId,
-      user,
-    );
-    return rowToPartyMaterial(row);
   });
 }
 

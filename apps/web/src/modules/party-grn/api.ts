@@ -4,6 +4,7 @@ import type {
   ListPartyGrnResponse,
   PartyGrn,
   PartyGrnDetail,
+  PartyGrnQcInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -105,6 +106,25 @@ export function useCancelPartyGrn() {
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
+    },
+  });
+}
+
+/** ADR-203 (owner D4): Incoming QC on a Party GRN — a separate step after the
+ *  receipt, gated by qc_incoming · entry. Only the accepted qty enters the
+ *  customer-material register. */
+export function useQcPartyGrn() {
+  const qc = useQueryClient();
+  return useMutation<PartyGrnDetail, Error, { id: string } & PartyGrnQcInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<PartyGrnDetail>(`/party-grn/${id}/qc`, { method: 'POST', json: body }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      // Accepted qty enters the register; JWSO lines show rmAcceptedQty.
+      void qc.invalidateQueries({ queryKey: ['party-materials'] });
+      void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
+      void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
     },
   });
 }

@@ -3,17 +3,29 @@
 // Same shape as the sales-orders service — header + lines in a single
 // transaction, option-C merge on update (header always; lines only when
 // present in payload). Differences from SO:
-//   - No GST / type / cost-center / BOM fields on the header.
-//   - JW lines have material-received fields, not rate / clientPoLineNo.
+//   - No type / cost-center fields on the header.
 //   - Always require ≥ 1 line (no Equipment exception).
 //
-// The merge helper is duplicated rather than abstracted out — rule of three.
-// If a third module (T-032 / T-038) needs the same logic, extract then.
+// ADR-203 (JWSO structure): every line names a master item and carries its own
+// customer raw material — the `<item>-RM` item and the per-customer party
+// material — written here on EVERY save (create and update) through
+// lib/jw-rm.ts. A line that a downstream document already uses (lib/jw-line-
+// state.ts `jwLineUsage`) cannot be removed and its item / UOM / BOM are
+// locked. Header status is server-owned and derived from the lines
+// (`recomputeJwHeaderStatus`).
 
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { ActivityChange, DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import type {
+  ActivityChange,
+  DocumentTraceability,
+  EnsureJwRmItemInput,
+  EnsureJwRmItemResponse,
+  ItemType,
+  RelatedDoc,
+} from '@innovic/shared';
 import {
   ActivityAction,
+  ITEM_TYPE_RULES,
   normalizeRevision,
   revisionBackwardsMessage,
   revisionGoesBackwards,
@@ -40,11 +52,11 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { ensurePartyMaterial, ensureRmItemForOrderItem } from '../../lib/jw-rm';
+import { jwLineUsage, lockJwLine, recomputeJwHeaderStatus } from '../../lib/jw-line-state';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
-import { logger } from '../../lib/logger';
 import { emitActivityLog } from '../activity-log/service';
 import { assertBomUsableForJobWork, cascadeBomToJwLine } from '../bom-master/cascade';
-import { ensurePartyMaterialForClientItem } from '../party-materials/service';
 import type {
   CreateJobWorkOrderInput,
   JobWorkOrder,
@@ -85,23 +97,6 @@ async function assertClientExists(
   return (await assertActiveParty(tx, 'customer', clientId, companyId, keepClientId)).name;
 }
 
-async function resolveItemCodes(
-  tx: DbTransaction,
-  codes: string[],
-  companyId: string,
-): Promise<Map<string, string>> {
-  if (codes.length === 0) return new Map();
-  const rows = await tx
-    .select({ id: items.id, code: items.code })
-    .from(items)
-    .where(
-      and(eq(items.companyId, companyId), inArray(items.code, codes), isNull(items.deletedAt)),
-    );
-  const map = new Map<string, string>();
-  for (const r of rows) map.set(r.code, r.id);
-  return map;
-}
-
 /** What a JWSO line reads back from the item master: the readable code and,
  *  since 0136, the product image path for the thumbnail next to it. */
 interface ItemMasterRef {
@@ -109,11 +104,9 @@ interface ItemMasterRef {
   imagePath: string | null;
 }
 
-/** Reverse of resolveItemCodes: itemId → master item code (+ image path). Used
- *  on READ so the detail/edit form can show the readable code for lines that
- *  were resolved to an itemId at write time (their item_code_text is null).
- *  Fixes bugs 1.3/1.4. The image rides along in the same query so the line
- *  thumbnail costs no extra round trip. */
+/** itemId → master item code (+ image path). Used on READ so the detail/edit
+ *  form shows the readable code, and for the line's customer RM code. The
+ *  image rides along in the same query so the thumbnail costs no extra trip. */
 async function resolveItemCodesById(
   tx: DbTransaction,
   itemIds: Array<string | null>,
@@ -146,114 +139,165 @@ async function nextJwCode(tx: DbTransaction, companyId: string): Promise<string>
   return `IN-JW-${String(max + 1).padStart(5, '0')}`;
 }
 
-async function assertItemIdsExist(
+/** ADR-203 rule 3: every line's item must be a LIVE master item that is NOT a
+ *  customer material (Party Supplied Material — that is the line's RM, not the
+ *  part to be made). Returns itemId → master code, the line's code snapshot. */
+async function loadOrderItems(
   tx: DbTransaction,
   itemIds: string[],
   companyId: string,
-): Promise<void> {
+): Promise<Map<string, string>> {
   const unique = Array.from(new Set(itemIds));
-  if (unique.length === 0) return;
+  const map = new Map<string, string>();
+  if (unique.length === 0) return map;
   const rows = await tx
-    .select({ id: items.id })
+    .select({ id: items.id, code: items.code, itemType: items.itemType })
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     throw new ValidationError('Item not found. Please select the Item Code again.');
   }
-}
-
-function resolveLineItemRefs(
-  line: JobWorkOrderLineInput,
-  resolved: Map<string, string>,
-): { itemId: string | null; itemCodeText: string | null } {
-  if (line.itemId) {
-    return { itemId: line.itemId, itemCodeText: null };
-  }
-  const code = line.itemCodeText?.trim();
-  if (!code) {
-    throw new ValidationError('Item Code is required.');
-  }
-  const found = resolved.get(code);
-  return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
-}
-
-function assignLineNos(lines: JobWorkOrderLineInput[], startFrom: number): number[] {
-  const provided = lines.filter((l) => l.lineNo !== undefined);
-  if (provided.length > 0 && provided.length !== lines.length) {
-    throw new ValidationError('Ln is required on every row, or leave all blank.');
-  }
-  if (provided.length === 0) {
-    return lines.map((_, i) => startFrom + i);
-  }
-  const seen = new Set<number>();
-  const out: number[] = [];
-  for (const l of lines) {
-    const n = l.lineNo!;
-    if (seen.has(n)) {
-      throw new ValidationError(`Ln ${n} is used twice. Each row needs its own Ln.`);
+  for (const r of rows) {
+    if (ITEM_TYPE_RULES[r.itemType as ItemType]?.partyOwned) {
+      throw new ValidationError(
+        `${r.code} is a customer material (Party Supplied Material) — pick the part to be made, not its raw material.`,
+      );
     }
-    seen.add(n);
-    out.push(n);
+    map.set(r.id, r.code);
   }
+  return map;
+}
+
+/** ADR-203 rule 1: one resolver per save. order item → its `-RM` item, then
+ *  RM + the JWSO's customer → party material. Cached so a JWSO with five lines
+ *  of the same item asks once. Errors propagate: no save without material. */
+type RmResolver = (itemId: string) => Promise<{ rmItemId: string; partyMaterialId: string }>;
+
+function makeRmResolver(
+  tx: DbTransaction,
+  companyId: string,
+  clientId: string | null,
+  userId: string,
+): RmResolver {
+  const cache = new Map<string, { rmItemId: string; partyMaterialId: string }>();
+  return async (itemId) => {
+    const hit = cache.get(itemId);
+    if (hit) return hit;
+    if (!clientId) {
+      throw new ValidationError(
+        'A client (from the client master) is required for a Job Work order.',
+      );
+    }
+    const rm = await ensureRmItemForOrderItem(tx, companyId, itemId, userId);
+    const pm = await ensurePartyMaterial(tx, companyId, rm.rmItemId, clientId, userId);
+    const out = { rmItemId: rm.rmItemId, partyMaterialId: pm.partyMaterialId };
+    cache.set(itemId, out);
+    return out;
+  };
+}
+
+/** ADR-203 rule 1 (code review fix): bring the lines of a JWSO in step with
+ *  their customer RM WITHOUT ever moving a line that is already in use — its
+ *  receipts and issues are booked on its current party material, so re-pointing
+ *  it would strand that stock. Two cases:
+ *   · the customer changed (only allowed when no line is in use) → every line
+ *     is re-pointed to the new customer's party material; errors stop the save;
+ *   · otherwise only lines with NO RM yet (legacy rows) are backfilled, best
+ *     effort in a savepoint, so a header-only edit of an old JWSO never fails
+ *     because of master data it did not touch. */
+async function wireLineRm(
+  tx: DbTransaction,
+  p: {
+    jobWorkOrderId: string;
+    companyId: string;
+    clientId: string | null;
+    clientChanged: boolean;
+    usage: Map<string, string[]>;
+    userId: string;
+  },
+): Promise<void> {
+  const rows = await tx
+    .select({
+      id: jobWorkOrderLines.id,
+      itemId: jobWorkOrderLines.itemId,
+      rmItemId: jobWorkOrderLines.rmItemId,
+      partyMaterialId: jobWorkOrderLines.partyMaterialId,
+    })
+    .from(jobWorkOrderLines)
+    .where(
+      and(
+        eq(jobWorkOrderLines.jobWorkOrderId, p.jobWorkOrderId),
+        isNull(jobWorkOrderLines.deletedAt),
+      ),
+    );
+  const strict = makeRmResolver(tx, p.companyId, p.clientId, p.userId);
+  for (const r of rows) {
+    if (!r.itemId || p.usage.has(r.id)) continue;
+    let rm: { rmItemId: string; partyMaterialId: string } | null = null;
+    if (p.clientChanged) {
+      rm = await strict(r.itemId);
+    } else if (!r.rmItemId || !r.partyMaterialId) {
+      const itemId = r.itemId;
+      rm = await tx
+        .transaction(async (sp) => makeRmResolver(sp, p.companyId, p.clientId, p.userId)(itemId))
+        .catch(() => null);
+    }
+    if (!rm || (r.rmItemId === rm.rmItemId && r.partyMaterialId === rm.partyMaterialId)) continue;
+    await tx
+      .update(jobWorkOrderLines)
+      .set({ rmItemId: rm.rmItemId, partyMaterialId: rm.partyMaterialId, updatedBy: p.userId })
+      .where(eq(jobWorkOrderLines.id, r.id));
+  }
+}
+
+/** `uuid IN (…)` list for raw SQL. */
+function uuidList(ids: readonly string[]) {
+  return sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+}
+
+/** ADR-203 rule 9: customer material QC-ACCEPTED per JWSO line
+ *  (Σ party_grn_lines.accepted_qty by jw_line_id, live GRN + live GRN line).
+ *  Rejected pieces never count. */
+async function rmAcceptedByLine(
+  tx: DbTransaction,
+  lineIds: readonly string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (lineIds.length === 0) return out;
+  const rows = (await tx.execute(sql`
+    SELECT gl.jw_line_id AS "lineId", COALESCE(SUM(gl.accepted_qty), 0)::int AS qty
+      FROM public.party_grn_lines gl
+      JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
+     WHERE gl.jw_line_id IN (${uuidList(lineIds)}) AND gl.deleted_at IS NULL
+     GROUP BY gl.jw_line_id
+  `)) as unknown as Array<{ lineId: string; qty: number }>;
+  for (const r of rows) out.set(r.lineId, Number(r.qty));
   return out;
 }
 
-function numToStringOrNull(v: number | undefined): string | null {
-  return v === undefined ? null : v.toFixed(2);
-}
-
-/** Actual client-material receipts for one JWSO = Σ party_grn_lines.received_qty
- *  across its non-deleted Party GRNs. This is the source of truth for the
- *  "material received" badge. Returns 0 when no Party GRNs exist. */
-async function sumPartyReceivedQty(tx: DbTransaction, jobWorkOrderId: string): Promise<number> {
-  const rows = await tx.execute(sql`
-    SELECT COALESCE(SUM(gl.received_qty), 0)::int AS qty
-    FROM public.party_grn g
-    JOIN public.party_grn_lines gl
-      ON gl.party_grn_id = g.id AND gl.deleted_at IS NULL
-    WHERE g.job_work_order_id = ${jobWorkOrderId}::uuid AND g.deleted_at IS NULL
-  `);
-  return Number((rows as unknown as Array<{ qty: number }>)[0]?.qty ?? 0);
-}
-
-/** ADR-195 bridge: when a JWSO names customer-supplied material in its
- *  `clientMaterial` header field (which holds a party-supplied item CODE), make
- *  sure a party_materials record exists for this JWSO's customer + that item, so
- *  the Party GRN / QC / party-stock chain (ADR-194) has something to attach to.
- *
- *  It runs in a SAVEPOINT (a nested transaction) so that if the bridge hits a
- *  database error, only the bridge's own work rolls back — the outer JWSO save
- *  stays intact and commits. Any failure is logged and swallowed: a JWSO must
- *  never fail to save because of the bridge. Blank clientMaterial, a code that is
- *  not in the Item Master, or an item that is not party-owned are all no-ops
- *  (handled inside ensurePartyMaterialForClientItem). */
-async function bridgeClientMaterialToPartyStore(
+/** party_materials id → its PM-#### code (the customer-material register). */
+async function partyMaterialCodes(
   tx: DbTransaction,
-  params: {
-    companyId: string;
-    clientId: string | null;
-    clientMaterial: string | null;
-    jwCode: string;
-    user: AuthContext;
-  },
-): Promise<void> {
-  const { companyId, clientId, clientMaterial, jwCode, user } = params;
-  if (!clientId || !clientMaterial || !clientMaterial.trim()) return;
-  try {
-    await tx.transaction(async (sp) => {
-      await ensurePartyMaterialForClientItem(sp, {
-        companyId,
-        clientId,
-        itemCode: clientMaterial,
-        user,
-      });
-    });
-  } catch (err) {
-    logger.warn(
-      { err, jwCode, clientMaterial },
-      'JWSO → Party Material bridge failed; JWSO saved without the party material',
-    );
-  }
+  ids: Array<string | null>,
+  companyId: string,
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(ids.filter((x): x is string => Boolean(x))));
+  const out = new Map<string, string>();
+  if (unique.length === 0) return out;
+  const rows = (await tx.execute(sql`
+    SELECT id, code FROM public.party_materials
+     WHERE id IN (${uuidList(unique)}) AND company_id = ${companyId}::uuid
+  `)) as unknown as Array<{ id: string; code: string }>;
+  for (const r of rows) out.set(r.id, r.code);
+  return out;
+}
+
+/** "Ln 2 (JC-0045, PGRN-00031)" — the in-use refusal's document list. */
+function usageLabel(lineNo: number, docs: readonly string[]): string {
+  return `Ln ${lineNo} (${docs.join(', ')})`;
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────
@@ -275,13 +319,15 @@ export async function listJobWorkOrders(
   user: AuthContext,
 ): Promise<ListJobWorkOrdersResponse> {
   const companyId = requireCompany(user);
+  // ADR-203 rule 8: reading the JWSO Master needs its view right.
+  await requireFormAccess(user, 'jw_create', 'view');
   return withUserContext(user, async (tx) => {
     // Search covers every field the JWSO list card actually shows — band 1
     // (JWSO code, client name, status badge), band 2's meta line (JWSO date,
     // client PO no, earliest due date, remarks) and, via EXISTS, the expandable
-    // LINE ITEMS table (Item Code, Part Name, Material, Drawing No, UOM, Due
-    // Date, line Status). One matching line surfaces its whole JWSO — the
-    // header stays one row (#6).
+    // LINE ITEMS table (Item Code, Customer RM, Part Name, Material, Drawing
+    // No, UOM, Due Date, line Status). One matching line surfaces its whole
+    // JWSO — the header stays one row (#6).
     // Deliberately NOT searched: total / JC / dispatched / balance / line
     // quantities and the client-material qty behind the ✓ Full / ◑ Partial
     // badge — matching numbers would make "5" hit almost every JWSO. And NOT
@@ -299,6 +345,7 @@ export async function listJobWorkOrders(
                  OR EXISTS (
                    SELECT 1 FROM public.job_work_order_lines l2
                    LEFT JOIN public.items i2 ON i2.id = l2.item_id AND i2.deleted_at IS NULL
+                   LEFT JOIN public.items ri2 ON ri2.id = l2.rm_item_id AND ri2.deleted_at IS NULL
                    WHERE l2.job_work_order_id = jw.id AND l2.deleted_at IS NULL
                      AND (
                        -- Item Code is matched on BOTH the text the line stored
@@ -308,6 +355,8 @@ export async function listJobWorkOrders(
                        -- the stored text whenever the master row still existed.)
                        l2.item_code_text ILIKE ${term} ESCAPE '\\'
                        OR i2.code ILIKE ${term} ESCAPE '\\'
+                       -- ADR-203: the line's customer RM code (ABCD123-RM).
+                       OR ri2.code ILIKE ${term} ESCAPE '\\'
                        OR l2.part_name ILIKE ${term} ESCAPE '\\'
                        OR l2.material ILIKE ${term} ESCAPE '\\'
                        OR l2.drawing_no ILIKE ${term} ESCAPE '\\'
@@ -339,7 +388,10 @@ export async function listJobWorkOrders(
       LEFT JOIN (
         SELECT job_work_order_id,
           COUNT(*) AS line_count, SUM(order_qty) AS total_qty,
-          SUM(returned_qty) AS dispatched_qty, MIN(due_date) AS earliest_due
+          SUM(returned_qty) AS dispatched_qty, MIN(due_date) AS earliest_due,
+          -- ADR-203 (owner D1): 1 RM piece per finished part, so the material
+          -- needed is the order qty of the lines that have a customer RM.
+          SUM(order_qty) FILTER (WHERE rm_item_id IS NOT NULL) AS rm_required_qty
         FROM public.job_work_order_lines
         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
         GROUP BY job_work_order_id
@@ -355,16 +407,15 @@ export async function listJobWorkOrders(
           AND jc.recovery_kind IS NULL
         GROUP BY l.job_work_order_id
       ) jca ON jca.job_work_order_id = jw.id
-      -- Actual client-material receipts = Σ party_grn_lines.received_qty across
-      -- this JWSO's non-deleted Party GRNs (the real source of truth for the
-      -- material-received badge, replacing the manually-typed header field).
+      -- ADR-203: customer material QC-ACCEPTED on this JWSO's live lines
+      -- (Σ party_grn_lines.accepted_qty by jw_line_id). Rejected never counts.
       LEFT JOIN (
-        SELECT g.job_work_order_id, SUM(gl.received_qty) AS party_received_qty
-        FROM public.party_grn g
-        JOIN public.party_grn_lines gl
-          ON gl.party_grn_id = g.id AND gl.deleted_at IS NULL
-        WHERE g.deleted_at IS NULL AND g.job_work_order_id IS NOT NULL
-        GROUP BY g.job_work_order_id
+        SELECT l.job_work_order_id, SUM(gl.accepted_qty) AS party_received_qty
+        FROM public.party_grn_lines gl
+        JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
+        JOIN public.job_work_order_lines l ON l.id = gl.jw_line_id AND l.deleted_at IS NULL
+        WHERE gl.deleted_at IS NULL AND l.company_id = ${companyId}::uuid
+        GROUP BY l.job_work_order_id
       ) pg ON pg.job_work_order_id = jw.id
       WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
         ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag} ${sfFrag}`;
@@ -381,7 +432,8 @@ export async function listJobWorkOrders(
         agg.earliest_due::text AS "earliestDueDate",
         jw.status, jw.remarks,
         jw.client_material_qty::text AS "clientMaterialQty",
-        COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty"
+        COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty",
+        COALESCE(agg.rm_required_qty, 0)::int AS "rmRequiredQty"
       ${fromWhere}
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
@@ -412,6 +464,7 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     remarks: (r['remarks'] as string | null) ?? null,
     clientMaterialQty: (r['clientMaterialQty'] as string | null) ?? null,
     partyReceivedQty: Number(r['partyReceivedQty'] ?? 0),
+    rmRequiredQty: Number(r['rmRequiredQty'] ?? 0),
   };
 }
 
@@ -432,46 +485,72 @@ function hideJwLineMoney<T extends { rate: string | null }>(l: T): T {
   return { ...l, rate: null };
 }
 
+/** The ONE detail read — used by get AND by the create / update responses, so
+ *  a write answers with exactly what a read would show, money mask included
+ *  (ADR-203 rule 8). Caller has already confirmed the header is in-company. */
+async function loadJobWorkOrderDetail(
+  tx: DbTransaction,
+  id: string,
+  companyId: string,
+  showMoney: boolean,
+): Promise<JobWorkOrderDetail> {
+  const headers = await tx
+    .select()
+    .from(jobWorkOrders)
+    .where(
+      and(
+        eq(jobWorkOrders.id, id),
+        eq(jobWorkOrders.companyId, companyId),
+        isNull(jobWorkOrders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const header = headers[0];
+  if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
+
+  const lineRows = await tx
+    .select()
+    .from(jobWorkOrderLines)
+    .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
+    .orderBy(asc(jobWorkOrderLines.lineNo));
+  const lineIds = lineRows.map((l) => l.id);
+
+  // Order items and RM items share the items table — one lookup serves both.
+  const codeMap = await resolveItemCodesById(
+    tx,
+    [...lineRows.map((l) => l.itemId), ...lineRows.map((l) => l.rmItemId)],
+    companyId,
+  );
+  const pmCodes = await partyMaterialCodes(
+    tx,
+    lineRows.map((l) => l.partyMaterialId),
+    companyId,
+  );
+  const accepted = await rmAcceptedByLine(tx, lineIds);
+  const usage = await jwLineUsage(tx, lineIds);
+  // ADR-203 rule 9: Σ accepted by jw_line_id over THIS JWSO's live lines.
+  const partyReceivedQty = lineIds.reduce((a, lid) => a + (accepted.get(lid) ?? 0), 0);
+
+  const headerOut = toJobWorkOrder(header);
+  return {
+    ...(showMoney ? headerOut : hideJwHeaderMoney(headerOut)),
+    partyReceivedQty,
+    lines: lineRows.map((l) => {
+      const line = toJobWorkOrderLine(l, codeMap, {
+        partyMaterialCode: l.partyMaterialId ? (pmCodes.get(l.partyMaterialId) ?? null) : null,
+        rmAcceptedQty: accepted.get(l.id) ?? 0,
+        inUse: usage.has(l.id),
+      });
+      return showMoney ? line : hideJwLineMoney(line);
+    }),
+  };
+}
+
 export async function getJobWorkOrder(id: string, user: AuthContext): Promise<JobWorkOrderDetail> {
   const companyId = requireCompany(user);
+  await requireFormAccess(user, 'jw_create', 'view');
   const showMoney = await canSeeFormPrice(user, 'jw_create');
-  return withUserContext(user, async (tx) => {
-    const headers = await tx
-      .select()
-      .from(jobWorkOrders)
-      .where(
-        and(
-          eq(jobWorkOrders.id, id),
-          eq(jobWorkOrders.companyId, companyId),
-          isNull(jobWorkOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    const header = headers[0];
-    if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
-
-    const lineRows = await tx
-      .select()
-      .from(jobWorkOrderLines)
-      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
-      .orderBy(asc(jobWorkOrderLines.lineNo));
-
-    const codeMap = await resolveItemCodesById(
-      tx,
-      lineRows.map((l) => l.itemId),
-      companyId,
-    );
-    const partyReceivedQty = await sumPartyReceivedQty(tx, id);
-    const headerOut = toJobWorkOrder(header);
-    return {
-      ...(showMoney ? headerOut : hideJwHeaderMoney(headerOut)),
-      partyReceivedQty,
-      lines: lineRows.map((l) => {
-        const line = toJobWorkOrderLine(l, codeMap);
-        return showMoney ? line : hideJwLineMoney(line);
-      }),
-    };
-  });
+  return withUserContext(user, (tx) => loadJobWorkOrderDetail(tx, id, companyId, showMoney));
 }
 
 /**
@@ -494,6 +573,8 @@ export async function getJobWorkOrderRelated(
   user: AuthContext,
 ): Promise<DocumentTraceability> {
   const companyId = requireCompany(user);
+  // ADR-203 rule 8: the trace reads the JWSO, so it needs the JWSO view right.
+  await requireFormAccess(user, 'jw_create', 'view');
   return withUserContext(user, async (tx) => {
     // Confirm the JWO exists / is visible; grab jw_date + client_id for the
     // anchor timeline event and the upstream client link.
@@ -703,6 +784,11 @@ export async function getJobWorkOrderRelated(
 // close, and three flag columns record that the close was short and why.
 // Closing a line with a shortfall is a department-admin decision, so it takes
 // the edit AND approve pair on jw_create (no new permission key).
+//
+// ADR-203 rule 7: the line is read under its row lock (lockJwLine), a line
+// that is already closed / short-closed / fully returned is refused, the write
+// is conditional on status = 'open' (CLAUDE.md §20.2), and the header status is
+// recomputed from the lines afterwards.
 export async function shortCloseJobWorkOrderLine(
   lineId: string,
   input: ShortCloseJobWorkOrderLineInput,
@@ -717,21 +803,17 @@ export async function shortCloseJobWorkOrderLine(
   if (!reason) throw new ValidationError('Reason is required to short-close a JWSO line.');
 
   const jobWorkOrderId = await withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select()
-      .from(jobWorkOrderLines)
-      .where(
-        and(
-          eq(jobWorkOrderLines.id, lineId),
-          eq(jobWorkOrderLines.companyId, companyId),
-          isNull(jobWorkOrderLines.deletedAt),
-        ),
-      )
-      .limit(1);
-    const line = rows[0];
-    if (!line) throw new NotFoundError('JWSO line not found. Refresh the page.');
-    if (line.status === 'closed') {
-      throw new ConflictError('This JWSO line is already closed.');
+    const line = await lockJwLine(tx, companyId, lineId);
+    const where = `${line.jwCode} Ln ${line.lineNo}`;
+    if (line.shortClosedAt) throw new ConflictError(`${where} is already short-closed.`);
+    if (line.status === 'closed') throw new ConflictError(`${where} is already closed.`);
+    if (line.returnedQty >= line.orderQty) {
+      throw new ConflictError(`${where} is fully returned — there is no balance to short-close.`);
+    }
+    if (line.status !== 'open') {
+      throw new ConflictError(
+        `${where} is ${line.status} — only an open line can be short-closed.`,
+      );
     }
 
     const updated = await tx
@@ -744,35 +826,45 @@ export async function shortCloseJobWorkOrderLine(
         updatedAt: new Date(),
         updatedBy: userId,
       })
-      .where(eq(jobWorkOrderLines.id, line.id))
-      .returning();
+      .where(
+        and(
+          eq(jobWorkOrderLines.id, line.id),
+          eq(jobWorkOrderLines.status, 'open'),
+          isNull(jobWorkOrderLines.shortClosedAt),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      )
+      .returning({
+        lineNo: jobWorkOrderLines.lineNo,
+        orderQty: jobWorkOrderLines.orderQty,
+        returnedQty: jobWorkOrderLines.returnedQty,
+      });
     const row = updated[0];
-    if (!row) throw new ConflictError('Could not short-close the JWSO line. Try again.');
+    if (!row) {
+      throw new ConflictError(
+        `${where} was changed by someone else just now — reload and try again.`,
+      );
+    }
 
     const shortfall = Math.max(0, row.orderQty - row.returnedQty);
-    const hdr = await tx
-      .select({ code: jobWorkOrders.code })
-      .from(jobWorkOrders)
-      .where(eq(jobWorkOrders.id, row.jobWorkOrderId))
-      .limit(1);
-    const jwCode = hdr[0]?.code ?? null;
     await emitActivityLog(
       tx,
       {
         action: ActivityAction.CloseShort,
         entity: 'JobWorkOrder',
-        entityId: row.jobWorkOrderId,
-        refId: jwCode,
+        entityId: line.jobWorkOrderId,
+        refId: line.jwCode,
         lineRef: `Line ${row.lineNo}`,
         qty: shortfall,
         reason,
-        detail: `${jwCode ?? 'JWSO'} Ln ${row.lineNo} short-closed (${shortfall} unmet)`,
+        detail: `${line.jwCode} Ln ${row.lineNo} short-closed (${shortfall} unmet)`,
       },
       companyId,
       user,
     );
 
-    return row.jobWorkOrderId;
+    await recomputeJwHeaderStatus(tx, line.jobWorkOrderId, userId);
+    return line.jobWorkOrderId;
   });
 
   // Return the whole JWSO detail so the caller re-renders the order with the
@@ -806,14 +898,22 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
   };
 }
 
+/** ADR-203 read-only extras a line carries that are not columns on the row. */
+interface JwLineExtras {
+  partyMaterialCode: string | null;
+  rmAcceptedQty: number;
+  inUse: boolean;
+}
+
 function toJobWorkOrderLine(
   row: typeof jobWorkOrderLines.$inferSelect,
-  masterByItemId?: Map<string, ItemMasterRef>,
+  masterByItemId: Map<string, ItemMasterRef>,
+  extras: JwLineExtras,
 ): JobWorkOrderLine {
-  // On write, a line matched to a master item stores item_id and nulls
-  // item_code_text. On read we surface the readable code (from the master) so
-  // the detail page and edit form show it instead of a blank / "— linked —".
-  const master = row.itemId ? masterByItemId?.get(row.itemId) : undefined;
+  // Since ADR-203 item_code_text is the master code snapshot written on save;
+  // older rows matched to a master item stored it null, so the live master
+  // code is the fallback (bugs 1.3/1.4).
+  const master = row.itemId ? masterByItemId.get(row.itemId) : undefined;
   const resolvedCode = row.itemCodeText ?? master?.code ?? null;
   return {
     id: row.id,
@@ -826,9 +926,7 @@ function toJobWorkOrderLine(
     material: row.material,
     drawingNo: row.drawingNo,
     // Migration 0120 — the customer's drawing Rev and the drawing FILE, read
-    // back exactly as the sales-order line reads them. Both selects that feed
-    // this mapper are whole-row `select()`s, so the columns arrive on their own;
-    // what was missing was this mapper putting them on the wire.
+    // back exactly as the sales-order line reads them.
     revision: row.revision,
     drawingFilePath: row.drawingFilePath,
     // Item Master product image (0136) — the thumbnail next to code · name.
@@ -850,6 +948,14 @@ function toJobWorkOrderLine(
     shortClosedBy: row.shortClosedBy,
     shortCloseReason: row.shortCloseReason,
     sourceBomMasterId: row.sourceBomMasterId,
+    // ADR-203: the line's customer RM + its register row, accepted material
+    // and whether any document uses the line (drives the edit form's locks).
+    rmItemId: row.rmItemId,
+    rmItemCode: row.rmItemId ? (masterByItemId.get(row.rmItemId)?.code ?? null) : null,
+    partyMaterialId: row.partyMaterialId,
+    partyMaterialCode: extras.partyMaterialCode,
+    rmAcceptedQty: extras.rmAcceptedQty,
+    inUse: extras.inUse,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
@@ -862,7 +968,37 @@ function toJobWorkOrderLine(
   };
 }
 
+/** ADR-203 rule 6: a line's due date may not fall before the JWSO date. */
+function assertDueNotBeforeJwDate(lineLabel: string, dueDate: string, jwDate: string): void {
+  if (dueDate < jwDate) {
+    throw new ValidationError(
+      `${lineLabel}: Due Date ${dueDate} is before the JWSO Date ${jwDate}.`,
+    );
+  }
+}
+
 // ─── Writes ───────────────────────────────────────────────────────────────
+
+/** ADR-203 — find-or-create the customer RM item for an order item. Called by
+ *  the JWSO form the moment a line's item is picked (silent, no popup). The
+ *  save re-runs the same idempotent ensure, so this is a preview, not a gate. */
+export async function ensureJwRmItem(
+  input: EnsureJwRmItemInput,
+  user: AuthContext,
+): Promise<EnsureJwRmItemResponse> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'jw_create', 'entry');
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rm = await ensureRmItemForOrderItem(tx, companyId, input.itemId, user.id);
+    return {
+      rmItemId: rm.rmItemId,
+      rmItemCode: rm.rmItemCode,
+      rmItemName: rm.rmItemName,
+      created: rm.created,
+    };
+  });
+}
 
 export async function createJobWorkOrder(
   input: CreateJobWorkOrderInput,
@@ -871,6 +1007,13 @@ export async function createJobWorkOrder(
   requireWriteRole(user);
   await requireFormAccess(user, 'jw_create', 'entry');
   const companyId = requireCompany(user);
+  // ADR-203 rule 8: a user who may not see prices does not set them either —
+  // their rate / GST % are ignored and the response is masked like a read.
+  const showMoney = await canSeeFormPrice(user, 'jw_create');
+  const h = input.header;
+  input.lines.forEach((l, i) => {
+    if (l.dueDate) assertDueNotBeforeJwDate(`Ln ${i + 1}`, l.dueDate, h.jwDate);
+  });
 
   // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
   // collide on job_work_orders_company_code_uniq (23505) — the MAX+1 generator
@@ -881,7 +1024,7 @@ export async function createJobWorkOrder(
       // generate the next IN-JW-##### in the company series (fixes bug 1.2). A
       // caller-supplied code is still honoured (and duplicate-checked) for parity
       // with the legacy manual-entry path.
-      const code = input.header.code?.trim() || (await nextJwCode(tx, companyId));
+      const code = h.code?.trim() || (await nextJwCode(tx, companyId));
 
       const dup = await tx
         .select({ id: jobWorkOrders.id })
@@ -898,77 +1041,72 @@ export async function createJobWorkOrder(
         throw new ConflictError(`JWSO No. "${code}" already exists.`);
       }
 
-      // Client master link is enforced by the create schema (route boundary).
-      // When a client is set, snapshot its master name into customer_name so the
-      // stored customer always mirrors the master (no free text).
-      let clientName: string | null = null;
-      if (input.header.clientId) {
-        clientName = await assertClientExists(tx, input.header.clientId, companyId);
+      // Client master link is mandatory (the RM register is per customer).
+      // Snapshot its master name into customer_name (no free text).
+      if (!h.clientId) {
+        throw new ValidationError(
+          'A client (from the client master) is required for a Job Work order.',
+        );
       }
+      const clientName = await assertClientExists(tx, h.clientId, companyId);
 
-      const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
-      await assertItemIdsExist(tx, directIds, companyId);
-      const codesToResolve = input.lines
-        .filter((l) => !l.itemId && l.itemCodeText)
-        .map((l) => l.itemCodeText!.trim());
-      const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
-      const lineNos = assignLineNos(input.lines, 1);
+      const itemCodes = await loadOrderItems(
+        tx,
+        input.lines.map((l) => l.itemId),
+        companyId,
+      );
+      const resolveRm = makeRmResolver(tx, companyId, h.clientId, user.id);
 
-      const headerStatus = input.header.status ?? 'open';
       const inserted = await tx
         .insert(jobWorkOrders)
         .values({
           companyId,
           code,
-          jwDate: input.header.jwDate,
-          clientId: input.header.clientId ?? null,
-          customerName: clientName ?? input.header.customerName ?? null,
-          clientPoNo: input.header.clientPoNo ?? null,
-          status: headerStatus,
-          gstPercent: (input.header.gstPercent ?? 18).toFixed(2),
-          remarks: input.header.remarks ?? null,
-          clientMaterial: input.header.clientMaterial ?? null,
-          clientMaterialQty: numToStringOrNull(input.header.clientMaterialQty),
+          jwDate: h.jwDate,
+          clientId: h.clientId,
+          customerName: clientName,
+          clientPoNo: h.clientPoNo ?? null,
+          // ADR-203 rule 6: a new JWSO is always open (status is server-owned).
+          status: 'open',
+          gstPercent: (showMoney ? (h.gstPercent ?? 18) : 18).toFixed(2),
+          remarks: h.remarks ?? null,
           createdBy: user.id,
           updatedBy: user.id,
         })
         .returning();
       const header = inserted[0]!;
 
-      const lineValues = input.lines.map((l, i) => {
-        const refs = resolveLineItemRefs(l, resolved);
-        return {
+      const lineValues: Array<typeof jobWorkOrderLines.$inferInsert> = [];
+      for (const [i, l] of input.lines.entries()) {
+        const rm = await resolveRm(l.itemId);
+        lineValues.push({
           companyId,
           jobWorkOrderId: header.id,
-          lineNo: lineNos[i]!,
-          itemId: refs.itemId,
-          itemCodeText: refs.itemCodeText,
+          // ADR-203: numbered by the server, 1..n on a new JWSO.
+          lineNo: i + 1,
+          itemId: l.itemId,
+          itemCodeText: itemCodes.get(l.itemId) ?? null,
           partName: l.partName,
           material: l.material ?? null,
           drawingNo: l.drawingNo ?? null,
           // The customer's drawing Rev, exactly as the user typed it (0120).
-          // The sales-order line's input makes this compulsory and so has
-          // nothing to default; the JWSO line's input leaves it OPTIONAL,
-          // because the server paths that raise a JWSO line without asking a
-          // human — the BOM cascade, the SO→JW conversions — have no Rev to
-          // give. Those land on '0', the same value the column's DB default
-          // carries, written explicitly here so the row does not depend on
-          // drizzle's undefined-means-DEFAULT behaviour. The server never
-          // invents or bumps a Rev; "compulsory" is a rule the FORM enforces.
-          // ADR-177: stored upper-cased; the column default when the caller
-          // (BOM cascade, SO-to-JW conversion) did not name one.
+          // OPTIONAL on the input, because the server paths that raise a JWSO
+          // line without asking a human have no Rev to give; those land on '0',
+          // the column's DB default. ADR-177: stored upper-cased.
           revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
           drawingFilePath: l.drawingFilePath ?? null,
-          uom: l.uom,
+          uom: l.uom ?? 'NOS',
           orderQty: l.orderQty,
-          rate: (l.rate ?? 0).toFixed(2),
+          rate: showMoney ? (l.rate ?? 0).toFixed(2) : '0.00',
           dueDate: l.dueDate ?? null,
-          status: l.status ?? headerStatus,
+          status: 'open' as const,
+          rmItemId: rm.rmItemId,
+          partyMaterialId: rm.partyMaterialId,
           sourceBomMasterId: l.sourceBomMasterId ?? null,
           createdBy: user.id,
           updatedBy: user.id,
-        };
-      });
+        });
+      }
 
       // BOM-8 for job work (0086): refuse bought parts BEFORE writing anything,
       // so the user gets the friendly error instead of a half-built JWSO.
@@ -988,12 +1126,6 @@ export async function createJobWorkOrder(
         }
       }
 
-      const codeMap = await resolveItemCodesById(
-        tx,
-        insertedLines.map((l) => l.itemId),
-        companyId,
-      );
-
       await emitActivityLog(
         tx,
         {
@@ -1008,22 +1140,7 @@ export async function createJobWorkOrder(
         user,
       );
 
-      // ADR-195: ensure the customer-material item has a party_materials record
-      // for this customer, in the same transaction as the JWSO save.
-      await bridgeClientMaterialToPartyStore(tx, {
-        companyId,
-        clientId: header.clientId,
-        clientMaterial: header.clientMaterial,
-        jwCode: header.code,
-        user,
-      });
-
-      return {
-        ...toJobWorkOrder(header),
-        // A freshly created JWSO cannot have any Party GRNs yet.
-        partyReceivedQty: 0,
-        lines: insertedLines.map((l) => toJobWorkOrderLine(l, codeMap)),
-      };
+      return loadJobWorkOrderDetail(tx, header.id, companyId, showMoney);
     }),
   );
 }
@@ -1039,9 +1156,7 @@ export async function updateJobWorkOrder(
   // Money in, same rule as money out. `priceOff` makes "can do the job but must
   // not see the number" a supported setup, so an editor with prices hidden is a
   // real user — and their form posts back money fields it never showed them.
-  // The rate/percent fields carry zod defaults, so a blinded payload does not
-  // merely omit them: it arrives holding a default that would overwrite the
-  // stored figures. Ignore them here — what is stored stands.
+  // Ignore them here — what is stored stands.
   const showMoney = await canSeeFormPrice(user, 'jw_create');
 
   return withUserContext(user, async (tx) => {
@@ -1062,76 +1177,99 @@ export async function updateJobWorkOrder(
     // R5: refuse the save if someone else edited the JWSO after this form opened it.
     assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
+    // ADR-203 rule 4: lock every live line before reading what uses them, so
+    // no Job Card / Party GRN can attach between the check and the write.
+    const existingLines = await tx
+      .select()
+      .from(jobWorkOrderLines)
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
+      .for('update');
+    const usage = await jwLineUsage(
+      tx,
+      existingLines.map((l) => l.id),
+    );
+
+    const h = input.header;
+    const nextClientId = h.clientId !== undefined ? (h.clientId ?? null) : existingHdr.clientId;
+    if (nextClientId !== existingHdr.clientId && usage.size > 0) {
+      const inUse = existingLines
+        .filter((l) => usage.has(l.id))
+        .map((l) => usageLabel(l.lineNo, usage.get(l.id)!));
+      throw new ConflictError(
+        `The customer cannot be changed — ${inUse.join('; ')} already use this JWSO's lines.`,
+      );
+    }
+
     // When the client changes, snapshot the customer name from the master.
     let snapshotClientName: string | null = null;
-    if (input.header.clientId !== undefined && input.header.clientId !== null) {
+    if (h.clientId !== undefined && nextClientId) {
       snapshotClientName = await assertClientExists(
         tx,
-        input.header.clientId,
+        nextClientId,
         companyId,
         existingHdr.clientId,
       );
     }
 
+    // Status is server-owned (ADR-203): never taken from the payload; derived
+    // from the lines by recomputeJwHeaderStatus below. The header-level
+    // customer material (client_material / _qty) is no longer written — each
+    // LINE carries its own RM; the old columns stay readable as legacy.
     const updates: Record<string, unknown> = { updatedBy: user.id };
-    const h = input.header;
     if (h.jwDate !== undefined) updates['jwDate'] = h.jwDate;
-    if (h.clientId !== undefined) updates['clientId'] = h.clientId ?? null;
+    if (h.clientId !== undefined) updates['clientId'] = nextClientId;
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
-    // Status is IMMUTABLE on a raw edit: preserve the existing JWSO status
-    // regardless of what the payload sends (mirror of updateJobCard /
-    // updatePurchaseOrder source-immutability). JWSO status moves ONLY through
-    // its cascades — JC-completion (open→closed), JW-Return (→dispatched) — and
-    // soft-delete for cancel; a plain update flipping status would only cause
-    // drift. Silently ignore input.status.
-    updates['status'] = existingHdr.status;
     if (h.gstPercent !== undefined && showMoney)
       updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
-    if (h.clientMaterial !== undefined) updates['clientMaterial'] = h.clientMaterial ?? null;
-    if (h.clientMaterialQty !== undefined)
-      updates['clientMaterialQty'] = numToStringOrNull(h.clientMaterialQty);
 
     // ADR-197: before → after of the header, read BEFORE the update.
     const headerChanges = diffFields(existingHdr, updates, JW_HEADER_FIELDS);
 
     await tx.update(jobWorkOrders).set(updates).where(eq(jobWorkOrders.id, id));
 
+    const resolveRm = makeRmResolver(tx, companyId, nextClientId, user.id);
     const lineLogs =
       input.lines !== undefined
-        ? await mergeLines(tx, id, companyId, input.lines, user, showMoney)
+        ? await mergeLines(tx, {
+            jobWorkOrderId: id,
+            companyId,
+            inputLines: input.lines,
+            existing: existingLines,
+            usage,
+            user,
+            showMoney,
+            resolveRm,
+            jwDate: h.jwDate ?? existingHdr.jwDate,
+          })
         : [];
 
+    // ADR-203 rule 1: every live line — sent or not — ends the save with its RM
+    // and the (possibly new) customer's party material.
+    await wireLineRm(tx, {
+      jobWorkOrderId: id,
+      companyId,
+      clientId: nextClientId,
+      clientChanged: nextClientId !== existingHdr.clientId,
+      usage,
+      userId: user.id,
+    });
+    // ADR-203 rule 7: header status follows the lines.
+    await recomputeJwHeaderStatus(tx, id, user.id);
+
     const updatedHdrRows = await tx
-      .select()
+      .select({
+        id: jobWorkOrders.id,
+        code: jobWorkOrders.code,
+        customerName: jobWorkOrders.customerName,
+      })
       .from(jobWorkOrders)
       .where(eq(jobWorkOrders.id, id))
       .limit(1);
-    const lineRows = await tx
-      .select()
-      .from(jobWorkOrderLines)
-      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
-      .orderBy(asc(jobWorkOrderLines.lineNo));
-
     const updatedHdr = updatedHdrRows[0]!;
 
-    // ADR-195: keep the customer-material → party_materials bridge in step with
-    // the (possibly changed) client + clientMaterial, in the same transaction.
-    await bridgeClientMaterialToPartyStore(tx, {
-      companyId,
-      clientId: updatedHdr.clientId,
-      clientMaterial: updatedHdr.clientMaterial,
-      jwCode: updatedHdr.code,
-      user,
-    });
-
-    const codeMap = await resolveItemCodesById(
-      tx,
-      lineRows.map((l) => l.itemId),
-      companyId,
-    );
     // ADR-197: one row for the header (only when a header field changed) and
     // one per line added / changed / removed, each carrying its own lineRef.
     if (headerChanges.length > 0) {
@@ -1167,12 +1305,7 @@ export async function updateJobWorkOrder(
       );
     }
 
-    const partyReceivedQty = await sumPartyReceivedQty(tx, id);
-    return {
-      ...toJobWorkOrder(updatedHdr),
-      partyReceivedQty,
-      lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
-    };
+    return loadJobWorkOrderDetail(tx, id, companyId, showMoney);
   });
 }
 
@@ -1192,8 +1325,6 @@ const JW_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'clientPoNo', label: 'Client PO No.' },
   { key: 'gstPercent', label: 'GST %' },
   { key: 'remarks', label: 'Remarks' },
-  { key: 'clientMaterial', label: 'Customer Material (Item -rm)' },
-  { key: 'clientMaterialQty', label: 'Material Qty' },
 ];
 
 /** JWSO line fields compared on Edit — labels as on the JWSO form's line grid. */
@@ -1201,8 +1332,9 @@ function jwLineFields(itemCode: (v: unknown) => string | null): readonly DiffFie
   const fileName = (v: unknown): string | null =>
     v == null || v === '' ? null : (String(v).split('/').pop() ?? String(v));
   return [
-    { key: 'lineNo', label: 'Ln' },
     { key: 'itemId', label: 'Item Code', format: itemCode },
+    // ADR-203: the line's customer raw material (`<item>-RM`).
+    { key: 'rmItemId', label: 'Customer RM', format: itemCode },
     { key: 'partName', label: 'Item Name' },
     { key: 'material', label: 'Material' },
     { key: 'drawingNo', label: 'Drawing No.' },
@@ -1212,7 +1344,6 @@ function jwLineFields(itemCode: (v: unknown) => string | null): readonly DiffFie
     { key: 'orderQty', label: 'Order Qty' },
     { key: 'rate', label: 'Rate' },
     { key: 'dueDate', label: 'Due Date' },
-    { key: 'status', label: 'Status' },
     {
       key: 'sourceBomMasterId',
       label: 'Assembly BOM',
@@ -1221,51 +1352,102 @@ function jwLineFields(itemCode: (v: unknown) => string | null): readonly DiffFie
   ];
 }
 
+/** ADR-203 rule 4: the least a line's Order Qty may be — what has already
+ *  been returned, invoiced, or put on (non-recovery) Job Cards for it. */
+async function orderQtyFloor(
+  tx: DbTransaction,
+  companyId: string,
+  line: typeof jobWorkOrderLines.$inferSelect,
+): Promise<{ floor: number; jcQty: number }> {
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(SUM(order_qty), 0)::int AS qty
+      FROM public.job_cards
+     WHERE source_jw_line_id = ${line.id}::uuid AND company_id = ${companyId}::uuid
+       AND deleted_at IS NULL AND recovery_kind IS NULL
+  `)) as unknown as Array<{ qty: number }>;
+  const jcQty = Number(rows[0]?.qty ?? 0);
+  // Code review fix: customer material already accepted, or received and
+  // waiting for QC, on this line also holds the qty up (1 RM piece per part).
+  const mat = (await tx.execute(sql`
+    SELECT COALESCE(SUM(CASE WHEN pgl.qc_at IS NULL AND pgl.accepted_qty = 0 AND pgl.rejected_qty = 0
+                             THEN pgl.received_qty ELSE pgl.accepted_qty END), 0)::int AS qty
+      FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+     WHERE pgl.jw_line_id = ${line.id}::uuid AND pgl.deleted_at IS NULL
+  `)) as unknown as Array<{ qty: number }>;
+  const matQty = Number(mat[0]?.qty ?? 0);
+  return { floor: Math.max(line.returnedQty, line.invoicedQty, jcQty, matQty), jcQty };
+}
+
 async function mergeLines(
   tx: DbTransaction,
-  jobWorkOrderId: string,
-  companyId: string,
-  inputLines: JobWorkOrderLineInput[],
-  user: AuthContext,
-  /** False when the caller may not see money on this form — their payload's
-   *  `rate` is then ignored on an EXISTING line so the stored figure survives.
-   *  A NEW line still takes the input (there is no stored value to protect). */
-  showMoney: boolean,
+  p: {
+    jobWorkOrderId: string;
+    companyId: string;
+    inputLines: JobWorkOrderLineInput[];
+    /** The live lines, already locked FOR UPDATE by the caller. */
+    existing: Array<typeof jobWorkOrderLines.$inferSelect>;
+    usage: Map<string, string[]>;
+    user: AuthContext;
+    /** False when the caller may not see money on this form — their payload's
+     *  `rate` is then ignored (an existing line keeps its figure, a new line
+     *  gets 0), same rule as create. */
+    showMoney: boolean;
+    resolveRm: RmResolver;
+    /** The JWSO date after this save — a line's due date may not precede it. */
+    jwDate: string;
+  },
 ): Promise<JwLineLog[]> {
-  // The whole stored line: its Rev is compared for ADR-177 (never backwards)
-  // and every field feeds the ADR-197 before → after of the line edit.
-  const existing = await tx
-    .select()
-    .from(jobWorkOrderLines)
-    .where(
-      and(
-        eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrderId),
-        isNull(jobWorkOrderLines.deletedAt),
-      ),
-    );
+  const { jobWorkOrderId, companyId, inputLines, existing, usage, user, showMoney, resolveRm } = p;
   const existingById = new Map(existing.map((e) => [e.id, e]));
 
-  const directIds = inputLines.flatMap((l) => (l.itemId ? [l.itemId] : []));
-  await assertItemIdsExist(tx, directIds, companyId);
-  const codesToResolve = inputLines
-    .filter((l) => !l.itemId && l.itemCodeText)
-    .map((l) => l.itemCodeText!.trim());
-  const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
-
+  // ADR-203 rule 3: a line id must be a live line of THIS JWSO.
   const seenInputIds = new Set<string>();
-  const toInsert: JobWorkOrderLineInput[] = [];
-  const toUpdate: Array<{ id: string; data: JobWorkOrderLineInput }> = [];
-
   for (const l of inputLines) {
-    if (l.id && existingById.has(l.id)) {
-      seenInputIds.add(l.id);
-      toUpdate.push({ id: l.id, data: l });
-    } else {
-      toInsert.push(l);
+    if (l.id === undefined) continue;
+    if (!existingById.has(l.id)) {
+      throw new ValidationError(
+        'A line on this form is no longer on the JWSO (removed or from another order). Reload and redo your change.',
+      );
     }
+    if (seenInputIds.has(l.id)) {
+      throw new ValidationError('The same JWSO line was sent twice. Reload and redo your change.');
+    }
+    seenInputIds.add(l.id);
   }
 
+  const itemCodes = await loadOrderItems(
+    tx,
+    inputLines.map((l) => l.itemId),
+    companyId,
+  );
+
+  const toInsert = inputLines.filter((l) => l.id === undefined);
+  const toUpdate = inputLines.flatMap((l) => (l.id !== undefined ? [{ id: l.id, data: l }] : []));
   const absentIds = existing.map((e) => e.id).filter((eid) => !seenInputIds.has(eid));
+
+  // ADR-203 rule 4: a line a document already uses cannot be removed.
+  const blocked = absentIds.filter((eid) => usage.has(eid));
+  if (blocked.length > 0) {
+    const labels = blocked.map((eid) => usageLabel(existingById.get(eid)!.lineNo, usage.get(eid)!));
+    throw new ConflictError(
+      `${labels.join('; ')} ${blocked.length === 1 ? 'is' : 'are'} already in use and cannot be removed — Short-close the line instead.`,
+    );
+  }
+
+  // Customer RM per sent line (rule 1) — resolved up front so the History diff
+  // can name the RM codes.
+  // Code review fix: only NEW lines and lines whose item CHANGES need an RM
+  // here (errors stop the save). An unchanged line keeps the RM it has — an
+  // in-use line's receipts are booked on it; a legacy line without one is
+  // backfilled best-effort by wireLineRm after the merge.
+  const rmByItem = new Map<string, { rmItemId: string; partyMaterialId: string }>();
+  for (const l of inputLines) {
+    const before = l.id ? existingById.get(l.id) : undefined;
+    const needs = !before || before.itemId !== l.itemId;
+    if (needs && !rmByItem.has(l.itemId)) rmByItem.set(l.itemId, await resolveRm(l.itemId));
+  }
+
   if (absentIds.length > 0) {
     await tx
       .update(jobWorkOrderLines)
@@ -1273,13 +1455,14 @@ async function mergeLines(
       .where(inArray(jobWorkOrderLines.id, absentIds));
   }
 
-  // ADR-197: Item Code changes read as codes, not uuids.
+  // ADR-197: Item Code / Customer RM changes read as codes, not uuids.
   const codeById = await resolveItemCodesById(
     tx,
     [
       ...existing.map((e) => e.itemId),
-      ...inputLines.map((l) => l.itemId ?? null),
-      ...Array.from(resolved.values()),
+      ...existing.map((e) => e.rmItemId),
+      ...inputLines.map((l) => l.itemId),
+      ...Array.from(rmByItem.values()).map((r) => r.rmItemId),
     ],
     companyId,
   );
@@ -1308,61 +1491,86 @@ async function mergeLines(
   }
 
   for (const u of toUpdate) {
-    const refs = resolveLineItemRefs(u.data, resolved);
-    const lineUpdate: Record<string, unknown> = { updatedBy: user.id };
-    if (u.data.lineNo !== undefined) lineUpdate['lineNo'] = u.data.lineNo;
-    if (u.data.itemId !== undefined || u.data.itemCodeText !== undefined) {
-      lineUpdate['itemId'] = refs.itemId;
-      lineUpdate['itemCodeText'] = refs.itemCodeText;
+    const before = existingById.get(u.id)!;
+    const ln = `Ln ${before.lineNo}`;
+    const inUseDocs = usage.get(u.id);
+    const itemChanged = u.data.itemId !== before.itemId;
+    const uomChanged = u.data.uom !== undefined && u.data.uom !== before.uom;
+    const bomChanged =
+      u.data.sourceBomMasterId !== undefined &&
+      u.data.sourceBomMasterId !== before.sourceBomMasterId;
+    // ADR-203 rule 4: item / UOM / BOM are locked once a document uses the line.
+    if (inUseDocs && (itemChanged || uomChanged || bomChanged)) {
+      const what = itemChanged ? 'Item Code' : uomChanged ? 'UOM' : 'Assembly BOM';
+      throw new ConflictError(
+        `${usageLabel(before.lineNo, inUseDocs)} is already in use — its ${what} cannot be changed.`,
+      );
     }
-    if (u.data.partName !== undefined) lineUpdate['partName'] = u.data.partName;
+
+    const rm = itemChanged ? rmByItem.get(u.data.itemId) : undefined;
+    const lineUpdate: Record<string, unknown> = {
+      updatedBy: user.id,
+      itemId: u.data.itemId,
+      ...(rm ? { rmItemId: rm.rmItemId, partyMaterialId: rm.partyMaterialId } : {}),
+    };
+    // The code snapshot follows the item; an unchanged item keeps the code it
+    // was raised with (older rows that stored null get it filled).
+    if (itemChanged || !before.itemCodeText) {
+      lineUpdate['itemCodeText'] = itemCodes.get(u.data.itemId) ?? null;
+    }
+    lineUpdate['partName'] = u.data.partName;
+    // `null` clears; absent leaves the stored value.
     if (u.data.material !== undefined) lineUpdate['material'] = u.data.material ?? null;
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
-    // Rev and drawing file are written like any other field the user typed
-    // (0120). Absent from the payload means "not mentioned", so the stored
-    // value survives; an explicit null on the file means the user CLEARED the
-    // drawing and has to be written through, which is why `?? null` is here and
-    // the `!== undefined` test is outside it.
-    //
-    // Unlike the sales-order line there is no history table to feed: drawing
-    // revisions are logged per SO line (so_line_drawing_revisions) and job-work
-    // lines have no equivalent. The stored Rev is read back for one reason
-    // only — ADR-177: a Rev is stored upper-cased and may never go backwards
-    // on a line (B → A, 2 → 1). A change of kind (1 → A) is allowed.
+    // ADR-177: a Rev is stored upper-cased and may never go backwards on a
+    // line (B → A, 2 → 1). A change of kind (1 → A) is allowed.
     if (u.data.revision !== undefined) {
-      const stored = existingById.get(u.id)!;
       const nextRevision = normalizeRevision(u.data.revision);
-      if (revisionGoesBackwards(stored.revision, nextRevision)) {
-        const lineNo = u.data.lineNo ?? stored.lineNo;
-        throw new ValidationError(revisionBackwardsMessage(lineNo, stored.revision, nextRevision));
+      if (revisionGoesBackwards(before.revision, nextRevision)) {
+        throw new ValidationError(
+          revisionBackwardsMessage(before.lineNo, before.revision, nextRevision),
+        );
       }
       lineUpdate['revision'] = nextRevision;
     }
     if (u.data.drawingFilePath !== undefined)
       lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
+    // UOM only changes when it is sent.
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
-    if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
-    if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = (u.data.rate ?? 0).toFixed(2);
-    if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
-    if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
+    if (u.data.orderQty !== before.orderQty) {
+      if (u.data.orderQty < before.orderQty) {
+        const { floor, jcQty } = await orderQtyFloor(tx, companyId, before);
+        if (u.data.orderQty < floor) {
+          throw new ValidationError(
+            `${ln}: Order Qty cannot go below ${floor} — returned ${before.returnedQty}, invoiced ${before.invoicedQty}, on Job Cards ${jcQty}, or customer material already received for it.`,
+          );
+        }
+      }
+      lineUpdate['orderQty'] = u.data.orderQty;
+    }
+    if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = u.data.rate.toFixed(2);
+    if (u.data.dueDate !== undefined) {
+      if (u.data.dueDate !== null && u.data.dueDate !== before.dueDate) {
+        assertDueNotBeforeJwDate(ln, u.data.dueDate, p.jwDate);
+      }
+      lineUpdate['dueDate'] = u.data.dueDate;
+    }
     if (u.data.sourceBomMasterId !== undefined) {
       // Validate before storing. Deliberately does NOT re-cascade: the cascade
       // is idempotent on existing child JCs, so re-pointing a line that already
       // spawned work would silently change the BOM of record without changing
       // the shop floor. Same behaviour as the sales-order update path.
-      if (u.data.sourceBomMasterId) {
-        await assertBomUsableForJobWork(tx, u.data.sourceBomMasterId, companyId);
-      }
-      lineUpdate['sourceBomMasterId'] = u.data.sourceBomMasterId ?? null;
+      if (bomChanged) await assertBomUsableForJobWork(tx, u.data.sourceBomMasterId, companyId);
+      lineUpdate['sourceBomMasterId'] = u.data.sourceBomMasterId;
     }
+    // Line status is server-owned (ADR-203 rule 3) — never taken from input.
 
-    const beforeLine = existingById.get(u.id)!;
-    const lineChanges = diffFields(beforeLine, lineUpdate, lineFields);
+    const lineChanges = diffFields(before, lineUpdate, lineFields);
     await tx.update(jobWorkOrderLines).set(lineUpdate).where(eq(jobWorkOrderLines.id, u.id));
     if (lineChanges.length > 0) {
       logs.push({
         action: ActivityAction.Edit,
-        lineNo: Number(lineUpdate['lineNo'] ?? beforeLine.lineNo),
+        lineNo: before.lineNo,
         what: 'edited',
         changes: lineChanges,
       });
@@ -1370,32 +1578,40 @@ async function mergeLines(
   }
 
   if (toInsert.length > 0) {
-    const survivingMax = existing
-      .filter((e) => !absentIds.includes(e.id))
-      .reduce((m, e) => Math.max(m, e.lineNo), 0);
-    const startFrom = survivingMax + 1;
-    const newLineNos = assignLineNos(toInsert, startFrom);
+    // ADR-203 rule 3: a new line takes MAX(line_no)+1 over EVERY line this
+    // JWSO ever had — removed ones included — so a number is never reused
+    // (History and printed papers name lines by number). Safe under the
+    // header row lock the caller holds.
+    const maxRows = (await tx.execute(sql`
+      SELECT COALESCE(MAX(line_no), 0)::int AS n
+        FROM public.job_work_order_lines
+       WHERE job_work_order_id = ${jobWorkOrderId}::uuid
+    `)) as unknown as Array<{ n: number }>;
+    const startFrom = Number(maxRows[0]?.n ?? 0) + 1;
     const values = toInsert.map((l, i) => {
-      const refs = resolveLineItemRefs(l, resolved);
+      const lineNo = startFrom + i;
+      if (l.dueDate) assertDueNotBeforeJwDate(`Ln ${lineNo}`, l.dueDate, p.jwDate);
+      const rm = rmByItem.get(l.itemId)!;
       return {
         companyId,
         jobWorkOrderId,
-        lineNo: newLineNos[i]!,
-        itemId: refs.itemId,
-        itemCodeText: refs.itemCodeText,
+        lineNo,
+        itemId: l.itemId,
+        itemCodeText: itemCodes.get(l.itemId) ?? null,
         partName: l.partName,
         material: l.material ?? null,
         drawingNo: l.drawingNo ?? null,
-        // Same as the create path: a line added on edit is still a new line,
-        // and it takes the Rev the user typed, or '0' when nobody was asked.
-        // ADR-177: stored upper-cased (same rule as the create path).
+        // Same as the create path: the Rev the user typed, or '0' when nobody
+        // was asked. ADR-177: stored upper-cased.
         revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
         drawingFilePath: l.drawingFilePath ?? null,
-        uom: l.uom,
+        uom: l.uom ?? 'NOS',
         orderQty: l.orderQty,
-        rate: (l.rate ?? 0).toFixed(2),
+        rate: showMoney ? (l.rate ?? 0).toFixed(2) : '0.00',
         dueDate: l.dueDate ?? null,
-        status: l.status ?? 'open',
+        status: 'open' as const,
+        rmItemId: rm.rmItemId,
+        partyMaterialId: rm.partyMaterialId,
         sourceBomMasterId: l.sourceBomMasterId ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -1450,11 +1666,32 @@ export async function softDeleteJobWorkOrder(
           isNull(jobWorkOrders.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const row = existing[0];
     if (!row) {
       throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
     }
+
+    // ADR-203 rule 5: a JWSO whose lines any document uses stays.
+    const lines = await tx
+      .select({ id: jobWorkOrderLines.id, lineNo: jobWorkOrderLines.lineNo })
+      .from(jobWorkOrderLines)
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
+      .for('update');
+    const usage = await jwLineUsage(
+      tx,
+      lines.map((l) => l.id),
+    );
+    if (usage.size > 0) {
+      const labels = lines
+        .filter((l) => usage.has(l.id))
+        .map((l) => usageLabel(l.lineNo, usage.get(l.id)!));
+      throw new ConflictError(
+        `${row.code} cannot be moved to Trash — ${labels.join('; ')} already use it. Short-close the lines instead.`,
+      );
+    }
+
     const stamp = softDeleteStamp(user);
     await tx
       .update(jobWorkOrderLines)

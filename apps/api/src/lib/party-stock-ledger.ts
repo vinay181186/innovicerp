@@ -49,7 +49,8 @@ export interface PartyStockMoveResult {
   partyMaterialCode: string;
 }
 
-/** Lock the party material row and return its code + current balance (stockQty). */
+/** Lock the LIVE party material row and return its code + current balance
+ *  (stockQty). ADR-203: a deleted material can take no movement. */
 async function lockPartyMaterial(
   tx: DbTransaction,
   companyId: string,
@@ -59,6 +60,7 @@ async function lockPartyMaterial(
     SELECT code, stock_qty::int AS balance
     FROM public.party_materials
     WHERE id = ${partyMaterialId}::uuid AND company_id = ${companyId}::uuid
+      AND deleted_at IS NULL
     FOR UPDATE
   `)) as unknown as Array<{ code: string; balance: number }>;
   const row = rows[0];

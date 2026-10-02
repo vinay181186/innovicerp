@@ -112,17 +112,23 @@ export function itemTypeLabel(t: string): string {
   return (ITEM_TYPE_RULES as Record<string, ItemTypeRule>)[t]?.label ?? t;
 }
 
-/** ADR-195: a Party Supplied Material item's code carries this suffix, e.g.
- *  ITM-0042-rm. Case-insensitive; appended only once. Backend (item create/next
- *  code) and the item form both call this so the two never disagree. */
-export const PARTY_MATERIAL_CODE_SUFFIX = '-rm';
+/** ADR-195 + ADR-203: a Party Supplied Material item's code carries this
+ *  suffix. ADR-203 (owner D2): upper-case `-RM`, and the code is the ORDER
+ *  item's code + `-RM` (ABCD123 → ABCD123-RM). Matching is case-insensitive
+ *  (an old `-rm` still reads as one); the suffix is appended only once. */
+export const PARTY_MATERIAL_CODE_SUFFIX = '-RM';
 
 export function withPartyMaterialSuffix(baseCode: string): string {
   const c = baseCode.trim();
-  return c.toLowerCase().endsWith(PARTY_MATERIAL_CODE_SUFFIX) ? c : `${c}${PARTY_MATERIAL_CODE_SUFFIX}`;
+  return isPartyMaterialCode(c) ? `${c.slice(0, -PARTY_MATERIAL_CODE_SUFFIX.length)}${PARTY_MATERIAL_CODE_SUFFIX}` : `${c}${PARTY_MATERIAL_CODE_SUFFIX}`;
 }
 
 /** True when a code is (or ends like) a Party Supplied Material code. */
 export function isPartyMaterialCode(code: string): boolean {
-  return code.trim().toLowerCase().endsWith(PARTY_MATERIAL_CODE_SUFFIX);
+  return code.trim().toUpperCase().endsWith(PARTY_MATERIAL_CODE_SUFFIX);
+}
+
+/** ADR-203: the customer-RM item code for an order item code. */
+export function rmCodeForItemCode(orderItemCode: string): string {
+  return withPartyMaterialSuffix(orderItemCode);
 }

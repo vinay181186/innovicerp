@@ -4,10 +4,10 @@
 // cannot return more than has actually been PRODUCED (terminal QC-accepted qty
 // on the line's Job Card, read from v_jc_op_status) minus what was already
 // returned — mirrors the customer-dispatch readiness gate. Bumps
-// job_work_order_lines.returned_qty and flips the JWSO to 'dispatched' once
-// every line is fully returned.
+// job_work_order_lines.returned_qty; the JWSO header status is then re-derived
+// by recomputeJwHeaderStatus (ADR-203, the only writer of that status).
 
-import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
+import { type SQL, and, count, desc, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
 import {
   ActivityAction,
   type CreateJwReturnChallanInput,
@@ -27,7 +27,8 @@ import {
   jwReturnChallans,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
+import { recomputeJwHeaderStatus } from '../../lib/jw-line-state';
 import {
   AuthorizationError,
   ConflictError,
@@ -305,7 +306,8 @@ export async function createJwReturnChallan(
   input: CreateJwReturnChallanInput,
   user: AuthContext,
 ): Promise<JwReturnChallan> {
-  requireWriteRole(user);
+  // ADR-203 — form access is the rule (the JWSO page's key), not the old role check.
+  await requireFormAccess(user, 'jw_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -364,11 +366,12 @@ export async function createJwReturnChallan(
       );
     }
 
-    // 3) Optional JC
+    // 3) Optional JC — it must be a card raised on THIS JWSO line (ADR-203),
+    // or the challan would name a card that made a different part.
     let jobCardId: string | null = null;
     if (input.jobCardId) {
       const jcRows = await tx
-        .select({ id: jobCards.id })
+        .select({ id: jobCards.id, code: jobCards.code, sourceJwLineId: jobCards.sourceJwLineId })
         .from(jobCards)
         .where(
           and(
@@ -378,9 +381,14 @@ export async function createJwReturnChallan(
           ),
         )
         .limit(1);
-      if (!jcRows[0])
-        throw new NotFoundError('Selected JC was not found. Please pick the JC No. again.');
-      jobCardId = jcRows[0].id;
+      const jc = jcRows[0];
+      if (!jc) throw new NotFoundError('Selected JC was not found. Please pick the JC No. again.');
+      if (jc.sourceJwLineId !== line.id) {
+        throw new ValidationError(
+          `${jc.code} is not a Job Card of ${jw.code} Ln ${line.lineNo}. Pick a JC raised on this line.`,
+        );
+      }
+      jobCardId = jc.id;
     }
 
     // 4) Insert return challan — with its legal copy of the customer (plan D7,
@@ -459,25 +467,11 @@ export async function createJwReturnChallan(
       .set({ returnedQty: newReturned, updatedAt: new Date(), updatedBy: userId })
       .where(eq(jobWorkOrderLines.id, line.id));
 
-    // 6) Flip JWSO → dispatched once EVERY line is fully returned
-    const siblings = await tx
-      .select({
-        id: jobWorkOrderLines.id,
-        orderQty: jobWorkOrderLines.orderQty,
-        returnedQty: jobWorkOrderLines.returnedQty,
-      })
-      .from(jobWorkOrderLines)
-      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)));
-    const allReturned = siblings.every((s) => {
-      const eff = s.id === line.id ? newReturned : s.returnedQty;
-      return eff >= s.orderQty;
-    });
-    if (allReturned) {
-      await tx
-        .update(jobWorkOrders)
-        .set({ status: 'dispatched', updatedAt: new Date(), updatedBy: userId })
-        .where(and(eq(jobWorkOrders.id, jw.id), isNull(jobWorkOrders.deletedAt)));
-    }
+    // 6) The JWSO header status is derived from its lines by the ONE writer
+    // (ADR-203, lib/jw-line-state.ts) — 'dispatched' once every line is fully
+    // returned or short-closed.
+    const headerStatus = await recomputeJwHeaderStatus(tx, jw.id, userId);
+    const allReturned = headerStatus === 'dispatched';
 
     // ADR-197: one row per document — the challan, and the JWSO whose line
     // the goods left against.
@@ -505,7 +499,7 @@ export async function createJwReturnChallan(
         qty: input.qty,
         detail:
           `${jw.code} Ln ${line.lineNo} — ${input.qty} returned to customer on ${code}` +
-          (allReturned ? ' (every line returned — JWSO Dispatched)' : ''),
+          (allReturned ? ' (JWSO now Dispatched)' : ''),
       },
       companyId,
       user,
@@ -523,8 +517,10 @@ export async function cancelJwReturnChallan(
   // Reverses a JW Return Challan (mirrors delivery-challans.cancelDeliveryChallan).
   // Creating a return bumped job_work_order_lines.returned_qty and may have
   // flipped the JWSO to 'dispatched' once every line was fully returned — this
-  // unwinds both.
-  requireWriteRole(user);
+  // unwinds both. ADR-203 — cancelling reverses a dispatched qty, so it takes
+  // the edit AND approve pair (as JW Invoice / JWSO cancels do).
+  await requireFormAccess(user, 'jw_create', 'edit');
+  await requireFormAccess(user, 'jw_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -575,7 +571,15 @@ export async function cancelJwReturnChallan(
     // this return would drop returned_qty below what is still invoiced, leaving
     // a live invoice for goods the books say were never returned. Block it — the
     // JW Invoice must be cancelled first.
-    const returnedAfter = Math.max(0, line.returnedQty - ret.qty);
+    // ADR-203 — no clamp: a counter that would go negative is already wrong.
+    const returnedAfter = line.returnedQty - ret.qty;
+    if (returnedAfter < 0) {
+      throw new ConflictError(
+        `Cannot cancel ${ret.code}: its JWSO line shows only ${line.returnedQty} returned, ` +
+          `less than this challan's ${ret.qty}. The line's Returned count is out of step — ` +
+          `report this to the administrator before cancelling.`,
+      );
+    }
     if (line.invoicedQty > returnedAfter) {
       throw new ConflictError(
         `Cannot cancel ${ret.code}: ${line.invoicedQty} piece(s) on this line are still ` +
@@ -628,48 +632,32 @@ export async function cancelJwReturnChallan(
         updatedAt: new Date(),
         updatedBy: userId,
       })
-      .where(eq(jwReturnChallans.id, ret.id))
+      // Conditional (CLAUDE.md §20.2): a second cancel racing this one finds
+      // no row and is refused below, so the line is never credited twice.
+      .where(and(eq(jwReturnChallans.id, ret.id), ne(jwReturnChallans.status, 'cancelled')))
       .returning();
     const row = updated[0];
-    if (!row) throw new ConflictError(`Could not cancel JW Return ${ret.code}. Try again.`);
+    if (!row) {
+      throw new ConflictError(
+        `JW Return ${ret.code} was cancelled by someone else just now. Reload the page.`,
+      );
+    }
 
-    // 2) DECREMENT the line's returned_qty by the return's qty (clamp at 0)
-    const newReturned = Math.max(0, line.returnedQty - ret.qty);
+    // 2) DECREMENT the line's returned_qty by the return's qty (checked ≥ 0 above)
     await tx
       .update(jobWorkOrderLines)
-      .set({ returnedQty: newReturned, updatedAt: new Date(), updatedBy: userId })
+      .set({ returnedQty: returnedAfter, updatedAt: new Date(), updatedBy: userId })
       .where(eq(jobWorkOrderLines.id, line.id));
 
-    // 3) Revert the JWSO header 'dispatched' → 'open' if it is no longer the
-    // case that EVERY line is fully returned (reverse of the create flip).
+    // 3) Re-derive the JWSO header status from its lines (ADR-203 — the ONE
+    // writer; 'dispatched' drops back to 'open' / 'closed' as the lines say).
+    await recomputeJwHeaderStatus(tx, line.jwId, userId);
     const jwRows = await tx
-      .select({ id: jobWorkOrders.id, status: jobWorkOrders.status, code: jobWorkOrders.code })
+      .select({ code: jobWorkOrders.code })
       .from(jobWorkOrders)
       .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
       .limit(1);
     const jw = jwRows[0];
-    if (jw && jw.status === 'dispatched') {
-      const siblings = await tx
-        .select({
-          id: jobWorkOrderLines.id,
-          orderQty: jobWorkOrderLines.orderQty,
-          returnedQty: jobWorkOrderLines.returnedQty,
-        })
-        .from(jobWorkOrderLines)
-        .where(
-          and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)),
-        );
-      const allReturned = siblings.every((s) => {
-        const eff = s.id === line.id ? newReturned : s.returnedQty;
-        return eff >= s.orderQty;
-      });
-      if (!allReturned) {
-        await tx
-          .update(jobWorkOrders)
-          .set({ status: 'open', updatedAt: new Date(), updatedBy: userId })
-          .where(and(eq(jobWorkOrders.id, jw.id), isNull(jobWorkOrders.deletedAt)));
-      }
-    }
 
     const jwCode = jw?.code ?? ret.jwCodeText ?? null;
     await emitActivityLog(

@@ -3,10 +3,10 @@
 //   ◑ Partial     — 0 < receivedQty < expectedQty (amber)
 //   ✕ Not received — receivedQty == 0 (red)
 //
-// receivedQty is the ACTUAL client-material received = Σ Party GRN receipts
-// (partyReceivedQty from the API), NOT the manually-typed header
-// materialReceivedQty (which can be typed without any GRNs posted).
-// expectedQty is the header clientMaterialQty (order/expected intent).
+// receivedQty is the customer material QC-ACCEPTED across the JWSO's lines
+// (partyReceivedQty from the API — Σ Party GRN accepted, rejects never count).
+// expectedQty is what the lines need (ADR-203): Σ order qty of the lines that
+// have a Customer RM, 1 RM piece per finished part (rmRequiredQty on the list).
 
 interface Props {
   receivedQty: number;

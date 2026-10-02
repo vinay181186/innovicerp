@@ -1,27 +1,27 @@
 // New Party Material GRN — client-supplied material received against a JW order.
-// Split out of routes/list.tsx (969 lines, over the 400-line rule).
 //
-// Styling pass 2026-08-13 against SO Master. The header fields were a raw
-// `display: grid; 1fr 1fr` reimplementing `.form-grid` by hand, losing its
-// ≤768px single-column collapse; they now use the class. The line editor was a
-// bare `<table>` in an `overflow: hidden` box, which CLIPPED rather than
-// scrolled once the columns outgrew it; it is now `.innovic-table` with
-// `tableLayout: fixed` + percentage widths. Overlay z-index 100 → 200, matching
-// the SO Master dialogs. No validation, payload, query or mutation behaviour
-// changed — every message string is verbatim.
+// ADR-203 (owner D4): the receipt and the QC are TWO steps. This modal records
+// only what arrived — per JWSO line, the Received Qty. The customer material
+// itself is not picked: it is the line's own Customer RM (`<item>-RM`), so it
+// can never mismatch the part. Accepted / Rejected are entered afterwards by
+// Incoming QC (row ⋯ "Incoming QC" on the list → party-grn-qc-modal.tsx).
+//
+// Lines with no Customer RM yet (a JWSO saved before ADR-203) are shown greyed
+// and cannot be received until the JWSO is saved again.
 
 import type { CreatePartyGrnInput, CreatePartyGrnLineInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { usePartyMaterialsList } from '../../party-materials/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
-import { partyMaterialFitsJwLine } from '@/modules/party-materials/fits-jw-line';
-import { LineRow, MATERIAL_DATALIST_ID, makeEmptyLine, type UiLine } from './party-grn-line-row';
+
+/** What the user typed per JWSO line, keyed by the line id. */
+type LineEntry = { receivedQty: string; remarks: string };
 
 export function NewPartyGrnModal({
   onClose,
@@ -36,7 +36,7 @@ export function NewPartyGrnModal({
   const [jwId, setJwId] = useState<string | null>(initialJwId ?? null);
   const [dcNo, setDcNo] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [lines, setLines] = useState<UiLine[]>([makeEmptyLine()]);
+  const [entries, setEntries] = useState<Record<string, LineEntry>>({});
   const [err, setErr] = useState<string | null>(null);
 
   const nextCodeQ = useNextPartyGrnCode();
@@ -46,104 +46,46 @@ export function NewPartyGrnModal({
     limit: 50,
     offset: 0,
   });
-  const jwData = jwQuery.data;
-  // The JW list is one row per JWSO (#6); no dedupe needed.
-  const jwHeaders = jwData?.items ?? [];
+  const jwHeaders = jwQuery.data?.items ?? [];
   const selectedJw = useMemo(
     () => jwHeaders.find((j) => j.jwId === jwId) ?? null,
     [jwHeaders, jwId],
   );
-  // Bug 3.3: once a JWSO is picked, surface ITS line item codes so the user can
-  // see/pick them in the JW Line box. Lines come from the JWSO detail (the
-  // master list no longer carries per-line rows).
+  // The picked JWSO's lines (with their Customer RM) come from its detail. A
+  // `?jw=` deep link may name a JWSO not on the picker's first page.
   const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
-  const jwLinesForSelected = jwDetailQ.data?.lines ?? [];
-  // The picked JWSO's client / PO, from the open-JWSO page when it is on it and
-  // from the JWSO detail otherwise — a `?jw=` deep link may name a JWSO that
-  // is not in the first page of the picker's list.
   const jwDetail = jwDetailQ.data && jwDetailQ.data.id === jwId ? jwDetailQ.data : null;
-  const jwClientId = selectedJw?.clientId ?? jwDetail?.clientId ?? null;
   const jwCustomerName = selectedJw?.customerName ?? jwDetail?.customerName ?? '';
   const jwClientPoNo = selectedJw?.clientPoNo ?? jwDetail?.clientPoNo ?? '';
-  // ADR-195: the JWSO's own customer material (-rm item code). A party material
-  // pinned to it fits every line of this JWSO, not only the part's own item.
-  const jwClientMaterial = jwDetail?.clientMaterial ?? null;
-
-  // ADR-102: only the selected JWSO's client's materials. Party material is
-  // customer-owned — showing every client's codes invited receiving one
-  // client's material against another's order (the API refuses it now, but the
-  // picker should not offer it in the first place). Disabled until a JWSO is
-  // picked, so the client is always known.
-  const { data: pmData } = usePartyMaterialsList(
-    {
-      search: undefined,
-      clientId: jwClientId ?? undefined,
-      limit: 200,
-      offset: 0,
-    },
-    { enabled: Boolean(jwClientId) },
+  // Only lines still open take material; closed / cancelled lines are left out.
+  const jwLines = useMemo(
+    () =>
+      (jwDetail?.lines ?? [])
+        .filter((l) => l.status !== 'closed' && l.status !== 'cancelled')
+        .sort((a, b) => a.lineNo - b.lineNo),
+    [jwDetail],
   );
-  const pmAll = pmData?.items ?? [];
 
   // R2 — one idempotency key per open modal, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const createMut = useCreatePartyGrn(saveKey);
 
-  // A stray click outside / ESC used to throw away every typed line; now it
-  // asks first when anything was typed (party-grn-create#1).
   const dirty =
     jwId !== (initialJwId ?? null) ||
     Boolean(dcNo.trim() || remarks.trim()) ||
-    lines.some(
-      (l) =>
-        Boolean(l.partyMaterialId) ||
-        Boolean(l.materialSearch.trim() || l.receivedQty.trim() || l.remarks.trim()) ||
-        Boolean(l.jwLineNoText),
-    );
+    Object.values(entries).some((e) => Boolean(e.receivedQty.trim() || e.remarks.trim()));
   const guard = useDiscardGuard(dirty, onClose);
 
-  const setLine = (idx: number, patch: Partial<UiLine>): void => {
-    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  const onJwChange = (id: string | null): void => {
+    setJwId(id);
+    // The typed quantities belong to the old JWSO's lines — never carry them over.
+    setEntries({});
   };
 
-  const addLine = (): void => {
-    setLines((prev) => [...prev, makeEmptyLine()]);
-  };
-
-  const removeLine = (idx: number): void => {
-    setLines((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  // "Add this client's materials": one line per party material of the picked
-  // JWSO's client that is not on a line already, Received left blank for the
-  // storekeeper to fill. A still-blank first line is replaced rather than left
-  // behind. When exactly one JWSO line is for the material's part, that line
-  // is pre-picked (still editable); otherwise it is left to choose.
-  const addClientMaterials = (): void => {
-    setLines((prev) => {
-      const isBlank = (l: UiLine): boolean =>
-        !l.partyMaterialId && !l.materialSearch.trim() && !l.receivedQty.trim() && !l.jwLineNoText;
-      const kept = prev.filter((l) => !isBlank(l));
-      const have = new Set(kept.map((l) => l.partyMaterialId).filter(Boolean));
-      const added = pmAll
-        .filter((p) => !have.has(p.id))
-        .map((p): UiLine => {
-          const forPart =
-            p.itemId != null
-              ? jwLinesForSelected.filter(
-                  (j) => j.itemId != null && partyMaterialFitsJwLine(p, j.itemId, jwClientMaterial),
-                )
-              : [];
-          const only = forPart.length === 1 ? forPart[0] : undefined;
-          return {
-            ...makeEmptyLine(),
-            partyMaterialId: p.id,
-            materialSearch: p.code,
-            jwLineNoText: only ? String(only.lineNo) : '',
-          };
-        });
-      const next = [...kept, ...added];
-      return next.length > 0 ? next : prev;
+  const setEntry = (lineId: string, patch: Partial<LineEntry>): void => {
+    setEntries((prev) => {
+      const cur = prev[lineId] ?? { receivedQty: '', remarks: '' };
+      return { ...prev, [lineId]: { ...cur, ...patch } };
     });
   };
 
@@ -154,72 +96,25 @@ export function NewPartyGrnModal({
       return;
     }
     const validLines: CreatePartyGrnLineInput[] = [];
-    for (const [i, l] of lines.entries()) {
-      // Bug 3.4: a typed-but-not-clicked material left partyMaterialId null and
-      // blocked save. Resolve the typed text to a material id by exact code/name
-      // match (case-insensitive) before giving up.
-      let pmId = l.partyMaterialId;
-      if (!pmId) {
-        const typed = l.materialSearch.trim().toLowerCase();
-        const match = typed
-          ? pmAll.find((p) => p.code.toLowerCase() === typed || p.name.toLowerCase() === typed)
-          : undefined;
-        if (match) pmId = match.id;
-      }
-      if (!pmId) {
-        setErr(
-          `Line ${i + 1}: pick a material from the list, or type an exact material code. Not listed? Add it in Customer Material Master first.`,
-        );
+    for (const l of jwLines) {
+      const e = entries[l.id];
+      const raw = e?.receivedQty.trim() ?? '';
+      if (!raw) continue; // blank = this line did not arrive on this challan
+      if (!l.partyMaterialId) {
+        setErr(`JWSO line ${l.lineNo}: no customer RM — save the JWSO first.`);
         return;
       }
-      const q = Number(l.receivedQty);
-      if (!Number.isFinite(q) || q <= 0) {
-        setErr(`Line ${i + 1}: Received must be 1 or more.`);
+      const q = Number(raw);
+      if (!Number.isInteger(q) || q <= 0) {
+        setErr(`JWSO line ${l.lineNo}: Received Qty must be a whole number, 1 or more.`);
         return;
       }
-      // ADR-102: the JWSO line is mandatory — the order-qty cap and the
-      // first-op material gate both key off it.
-      const lnNo = l.jwLineNoText.trim();
-      if (!lnNo) {
-        setErr(`Line ${i + 1}: pick which JWSO line this material is for.`);
-        return;
-      }
-      const jwLine = jwLinesForSelected.find((j) => String(j.lineNo) === lnNo);
-      // ADR-102: refuse a material that is not that line's part — or, per
-      // ADR-195, this JWSO's own customer material.
-      const pm = pmAll.find((p) => p.id === pmId);
-      if (jwLine && pm && !partyMaterialFitsJwLine(pm, jwLine.itemId, jwClientMaterial)) {
-        setErr(
-          `Line ${i + 1}: ${pm.code} is "${pm.name}", but JWSO line ${lnNo} is "${jwLine.partName}". Pick the material for this part, or pick the line this material belongs to.`,
-        );
-        return;
-      }
-      // R2 (ADR-194): compulsory incoming QC split. Accepted + Rejected must
-      // equal Received, and a reason is required when anything is rejected —
-      // the same refine the shared schema enforces, shown before Save.
-      const accepted = Number(l.acceptedQty);
-      const rejected = Number(l.rejectedQty) || 0;
-      if (!Number.isFinite(accepted) || accepted < 0 || accepted + rejected !== q) {
-        setErr(`Line ${i + 1}: Accepted + Rejected must equal Received (${q}).`);
-        return;
-      }
-      if (rejected > 0 && !l.rejectReason.trim()) {
-        setErr(`Line ${i + 1}: give a reject reason — ${rejected} rejected.`);
-        return;
-      }
-      const ln: CreatePartyGrnLineInput = {
-        partyMaterialId: pmId,
-        receivedQty: q,
-        jwLineNoText: lnNo,
-        acceptedQty: accepted,
-        rejectedQty: rejected,
-      };
-      if (rejected > 0) ln.rejectReason = l.rejectReason.trim();
-      if (l.remarks.trim()) ln.remarks = l.remarks.trim();
+      const ln: CreatePartyGrnLineInput = { jwLineId: l.id, receivedQty: q };
+      if (e?.remarks.trim()) ln.remarks = e.remarks.trim();
       validLines.push(ln);
     }
     if (validLines.length === 0) {
-      setErr('Add at least one line.');
+      setErr('Enter the Received Qty on at least one line.');
       return;
     }
     const input: CreatePartyGrnInput = {
@@ -262,7 +157,7 @@ export function NewPartyGrnModal({
           border: '1px solid var(--border)',
           borderRadius: 8,
           padding: 20,
-          width: 'min(1100px, 96vw)',
+          width: 'min(1000px, 96vw)',
           maxHeight: '90vh',
           overflowY: 'auto',
         }}
@@ -271,17 +166,6 @@ export function NewPartyGrnModal({
         <div className="section-hdr" style={{ marginBottom: 12 }}>
           New Party GRN
         </div>
-
-        {/* Native <datalist> rather than a custom absolute dropdown: a custom one
-            was clipped by the modal's and the table's own overflow. */}
-        <datalist id={MATERIAL_DATALIST_ID}>
-          {pmAll.map((p) => (
-            <option key={p.id} value={p.code}>
-              {p.name}
-              {p.material ? ` · ${p.material}` : ''}
-            </option>
-          ))}
-        </datalist>
 
         <div className="form-grid">
           <div className="form-grp">
@@ -294,7 +178,7 @@ export function NewPartyGrnModal({
               className="innovic-input"
               readOnly
               value={nextCodeQ.data?.code ?? ''}
-              style={{ fontWeight: 700, color: 'var(--cyan)' }}
+              style={{ fontWeight: 700, color: 'var(--cyan)', maxWidth: '18ch' }}
             />
           </div>
           <div className="form-grp">
@@ -307,6 +191,7 @@ export function NewPartyGrnModal({
               className="innovic-input"
               value={date}
               onChange={(e) => setDate(e.target.value)}
+              style={{ maxWidth: '18ch' }}
             />
           </div>
           <div className="form-grp form-full">
@@ -316,7 +201,7 @@ export function NewPartyGrnModal({
             <SearchableSelect
               id="pgrn-jwso"
               value={jwId}
-              onChange={setJwId}
+              onChange={onJwChange}
               onSearch={setJwSearch}
               loading={jwQuery.isFetching}
               placeholder="🔍 Select JWSO — type number or customer…"
@@ -352,6 +237,7 @@ export function NewPartyGrnModal({
               className="innovic-input"
               readOnly
               value={jwClientPoNo}
+              style={{ maxWidth: '24ch' }}
             />
           </div>
           <div className="form-grp">
@@ -365,6 +251,7 @@ export function NewPartyGrnModal({
               autoComplete="off"
               value={dcNo}
               onChange={(e) => setDcNo(e.target.value)}
+              style={{ maxWidth: '24ch' }}
             />
           </div>
           <div className="form-grp">
@@ -385,97 +272,110 @@ export function NewPartyGrnModal({
         <div
           style={{
             margin: '14px 0 8px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10,
-            flexWrap: 'wrap',
+            fontSize: 11,
+            color: 'var(--cyan)',
+            fontFamily: 'var(--mono)',
+            fontWeight: 700,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-            <span
-              style={{
-                fontSize: 11,
-                color: 'var(--cyan)',
-                fontFamily: 'var(--mono)',
-                fontWeight: 700,
-              }}
-            >
-              Line Items
-            </span>
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {jwId && pmAll.length > 0 ? (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={addClientMaterials}
-                title="Add one line for every Customer Material of this JWSO's customer (Received left blank)"
-              >
-                + Add this customer&apos;s materials
-              </button>
-            ) : null}
-            <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
-              + Add Line
-            </button>
-          </div>
+          Line Items
+          <span className="text3" style={{ fontWeight: 400, marginLeft: 8 }}>
+            Enter Received Qty for the lines on this challan — leave blank to skip. Accepted /
+            Rejected are entered later by Incoming QC.
+          </span>
         </div>
 
-        {/* `overflow: visible`, not hidden — the old box clipped the columns
-            instead of letting them fit, so a wide row simply disappeared. */}
-        <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
-          <table
-            className="innovic-table"
-            style={{ width: '100%', tableLayout: 'fixed', minWidth: 1150 }}
-          >
+        <div className="tbl-wrap">
+          <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: '3%' }}>Ln</th>
-                <th style={{ width: '15%' }}>
-                  JWSO Line<span className="req">★</span>
-                </th>
-                <th style={{ width: '12%' }}>
-                  Customer Material<span className="req">★</span>
-                </th>
-                <th style={{ width: '16%' }}>Customer Material Name</th>
-                <th style={{ width: '8%', color: 'var(--green2)' }} className="th-num">
-                  Received<span className="req">★</span>
-                </th>
-                {/* R2 (ADR-194): compulsory incoming QC split. */}
-                <th style={{ width: '8%', color: 'var(--green2)' }} className="th-num">
-                  Accepted<span className="req">★</span>
-                </th>
-                <th style={{ width: '8%', color: 'var(--red2)' }} className="th-num">
-                  Rejected
-                </th>
-                <th style={{ width: '13%' }}>Reject Reason</th>
-                <th style={{ width: '5%' }} className="td-ctr">
-                  UOM
-                </th>
-                <th style={{ width: '9%' }}>Remarks</th>
-                <th style={{ width: '3%' }} />
+                <th className="th-num">Ln</th>
+                <th>Item Code</th>
+                <th>Customer RM</th>
+                <th className="th-num">Order Qty</th>
+                <th className="th-num">Accepted So Far</th>
+                <th className="th-num">Received Qty</th>
+                <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
-              {lines.length === 0 ? (
+              {!jwId ? (
                 <tr>
-                  <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
-                    No line items — click <strong>+ Add Line</strong>.
+                  <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
+                    Pick the JWSO first.
+                  </td>
+                </tr>
+              ) : jwDetailQ.isLoading ? (
+                <tr>
+                  <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
+                    <Loader2 size={13} className="inline animate-spin" /> Loading lines…
+                  </td>
+                </tr>
+              ) : jwLines.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
+                    No open lines on this JWSO.
                   </td>
                 </tr>
               ) : (
-                lines.map((l, i) => (
-                  <LineRow
-                    key={i}
-                    idx={i}
-                    line={l}
-                    pmAll={pmAll}
-                    jwLines={jwLinesForSelected}
-                    jwClientMaterial={jwClientMaterial}
-                    onChange={(patch) => setLine(i, patch)}
-                    onRemove={() => removeLine(i)}
-                  />
-                ))
+                jwLines.map((l) => {
+                  const noRm = !l.partyMaterialId;
+                  const e = entries[l.id];
+                  return (
+                    <tr key={l.id} style={noRm ? { opacity: 0.55 } : undefined}>
+                      <td className="td-num mono">{l.lineNo}</td>
+                      <td title={l.partName}>
+                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                          {itemCodeWithRev(l.itemCodeText, l.revision)}
+                        </span>
+                      </td>
+                      <td>
+                        {noRm ? (
+                          <span className="text3" style={{ fontSize: 11 }}>
+                            No customer RM — save the JWSO first
+                          </span>
+                        ) : (
+                          <span
+                            className="mono fw-700"
+                            style={{ color: 'var(--text)' }}
+                            title={l.partyMaterialCode ?? ''}
+                          >
+                            {l.rmItemCode ?? l.partyMaterialCode ?? '—'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="td-num mono">
+                        {l.orderQty} {l.uom}
+                      </td>
+                      <td className="td-num mono">{l.rmAcceptedQty}</td>
+                      <td className="td-num">
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          className="innovic-input"
+                          aria-label={`Received Qty, line ${l.lineNo}`}
+                          disabled={noRm}
+                          value={e?.receivedQty ?? ''}
+                          onChange={(ev) => setEntry(l.id, { receivedQty: ev.target.value })}
+                          placeholder="—"
+                          style={{ maxWidth: '12ch' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="innovic-input"
+                          aria-label={`Remarks, line ${l.lineNo}`}
+                          disabled={noRm}
+                          autoComplete="off"
+                          value={e?.remarks ?? ''}
+                          onChange={(ev) => setEntry(l.id, { remarks: ev.target.value })}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

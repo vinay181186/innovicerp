@@ -96,6 +96,38 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
       ),
     },
     {
+      // ADR-203: what QC accepted into the customer-material register.
+      // No sortFilterField: the API's sf-columns has no accepted-qty field yet.
+      id: 'accepted_qty',
+      header: 'Accepted Qty',
+      kind: 'num',
+      align: 'right',
+      headColor: 'var(--green)',
+      nowrap: true,
+      render: (g) => (
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {g.totalAcceptedQty}
+        </span>
+      ),
+    },
+    {
+      // ADR-203 (owner D4): Incoming QC is a separate step after the receipt.
+      id: 'qc_status',
+      header: 'QC Status',
+      nowrap: true,
+      render: (g) =>
+        g.qcPendingLines > 0 ? (
+          <span
+            className="badge b-amber"
+            title={`${g.qcPendingLines} line(s) waiting for Incoming QC`}
+          >
+            Waiting QC
+          </span>
+        ) : (
+          <span className="badge b-green">QC done</span>
+        ),
+    },
+    {
       id: 'lines',
       sortFilterField: 'linesCount',
       header: 'Lines',

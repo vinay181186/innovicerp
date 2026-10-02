@@ -13,6 +13,8 @@
 
 import {
   ActivityAction,
+  ITEM_TYPE_RULES,
+  type ItemType,
   deriveSoFulfilmentStatus,
   normalizeRevision,
   revisionBackwardsMessage,
@@ -157,6 +159,30 @@ async function assertItemIdsExist(
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     throw new ValidationError('Item not found. Please select the Item Code again.');
+  }
+}
+
+/** ADR-203 — Party Supplied Material is the CUSTOMER's own material: it is
+ *  never sold to them on a Sales Order. Reads the type's `partyOwned` flag
+ *  (ITEM_TYPE_RULES) so a future party-owned type is covered too. Runs on
+ *  every resolved line item (picked by id or matched by code). */
+async function assertNoPartyOwnedItems(
+  tx: DbTransaction,
+  itemIds: string[],
+  companyId: string,
+): Promise<void> {
+  const unique = Array.from(new Set(itemIds));
+  if (unique.length === 0) return;
+  const rows = await tx
+    .select({ code: items.code, itemType: items.itemType })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
+  const offending = rows.find((r) => ITEM_TYPE_RULES[r.itemType as ItemType]?.partyOwned);
+  if (offending) {
+    throw new ValidationError(
+      `${offending.code} is the customer's material (Party Supplied Material) — it cannot be ` +
+        `put on a Sales Order line. Pick the finished item instead.`,
+    );
   }
 }
 
@@ -1499,6 +1525,7 @@ export async function createSalesOrder(
         .filter((l) => !l.itemId && l.itemCodeText)
         .map((l) => l.itemCodeText!.trim());
       const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+      await assertNoPartyOwnedItems(tx, [...directIds, ...resolved.values()], companyId);
       const lineNos = assignLineNos(input.lines, 1);
 
       // Insert header
@@ -2033,6 +2060,7 @@ async function mergeLines(
     .filter((l) => !l.itemId && l.itemCodeText)
     .map((l) => l.itemCodeText!.trim());
   const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+  await assertNoPartyOwnedItems(tx, [...directIds, ...resolved.values()], companyId);
 
   // Decide updates vs inserts.
   const seenInputIds = new Set<string>();

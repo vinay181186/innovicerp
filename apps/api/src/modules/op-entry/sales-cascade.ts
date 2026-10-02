@@ -28,6 +28,7 @@ import {
 } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { emitActivityLog } from '../activity-log/service';
+import { recomputeJwHeaderStatus } from '../../lib/jw-line-state';
 
 export interface CascadeResult {
   /** SO line id whose status was flipped from open → closed. */
@@ -427,27 +428,14 @@ async function cascadeJw(
     );
   }
 
-  const siblingRows = await tx
-    .select({ id: jobWorkOrderLines.id, status: jobWorkOrderLines.status })
-    .from(jobWorkOrderLines)
-    .where(
-      and(
-        eq(jobWorkOrderLines.jobWorkOrderId, line.jobWorkOrderId),
-        isNull(jobWorkOrderLines.deletedAt),
-      ),
-    );
-
-  const allTerminal = siblingRows.every((s) => TERMINAL_STATUSES.has(s.status));
+  // ADR-203 — the JWSO header status is derived from its lines by the ONE
+  // writer (lib/jw-line-state.ts). It closes once every line is closed
+  // (short-closed counts), and never touches a draft / cancelled header.
   const result: CascadeResult = { closedJwLineId: jwLineId };
-  if (!allTerminal) return result;
-
   if (!jwHeader) return result;
-  if (TERMINAL_STATUSES.has(jwHeader.status)) return result;
-
-  await tx
-    .update(jobWorkOrders)
-    .set({ status: 'closed', updatedBy: user.id })
-    .where(eq(jobWorkOrders.id, line.jobWorkOrderId));
+  const before = String(jwHeader.status);
+  const after = await recomputeJwHeaderStatus(tx, line.jobWorkOrderId, user.id);
+  if (after === before || after === 'open') return result;
   result.closedJwHeaderId = line.jobWorkOrderId;
 
   if (user.companyId) {
@@ -457,7 +445,10 @@ async function cascadeJw(
         action: ActivityAction.Close,
         entity: 'JobWorkOrder',
         entityId: line.jobWorkOrderId,
-        detail: `${jwHeader.code} — All lines closed`,
+        detail:
+          after === 'closed'
+            ? `${jwHeader.code} — All lines closed`
+            : `${jwHeader.code} — JWSO now ${after === 'dispatched' ? 'Dispatched' : after}`,
         refId: jwHeader.code,
       },
       user.companyId,
