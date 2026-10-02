@@ -1,33 +1,34 @@
-// NC register list (UI-003-06).
+// NC register list (UI-003-06) — ONE ROW PER NC on the shared FIT table
+// (ADR-199: <DataTable tableKey=…>), the fit engine sizing columns to the screen
+// and dropping the rightmost unpinned ones into a ▸ detail row when it is too
+// narrow. Row click opens the NC; the ▸ reveals POL, JC No., Op, Rework done and
+// the linked CAPA (NcExpanded). Replaces the hand-built card list.
+//
+// Columns (first pinned) + tint + the per-row ⋯ menu live in
+// components/nc-list-columns.tsx so this file stays under the 400-line ceiling.
+// CAPA stays folded in as a tab; the NC filters, StatStrip and permission gates
+// are unchanged.
 
 import {
   type ListNcRegisterQuery,
+  type NcRegisterListItem,
   NC_REASON_CATEGORIES,
-  NC_FILTER_STATUSES,
-  NC_REASON_CATEGORY_LABELS,
-  NC_STATUS_LABELS,
   NC_STATUSES,
-  type NcReasonCategory,
-  type NcStatus,
-  opSrNo,
-  roundQty,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, PageState } from '@/ui/layout';
 import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
-import { NcDispositionBadge } from '../components/nc-disposition-badge';
-import { NcStatusBadge } from '../components/nc-status-badge';
+import { NcListHeader } from '../components/nc-list-header';
+import { NcExpanded, ncListColumns, ncRowMenu, ncRowTint } from '../components/nc-list-columns';
 
 const PAGE_SIZE = 25;
 
@@ -53,25 +54,6 @@ export const ncRegisterListRoute = createRoute({
   validateSearch: listSearchSchema,
   component: NcRegisterListPage,
 });
-
-// Accent bar colour by NC status — kept in step with NcStatusBadge's b-*
-// classes (app status colours): blue = raised / disposed, waiting for the next
-// step; amber = recovery under way; green = rework completed / closed.
-function accentForNc(status: NcStatus): string {
-  switch (status) {
-    case 'under_rework':
-    case 'under_repair':
-    case 'sent_to_vendor':
-    case 'received_qc_pending':
-      return 'var(--amber)';
-    case 'rework_done':
-    case 'closed':
-      return 'var(--green)';
-    default:
-      // pending (NC Raised), disposed
-      return 'var(--blue)';
-  }
-}
 
 function NcRegisterListPage(): React.JSX.Element {
   const search = ncRegisterListRoute.useSearch();
@@ -131,23 +113,48 @@ function NcRegisterListPage(): React.JSX.Element {
   // params are untouched by switching tabs.
   const [tab, setTab] = useState<'nc' | 'capa'>(() => search.tab ?? 'nc');
 
+  // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
+  // expand control (onToggleExpanded), and renderExpanded returns null for a
+  // collapsed row.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpandedIds((prev) => {
+      const nextSet = new Set(prev);
+      if (nextSet.has(id)) nextSet.delete(id);
+      else nextSet.add(id);
+      return nextSet;
+    });
+  }, []);
+
+  // The NC whose ⋯ → Assign Task is open (one modal for the whole list).
+  const [assignTarget, setAssignTarget] = useState<NcRegisterListItem | null>(null);
+
+  const openCapa = useCallback(
+    (capaCode: string): void => {
+      void navigate({ search: (prev) => ({ ...prev, tab: 'capa', capa: capaCode }) });
+      setTab('capa');
+    },
+    [navigate],
+  );
+
+  const columns = useMemo(() => ncListColumns(), []);
+
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load. Sits after every hook so the early
   // return never trips rules-of-hooks.
   if (eff && !ncPerms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view the NC Register. Ask an admin.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+
+  const emptyText =
+    search.search || search.status || search.reasonCategory ? 'No NCs match.' : 'No NCs yet.';
 
   const tabBar = (
     <div
@@ -199,75 +206,24 @@ function NcRegisterListPage(): React.JSX.Element {
         />
       ) : (
         <>
-          <ListHeader
-            title="NC Register"
-            icon="⚠️"
+          <NcListHeader
             count={data ? total : undefined}
-            noun="NC"
-            filterNote={
-              search.status || search.reasonCategory
-                ? [
-                    search.status ? NC_STATUS_LABELS[search.status] : null,
-                    search.reasonCategory ? NC_REASON_CATEGORY_LABELS[search.reasonCategory] : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')
-                : undefined
-            }
-            // Server-side search over code / reason / item (service.ts L215);
-            // it does NOT match JC, so the placeholder does not claim it.
-            search={searchInput}
+            searchInput={searchInput}
             onSearch={setSearchInput}
-            searchPlaceholder="Search NC No., item code, item name, reason…"
             updating={isFetching && !isLoading}
-            filters={
-              <>
-                <select
-                  className="innovic-select"
-                  aria-label="NC status"
-                  title="NC status"
-                  value={search.status ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value as NcStatus | '';
-                    void navigate({
-                      search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                      replace: true,
-                    });
-                  }}
-                >
-                  <option value="">All Status</option>
-                  {/* S8 — every status NCs are written in (legacy rework_done hidden). */}
-                  {NC_FILTER_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {NC_STATUS_LABELS[s]}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="innovic-select"
-                  aria-label="Reason category"
-                  title="Reason category"
-                  value={search.reasonCategory ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value as NcReasonCategory | '';
-                    void navigate({
-                      search: (prev) => ({
-                        ...prev,
-                        reasonCategory: v === '' ? undefined : v,
-                        page: 1,
-                      }),
-                      replace: true,
-                    });
-                  }}
-                >
-                  <option value="">All Reasons</option>
-                  {NC_REASON_CATEGORIES.map((r) => (
-                    <option key={r} value={r}>
-                      {NC_REASON_CATEGORY_LABELS[r]}
-                    </option>
-                  ))}
-                </select>
-              </>
+            status={search.status}
+            reasonCategory={search.reasonCategory}
+            onStatusChange={(v) =>
+              void navigate({
+                search: (prev) => ({ ...prev, status: v, page: 1 }),
+                replace: true,
+              })
+            }
+            onReasonChange={(v) =>
+              void navigate({
+                search: (prev) => ({ ...prev, reasonCategory: v, page: 1 }),
+                replace: true,
+              })
             }
             onClearFilters={() => {
               setSearchInput('');
@@ -282,282 +238,41 @@ function NcRegisterListPage(): React.JSX.Element {
                 replace: true,
               });
             }}
-            filtersActive={!!search.status || !!search.reasonCategory || searchInput.trim() !== ''}
-            primary={
-              canReportNc ? (
-                <Link to="/nc-register/new" className="btn btn-primary">
-                  ⚠️ Report NC
-                </Link>
-              ) : null
-            }
-          >
-            {/* Counts as ONE single-row strip (styling skill Rule 3 + SO Master).
-                Read-only metrics — no onClick, so each cell renders as a div. */}
-            <StatStrip
-              items={[
-                {
-                  key: 'total',
-                  label: 'NCs',
-                  count: summary?.total == null ? '—' : Math.round(summary.total),
-                  color: 'var(--red2)',
-                },
-                {
-                  key: 'pending',
-                  label: 'NC Raised',
-                  count: summary?.pending == null ? '—' : Math.round(summary.pending),
-                  color: 'var(--amber2)',
-                },
-                {
-                  key: 'totalQty',
-                  label: 'Rejected Qty',
-                  count: summary?.totalQty == null ? '—' : roundQty(summary.totalQty),
-                },
-                {
-                  key: 'rework',
-                  label: 'Rework Qty',
-                  count: summary?.reworkQty == null ? '—' : roundQty(summary.reworkQty),
-                  color: 'var(--cyan)',
-                },
-                {
-                  key: 'scrap',
-                  label: 'Scrap Qty',
-                  count: summary?.scrapQty == null ? '—' : roundQty(summary.scrapQty),
-                  color: 'var(--red2)',
-                },
-              ]}
+            canReportNc={canReportNc}
+            summary={summary}
+          />
+
+          {isError ? (
+            <PageState
+              state="error"
+              message={error instanceof Error ? error.message : 'Could not load NCs. Try again.'}
             />
-          </ListHeader>
-
-          {/* Card-per-NC list, mirroring SO Master (sales-orders list): a rounded
-              panel per row with a status accent bar, an identity band and a meta
-              band. An NC has no sub line items, so there is no expand toggle —
-              the whole card opens the detail page. */}
-          {isLoading ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-              Loading…
-            </div>
-          ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load NCs. Try again.'}
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              {search.search || search.status || search.reasonCategory
-                ? 'No NCs match.'
-                : 'No NCs yet.'}
-            </div>
           ) : (
-            rows.map((nc) => {
-              const seq = nc.jcOpSeqResolved ?? nc.opSeq;
-              const op = nc.jcOpOperation ?? nc.operationText ?? nc.qcOperationText;
-              const opText =
-                seq == null && !op
-                  ? null
-                  : `${seq != null ? `Op ${opSrNo(seq)}` : ''}${seq != null && op ? ': ' : ''}${op ?? ''}`;
-              const itemCode = nc.itemCode
-                ? itemCodeWithRev(nc.itemCode, nc.itemRevision)
-                : (nc.itemCodeText ?? '');
-              const itemName = nc.itemName ?? nc.itemNameText ?? '';
-              return (
-                <div
-                  key={nc.id}
-                  className="panel"
-                  style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
-                >
-                  {/* Accent bar — amber pending, blue disposed, cyan rework done,
-                      green closed. */}
-                  <div style={{ width: 4, flexShrink: 0, background: accentForNc(nc.status) }} />
-                  <div
-                    style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-                    onClick={() => void navigate({ to: '/nc-register/$id', params: { id: nc.id } })}
-                    title="Open this NC"
-                  >
-                    {/* ── Band 1: identity + badges — actions ── */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                        padding: '10px 14px',
-                      }}
-                    >
-                      {/* The card opens the detail; the CODE is the explicit link
-                          to it — stopPropagation keeps its click self-contained. */}
-                      <Link
-                        to="/nc-register/$id"
-                        params={{ id: nc.id }}
-                        className="td-code"
-                        style={{ color: 'var(--red2)', fontWeight: 800, fontSize: 13 }}
-                        title="Open the NC detail page"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {nc.code}
-                      </Link>
-                      <NcStatusBadge status={nc.status} />
-                      {nc.disposition ? <NcDispositionBadge disposition={nc.disposition} /> : null}
-                      {/* Legacy L22534: rework progress hint beside the disposition. */}
-                      {nc.disposition === 'rework' && Number(nc.reworkDoneQty) > 0 ? (
-                        <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                          ♻ {Number(nc.reworkDoneQty)} of {Number(nc.rejectedQty)} Completed
-                        </span>
-                      ) : null}
-                      <span style={{ flex: 1 }} />
-                      {/* Row opens the NC detail; these controls do OTHER things,
-                          so stop the click from also firing the row navigation
-                          (styling skill). All these actions live on the detail
-                          page — they link there, matching the old table. */}
-                      <div
-                        style={{ display: 'flex', gap: 3, alignItems: 'center' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {canDispose && nc.status === 'pending' ? (
-                          <Link
-                            to="/nc-register/$id"
-                            params={{ id: nc.id }}
-                            className="btn btn-primary btn-sm"
-                            style={{ fontSize: 11 }}
-                            title="Dispose this NC on its detail page"
-                          >
-                            ✏ Dispose
-                          </Link>
-                        ) : canDispose &&
-                          nc.status === 'disposed' &&
-                          nc.disposition === 'rework' ? (
-                          <Link
-                            to="/nc-register/$id"
-                            params={{ id: nc.id }}
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 11 }}
-                            title="Close the rework on this NC's detail page"
-                          >
-                            ✅ Close Rework
-                          </Link>
-                        ) : canCreateCapa && nc.status !== 'pending' && !nc.linkedCapaCode ? (
-                          <Link
-                            to="/nc-register/$id"
-                            params={{ id: nc.id }}
-                            className="btn btn-ghost btn-sm"
-                            style={{ fontSize: 11, color: 'var(--purple)' }}
-                            title="Create a CAPA from this NC on its detail page"
-                          >
-                            🛡 CAPA
-                          </Link>
-                        ) : null}
-                        {nc.status !== 'closed' ? (
-                          <AssignTaskButton
-                            linkedRef={{
-                              type: 'nc',
-                              id: nc.id,
-                              display: `NC ${nc.code}`,
-                              navPage: `/nc-register/${nc.id}`,
-                            }}
-                            suggestedTitle={
-                              nc.status === 'pending' ? `Dispose ${nc.code}` : `Review ${nc.code}`
-                            }
-                            className="btn btn-ghost btn-sm"
-                            label=""
-                          />
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {/* ── Band 2: meta line (dot-separated) ── Item Code strong-mono
-                        (the main thing — memory rule) AND Item Name, both clearly
-                        shown, then JC, operation, qty, reason, date, CAPA. */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        flexWrap: 'wrap',
-                        padding: '0 14px 10px',
-                        fontSize: 11,
-                        color: 'var(--text3)',
-                      }}
-                    >
-                      {/* POL — the CUSTOMER's own PO line number off the SO line
-                          behind this NC's job card. Same purple mono chip the Job
-                          Card list uses; absent when there is no SO behind it. */}
-                      {nc.clientPoLineNo ? (
-                        <>
-                          <span className="mono">
-                            POL{' '}
-                            <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                              {nc.clientPoLineNo}
-                            </span>
-                          </span>
-                          <span>·</span>
-                        </>
-                      ) : null}
-                      <span className="td-code" style={{ color: 'var(--text)' }}>
-                        {itemCode || '—'}
-                      </span>
-                      <span>·</span>
-                      <span
-                        className="text2"
-                        style={{
-                          maxWidth: 200,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                        title={itemName}
-                      >
-                        {itemName || '—'}
-                      </span>
-                      <span>·</span>
-                      <span>
-                        JC No.{' '}
-                        <span className="mono" style={{ color: 'var(--cyan)' }}>
-                          {nc.jcCode ?? '—'}
-                        </span>
-                      </span>
-                      {opText ? (
-                        <>
-                          <span>·</span>
-                          <span className="text2">{opText}</span>
-                        </>
-                      ) : null}
-                      <span>·</span>
-                      <span>
-                        Rejected{' '}
-                        <span className="mono fw-700" style={{ color: 'var(--red2)' }}>
-                          {roundQty(Number(nc.rejectedQty))}
-                        </span>
-                      </span>
-                      <span>·</span>
-                      <span className="text2">{NC_REASON_CATEGORY_LABELS[nc.reasonCategory]}</span>
-                      <span>·</span>
-                      <span className="text2">{fmtDate(nc.ncDate)}</span>
-                      {nc.linkedCapaCode ? (
-                        <>
-                          <span>·</span>
-                          <Link
-                            to="/nc-register"
-                            search={{ tab: 'capa', capa: nc.linkedCapaCode }}
-                            className="mono"
-                            style={{
-                              color: 'var(--purple)',
-                              fontWeight: 700,
-                              textDecoration: 'none',
-                            }}
-                            title={`Open CAPA ${nc.linkedCapaCode}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTab('capa');
-                            }}
-                          >
-                            {nc.linkedCapaCode}
-                          </Link>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+            <Panel bodyPadding="none">
+              <DataTable
+                tableKey={TABLE_KEYS.ncRegister}
+                columns={columns}
+                rows={rows}
+                loading={isLoading}
+                emptyText={emptyText}
+                rowKey={(nc) => nc.id}
+                // Server-paginated page, not the whole list — the column ▾ sort /
+                // filter would act on this page only, so it is off.
+                sortFilter={false}
+                onRowClick={(nc) =>
+                  void navigate({ to: '/nc-register/$id', params: { id: nc.id } })
+                }
+                rowClassName={(nc) => ncRowTint(nc.status)}
+                rowMenu={(nc) =>
+                  ncRowMenu(nc, { canDispose, canCreateCapa, onAssign: setAssignTarget })
+                }
+                renderLink={(p) => <Link {...p} />}
+                renderExpanded={(nc) =>
+                  expandedIds.has(nc.id) ? <NcExpanded nc={nc} onOpenCapa={openCapa} /> : null
+                }
+                onToggleExpanded={(nc) => toggleExpand(nc.id)}
+              />
+            </Panel>
           )}
 
           <ListFooter
@@ -574,6 +289,23 @@ function NcRegisterListPage(): React.JSX.Element {
           />
         </>
       )}
+
+      {assignTarget ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'nc',
+            id: assignTarget.id,
+            display: `NC ${assignTarget.code}`,
+            navPage: `/nc-register/${assignTarget.id}`,
+          }}
+          suggestedTitle={
+            assignTarget.status === 'pending'
+              ? `Dispose ${assignTarget.code}`
+              : `Review ${assignTarget.code}`
+          }
+          onClose={() => setAssignTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

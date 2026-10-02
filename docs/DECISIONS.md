@@ -10700,3 +10700,27 @@ Editable FORM line tables keep full-width inputs, and the 31-day Production Sche
 
 - Reverses the 2026-09-19/26 "wrap + scroll + cream" sheet decisions recorded in innovic-theme.css.
 - Playwright specs that read columns by position or assert a header visible must run at a wide viewport or rely on default pins.
+
+## ADR-200: Sort & Filter on every table (Excel-style)
+
+**Date:** 2026-10-01
+**Status:** Accepted (owner request 2026-10-01; plan: `Innovic - Sort and Filter on Every Table - Plan.pdf`)
+
+### Context
+
+Only four screens could sort, date filters existed on six screens and only on the document date, and no list could filter Due Date or Created On. The owner asked for Excel behaviour on every table: any column sortable and filterable by its type, behind a "Sort & Filter" button placed before the search box.
+
+### Decision
+
+1. **Button before the search box** (ListHeader; on pages without one, above the first table). Off by default. On shows a ▾ in every column header; on → off with filters applied asks "Keep filters / Clear filters". While filters apply it reads `Sort & Filter (n)` and the table shows `Showing X of Y · Clear filters`. Filtered / sorted columns keep a mark (⏷ / ↑↓) even when the ▾ is hidden.
+2. **Menu by column type**, detected from the column kind and the DISPLAYED values: text/code — A→Z/Z→A, contains / does not contain / equals / begins with, search + tick list (Blanks included); number — =, ≠, >, ≥, <, ≤, between; date — Today, Yesterday, This week, Last week, This month, Last month (India time, week starts Monday), on / before / after / from–to; status — tick list. Nothing applies until OK. Blanks sort last both ways; codes sort naturally (IN-JC-9 before IN-JC-10).
+3. **The filter reads what the cell shows** (column `filterValue`, else the `key` field, else the rendered text; status chips via their label). So every DataTable gets it without per-screen work; a screen adds `filterValue` only where the shown text is not the useful value.
+4. **Browser mode first.** It filters the rows the table was given, so it is on only where those rows are the whole list. `ListFooter` switches it off when it shows part of a list (server pager with more pages, or a hit fetch cap), and a screen passes `sortFilter={false}` where the server caps rows without telling the screen (Log Entry Approvals, JC Ops board, QC History log, TPI completed, Document History, Tool Write-offs). Line editors (`editable`) and nested `compact` tables are off by default.
+5. **State per browser tab** (`sessionStorage`) so Refresh / Back keep it; a page switch turns the ▾ off. Not saved to the profile, not logged (read-only, would flood the activity log).
+6. **Server mode next:** one shared list-query contract (sort + filters with typed operators, IST day bounds, escaped search, price-column guard) for the server-paged / capped lists, then their Sort & Filter switches on.
+
+### Alternatives considered
+
+- **Page address (URL) state** — deferred: route search schemas strip unknown keys; per-tab storage gives the same Refresh/Back behaviour without touching ~75 route schemas.
+- **Filtering the loaded page of a paged list** — rejected: silently wrong answers.
+- **Per-screen accessor wiring** — rejected for the first pass; reading the displayed text covers every table at once.

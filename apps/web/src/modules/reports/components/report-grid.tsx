@@ -197,6 +197,8 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
           tableKey={reportTableKey(slug)}
           columns={tableColumns}
           rows={errorText ? NO_ROWS : pageRows}
+          // Reports keep their own filter strip, totals and count for now (ADR-200 S4).
+          sortFilter={false}
           rowKey={rowKeyOf}
           defaultPinned={defaultPinned}
           loading={loading && !errorText}

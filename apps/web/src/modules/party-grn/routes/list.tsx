@@ -22,17 +22,20 @@
 
 import type { PartyGrnListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnList } from '../api';
 import { CancelPartyGrnModal } from '../components/cancel-party-grn-modal';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
-import { PartyGrnCard } from '../components/party-grn-card';
+import { partyGrnColumns } from '../components/party-grn-columns';
+import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
 
 const PAGE_SIZE = 50;
@@ -91,6 +94,18 @@ function PartyGrnListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
   const summary = data?.summary ?? { totalGrns: 0, totalReceived: 0, today: 0 };
   const rows = data?.items ?? [];
+  const columns = useMemo(() => partyGrnColumns(), []);
+
+  // ▸ expand — the per-line QC split loads lazily inside PartyGrnExpand.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -186,29 +201,44 @@ function PartyGrnListPage(): React.JSX.Element {
             />
           </ListHeader>
 
-          {isLoading ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-              Loading…
-            </div>
-          ) : isError ? (
-            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load party GRNs. Try again.'}
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              {search.trim() ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
-            </div>
+          {isError ? (
+            <PageState
+              state="error"
+              message={
+                error instanceof Error ? error.message : 'Could not load party GRNs. Try again.'
+              }
+            />
           ) : (
-            rows.map((g) => (
-              // The card's `canWrite` prop gates its Cancel button and nothing else.
-              <PartyGrnCard
-                key={g.id}
-                g={g}
-                canWrite={canCancel}
-                onCancel={() => setCancelRow(g)}
+            // THE shared FIT table (ADR-199). First column (GRN No.) is pinned.
+            // There is no detail page for a party GRN, so a row is not clickable;
+            // the ▸ reveals the per-line QC split, Received By / Remarks and the
+            // receipt's History. Every row here is a live receipt (a cancelled
+            // GRN is soft-deleted and filtered out by the API), so the only tint
+            // is the defensive cancelled wash. The one per-row action is Cancel,
+            // gated by canCancel exactly as the card's button was.
+            <Panel bodyPadding="none">
+              <DataTable
+                tableKey={TABLE_KEYS.partyGrn}
+                columns={columns}
+                rows={rows}
+                rowKey={(g) => g.id}
+                loading={isLoading}
+                emptyText={search.trim() ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
+                rowClassName={(g) => (g.deletedAt ? ROW_TINT.cancelled : undefined)}
+                renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
+                onToggleExpanded={(g) => toggleExpand(g.id)}
+                rowMenu={(g) => [
+                  {
+                    key: 'cancel',
+                    label: 'Cancel GRN',
+                    icon: 'x',
+                    group: 'danger',
+                    hidden: !canCancel,
+                    onSelect: () => setCancelRow(g),
+                  },
+                ]}
               />
-            ))
+            </Panel>
           )}
 
           {data ? (

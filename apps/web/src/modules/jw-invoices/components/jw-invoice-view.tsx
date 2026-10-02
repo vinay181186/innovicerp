@@ -1,41 +1,36 @@
 // JW Invoice (Labour) view — bills the processing / labour charge for a Job Work
-// Order line (qty x line rate + GST from the JWSO header). NO material value:
-// the client owns the material. Extracted from the standalone jw-invoices list
-// route so it can render inside the Invoices screen as a tab. Behavior, hooks,
-// modals and price/money display are identical to the original screen.
+// Order line (qty × line rate + GST from the JWSO header). NO material value:
+// the client owns the material. Rendered inside the Invoices screen as a tab.
+//
+// Table standard 2026-10-01 (ADR-199): the register now draws on the shared FIT
+// DataTable (tableKey = jwInvoices) — it always fits its width and drops the
+// rightmost unpinned columns into a ▸ detail row instead of scrolling sideways.
+// Columns, the ▸ expand and the New JW Invoice modal are split into sibling
+// files so each clears the 400-line rule. The data, hooks, price gating,
+// permissions and modals are unchanged.
 
-import {
-  type CreateJwInvoiceInput,
-  type ListJwInvoicesQuery,
-  PLACE_OF_SUPPLY_UNKNOWN_NOTE,
-} from '@innovic/shared';
-import { Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { type ListJwInvoicesQuery } from '@innovic/shared';
+import { Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
-import { ListFooter, ListHeader } from '@/ui/layout';
-import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useCreateJwInvoice, useJwInvoiceableLines, useJwInvoicesList } from '../api';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { useJwInvoicesList } from '../api';
 import { CancelJwInvoiceModal } from './cancel-jw-invoice-modal';
+import { jwInvoiceColumns } from './jw-invoice-columns';
+import { JwInvoiceExpand } from './jw-invoice-expand';
+import { NewJwInvoiceModal } from './new-jw-invoice-modal';
 import { usePrintJwInvoice } from './use-print-jw-invoice';
 
 // The register scrolls; it has no Prev/Next. 500 is the endpoint's ceiling and
 // exactly the cap this list already ran under, so nothing that was visible
-// before disappears — what changed is that the SEARCH now runs on the server,
-// over the whole book, instead of over the rows that happened to be downloaded.
+// before disappears — the SEARCH runs on the server, over the whole book.
 const LIST_LIMIT = 500;
-
-function money(n: number): string {
-  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 // `initialSearch` — one-time seed from the host route's ?search param (Global
 // Search deep link). It fills the box AND the debounced term, so the first fetch
@@ -74,11 +69,8 @@ export function JwInvoiceView({
     return () => window.clearTimeout(id);
   }, [searchInput, term]);
 
-  // The term goes to the SERVER now. It used to filter the downloaded rows in
-  // the browser, which only ever searched the capped page the endpoint had
-  // sent — past the cap the box quietly hid matching invoices. A new term is a
-  // new query key, so it refetches, and the read always starts at the first
-  // page (offset 0) rather than stranding the user mid-list.
+  // The term goes to the SERVER: a new term is a new query key, so it refetches,
+  // and the read always starts at the first page (offset 0).
   const query: ListJwInvoicesQuery = useMemo(
     () => ({ ...(term ? { search: term } : {}), limit: LIST_LIMIT, offset: 0 }),
     [term],
@@ -93,14 +85,26 @@ export function JwInvoiceView({
   // detail page, so its History opens over the list.
   const [historyTarget, setHistoryTarget] = useState<{ id: string; code: string } | null>(null);
 
+  // ▸ expand — caller-owned open set; the engine's ▸ toggles it.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
   // Taxable / GST% / GST Amt / Total columns are dropped for them.
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
-  // Print: no permission gate — anyone who can see the row can print it, as
-  // on the DC detail page. Money a viewer may not see is already gone from the
-  // row AND the printed sheet (printed with money suppressed, not blocked).
+  const columns = useMemo(() => jwInvoiceColumns(priceHidden), [priceHidden]);
+  // Print: no permission gate — anyone who can see the row can print it, as on
+  // the DC detail page. Money a viewer may not see is already gone from the row
+  // AND the printed sheet.
   const printInvoice = usePrintJwInvoice(!priceHidden);
 
   return (
@@ -123,164 +127,59 @@ export function JwInvoiceView({
         }
       />
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load JW invoices. Try again.'}
-            </div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid tbl-auto">
-              <thead>
-                <tr>
-                  <th>Invoice No.</th>
-                  <th>Invoice Date</th>
-                  <th>JWSO No.</th>
-                  <th>Customer</th>
-                  <th>Item Code</th>
-                  <th>Item Name</th>
-                  <th className="th-num">Invoice Qty</th>
-                  {priceHidden ? null : (
-                    <>
-                      <th className="th-num">Rate</th>
-                      <th className="th-num">Taxable</th>
-                      <th className="th-num">GST%</th>
-                      <th className="th-num">GST Amt</th>
-                      <th className="th-num" style={{ color: 'var(--green2)' }}>
-                        Total
-                      </th>
-                    </>
-                  )}
-                  {/* R5 (ADR-194): issued | cancelled. A cancelled invoice
-                      reads visibly cancelled and offers no Cancel again. */}
-                  <th>Status</th>
-                  {/* The ⋯ row menu: Print · History · Cancel Invoice. */}
-                  <th className="td-ctr" aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td colSpan={priceHidden ? 9 : 14} className="empty-state">
-                      {term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-                {items.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <span className="td-code" style={{ color: 'var(--cyan)' }}>
-                        {r.code}
-                      </span>
-                      {/* Screen only, never printed (plan D2, 0186). */}
-                      {r.status !== 'cancelled' && !r.placeOfSupply ? (
-                        <div
-                          title={PLACE_OF_SUPPLY_UNKNOWN_NOTE}
-                          style={{ fontSize: 10, color: 'var(--amber2)', whiteSpace: 'nowrap' }}
-                        >
-                          ⚠ Place of Supply unknown
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {fmtDate(r.invoiceDate)}
-                    </td>
-                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
-                      {r.jwCodeText ?? '—'}
-                    </td>
-                    <td className="fw-700">{r.clientName ?? '—'}</td>
-                    <td
-                      className="mono fw-700"
-                      style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
-                    >
-                      {itemCodeWithRev(r.itemCode, r.itemRevision)}
-                    </td>
-                    <td className="text2" style={{ fontSize: 12 }}>
-                      {r.partName ?? '—'}
-                    </td>
-                    <td className="mono td-num">{r.qty}</td>
-                    {priceHidden ? null : (
-                      <>
-                        <td className="mono td-num">{money(r.rate ?? 0)}</td>
-                        <td className="mono td-num">{money(r.taxableAmount ?? 0)}</td>
-                        <td className="mono text3 td-num" style={{ fontSize: 11 }}>
-                          {r.gstPercent}%
-                        </td>
-                        <td className="mono td-num">{money(r.gstAmount ?? 0)}</td>
-                        <td
-                          className="mono fw-700 td-num"
-                          style={{ fontSize: 14, color: 'var(--green2)' }}
-                        >
-                          {money(r.totalAmount ?? 0)}
-                        </td>
-                      </>
-                    )}
-                    <td>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: 4,
-                          color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
-                          background:
-                            r.status === 'cancelled'
-                              ? 'rgba(239,68,68,0.10)'
-                              : 'rgba(34,197,94,0.10)',
-                        }}
-                        title={
-                          r.status === 'cancelled' && r.cancelReason
-                            ? `Cancelled: ${r.cancelReason}`
-                            : undefined
-                        }
-                      >
-                        {r.status === 'cancelled' ? 'Cancelled' : 'Issued'}
-                      </span>
-                    </td>
-                    <td className="td-ctr">
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'print',
-                            label: 'Print',
-                            icon: 'printer',
-                            onSelect: () => printInvoice(r),
-                          },
-                          {
-                            key: 'history',
-                            label: 'History',
-                            icon: 'activity',
-                            onSelect: () => setHistoryTarget({ id: r.id, code: r.code }),
-                          },
-                          {
-                            // R5 (ADR-194): a cancelled invoice offers no Cancel.
-                            key: 'cancel',
-                            label: 'Cancel Invoice',
-                            icon: 'x',
-                            group: 'danger',
-                            hidden: !canCancel,
-                            disabledReason:
-                              r.status === 'cancelled' ? 'Already Cancelled' : undefined,
-                            onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load JW invoices. Try again.'
+          }
+        />
+      ) : (
+        // THE shared FIT table (ADR-199). First column (Invoice No.) is pinned.
+        // There is no detail page for a JW invoice, so a row is not clickable;
+        // the ▸ reveals Item Name / Rate / GST % / GST Amt. A cancelled invoice
+        // is tinted and offers no Cancel again. The row actions — Print ·
+        // History · Cancel Invoice — keep their existing permission gating.
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.jwInvoices}
+            columns={columns}
+            rows={items}
+            rowKey={(r) => r.id}
+            loading={isLoading}
+            emptyText={term ? 'No JW Invoices match.' : 'No JW Invoices yet.'}
+            rowClassName={(r) => (r.status === 'cancelled' ? ROW_TINT.cancelled : undefined)}
+            renderExpanded={(r) =>
+              expanded.has(r.id) ? <JwInvoiceExpand r={r} priceHidden={priceHidden} /> : null
+            }
+            onToggleExpanded={(r) => toggleExpand(r.id)}
+            rowMenu={(r) => [
+              {
+                key: 'print',
+                label: 'Print',
+                icon: 'printer',
+                onSelect: () => printInvoice(r),
+              },
+              {
+                key: 'history',
+                label: 'History',
+                icon: 'activity',
+                onSelect: () => setHistoryTarget({ id: r.id, code: r.code }),
+              },
+              {
+                // R5 (ADR-194): a cancelled invoice offers no Cancel.
+                key: 'cancel',
+                label: 'Cancel Invoice',
+                icon: 'x',
+                group: 'danger',
+                hidden: !canCancel,
+                disabledReason: r.status === 'cancelled' ? 'Already Cancelled' : undefined,
+                onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
+              },
+            ]}
+          />
+        </Panel>
+      )}
       <ListFooter total={data?.total ?? items.length} noun="JW invoice" limit={LIST_LIMIT} />
 
       {showModal && canWrite ? (
@@ -306,389 +205,6 @@ export function JwInvoiceView({
           onClose={() => setCancelTarget(null)}
         />
       ) : null}
-    </div>
-  );
-}
-
-// ─── New JW Invoice modal ──────────────────────────────────────────────────
-
-function NewJwInvoiceModal({
-  onClose,
-  initialJwId,
-}: {
-  onClose: () => void;
-  /** JWSO pre-picked from `?jw=` (JWSO detail → "JW Invoice"). */
-  initialJwId?: string | undefined;
-}): React.JSX.Element {
-  const [date, setDate] = useState(todayLocal());
-  const [jwSearch, setJwSearch] = useState('');
-  const [jwId, setJwId] = useState<string | null>(() => initialJwId ?? null);
-  const [lineId, setLineId] = useState<string | null>(null);
-  // Filled with the line's To Invoice when a line is picked.
-  const [qty, setQty] = useState('');
-  const [rate, setRate] = useState('');
-  const [remarks, setRemarks] = useState('');
-  // '' = Auto: the server decides from the Place of Supply (the customer's
-  // State vs ours; SEZ / Overseas → IGST — plan D2). A manual choice is only
-  // accepted while the Place of Supply is unknown. Totals do not change.
-  const [taxType, setTaxType] = useState<'' | 'sgst_cgst' | 'igst'>('');
-  const [err, setErr] = useState<string | null>(null);
-
-  // ADR-104: NO status filter — see jw-returns. A JWSO closes at final QC, so
-  // filtering to `open` hid every finished job from the one screen that bills
-  // it. IN-JW-00004 sat complete with 0 invoices because of this.
-  const jwQuery = useJobWorkOrdersList({
-    search: jwSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
-  const jwHeaders = jwQuery.data?.items ?? [];
-
-  // Lines + gstPercent come from the JWSO detail once a header is picked.
-  const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
-  const jwLines = jwDetailQ.data?.lines ?? [];
-  const gstPct = Number(jwDetailQ.data?.gstPercent ?? 0);
-
-  // To Invoice (Returned − Invoiced) per line — the limit the server checks.
-  const billableQ = useJwInvoiceableLines(jwId ?? undefined);
-  const toInvoiceById = useMemo(
-    () => new Map((billableQ.data?.lines ?? []).map((b) => [b.jobWorkOrderLineId, b])),
-    [billableQ.data],
-  );
-  const pickedBillable = lineId ? toInvoiceById.get(lineId) : undefined;
-
-  const saveKey = useSaveKey();
-  const createMut = useCreateJwInvoice(saveKey);
-
-  const onPickLine = (id: string): void => {
-    setLineId(id || null);
-    const line = jwLines.find((l) => l.id === id);
-    const billable = toInvoiceById.get(id);
-    setQty(billable && billable.toInvoiceQty > 0 ? String(billable.toInvoiceQty) : '');
-    // Prefill the (editable) rate from the JW line's processing charge. Null
-    // only when the picker can't see prices (they can't reach this create flow),
-    // so fall back to blank.
-    if (line) setRate(line.rate ?? '');
-  };
-
-  const qtyNum = Number(qty);
-  const rateNum = Number(rate);
-  const taxable = Number.isFinite(qtyNum) && Number.isFinite(rateNum) ? qtyNum * rateNum : 0;
-  const gstAmount = Number.isFinite(gstPct) ? taxable * (gstPct / 100) : 0;
-  const total = taxable + gstAmount;
-
-  const onSave = (): void => {
-    setErr(null);
-    if (!jwId) {
-      setErr('Select a JWSO');
-      return;
-    }
-    if (!lineId) {
-      setErr('Select a JW line');
-      return;
-    }
-    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
-      setErr('Invoice Qty must be at least 1.');
-      return;
-    }
-    if (pickedBillable && qtyNum > pickedBillable.toInvoiceQty) {
-      setErr(
-        `Invoice Qty (${qtyNum}) cannot be more than To Invoice (${pickedBillable.toInvoiceQty}).`,
-      );
-      return;
-    }
-    const input: CreateJwInvoiceInput = {
-      invoiceDate: date,
-      jobWorkOrderLineId: lineId,
-      qty: qtyNum,
-      ...(taxType ? { taxType } : {}),
-    };
-    if (Number.isFinite(rateNum) && rate.trim()) input.rate = rateNum;
-    if (remarks.trim()) input.remarks = remarks.trim();
-
-    createMut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) =>
-        setErr(
-          e instanceof Error ? e.message : 'Could not save Invoice. Check the lines and try again.',
-        ),
-    });
-  };
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(720px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          🧾 New JW Invoice (Labour)
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No. ★">
-              <SearchableSelect
-                id="jwinv-jwso"
-                value={jwId}
-                onChange={(id) => {
-                  setJwId(id);
-                  setLineId(null);
-                  setRate('');
-                  setQty('');
-                }}
-                onSearch={setJwSearch}
-                loading={jwQuery.isFetching}
-                // The pre-picked JWSO may sit outside the first 50 the picker
-                // lists, so its label comes from the loaded detail.
-                valueLabel={
-                  jwId && jwDetailQ.data?.id === jwId
-                    ? `${jwDetailQ.data.code} — ${jwDetailQ.data.customerName ?? ''}`
-                    : undefined
-                }
-                placeholder="🔍 Select JWSO — type number or customer…"
-                options={jwHeaders.map((j) => ({
-                  id: j.jwId,
-                  code: j.code,
-                  name: j.customerName ?? '',
-                }))}
-              />
-            </Field>
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Ln ★">
-              <select
-                className="innovic-input"
-                value={lineId ?? ''}
-                disabled={!jwId || jwDetailQ.isFetching || billableQ.isFetching}
-                onChange={(e) => onPickLine(e.target.value)}
-                style={{ width: '100%' }}
-              >
-                <option value="">
-                  {!jwId
-                    ? 'Select a JWSO first…'
-                    : jwDetailQ.isFetching || billableQ.isFetching
-                      ? 'Loading lines…'
-                      : jwLines.length === 0
-                        ? 'No lines on this JWSO'
-                        : 'Select a line…'}
-                </option>
-                {jwLines.map((l) => {
-                  const b = toInvoiceById.get(l.id);
-                  return (
-                    <option key={l.id} value={l.id} disabled={b ? b.toInvoiceQty <= 0 : false}>
-                      L{l.lineNo} · {l.partName} · rate {l.rate}
-                      {b ? ` · To Invoice ${b.toInvoiceQty}` : ''}
-                    </option>
-                  );
-                })}
-              </select>
-            </Field>
-          </div>
-
-          <Field label="Invoice Date">
-            <input
-              type="date"
-              className="innovic-input"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </Field>
-          <Field
-            label={
-              pickedBillable
-                ? `Invoice Qty ★ (To Invoice ${pickedBillable.toInvoiceQty})`
-                : 'Invoice Qty ★'
-            }
-          >
-            <input
-              type="number"
-              min={1}
-              max={pickedBillable?.toInvoiceQty}
-              className="innovic-input"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="0"
-              style={{ fontWeight: 700, color: 'var(--green2)' }}
-            />
-          </Field>
-
-          <Field label="Rate (per unit)">
-            <input
-              type="number"
-              min={0}
-              className="innovic-input"
-              value={rate}
-              onChange={(e) => setRate(e.target.value)}
-              placeholder="0.00"
-            />
-          </Field>
-          <Field label="Tax Type">
-            <select
-              className="innovic-input"
-              value={taxType}
-              onChange={(e) =>
-                setTaxType(
-                  e.target.value === 'igst'
-                    ? 'igst'
-                    : e.target.value === 'sgst_cgst'
-                      ? 'sgst_cgst'
-                      : '',
-                )
-              }
-              style={{ width: '100%' }}
-            >
-              <option value="">Auto (from customer&apos;s State)</option>
-              <option value="sgst_cgst">SGST + CGST</option>
-              <option value="igst">IGST</option>
-            </select>
-          </Field>
-          <Field label="Remarks">
-            <input
-              type="text"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Optional note…"
-            />
-          </Field>
-        </div>
-
-        {/* Live preview — Taxable = qty × rate; GST from the JWSO header %. */}
-        <div
-          style={{
-            marginTop: 16,
-            border: '1px solid var(--border2)',
-            borderRadius: 'var(--radius)',
-            padding: 12,
-            background: 'var(--bg3)',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: 12,
-          }}
-        >
-          <PreviewCell label="Taxable" value={money(taxable)} />
-          <PreviewCell label={`GST (${gstPct}%)`} value={money(gstAmount)} />
-          <PreviewCell label="Total" value={money(total)} accent />
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div className="text3" style={{ fontSize: 11 }}>
-              qty × rate = taxable · + GST from JWSO
-            </div>
-          </div>
-        </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={createMut.isPending}
-            onClick={onSave}
-          >
-            {createMut.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save Invoice'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PreviewCell({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        className="mono fw-700"
-        style={{ fontSize: 16, color: accent ? 'var(--green)' : 'var(--text)' }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      {children}
     </div>
   );
 }

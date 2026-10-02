@@ -5,9 +5,11 @@
 
 import { REPORT_TYPE_STATUSES, type CreateReportTypeInput, type ReportType } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { PageState } from '@/ui/layout';
 import {
   useCreateReportType,
   useDeleteReportType,
@@ -30,16 +32,77 @@ export function ReportTypesPanel(): React.JSX.Element {
     await del.mutateAsync(row.id);
   }
 
+  // The sheet's columns (first = the Report / Document Name, always pinned).
+  // Default requirement and Active both show as badges; Description shares the
+  // spare width and clips with "…" + tooltip. Sr No is dropped — the name is
+  // the identity, and the fit table pins it as column 0.
+  const columns = useMemo<DataTableColumn<ReportType>[]>(
+    () => [
+      {
+        id: 'name',
+        header: 'Report / Document Name',
+        kind: 'code',
+        nowrap: true,
+        className: 'fw-700',
+        render: (row) => <span style={{ color: 'var(--purple)' }}>{row.name}</span>,
+      },
+      {
+        id: 'description',
+        header: 'Description',
+        kind: 'text',
+        align: 'left',
+        className: 'text2',
+        render: (row) => row.description ?? '—',
+        title: (row) => row.description ?? '',
+      },
+      {
+        id: 'default',
+        header: 'Default',
+        kind: 'badge',
+        nowrap: true,
+        render: (row) => (
+          <span className={`badge ${row.defaultMandatory ? 'b-red' : 'b-blue'}`}>
+            {row.defaultMandatory ? '★ Mandatory' : 'Optional'}
+          </span>
+        ),
+      },
+      {
+        id: 'status',
+        header: 'Active',
+        kind: 'badge',
+        nowrap: true,
+        render: (row) => (
+          <span className={`badge ${row.status === 'Active' ? 'b-green' : 'b-amber'}`}>
+            {row.status}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          marginBottom: 12,
+          gap: 8,
+        }}
+      >
         {isFetching && !isLoading ? (
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             <Loader2 className="inline h-3 w-3 animate-spin" />
           </span>
         ) : null}
         {canWrite ? (
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setModal({ kind: 'new' })}
+          >
             + Add Report Type
           </button>
         ) : null}
@@ -54,88 +117,44 @@ export function ReportTypesPanel(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Sr No</th>
-                <th>Report / Document Name</th>
-                <th>Description</th>
-                <th>Default</th>
-                <th>Active</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={6} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={6} className="empty-state" style={{ color: 'var(--red2)' }}>
-                    {error instanceof Error ? error.message : 'Could not load report types. Try again.'}
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="empty-state">
-                    No report types defined. Click + Add Report Type.
-                  </td>
-                </tr>
-              ) : (
-                items.map((r, i) => (
-                  <tr key={r.id}>
-                    <td className="td-ctr mono fw-700">{i + 1}</td>
-                    <td className="fw-700" style={{ color: 'var(--purple)' }}>
-                      {r.name}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {r.description ?? '—'}
-                    </td>
-                    <td>
-                      <span className={`badge ${r.defaultMandatory ? 'b-red' : 'b-blue'}`}>
-                        {r.defaultMandatory ? '★ Mandatory' : 'Optional'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${r.status === 'Active' ? 'b-green' : 'b-amber'}`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'edit',
-                            label: 'Edit',
-                            icon: 'pencil',
-                            hidden: !canWrite,
-                            onSelect: () => setModal({ kind: 'edit', row: r }),
-                          },
-                          {
-                            key: 'delete',
-                            label: 'Delete',
-                            icon: 'trash-2',
-                            group: 'danger',
-                            hidden: !canWrite,
-                            // As before: no second delete while one is saving.
-                            disabledReason: del.isPending ? 'Deleting…' : undefined,
-                            onSelect: () => onDelete(r),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load report types. Try again.'
+          }
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.reportTypes}
+            columns={columns}
+            rows={items}
+            loading={isLoading}
+            rowActionsWidth="1%"
+            emptyText="No report types defined. Click + Add Report Type."
+            rowMenu={(row) => [
+              {
+                key: 'edit',
+                label: 'Edit',
+                icon: 'pencil',
+                hidden: !canWrite,
+                onSelect: () => setModal({ kind: 'edit', row }),
+              },
+              {
+                key: 'delete',
+                label: 'Delete',
+                icon: 'trash-2',
+                group: 'danger',
+                hidden: !canWrite,
+                // As before: no second delete while one is saving.
+                disabledReason: del.isPending ? 'Deleting…' : undefined,
+                onSelect: () => onDelete(row),
+              },
+            ]}
+          />
+        </Panel>
+      )}
 
       {modal.kind !== 'none' ? (
         <ReportTypeModal
@@ -154,7 +173,9 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
   const [name, setName] = useState(row?.name ?? '');
   const [description, setDescription] = useState(row?.description ?? '');
   const [defaultMandatory, setDefaultMandatory] = useState(row?.defaultMandatory ?? false);
-  const [status, setStatus] = useState<(typeof REPORT_TYPE_STATUSES)[number]>(row?.status ?? 'Active');
+  const [status, setStatus] = useState<(typeof REPORT_TYPE_STATUSES)[number]>(
+    row?.status ?? 'Active',
+  );
   const [err, setErr] = useState<string | null>(null);
 
   async function submit(): Promise<void> {
@@ -195,7 +216,11 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
       }}
       onClick={onClose}
     >
-      <div className="panel" style={{ width: 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="panel"
+        style={{ width: 'min(1100px, 96vw)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="panel-hdr">
           <span className="panel-title">{row ? '✏ Edit Report Type' : '📄 Add Report Type'}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
@@ -258,7 +283,12 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Cancel
             </button>
-            <button type="button" className="btn btn-primary" disabled={pending} onClick={() => void submit()}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={pending}
+              onClick={() => void submit()}
+            >
               {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
             </button>
           </div>

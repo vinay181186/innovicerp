@@ -1,20 +1,37 @@
 // Stuck Activity Dashboard — mirror of legacy renderStuckDashboard (L18017).
 //
-// Flags SO phases that have run past their day threshold, grouped by stage and
-// sorted by most-over-threshold. Read-only. Thresholds ship as constants for
-// v1 (legacy had an editable config; no config store yet).
+// Flags SO phases that have run past their day threshold, sorted by most-over-
+// threshold (stage groups kept adjacent, largest group first). Read-only.
+// Thresholds ship as constants for v1 (legacy had an editable config; no config
+// store yet).
+//
+// ADR-199 table standard (2026-10-01): the one ruled fit sheet
+// <DataTable tableKey={TABLE_KEYS.stuckDashboard}>. SO No. is the pinned first
+// column; Stage moved from a group-header band into its own column (coloured by
+// severity); numbers right-align; a whole-row tint flags how far over threshold
+// the activity is (red past 5 days, amber otherwise). The ⋯ row menu carries
+// Assign Task, and the row opens the Sales Order. Column sort / filter come from
+// the table's own ▾ header menus (ADR-200), alongside the page search.
 
 import type { StuckDashboardResponse, StuckItem } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { apiFetch } from '@/lib/api';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu, StatStrip } from '@/ui/data';
+import {
+  DataTable,
+  Panel,
+  ROW_TINT,
+  StatStrip,
+  type DataTableColumn,
+  type RowMenuItem,
+} from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader } from '@/ui/layout';
 
 export const stuckDashboardRoute = createRoute({
@@ -31,16 +48,120 @@ function overColor(over: number): string {
   return over > 10 ? 'var(--red2)' : over > 5 ? 'var(--red)' : 'var(--orange)';
 }
 
+const over = (it: StuckItem): number => it.days - it.threshold;
+
+function stuckColumns(): DataTableColumn<StuckItem>[] {
+  return [
+    {
+      id: 'so_no',
+      kind: 'code',
+      header: 'SO No.',
+      className: 'td-code',
+      render: (it) => (
+        <Link
+          to="/sales-orders/$id"
+          params={{ id: it.soId }}
+          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {it.soNo}
+        </Link>
+      ),
+    },
+    {
+      id: 'stage',
+      kind: 'code',
+      header: 'Stage',
+      filterValue: (it) => it.stage,
+      render: (it) => <span style={{ color: it.color, fontWeight: 700 }}>{it.stage}</span>,
+    },
+    {
+      id: 'customer',
+      kind: 'text',
+      header: 'Customer',
+      align: 'left',
+      ellipsis: true,
+      render: (it) => it.customer ?? '—',
+      title: (it) => it.customer ?? '',
+    },
+    {
+      id: 'stuck_for',
+      kind: 'num',
+      header: 'Stuck For',
+      align: 'right',
+      className: 'mono fw-700',
+      filterValue: (it) => it.days,
+      render: (it) => <span style={{ color: overColor(over(it)) }}>{it.days} days</span>,
+    },
+    {
+      id: 'threshold',
+      kind: 'num',
+      header: 'Threshold',
+      align: 'right',
+      className: 'mono text3',
+      filterValue: (it) => it.threshold,
+      render: (it) => `${it.threshold} days`,
+    },
+    {
+      id: 'over_by',
+      kind: 'num',
+      header: 'Over By',
+      align: 'right',
+      className: 'mono fw-700',
+      filterValue: (it) => over(it),
+      render: (it) => <span style={{ color: overColor(over(it)) }}>+{over(it)} days</span>,
+    },
+    {
+      id: 'stuck_since',
+      kind: 'date',
+      header: 'Stuck Since',
+      className: 'text3',
+      filterValue: (it) => it.since,
+      render: (it) => fmtDate(it.since),
+    },
+    {
+      id: 'detail',
+      kind: 'text',
+      header: 'Detail',
+      align: 'left',
+      ellipsis: true,
+      render: (it) => it.detail,
+      title: (it) => it.detail,
+    },
+  ];
+}
+
 function StuckDashboardPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useQuery<StuckDashboardResponse>({
     queryKey: ['stuck-dashboard'],
     queryFn: () => apiFetch<StuckDashboardResponse>('/stuck-dashboard'),
     staleTime: 30_000,
   });
+  const navigate = useNavigate();
   // Client-side search over the rows loaded — SO No., customer, stage, detail.
   const [term, setTerm] = useState('');
   // The row whose ⋯ → Assign Task popup is open; null = closed.
   const [assignFor, setAssignFor] = useState<StuckItem | null>(null);
+
+  // Keep the legacy ordering: group by stage, largest group first, rows inside a
+  // group in the server's most-over order — then flatten to one list so same-
+  // stage rows stay adjacent in the single table.
+  const rows = useMemo(() => {
+    const items = (data?.items ?? []).filter((it) =>
+      matchesSearchTerm([it.soNo, it.customer, it.stage, it.detail], term),
+    );
+    const grouped = new Map<string, StuckItem[]>();
+    for (const it of items) {
+      const arr = grouped.get(it.stage);
+      if (arr) arr.push(it);
+      else grouped.set(it.stage, [it]);
+    }
+    return [...grouped.entries()]
+      .sort((a, b) => b[1].length - a[1].length)
+      .flatMap(([, arr]) => arr);
+  }, [data, term]);
+
+  const columns = useMemo(() => stuckColumns(), []);
 
   if (isLoading) {
     return (
@@ -57,25 +178,12 @@ function StuckDashboardPage(): React.JSX.Element {
     );
   }
 
-  // Group by stage, preserving the global most-over-threshold ordering within
-  // each group; order groups by size (legacy L18130).
-  const grouped = new Map<string, StuckItem[]>();
-  const items = data.items.filter((it) =>
-    matchesSearchTerm([it.soNo, it.customer, it.stage, it.detail], term),
-  );
-  for (const it of items) {
-    const arr = grouped.get(it.stage);
-    if (arr) arr.push(it);
-    else grouped.set(it.stage, [it]);
-  }
-  const stageOrder = [...grouped.entries()].sort((a, b) => b[1].length - a[1].length);
-
   return (
     <div>
       <ListHeader
         title="Stuck Dashboard"
         icon="⚠"
-        count={items.length}
+        count={rows.length}
         noun="stuck activity"
         nounPlural="stuck activities"
         search={term}
@@ -122,92 +230,28 @@ function StuckDashboardPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {stageOrder.map(([stage, items]) => {
-            const color = items[0]!.color;
-            return (
-              <div key={stage} style={{ marginBottom: 20 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color,
-                    marginBottom: 8,
-                    padding: '6px 12px',
-                    background: 'var(--bg2)',
-                    borderRadius: 6,
-                    borderLeft: `3px solid ${color}`,
-                  }}
-                >
-                  {stage} ({items.length})
-                </div>
-                <div className="panel">
-                  <div className="tbl-wrap">
-                    <table className="innovic-table tbl-grid">
-                      <thead>
-                        <tr>
-                          <th>SO No.</th>
-                          <th>Customer</th>
-                          <th className="th-num">Stuck For</th>
-                          <th className="th-num">Threshold</th>
-                          <th className="th-num">Over By</th>
-                          <th>Stuck Since</th>
-                          <th>Detail</th>
-                          <th aria-label="Actions" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.map((it, i) => {
-                          const over = it.days - it.threshold;
-                          const oc = overColor(over);
-                          return (
-                            <tr key={`${it.soId}:${it.stage}:${i}`}>
-                              <td>
-                                <Link
-                                  to="/sales-orders/$id"
-                                  params={{ id: it.soId }}
-                                  className="td-code"
-                                  style={{ color: 'var(--cyan)', textDecoration: 'underline' }}
-                                >
-                                  {it.soNo}
-                                </Link>
-                              </td>
-                              <td style={{ fontSize: 12 }}>{it.customer ?? '—'}</td>
-                              <td className="td-num mono fw-700" style={{ color: oc }}>
-                                {it.days} days
-                              </td>
-                              <td className="td-num mono text3">{it.threshold} days</td>
-                              <td className="td-num mono fw-700" style={{ color: oc }}>
-                                +{over} days
-                              </td>
-                              <td className="text3" style={{ fontSize: 11 }}>
-                                {fmtDate(it.since)}
-                              </td>
-                              <td style={{ fontSize: 11 }}>{it.detail}</td>
-                              {/* Chase it: a task linked to the SO, titled with
-                                  the stage it is stuck in. */}
-                              <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                                <RowMenu
-                                  items={[
-                                    {
-                                      key: 'assign',
-                                      label: 'Assign Task',
-                                      icon: 'user-round',
-                                      group: 'assign',
-                                      onSelect: () => setAssignFor(it),
-                                    },
-                                  ]}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          <Panel bodyPadding="none">
+            <DataTable<StuckItem>
+              tableKey={TABLE_KEYS.stuckDashboard}
+              columns={columns}
+              rows={rows}
+              rowKey={(it, i) => `${it.soId}:${it.stage}:${i}`}
+              empty={term ? 'No stuck activities match.' : 'No stuck jobs.'}
+              rowClassName={(it) => (over(it) > 5 ? ROW_TINT.late : ROW_TINT.pending)}
+              onRowClick={(it) =>
+                void navigate({ to: '/sales-orders/$id', params: { id: it.soId } })
+              }
+              rowMenu={(it): RowMenuItem[] => [
+                {
+                  key: 'assign',
+                  label: 'Assign Task',
+                  icon: 'user-round',
+                  group: 'assign',
+                  onSelect: () => setAssignFor(it),
+                },
+              ]}
+            />
+          </Panel>
           {/* Thresholds on demand — a "?" with the day limits in its tooltip. */}
           <div
             className="text3"

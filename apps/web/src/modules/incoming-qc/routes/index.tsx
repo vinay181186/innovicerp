@@ -3,26 +3,37 @@
 // table. The ⋯ menu's Inspect opens the accept/reject form as a popup OVER
 // this queue (IncomingQcInspectModal) — the same form the QC Call Register
 // draws inline in its expanded row — so the inspector never leaves the list
-// they are working through. Legacy chrome.
+// they are working through.
+//
+// ADR-199 table standard: both tables are the shared FIT table
+// (<DataTable tableKey=…>), one line per GRN line, the fit engine sizing columns
+// to the screen and dropping the rightmost unpinned ones into a ▸ detail row
+// when it is too narrow. The row columns + ▸ detail live in two column modules
+// so this file stays under the 400-line ceiling.
 
-import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate } from '@/lib/date';
-import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback/Banner';
-import { ListHeader } from '@/ui/layout';
+import { ListHeader, PageState } from '@/ui/layout';
 import { useIncomingQc } from '../api';
 import { type IncomingRaisedNc } from '../components/incoming-qc-inspect-form';
 import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
+import {
+  IncomingQcCompletedExpanded,
+  incomingQcCompletedColumns,
+} from '../components/incoming-qc-completed-columns';
+import {
+  IncomingQcPendingExpanded,
+  incomingQcPendingColumns,
+} from '../components/incoming-qc-pending-columns';
+import { daysText } from '../lib/qc-format';
 
 const searchSchema = z.object({
   // DEEP LINK: `?line=<grnLineId>` means "open the Inspect popup for this GRN
@@ -38,36 +49,6 @@ export const incomingQcRoute = createRoute({
   validateSearch: searchSchema,
   component: IncomingQcPage,
 });
-
-// Days Waiting chip: badge classes, no hard-coded colours.
-function waitBadge(days: number): string {
-  if (days >= 3) return 'b-red';
-  if (days >= 2) return 'b-amber';
-  return 'b-green';
-}
-
-/** "1 day" / "3 days" — the one waiting-time format on every QC screen. */
-function daysText(n: number): string {
-  return `${n} ${n === 1 ? 'day' : 'days'}`;
-}
-
-function respColor(days: number | null): string {
-  if (days === null) return 'var(--text3)';
-  if (days <= 1) return 'var(--green)';
-  if (days <= 2) return 'var(--amber)';
-  return 'var(--red)';
-}
-
-function dispColor(d: IncomingQcCompletedRow['disposition']): string {
-  if (d === 'Rejected') return 'var(--red)';
-  if (d === 'Partial Accept') return 'var(--amber)';
-  return 'var(--green)';
-}
-
-/** Screen word for the stored QC result code. */
-function dispLabel(d: IncomingQcCompletedRow['disposition']): string {
-  return d === 'Partial Accept' ? 'Partly Accepted' : d;
-}
 
 function IncomingQcPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useIncomingQc();
@@ -133,6 +114,17 @@ function IncomingQcPage(): React.JSX.Element {
       term,
     ),
   );
+
+  // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
+  // expand control (onToggleExpanded), and renderExpanded returns null for a
+  // collapsed row.
+  const [pendingOpen, setPendingOpen] = useState<Set<string>>(new Set());
+  const [completedOpen, setCompletedOpen] = useState<Set<string>>(new Set());
+  const togglePending = useCallback((id: string) => toggle(setPendingOpen, id), []);
+  const toggleCompleted = useCallback((id: string) => toggle(setCompletedOpen, id), []);
+
+  const pendingCols = incomingQcPendingColumns();
+  const completedCols = incomingQcCompletedColumns();
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -228,18 +220,13 @@ function IncomingQcPage(): React.JSX.Element {
         </Banner>
       ) : null}
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="empty-state">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading incoming QC…
-          </div>
-        </div>
-      ) : isError || !data ? (
-        <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load Incoming QC. Try again.'}
-          </div>
-        </div>
+      {isError || (!data && !isLoading) ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load Incoming QC. Try again.'
+          }
+        />
       ) : (
         <>
           {/* Pending inspection queue */}
@@ -249,67 +236,34 @@ function IncomingQcPage(): React.JSX.Element {
                 ⏳ Pending Inspection ({pendingRows.length} lines)
               </span>
             </div>
-            {/* The sheet look (tbl-grid, as the Plans and Job Card lists):
-                bold blue column names, gridlines, cream / white rows, fixed
-                widths that add up to the page so nothing scrolls sideways. */}
-            <div className="tbl-wrap">
-              <table className="innovic-table tbl-grid">
-                {/* POL added before Item Code; Vendor and Item Name gave up
-                    the width so these still total 100. */}
-                <colgroup>
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '14%' }} />
-                  <col style={{ width: '5%' }} />
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '17%' }} />
-                  <col style={{ width: '7%' }} />
-                  <col style={{ width: '7%' }} />
-                  <col style={{ width: '6%' }} />
-                  {/* The ⋯ row menu — one small button. */}
-                  <col style={{ width: '3%' }} />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>GRN No.</th>
-                    <th>GRN Date</th>
-                    <th>PO No.</th>
-                    <th>Vendor</th>
-                    {/* POL = the CUSTOMER's own PO line number off the SO line
-                        behind this receipt. */}
-                    <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item Code</th>
-                    <th>Item Name</th>
-                    <th className="th-num">Received</th>
-                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                      Days Waiting
-                    </th>
-                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                      QC Pending
-                    </th>
-                    <th aria-label="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={11} className="empty-state">
-                        {term.trim() ? 'No GRN lines match.' : 'No GRN lines waiting for QC.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    pendingRows.map((r) => (
-                      <PendingRow
-                        key={r.grnLineId}
-                        r={r}
-                        onInspect={() => setInspectLineId(r.grnLineId)}
-                      />
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <Panel bodyPadding="none">
+              <DataTable
+                tableKey={TABLE_KEYS.incomingQcPending}
+                columns={pendingCols}
+                rows={pendingRows}
+                rowKey={(r) => r.grnLineId}
+                loading={isLoading}
+                emptyText={term.trim() ? 'No GRN lines match.' : 'No GRN lines waiting for QC.'}
+                // Row click opens the GRN doc; Inspect (⋯) opens the accept/reject
+                // popup over the queue.
+                onRowClick={(r) =>
+                  void navigate({ to: '/goods-receipt-notes/$id', params: { id: r.grnId } })
+                }
+                renderExpanded={(r) =>
+                  pendingOpen.has(r.grnLineId) ? <IncomingQcPendingExpanded r={r} /> : null
+                }
+                onToggleExpanded={(r) => togglePending(r.grnLineId)}
+                rowMenu={(r) => [
+                  {
+                    key: 'inspect',
+                    label: 'Inspect',
+                    icon: 'check',
+                    group: 'workflow',
+                    onSelect: () => setInspectLineId(r.grnLineId),
+                  },
+                ]}
+              />
+            </Panel>
           </div>
 
           {/* Recently completed */}
@@ -319,65 +273,28 @@ function IncomingQcPage(): React.JSX.Element {
                 ✅ Recently Completed QC (last 20)
               </span>
             </div>
-            <div className="tbl-wrap">
-              <table className="innovic-table tbl-grid">
-                {/* POL added before Item Code; Vendor, Item Code and Item Name
-                    gave up the width so these still total 100. */}
-                <colgroup>
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '8%' }} />
-                  <col style={{ width: '8%' }} />
-                  <col style={{ width: '7%' }} />
-                  <col style={{ width: '11%' }} />
-                  <col style={{ width: '5%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '11%' }} />
-                  <col style={{ width: '5%' }} />
-                  <col style={{ width: '5%' }} />
-                  <col style={{ width: '5%' }} />
-                  <col style={{ width: '6%' }} />
-                  <col style={{ width: '5%' }} />
-                  <col style={{ width: '5%' }} />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>GRN No.</th>
-                    <th>GRN Date</th>
-                    <th style={{ color: 'var(--green2)' }}>QC Date</th>
-                    <th className="th-num">Days to Inspect</th>
-                    <th>Vendor</th>
-                    {/* POL = the CUSTOMER's own PO line number off the SO line
-                        behind this receipt. */}
-                    <th style={{ color: 'var(--purple)' }}>POL</th>
-                    <th>Item Code</th>
-                    <th>Item Name</th>
-                    <th className="th-num">Received</th>
-                    <th className="th-num" style={{ color: 'var(--green2)' }}>
-                      Accepted
-                    </th>
-                    <th className="th-num" style={{ color: 'var(--red2)' }}>
-                      Rejected
-                    </th>
-                    <th>QC Result</th>
-                    <th>Remarks</th>
-                    <th>Report</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {completedRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={14} className="empty-state">
-                        {term.trim()
-                          ? 'No completed inspections match.'
-                          : 'No completed inspections yet.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    completedRows.map((r) => <CompletedRow key={r.grnLineId} r={r} />)
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <Panel bodyPadding="none">
+              <DataTable
+                tableKey={TABLE_KEYS.incomingQcDone}
+                columns={completedCols}
+                rows={completedRows}
+                rowKey={(r) => r.grnLineId}
+                loading={isLoading}
+                emptyText={
+                  term.trim() ? 'No completed inspections match.' : 'No completed inspections yet.'
+                }
+                onRowClick={(r) =>
+                  void navigate({ to: '/goods-receipt-notes/$id', params: { id: r.grnId } })
+                }
+                // Row tint by the real QC result (disposition): accepted green,
+                // partial amber, rejected red.
+                rowClassName={(r) => ROW_TINT_BY_DISP[r.disposition]}
+                renderExpanded={(r) =>
+                  completedOpen.has(r.grnLineId) ? <IncomingQcCompletedExpanded r={r} /> : null
+                }
+                onToggleExpanded={(r) => toggleCompleted(r.grnLineId)}
+              />
+            </Panel>
           </div>
         </>
       )}
@@ -394,119 +311,18 @@ function IncomingQcPage(): React.JSX.Element {
   );
 }
 
-function PendingRow({
-  r,
-  onInspect,
-}: {
-  r: IncomingQcPendingRow;
-  onInspect: () => void;
-}): React.JSX.Element {
-  return (
-    <tr>
-      <td className="td-code cyan">{r.grnNo}</td>
-      <td className="text2" style={{ fontSize: 11 }}>
-        {fmtDate(r.grnDate)}
-      </td>
-      <td className="mono text2" style={{ fontSize: 11 }}>
-        {r.poCode ?? '—'}
-      </td>
-      <td>{r.vendorName ?? '—'}</td>
-      {/* POL — the customer's own PO line number; '—' on a raw-material
-          receipt, which has no sales order behind it. */}
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {r.clientPoLineNo ?? '—'}
-      </td>
-      <td className="td-code" style={{ color: 'var(--text)' }}>
-        {/* An OSP return traces back to an SO line and shows CODE/REV; a vendor's
-            raw-material receipt has no SO behind it and shows the bare code. Half
-            this queue being unslashed is the truth, not a missing value. */}
-        {itemCodeWithRev(r.itemCode, r.itemRevision)}
-      </td>
-      <td>{r.itemName ?? '—'}</td>
-      <td className="mono fw-700 td-num">{r.receivedQty}</td>
-      <td className="td-num">
-        <span className={`badge ${waitBadge(r.waitDays)}`}>{daysText(r.waitDays)}</span>
-      </td>
-      <td className="mono fw-700 td-num" style={{ fontSize: 14, color: 'var(--amber2)' }}>
-        {r.pendingQty}
-      </td>
-      {/* ⋯ row menu: Inspect opens the same accept/reject popup. */}
-      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-        <RowMenu
-          items={[
-            {
-              key: 'inspect',
-              label: 'Inspect',
-              icon: 'check',
-              group: 'workflow',
-              onSelect: onInspect,
-            },
-          ]}
-        />
-      </td>
-    </tr>
-  );
-}
+// Completed QC result → row tint (ADR-199 ROW_TINT). Real disposition enum only.
+const ROW_TINT_BY_DISP: Record<string, string> = {
+  Accepted: ROW_TINT.done,
+  'Partial Accept': ROW_TINT.pending,
+  Rejected: ROW_TINT.late,
+};
 
-function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
-  return (
-    <tr>
-      <td className="td-code cyan">{r.grnNo}</td>
-      <td className="text2" style={{ fontSize: 11 }}>
-        {fmtDate(r.grnDate)}
-      </td>
-      <td className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
-        {fmtDate(r.qcDate)}
-      </td>
-      <td
-        className="td-num"
-        style={{ fontSize: 11, fontWeight: 700, color: respColor(r.respDays) }}
-      >
-        {r.respDays === null ? '' : r.respDays <= 0 ? 'Same day' : daysText(r.respDays)}
-      </td>
-      <td>{r.vendorName ?? '—'}</td>
-      {/* POL — the customer's own PO line number; '—' on a raw-material
-          receipt, which has no sales order behind it. */}
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {r.clientPoLineNo ?? '—'}
-      </td>
-      <td className="td-code" style={{ color: 'var(--text)' }}>
-        {itemCodeWithRev(r.itemCode, r.itemRevision)}
-      </td>
-      <td>{r.itemName ?? '—'}</td>
-      <td className="mono fw-700 td-num">{r.receivedQty}</td>
-      <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
-        {r.acceptedQty}
-      </td>
-      <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
-        {r.rejectedQty}
-      </td>
-      <td>
-        <span className="fw-700" style={{ color: dispColor(r.disposition) }}>
-          {dispLabel(r.disposition)}
-        </span>
-      </td>
-      <td
-        className="text3"
-        style={{
-          fontSize: 11,
-          maxWidth: 120,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {r.qcRemarks ?? '—'}
-      </td>
-      <td>
-        {r.qcReportPath ? (
-          <QcReportLink path={r.qcReportPath} name={r.qcReportName} label="Report" />
-        ) : (
-          <span className="text3" style={{ fontSize: 11 }}>
-            —
-          </span>
-        )}
-      </td>
-    </tr>
-  );
+function toggle(set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string): void {
+  set((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
 }

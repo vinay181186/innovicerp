@@ -1,21 +1,29 @@
-// SO Overview list (PL-2 + PL-2b parity port). Mirrors legacy renderSOOverview
-// L9112 — list mode shows one row per open SO with overall status badge +
-// progress + alert flags; PL-2b adds the overall-status filter and Equipment column.
-// Clicking an SO row (or its Activity button) opens that SO's SO Status page
-// (/sales-orders/$id/status, owner decision 2026-09-26) — the old in-memory
-// drill view that replaced this list is gone, so Back / refresh now behave.
+// SO Overview list (PL-2 + PL-2b parity port, ADR-199 shared FIT table). One
+// row per open SO: SO No. (pinned) · Customer · SO Type · Progress Status ·
+// Progress bar · Order / Completed / Pending qty · Due Date · Alerts, with
+// Client PO No. / Equipment / Lines / SO Date folded into the ▸ detail row.
+// The columns + their helpers live in ../components/so-overview-columns.
+//
+// Clicking an SO row opens that SO's SO Status page (/sales-orders/$id/status,
+// owner decision 2026-09-26); the SO No. link inside the first cell opens the SO
+// itself (/sales-orders/$id). Rows tint by the derived progress status.
 
 import type { SoOverallStatus, SoOverviewRow } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { fmtDate, todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { SearchInput } from '@/ui/forms';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useSoOverview } from '../api';
+import {
+  SO_OVERVIEW_DEFAULT_HIDDEN,
+  soOverviewColumns,
+  soRowTint,
+} from '../components/so-overview-columns';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -29,19 +37,9 @@ export const soOverviewListRoute = createRoute({
   component: SoOverviewPage,
 });
 
-const STATUS_BADGE: Record<SoOverallStatus, { cls: string; label: string }> = {
-  not_started: { cls: 'b-grey', label: 'Not Started' },
-  in_progress: { cls: 'b-amber', label: 'In Progress' },
-  on_track: { cls: 'b-blue', label: 'On Track' },
-  delayed: { cls: 'b-red', label: 'Delayed' },
-  completed: { cls: 'b-green', label: 'Completed' },
-  blocked: { cls: 'b-red', label: 'Blocked' },
-};
-
 /** Per-row status filter (different from header.status — this filters the
  *  *derived* overallStatus). A dropdown in the filter bar with the counts in
- *  its option labels (was a pill row, PL-2b §1.3; owner decision
- *  2026-09-26). */
+ *  its option labels (was a pill row, PL-2b §1.3; owner decision 2026-09-26). */
 type OverallStatusFilter = SoOverallStatus | 'all';
 const OVERALL_STATUS_LABELS: Array<{ value: OverallStatusFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -85,19 +83,18 @@ function SoOverviewPage(): React.JSX.Element {
       replace: true,
     });
   }, [searchInput, navigate]);
-  const { data, isLoading, isError, error } = useSoOverview({
-    search,
-    status,
-  });
+  const { data, isLoading, isError, error } = useSoOverview({ search, status });
 
-  const openSoStatus = (soId: string): void => {
-    void navigate({ to: '/sales-orders/$id/status', params: { id: soId } });
+  const openSoStatus = (row: SoOverviewRow): void => {
+    void navigate({ to: '/sales-orders/$id/status', params: { id: row.id } });
   };
 
   const filteredRows =
     overallFilter === 'all'
       ? (data?.rows ?? [])
       : (data?.rows ?? []).filter((r) => r.overallStatus === overallFilter);
+
+  const columns = soOverviewColumns();
 
   return (
     <div>
@@ -171,34 +168,35 @@ function SoOverviewPage(): React.JSX.Element {
         filtersActive={!!(search || status || searchInput) || overallFilter !== 'all'}
       />
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading SO overview…
-            </div>
-          </div>
-        </div>
-      ) : isError ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load SO overview. Try again.'}
-            </div>
-          </div>
-        </div>
-      ) : data ? (
-        <>
-          <OverviewTable
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load SO overview. Try again.'
+          }
+        />
+      ) : (
+        // THE shared FIT table (ADR-199). SO No. is pinned; Client PO No. /
+        // Equipment / Lines / SO Date live in the ▸ detail row by default. Rows
+        // tint by the derived progress status, the row click opens the SO Status
+        // page, and the SO No. link inside the first cell opens the SO itself.
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.soOverview}
+            columns={columns}
             rows={filteredRows}
-            onRowClick={openSoStatus}
-            filtered={
-              !!search || (status !== undefined && status !== 'all') || overallFilter !== 'all'
+            loading={isLoading}
+            defaultHidden={SO_OVERVIEW_DEFAULT_HIDDEN}
+            emptyText={
+              search || status || overallFilter !== 'all' ? 'No SOs match.' : 'No SOs yet.'
             }
+            onRowClick={openSoStatus}
+            rowClassName={(row) => soRowTint(row.overallStatus)}
           />
-          <ListFooter total={data.rows.length} shown={filteredRows.length} noun="SO" />
-        </>
-      ) : null}
+        </Panel>
+      )}
+
+      {data ? <ListFooter total={data.rows.length} shown={filteredRows.length} noun="SO" /> : null}
     </div>
   );
 }
@@ -241,225 +239,5 @@ function OverallStatusSelect({
         );
       })}
     </select>
-  );
-}
-
-function OverviewTable({
-  rows,
-  onRowClick,
-  filtered,
-}: {
-  rows: SoOverviewRow[];
-  onRowClick: (soId: string) => void;
-  filtered: boolean;
-}): React.JSX.Element {
-  return (
-    <>
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>SO No.</th>
-                <th>Customer</th>
-                <th>SO Type</th>
-                <th>Equipment</th>
-                <th className="th-num">Lines</th>
-                <th>Progress Status</th>
-                <th>Progress</th>
-                <th className="th-num">Order Qty</th>
-                <th className="th-num" style={{ color: 'var(--green2)' }}>
-                  Completed
-                </th>
-                <th className="th-num" style={{ color: 'var(--red2)' }}>
-                  Pending
-                </th>
-                <th>Due Date</th>
-                <th>Alerts</th>
-                <th>SO Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={13} className="empty-state">
-                    {filtered ? 'No SOs match.' : 'No SOs yet.'}
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => <Row key={row.id} row={row} onRowClick={onRowClick} />)
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function Row({
-  row,
-  onRowClick,
-}: {
-  row: SoOverviewRow;
-  onRowClick: (soId: string) => void;
-}): React.JSX.Element {
-  const badge = STATUS_BADGE[row.overallStatus];
-  const today = todayIst();
-  const overdue =
-    row.earliestDueDate !== null &&
-    row.earliestDueDate < today &&
-    row.overallStatus !== 'completed';
-  return (
-    <tr style={{ cursor: 'pointer' }} onClick={() => onRowClick(row.id)}>
-      <td style={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: row.id }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', fontSize: 13, fontWeight: 800 }}
-        >
-          {row.code}
-        </Link>
-        {row.clientPoNo ? (
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Client PO No. {row.clientPoNo}
-          </div>
-        ) : null}
-      </td>
-      <td className="fw-700">{row.customerName ?? '—'}</td>
-      <td style={{ fontSize: 11 }}>
-        {row.type === 'equipment'
-          ? 'Equipment'
-          : row.type === 'with_material'
-            ? 'With Material'
-            : 'Component'}
-      </td>
-      <td style={{ color: 'var(--purple)', fontSize: 12 }}>{row.equipmentItemName ?? '—'}</td>
-      <td className="td-num mono fw-700" style={{ color: 'var(--purple)' }}>
-        {row.lineCount}
-      </td>
-      <td>
-        <span className={`badge ${badge.cls}`}>{badge.label}</span>
-      </td>
-      <td>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110 }}>
-          <ProgBar pct={row.overallPct} status={row.overallStatus} />
-          <span
-            className="mono fw-700"
-            style={{ fontSize: 11, color: barTextColor(row.overallStatus) }}
-          >
-            {row.overallPct}%
-          </span>
-        </div>
-      </td>
-      <td className="td-num mono fw-700">{row.totalRequiredQty}</td>
-      <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
-        {row.totalDoneQty}
-      </td>
-      <td
-        className="td-num mono fw-700"
-        style={{ color: row.totalBalanceQty > 0 ? 'var(--red2)' : 'var(--green2)' }}
-      >
-        {row.totalBalanceQty}
-      </td>
-      <td
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          whiteSpace: 'nowrap',
-          color: overdue ? 'var(--red2)' : 'var(--text)',
-        }}
-      >
-        {fmtDate(row.earliestDueDate)}
-      </td>
-      <td>
-        <AlertFlags row={row} />
-      </td>
-      <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-        {fmtDate(row.soDate)}
-      </td>
-    </tr>
-  );
-}
-
-/** Legacy L9135 renders alerts as plain coloured spans (not badges), in the
- *  order ⚠ delayed → 🏭 at-vendor → 🔬 QC → 🚫 blocked, falling back to an
- *  em-dash. Titles describe what OUR server actually returns (a qty for
- *  at-vendor, an op count for QC) rather than legacy's per-line counts. */
-function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
-  const flags: React.ReactNode[] = [];
-  if (row.alerts.delayedLines > 0) {
-    flags.push(
-      <span
-        key="delayed"
-        style={{ color: 'var(--red2)', fontWeight: 700, fontSize: 11 }}
-        title="Lines past due"
-      >
-        ⚠{row.alerts.delayedLines}
-      </span>,
-    );
-  }
-  if (row.alerts.atVendorQty > 0) {
-    flags.push(
-      <span
-        key="atvendor"
-        style={{ color: 'var(--purple)', fontSize: 11 }}
-        title="Qty at outsource vendor"
-      >
-        🏭{row.alerts.atVendorQty}
-      </span>,
-    );
-  }
-  if (row.alerts.qcPendingOps > 0) {
-    flags.push(
-      <span key="qcpend" style={{ color: 'var(--amber2)', fontSize: 11 }} title="Ops awaiting QC">
-        🔬{row.alerts.qcPendingOps}
-      </span>,
-    );
-  }
-  if (row.stageCounts.hold > 0) {
-    flags.push(
-      <span key="hold" style={{ color: 'var(--red2)', fontSize: 11 }} title="Blocked lines">
-        🚫{row.stageCounts.hold}
-      </span>,
-    );
-  }
-  if (flags.length === 0) {
-    return (
-      <span className="text3" style={{ fontSize: 11 }}>
-        —
-      </span>
-    );
-  }
-  return <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{flags}</div>;
-}
-
-/** Legacy colours the progress bar by overall STATUS, not by percentage
- *  (L9122 / L9148): Delayed → red, Completed → green, everything else amber. */
-function barColor(status: SoOverallStatus): string {
-  return status === 'delayed'
-    ? 'var(--red)'
-    : status === 'completed'
-      ? 'var(--green)'
-      : status === 'on_track'
-        ? 'var(--blue)'
-        : 'var(--amber)';
-}
-
-/** The same status colours as text — the "2" variants, which hold contrast. */
-function barTextColor(status: SoOverallStatus): string {
-  return status === 'delayed'
-    ? 'var(--red2)'
-    : status === 'completed'
-      ? 'var(--green2)'
-      : 'var(--cyan)';
-}
-
-function ProgBar({ pct, status }: { pct: number; status: SoOverallStatus }): React.JSX.Element {
-  return (
-    <div className="prog-wrap" style={{ flex: 1 }}>
-      <div className="prog-bar" style={{ width: `${pct}%`, background: barColor(status) }} />
-    </div>
   );
 }

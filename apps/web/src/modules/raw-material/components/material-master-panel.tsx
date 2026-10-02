@@ -5,20 +5,22 @@
 // and the four write callbacks down here. One file instead of two 250-line
 // copies that would drift apart on the first fix.
 //
-// Styling follows the `styling` skill: <ListHeader> band, the ruled sheet
-// (.innovic-table.tbl-grid — codes on one line, descriptions wrap), an
-// All / Active / Inactive dropdown in the filter bar whose labels carry the
-// counts (owner's filter-bar decision 2026-09-26 — it replaced the clickable
-// count strip), clickable rows, and a scrolling list — masters do not paginate.
+// ADR-199 table standard (2026-10-01): the master runs on the shared FIT
+// <DataTable tableKey=…> — each tab passes its own key so the user's column
+// layout is remembered per master. First column (Code) pinned; the ⋯ row menu
+// carries Edit / Move to Trash. Styling still follows the `styling` skill:
+// <ListHeader> band, an All / Active / Inactive dropdown in the filter bar whose
+// labels carry the counts (owner's filter-bar decision 2026-09-26), clickable
+// rows, and a scrolling list — masters do not paginate.
 
 import { Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
+import { useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { MaterialRowModal } from './material-row-modal';
 
 /** The subset of MaterialGrade / MaterialSize this table renders. Both shared
  *  types are structurally assignable to it. */
@@ -39,6 +41,8 @@ export interface MaterialMasterSaveInput {
 export interface MaterialMasterPanelProps {
   /** 'Grade' or 'Size' — the noun used in the column head, buttons and messages. */
   noun: string;
+  /** The shared FIT table's saved-layout key (TABLE_KEYS.rawMaterialGrade / …Size). */
+  tableKey: string;
   /** The WHOLE master in one fetch (search-filtered server-side, Active filtered
    *  here so the strip can show all three counts at once). */
   rows: MaterialMasterRow[];
@@ -70,6 +74,7 @@ type StatusFilter = 'all' | 'active' | 'inactive';
 export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.Element {
   const {
     noun,
+    tableKey,
     rows,
     total,
     isLoading,
@@ -110,6 +115,58 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         ? rows
         : rows.filter((r) => (status === 'active' ? r.isActive : !r.isActive)),
     [rows, status],
+  );
+
+  // The four master columns (first pinned = Code). Headers stay noun-qualified
+  // (Grade Code / Grade, Size Code / Size) so a joined label never reads as a
+  // bare "Code" app-wide. Code is mono + cyan; the name is bold; the description
+  // is long free text that shares the spare width and clips with "…"; Active is
+  // a status badge.
+  const columns = useMemo<DataTableColumn<MaterialMasterRow>[]>(
+    () => [
+      {
+        id: 'code',
+        header: `${noun} Code`,
+        kind: 'code',
+        nowrap: true,
+        render: (row) => (
+          <span className="td-code" style={{ color: 'var(--cyan)' }}>
+            {row.code}
+          </span>
+        ),
+      },
+      {
+        id: 'name',
+        header: noun,
+        align: 'left',
+        className: 'fw-700',
+        ellipsis: true,
+        key: 'name',
+        title: (row) => row.name,
+      },
+      {
+        id: 'description',
+        header: 'Description',
+        align: 'left',
+        kind: 'text',
+        ellipsis: true,
+        render: (row) => <span className="text2">{row.description || '—'}</span>,
+        title: (row) => row.description ?? '',
+      },
+      {
+        id: 'active',
+        header: 'Active',
+        kind: 'badge',
+        nowrap: true,
+        filterValue: (row) => (row.isActive ? 'Active' : 'Inactive'),
+        render: (row) => (
+          <span className={`badge ${row.isActive ? 'b-green' : 'b-grey'}`}>
+            {row.isActive ? 'Active' : 'Inactive'}
+          </span>
+        ),
+      },
+    ],
+    [noun],
   );
 
   // Excel import — the WHOLE sheet goes in one request, and the list reloads
@@ -195,92 +252,48 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>{noun} Code</th>
-                <th>{noun}</th>
-                <th>Description</th>
-                <th>Active</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={5} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={5} className="empty-state" style={{ color: 'var(--red2)' }}>
-                    {error instanceof Error
-                      ? error.message
-                      : `Could not load material ${noun.toLowerCase()}s. Try again.`}
-                  </td>
-                </tr>
-              ) : visible.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="empty-state">
-                    {rows.length === 0 && !searchInput.trim()
-                      ? `No ${noun}s yet.`
-                      : `No ${noun}s match.`}
-                  </td>
-                </tr>
-              ) : (
-                visible.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={canEdit ? () => setModal({ kind: 'edit', row }) : undefined}
-                    style={canEdit ? { cursor: 'pointer' } : undefined}
-                  >
-                    <td className="td-code" style={{ color: 'var(--cyan)', whiteSpace: 'nowrap' }}>
-                      {row.code}
-                    </td>
-                    <td className="fw-700">{row.name}</td>
-                    {/* Long free text WRAPS inside its column (sheet rule). */}
-                    <td className="text2" style={{ fontSize: 12, textAlign: 'left' }}>
-                      {row.description || '—'}
-                    </td>
-                    <td>
-                      <span className={`badge ${row.isActive ? 'b-green' : 'b-grey'}`}>
-                        {row.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    {/* Stopped so a menu click never also fires the row's own
-                        open-for-edit click. */}
-                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'edit',
-                            label: 'Edit',
-                            icon: 'pencil',
-                            hidden: !canEdit,
-                            onSelect: () => setModal({ kind: 'edit', row }),
-                          },
-                          {
-                            key: 'trash',
-                            label: 'Move to Trash',
-                            icon: 'trash-2',
-                            group: 'danger',
-                            hidden: !canDelete,
-                            disabledReason: deleting ? 'Working…' : undefined,
-                            onSelect: () => setTrashRow(row),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error
+              ? error.message
+              : `Could not load material ${noun.toLowerCase()}s. Try again.`
+          }
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={tableKey}
+            columns={columns}
+            rows={visible}
+            loading={isLoading}
+            emptyText={
+              rows.length === 0 && !searchInput.trim() ? `No ${noun}s yet.` : `No ${noun}s match.`
+            }
+            onRowClick={canEdit ? (row) => setModal({ kind: 'edit', row }) : undefined}
+            // ⋯ menu: Edit · ─ · Move to Trash (danger) — same gates as before.
+            rowMenu={(row) => [
+              {
+                key: 'edit',
+                label: 'Edit',
+                icon: 'pencil',
+                hidden: !canEdit,
+                onSelect: () => setModal({ kind: 'edit', row }),
+              },
+              {
+                key: 'trash',
+                label: 'Move to Trash',
+                icon: 'trash-2',
+                group: 'danger',
+                hidden: !canDelete,
+                disabledReason: deleting ? 'Working…' : undefined,
+                onSelect: () => setTrashRow(row),
+              },
+            ]}
+          />
+        </Panel>
+      )}
 
       {/* Masters scroll, they do not paginate — one fetch, no Prev/Next. The
           count line says which of the two happened so a capped list can never
@@ -350,169 +363,6 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           onClose={() => setModal({ kind: 'none' })}
         />
       ) : null}
-    </div>
-  );
-}
-
-/** New/Edit modal. Same shape as the Report Type master's inline modal — this
- *  page has no separate create/edit route because it is one tabbed screen. */
-function MaterialRowModal({
-  noun,
-  namePlaceholder,
-  row,
-  saving,
-  onSave,
-  onClose,
-}: {
-  noun: string;
-  namePlaceholder: string;
-  row?: MaterialMasterRow;
-  saving: boolean;
-  onSave: (input: MaterialMasterSaveInput, id: string | null) => Promise<void>;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [name, setName] = useState(row?.name ?? '');
-  const [description, setDescription] = useState(row?.description ?? '');
-  const [isActive, setIsActive] = useState(row?.isActive ?? true);
-  const [err, setErr] = useState<string | null>(null);
-
-  // ESC and a click outside ASK before closing (user, 2026-09-12) -- the same
-  // "Are you sure you want to exit?" every create / edit screen raises. This
-  // modal used to close the instant ESC was pressed, taking the half-typed row
-  // with it. The form's own Cancel button is untouched.
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      // ESC with a type-to-search dropdown open is that dropdown's key.
-      if (escapeBelongsToAnOpenPicker(e.target)) return;
-      setConfirmOpen(true);
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
-
-  async function submit(): Promise<void> {
-    setErr(null);
-    if (!name.trim()) {
-      setErr(`${noun} is required.`);
-      return;
-    }
-    try {
-      await onSave(
-        {
-          name: name.trim(),
-          description: description.trim() || null,
-          isActive,
-        },
-        row?.id ?? null,
-      );
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : `Could not save ${noun}. Try again.`);
-    }
-  }
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        zIndex: 100,
-        padding: 24,
-        overflowY: 'auto',
-      }}
-      onClick={(e) => {
-        // Only the dim backdrop itself -- not the popup rendered inside it.
-        if (e.target === e.currentTarget) setConfirmOpen(true);
-      }}
-    >
-      {confirmOpen ? (
-        <ExitConfirmDialog
-          onStay={() => setConfirmOpen(false)}
-          onExit={() => {
-            setConfirmOpen(false);
-            onClose();
-          }}
-        />
-      ) : null}
-      <div
-        className="panel"
-        style={{ width: 'min(620px, 96vw)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="panel-hdr">
-          <span className="panel-title">{row ? `Edit ${noun}` : `Add ${noun}`}</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="panel-body">
-          <div className="form-grid">
-            {row ? (
-              <div className="form-grp">
-                <label className="form-label">Code</label>
-                <input className="innovic-input" value={row.code} readOnly />
-              </div>
-            ) : null}
-            <div className={row ? 'form-grp' : 'form-grp form-full'}>
-              <label className="form-label">
-                {noun} <span className="req">★</span>
-              </label>
-              <input
-                className="innovic-input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={namePlaceholder}
-                autoFocus
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label">Description</label>
-              <input
-                className="innovic-input"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional note — standard, equivalent, stock form…"
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Active</label>
-              <select
-                className="innovic-select"
-                value={isActive ? 'active' : 'inactive'}
-                onChange={(e) => setIsActive(e.target.value === 'active')}
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
-          </div>
-          {err ? (
-            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
-              {err}
-            </div>
-          ) : null}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={saving}
-              onClick={() => void submit()}
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{' '}
-              {row ? 'Save Changes' : `Save ${noun}`}
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

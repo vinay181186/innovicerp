@@ -4,6 +4,7 @@
 
 import type { ListMaterialSizesQuery } from '@innovic/shared';
 import { useMemo } from 'react';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import {
   useBulkCreateMaterialSizes,
   useCreateMaterialSize,
@@ -44,6 +45,7 @@ export function SizeTab({
   return (
     <MaterialMasterPanel
       noun="Size"
+      tableKey={TABLE_KEYS.rawMaterialSize}
       rows={list.data?.sizes ?? []}
       total={list.data?.total ?? 0}
       isLoading={list.isLoading}

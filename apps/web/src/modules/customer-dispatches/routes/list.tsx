@@ -1,23 +1,16 @@
 // Customer Dispatch Register — mirror of legacy `renderDispatchRegister`
-// (L10711): 3 KPI tiles + item-wise summary panel + dispatch log + search +
-// 🖨 Print. Per user direction 2026-06-06 the log is ONE ROW PER DISPATCH,
-// click to expand its item lines (SO-Master expand pattern); SO filter +
-// Export Excel (all dispatches flattened to line rows, or the filtered SO).
-// Ours on top of legacy: Dispatch No. + Status columns, 🧾 Invoice (pre-filled
-// invoice form) + ✖ Cancel actions (dispatch docs gate invoicing).
+// (L10711): item-wise summary panel + dispatch log + search + Print. Per user
+// direction 2026-06-06 the log is ONE ROW PER DISPATCH, click to expand its
+// item lines; SO filter + Export Excel (all dispatches flattened to line rows).
 //
-// Styled to SO Master (sales-orders/routes/list.tsx): frozen header band, one
-// `.panel` card per dispatch instead of the 11-column table that scrolled
-// sideways. Nothing about the data, the filters or the mutations changed.
-//
-// 2026-08-13: the 3 KPI tiles (three `.panel` cards in a 3-col grid, below the
-// band, scrolling away with the list) are one `<StatStrip>` inside the band —
-// styling skill Rule 3. Read-only metrics, not filters, so the strip's cells
-// render as divs. Same three numbers over the same ACTIVE rows.
+// 2026-10-01 (ADR-199): the per-dispatch cards are replaced by the ONE shared
+// FIT table (<DataTable tableKey=…>). One line per dispatch, the fit engine
+// sizing columns to the screen and dropping the rightmost unpinned ones into a
+// ▸ detail row (the item lines + Remarks). Nothing about the data, the filters,
+// the search coverage or the mutations changed. The item-wise summary strip and
+// the StatStrip counts stay.
 
-import type { CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
@@ -26,11 +19,17 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
 import { useDispatchList, useDispatchRegister } from '../api';
 import { CancelDispatchModal } from '../components/cancel-dispatch-modal';
-import { type DispatchGroup, DispatchCard } from '../components/dispatch-card';
+import { type DispatchGroup, groupByDispatch } from '../components/dispatch-group';
+import { DispatchExpanded } from '../components/dispatch-expanded';
+import { DispatchItemSummary } from '../components/dispatch-item-summary';
+import { dispatchListColumns } from '../components/dispatch-list-columns';
+import { DispatchRowActions } from '../components/dispatch-row-actions';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
 
@@ -50,38 +49,12 @@ export const customerDispatchListRoute = createRoute({
   component: CustomerDispatchListPage,
 });
 
-function groupByDispatch(rows: CustomerDispatchRegisterRow[]): DispatchGroup[] {
-  const groups: DispatchGroup[] = [];
-  const byId = new Map<string, DispatchGroup>();
-  for (const r of rows) {
-    let g = byId.get(r.dispatchId);
-    if (!g) {
-      g = {
-        dispatchId: r.dispatchId,
-        code: r.dispatchCode,
-        date: r.date,
-        soNo: r.soNo,
-        customer: r.customer,
-        dispatchedBy: r.dispatchedBy,
-        remarks: r.remarks,
-        status: r.status,
-        lines: [],
-        totalQty: 0,
-      };
-      byId.set(r.dispatchId, g);
-      groups.push(g);
-    }
-    g.lines.push(r);
-    g.totalQty += r.qty;
-  }
-  return groups;
-}
-
 function CustomerDispatchListPage(): React.JSX.Element {
   // JW Dispatch (jw-returns) folded in here as a tab — same job, two document
   // families: this one ships finished goods against an SO, that one returns
   // machined goods against a JWSO line. Its own hooks/mutations are unchanged.
   const routeSearch = customerDispatchListRoute.useSearch();
+  const navigate = customerDispatchListRoute.useNavigate();
   const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
@@ -104,8 +77,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
   );
   const [soFilter, setSoFilter] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // Item-wise Summary is folded away by default so the Dispatch Log is first.
-  const [showSummary, setShowSummary] = useState(false);
   const [cancelling, setCancelling] = useState<DispatchGroup | null>(null);
 
   const allRows = useMemo(() => data?.rows ?? [], [data]);
@@ -119,9 +90,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
     () => (soFilter ? allRows.filter((r) => r.soNo === soFilter) : allRows),
     [allRows, soFilter],
   );
-  // Search covers every column the register puts on screen — the card band
-  // (dispatch no, status, date, SO, customer, dispatched by, remarks) AND the
-  // expanded line columns (JC no, POL, item code, item name, UOM). Not the
+  // Search covers every column the register puts on screen — the table row
+  // (dispatch no, date, SO, customer, dispatched by) AND the ▸ expanded line
+  // columns (JC no, POL, item code, item name, UOM) plus Remarks. Not the
   // qty / stock numbers: a bare "5" would match nearly every row.
   const rows = useMemo(() => {
     const q = normalizeSearchTerm(search);
@@ -152,36 +123,11 @@ function CustomerDispatchListPage(): React.JSX.Element {
   }, [soRows, search]);
 
   const groups = useMemo(() => groupByDispatch(rows), [rows]);
+  const columns = useMemo(() => dispatchListColumns((id) => billedById.get(id)), [billedById]);
 
   // KPIs + item-wise summary over ACTIVE rows only (cancelled were reversed).
   const active = useMemo(() => rows.filter((r) => r.status !== 'cancelled'), [rows]);
   const totalPcs = active.reduce((s, r) => s + r.qty, 0);
-  const summary = useMemo(() => {
-    const m = new Map<
-      string,
-      { code: string; name: string; total: number; count: number; stock: number | null }
-    >();
-    // Item-wise rollup: one row per ITEM, with its current on-hand stock beside
-    // it. The drawing revision is deliberately left out of both the key and the
-    // code shown — Rev A and Rev B of a part are one item holding one stock
-    // figure, and splitting them here would double the rows and halve neither
-    // stock number correctly. The per-dispatch line tables carry the revision.
-    for (const r of active) {
-      const key = r.itemCode ?? r.itemCodeText ?? r.itemName;
-      const cur = m.get(key) ?? {
-        code: r.itemCode ?? r.itemCodeText ?? '—',
-        name: r.itemName,
-        total: 0,
-        count: 0,
-        stock: r.currentStock,
-      };
-      cur.total += r.qty;
-      cur.count += 1;
-      if (cur.stock === null) cur.stock = r.currentStock;
-      m.set(key, cur);
-    }
-    return [...m.values()];
-  }, [active]);
 
   function toggle(id: string): void {
     setExpanded((prev) => {
@@ -240,8 +186,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
     <div>
       {tabBar}
       {/* The ONE list header (ui/layout ListHeader). Same filters, same
-          client-side search, same Export / Print as before — Excel + Print
-          now sit under one Export menu. The KPI strip stays in the band. */}
+          client-side search, same Export / Print as before. */}
       <ListHeader
         title="Customer Dispatch"
         icon="🚚"
@@ -280,7 +225,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
               type="button"
               className="btn btn-ghost"
               disabled={groups.length === 0}
-              title={allExpanded ? 'Hide every card’s items' : 'Show every card’s items'}
+              title={allExpanded ? 'Hide every row’s items' : 'Show every row’s items'}
               onClick={() =>
                 setExpanded(allExpanded ? new Set() : new Set(groups.map((g) => g.dispatchId)))
               }
@@ -338,70 +283,14 @@ function CustomerDispatchListPage(): React.JSX.Element {
         />
       </ListHeader>
 
-      {isLoading ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-          Loading…
-        </div>
-      ) : isError || !data ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red2)' }}>
-          {error instanceof Error ? error.message : 'Could not load dispatches. Try again.'}
-        </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load dispatches. Try again.'}
+        />
       ) : (
         <>
-          {summary.length > 0 ? (
-            <div style={{ marginBottom: 8 }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                aria-expanded={showSummary}
-                onClick={() => setShowSummary((v) => !v)}
-              >
-                {showSummary ? '▾ Hide summary' : '▸ Show summary'}
-              </button>
-            </div>
-          ) : null}
-          {summary.length > 0 && showSummary ? (
-            <div className="panel" style={{ marginBottom: 14 }}>
-              <div className="panel-hdr">
-                <span className="panel-title">Item-wise Summary</span>
-              </div>
-              <div className="tbl-wrap">
-                <table className="innovic-table tbl-grid tbl-auto">
-                  <thead>
-                    <tr>
-                      <th>Item Code</th>
-                      <th>Item Name</th>
-                      <th className="th-num">Total Dispatched</th>
-                      <th className="th-num">No. of Dispatches</th>
-                      <th className="th-num" style={{ color: 'var(--green2)' }}>
-                        Current Stock
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.map((s) => (
-                      <tr key={s.code + s.name}>
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>
-                          {s.code}
-                        </td>
-                        <td className="fw-700">{s.name}</td>
-                        <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
-                          {s.total}
-                        </td>
-                        <td className="mono td-num" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                          {s.count}
-                        </td>
-                        <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
-                          {s.stock ?? 0}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
+          <DispatchItemSummary active={active} />
 
           <div
             style={{
@@ -415,24 +304,39 @@ function CustomerDispatchListPage(): React.JSX.Element {
             Dispatch Log
           </div>
 
-          {groups.length === 0 ? (
-            <div className="panel empty-state" style={{ padding: 24 }}>
-              {search || soFilter ? 'No Dispatches match.' : 'No Dispatches yet.'}
-            </div>
-          ) : (
-            groups.map((g) => (
-              <DispatchCard
-                key={g.dispatchId}
-                g={g}
-                billedStatus={billedById.get(g.dispatchId)}
-                isOpen={expanded.has(g.dispatchId)}
-                canCancel={canCancel}
-                cancelPending={cancelling !== null}
-                onToggle={() => toggle(g.dispatchId)}
-                onCancel={() => setCancelling(g)}
-              />
-            ))
-          )}
+          {/* THE shared FIT table (ADR-199). First column (Dispatch No.) is
+              pinned; the row click opens the dispatch; the ▸ opens the item
+              lines + Remarks; rows tint by status (cancelled → grey). */}
+          <Panel bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.customerDispatches}
+              columns={columns}
+              rows={groups}
+              rowKey={(g) => g.dispatchId}
+              loading={isLoading}
+              emptyText={search || soFilter ? 'No Dispatches match.' : 'No Dispatches yet.'}
+              onRowClick={(g) =>
+                void navigate({ to: '/customer-dispatches/$id', params: { id: g.dispatchId } })
+              }
+              rowClassName={(g) => (g.status === 'cancelled' ? ROW_TINT.cancelled : ROW_TINT.done)}
+              renderExpanded={(g) =>
+                expanded.has(g.dispatchId) ? <DispatchExpanded g={g} /> : null
+              }
+              onToggleExpanded={(g) => toggle(g.dispatchId)}
+              rowActions={(g) => (
+                <DispatchRowActions
+                  g={g}
+                  billedStatus={billedById.get(g.dispatchId)}
+                  canCancel={canCancel}
+                  cancelPending={cancelling !== null}
+                  onInvoice={() =>
+                    void navigate({ to: '/invoices/new', search: { dispatchId: g.dispatchId } })
+                  }
+                  onCancel={() => setCancelling(g)}
+                />
+              )}
+            />
+          </Panel>
           <ListFooter total={groups.length} noun="dispatch" nounPlural="dispatches" />
         </>
       )}

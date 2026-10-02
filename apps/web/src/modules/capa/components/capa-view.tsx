@@ -1,6 +1,7 @@
 // CAPA — Corrective & Preventive Action (legacy renderCAPA L22779 + _capaNew /
-// _capaEdit 5-step). Legacy chrome. 6 cards + overdue alert + 10-col table +
-// New modal + 5-step edit modal. Backed by /capa (capa_records, migration 0034).
+// _capaEdit 5-step). 6-counter strip + overdue alert + the shared fit table
+// (ADR-199) + New modal + 5-step edit modal. Backed by /capa (capa_records,
+// migration 0034).
 //
 // Extracted from capa/routes/list.tsx so the same screen can render both as its
 // own route AND as the "🛡 CAPA" tab on NC Register (screen-merge audit). All
@@ -8,39 +9,25 @@
 // safe to mount inside another route. Pass `title` when it IS the page.
 // `initialSearch` is a one-time seed for the search box (Global Search deep
 // link via the host's ?search); typing afterwards stays local.
+//
+// The row sheet, row tint and ⋯ menu live in ./capa-list-columns; the two
+// modals in ./capa-new-modal and ./capa-edit-modal (ADR-199 split).
 
-import {
-  CAPA_EFFECTIVENESS,
-  CAPA_RC_METHODS,
-  CAPA_STATUSES,
-  CAPA_TYPES,
-  NC_REASON_CATEGORY_LABELS,
-  type CapaRecord,
-  type CreateCapaInput,
-  type UpdateCapaInput,
-} from '@innovic/shared';
+import { type CapaRecord } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { fmtDate, todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtDate } from '@/lib/date';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { ListHeader } from '@/ui/layout';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { useNcRegisterList } from '@/modules/nc-register/api';
-import { useOperatorsList } from '@/modules/operators/api';
-import { useUsersList } from '@/modules/users/api';
-import { useCapaList, useCreateCapa, useNextCapaCode, useUpdateCapa } from '../api';
-
-// App status colours: Open / Verified (waiting for the next step) = blue,
-// In Progress = amber, Closed = green.
-function statusColor(s: string): string {
-  if (s === 'Open') return 'var(--blue)';
-  if (s === 'In Progress') return 'var(--amber)';
-  if (s === 'Verified') return 'var(--blue)';
-  if (s === 'Closed') return 'var(--green)';
-  return 'var(--text3)';
-}
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
+import { useCapaList } from '../api';
+import { capaListColumns, capaRowMenu, capaRowTint } from './capa-list-columns';
+import { NewCapaModal } from './capa-new-modal';
+import { EditCapaModal } from './capa-edit-modal';
 
 type ModalState =
   | { kind: 'none' }
@@ -66,6 +53,10 @@ export function CapaView(props: {
   const canEdit = perms.edit;
   const [term, setTerm] = useState(() => props.initialSearch ?? '');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  const [assignCapa, setAssignCapa] = useState<CapaRecord | null>(null);
+  // The fit table's ▸ is the row's one expand control (CAPA Date + Root Cause).
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
+  const columns = useMemo(() => capaListColumns(), []);
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const counters = data?.counters;
@@ -85,16 +76,39 @@ export function CapaView(props: {
   }, [items, isFetching, props.initialSearch, props.openForEdit]);
   const overdue = items.filter((c) => c.overdue);
 
-  const filtered = useMemo(() => {
-    const t = term.trim().toLowerCase();
-    if (!t) return items;
-    return items.filter((c) =>
-      [c.code, c.problem, c.ncRefs.join(' '), c.jcNo ?? '', c.responsible ?? '']
-        .join(' ')
-        .toLowerCase()
-        .includes(t),
-    );
-  }, [items, term]);
+  // Search across every column the user can see — CAPA No., Type, NC No.,
+  // Problem, Responsible, Target and CAPA Status — plus the two facts in the ▸
+  // expand (CAPA Date, Root Cause). Whole list held in the browser (masters
+  // scroll, they do not paginate), so matching is client-side.
+  const filtered = useMemo(
+    () =>
+      items.filter((c) =>
+        matchesSearchTerm(
+          [
+            c.code,
+            c.type,
+            c.ncRefs.join(' '),
+            c.problem,
+            c.responsible,
+            fmtDate(c.targetDate),
+            c.status,
+            fmtDate(c.capaDate),
+            c.rootCause,
+            c.jcNo,
+          ],
+          term,
+        ),
+      ),
+    [items, term],
+  );
+
+  const toggleExpand = (id: string): void =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <div>
@@ -105,7 +119,7 @@ export function CapaView(props: {
         noun="CAPA"
         search={term}
         onSearch={setTerm}
-        searchPlaceholder="Search CAPA no., NC no., problem, JC, responsible…"
+        searchPlaceholder="Search CAPA no., type, NC no., problem, responsible, status…"
         updating={isFetching && !isLoading}
         primary={
           canCreate ? (
@@ -182,125 +196,51 @@ export function CapaView(props: {
             </div>
           ) : null}
 
-          <div className="panel">
-            <div className="tbl-wrap">
-              <table className="innovic-table tbl-grid">
-                <thead>
-                  <tr>
-                    <th>CAPA No.</th>
-                    <th>CAPA Type</th>
-                    <th>CAPA Date</th>
-                    <th>NC No.</th>
-                    <th>Problem</th>
-                    <th>Root Cause</th>
-                    <th>Responsible</th>
-                    <th>Target Date</th>
-                    <th>CAPA Status</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="empty-state">
-                        {term.trim() ? 'No CAPAs match.' : 'No CAPAs yet.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    filtered.map((c) => (
-                      <tr
-                        key={c.id}
-                        className={c.overdue ? 'row-alert-left' : undefined}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
-                        title={`Open CAPA ${c.code}`}
-                      >
-                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                          {c.code}
-                        </td>
-                        <td>
-                          <span className={`badge ${c.type === 'Corrective' ? 'b-red' : 'b-blue'}`}>
-                            {c.type}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: 11 }}>{fmtDate(c.capaDate)}</td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--red2)' }}>
-                          {c.ncRefs.join(', ')}
-                        </td>
-                        <td
-                          style={{
-                            fontSize: 12,
-                            maxWidth: 200,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={c.problem}
-                        >
-                          {c.problem}
-                        </td>
-                        <td
-                          style={{
-                            fontSize: 12,
-                            maxWidth: 180,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={c.rootCause ?? ''}
-                        >
-                          {c.rootCause ? c.rootCause : <span className="text3">—</span>}
-                        </td>
-                        <td style={{ fontSize: 12, fontWeight: 600 }}>{c.responsible ?? '—'}</td>
-                        <td
-                          style={{
-                            fontSize: 11,
-                            color: c.overdue ? 'var(--red)' : undefined,
-                            fontWeight: c.overdue ? 700 : 400,
-                          }}
-                        >
-                          {fmtDate(c.targetDate)}
-                          {c.overdue ? ' ⚠' : ''}
-                        </td>
-                        <td>
-                          <span style={{ fontWeight: 700, color: statusColor(c.status) }}>
-                            {c.status}
-                          </span>
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: 3 }}>
-                            {canEdit && c.status !== 'Closed' ? (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                style={{ fontSize: 11 }}
-                                onClick={() => setModal({ kind: 'edit', capa: c, readOnly: false })}
-                              >
-                                ✏ Edit
-                              </button>
-                            ) : null}
-                            {c.status !== 'Closed' ? (
-                              <AssignTaskButton
-                                linkedRef={{
-                                  type: 'capa',
-                                  id: c.id,
-                                  display: `CAPA ${c.code}`,
-                                  navPage: '/capa',
-                                }}
-                                suggestedTitle={`Continue ${c.code}`}
-                                className="btn btn-ghost btn-sm"
-                                label=""
-                              />
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Panel bodyPadding="none">
+            <DataTable<CapaRecord>
+              tableKey={TABLE_KEYS.capaList}
+              columns={columns}
+              rows={filtered}
+              sortFilter={false}
+              rowKey={(c) => c.id}
+              empty={term.trim() ? 'No CAPAs match.' : 'No CAPAs yet.'}
+              rowClassName={(c) => capaRowTint(c)}
+              onRowClick={(c) => setModal({ kind: 'edit', capa: c, readOnly: true })}
+              // The fit table's ▸ is the row's one expand control: it reveals
+              // CAPA Date and Root Cause. renderExpanded returns null for a
+              // collapsed row.
+              renderExpanded={(c) =>
+                expandedIds.has(c.id) ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 24,
+                      flexWrap: 'wrap',
+                      fontSize: 12,
+                      padding: '2px 2px',
+                    }}
+                  >
+                    <span>
+                      <span className="text3">CAPA Date</span>{' '}
+                      <b className="mono">{fmtDate(c.capaDate)}</b>
+                    </span>
+                    <span style={{ flex: '1 1 320px', minWidth: 0 }}>
+                      <span className="text3">Root Cause</span>{' '}
+                      {c.rootCause ? c.rootCause : <span className="text3">—</span>}
+                    </span>
+                  </div>
+                ) : null
+              }
+              onToggleExpanded={(c) => toggleExpand(c.id)}
+              rowMenu={(c) =>
+                capaRowMenu(c, {
+                  canEdit,
+                  onEdit: (row) => setModal({ kind: 'edit', capa: row, readOnly: false }),
+                  onAssign: (row) => setAssignCapa(row),
+                })
+              }
+            />
+          </Panel>
         </>
       )}
 
@@ -320,521 +260,19 @@ export function CapaView(props: {
           onClose={() => setModal({ kind: 'none' })}
         />
       ) : null}
-    </div>
-  );
-}
 
-function Overlay(props: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: 24,
-        overflowY: 'auto',
-      }}
-      onClick={props.onClose}
-    >
-      <div
-        className="panel"
-        style={{ width: 'min(1100px, 96vw)', maxWidth: 1100 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="panel-hdr">
-          <span className="panel-title">{props.title}</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={props.onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="panel-body">{props.children}</div>
-      </div>
-    </div>
-  );
-}
-
-function NewCapaModal({
-  capas,
-  onClose,
-  onCreated,
-}: {
-  capas: CapaRecord[];
-  onClose: () => void;
-  onCreated: (capa: CapaRecord) => void;
-}): React.JSX.Element {
-  const create = useCreateCapa();
-  const nextCode = useNextCapaCode();
-  // NC Reference is a dropdown of NCs that don't yet have a CAPA (legacy
-  // _capaForNC filter, L22832). On pick, back-fill jc/so/item/operation from
-  // the chosen NC (legacy L22847-22850).
-  const ncQuery = useNcRegisterList({ limit: 200, offset: 0 });
-  const usedNcRefs = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of capas) for (const r of c.ncRefs) set.add(r);
-    return set;
-  }, [capas]);
-  const availableNcs = useMemo(
-    () => (ncQuery.data?.items ?? []).filter((nc) => !usedNcRefs.has(nc.code)),
-    [ncQuery.data, usedNcRefs],
-  );
-
-  const [type, setType] = useState<(typeof CAPA_TYPES)[number]>('Corrective');
-  const [capaDate, setCapaDate] = useState(todayIst());
-  const [ncRef, setNcRef] = useState('');
-  const [jcNo, setJcNo] = useState('');
-  const [soNo, setSoNo] = useState('');
-  const [itemCode, setItemCode] = useState('');
-  const [operation, setOperation] = useState('');
-  const [department, setDepartment] = useState('QC');
-  const [problem, setProblem] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-
-  function onPickNc(code: string): void {
-    setNcRef(code);
-    const nc = availableNcs.find((x) => x.code === code);
-    if (nc) {
-      setJcNo(nc.jcCode ?? '');
-      setSoNo(nc.soCodeText ?? '');
-      setItemCode(nc.itemCode ?? nc.itemCodeText ?? '');
-      setOperation(nc.jcOpOperation ?? nc.operationText ?? '');
-    }
-  }
-
-  async function submit(): Promise<void> {
-    setErr(null);
-    if (!problem.trim()) {
-      setErr('Problem Description is required.');
-      return;
-    }
-    const input: CreateCapaInput = {
-      type,
-      capaDate,
-      ncRefs: ncRef.trim() ? [ncRef.trim()] : [],
-      problem: problem.trim(),
-      department,
-      ...(jcNo.trim() ? { jcNo: jcNo.trim() } : {}),
-      ...(soNo.trim() ? { soNo: soNo.trim() } : {}),
-      ...(itemCode.trim() ? { itemCode: itemCode.trim() } : {}),
-      ...(operation.trim() ? { operation: operation.trim() } : {}),
-    };
-    try {
-      const created = await create.mutateAsync(input);
-      onCreated(created);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
-    }
-  }
-
-  return (
-    <Overlay title="New CAPA" onClose={onClose}>
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label">CAPA No.</label>
-          <input
-            className="innovic-input"
-            value={nextCode.data?.code ?? '(auto on save)'}
-            readOnly
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">CAPA Type</label>
-          <select
-            className="innovic-select"
-            value={type}
-            onChange={(e) => setType(e.target.value as typeof type)}
-          >
-            {CAPA_TYPES.map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label">CAPA Date</label>
-          <input
-            type="date"
-            className="innovic-input"
-            value={capaDate}
-            onChange={(e) => setCapaDate(e.target.value)}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">NC Reference</label>
-          <select
-            className="innovic-select"
-            value={ncRef}
-            onChange={(e) => onPickNc(e.target.value)}
-            disabled={ncQuery.isLoading}
-          >
-            <option value="">{ncQuery.isLoading ? 'Loading NCs…' : '— None —'}</option>
-            {availableNcs.map((nc) => (
-              <option key={nc.id} value={nc.code}>
-                {nc.code} — {NC_REASON_CATEGORY_LABELS[nc.reasonCategory]} — {nc.jcCode ?? ''}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label">JC No.</label>
-          <input
-            className="innovic-input"
-            value={jcNo}
-            onChange={(e) => setJcNo(e.target.value)}
-            placeholder="Fills from NC"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">SO No.</label>
-          <input
-            className="innovic-input"
-            value={soNo}
-            onChange={(e) => setSoNo(e.target.value)}
-            placeholder="Fills from NC"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Department</label>
-          <select
-            className="innovic-select"
-            value={department}
-            onChange={(e) => setDepartment(e.target.value)}
-          >
-            {['Production', 'QC', 'Store', 'Purchase', 'Design'].map((d) => (
-              <option key={d}>{d}</option>
-            ))}
-          </select>
-        </div>
-        <div className="form-grp form-full">
-          <label className="form-label">
-            Problem Description<span className="req">★</span>
-          </label>
-          <textarea
-            className="innovic-input"
-            rows={3}
-            value={problem}
-            onChange={(e) => setProblem(e.target.value)}
-            placeholder="Describe the problem / non-conformance…"
-          />
-        </div>
-      </div>
-      {err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
-          {err}
-        </div>
+      {assignCapa ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'capa',
+            id: assignCapa.id,
+            display: `CAPA ${assignCapa.code}`,
+            navPage: '/capa',
+          }}
+          suggestedTitle={`Continue ${assignCapa.code}`}
+          onClose={() => setAssignCapa(null)}
+        />
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={create.isPending}
-          onClick={() => void submit()}
-        >
-          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function EditCapaModal({
-  capa,
-  readOnly,
-  onClose,
-}: {
-  capa: CapaRecord;
-  readOnly: boolean;
-  onClose: () => void;
-}): React.JSX.Element {
-  const update = useUpdateCapa();
-  // Responsible and Verified By are one select of operators + active users
-  // (legacy L22862).
-  const operatorsQuery = useOperatorsList({ limit: 200, offset: 0, isActive: true });
-  const usersQuery = useUsersList({ limit: 200, offset: 0, isActive: true });
-  const responsibleOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const o of operatorsQuery.data?.operators ?? []) {
-      if (o.name) names.add(o.name);
-    }
-    for (const u of usersQuery.data?.items ?? []) {
-      if (u.fullName) names.add(u.fullName);
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [operatorsQuery.data, usersQuery.data]);
-
-  const [f, setF] = useState<UpdateCapaInput>({
-    problem: capa.problem,
-    rootCauseMethod: (capa.rootCauseMethod as UpdateCapaInput['rootCauseMethod']) ?? '5-Why',
-    rootCause: capa.rootCause ?? '',
-    correctiveAction: capa.correctiveAction ?? '',
-    responsible: capa.responsible ?? '',
-    targetDate: capa.targetDate ?? '',
-    verification: capa.verification ?? '',
-    verifiedBy: capa.verifiedBy ?? '',
-    verifiedDate: capa.verifiedDate ?? '',
-    preventiveAction: capa.preventiveAction ?? '',
-    effectiveness: (capa.effectiveness as UpdateCapaInput['effectiveness']) ?? '',
-    reviewDate: capa.reviewDate ?? '',
-    status: capa.status,
-  });
-  const [err, setErr] = useState<string | null>(null);
-  const set = <K extends keyof UpdateCapaInput>(k: K, v: UpdateCapaInput[K]): void =>
-    setF((p) => ({ ...p, [k]: v }));
-
-  async function submit(): Promise<void> {
-    setErr(null);
-    try {
-      await update.mutateAsync({ id: capa.id, input: f });
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
-    }
-  }
-
-  const Step = (props: {
-    n: number;
-    title: string;
-    children: React.ReactNode;
-  }): React.JSX.Element => (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 6 }}>
-        Step {props.n}: {props.title}
-      </div>
-      {props.children}
     </div>
-  );
-
-  return (
-    <Overlay title={`CAPA ${capa.code}`} onClose={onClose}>
-      <div
-        style={{
-          background: 'var(--bg3)',
-          border: '1px solid var(--border)',
-          padding: 10,
-          borderRadius: 8,
-          marginBottom: 14,
-          fontSize: 12,
-          display: 'flex',
-          gap: 16,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
-        <span className={`badge ${capa.type === 'Corrective' ? 'b-red' : 'b-blue'}`}>
-          {capa.type}
-        </span>
-        <span>
-          <span className="text3">NC No.</span>{' '}
-          <b className="mono">{capa.ncRefs.join(', ') || '—'}</b>
-        </span>
-        <span>
-          <span className="text3">JC No.</span> <b className="mono">{capa.jcNo ?? '—'}</b>
-        </span>
-        {/* POL — the CUSTOMER's own purchase-order line number off the SO line
-            behind this CAPA. Read-only; it is typed only on the Sales Order. */}
-        <span>
-          <span className="text3">POL</span>{' '}
-          <b className="mono" style={{ color: 'var(--purple)' }}>
-            {capa.clientPoLineNo ?? '—'}
-          </b>
-        </span>
-        <span>
-          <span className="text3">Item Code</span>{' '}
-          <b className="td-code" style={{ color: 'var(--text)' }}>
-            {itemCodeWithRev(capa.itemCode, capa.itemRevision)}
-          </b>
-        </span>
-      </div>
-
-      <fieldset disabled={readOnly} style={{ border: 'none', padding: 0, margin: 0 }}>
-        <Step n={1} title="Problem Description">
-          <textarea
-            className="innovic-input"
-            rows={3}
-            value={f.problem ?? ''}
-            onChange={(e) => set('problem', e.target.value)}
-          />
-        </Step>
-        <Step n={2} title="Root Cause Analysis">
-          <div className="form-grid" style={{ marginBottom: 6 }}>
-            <div className="form-grp">
-              <label className="form-label">Method</label>
-              <select
-                className="innovic-select"
-                value={f.rootCauseMethod}
-                onChange={(e) =>
-                  set('rootCauseMethod', e.target.value as UpdateCapaInput['rootCauseMethod'])
-                }
-              >
-                {CAPA_RC_METHODS.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <textarea
-            className="innovic-input"
-            rows={3}
-            value={f.rootCause ?? ''}
-            onChange={(e) => set('rootCause', e.target.value)}
-            placeholder="Describe root cause…"
-          />
-        </Step>
-        <Step n={3} title="Corrective Action">
-          <textarea
-            className="innovic-input"
-            rows={3}
-            value={f.correctiveAction ?? ''}
-            onChange={(e) => set('correctiveAction', e.target.value)}
-            placeholder="Actions taken to correct…"
-          />
-          <div className="form-grid" style={{ marginTop: 6 }}>
-            <div className="form-grp">
-              <label className="form-label">Responsible</label>
-              <select
-                className="innovic-select"
-                value={f.responsible ?? ''}
-                onChange={(e) => set('responsible', e.target.value)}
-              >
-                <option value="">— Select —</option>
-                {f.responsible && !responsibleOptions.includes(f.responsible) ? (
-                  <option value={f.responsible}>{f.responsible}</option>
-                ) : null}
-                {responsibleOptions.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Target Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={f.targetDate ?? ''}
-                onChange={(e) => set('targetDate', e.target.value)}
-              />
-            </div>
-          </div>
-        </Step>
-        <Step n={4} title="Verification">
-          <textarea
-            className="innovic-input"
-            rows={2}
-            value={f.verification ?? ''}
-            onChange={(e) => set('verification', e.target.value)}
-            placeholder="Verify corrective action effectiveness…"
-          />
-          <div className="form-grid" style={{ marginTop: 6 }}>
-            <div className="form-grp">
-              <label className="form-label">Verified By</label>
-              <select
-                className="innovic-select"
-                value={f.verifiedBy ?? ''}
-                onChange={(e) => set('verifiedBy', e.target.value)}
-              >
-                <option value="">— Select —</option>
-                {f.verifiedBy && !responsibleOptions.includes(f.verifiedBy) ? (
-                  <option value={f.verifiedBy}>{f.verifiedBy}</option>
-                ) : null}
-                {responsibleOptions.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Verification Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={f.verifiedDate ?? ''}
-                onChange={(e) => set('verifiedDate', e.target.value)}
-              />
-            </div>
-          </div>
-        </Step>
-        <Step n={5} title="Preventive Action & Closure">
-          <textarea
-            className="innovic-input"
-            rows={2}
-            value={f.preventiveAction ?? ''}
-            onChange={(e) => set('preventiveAction', e.target.value)}
-            placeholder="Systemic changes to prevent recurrence..."
-          />
-          <div className="form-grid" style={{ marginTop: 6 }}>
-            <div className="form-grp">
-              <label className="form-label">Effectiveness</label>
-              <select
-                className="innovic-select"
-                value={f.effectiveness}
-                onChange={(e) =>
-                  set('effectiveness', e.target.value as UpdateCapaInput['effectiveness'])
-                }
-              >
-                {CAPA_EFFECTIVENESS.map((e2) => (
-                  <option key={e2 || 'none'} value={e2}>
-                    {e2 || '— Select —'}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Review Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={f.reviewDate ?? ''}
-                onChange={(e) => set('reviewDate', e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">CAPA Status</label>
-              <select
-                className="innovic-select"
-                value={f.status}
-                onChange={(e) => set('status', e.target.value as UpdateCapaInput['status'])}
-              >
-                {CAPA_STATUSES.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </Step>
-      </fieldset>
-
-      {err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
-          {err}
-        </div>
-      ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          {readOnly ? 'Close' : 'Cancel'}
-        </button>
-        {!readOnly ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={update.isPending}
-            onClick={() => void submit()}
-          >
-            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save Changes
-          </button>
-        ) : null}
-      </div>
-    </Overlay>
   );
 }

@@ -1,32 +1,41 @@
-// Plans list (PL-4). All plans with status + type + search filters + pagination.
+// Plans list (PL-4). All plans with status + type + search filters. THE Innovic
+// fit table (ADR-199, table standard 2026-10-01): one ruled sheet, Plan No.
+// pinned first, every visible fact its own column, the secondary facts in the
+// row's ▸ reveal, and the next-step actions in the row's ⋯. The columns, the
+// row tint, the ▸ reveal and the ⋯ menu live in components/plans-list-columns.
 //
 // ADR-170 (Production Orders): the same list is Production → Master → Plans.
-// An All | Pending dropdown in the filter bar (was two pills) — where Pending is the server's
-// `poPending=true` (route-card-driven plans that still have no Production
-// Order). The Status column shows the DERIVED status for those plans
-// (Route card pending → Gen production order → In production → Production
-// complete) and the stored planStatus for old plans, exactly as before.
+// An All | Pending dropdown in the filter bar (was two pills) — where Pending is
+// the server's `poPending=true` (route-card-driven plans that still have no
+// Production Order). The Status column shows the DERIVED status for those plans
+// and the stored planStatus for old plans, exactly as before.
 
 import {
   PLAN_EFFECTIVE_STATUSES,
-  PRODUCTION_ORDER_STATUS_LABEL,
-  type ListPlansResponse,
   type PlanEffectiveStatus,
   type PlanStatus,
   type PlanType,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu, type RowMenuItem } from '@/ui/data';
-import { ListFooter, ListHeader, PageState, type RenderLink } from '@/ui/layout';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
-import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
+import {
+  PlanExpanded,
+  STATUS_BADGE,
+  planRowMenu,
+  planRowTint,
+  plansListColumns,
+  renderPlanLink,
+} from '../components/plans-list-columns';
+import { DERIVED_LABEL } from '../lib/derived-status';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -49,31 +58,6 @@ export const plansListRoute = createRoute({
   validateSearch: searchSchema,
   component: PlansListPage,
 });
-
-// Colours from the one STORED_BADGE map the plan detail also reads.
-const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
-  in_planning: { cls: STORED_BADGE.in_planning, label: 'In Planning' },
-  planned: { cls: STORED_BADGE.planned, label: 'Planned' },
-  jc_created: { cls: STORED_BADGE.jc_created, label: 'JC Created' },
-  pr_created: { cls: STORED_BADGE.pr_created, label: 'PR Created' },
-  in_production: { cls: STORED_BADGE.in_production, label: 'In Production' },
-  complete: { cls: STORED_BADGE.complete, label: 'Completed' },
-  cancelled: { cls: STORED_BADGE.cancelled, label: 'Cancelled' },
-};
-
-const TYPE_LABEL: Record<PlanType, string> = {
-  manufacture: 'Manufacture',
-  direct_purchase: 'Buy',
-  full_outsource: 'Full Outsource',
-  assembly: 'Assembly',
-};
-
-const TYPE_ICON: Record<PlanType, string> = {
-  manufacture: '🏭',
-  direct_purchase: '🛒',
-  full_outsource: '📦',
-  assembly: '🔧',
-};
 
 // Status dropdown value for the Needs-Planning mode (the `needsPlanning` URL
 // flag, not a plan status).
@@ -100,105 +84,6 @@ const STATUS_KPI_KEY: Record<
 // cap is 500; the count line under the table flags a rarer larger set.
 const LIMIT = 500;
 
-/** The ⋯ menu's link renderer: the Create … steps carry a query string
- *  (`/production-orders/new?planId=…`), and the router's <Link> wants it as
- *  `search`, so it is split off here. */
-const renderPlanLink: RenderLink = ({ to, ...rest }) => {
-  const q = to.indexOf('?');
-  if (q < 0) return <Link {...rest} to={to} />;
-  const search = Object.fromEntries(new URLSearchParams(to.slice(q + 1)));
-  return <Link {...rest} to={to.slice(0, q)} search={search} />;
-};
-
-/** `path?a=1&b=2`, leaving out the empty values. */
-function withQuery(path: string, params: Record<string, string | null | undefined>): string {
-  const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
-  const qs = q.toString();
-  return qs ? `${path}?${qs}` : path;
-}
-
-/**
- * The row's ⋯ menu (owner-approved spec 2026-10-01): the step that moves the
- * plan out of the state it shows, under "Workflow". Same steps, links and
- * gates as the old Action buttons. An item the user has no right to is left
- * out; one the server would refuse for this plan's state is greyed with why.
- */
-function planRowMenu(
-  row: ListPlansResponse['items'][number],
-  opts: { canCreateRouteCard: boolean; canProductionOrder: boolean },
-): RowMenuItem[] {
-  const itemLabel = (row.itemCode ?? row.itemCodeText) as string | null;
-  const itemName = row.itemName ?? row.itemNameText;
-  const newPoTo = withQuery('/production-orders/new', { planId: row.id, planCode: row.code });
-  if (row.derivedStatus === 'route_card_pending') {
-    return [
-      {
-        key: 'create-route-card',
-        label: 'Create Route Card',
-        icon: 'plus',
-        group: 'workflow',
-        hidden: !opts.canCreateRouteCard,
-        to: withQuery('/route-cards/new', {
-          itemId: row.itemId,
-          itemCode: itemLabel,
-          itemName,
-        }),
-      },
-    ];
-  }
-  if (row.derivedStatus === 'gen_production_order') {
-    return [
-      {
-        key: 'create-po',
-        label: 'Create Production Order',
-        icon: 'plus',
-        group: 'workflow',
-        hidden: !opts.canProductionOrder,
-        to: newPoTo,
-      },
-    ];
-  }
-  if (row.derivedStatus !== 'in_production') return [];
-  // ADR-182 — a plan part-covered by earlier orders still needs one for its
-  // Pending qty; with nothing Pending the server refuses a new order.
-  const nothingPending = row.pendingQty > 0 ? undefined : 'Nothing Pending';
-  // Close only once the Job Card has finished — before that the server
-  // refuses it.
-  const jcDone = row.jcStatus === 'complete' || row.jcStatus === 'closed';
-  return [
-    {
-      key: 'create-po',
-      label: 'Create Production Order',
-      icon: 'plus',
-      group: 'workflow',
-      hidden: !opts.canProductionOrder,
-      disabledReason: nothingPending,
-      ...(nothingPending ? {} : { to: newPoTo }),
-    },
-    {
-      // The Job Card: status, then Op Entry from there.
-      key: 'op-entry',
-      label: 'Op Entry',
-      icon: 'play',
-      group: 'workflow',
-      hidden: !row.jcId,
-      to: row.jcId ? `/job-cards/${row.jcId}` : undefined,
-    },
-    {
-      key: 'close-po',
-      label: 'Close Production Order',
-      icon: 'lock',
-      group: 'workflow',
-      hidden: !opts.canProductionOrder,
-      disabledReason: jcDone ? undefined : 'Job Card not complete',
-      ...(jcDone
-        ? { to: withQuery('/production-orders/close', { planId: row.id, planCode: row.code }) }
-        : {}),
-    },
-  ];
-}
-
 function PlansListPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { search, status, planType, offset, needsPlanning, pending } = plansListRoute.useSearch();
@@ -216,6 +101,22 @@ function PlansListPage(): React.JSX.Element {
   const dash = usePlanningDashboard();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
+  // The ⋯ menu's next steps: each one is the action that moves the plan out of
+  // the state it shows, offered only to someone allowed to take it.
+  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
+  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
+
+  // The row's ▸ opens its detail reveal; a Set — many can be open.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string): void =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const columns = useMemo(() => plansListColumns(), []);
 
   // Status dropdown → URL filter. A status sets `status`; "Needs Planning"
   // flips the body to the unplanned-SO-lines table. Each clears the other so
@@ -261,6 +162,9 @@ function PlansListPage(): React.JSX.Element {
       />
     );
   }
+
+  const rows = data?.items ?? [];
+  const filtered = Boolean(search || status || planType || pending);
 
   return (
     <div>
@@ -380,244 +284,36 @@ function PlansListPage(): React.JSX.Element {
 
       {needsPlanning ? (
         <NeedsPlanningTable />
-      ) : isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        </div>
       ) : isError ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load plans. Try again.'}
-            </div>
-          </div>
-        </div>
-      ) : data ? (
-        <Table data={data} filtered={Boolean(search || status || planType || pending)} />
-      ) : null}
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load plans. Try again.'}
+        />
+      ) : (
+        <>
+          <Panel bodyPadding="none">
+            <DataTable
+              tableKey={TABLE_KEYS.plansList}
+              columns={columns}
+              rows={rows}
+              loading={isLoading}
+              empty={filtered ? 'No Plans match.' : 'No Plans yet.'}
+              rowClassName={(row) => planRowTint(row)}
+              onRowClick={(row) => void navigate({ to: '/plans/$id', params: { id: row.id } })}
+              // The fit table's ▸ is the row's one expand control: it opens the
+              // plan's secondary facts. renderExpanded returns null for a
+              // closed row.
+              renderExpanded={(row) =>
+                expandedIds.has(row.id) ? <PlanExpanded row={row} /> : null
+              }
+              onToggleExpanded={(row) => toggleExpand(row.id)}
+              rowMenu={(row) => planRowMenu(row, { canCreateRouteCard, canProductionOrder })}
+              renderLink={renderPlanLink}
+            />
+          </Panel>
+          <ListFooter total={data?.total ?? 0} shown={rows.length} noun="plan" limit={LIMIT} />
+        </>
+      )}
     </div>
-  );
-}
-
-function Table({
-  data,
-  filtered,
-}: {
-  data: ListPlansResponse;
-  filtered: boolean;
-}): React.JSX.Element {
-  const navigate = useNavigate();
-  // The ⋯ menu's next steps: each one is the action that moves the plan out
-  // of the state it shows, offered only to someone allowed to take it.
-  const { data: eff } = useMyAccess();
-  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
-  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
-  if (data.items.length === 0) {
-    return (
-      <div className="panel">
-        <div className="panel-body">
-          <div className="empty-state">{filtered ? 'No Plans match.' : 'No Plans yet.'}</div>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <>
-      <div className="panel">
-        {/* The sheet look (tbl-grid) the user supplied for this screen: bold
-            blue column names, gridlines, cream / white rows, fixed widths that
-            add up to the page so nothing scrolls sideways. Plan # carries its
-            date and type underneath; Ops is gone; Status states where the plan
-            IS and Action holds the one button that moves it on. */}
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            {/* Widths total exactly 100. POL took 5% — one each off Plan No.,
-                SO and Action, two off Item — when it was added (2026-09-23).
-                The Action buttons became the ⋯ (2026-10-01): its 4% gave the
-                rest back to Item and Plan Status. */}
-            <colgroup>
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '5%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '6%' }} />
-              <col style={{ width: '6%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '4%' }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Plan No.</th>
-                {/* POL — the CUSTOMER's own PO line number, not our SO line
-                    number (that stays in the SO column as "Ln"). */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item Code</th>
-                <th>SO / JWSO No.</th>
-                <th className="th-num">Order Qty</th>
-                <th className="th-num">Plan Qty</th>
-                <th>Production Order No.</th>
-                <th>JC No.</th>
-                <th>Plan Status</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((row) => {
-                // New-flow plans (opsSource 'route_card') carry a derived
-                // status; old plans carry null and keep their stored label.
-                const badge = row.derivedStatus
-                  ? {
-                      cls: DERIVED_BADGE[row.derivedStatus],
-                      label: DERIVED_LABEL[row.derivedStatus],
-                    }
-                  : STATUS_BADGE[row.planStatus];
-                const itemLabel = (row.itemCode ?? row.itemCodeText) as string | null;
-                const itemName = row.itemName ?? row.itemNameText;
-                return (
-                  // Row click opens the plan (ERPNext list); a click on a link
-                  // or button inside the row keeps its own target.
-                  <tr
-                    key={row.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).closest('a,button')) return;
-                      void navigate({ to: '/plans/$id', params: { id: row.id } });
-                    }}
-                  >
-                    <td>
-                      <Link
-                        to="/plans/$id"
-                        params={{ id: row.id }}
-                        className="td-code"
-                        style={{ whiteSpace: 'nowrap' }}
-                      >
-                        {row.code}
-                      </Link>
-                      <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                        {fmtDate(row.planDate)}
-                      </div>
-                      <div className="text3" style={{ fontSize: 11 }}>
-                        {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
-                      </div>
-                      {row.customerDispatchDate ? (
-                        <div className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                          Dispatch {fmtDate(row.customerDispatchDate)}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                      {row.clientPoLineNo ?? '—'}
-                    </td>
-                    <td>
-                      {/* `CODE/REV` — the customer's drawing revision from the
-                          SO line this plan was raised against; a JW-sourced or
-                          ad-hoc plan keeps the bare code. Item code bold: the
-                          primary value on every screen. */}
-                      <div className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
-                        {itemCodeWithRev(itemLabel, row.itemRevision)}
-                      </div>
-                      {itemName ? (
-                        <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                          {itemName}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      <span className="mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                        {row.soCodeText ?? '—'}
-                        {row.lineNo ? ` · Ln ${row.lineNo}` : ''}
-                      </span>
-                    </td>
-                    <td className="mono fw-700 td-num">{row.orderQty}</td>
-                    {/* ADR-182 — Plan Qty, and under it how much of it the
-                        plan's Production Orders already cover. `Pending` is
-                        what a new order may still be raised for (NAMING.md —
-                        never "Remaining" or "Balance"). Only route-card plans
-                        carry orders, so only they show the two lines. */}
-                    <td className="mono fw-700 td-num">
-                      {row.planQty}
-                      {row.derivedStatus ? (
-                        <div className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
-                          Covered {row.coveredQty}
-                          <br />
-                          Pending{' '}
-                          <span
-                            className="fw-700"
-                            style={{
-                              color: row.pendingQty > 0 ? 'var(--amber)' : 'var(--green)',
-                            }}
-                          >
-                            {row.pendingQty}
-                          </span>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      {row.productionOrderId && row.productionOrderCode ? (
-                        <Link
-                          to="/production-orders/$id"
-                          params={{ id: row.productionOrderId }}
-                          className="td-code"
-                          style={{ whiteSpace: 'nowrap' }}
-                          title={
-                            row.productionOrderStatus
-                              ? `Production Order · ${
-                                  (
-                                    PRODUCTION_ORDER_STATUS_LABEL as Record<
-                                      string,
-                                      string | undefined
-                                    >
-                                  )[row.productionOrderStatus] ?? row.productionOrderStatus
-                                }`
-                              : 'Production Order'
-                          }
-                        >
-                          {row.productionOrderCode}
-                        </Link>
-                      ) : (
-                        <span className="text3">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {row.jcId && row.jcCode ? (
-                        <Link
-                          to="/job-cards/$id"
-                          params={{ id: row.jcId }}
-                          className="td-code"
-                          style={{ whiteSpace: 'nowrap' }}
-                        >
-                          {row.jcCode}
-                        </Link>
-                      ) : (
-                        <span className="text3">—</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                    </td>
-                    {/* The ⋯: the step that moves the plan out of the state
-                        it shows. Its clicks never open the plan. */}
-                    <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                      <RowMenu
-                        items={planRowMenu(row, { canCreateRouteCard, canProductionOrder })}
-                        renderLink={renderPlanLink}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <ListFooter total={data.total} shown={data.items.length} noun="plan" limit={LIMIT} />
-    </>
   );
 }

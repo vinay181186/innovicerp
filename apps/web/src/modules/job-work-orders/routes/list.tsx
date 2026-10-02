@@ -1,41 +1,60 @@
-// JW Master list — ONE ROW PER JWSO (#6, matches the SO Master list). Columns,
-// in legacy renderJWMaster thead order (L12685, with Line → Lines per the
-// grouped SO Master L11863):
-// JWSO NO. · LINES · DATE · CLIENT · CLIENT PO · TOTAL QTY · JC QTY · MATERIAL ·
-// DUE · STATUS · REMARKS · (Edit Del). Material is colored text (✓ Full / ◑
-// Partial / ✕ Not Received) keyed on partyReceivedQty (actual Σ Party GRN
-// receipts) vs the header clientMaterialQty (expected client-supplied material).
+// JWSO Master list — ONE ROW PER JWSO on the shared FIT table (ADR-199:
+// <DataTable tableKey=…>), the fit engine sizing columns to the screen and
+// dropping the rightmost unpinned ones into a ▸ detail row when it is too narrow.
+// Row click opens the JWSO; the ▸ reveals the JWSO's line items + remarks (own
+// fetch, JwsoExpandedLines). Replaces the hand-built card list.
 //
-// NOT ported from legacy L12656 — the Client PO 📎 attachment link: JW carries no
-// clientPoFilePath (SO does; packages/shared/src/schemas/sales-order.ts:136), so
-// the link would need a DB column + upload route. Not faked here (ISSUE-031).
+// Columns (first pinned): JWSO No. · JWSO Date · Customer · Client PO No. ·
+// Order Qty · JC Qty · Dispatched · Pending · Customer Material · Due ·
+// JWSO Status — see components/jwso-list-columns.tsx.
+//
+// Row actions (RowActions prop): Edit (edit tier) · Delete (edit+approve tier).
+// Delete reuses the reason-required DeleteJwsoModal (ADR-197) unchanged.
+//
+// Row tint by overdue / status (rowClassName + ROW_TINT): overdue (open + past
+// its earliest due) = late, closed / dispatched = done, cancelled = cancelled;
+// draft and open carry no tint.
+//
+// NOT ported — the Client PO 📎 attachment link: JW carries no clientPoFilePath
+// (SO does), so the link would need a DB column + upload route (ISSUE-031).
 
 import {
-  type JobWorkOrderDetail,
   type JobWorkOrderListItem,
   type ListJobWorkOrdersQuery,
   SO_STATUSES,
   type SoStatus,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { fmtDate, todayIst } from '@/lib/date';
-import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader } from '@/components/shared/item-badge';
+import { todayIst } from '@/lib/date';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { useJobWorkOrder, useJobWorkOrdersList } from '../api';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { useJobWorkOrdersList } from '../api';
 import { DeleteJwsoModal } from '../components/delete-jwso-modal';
+import { JwsoExpandedLines } from '../components/jwso-expanded-lines';
+import { jwsoListColumns } from '../components/jwso-list-columns';
 
-// No pagination — mirror the SO/WO list: load all matching JWSOs in one fetch
-// and scroll (no Prev/Next). Uses the JW list-query cap (200); the count line
-// flags the rare larger set instead of silently hiding rows.
+// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
+// JW list-query cap is 200; the count line flags a rare larger set.
 const LIST_LIMIT = 200;
+
+// JWSO status / overdue → row tint (ADR-199 ROW_TINT). Overdue (still open past
+// its earliest due) reads as late and wins; closed and dispatched are done;
+// cancelled is cancelled; draft and open stay untinted.
+function rowTint(jw: JobWorkOrderListItem, today: string): string | undefined {
+  if (jw.earliestDueDate != null && jw.earliestDueDate < today && jw.status === 'open') {
+    return ROW_TINT.late;
+  }
+  if (jw.status === 'closed' || jw.status === 'dispatched') return ROW_TINT.done;
+  if (jw.status === 'cancelled') return ROW_TINT.cancelled;
+  return undefined;
+}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -49,77 +68,6 @@ export const jobWorkOrdersListRoute = createRoute({
   validateSearch: listSearchSchema,
   component: JobWorkOrdersListPage,
 });
-
-// Material status as colored text: header received vs expected client material.
-function MaterialCell({
-  received,
-  expected,
-}: {
-  received: number;
-  expected: number;
-}): React.JSX.Element {
-  if (expected > 0 && received >= expected) {
-    return <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✓ Full</span>;
-  }
-  if (received > 0) {
-    return (
-      <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
-        ◑ Partly Received ({received})
-      </span>
-    );
-  }
-  return <span style={{ color: 'var(--red2)', fontWeight: 700 }}>✕ Not Received</span>;
-}
-
-/** One cell of the card's metric strip — big number over a small label,
- *  mirroring the SO list (Total Qty / JC Qty / Lines). */
-function QtyBox({
-  label,
-  value,
-  color,
-  bordered,
-}: {
-  label: string;
-  value: number;
-  color?: string;
-  bordered?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        padding: '4px 12px',
-        textAlign: 'center',
-        minWidth: 58,
-        borderLeft: bordered ? '1px solid var(--border)' : undefined,
-      }}
-    >
-      <div
-        className="mono fw-700"
-        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
-      >
-        {value}
-      </div>
-      <div
-        className="mono"
-        style={{
-          fontSize: 11,
-          color: 'var(--text3)',
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-}
-
-/** Left accent bar — red when late, green once finished, blue while open. Same
- *  three tokens the badges use (mirrors the SO/WO list accentFor). */
-function accentFor(jw: JobWorkOrderListItem, today: string): string {
-  if (jw.earliestDueDate != null && jw.earliestDueDate < today && jw.status === 'open')
-    return 'var(--red)';
-  if (jw.status === 'closed' || jw.status === 'dispatched') return 'var(--green)';
-  return 'var(--blue)';
-}
 
 function JobWorkOrdersListPage(): React.JSX.Element {
   const search = jobWorkOrdersListRoute.useSearch();
@@ -166,14 +114,37 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const canDelete = perms.edit && perms.approve;
   const today = todayIst();
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const toggleExpand = (id: string): void => setExpandedId((prev) => (prev === id ? null : id));
+  // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
+  // expand control (onToggleExpanded), and renderExpanded returns null for a
+  // collapsed row so a closed JWSO never fetches its lines.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string): void => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // The JWSO the Move-to-Trash dialog is asking about, or null when closed.
   const [trashTarget, setTrashTarget] = useState<{ id: string; code: string } | null>(null);
 
+  const columns = useMemo(() => jwsoListColumns(today), [today]);
+
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
+
+  // Row actions — Edit · Delete, with the gates the retired card used, unchanged.
+  // No View button: the row click opens the JWSO. Delete reuses the
+  // reason-required DeleteJwsoModal (ADR-197), so onDelete just opens it.
+  const rowActions = (jw: JobWorkOrderListItem): React.JSX.Element => (
+    <RowActions
+      editTo={canEdit ? `/job-work-orders/${jw.jwId}/edit` : undefined}
+      renderLink={(p) => <Link {...p} />}
+      onDelete={canDelete ? () => setTrashTarget({ id: jw.jwId, code: jw.code }) : undefined}
+    />
+  );
 
   // Hide-page: a user whose VIEW was removed for JWSO Master sees the no-access
   // panel, not the list. `eff` undefined only while access loads — don't block
@@ -181,6 +152,8 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
   }
+
+  const emptyText = search.search || search.status ? 'No JWSOs match.' : 'No JWSOs yet.';
 
   return (
     <div>
@@ -235,190 +208,38 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         }
       />
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-            Loading…
-          </div>
-        </div>
-      ) : isError ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20, color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load JWSOs. Try again.'}
-          </div>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>
-            {search.search || search.status ? 'No JWSOs match.' : 'No JWSOs yet.'}
-          </div>
-        </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load JWSOs. Try again.'}
+        />
       ) : (
-        rows.map((jw) => {
-          const isExpanded = expandedId === jw.jwId;
-          const overdue =
-            !!jw.earliestDueDate && jw.earliestDueDate < today && jw.status === 'open';
-          const jcColor =
-            jw.jcQty >= jw.totalQty && jw.totalQty > 0
-              ? 'var(--green)'
-              : jw.jcQty > 0
-                ? 'var(--amber)'
-                : 'var(--text3)';
-          return (
-            <div
-              key={jw.jwId}
-              className="panel"
-              style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
-            >
-              {/* Accent bar — red late, green finished, blue open. */}
-              <div style={{ width: 4, flexShrink: 0, background: accentFor(jw, today) }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {/* Band 1: identity + status + actions */}
-                <div
-                  onClick={() => toggleExpand(jw.jwId)}
-                  title={isExpanded ? 'Hide line items' : 'Show line items'}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                    padding: '10px 14px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span style={{ color: 'var(--text3)', display: 'inline-flex' }} aria-hidden>
-                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </span>
-                  <Link
-                    to="/job-work-orders/$id"
-                    params={{ id: jw.jwId }}
-                    className="td-code"
-                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {jw.code}
-                  </Link>
-                  <span className="fw-700" style={{ fontSize: 13 }}>
-                    {jw.customerName ?? '—'}
-                  </span>
-                  <SoStatusBadge status={jw.status} />
-                  <span style={{ flex: 1 }} />
-                  {canEdit || canDelete ? (
-                    <div
-                      style={{ display: 'flex', gap: 4, alignItems: 'center' }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {canEdit ? (
-                        <Link
-                          to="/job-work-orders/$id/edit"
-                          params={{ id: jw.jwId }}
-                          className="btn btn-ghost btn-sm"
-                        >
-                          Edit
-                        </Link>
-                      ) : null}
-                      {canDelete ? (
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          onClick={() => setTrashTarget({ id: jw.jwId, code: jw.code })}
-                        >
-                          Delete
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-                {/* Band 2: metric strip + meta line */}
-                <div
-                  onClick={() => toggleExpand(jw.jwId)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                    padding: '0 14px 10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div
-                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
-                  >
-                    <QtyBox label="Total Qty" value={jw.totalQty} />
-                    <QtyBox label="JC Qty" value={jw.jcQty} color={jcColor} bordered />
-                    {/* Dispatched = finished parts delivered back to the client
-                        (Σ line returned_qty). Balance = still owed on the order. */}
-                    <QtyBox
-                      label="Dispatched"
-                      value={jw.dispatchedQty}
-                      color={jw.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)'}
-                      bordered
-                    />
-                    <QtyBox
-                      label="Pending"
-                      value={Math.max(0, jw.totalQty - jw.dispatchedQty)}
-                      color={jw.totalQty - jw.dispatchedQty > 0 ? 'var(--red)' : 'var(--green)'}
-                      bordered
-                    />
-                    <QtyBox label="Lines" value={jw.lineCount} bordered />
-                  </div>
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--text3)',
-                      display: 'flex',
-                      gap: 6,
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span className="text2">{fmtDate(jw.jwDate)}</span>
-                    <span>·</span>
-                    <span>
-                      Client PO No.{' '}
-                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                        {jw.clientPoNo ?? '—'}
-                      </span>
-                    </span>
-                    <span>·</span>
-                    <span>
-                      Customer Material{' '}
-                      <MaterialCell
-                        received={jw.partyReceivedQty}
-                        expected={Number(jw.clientMaterialQty ?? 0)}
-                      />
-                    </span>
-                    <span>·</span>
-                    <span
-                      style={{
-                        color: overdue ? 'var(--red)' : undefined,
-                        fontWeight: overdue ? 700 : undefined,
-                      }}
-                    >
-                      {jw.earliestDueDate
-                        ? `Due ${fmtDate(jw.earliestDueDate)}${overdue ? ' ⚠' : ''}`
-                        : 'No due date'}
-                    </span>
-                    {jw.remarks ? (
-                      <>
-                        <span>·</span>
-                        <span title={jw.remarks}>{jw.remarks}</span>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-                {/* Band 3: line items */}
-                {isExpanded ? (
-                  <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
-                    <JwExpandedPanel jwId={jw.jwId} canEdit={canEdit} />
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          );
-        })
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.jwsoList}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText={emptyText}
+            rowKey={(jw) => jw.jwId}
+            onRowClick={(jw) =>
+              void navigate({ to: '/job-work-orders/$id', params: { id: jw.jwId } })
+            }
+            rowClassName={(jw) => rowTint(jw, today)}
+            rowActions={(jw) => rowActions(jw)}
+            // The lines are fetched only for a row that is actually open —
+            // returning null for a collapsed row means JwsoExpandedLines (and
+            // its detail query) never mounts for it.
+            renderExpanded={(jw) =>
+              expandedIds.has(jw.jwId) ? (
+                <JwsoExpandedLines jwId={jw.jwId} canEdit={canEdit} />
+              ) : null
+            }
+            // The fit table's ▸ is the row's one expand control: it opens the
+            // line items too.
+            onToggleExpanded={(jw) => toggleExpand(jw.jwId)}
+          />
+        </Panel>
       )}
 
       <ListFooter total={total} shown={rows.length} noun="JWSO" limit={LIST_LIMIT} />
@@ -430,162 +251,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           onClose={() => setTrashTarget(null)}
         />
       ) : null}
-    </div>
-  );
-}
-
-// Inline line-item panel for one JWSO — mirrors the SO Master expand. Loads the
-// JWSO detail (header + lines) and lists each line's item / part / material /
-// qty / rate / due / status.
-function JwExpandedPanel({ jwId, canEdit }: { jwId: string; canEdit: boolean }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
-  if (isLoading)
-    return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>
-        <Loader2 size={12} className="inline animate-spin" /> Loading lines…
-      </div>
-    );
-  if (isError || !data)
-    return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red2)' }}>
-        {error instanceof Error ? error.message : 'Could not load JWSO detail. Try again.'}
-      </div>
-    );
-  return <JwLinesTable jw={data} canEdit={canEdit} />;
-}
-
-function JwLinesTable({
-  jw,
-  canEdit,
-}: {
-  jw: JobWorkOrderDetail;
-  canEdit: boolean;
-}): React.JSX.Element {
-  // Money hidden for L1 Viewers: the API nulls the JWSO GST % + line rates, so
-  // the Rate column is dropped here too.
-  // Told by the server, not inferred from a null money field: a null also means
-  // "no value yet", so probing it hid money from users entitled to see it.
-  const priceHidden = jw.priceVisible === false;
-  // Ln · Item (badge) · Material · Drawing No · Qty · Dispatched · Balance · UOM
-  // · [Rate] · Due Date · Status · [edit] — the old Item Code + Part Name pair
-  // is one badge cell now (user decision 2026-09-21).
-  const cols = (canEdit ? 13 : 12) - (priceHidden ? 1 : 0);
-  return (
-    <div style={{ padding: '8px 12px 8px 36px' }}>
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--blue)',
-          fontFamily: 'var(--mono)',
-          fontWeight: 700,
-          marginBottom: 6,
-        }}
-      >
-        Line Items
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table tbl-grid tbl-compact" style={{ margin: 0 }}>
-          <thead>
-            <tr style={{ background: 'var(--bg4)' }}>
-              <th style={{ width: 36 }}>Ln</th>
-              <ItemThumbnailHeader />
-              <th>Item</th>
-              <th>Material</th>
-              <th>Drawing No.</th>
-              <th className="th-num">Order Qty</th>
-              <th className="th-num" style={{ color: 'var(--green2)' }}>
-                Dispatched
-              </th>
-              <th className="th-num">Pending</th>
-              <th>UOM</th>
-              {priceHidden ? null : <th className="th-num">Rate</th>}
-              <th>Due Date</th>
-              <th>JWSO Status</th>
-              {canEdit ? <th /> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {jw.lines.length === 0 ? (
-              <tr>
-                <td colSpan={cols} className="empty-state">
-                  No lines yet.
-                </td>
-              </tr>
-            ) : (
-              jw.lines.map((l) => {
-                const balance = Math.max(0, l.orderQty - l.returnedQty);
-                return (
-                  <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                    <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
-                      {l.lineNo}
-                    </td>
-                    {/* CODE/REV — the client's drawing revision typed on this line travels
-                    with the code (the badge formats it via itemCodeWithRev). */}
-                    <ItemThumbnailCell imagePath={l.itemImagePath} alt={l.partName} />
-                    <td>
-                      <ItemBadge
-                        size="row"
-                        showImage={false}
-                        code={l.itemCodeText}
-                        name={l.partName}
-                        revision={l.revision}
-                        imagePath={l.itemImagePath}
-                      />
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {l.material ?? '—'}
-                    </td>
-                    <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-                      {l.drawingNo ?? '—'}
-                    </td>
-                    <td className="mono fw-700 td-num" style={{ fontSize: 14 }}>
-                      {l.orderQty}
-                    </td>
-                    <td
-                      className="mono fw-700 td-num"
-                      style={{ color: l.returnedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
-                    >
-                      {l.returnedQty}
-                    </td>
-                    <td
-                      className="mono fw-700 td-num"
-                      style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}
-                    >
-                      {balance}
-                    </td>
-                    <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                      {l.uom}
-                    </td>
-                    {priceHidden ? null : (
-                      <td className="mono td-num" style={{ fontSize: 11 }}>
-                        {l.rate}
-                      </td>
-                    )}
-                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {fmtDate(l.dueDate)}
-                    </td>
-                    <td>
-                      <SoStatusBadge status={l.status} />
-                    </td>
-                    {canEdit ? (
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <Link
-                          to="/job-work-orders/$id/edit"
-                          params={{ id: jw.id }}
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 11 }}
-                        >
-                          Edit
-                        </Link>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

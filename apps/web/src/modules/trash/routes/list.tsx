@@ -9,17 +9,17 @@
 // count only the matching documents.
 
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Lock } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { SearchInput } from '@/ui/forms';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import {
   useRestoreFromTrash,
   useTrash,
@@ -27,40 +27,9 @@ import {
   type TrashEntityType,
   type TrashListItem,
 } from '../api';
+import { trashColumns, TYPE_OPTIONS, typeLabel } from '../components/trash-columns';
 
 const PAGE_SIZE = 50;
-
-const TYPE_OPTIONS: readonly TrashEntityType[] = [
-  'Sales Order',
-  'Job Work Order',
-  'Job Card',
-  'Item',
-  'Client',
-  'Vendor',
-  'Machine',
-  'Operator',
-  'Purchase Request',
-  'Purchase Order',
-  'Goods Receipt Note',
-  'Delivery Challan',
-  'NC Register',
-  'BOM Master',
-  'Route Card',
-  'Cost Center',
-  'QC Process',
-];
-
-// On-screen names for the type codes above. The codes themselves are what the
-// API filters on and stay as they are; only the words the user reads change
-// (Customer, never Client; Cost Centre spelling; JWSO's full name).
-const TYPE_LABEL: Partial<Record<TrashEntityType, string>> = {
-  'Job Work Order': 'Job Work Sales Order',
-  Client: 'Customer',
-  'Cost Center': 'Cost Centre',
-};
-function typeLabel(t: TrashEntityType): string {
-  return TYPE_LABEL[t] ?? t;
-}
 
 const listSearchSchema = z.object({
   type: z.string().optional(),
@@ -98,6 +67,7 @@ function TrashListPage(): React.JSX.Element {
   const [restoring, setRestoring] = useState<TrashListItem | null>(null);
 
   const items = data?.items ?? [];
+  const columns = useMemo(() => trashColumns(), []);
 
   // The box keeps what the user typed (a trailing space included); only the
   // normalised term goes to the URL, and a new term goes back to page 1.
@@ -194,73 +164,36 @@ function TrashListPage(): React.JSX.Element {
         filtersActive={!!search.type || searchInput.trim() !== ''}
       />
 
-      {!isLoading && !isError && items.length === 0 ? (
-        <div className="panel">
-          <div className="empty-state" style={{ padding: 32 }}>
-            {urlTerm || search.type ? 'No deleted documents match.' : 'Trash is empty.'}
-          </div>
-        </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load Trash. Try again.'}
+        />
       ) : (
-        <div className="panel">
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Deleted At</th>
-                  <th>Document Type</th>
-                  <th>Document</th>
-                  <th>Deleted By</th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={5} className="empty-state">
-                      <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                      Loading…
-                    </td>
-                  </tr>
-                ) : isError ? (
-                  <tr>
-                    <td colSpan={5} className="empty-state" style={{ color: 'var(--red2)' }}>
-                      {error instanceof Error ? error.message : 'Could not load Trash. Try again.'}
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((it) => (
-                    <tr key={`${it.type}:${it.id}`}>
-                      <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {fmtDateTime(it.deletedAt)}
-                      </td>
-                      <td>
-                        <span className="badge b-grey">{typeLabel(it.type)}</span>
-                      </td>
-                      <td className="fw-700">{it.label}</td>
-                      <td className="text3" style={{ fontSize: 11 }}>
-                        {it.deletedByName ?? '—'}
-                      </td>
-                      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                        <RowMenu
-                          items={[
-                            {
-                              key: 'restore',
-                              label: 'Restore',
-                              icon: 'refresh-cw',
-                              // As before: no second Restore while one is saving.
-                              disabledReason: restore.isPending ? 'Restoring…' : undefined,
-                              onSelect: () => setRestoring(it),
-                            },
-                          ]}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        // THE shared FIT table (ADR-199). First column (Document) is pinned; a
+        // trashed row has no detail page, so the row is not clickable. The one
+        // per-row action — Restore — is the ⋯ rowMenu, gated and wired to the
+        // same confirm + mutation as before.
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.trashList}
+            columns={columns}
+            rows={items}
+            rowKey={(it) => `${it.type}:${it.id}`}
+            loading={isLoading}
+            emptyText={urlTerm || search.type ? 'No deleted documents match.' : 'Trash is empty.'}
+            rowMenu={(it) => [
+              {
+                key: 'restore',
+                label: 'Restore',
+                icon: 'refresh-cw',
+                // As before: no second Restore while one is saving.
+                disabledReason: restore.isPending ? 'Restoring…' : undefined,
+                onSelect: () => setRestoring(it),
+              },
+            ]}
+          />
+        </Panel>
       )}
 
       <ListFooter

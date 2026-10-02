@@ -8,10 +8,12 @@ import {
   type ToolWriteoffRow,
   type ToolWriteoffStatus,
 } from '@innovic/shared';
-import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { DataTable, type DataTableColumn, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { PageState, RowActions } from '@/ui/layout';
 import { useDecideToolWriteoff, useToolWriteoffs } from '../api';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
@@ -34,6 +36,92 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
   );
   const [deciding, setDeciding] = useState<ToolWriteoffRow | null>(null);
 
+  const columns = useMemo<DataTableColumn<ToolWriteoffRow>[]>(
+    () => [
+      {
+        id: 'kind',
+        kind: 'text',
+        header: 'Write-off Kind',
+        render: (w) => KIND_LABELS[w.kind],
+      },
+      {
+        id: 'item_code',
+        kind: 'code',
+        header: 'Item Code',
+        align: 'left',
+        className: 'mono fw-700',
+        render: (w) => <span style={{ color: 'var(--text)' }}>{w.itemCode}</span>,
+      },
+      {
+        id: 'serial_no',
+        kind: 'code',
+        header: 'Instrument Serial No.',
+        className: 'mono',
+        render: (w) => w.serialNo || '—',
+      },
+      {
+        id: 'qty',
+        kind: 'num',
+        header: 'Write-off Qty',
+        align: 'right',
+        className: 'mono',
+        render: (w) => r3(w.qty),
+      },
+      {
+        id: 'issue_no',
+        kind: 'code',
+        header: 'Issue No.',
+        className: 'td-code',
+        nowrap: true,
+        render: (w) => w.toolIssueCode || '—',
+      },
+      {
+        id: 'issued_to',
+        kind: 'text',
+        header: 'Issued To',
+        render: (w) => w.holder || '—',
+      },
+      {
+        id: 'reason',
+        kind: 'text',
+        header: 'Reason',
+        align: 'left',
+        ellipsis: true,
+        className: 'text3',
+        render: (w) => w.reason,
+        title: (w) => w.reason,
+      },
+      {
+        id: 'requested_by',
+        kind: 'text',
+        header: 'Requested By',
+        render: (w) => (
+          <>
+            {w.requestedByName || '—'}
+            <div className="text3">{fmtDate(w.requestedAt.slice(0, 10))}</div>
+          </>
+        ),
+      },
+      {
+        id: 'status',
+        kind: 'text',
+        header: 'Write-off Status',
+        render: (w) => (
+          <>
+            {STATUS_LABELS[w.status]}
+            {w.decidedByName ? (
+              <div className="text3" style={{ fontSize: 11 }}>
+                {w.decidedByName}
+                {w.decisionRemarks ? ` — ${w.decisionRemarks}` : ''}
+              </div>
+            ) : null}
+          </>
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
     <div>
       <div style={{ marginBottom: 8 }}>
@@ -49,84 +137,41 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
           <option value="">All</option>
         </select>
       </div>
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body text3" style={{ fontSize: 12 }}>
-            <Loader2 size={14} className="inline animate-spin" /> Loading…
-          </div>
-        ) : isError || !data ? (
-          <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load write-offs.'}
-          </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Write-off Kind</th>
-                  <th>Item Code</th>
-                  <th>Instrument Serial No.</th>
-                  <th className="th-num">Write-off Qty</th>
-                  <th>Issue No.</th>
-                  <th>Issued To</th>
-                  <th>Reason</th>
-                  <th>Requested By</th>
-                  <th>Write-off Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((w) => (
-                  <tr key={w.id}>
-                    <td>{KIND_LABELS[w.kind]}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                      {w.itemCode}
-                    </td>
-                    <td className="mono">{w.serialNo || '—'}</td>
-                    <td className="mono td-num">{r3(w.qty)}</td>
-                    <td className="td-code">{w.toolIssueCode || '—'}</td>
-                    <td>{w.holder || '—'}</td>
-                    <td className="text3" style={{ fontSize: 11 }}>
-                      {w.reason}
-                    </td>
-                    <td style={{ fontSize: 11 }}>
-                      {w.requestedByName || '—'}
-                      <div className="text3">{fmtDate(w.requestedAt.slice(0, 10))}</div>
-                    </td>
-                    <td>
-                      {STATUS_LABELS[w.status]}
-                      {w.decidedByName ? (
-                        <div className="text3" style={{ fontSize: 11 }}>
-                          {w.decidedByName}
-                          {w.decisionRemarks ? ` — ${w.decisionRemarks}` : ''}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      {canDecide && w.status === 'pending' ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => setDeciding(w)}
-                        >
-                          Decide
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-                {data.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="empty-state">
-                      No write-offs here.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load write-offs.'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.toolWriteoffs}
+            columns={columns}
+            rows={data?.items ?? []}
+            sortFilter={false}
+            rowKey={(w) => w.id}
+            loading={isLoading}
+            empty="No write-offs here."
+            // A decided write-off is washed: approved greens the row, rejected
+            // greys it; a pending one (awaiting the Store In-charge) stays plain.
+            rowClassName={(w) =>
+              w.status === 'approved'
+                ? ROW_TINT.done
+                : w.status === 'rejected'
+                  ? ROW_TINT.cancelled
+                  : undefined
+            }
+            rowActionsWidth="1%"
+            rowActions={(w) =>
+              canDecide && w.status === 'pending' ? (
+                <RowActions
+                  items={[{ key: 'decide', label: 'Decide', onSelect: () => setDeciding(w) }]}
+                />
+              ) : null
+            }
+          />
+        </Panel>
+      )}
       {deciding ? <DecideModal w={deciding} onClose={() => setDeciding(null)} /> : null}
     </div>
   );

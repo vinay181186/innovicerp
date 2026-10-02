@@ -18,7 +18,9 @@ import {
 } from '@innovic/shared';
 import type { GlobalSearchKind, GlobalSearchResult } from '@innovic/shared';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
+import { PageState } from '@/ui/layout';
 import { useGlobalSearch } from '../api';
+import { ResultsFitTable } from './results-fit-table';
 import { RESULT_COLUMNS, ResultsTable } from './results-table';
 
 export function SearchResults({
@@ -145,12 +147,27 @@ export function SearchResults({
   );
   const strip = stripItems.length > 0 ? <StatStrip items={stripItems} /> : null;
 
-  const table = !hasQuery ? (
+  const typeMore = (
     <div className="empty-state">
       Type at least {GLOBAL_SEARCH_MIN_CHARS} characters in the search box above (Ctrl+K)
     </div>
+  );
+  // Popup: the compact table it has always used (its own scroller, see .gs-overlay).
+  const table = !hasQuery ? typeMore : <ResultsTable items={items} body={body} onOpen={onOpen} />;
+  // Page: THE shared fit table (ADR-199). Error / "type more" sit outside it; the
+  // loading and empty states are the table's own rows.
+  const noResultsMsg = (
+    <>
+      No results for &ldquo;{q}&rdquo;
+      {kind ? <> in {GLOBAL_SEARCH_KIND_META[kind].label}</> : null}
+    </>
+  );
+  const pageTable = !hasQuery ? (
+    typeMore
+  ) : rows.isError ? (
+    <PageState state="error" message={rows.error.message} />
   ) : (
-    <ResultsTable items={items} body={body} onOpen={onOpen} />
+    <ResultsFitTable items={items} loading={searching} empty={noResultsMsg} onOpen={onOpen} />
   );
   const note = truncated ? (
     <div className="text3" style={{ fontSize: 12, marginTop: 8 }}>
@@ -184,7 +201,7 @@ export function SearchResults({
           </div>
           {strip}
         </div>
-        {table}
+        {pageTable}
         {note}
       </div>
     );

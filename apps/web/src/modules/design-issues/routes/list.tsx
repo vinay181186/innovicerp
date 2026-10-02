@@ -1,17 +1,25 @@
 // All Design Issues (Design slice D) — cross-project view.
 // Mirrors legacy renderDesignIssuesPage (HTML L7890).
+//
+// ADR-199 table standard (2026-10-01): the issue list is the ONE fit table
+// (<DataTable tableKey={TABLE_KEYS.designIssues}>) — the issue (first column) is
+// pinned, numbers (Days Open) are right-aligned, the row washes by status and
+// the row's ⋯ carries Assign Task. Row click opens the design project behind
+// the issue (there is no standalone issue detail page).
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import type { DesignIssueListItem } from '@innovic/shared';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDesignIssuesAll } from '../api';
 
 type FilterKey = 'all' | 'open' | 'resolved' | 'critical';
@@ -23,11 +31,22 @@ const FILTER_LABEL: Record<FilterKey, string> = {
   critical: 'Critical',
 };
 
+const LIST_LIMIT = 200;
+
 export const designIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'design-issues',
   component: DesignIssuesAllPage,
 });
+
+/** Whole-row wash by the issue's status (ADR-199 ROW_TINT): Resolved / Closed →
+ *  done (green); an issue open longer than 5 days → late (red); otherwise no
+ *  wash. The 5-day line matches the old "stale" red on Days Open. */
+function issueRowTint(i: DesignIssueListItem): string | undefined {
+  if (i.status === 'Resolved' || i.status === 'Closed') return ROW_TINT.done;
+  if (i.ageDays > 5) return ROW_TINT.late;
+  return undefined;
+}
 
 function DesignIssuesAllPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
@@ -46,7 +65,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useDesignIssuesAll({
     search: search.trim() || undefined,
     filter,
-    limit: 200,
+    limit: LIST_LIMIT,
     offset: 0,
   });
   const summary = data?.summary ?? { total: 0, open: 0, resolved: 0, critical: 0 };
@@ -60,12 +79,85 @@ function DesignIssuesAllPage(): React.JSX.Element {
   // "Hide page" (Access Control → Config): a user whose VIEW was removed for
   // the Design Issues page sees the no-access panel, not the page.
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Design Issues. Ask an admin.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
+
+  const rows = data?.items ?? [];
+  const columns: DataTableColumn<DesignIssueListItem>[] = [
+    {
+      id: 'issue',
+      header: 'Issue',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      className: 'fw-700',
+      // The row's ▸ opens the engine detail; the title link opens the design
+      // project. stopPropagation on the link, not the cell.
+      render: (i) => (
+        <Link
+          to="/design-projects/$id"
+          params={{ id: i.designProjectId }}
+          style={{ color: 'inherit', textDecoration: 'none' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {i.title}
+        </Link>
+      ),
+      title: (i) => i.title,
+    },
+    {
+      id: 'project',
+      header: 'Project',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (i) => <span style={{ color: 'var(--purple)' }}>{i.projectName ?? '—'}</span>,
+      title: (i) => i.projectName ?? '',
+    },
+    {
+      id: 'severity',
+      header: 'Severity',
+      kind: 'badge',
+      nowrap: true,
+      render: (i) => <Badge value={i.severity} />,
+    },
+    {
+      id: 'status',
+      header: 'Issue Status',
+      kind: 'badge',
+      nowrap: true,
+      render: (i) => <Badge value={i.status} />,
+    },
+    {
+      id: 'assigned_to',
+      header: 'Assigned To',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (i) => i.assignedToText ?? '—',
+      title: (i) => i.assignedToText ?? '',
+    },
+    {
+      id: 'raised_date',
+      header: 'Raised Date',
+      kind: 'date',
+      nowrap: true,
+      render: (i) => fmtDate(i.raisedDate),
+    },
+    {
+      id: 'days_open',
+      header: 'Days Open',
+      kind: 'num',
+      align: 'right',
+      className: 'mono fw-700',
+      nowrap: true,
+      filterValue: (i) => i.ageDays,
+      render: (i) => {
+        const stale = i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
+        return <span style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}>{i.ageDays}d</span>;
+      },
+    },
+  ];
 
   return (
     <div>
@@ -99,119 +191,52 @@ function DesignIssuesAllPage(): React.JSX.Element {
         filtersActive={search.trim() !== '' || filter !== 'all'}
       />
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load design issues. Try again.'}
-            </div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Issue</th>
-                  <th>Project</th>
-                  <th>Severity</th>
-                  <th>Issue Status</th>
-                  <th>Assigned To</th>
-                  <th>Raised Date</th>
-                  <th>Days Open</th>
-                  <th className="td-ctr" aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="empty-state">
-                      {search.trim() || filter !== 'all'
-                        ? 'No Design Issues match.'
-                        : 'No Design Issues yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-                {data.items.map((i) => {
-                  const stale = i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
-                  return (
-                    <tr
-                      key={i.id}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() =>
-                        void navigate({
-                          to: '/design-projects/$id',
-                          params: { id: i.designProjectId },
-                        })
-                      }
-                    >
-                      <td className="fw-700" style={{ textAlign: 'left' }}>
-                        <Link
-                          to="/design-projects/$id"
-                          params={{ id: i.designProjectId }}
-                          style={{ color: 'inherit', textDecoration: 'none' }}
-                        >
-                          {i.title}
-                        </Link>
-                      </td>
-                      <td style={{ fontSize: 11, color: 'var(--purple)' }}>
-                        {i.projectName ?? ''}
-                      </td>
-                      <td>
-                        <Badge value={i.severity} />
-                      </td>
-                      <td>
-                        <Badge value={i.status} kind="status" />
-                      </td>
-                      <td style={{ fontSize: 11, fontWeight: 600 }}>{i.assignedToText ?? ''}</td>
-                      <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {fmtDate(i.raisedDate)}
-                      </td>
-                      <td
-                        className="mono fw-700"
-                        style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}
-                      >
-                        {i.ageDays}d
-                      </td>
-                      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-                        <RowMenu
-                          items={[
-                            {
-                              // Same rule as the old button: none on a resolved /
-                              // closed issue; a viewer is refused by the server.
-                              key: 'assign',
-                              label: 'Assign Task',
-                              icon: 'user-round',
-                              group: 'assign',
-                              hidden:
-                                i.status === 'Closed' ||
-                                i.status === 'Resolved' ||
-                                !me ||
-                                me.role === 'viewer',
-                              onSelect: () =>
-                                setAssignTarget({
-                                  id: i.id,
-                                  title: i.title,
-                                  designProjectId: i.designProjectId,
-                                }),
-                            },
-                          ]}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
-      {data ? <ListFooter total={data.total} noun="issue" limit={200} /> : null}
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load design issues. Try again.'
+          }
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable<DesignIssueListItem>
+            tableKey={TABLE_KEYS.designIssues}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            empty={
+              search.trim() || filter !== 'all'
+                ? 'No Design Issues match.'
+                : 'No Design Issues yet.'
+            }
+            rowClassName={(i) => issueRowTint(i)}
+            onRowClick={(i) =>
+              void navigate({ to: '/design-projects/$id', params: { id: i.designProjectId } })
+            }
+            rowMenu={(i) => [
+              {
+                // Same rule as the old button: none on a resolved / closed issue;
+                // a viewer is refused by the server.
+                key: 'assign',
+                label: 'Assign Task',
+                icon: 'user-round',
+                group: 'assign',
+                hidden:
+                  i.status === 'Closed' || i.status === 'Resolved' || !me || me.role === 'viewer',
+                onSelect: () =>
+                  setAssignTarget({
+                    id: i.id,
+                    title: i.title,
+                    designProjectId: i.designProjectId,
+                  }),
+              },
+            ]}
+          />
+        </Panel>
+      )}
+
+      {data ? <ListFooter total={data.total} noun="issue" limit={LIST_LIMIT} /> : null}
       {assignTarget ? (
         <AssignTaskModal
           linkedRef={{
@@ -230,7 +255,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
 
 /** Severity / status badge — house classes: Critical red, Major amber, Minor
  *  grey; Open blue, In Progress amber, Resolved / Closed green. */
-function Badge({ value }: { value: string; kind?: 'status' }): React.JSX.Element {
+function Badge({ value }: { value: string }): React.JSX.Element {
   const v = value.toLowerCase().replace(/[\s/]/g, '');
   const cls: Record<string, string> = {
     critical: 'b-red',

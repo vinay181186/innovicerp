@@ -1,40 +1,40 @@
 // Design Tracker (Design slice B) — per-SO design assignment.
 // Mirrors legacy renderDesignTracker (HTML L7259) + helpers L7338–7489.
+//
+// ADR-199 table standard (2026-10-01): the tracker is the ONE fit table
+// (<DataTable tableKey={TABLE_KEYS.designTracker}>). The column defs, row tint,
+// ⋯ menu and ▸ detail live in components/design-tracker-columns.tsx; the three
+// dialogs live in components/{add,edit,log-time}-design-modal.tsx. This file
+// owns the page: query, filters, access gates and the modal / confirm wiring.
 
-import {
-  type CreateDesignTrackerInput,
-  DESIGN_DAY_HOURS_WARN,
-  DESIGN_HOURS_MAX_PER_ENTRY,
-  type DesignTrackerListItem,
-  type LogDesignTimeInput,
-} from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { type DesignTrackerListItem } from '@innovic/shared';
+import { Link, createRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate, todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { DataTable, Panel } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ConfirmDialog } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
-import { ListFooter, ListHeader } from '@/ui/layout';
-import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
-import { soTypeLabel } from '../../sales-orders/lib/so-status-label';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import {
   useApproveDesign,
-  useCreateDesignTracker,
-  useDesignTrackerDetail,
   useDesignTrackerList,
-  useLogDesignTime,
-  useNextDesignTrackerCode,
   useReviseDesign,
   useSubmitDesignReview,
-  useUpdateDesignTracker,
 } from '../api';
+import { AddDesignModal } from '../components/add-design-modal';
+import {
+  DesignTrackerExpanded,
+  designTrackerColumns,
+  designTrackerRowMenu,
+  designTrackerRowTint,
+} from '../components/design-tracker-columns';
+import { EditDesignModal } from '../components/edit-design-modal';
+import { LogTimeModal } from '../components/log-time-modal';
 
 type FilterKey = 'all' | 'pending' | 'progress' | 'review' | 'approved' | 'overdue';
 
@@ -74,6 +74,32 @@ function DesignTrackerListPage(): React.JSX.Element {
   const [editRow, setEditRow] = useState<DesignTrackerListItem | null>(null);
   const [logTimeRow, setLogTimeRow] = useState<DesignTrackerListItem | null>(null);
 
+  // The row's ▸ opens its Start Date detail. A Set — many can be open at once.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string): void =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // Submit / Approve ask through the ONE confirm dialog (lifted off each row).
+  const [confirm, setConfirm] = useState<{
+    row: DesignTrackerListItem;
+    kind: 'submit' | 'approve';
+  } | null>(null);
+  const submitMut = useSubmitDesignReview();
+  const approveMut = useApproveDesign();
+  const reviseMut = useReviseDesign();
+
+  const onRevise = (row: DesignTrackerListItem): void => {
+    const reason = window.prompt('Revision reason:');
+    if (reason && reason.trim()) {
+      void reviseMut.mutateAsync({ id: row.id, input: { reason: reason.trim() } });
+    }
+  };
+
   const { data, isLoading, isFetching, isError, error } = useDesignTrackerList({
     search: search.trim() || undefined,
     filter,
@@ -97,12 +123,12 @@ function DesignTrackerListPage(): React.JSX.Element {
     overdue: summary.overdue,
   };
 
+  const today = todayIst();
+  const rows = data?.items ?? [];
+  const columns = useMemo(() => designTrackerColumns({ today }), [today]);
+
   if (eff && !perms.view) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Design Tracker. Ask an admin.
-      </div>
-    );
+    return <PageState as="page" state="noaccess" />;
   }
 
   return (
@@ -145,64 +171,42 @@ function DesignTrackerListPage(): React.JSX.Element {
         }
       />
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error ? error.message : 'Could not load designs. Try again.'}
-            </div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Design No.</th>
-                  <th>SO No.</th>
-                  {/* POL — the CUSTOMER's own purchase-order line number off the
-                      SO line behind this design. Nothing to do with the "Rev"
-                      column further right, which counts OUR design revisions. */}
-                  <th style={{ color: 'var(--purple)' }}>POL</th>
-                  <th>Item Code</th>
-                  <th>Design Engineer</th>
-                  <th>Start Date</th>
-                  <th>Due Date</th>
-                  <th>Design Status</th>
-                  <th className="td-ctr">Design Rev</th>
-                  <th className="td-ctr">Hours</th>
-                  <th className="td-ctr" aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="empty-state">
-                      {search.trim() || filter !== 'all' ? 'No Designs match.' : 'No Designs yet.'}
-                    </td>
-                  </tr>
-                ) : (
-                  data.items.map((d) => (
-                    <Row
-                      key={d.id}
-                      row={d}
-                      canWrite={canWrite}
-                      isAdmin={canWrite}
-                      onEdit={() => setEditRow(d)}
-                      onLogTime={() => setLogTimeRow(d)}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load designs. Try again.'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable<DesignTrackerListItem>
+            tableKey={TABLE_KEYS.designTracker}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            empty={search.trim() || filter !== 'all' ? 'No Designs match.' : 'No Designs yet.'}
+            rowClassName={(d) => designTrackerRowTint(d, today)}
+            // The fit table's ▸ opens the Start Date detail — no row click, there
+            // is no standalone design detail page.
+            renderExpanded={(d) =>
+              expandedIds.has(d.id) ? <DesignTrackerExpanded row={d} /> : null
+            }
+            onToggleExpanded={(d) => toggleExpand(d.id)}
+            rowMenu={(d) =>
+              designTrackerRowMenu(d, {
+                canWrite,
+                isAdmin: canWrite,
+                canEdit: perms.edit,
+                onLogTime: setLogTimeRow,
+                onEdit: setEditRow,
+                onSubmit: (row) => setConfirm({ row, kind: 'submit' }),
+                onApprove: (row) => setConfirm({ row, kind: 'approve' }),
+                onRevise,
+              })
+            }
+            renderLink={(p) => <Link {...p} />}
+          />
+        </Panel>
+      )}
 
       {data ? <ListFooter total={data.total} noun="design" limit={PAGE_SIZE} /> : null}
       <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
@@ -212,744 +216,33 @@ function DesignTrackerListPage(): React.JSX.Element {
       {showAdd ? <AddDesignModal onClose={() => setShowAdd(false)} /> : null}
       {editRow ? <EditDesignModal row={editRow} onClose={() => setEditRow(null)} /> : null}
       {logTimeRow ? <LogTimeModal row={logTimeRow} onClose={() => setLogTimeRow(null)} /> : null}
-    </div>
-  );
-}
 
-function Row({
-  row,
-  canWrite,
-  isAdmin,
-  onEdit,
-  onLogTime,
-}: {
-  row: DesignTrackerListItem;
-  canWrite: boolean;
-  isAdmin: boolean;
-  onEdit: () => void;
-  onLogTime: () => void;
-}): React.JSX.Element {
-  const today = todayIst();
-  const isOverdue = row.targetDate < today && row.status !== 'Approved';
-  // Pending = waiting to start (blue); In Progress / Review / Revision = under
-  // way (amber); Approved = done (green).
-  const stCls =
-    row.status === 'Approved' ? 'b-green' : row.status === 'Pending' ? 'b-blue' : 'b-amber';
-  const [ask, setAsk] = useState<'submit' | 'approve' | null>(null);
-
-  const { data: eff } = useMyAccess();
-  const perms = effectiveFormPerms(eff, 'design_create');
-  const submitMut = useSubmitDesignReview();
-  const approveMut = useApproveDesign();
-  const reviseMut = useReviseDesign();
-
-  const hrsOver = row.totalHours > row.estimatedHours;
-  return (
-    <tr style={{ background: isOverdue ? 'var(--red3)' : 'var(--bg)' }}>
-      {/* `td-code` stays on the span: our `.innovic-table td` (0,1,1) outranks the
-          bare `.td-code` (0,1,0) and would force its font-size back to 13px, where
-          legacy's bare `td` (0,0,1) loses to `.td-code` and renders 12px. See ISSUE-060. */}
-      <td style={{ whiteSpace: 'nowrap' }}>
-        <span className="td-code" style={{ color: 'var(--purple)' }}>
-          {row.code}
-        </span>
-      </td>
-      <td style={{ whiteSpace: 'nowrap' }}>
-        <span className="td-code" style={{ color: 'var(--cyan)' }}>
-          {row.soCodeText ?? '—'}
-        </span>
-      </td>
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {row.clientPoLineNo ?? '—'}
-      </td>
-      <td style={{ fontSize: 11, textAlign: 'left' }}>
-        <span style={{ color: 'var(--purple)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-          {itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
-        </span>
-        <br />
-        {row.itemNameText ?? ''}
-      </td>
-      <td style={{ fontSize: 12 }}>{row.designer || '—'}</td>
-      <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-        {fmtDate(row.startDate)}
-      </td>
-      <td
-        className="text2"
-        style={{
-          fontSize: 11,
-          whiteSpace: 'nowrap',
-          color: isOverdue ? 'var(--red)' : undefined,
+      <ConfirmDialog
+        open={confirm?.kind === 'submit'}
+        title={`Submit ${confirm?.row.code ?? ''} for review?`}
+        message="The design moves to Review for approval."
+        confirmLabel="Submit"
+        tone="primary"
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          if (!confirm) return;
+          await submitMut.mutateAsync(confirm.row.id);
+          setConfirm(null);
         }}
-      >
-        {fmtDate(row.targetDate)}
-      </td>
-      <td>
-        <span className={`badge ${stCls}`}>{row.status}</span>
-      </td>
-      <td className="td-ctr mono fw-700" style={{ whiteSpace: 'nowrap' }}>
-        Design Rev {row.revision}
-      </td>
-      <td className="td-ctr">
-        <span className="mono fw-700" style={{ color: hrsOver ? 'var(--red)' : 'var(--green)' }}>
-          {row.totalHours}
-        </span>
-        <span style={{ color: 'var(--text3)', fontSize: 11 }}> / {row.estimatedHours}h</span>
-      </td>
-      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-        <RowMenu
-          items={[
-            { key: 'log', label: 'Log Time', icon: 'plus', onSelect: onLogTime },
-            {
-              key: 'edit',
-              label: 'Edit',
-              icon: 'pencil',
-              hidden: !perms.edit || row.status === 'Approved',
-              onSelect: onEdit,
-            },
-            {
-              key: 'submit',
-              label: 'Submit',
-              icon: 'check',
-              group: 'workflow',
-              hidden: !canWrite || row.status !== 'In Progress',
-              onSelect: () => setAsk('submit'),
-            },
-            {
-              key: 'approve',
-              label: 'Approve',
-              icon: 'check',
-              group: 'workflow',
-              hidden: !isAdmin || row.status !== 'Review',
-              onSelect: () => setAsk('approve'),
-            },
-            {
-              // Sends the design back for revision — red, as the old button was.
-              key: 'revise',
-              label: 'Revise',
-              icon: 'arrow-left',
-              group: 'danger',
-              hidden: !isAdmin || row.status !== 'Review',
-              onSelect: () => {
-                const reason = window.prompt('Revision reason:');
-                if (reason && reason.trim()) {
-                  return reviseMut
-                    .mutateAsync({ id: row.id, input: { reason: reason.trim() } })
-                    .then(() => undefined);
-                }
-                return undefined;
-              },
-            },
-          ]}
-        />
-        <ConfirmDialog
-          open={ask === 'submit'}
-          title={`Submit ${row.code} for review?`}
-          message="The design moves to Review for approval."
-          confirmLabel="Submit"
-          tone="primary"
-          onCancel={() => setAsk(null)}
-          onConfirm={async () => {
-            await submitMut.mutateAsync(row.id);
-            setAsk(null);
-          }}
-        />
-        <ConfirmDialog
-          open={ask === 'approve'}
-          title={`Approve design ${row.code}?`}
-          message={`This unlocks BOM creation for ${row.soCodeText ?? 'the SO'}.`}
-          confirmLabel="Approve"
-          tone="primary"
-          onCancel={() => setAsk(null)}
-          onConfirm={async () => {
-            await approveMut.mutateAsync(row.id);
-            setAsk(null);
-          }}
-        />
-      </td>
-    </tr>
-  );
-}
-
-// ─── Add modal ────────────────────────────────────────────────────────────
-
-function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date] = useState(todayIst());
-  const [soSearch, setSoSearch] = useState('');
-  const [soId, setSoId] = useState<string | null>(null);
-  const [soLineId, setSoLineId] = useState('');
-  const [designer, setDesigner] = useState('');
-  const [estHours, setEstHours] = useState('');
-  const [startDate, setStartDate] = useState(date);
-  const [targetDate, setTargetDate] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-
-  const { data: soData } = useSalesOrdersList({
-    search: soSearch.trim() || undefined,
-    status: 'open',
-    limit: 50,
-    offset: 0,
-  });
-  const selectedSo = useMemo(
-    () => soData?.items.find((s) => s.id === soId) ?? null,
-    [soData, soId],
-  );
-
-  const mut = useCreateDesignTracker();
-  const { data: next } = useNextDesignTrackerCode();
-
-  // The SO's lines — the design is for ONE line (POL + CODE/REV), and that
-  // line's item is what the design shows.
-  const { data: soDetail } = useSalesOrder(soId ?? undefined);
-  const soLines = soId && soDetail?.id === soId ? soDetail.lines : [];
-  const lineLabel = (l: (typeof soLines)[number]): string =>
-    [
-      `POL ${l.clientPoLineNo ?? '—'}`,
-      itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision),
-      l.partName,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-  // A one-line SO needs no choice.
-  const pickedLineId = soLineId || (soLines.length === 1 ? (soLines[0]?.id ?? '') : '');
-
-  const onSave = (): void => {
-    setErr(null);
-    if (!soId) {
-      setErr('SO No. is required.');
-      return;
-    }
-    if (!pickedLineId) {
-      setErr('SO Line is required — pick the line (POL + CODE/REV) this design is for.');
-      return;
-    }
-    if (!designer.trim()) {
-      setErr('Design Engineer is required.');
-      return;
-    }
-    if (!targetDate) {
-      setErr('Due Date is required.');
-      return;
-    }
-    const input: CreateDesignTrackerInput = {
-      salesOrderId: soId,
-      salesOrderLineId: pickedLineId,
-      designer: designer.trim(),
-      startDate,
-      targetDate,
-    };
-    if (estHours.trim()) input.estimatedHours = Number(estHours);
-    if (remarks.trim()) input.remarks = remarks.trim();
-    mut.mutate(input, {
-      onSuccess: () => onClose(),
-      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Design. Try again.'),
-    });
-  };
-
-  return (
-    <ModalShell onClose={onClose} title="Assign Design">
-      <div className="form-grid">
-        <Field label="Design No.">
-          <input
-            type="text"
-            className="innovic-input"
-            value={next?.code ?? '(auto on save)'}
-            readOnly
-            style={{ color: 'var(--purple)', fontWeight: 700 }}
-          />
-        </Field>
-        <Field label="SO No." req full>
-          <SearchableSelect
-            value={soId}
-            valueLabel={
-              selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : undefined
-            }
-            // SO type beside the customer (e.g. "· Equipment") — design work
-            // is mostly on Equipment SOs, so the type tells them apart.
-            options={(soData?.items ?? []).map((so) => ({
-              id: so.id,
-              code: so.code,
-              name: [so.customerName, so.type ? soTypeLabel(so.type) : null]
-                .filter(Boolean)
-                .join(' · '),
-            }))}
-            onSearch={setSoSearch}
-            placeholder="Type SO No. or customer…"
-            onChange={(id) => {
-              setSoId(id);
-              setSoLineId('');
-            }}
-          />
-        </Field>
-        <Field label="SO Line (POL · CODE/REV)" req full>
-          <select
-            className="innovic-select"
-            value={pickedLineId}
-            disabled={!soId}
-            onChange={(e) => setSoLineId(e.target.value)}
-          >
-            <option value="">{soId ? '— Select line —' : 'Pick the SO first'}</option>
-            {soLines.map((l) => (
-              <option key={l.id} value={l.id}>
-                {lineLabel(l)}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Design Engineer" req>
-          <input
-            type="text"
-            className="innovic-input"
-            value={designer}
-            onChange={(e) => setDesigner(e.target.value)}
-            placeholder="Design engineer name"
-          />
-        </Field>
-        <Field label="Estimated Hours">
-          <input
-            type="number"
-            min={0}
-            className="innovic-input"
-            value={estHours}
-            onChange={(e) => setEstHours(e.target.value)}
-            placeholder="e.g. 40"
-          />
-        </Field>
-        <Field label="Start Date">
-          <input
-            type="date"
-            className="innovic-input"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-        </Field>
-        <Field label="Due Date" req>
-          <input
-            type="date"
-            className="innovic-input"
-            value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-          />
-        </Field>
-        <Field label="Remarks" full>
-          <input
-            type="text"
-            className="innovic-input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="What needs to be designed..."
-          />
-        </Field>
-      </div>
-      {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Design" />
-    </ModalShell>
-  );
-}
-
-// ─── Edit modal ───────────────────────────────────────────────────────────
-
-function EditDesignModal({
-  row,
-  onClose,
-}: {
-  row: DesignTrackerListItem;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [designer, setDesigner] = useState(row.designer);
-  const [status, setStatus] = useState(row.status);
-  const [estHours, setEstHours] = useState(String(row.estimatedHours));
-  const [targetDate, setTargetDate] = useState(row.targetDate);
-  const [remarks, setRemarks] = useState(row.remarks ?? '');
-  const [err, setErr] = useState<string | null>(null);
-  const mut = useUpdateDesignTracker();
-
-  const onSave = (): void => {
-    setErr(null);
-    mut.mutate(
-      {
-        id: row.id,
-        input: {
-          designer: designer.trim() || undefined,
-          status,
-          estimatedHours: estHours.trim() ? Number(estHours) : undefined,
-          targetDate,
-          remarks,
-        },
-      },
-      {
-        onSuccess: () => onClose(),
-        onError: (e) =>
-          setErr(e instanceof Error ? e.message : 'Could not save Design. Try again.'),
-      },
-    );
-  };
-
-  return (
-    <ModalShell onClose={onClose} title={`Edit Design — ${row.code}`}>
-      <div className="form-grid">
-        <Field label="SO No.">
-          <input
-            type="text"
-            className="innovic-input"
-            value={row.soCodeText ?? ''}
-            readOnly
-            style={{ color: 'var(--cyan)', fontWeight: 700 }}
-          />
-        </Field>
-        {/* POL — read-only here; it is typed only on the Sales Order. */}
-        <Field label="POL">
-          <input
-            type="text"
-            className="innovic-input"
-            value={row.clientPoLineNo ?? '—'}
-            readOnly
-            style={{ color: 'var(--purple)', fontWeight: 700 }}
-          />
-        </Field>
-        <Field label="Item Code">
-          <input
-            type="text"
-            className="innovic-input"
-            value={itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
-            readOnly
-            style={{ color: 'var(--purple)' }}
-          />
-        </Field>
-        <Field label="Design Engineer">
-          <input
-            type="text"
-            className="innovic-input"
-            value={designer}
-            onChange={(e) => setDesigner(e.target.value)}
-          />
-        </Field>
-        <Field label="Design Status">
-          <select
-            className="innovic-select"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as DesignTrackerListItem['status'])}
-          >
-            <option>Pending</option>
-            <option>In Progress</option>
-            <option>Review</option>
-            <option>Approved</option>
-            {/* Revision is set only by the Revise action; listed here only so a
-                design already in Revision keeps its value. */}
-            {row.status === 'Revision' ? <option>Revision</option> : null}
-          </select>
-        </Field>
-        <Field label="Estimated Hours">
-          <input
-            type="number"
-            min={0}
-            className="innovic-input"
-            value={estHours}
-            onChange={(e) => setEstHours(e.target.value)}
-          />
-        </Field>
-        <Field label="Due Date">
-          <input
-            type="date"
-            className="innovic-input"
-            value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-          />
-        </Field>
-        <Field label="Remarks" full>
-          <input
-            type="text"
-            className="innovic-input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-        </Field>
-      </div>
-      {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Changes" />
-    </ModalShell>
-  );
-}
-
-// ─── Log time modal ───────────────────────────────────────────────────────
-
-function LogTimeModal({
-  row,
-  onClose,
-}: {
-  row: DesignTrackerListItem;
-  onClose: () => void;
-}): React.JSX.Element {
-  const [logDate, setLogDate] = useState(todayIst());
-  const [hours, setHours] = useState('');
-  const [worker, setWorker] = useState(row.designer);
-  const [description, setDescription] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  // Set after a save that took the person's day above the warning line.
-  const [dayWarn, setDayWarn] = useState<string | null>(null);
-  const mut = useLogDesignTime();
-
-  const { data: detail } = useDesignTrackerDetail(row.id);
-  const previous = detail?.timeLog ?? [];
-
-  const onSave = (): void => {
-    setErr(null);
-    const h = Number(hours);
-    if (!Number.isFinite(h) || h <= 0) {
-      setErr('Hours Worked is required.');
-      return;
-    }
-    if (h > DESIGN_HOURS_MAX_PER_ENTRY) {
-      setErr(`Hours Worked cannot be more than ${DESIGN_HOURS_MAX_PER_ENTRY} in one entry.`);
-      return;
-    }
-    if (!worker.trim()) {
-      setErr('Design Engineer is required.');
-      return;
-    }
-    const input: LogDesignTimeInput = {
-      logDate,
-      hours: h,
-      workerText: worker.trim(),
-    };
-    if (description.trim()) input.description = description.trim();
-    mut.mutate(
-      { id: row.id, input },
-      {
-        onSuccess: (saved) => {
-          const day = saved.dayTotalHours ?? 0;
-          if (day > DESIGN_DAY_HOURS_WARN) {
-            // Saved, but flag it: keep the box open so the warning is seen.
-            setHours('');
-            setDescription('');
-            setDayWarn(
-              `Saved. ${saved.workerText} now has ${day}h booked on ${fmtDate(saved.logDate)} — more than ${DESIGN_DAY_HOURS_WARN}h in one day. Check the hours are right.`,
-            );
-            return;
-          }
-          onClose();
-        },
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not log time. Try again.'),
-      },
-    );
-  };
-
-  return (
-    <ModalShell
-      onClose={onClose}
-      title={`Time Log — ${row.code} (${row.totalHours}h / ${row.estimatedHours}h)`}
-    >
-      <div
-        style={{
-          marginBottom: 14,
-          padding: 10,
-          background: 'var(--bg3)',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          fontSize: 12,
+      />
+      <ConfirmDialog
+        open={confirm?.kind === 'approve'}
+        title={`Approve design ${confirm?.row.code ?? ''}?`}
+        message={`This unlocks BOM creation for ${confirm?.row.soCodeText ?? 'the SO'}.`}
+        confirmLabel="Approve"
+        tone="primary"
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          if (!confirm) return;
+          await approveMut.mutateAsync(confirm.row.id);
+          setConfirm(null);
         }}
-      >
-        <b style={{ color: 'var(--cyan)' }}>{row.soCodeText ?? '—'}</b> | POL{' '}
-        <b className="mono" style={{ color: 'var(--purple)' }}>
-          {row.clientPoLineNo ?? '—'}
-        </b>{' '}
-        | {itemCodeWithRev(row.itemCodeText, row.itemRevision, '')} | Design Engineer:{' '}
-        <b>{row.designer}</b>
-      </div>
-      <div className="form-grid">
-        <Field label="Log Date">
-          <input
-            type="date"
-            className="innovic-input"
-            value={logDate}
-            onChange={(e) => setLogDate(e.target.value)}
-          />
-        </Field>
-        <Field label="Hours Worked">
-          <input
-            type="number"
-            min={0.5}
-            step={0.5}
-            max={DESIGN_HOURS_MAX_PER_ENTRY}
-            className="innovic-input"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            placeholder="e.g. 4"
-          />
-        </Field>
-        <Field label="Design Engineer">
-          <input
-            type="text"
-            className="innovic-input"
-            value={worker}
-            onChange={(e) => setWorker(e.target.value)}
-          />
-        </Field>
-        <Field label="Description">
-          <input
-            type="text"
-            className="innovic-input"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="What was done..."
-          />
-        </Field>
-      </div>
-
-      {previous.length > 0 ? (
-        <>
-          <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>
-            Previous Entries
-          </div>
-          <div className="tbl-wrap" style={{ maxHeight: 200, overflowY: 'auto' }}>
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>Log Date</th>
-                  <th>Hours</th>
-                  <th>Design Engineer</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {previous.map((t) => (
-                  <tr key={t.id}>
-                    <td style={{ fontSize: 11 }}>{fmtDate(t.logDate)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
-                      {t.hours}h
-                    </td>
-                    <td style={{ fontSize: 11 }}>{t.workerText}</td>
-                    <td style={{ fontSize: 11, color: 'var(--text3)' }}>{t.description ?? ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : null}
-
-      {dayWarn ? (
-        <div style={{ marginTop: 12 }}>
-          <Banner tone="warn" flush>
-            {dayWarn}
-          </Banner>
-        </div>
-      ) : null}
-      {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Log Time" />
-    </ModalShell>
-  );
-}
-
-// ─── Shared bits ──────────────────────────────────────────────────────────
-
-function ModalShell({
-  onClose,
-  title,
-  children,
-}: {
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Actions({
-  onClose,
-  onSave,
-  saving,
-  label,
-}: {
-  onClose: () => void;
-  onSave: () => void;
-  saving: boolean;
-  label: string;
-}): React.JSX.Element {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-      <button type="button" className="btn btn-ghost" onClick={onClose}>
-        Cancel
-      </button>
-      <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>
-        {saving ? (
-          <>
-            <Loader2 size={14} className="inline animate-spin" /> Saving…
-          </>
-        ) : (
-          label
-        )}
-      </button>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  req,
-  full,
-  children,
-}: {
-  label: string;
-  req?: boolean;
-  full?: boolean;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className={full ? 'form-grp form-full' : 'form-grp'}>
-      <label className="form-label">
-        {label}
-        {req ? <span className="req">★</span> : null}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function ErrorBox({ message }: { message: string }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        marginTop: 12,
-        padding: 8,
-        background: 'var(--red3)',
-        color: 'var(--red2)',
-        borderRadius: 4,
-        fontSize: 12,
-      }}
-    >
-      {message}
+      />
     </div>
   );
 }

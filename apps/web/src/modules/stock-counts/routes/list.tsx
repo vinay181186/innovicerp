@@ -1,18 +1,26 @@
 // Stock Count list (ADR-193 phase 2) — opening stock + periodic counts.
+// Migrated onto the standard <DataTable tableKey> sheet (ADR-199): the
+// hand-written <table className="innovic-table"> is replaced, Count No. is the
+// pinned first column, and the Columns / density toolbar comes for free. The
+// query (search + status + pagination), the status filter, the permission gate
+// and the row click to the detail page are unchanged.
 import {
   STOCK_COUNT_PURPOSE_LABELS,
   STOCK_COUNT_STATUS_LABELS,
   STOCK_COUNT_STATUSES,
+  type StockCount,
   type StockCountStatus,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStockCounts } from '../api';
 
 const PAGE_SIZE = 25;
@@ -43,6 +51,88 @@ function StockCountsListPage(): React.JSX.Element {
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
+
+  const rows = data?.items ?? [];
+  const filtered = Boolean(search.trim() || status);
+
+  // The ruled sheet's columns. Count No. is the pinned first column; Items is a
+  // right-aligned number; Count Status is a badge; Remarks is long free text
+  // that clips with a tooltip.
+  const columns = useMemo<DataTableColumn<StockCount>[]>(
+    () => [
+      {
+        id: 'code',
+        header: 'Count No.',
+        nowrap: true,
+        render: (c) => (
+          <Link
+            to="/stock-counts/$id"
+            params={{ id: c.id }}
+            className="td-code"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {c.code}
+          </Link>
+        ),
+      },
+      {
+        id: 'count_date',
+        header: 'Count Date',
+        kind: 'date',
+        nowrap: true,
+        render: (c) => fmtDate(c.countDate),
+      },
+      {
+        id: 'purpose',
+        header: 'Purpose',
+        render: (c) => STOCK_COUNT_PURPOSE_LABELS[c.purpose],
+      },
+      {
+        id: 'line_count',
+        header: 'Items',
+        kind: 'num',
+        align: 'right',
+        className: 'mono',
+        key: 'lineCount',
+      },
+      {
+        id: 'status',
+        header: 'Count Status',
+        kind: 'badge',
+        nowrap: true,
+        render: (c) => (
+          <span className={`badge ${STATUS_BADGE[c.status]}`}>
+            {STOCK_COUNT_STATUS_LABELS[c.status]}
+          </span>
+        ),
+      },
+      {
+        id: 'counted_by',
+        header: 'Counted By',
+        ellipsis: true,
+        render: (c) => c.createdByName ?? '—',
+        title: (c) => c.createdByName ?? '',
+      },
+      {
+        id: 'approved_by',
+        header: 'Approved By',
+        ellipsis: true,
+        render: (c) => c.approvedByName ?? '—',
+        title: (c) => c.approvedByName ?? '',
+      },
+      {
+        id: 'remarks',
+        header: 'Remarks',
+        align: 'left',
+        className: 'text3',
+        ellipsis: true,
+        render: (c) => c.remarks ?? '—',
+        title: (c) => c.remarks ?? '',
+      },
+    ],
+    [],
+  );
 
   return (
     <div>
@@ -86,67 +176,23 @@ function StockCountsListPage(): React.JSX.Element {
           ) : null
         }
       />
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body text3">
-            <Loader2 size={14} className="inline animate-spin" /> Loading…
-          </div>
-        ) : isError ? (
-          <div className="panel-body empty-state" style={{ color: 'var(--red2)' }}>
-            {error instanceof Error ? error.message : 'Could not load stock counts.'}
-          </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>Count No.</th>
-                  <th>Count Date</th>
-                  <th>Purpose</th>
-                  <th className="th-num">Items</th>
-                  <th>Count Status</th>
-                  <th>Counted By</th>
-                  <th>Approved By</th>
-                  <th>Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.items ?? []).map((c) => (
-                  <tr
-                    key={c.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => void navigate({ to: '/stock-counts/$id', params: { id: c.id } })}
-                  >
-                    <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
-                      <Link to="/stock-counts/$id" params={{ id: c.id }}>
-                        {c.code}
-                      </Link>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.countDate)}</td>
-                    <td>{STOCK_COUNT_PURPOSE_LABELS[c.purpose]}</td>
-                    <td className="td-num mono">{c.lineCount}</td>
-                    <td>
-                      <span className={`badge ${STATUS_BADGE[c.status]}`}>
-                        {STOCK_COUNT_STATUS_LABELS[c.status]}
-                      </span>
-                    </td>
-                    <td>{c.createdByName ?? '—'}</td>
-                    <td>{c.approvedByName ?? '—'}</td>
-                    <td className="text3">{c.remarks ?? '—'}</td>
-                  </tr>
-                ))}
-                {(data?.items ?? []).length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="empty-state">
-                      No stock counts yet.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={error instanceof Error ? error.message : 'Could not load stock counts.'}
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.stockCounts}
+            columns={columns}
+            rows={rows}
+            loading={isLoading}
+            emptyText={filtered ? 'No stock counts match.' : 'No stock counts yet.'}
+            onRowClick={(c) => void navigate({ to: '/stock-counts/$id', params: { id: c.id } })}
+          />
+        </Panel>
+      )}
       {data ? (
         <ListFooter
           total={data.total}

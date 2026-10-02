@@ -7,7 +7,7 @@ import { Link } from '@tanstack/react-router';
 import { ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { StatusBadge } from '@/ui/core';
+import { Badge, StatusBadge } from '@/ui/core';
 import { ProgressBar, type DataTableColumn } from '@/ui/data';
 
 /** A job is "done" when it has reached complete or closed — the Days Left
@@ -266,5 +266,104 @@ export function jobCardListColumns(
       title: () => 'Customer Dispatch Date (from the plan)',
       render: (jc) => (jc.customerDispatchDate ? fmtDate(jc.customerDispatchDate) : '—'),
     },
+    // ── Hidden by default (ADR-199) — these ride in the ▸ detail row and can
+    // be switched on from the Columns menu. The analysis asked for them as
+    // extra, off-by-default columns so the one-line sheet stays uncluttered.
+    {
+      id: 'priority',
+      header: 'Priority',
+      nowrap: true,
+      render: (jc) => {
+        const high = jc.priority === 'high';
+        return <Badge tone={high ? 'amber' : 'grey'}>{high ? 'High' : 'Normal'}</Badge>;
+      },
+    },
+    {
+      id: 'production_order_code',
+      header: 'Production Order No.',
+      nowrap: true,
+      render: (jc) =>
+        jc.productionOrderId && jc.productionOrderCode ? (
+          <Link
+            to="/production-orders/$id"
+            params={{ id: jc.productionOrderId }}
+            className="mono"
+            style={{ color: 'var(--blue)', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {jc.productionOrderCode}
+          </Link>
+        ) : (
+          <span className="text3">—</span>
+        ),
+    },
+    {
+      // Qty still owed on the card — order qty less what the last op has made.
+      id: 'pending',
+      header: 'Pending',
+      align: 'right',
+      nowrap: true,
+      render: (jc) => {
+        const pending = Math.max(0, jc.orderQty - jc.lastOpCompletedQty);
+        return (
+          <>
+            <span
+              className="mono fw-700"
+              style={{ color: pending > 0 ? 'var(--blue)' : 'var(--green)' }}
+            >
+              {pending}
+            </span>{' '}
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+              Nos
+            </span>
+          </>
+        );
+      },
+    },
+    {
+      // Operations finished over the total in the routing (e.g. 2/5).
+      id: 'ops',
+      header: 'Ops',
+      align: 'right',
+      className: 'mono',
+      nowrap: true,
+      render: (jc) => `${jc.doneOps}/${jc.totalOps}`,
+    },
+    {
+      // Operations with a live running session right now.
+      id: 'running',
+      header: 'Running',
+      align: 'right',
+      nowrap: true,
+      title: () => 'Operations running now',
+      render: (jc) =>
+        jc.runningCount > 0 ? (
+          <span className="mono fw-700" style={{ color: 'var(--green2)' }}>
+            ▶{jc.runningCount}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
+    },
+    {
+      id: 'remarks',
+      header: 'Remarks',
+      align: 'left',
+      ellipsis: true,
+      className: 'text2',
+      render: (jc) => jc.remarks?.trim() || '—',
+      title: (jc) => jc.remarks ?? '',
+    },
   ];
 }
+
+/** Columns off by default on the Job Cards sheet (ADR-199) — passed to the
+ *  DataTable's `defaultHidden`. They stay reachable in ▸ / the Columns menu. */
+export const JC_LIST_HIDDEN_COLUMNS = [
+  'priority',
+  'production_order_code',
+  'pending',
+  'ops',
+  'running',
+  'remarks',
+] as const;

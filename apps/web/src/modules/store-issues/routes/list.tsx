@@ -1,18 +1,23 @@
 // Item Issue Register (PL-II-1) — ADR-193 phase 3b: a slip has lines and is
 // issued against a Job Card, an Assembly SO or for General use. Click a row to
-// see its lines and Return leftovers or Reverse it.
+// see its lines and Return leftovers or Reverse it. On the shared FIT DataTable
+// (ADR-199, table standard 2026-10-01): one line per row, always fits the
+// screen, the ▸ reveals Remarks and (when reversed) who reversed it and why.
 
-import { ISSUE_AGAINST, ISSUE_AGAINST_LABELS } from '@innovic/shared';
+import { ISSUE_AGAINST } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
 import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useStoreIssuesList } from '../api';
+import { issueRegisterColumns } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
 
@@ -57,6 +62,7 @@ function StoreIssuesListPage(): React.JSX.Element {
       : null,
   );
   const [viewId, setViewId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Tier-driven, per department (Store). Was `role === admin || manager`, which
   // let any manager in any department post a stock issue and locked out the
   // L2 storekeeper whose job this is. This gate covers the Item Issues tab
@@ -73,7 +79,17 @@ function StoreIssuesListPage(): React.JSX.Element {
     offset: (page - 1) * PAGE_SIZE,
   });
 
+  const columns = useMemo(() => issueRegisterColumns(), []);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE));
+
+  const toggleExpand = useCallback((id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -151,97 +167,47 @@ function StoreIssuesListPage(): React.JSX.Element {
             }
           />
 
-          <div className="panel">
-            {isLoading ? (
-              <div className="panel-body">
-                <div className="text3" style={{ fontSize: 12 }}>
-                  <Loader2 size={14} className="inline animate-spin" /> Loading…
-                </div>
-              </div>
-            ) : isError ? (
-              <div className="panel-body">
-                <div className="empty-state" style={{ color: 'var(--red2)' }}>
-                  {error instanceof Error ? error.message : 'Could not load issues. Try again.'}
-                </div>
-              </div>
-            ) : data ? (
-              <div className="tbl-wrap">
-                <table className="innovic-table tbl-grid">
-                  <thead>
-                    <tr>
-                      <th>Issue No.</th>
-                      <th>Issue Date</th>
-                      <th>Issue Against</th>
-                      <th>Reference</th>
-                      <th>Items</th>
-                      <th>Issued To</th>
-                      <th>Purpose</th>
-                      <th>Issued By</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.items.map((iss) => (
-                      <tr
-                        key={iss.id}
-                        onClick={() => setViewId(iss.id)}
-                        style={{ cursor: 'pointer' }}
-                        title="Open — see lines, Return or Reverse"
-                      >
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <span className="td-code" style={{ color: 'var(--cyan)' }}>
-                            {iss.code}
-                          </span>
-                          {iss.reversedAt ? (
-                            <div
-                              style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}
-                              title={`Reversed ${fmtDate(iss.reversedAt.slice(0, 10))} — ${iss.reversalReason ?? ''}`}
-                            >
-                              Reversed
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {fmtDate(iss.issueDate)}
-                        </td>
-                        <td style={{ fontSize: 11 }}>{ISSUE_AGAINST_LABELS[iss.issueAgainst]}</td>
-                        <td
-                          className="mono"
-                          style={{ fontSize: 11, color: 'var(--purple)', whiteSpace: 'nowrap' }}
-                        >
-                          {iss.issueAgainst === 'job_card'
-                            ? (iss.jobCardCode ?? '—')
-                            : iss.issueAgainst === 'assembly_so'
-                              ? (iss.salesOrderCode ?? '—')
-                              : (iss.department ?? iss.legacyReference ?? '—')}
-                        </td>
-                        <td
-                          className="mono fw-700"
-                          style={{
-                            color: 'var(--text)',
-                            textDecoration: iss.reversedAt ? 'line-through' : undefined,
-                          }}
-                        >
-                          {iss.itemsSummary || '—'}
-                        </td>
-                        <td>{iss.issuedTo || '—'}</td>
-                        <td className="text3" style={{ fontSize: 11 }} title={iss.remarks ?? ''}>
-                          {iss.purpose || '—'}
-                        </td>
-                        <td>{iss.issuedByName || '—'}</td>
-                      </tr>
-                    ))}
-                    {data.items.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="empty-state">
-                          {search.trim() ? 'No issues match.' : 'No issues yet.'}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </div>
+          {isError ? (
+            <PageState
+              state="error"
+              message={error instanceof Error ? error.message : 'Could not load issues. Try again.'}
+            />
+          ) : (
+            <Panel bodyPadding="none">
+              <DataTable
+                tableKey={TABLE_KEYS.issueRegister}
+                columns={columns}
+                rows={data?.items ?? []}
+                rowKey={(iss) => iss.id}
+                loading={isLoading}
+                empty={search.trim() ? 'No issues match.' : 'No issues yet.'}
+                onRowClick={(iss) => setViewId(iss.id)}
+                // A reversed slip washes the whole row and strikes its items.
+                rowClassName={(iss) => (iss.reversedAt ? ROW_TINT.cancelled : undefined)}
+                // The fit table's ▸ is the row's one expand control: Remarks and,
+                // when reversed, who reversed it and why.
+                renderExpanded={(iss) =>
+                  expanded.has(iss.id) ? (
+                    <div
+                      className="text3"
+                      style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-6)' }}
+                    >
+                      <b>Remarks:</b> {iss.remarks ?? '—'}
+                      {iss.reversedAt ? (
+                        <div style={{ color: 'var(--red2)', marginTop: 'var(--sp-1)' }}>
+                          <b>Reversed:</b> {fmtDate(iss.reversedAt.slice(0, 10))}
+                          {iss.reversalReason ? ` — ${iss.reversalReason}` : ''}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null
+                }
+                onToggleExpanded={(iss) => toggleExpand(iss.id)}
+                rowActionsWidth="1%"
+                rowActions={(iss) => <RowActions onView={() => setViewId(iss.id)} />}
+              />
+            </Panel>
+          )}
 
           {data ? (
             <ListFooter

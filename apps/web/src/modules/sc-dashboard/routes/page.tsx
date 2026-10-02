@@ -1,8 +1,18 @@
 // Supply Chain Dashboard — mirror of legacy renderSCDashboard L16790.
 //
-// Summary strip (PO counts + value totals + GRN today/total) + vendor summary +
-// SO summary + complete PO summary (tax-included) + recent GRN + pending
-// PO lines. Read-only.
+// Summary strip (PO counts + value totals + GRN today/total) + pending PO
+// tracker + vendor summary + SO summary + complete PO summary (tax-included) +
+// recent GRN. Read-only.
+//
+// ADR-199 table standard (2026-10-01): the five hand-built <table>s are replaced
+// by the shared <DataTable>. The headline Pending PO Tracker carries
+// TABLE_KEYS.scDashboard (fit engine: columns size to the screen, the rightmost
+// drop into a ▸ detail, Columns / density toolbar, saved layout). The four
+// summary tables each have a genuinely different column shape, so — per the
+// ADR-199 rule — they render as KEYLESS classic sheets rather than inventing
+// more keys. Column builders live beside this file; see ../components. Nothing
+// about the data, the filters, the money-hidden behaviour or the KPI strip
+// changed.
 
 import type { ScDashboardResponse } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -10,33 +20,22 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
-import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatStrip } from '@/ui/data';
+import { DataTable, Panel, StatStrip } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader } from '@/ui/layout';
+import { FilterInput } from '../components/filter-input';
+import { pendingColumns } from '../components/pending-columns';
+import { poSummaryColumns, recentGrnColumns } from '../components/po-grn-columns';
+import { inr } from '../components/sc-format';
+import { soColumns, vendorColumns } from '../components/vendor-so-columns';
 
 export const scDashboardRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'sc-dashboard',
   component: ScDashboardPage,
 });
-
-function inr(n: number | null): string {
-  if (n == null) return '';
-  return Math.round(n).toLocaleString('en-IN');
-}
-
-// Legacy renders the PO status verbatim ('Open' / 'Partial' / 'Closed' /
-// 'QC Pending') with b-green / b-amber / b-blue (L16891, L16995). Our status
-// column is a lower-snake enum, so map it back to legacy's labels.
-function statusBadge(s: string): { cls: string; label: string } {
-  if (s === 'closed') return { cls: 'b-green', label: 'Closed' };
-  if (s === 'partial') return { cls: 'b-amber', label: 'Partly Received' };
-  if (s === 'qc_pending') return { cls: 'b-amber', label: 'QC Pending' };
-  if (s === 'cancelled') return { cls: 'b-grey', label: 'Cancelled' };
-  return { cls: 'b-blue', label: 'Open' };
-}
 
 function ScDashboardPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQuery<ScDashboardResponse>({
@@ -114,10 +113,10 @@ function ScDashboardPage(): React.JSX.Element {
     );
   }
 
-  // Money hidden for L1 Viewers: the API nulls every value on the dashboard, so
-  // the money KPI tiles and the value columns are dropped.
-  // Told by the server, not inferred from a null money field: a null also means
-  // "no value yet", so probing it hid money from users entitled to see it.
+  // Money hidden for L1 Viewers: the API nulls every value on the dashboard and
+  // tells us via priceVisible (never inferred from a null money field — a null
+  // also means "no value yet", so probing it hid money from users entitled to
+  // see it). The money KPI tiles and the value columns are dropped.
   const priceHidden = !data.priceVisible;
   const grandOrderTotal = data.poSummary.reduce((s, g) => s + (g.grandTotal ?? 0), 0);
 
@@ -206,8 +205,8 @@ function ScDashboardPage(): React.JSX.Element {
         />
       </ListHeader>
 
-      {/* ═══ PENDING PO TRACKER with Filters (legacy L17030 — first panel
-          under the tiles, ahead of the vendor/SO/purchase summaries) ═══ */}
+      {/* ═══ PENDING PO TRACKER with Filters (legacy L17030) — the headline
+          table, carrying the fit engine's saved layout ═══ */}
       <div className="panel" style={{ marginBottom: 16 }}>
         <div className="panel-hdr">
           <span className="panel-title">🔍 Pending PO Tracker</span>
@@ -271,468 +270,89 @@ function ScDashboardPage(): React.JSX.Element {
             )}
           </div>
         </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>PO No.</th>
-                <th>Ln</th>
-                <th>PO Date</th>
-                <th>Vendor</th>
-                <th>SO / JWSO No.</th>
-                <th>Item Code</th>
-                <th>Item Name</th>
-                <th className="th-num">Order Qty</th>
-                <th className="th-num" style={{ color: 'var(--green2)' }}>
-                  Received
-                </th>
-                <th className="th-num" style={{ color: 'var(--red2)' }}>
-                  Pending
-                </th>
-                {priceHidden ? null : (
-                  <>
-                    <th className="th-num">Rate</th>
-                    <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                      Pending Value
-                    </th>
-                  </>
-                )}
-                <th>PO Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPending.length === 0 ? (
-                <tr>
-                  <td colSpan={priceHidden ? 11 : 13} className="empty-state">
-                    {isFiltered ? 'No pending PO lines match.' : 'No pending PO lines.'}
-                  </td>
-                </tr>
-              ) : (
-                filteredPending.map((p) => {
-                  const sb = statusBadge(p.status);
-                  return (
-                    <tr key={`${p.poId}:${p.lineNo}`}>
-                      <td>
-                        <Link
-                          to="/purchase-orders/$id"
-                          params={{ id: p.poId }}
-                          className="td-code cyan"
-                          style={{ textDecoration: 'underline dotted' }}
-                        >
-                          {p.poNo}
-                        </Link>
-                      </td>
-                      <td className="mono" style={{ fontSize: 11 }}>
-                        {p.lineNo}
-                      </td>
-                      <td style={{ fontSize: 11 }}>{fmtDate(p.poDate)}</td>
-                      <td className="fw-700" style={{ fontSize: 12 }}>
-                        {p.vendorName ?? p.vendorCode ?? '—'}
-                      </td>
-                      <td className="text2" style={{ fontSize: 11 }}>
-                        {p.soCode ?? '—'}
-                      </td>
-                      <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
-                        {itemCodeWithRev(p.itemCode, p.itemRevision)}
-                      </td>
-                      <td style={{ fontSize: 12 }}>{p.itemName ?? '—'}</td>
-                      <td className="td-num mono fw-700">{p.qty}</td>
-                      <td
-                        className="td-num mono"
-                        style={{ color: 'var(--green2)', fontWeight: 700 }}
-                      >
-                        {p.receivedQty}
-                      </td>
-                      <td
-                        className="td-num mono fw-700"
-                        style={{ color: 'var(--red2)', fontSize: 14 }}
-                      >
-                        {p.pendingQty}
-                      </td>
-                      {priceHidden ? null : (
-                        <>
-                          <td className="td-num mono" style={{ fontSize: 11 }}>
-                            {p.rate ? `₹${p.rate.toFixed(2)}` : '—'}
-                          </td>
-                          <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
-                            {(p.pendingVal ?? 0) > 0 ? `₹${inr(p.pendingVal)}` : '—'}
-                          </td>
-                        </>
-                      )}
-                      <td>
-                        <span className={`badge ${sb.cls}`}>{sb.label}</span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          tableKey={TABLE_KEYS.scDashboard}
+          columns={pendingColumns(priceHidden)}
+          rows={filteredPending}
+          rowKey={(p) => `${p.poId}:${p.lineNo}`}
+          emptyText={isFiltered ? 'No pending PO lines match.' : 'No pending PO lines.'}
+        />
       </div>
 
-      {/* Vendor-wise Open PO (legacy L17071) */}
-      <Section
+      {/* Vendor-wise Open PO (legacy L17071) — keyless summary sheet */}
+      <Panel
         title="🏭 Vendor-wise Open PO Summary"
-        meta={
+        actions={
           <span className="mono" style={{ fontSize: 12, color: 'var(--amber2)' }}>
             {data.byVendor.length} vendors with open POs
           </span>
         }
+        bodyPadding="none"
       >
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              <th>Vendor Name</th>
-              <th>Vendor Code</th>
-              <th className="th-num">PO Lines</th>
-              <th className="th-num">Items</th>
-              <th className="th-num">Order Qty</th>
-              <th className="th-num" style={{ color: 'var(--green2)' }}>
-                Received
-              </th>
-              <th className="th-num" style={{ color: 'var(--red2)' }}>
-                Pending Qty
-              </th>
-              {priceHidden ? null : (
-                <>
-                  <th className="th-num">Order Value</th>
-                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                    Pending Value
-                  </th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {data.byVendor.length === 0 ? (
-              <tr>
-                <td colSpan={priceHidden ? 7 : 9} className="empty-state">
-                  No open POs
-                </td>
-              </tr>
-            ) : (
-              data.byVendor.map((v) => {
-                const pendQty = v.totalQty - v.receivedQty;
-                return (
-                  <tr key={v.vendorId ?? v.vendorCode ?? 'unknown'}>
-                    <td className="fw-700">{v.vendorName ?? v.vendorCode ?? '—'}</td>
-                    <td className="td-code" style={{ fontSize: 11 }}>
-                      {v.vendorCode ?? '—'}
-                    </td>
-                    <td className="td-num mono">{v.lines}</td>
-                    <td className="td-num" style={{ fontSize: 11 }}>
-                      {v.uniqueItems}
-                    </td>
-                    <td className="td-num mono fw-700">{v.totalQty}</td>
-                    <td className="td-num mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
-                      {v.receivedQty}
-                    </td>
-                    <td className="td-num mono" style={{ color: 'var(--red2)', fontWeight: 700 }}>
-                      {pendQty}
-                    </td>
-                    {priceHidden ? null : (
-                      <>
-                        <td className="td-num mono" style={{ fontSize: 11 }}>
-                          ₹{inr(v.totalVal)}
-                        </td>
-                        <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
-                          ₹{inr(v.pendingVal)}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </Section>
+        <DataTable
+          columns={vendorColumns(priceHidden)}
+          rows={data.byVendor}
+          rowKey={(v) => v.vendorId ?? v.vendorCode ?? 'unknown'}
+          emptyText="No open POs"
+        />
+      </Panel>
 
-      {/* SO / JW-wise Open PO (legacy L17083) */}
-      <Section
+      {/* SO / JW-wise Open PO (legacy L17083) — keyless summary sheet */}
+      <Panel
         title="📋 SO / JW-wise Open PO Summary"
-        meta={
+        actions={
           <span className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
             {data.bySo.length} orders with open POs
           </span>
         }
+        bodyPadding="none"
       >
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              <th>SO / JWSO No.</th>
-              <th className="th-num">PO Lines</th>
-              <th className="th-num">Vendors</th>
-              <th className="th-num">Order Qty</th>
-              <th className="th-num" style={{ color: 'var(--green2)' }}>
-                Received
-              </th>
-              <th className="th-num" style={{ color: 'var(--red2)' }}>
-                Pending Qty
-              </th>
-              {priceHidden ? null : (
-                <>
-                  <th className="th-num">Order Value</th>
-                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                    Pending Value
-                  </th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {data.bySo.length === 0 ? (
-              <tr>
-                <td colSpan={priceHidden ? 6 : 8} className="empty-state">
-                  No open POs
-                </td>
-              </tr>
-            ) : (
-              data.bySo.map((s) => {
-                const pendQty = s.totalQty - s.receivedQty;
-                return (
-                  <tr key={s.soRefId ?? '_unlinked_'}>
-                    <td>{s.soCode ?? <span className="text3">No SO / JWSO linked</span>}</td>
-                    <td className="td-num mono">{s.lines}</td>
-                    <td className="td-num" style={{ fontSize: 11 }}>
-                      {s.uniqueVendors}
-                    </td>
-                    <td className="td-num mono fw-700">{s.totalQty}</td>
-                    <td className="td-num mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
-                      {s.receivedQty}
-                    </td>
-                    <td className="td-num mono" style={{ color: 'var(--red2)', fontWeight: 700 }}>
-                      {pendQty}
-                    </td>
-                    {priceHidden ? null : (
-                      <>
-                        <td className="td-num mono" style={{ fontSize: 11 }}>
-                          ₹{inr(s.totalVal)}
-                        </td>
-                        <td className="td-num mono fw-700" style={{ color: 'var(--amber2)' }}>
-                          ₹{inr(s.pendingVal)}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </Section>
+        <DataTable
+          columns={soColumns(priceHidden)}
+          rows={data.bySo}
+          rowKey={(s) => s.soRefId ?? '_unlinked_'}
+          emptyText="No open POs"
+        />
+      </Panel>
 
-      {/* Complete Purchase Summary (legacy L17095) */}
-      <Section
+      {/* Complete Purchase Summary (legacy L17095) — keyless summary sheet */}
+      <Panel
         title="📦 Complete Purchase Summary"
-        meta={
+        actions={
           <span className="mono" style={{ fontSize: 12, color: 'var(--green2)' }}>
             {data.poSummary.length} POs
             {priceHidden ? '' : ` · Grand Total: ₹${inr(grandOrderTotal)}`}
           </span>
         }
+        bodyPadding="none"
       >
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              <th>PO No.</th>
-              <th>PO Date</th>
-              <th>Vendor</th>
-              <th>SO / JWSO No.</th>
-              <th className="th-num">Lines</th>
-              <th className="th-num">Order Qty</th>
-              <th className="th-num" style={{ color: 'var(--green2)' }}>
-                Received
-              </th>
-              <th className="th-num" style={{ color: 'var(--red2)' }}>
-                Pending
-              </th>
-              {priceHidden ? null : (
-                <>
-                  <th className="th-num">Subtotal</th>
-                  <th className="th-num" style={{ color: 'var(--amber2)' }}>
-                    Tax
-                  </th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    Grand Total
-                  </th>
-                </>
-              )}
-              <th className="th-num">GRNs</th>
-              <th>PO Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.poSummary.length === 0 ? (
-              <tr>
-                <td colSpan={priceHidden ? 10 : 13} className="empty-state">No POs yet.</td>
-              </tr>
-            ) : (
-              data.poSummary.map((g) => {
-                const pendQty = g.totalQty - g.receivedQty;
-                const sb = statusBadge(g.status);
-                return (
-                  <tr key={g.poId}>
-                    <td>
-                      <Link
-                        to="/purchase-orders/$id"
-                        params={{ id: g.poId }}
-                        className="td-code cyan"
-                        style={{ textDecoration: 'none' }}
-                      >
-                        {g.poNo}
-                      </Link>
-                    </td>
-                    <td style={{ fontSize: 11 }}>{fmtDate(g.poDate)}</td>
-                    <td className="fw-700">{g.vendorName ?? g.vendorCode ?? '—'}</td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {g.soCode ?? '—'}
-                    </td>
-                    <td className="td-num mono">{g.lines}</td>
-                    <td className="td-num mono fw-700">{g.totalQty}</td>
-                    <td className="td-num mono" style={{ color: 'var(--green2)', fontWeight: 700 }}>
-                      {g.receivedQty}
-                    </td>
-                    <td
-                      className="td-num mono"
-                      style={{
-                        color: pendQty > 0 ? 'var(--red)' : 'var(--green)',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {pendQty}
-                    </td>
-                    {priceHidden ? null : (
-                      <>
-                        <td className="td-num mono" style={{ fontSize: 11 }}>
-                          ₹{inr(g.totalVal)}
-                        </td>
-                        <td
-                          className="td-num mono"
-                          style={{ fontSize: 11, color: 'var(--amber2)' }}
-                        >
-                          ₹{inr(g.taxAmount)}
-                        </td>
-                        <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
-                          ₹{inr(g.grandTotal)}
-                        </td>
-                      </>
-                    )}
-                    <td className="td-num">{g.grnCount}</td>
-                    <td>
-                      <span className={`badge ${sb.cls}`}>{sb.label}</span>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </Section>
+        <DataTable
+          columns={poSummaryColumns(priceHidden)}
+          rows={data.poSummary}
+          rowKey={(g) => g.poId}
+          emptyText="No POs yet."
+        />
+      </Panel>
 
       {/* Recent GRN Activity (legacy L17107). Legacy's Item / Accepted /
-          Rejected columns are GRN-line fields that this payload does not
-          carry — reported, not fabricated. */}
-      <Section
+          Rejected columns are GRN-line fields this payload does not carry —
+          reported, not fabricated. */}
+      <Panel
         title="📥 Recent GRN Activity"
-        meta={
+        actions={
           <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
             View All →
           </Link>
         }
+        bodyPadding="none"
       >
-        <table className="innovic-table tbl-grid">
-          <thead>
-            <tr>
-              <th>GRN No.</th>
-              <th>GRN Date</th>
-              <th>PO No.</th>
-              <th>Vendor</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.recentGrn.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="empty-state">No GRNs yet.</td>
-              </tr>
-            ) : (
-              data.recentGrn.map((g) => (
-                <tr key={g.grnNo}>
-                  <td className="td-code cyan">{g.grnNo}</td>
-                  <td style={{ fontSize: 11 }}>{fmtDate(g.grnDate)}</td>
-                  <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
-                    {g.poNo ?? 'Manual'}
-                  </td>
-                  <td style={{ fontSize: 11 }}>{g.vendorName ?? g.vendorCode ?? '—'}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Section>
-    </div>
-  );
-}
-
-// Legacy pairs every panel-title on this page with a right-hand meta note or
-// button in the same .panel-hdr (L17074, L17086, L17098, L17110). There is no
-// .panel-meta class — legacy inline-styles a .mono span.
-function Section({
-  title,
-  meta,
-  children,
-}: {
-  title: string;
-  meta?: React.ReactNode;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className="panel" style={{ marginBottom: 16 }}>
-      <div className="panel-hdr">
-        <span className="panel-title">{title}</span>
-        {meta}
-      </div>
-      <div className="tbl-wrap">{children}</div>
-    </div>
-  );
-}
-
-function FilterInput({
-  label,
-  listId,
-  value,
-  onChange,
-  options,
-  width,
-}: {
-  label: string;
-  listId: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-  width: number;
-}): React.JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <label
-        style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, whiteSpace: 'nowrap' }}
-      >
-        {label}:
-      </label>
-      <datalist id={listId}>
-        {options.map((o) => (
-          <option key={o} value={o} />
-        ))}
-      </datalist>
-      <input
-        list={listId}
-        className="innovic-input"
-        value={value}
-        placeholder="🔍 All"
-        onChange={(e) => onChange(e.target.value)}
-        style={{ fontSize: 12, padding: '4px 8px', width }}
-      />
+        <DataTable
+          columns={recentGrnColumns()}
+          rows={data.recentGrn}
+          rowKey={(g) => g.grnNo}
+          emptyText="No GRNs yet."
+        />
+      </Panel>
     </div>
   );
 }

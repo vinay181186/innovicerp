@@ -4,6 +4,7 @@
 
 import type { ListMaterialGradesQuery } from '@innovic/shared';
 import { useMemo } from 'react';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import {
   useBulkCreateMaterialGrades,
   useCreateMaterialGrade,
@@ -48,6 +49,7 @@ export function GradeTab({
   return (
     <MaterialMasterPanel
       noun="Grade"
+      tableKey={TABLE_KEYS.rawMaterialGrade}
       rows={list.data?.grades ?? []}
       total={list.data?.total ?? 0}
       isLoading={list.isLoading}

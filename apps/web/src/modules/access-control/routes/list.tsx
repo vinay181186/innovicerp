@@ -1,7 +1,8 @@
 // Access Control matrix list — admin-only.
 //
 // Mirror of legacy `renderAccessControl` (HTML L13861): one row per user
-// with Tiers + Departments count + Forms count + Configure button.
+// with Tiers + Departments count + Forms count + Configure action, now on the
+// shared FIT table (ADR-199: <DataTable tableKey=…>) like every other list.
 // Configure → modal (ConfigureAccessModal) → PUT /access-control/users/:id.
 //
 // 0100 added the "Tiers by department" column — the row's headline. The
@@ -17,19 +18,29 @@
 // `?configure=<userId>` opens that user's box straight away, so creating a
 // user in User Management lands here mid-flow instead of asking the admin to
 // find the row again.
+//
+// Columns, the stale-enforcement warning (▸ detail) and the ⋯ menu live in
+// components/access-list-columns.tsx. The tier logic is unchanged.
 
-import { ACCESS_DEPTS, type UserAccessListItem } from '@innovic/shared';
+import type { UserAccessListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Lock } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Lock } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RowMenu } from '@/ui/data';
+import { DataTable } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader } from '@/ui/layout';
 import { useUserAccessList } from '../api';
 import { ConfigureAccessModal } from '../components/configure-modal';
+import {
+  accessListColumns,
+  accessRowMenu,
+  accessRowTint,
+  deptLabel,
+} from '../components/access-list-columns';
 import { roleLabel } from '@/lib/role-label';
 
 const accessControlSearchSchema = z.object({
@@ -43,12 +54,6 @@ export const accessControlListRoute = createRoute({
   component: AccessControlListPage,
 });
 
-function deptLabel(key: string | null): { label: string; color: string } | null {
-  if (!key) return null;
-  const d = ACCESS_DEPTS.find((x) => x.key === key);
-  return d ? { label: d.label, color: d.color } : null;
-}
-
 function AccessControlListPage(): React.JSX.Element {
   const { data: me } = useSession();
   const navigate = accessControlListRoute.useNavigate();
@@ -57,6 +62,8 @@ function AccessControlListPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useUserAccessList();
   const [editing, setEditing] = useState<UserAccessListItem | null>(null);
   const [term, setTerm] = useState('');
+
+  const columns = useMemo(() => accessListColumns(), []);
 
   // Arriving from "create user" with ?configure=<id>: open that row's box as
   // soon as the list resolves, so the two screens read as one action. The
@@ -87,7 +94,7 @@ function AccessControlListPage(): React.JSX.Element {
   }
 
   // Client-side search over the whole list (it loads in one fetch): the
-  // columns on screen — user name / email, department, tier summary.
+  // columns on screen — user name / email, department, tier summary, role.
   const rows = (data?.items ?? []).filter((u) =>
     matchesSearchTerm(
       [u.userName, u.userEmail, deptLabel(u.mainDept)?.label, u.tierSummary, roleLabel(u.role)],
@@ -108,50 +115,29 @@ function AccessControlListPage(): React.JSX.Element {
       />
 
       <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Home Dept</th>
-                <th>Tiers by Department</th>
-                <th>Departments</th>
-                <th>Extras</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={6} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={6} className="empty-state" style={{ color: 'var(--red2)' }}>
-                    {error instanceof Error
-                      ? error.message
-                      : 'Could not load access settings. Try again.'}
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="empty-state">
-                    {term.trim()
-                      ? 'No users match.'
-                      : 'No users yet. Create users in User Management first.'}
-                  </td>
-                </tr>
-              ) : (
-                rows.map((u, i) => (
-                  <UserAccessRow key={u.userId} u={u} index={i} onConfigure={() => setEditing(u)} />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          tableKey={TABLE_KEYS.accessControlList}
+          columns={columns}
+          rows={rows}
+          loading={isLoading}
+          rowKey={(u) => u.userId}
+          defaultHidden={['enforcement_warning']}
+          rowClassName={(u) => accessRowTint(u)}
+          rowMenu={(u) => accessRowMenu(() => setEditing(u))}
+          empty={
+            isError ? (
+              <span style={{ color: 'var(--red2)' }}>
+                {error instanceof Error
+                  ? error.message
+                  : 'Could not load access settings. Try again.'}
+              </span>
+            ) : term.trim() ? (
+              'No users match.'
+            ) : (
+              'No users yet. Create users in User Management first.'
+            )
+          }
+        />
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
@@ -166,86 +152,5 @@ function AccessControlListPage(): React.JSX.Element {
         />
       ) : null}
     </div>
-  );
-}
-
-function UserAccessRow({
-  u,
-  index,
-  onConfigure,
-}: {
-  u: UserAccessListItem;
-  index: number;
-  onConfigure: () => void;
-}): React.JSX.Element {
-  const dept = deptLabel(u.mainDept);
-  // The stored role only catches up when someone presses Save Access. Until
-  // then the row can show departments while the server still enforces an older
-  // word — invisible unless we say so. Admins bypass the matrix entirely, so
-  // the mismatch is meaningless for them.
-  const stale = u.role !== 'admin' && u.derivedRole !== '' && u.role !== u.derivedRole;
-  return (
-    <tr style={{ background: index % 2 ? 'var(--bg3)' : 'var(--bg2)' }}>
-      <td className="fw-700">{u.userName ?? u.userEmail}</td>
-      <td>
-        {dept ? (
-          <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>{dept.label}</span>
-        ) : (
-          <span className="text3" style={{ fontSize: 11 }}>
-            —
-          </span>
-        )}
-      </td>
-      <td style={{ fontSize: 11 }}>
-        {u.fullAccess ? (
-          <span style={{ color: 'var(--green2)', fontWeight: 700 }}>
-            L6 Super Admin — everything
-          </span>
-        ) : u.auditor ? (
-          <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
-            L7 Auditor — reads everything, writes nothing
-          </span>
-        ) : u.tierSummary ? (
-          <>
-            {u.tierSummary}
-            {stale ? (
-              <div style={{ color: 'var(--amber2)', fontSize: 11, marginTop: 2 }}>
-                ⚠ still enforced as <b>{roleLabel(u.role)}</b> — open Configure and Save to apply
-              </div>
-            ) : null}
-          </>
-        ) : u.role === 'admin' ? (
-          <span style={{ color: 'var(--green2)', fontWeight: 700 }}>Admin — full access</span>
-        ) : (
-          <span style={{ color: 'var(--red2)', fontWeight: 600 }}>
-            Not configured — this person can see nothing. Click Configure.
-          </span>
-        )}
-      </td>
-      <td style={{ whiteSpace: 'nowrap' }}>
-        {u.fullAccess || u.auditor ? <>✅ All</> : `${u.deptCount}/${u.totalDepts}`}
-      </td>
-      <td>
-        {u.fullAccess ? <>✅ All</> : `${u.formCount}/${u.totalForms}`}
-        {/* The drawing-download tick is a whole-account switch, not one of the
-            form extras counted above, so it would otherwise be invisible from
-            the list — and "who can take our drawings home" is exactly the
-            question this screen gets opened to answer. L6 has it implicitly. */}
-        {u.fullAccess || u.drawingDownload ? (
-          <div
-            className="badge b-cyan"
-            style={{ fontSize: 11, marginTop: 3, display: 'inline-block' }}
-            title="Can download drawing files"
-          >
-            📐 Drawings
-          </div>
-        ) : null}
-      </td>
-      <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
-        <RowMenu
-          items={[{ key: 'configure', label: 'Configure', icon: 'lock', onSelect: onConfigure }]}
-        />
-      </td>
-    </tr>
   );
 }

@@ -2,31 +2,30 @@
 // Inventory (formerly the standalone /store-transactions screen). Auto-recorded
 // stock movements from GRN / Issues / Dispatch / OSP DC. Uses local component
 // state for its filters (the standalone route drove them off the URL).
+//
+// ADR-199 (table standard 2026-10-01): renders on the shared FIT table
+// (<DataTable tableKey={TABLE_KEYS.stockLedger}>). The visible page of rows is
+// already loaded, so columns sort in memory via useClientSort (no server
+// round-trip), exactly as the old client-side TanStack sort did. The public
+// signature is unchanged — this component still takes NO props, so both call
+// sites (store-inventory, party-stock-ledger) keep working untouched.
 
 import {
   type ListStoreTransactionsQuery,
   STORE_TXN_SOURCE_TYPES,
   STORE_TXN_TYPES,
-  type StoreTransactionListItem,
   type StoreTxnSourceType,
   type StoreTxnType,
 } from '@innovic/shared';
-import {
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { fmtDate } from '@/lib/date';
-import { StatStrip } from '@/ui/data';
-import { ListFooter, ListHeader } from '@/ui/layout';
+
+import { StatStrip, DataTable, Panel, useClientSort } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+
 import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
-import { TxnTypeBadge } from './txn-type-badge';
+import { stockLedgerColumns } from './stock-ledger-columns';
 
 const PAGE_SIZE = 50;
 
@@ -62,112 +61,14 @@ export function StockLedger(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useStoreTransactionsList(query);
 
-  const columns = useMemo<ColumnDef<StoreTransactionListItem>[]>(
-    () => [
-      {
-        header: 'Date',
-        accessorKey: 'txnDate',
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-            {fmtDate(row.original.txnDate)}
-          </span>
-        ),
-      },
-      {
-        header: 'Item Code',
-        id: 'item',
-        accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
-        cell: ({ row }) => (
-          <span
-            className="mono fw-700"
-            style={{ color: 'var(--text)', fontSize: 12, whiteSpace: 'nowrap' }}
-          >
-            {row.original.itemCode ?? row.original.itemCodeText ?? ''}
-          </span>
-        ),
-      },
-      {
-        header: 'Item Name',
-        accessorKey: 'itemName',
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName ?? ''}</span>,
-      },
-      {
-        header: 'Type',
-        accessorKey: 'txnType',
-        cell: ({ row }) => <TxnTypeBadge type={row.original.txnType} />,
-      },
-      {
-        header: 'Qty',
-        accessorKey: 'qty',
-        meta: { tdClass: 'td-num', thClass: 'th-num' },
-        cell: ({ row }) => {
-          const t = row.original.txnType;
-          return (
-            <span
-              className="mono fw-700"
-              style={
-                t === 'in'
-                  ? { color: 'var(--green2)' }
-                  : t === 'out'
-                    ? { color: 'var(--red2)' }
-                    : undefined
-              }
-            >
-              {t === 'in' ? '+' : t === 'out' ? '-' : ''}
-              {row.original.qty}
-            </span>
-          );
-        },
-      },
-      {
-        header: 'Source',
-        accessorKey: 'sourceType',
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>
-            {STORE_TXN_SOURCE_LABELS[row.original.sourceType]}
-          </span>
-        ),
-      },
-      {
-        header: 'Ref No.',
-        accessorKey: 'sourceRef',
-        meta: { tdClass: 'mono' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{row.original.sourceRef}</span>
-        ),
-      },
-      {
-        header: 'Remarks',
-        accessorKey: 'remarks',
-        cell: ({ row }) => (
-          <span className="text3" title={row.original.remarks ?? ''} style={{ fontSize: 11 }}>
-            {row.original.remarks ?? ''}
-          </span>
-        ),
-      },
-      {
-        header: 'Stock Before → After',
-        id: 'stockAfter',
-        accessorFn: (r) => r.stockAfter,
-        meta: { tdClass: 'mono td-num', thClass: 'th-num' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-            {row.original.stockBefore} → <b>{row.original.stockAfter}</b>
-          </span>
-        ),
-      },
-    ],
-    [],
-  );
+  const columns = useMemo(() => stockLedgerColumns(), []);
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
 
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
+  // Client-side sort over the loaded page — same behaviour the old TanStack
+  // getSortedRowModel gave, without a server round-trip. The Source column sorts
+  // by its displayed label, not the raw enum key.
+  const { rows, sortBy, sortDir, onSort } = useClientSort(items, {
+    accessors: { sourceType: (r) => STORE_TXN_SOURCE_LABELS[r.sourceType] },
   });
 
   const total = data?.total ?? 0;
@@ -282,90 +183,32 @@ export function StockLedger(): React.JSX.Element {
         ) : null}
       </ListHeader>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table tbl-grid">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => {
-                    const canSort = header.column.getCanSort();
-                    const sorted = header.column.getIsSorted();
-                    return (
-                      <th
-                        key={header.id}
-                        onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                        style={canSort ? { cursor: 'pointer', userSelect: 'none' } : undefined}
-                        aria-sort={
-                          sorted === 'asc'
-                            ? 'ascending'
-                            : sorted === 'desc'
-                              ? 'descending'
-                              : undefined
-                        }
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {canSort ? (
-                            <span
-                              aria-hidden
-                              style={{
-                                fontSize: 11,
-                                opacity: sorted ? 1 : 0.3,
-                                color: sorted ? 'var(--cyan)' : 'inherit',
-                              }}
-                            >
-                              {sorted === 'desc' ? '▼' : sorted === 'asc' ? '▲' : '↕'}
-                            </span>
-                          ) : null}
-                        </span>
-                      </th>
-                    );
-                  })}
-                </tr>
-              ))}
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading stock movements…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <span style={{ color: 'var(--red2)' }}>
-                      {error instanceof Error
-                        ? error.message
-                        : 'Could not load stock movements. Try again.'}
-                    </span>
-                  </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    {search || txnType || sourceType
-                      ? 'No stock movements match.'
-                      : 'No stock movements yet.'}
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error ? error.message : 'Could not load stock movements. Try again.'
+          }
+        />
+      ) : (
+        <Panel bodyPadding="none">
+          <DataTable
+            tableKey={TABLE_KEYS.stockLedger}
+            columns={columns}
+            defaultHidden={['remarks']}
+            rows={rows}
+            loading={isLoading}
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSort={onSort}
+            empty={
+              search || txnType || sourceType
+                ? 'No stock movements match.'
+                : 'No stock movements yet.'
+            }
+          />
+        </Panel>
+      )}
 
       <ListFooter
         total={total}

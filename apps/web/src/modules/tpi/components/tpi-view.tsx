@@ -232,6 +232,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               tableKey={TABLE_KEYS.tpiCompleted}
               columns={completedColumns}
               rows={completed}
+              sortFilter={false}
               rowKey={(l) => l.logId}
               emptyText="No TPI records yet."
               defaultPinned={TPI_COMPLETED_DEFAULT_PINNED}
