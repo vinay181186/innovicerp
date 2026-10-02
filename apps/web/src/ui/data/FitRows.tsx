@@ -26,6 +26,7 @@ export interface FitRowsProps<T> {
   onRowClick?: ((row: T, index: number) => void) | undefined;
   isRowClickable?: ((row: T, index: number) => boolean) | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
+  groupRow?: ((row: T, index: number, prev: T | undefined) => ReactNode) | undefined;
   renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
   onToggleExpanded?: ((row: T, index: number) => void) | undefined;
   rowActions?: ((row: T, index: number) => ReactNode) | undefined;
@@ -65,8 +66,14 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
         const isOpen = engineOpen || callerOpen;
         const clickable = !!p.onRowClick && (p.isRowClickable?.(row, ri) ?? true);
         const selected = p.selectable && p.selection.isSelected(rk);
+        const group = p.groupRow?.(row, ri, ri > 0 ? p.rows[ri - 1] : undefined);
         return (
           <Fragment key={rk}>
+            {group !== null && group !== undefined && group !== false ? (
+              <tr className="dt-group-row">
+                <td colSpan={p.nCols}>{group}</td>
+              </tr>
+            ) : null}
             <tr
               className={cx(
                 p.rowClassName?.(row, ri),

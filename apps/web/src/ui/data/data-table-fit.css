@@ -231,3 +231,18 @@
   align-items: center;
   gap: var(--sp-2);
 }
+
+/* ADR-203 — a group heading row inside ONE table (DataTable `groupRow`):
+   "VMC-1 · 9 jobs · 12.5 h". Full width, left aligned, blue wash; it is not
+   a data row, so it takes no hover wash. Shared by the fit and classic paths
+   (this sheet is loaded by both through DataTable). */
+.innovic-table tr.dt-group-row > td {
+  background: var(--blue3);
+  color: var(--blue2);
+  font-weight: 800;
+  text-align: left;
+  border-top: 2px solid var(--blue3);
+}
+.innovic-table tr.dt-group-row:hover > td {
+  background: var(--blue3);
+}

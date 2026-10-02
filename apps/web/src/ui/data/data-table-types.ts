@@ -159,6 +159,15 @@ export interface DataTableProps<T> {
   isRowClickable?: ((row: T, index: number) => boolean) | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
   /**
+   * A group heading drawn as a full-width row BEFORE this row (ADR-203) —
+   * e.g. "VMC-1 · 9 jobs · 12.5 h" above that machine's jobs, so a page shows
+   * ONE table (one frozen header) instead of a table per group. Return null
+   * for a row that continues the group above. `prev` is the row drawn just
+   * before (undefined for the first row of the page). The heading row is not
+   * a data row: no click, no tick-box, no ▸, no ⋯.
+   */
+  groupRow?: ((row: T, index: number, prev: T | undefined) => ReactNode) | undefined;
+  /**
    * Content revealed IN PLACE under a row — a BOM's part list, a route card's
    * operation sequence. Return null/undefined for a row that is collapsed; the
    * caller owns the open/closed set and the ▸ chevron that toggles it.
