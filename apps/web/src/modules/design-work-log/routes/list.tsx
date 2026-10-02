@@ -17,6 +17,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RowMenu } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ListHeader } from '@/ui/layout';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
@@ -448,16 +449,18 @@ function EntryTab(): React.JSX.Element {
                     {l.hours}h
                   </div>
                   {canDelete ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ fontSize: 11 }}
-                      disabled={deleteMut.isPending}
-                      title="Delete entry"
-                      onClick={() => setAskDelete(l.id)}
-                    >
-                      🗑
-                    </button>
+                    <RowMenu
+                      items={[
+                        {
+                          key: 'delete',
+                          label: 'Delete',
+                          icon: 'trash-2',
+                          group: 'danger',
+                          disabledReason: deleteMut.isPending ? 'Deleting…' : undefined,
+                          onSelect: () => setAskDelete(l.id),
+                        },
+                      ]}
+                    />
                   ) : null}
                 </div>
               );
