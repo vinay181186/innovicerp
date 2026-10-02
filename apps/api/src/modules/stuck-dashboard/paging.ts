@@ -52,8 +52,8 @@ export async function pageStuckItems(
   let search: SQL = sql``;
   if (term !== '') {
     const pat = `%${likeEscape(term)}%`;
-    search = sql`AND (t.so_no ILIKE ${pat} ESCAPE '\' OR t.customer ILIKE ${pat} ESCAPE '\'
-      OR t.stage ILIKE ${pat} ESCAPE '\' OR t.detail ILIKE ${pat} ESCAPE '\')`;
+    search = sql`AND (t.so_no ILIKE ${pat} ESCAPE '\\' OR t.customer ILIKE ${pat} ESCAPE '\\'
+      OR t.stage ILIKE ${pat} ESCAPE '\\' OR t.detail ILIKE ${pat} ESCAPE '\\')`;
   }
   const filtered = sql`SELECT t.* FROM jsonb_to_recordset(${json}::jsonb) AS ${REC}
     WHERE TRUE ${search} ${sfWhere(STUCK_SF_COLUMNS, sf)}`;

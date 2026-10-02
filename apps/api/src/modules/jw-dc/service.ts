@@ -52,7 +52,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
-import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
@@ -142,7 +142,7 @@ export async function listJwDcOutward(
 ): Promise<ListJwDcOutwardResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
           jdo.code ILIKE ${term}
@@ -997,7 +997,7 @@ export async function listJwDcInward(
 ): Promise<ListJwDcInwardResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
+    const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
           jdi.code ILIKE ${term}

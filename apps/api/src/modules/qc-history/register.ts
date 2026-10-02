@@ -106,6 +106,9 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
     }
 
     let keys: SQL;
+    // Applied on the SAME select as LIMIT / OFFSET — an ORDER BY inside a
+    // subquery is not guaranteed to survive, so pages could skip / repeat.
+    let order: SQL;
     if (input.view === 'pending') {
       const incPart = sql`
         SELECT 'inc'::text AS kind, l.id AS id, 0 AS k0, h.grn_date AS d_inc, h.code AS c_inc,
@@ -119,7 +122,7 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
         ${opStageWhere(input.stage, PEND_IS_LAST)} ${mineWhere}
         ${input.jcOpId ? sql`AND vos.jc_op_id = ${input.jcOpId}::uuid` : sql``}`;
       keys = unionOf(incOn ? incPart : null, opOn ? opPart : null);
-      keys = sql`${keys} ORDER BY k0, d_inc ASC, c_inc ASC, d_op DESC NULLS LAST, c_op, s_op, id`;
+      order = sql`k0, d_inc ASC, c_inc ASC, d_op DESC NULLS LAST, c_op, s_op, id`;
     } else {
       const incPart = sql`
         SELECT 'inc'::text AS kind, l.id AS id, ${INC_DONE_AT} AS at
@@ -129,12 +132,12 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
         ${logsFrom(companyId)} ${opSearchWhere(input.search)}
         ${opStageWhere(input.stage, LOG_IS_LAST)}`;
       keys = unionOf(incOn ? incPart : null, opOn ? opPart : null);
-      keys = sql`${keys} ORDER BY at DESC, kind, id`;
+      order = sql`at DESC, kind, id`;
     }
 
     const page = rows(
       await tx.execute(
-        sql`SELECT kind, id FROM (${keys}) k LIMIT ${input.limit} OFFSET ${input.offset}`,
+        sql`SELECT kind, id FROM (${keys}) k ORDER BY ${order} LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
     );
     const cnt = rows(await tx.execute(sql`SELECT COUNT(*)::int AS n FROM (${keys}) k`));

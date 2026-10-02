@@ -89,6 +89,13 @@ export async function moveQueueOp(
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
+    // Two people moving rows on the same machine at once: the second waits
+    // here until the first has written, then reads the new order.
+    await tx.execute(sql`
+      SELECT 1 FROM public.machines
+      WHERE id = ${machineId}::uuid AND company_id = ${companyId}::uuid
+      FOR UPDATE
+    `);
     const [machine] = await loadMachineQueues(tx, companyId, machineId);
     if (!machine) throw new NotFoundError(`Machine ${machineId} not found`);
     const ids = machine.rows.map((r) => r.jcOpId);
@@ -100,17 +107,17 @@ export async function moveQueueOp(
     if (swap < 0 || swap >= ids.length) return { ok: true };
     ids[idx] = ids[swap]!;
     ids[swap] = input.jcOpId;
-    for (let i = 0; i < ids.length; i++) {
-      await tx.execute(sql`
-        UPDATE public.jc_ops
-        SET queue_position = ${i + 1},
-            updated_at = now(),
-            updated_by = ${userId}::uuid
-        WHERE id = ${ids[i]!}::uuid
-          AND company_id = ${companyId}::uuid
-          AND queue_position IS DISTINCT FROM ${i + 1}
-      `);
-    }
+    // One statement renumbers the machine's queue (1..N in the new order).
+    await tx.execute(sql`
+      UPDATE public.jc_ops o
+      SET queue_position = q.pos,
+          updated_at = now(),
+          updated_by = ${userId}::uuid
+      FROM unnest(${`{${ids.join(',')}}`}::uuid[]) WITH ORDINALITY AS q(id, pos)
+      WHERE o.id = q.id
+        AND o.company_id = ${companyId}::uuid
+        AND o.queue_position IS DISTINCT FROM q.pos
+    `);
     return { ok: true };
   });
 }
