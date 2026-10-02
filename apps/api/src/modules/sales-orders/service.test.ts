@@ -438,6 +438,8 @@ describe('sales-orders service', () => {
           },
           // The "Drop Me" line above is omitted — should be soft-deleted
         ],
+        // Removing a line needs the version the edit started from.
+        expectedUpdatedAt: created.updatedAt,
       },
       admin,
     );

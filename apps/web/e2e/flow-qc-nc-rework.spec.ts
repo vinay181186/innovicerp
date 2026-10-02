@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { clickRowMenuItem } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 // QC → NC → Rework → Re-QC → Closure, exactly the worked example in §9 of
 // Innovic_ERP_QC_NC_Handling_Procedure_R2-1.pdf, driven through the deployed
@@ -172,7 +172,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.waitForTimeout(1300);
   await page.getByText(docs['SO']!, { exact: true }).first().click();
   await page.waitForTimeout(1800);
-  await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
+  await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
   await page.waitForTimeout(1300);
   // The create-plan box suggests (remaining − finished stock). The item has
   // stock from earlier runs, so the suggestion is less than the order; the

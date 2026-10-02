@@ -1,4 +1,5 @@
 import { test, type Page } from '@playwright/test';
+import { clickRowMenuItem } from './row-menu';
 
 function log(pass: boolean, name: string, detail = ''): void {
   // eslint-disable-next-line no-console
@@ -13,7 +14,7 @@ test('T20/22 create PO from PR blank → IN-PO', async ({ page }: { page: Page }
   test.setTimeout(150_000);
   await page.goto('/purchase-requests?search=IN-PR-00001', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByText('Create PO', { exact: false }).first().click();
+  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: 'IN-PR-00001' }).first(), /^Create PO/);
   await page.waitForTimeout(3000);
   // Clear the auto-filled PO number → exercise the blank→auto path (T20/22).
   const poNo = page.locator('input[value^="IN-PO-"], input[value^="IN-JWPO-"]').first();

@@ -387,6 +387,8 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
             jcCode,
             opSeq: op.opSeq,
             operation: op.operation,
+            jcOpId: op.id,
+            outsourceStatus: op.outsourceStatus ?? null,
           });
         }
         if (op.status === 'outsource_pr_raised') prRaisedCount += 1;

@@ -8,10 +8,10 @@
 // Rows tint by status (approved = done, rejected = cancelled) via ROW_TINT.
 
 import { type OpLogChangeStatus, type OpLogTimeChangeRequest, opSrNo } from '@innovic/shared';
-import { Check, X } from 'lucide-react';
 import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { RowActions } from '@/ui/layout';
 
 // Four context columns revealed under ▸ — never on the main line (brief).
 export const OP_ENTRY_DEFAULT_HIDDEN = ['client_po_line_no', 'item_name', 'reason', 'decided_by'];
@@ -196,12 +196,15 @@ export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
 
 export interface OpEntryActionProps {
   busy: boolean;
-  onApprove: (r: OpLogTimeChangeRequest) => void;
+  /** Return the decide Promise: the row's ⋯ stays busy until it settles. */
+  onApprove: (r: OpLogTimeChangeRequest) => void | Promise<void>;
   onReject: (r: OpLogTimeChangeRequest) => void;
 }
 
-/** Approve / Reject for a waiting request. Decided rows carry no actions — their
- *  outcome reads off the Status badge and the ▸ Decided By detail. */
+/** Approve / Reject for a waiting request, in the row's ⋯ menu (Approve under
+ *  Workflow, Reject red after a line). Both grey out on EVERY row while one
+ *  decision is in flight. Decided rows carry no actions — their outcome reads
+ *  off the Status badge and the ▸ Decided By detail. */
 export function OpEntryRowActions({
   r,
   p,
@@ -210,26 +213,27 @@ export function OpEntryRowActions({
   p: OpEntryActionProps;
 }): React.JSX.Element | null {
   if (r.status !== 'pending') return null;
+  const disabledReason = p.busy ? 'Working…' : undefined;
   return (
-    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
-      <button
-        type="button"
-        className="btn btn-primary btn-sm"
-        disabled={p.busy}
-        onClick={() => p.onApprove(r)}
-      >
-        <Check className="mr-1 inline h-3 w-3" />
-        Approve
-      </button>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        disabled={p.busy}
-        onClick={() => p.onReject(r)}
-      >
-        <X className="mr-1 inline h-3 w-3" />
-        Reject
-      </button>
-    </span>
+    <RowActions
+      items={[
+        {
+          key: 'approve',
+          label: 'Approve',
+          icon: 'check',
+          group: 'workflow',
+          disabledReason,
+          onSelect: () => p.onApprove(r),
+        },
+        {
+          key: 'reject',
+          label: 'Reject',
+          icon: 'x',
+          group: 'danger',
+          disabledReason,
+          onSelect: () => p.onReject(r),
+        },
+      ]}
+    />
   );
 }

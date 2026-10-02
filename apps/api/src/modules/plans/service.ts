@@ -696,6 +696,16 @@ async function assertPlanQtyWithinRemaining(
     // and a new plan cannot both pass), refuse a draft / cancelled order, and
     // measure against the ONE "to plan" rule (lib/so-line-coverage.ts: plans +
     // a Buy line's PRs + direct cards) — the figure Needs Planning shows.
+    // The lock is its OWN statement on purpose: under READ COMMITTED a
+    // statement that waits on a row lock re-checks only that row, not its
+    // sub-queries, so a covered sum taken in the same statement could miss
+    // the plan / PR the lock holder just committed. The next SELECT takes a
+    // fresh snapshot and sees it (same as raisePlanningPr in so-planning).
+    await tx.execute(sql`
+      SELECT 1 FROM public.sales_order_lines sol
+      WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
+      FOR UPDATE OF sol
+    `);
     const r = (await tx.execute(sql`
       SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
              sol.line_no AS "lineNo", sol.short_closed_at IS NOT NULL AS "shortClosed",
@@ -708,7 +718,6 @@ async function assertPlanQtyWithinRemaining(
       JOIN public.sales_orders so ON so.id = sol.sales_order_id
       WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
         AND sol.deleted_at IS NULL
-      FOR UPDATE OF sol
     `)) as unknown as Array<{
       orderQty: number;
       soStatus: string;
@@ -719,7 +728,9 @@ async function assertPlanQtyWithinRemaining(
       own: number;
     }>;
     const line = r[0];
-    if (!line) return;
+    // No row = the SO line was deleted (possibly while this request waited on
+    // the lock) — never wave a plan through against a line that is gone.
+    if (!line) throw new NotFoundError('Sales Order line not found. Refresh the page.');
     // A cut (or an unchanged re-save) of an existing plan only ever reduces
     // what the line is covered by — always allowed, even on an over-covered
     // line or a cancelled order, so a planner can fix an over-plan.

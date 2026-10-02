@@ -1,29 +1,14 @@
 // SO Master expand — an EQUIPMENT order's line + BOM-status strip + exploded
 // BOM items, revealed under its row. Moved out of routes/list.tsx (ADR-199
-// split). Behaviour unchanged.
+// split). Read-only: Edit / Delete are the row's ⋯ (they were duplicates here)
+// and Plan BOM Items moved into the row's ⋯ Workflow (equipment SO with a BOM).
 
 import type { SalesOrderDetail } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
-import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
-import { ConfirmDialog } from '@/ui/feedback';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { useSoStatus } from '../../so-status/api';
-import { useSoftDeleteSalesOrder } from '../api';
-import { REASON_REQUIRED_MESSAGE, ReasonField } from './reason-field';
 
-export function EquipmentSoExpand({
-  so,
-  canEdit,
-  canDelete,
-}: {
-  so: SalesOrderDetail;
-  canEdit: boolean;
-  canDelete: boolean;
-}): React.JSX.Element {
-  const softDelete = useSoftDeleteSalesOrder();
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleteReason, setDeleteReason] = useState('');
+export function EquipmentSoExpand({ so }: { so: SalesOrderDetail }): React.JSX.Element {
   const line = so.lines[0];
   if (!line)
     return (
@@ -78,65 +63,21 @@ export function EquipmentSoExpand({
                 : `📦 ${bomStatus}`}
           </div>
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {canEdit ? (
-            <Link
-              to="/sales-orders/$id/edit"
-              params={{ id: so.id }}
-              className="btn btn-ghost btn-sm"
-            >
-              ✏ Edit
-            </Link>
-          ) : null}
-          {so.bomMasterId ? (
-            <Link
-              to="/planning"
-              search={{ soId: so.id }}
-              className="btn btn-ghost btn-sm cyan fw-700"
-            >
-              📦 Plan BOM Items
-            </Link>
-          ) : (
-            <span
-              style={{ color: 'var(--amber2)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}
-            >
-              ⚠ No BOM linked — assign one in Edit.
-            </span>
-          )}
-          {canDelete ? (
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => {
-                setDeleteReason('');
-                setConfirmDelete(true);
-              }}
-            >
-              Delete
-            </button>
-          ) : null}
-        </div>
+        {so.bomMasterId ? null : (
+          <span
+            style={{
+              marginLeft: 'auto',
+              color: 'var(--amber2)',
+              fontSize: 12,
+              fontWeight: 600,
+              alignSelf: 'center',
+            }}
+          >
+            ⚠ No BOM linked — assign one in Edit.
+          </span>
+        )}
       </div>
       {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : null}
-      <ConfirmDialog
-        open={confirmDelete}
-        title={`Move SO ${so.code} to Trash?`}
-        message={
-          <>
-            You can restore it from Trash.
-            <ReasonField value={deleteReason} onChange={setDeleteReason} />
-          </>
-        }
-        confirmLabel="Move to Trash"
-        pendingLabel="Moving to Trash…"
-        onCancel={() => setConfirmDelete(false)}
-        onConfirm={async () => {
-          const reason = deleteReason.trim();
-          if (!reason) throw new Error(REASON_REQUIRED_MESSAGE);
-          await softDelete.mutateAsync({ id: so.id, reason });
-          setConfirmDelete(false);
-        }}
-      />
     </div>
   );
 }

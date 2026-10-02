@@ -1,6 +1,7 @@
 import { expect, test, request as pwRequest, type Page } from '@playwright/test';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
+import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 /**
  * Item product image (3D render) + Drawing No. typed on the SO line
@@ -308,7 +309,7 @@ async function raiseJcViaRouteCard(page: Page, s: State): Promise<void> {
     await expect(soRow).toBeVisible({ timeout: 30_000 });
     await soRow.click();
     await page.waitForTimeout(2000);
-    await page.getByRole('button', { name: /\+ ?Plan\b/ }).first().click();
+    await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
     const createBtn = page.getByRole('button', { name: /^Save Plan$/ });
     await expect(createBtn).toBeVisible({ timeout: 15_000 });
     const qty = page.locator('#create-plan-qty');

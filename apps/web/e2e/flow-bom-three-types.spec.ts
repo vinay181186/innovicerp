@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { clickRowMenuItem, findRowWithMenuItem, planningLineRows } from './row-menu';
 
 // A BOM whose three children use the three DIFFERENT line types, driven from
 // creation through to whatever stops it:
@@ -229,12 +230,13 @@ test('@bom3 03 — explode: what does each TYPE spawn?', async ({ page }) => {
   await page.getByText(state.soCode).first().click();
   await page.waitForTimeout(2500);
 
-  const bomBtn = page.getByRole('button', { name: /BOM Planning/i }).first();
-  if ((await bomBtn.count()) === 0) {
+  // BOM Planning is an item in the SO line's ⋯ menu ("BOM Planning (n)").
+  const bomRow = await findRowWithMenuItem(page, planningLineRows(page), /^BOM Planning/);
+  if (!bomRow) {
     record({ step: '03', doc: 'BOM explosion', code: '—', qty: '—', status: 'NOT OFFERED', note: 'no BOM Planning button' });
     return;
   }
-  await bomBtn.click();
+  await clickRowMenuItem(page, bomRow, /^BOM Planning/);
   await page.waitForTimeout(3000);
 
   // Each child's Total Need = qty/set × order qty.

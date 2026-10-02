@@ -5,13 +5,16 @@
 //
 // PHASE 4 — migrated onto apps/web/src/ui/ following the GROUP 1 reference
 // implementation, modules/clients/routes/list.tsx. The composition is that
-// file's, unchanged:
+// file's, with one owner-approved change (2026-10-02): the two Excel buttons
+// moved out of the footer into the header's `tools` slot, so they are visible
+// when the page opens instead of below 179 rows:
 //
-//   <ListHeader>            title · count · ⟳ Updating… · primary, then the filter
+//   <ListHeader>            title · count · ⟳ Updating… · tools (Excel Template ·
+//                           Import from Excel) · primary, then the filter
 //                           bar: SearchInput · item type (with counts) · Source · Clear
 //   <MasterImportDialog>    Excel import: Import Type → preview → import
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
-//   <ListFooter>            count line · 💡 hint · Excel template / import
+//   <ListFooter>            count line · 💡 hint
 //   <PageState>             no-access and load-failure
 //
 // Everything this file used to draw by hand is gone: the sticky band, the
@@ -220,6 +223,35 @@ function ItemsListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search code, name, description, material, UOM…"
         updating={isFetching && !isLoading}
+        // Excel template + import sit on the title row, before the primary
+        // action (owner decision 2026-10-02 — they used to be under the count
+        // line, out of sight on a long list). Order is the order of use:
+        // download the template, fill it, import it. Import opens the shared
+        // import dialog; Insert new needs Add, Update existing needs Edit.
+        tools={
+          canCreate || canEdit ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="download" size={12} />}
+                onClick={() => downloadItemTemplate()}
+                title="Download a blank Excel template for Item Master"
+              >
+                Excel Template
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="upload" size={12} />}
+                onClick={() => setImportOpen(true)}
+                title="Add or update items from a filled template"
+              >
+                Import from Excel
+              </Button>
+            </>
+          ) : null
+        }
         filters={
           <>
             {/* Item type, with the whole-master counts the old StatStrip
@@ -333,37 +365,7 @@ function ItemsListPage(): React.JSX.Element {
         </Panel>
       )}
 
-      <ListFooter
-        total={total}
-        noun="item"
-        limit={LIST_LIMIT}
-        // Excel template + import sit below the count line (mirror of Client
-        // and Vendor Master). Import opens the shared import dialog; Insert
-        // new needs Add, Update existing needs Edit.
-        actions={
-          canCreate || canEdit ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="download" size={12} />}
-                onClick={() => downloadItemTemplate()}
-                title="Download Excel template"
-              >
-                Download Excel Template
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Icon name="upload" size={12} />}
-                onClick={() => setImportOpen(true)}
-              >
-                Import from Excel
-              </Button>
-            </>
-          ) : null
-        }
-      />
+      <ListFooter total={total} noun="item" limit={LIST_LIMIT} />
       {importOpen ? (
         <MasterImportDialog
           title="Import Items from Excel"

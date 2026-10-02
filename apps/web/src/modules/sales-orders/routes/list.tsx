@@ -30,7 +30,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel } from '@/ui/data';
+import { DataTable, Panel, renderRowMenuLink } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -317,15 +317,14 @@ function SalesOrdersListPage(): React.JSX.Element {
             // SO's detail panel too. renderExpanded returns null for a closed
             // row, so the detail fetch never fires for it.
             renderExpanded={(so) =>
-              expandedIds.has(so.id) ? (
-                <SoExpandedPanel so={so} canEdit={canEdit} canDelete={canDelete} />
-              ) : null
+              expandedIds.has(so.id) ? <SoExpandedPanel so={so} canEdit={canEdit} /> : null
             }
             onToggleExpanded={(so) => toggleExpand(so.id)}
             rowMenu={(so) =>
               soRowMenu(so, { canEdit, canDelete, onAssign: setAssignSo, onDelete: onDeleteSo })
             }
-            renderLink={(p) => <Link {...p} />}
+            // Splits a `?query` off a ⋯ `to` (Plan BOM Items → /planning?soId=).
+            renderLink={renderRowMenuLink}
           />
         </Panel>
       )}

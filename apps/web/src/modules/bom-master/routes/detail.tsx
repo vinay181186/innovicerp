@@ -18,6 +18,7 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
+import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { useBomLinkedSoLines, useBomMaster, useDeleteBomMaster } from '../api';
@@ -322,6 +323,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                   <th>Revised By</th>
                   <th>Notes</th>
                   <th>Items</th>
+                  <th style={{ width: 48 }} aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -339,19 +341,28 @@ function BomMasterDetailPage(): React.JSX.Element {
                     </td>
                     <td>
                       {rev.itemsSnapshot.length > 0 ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          style={{ fontSize: 11 }}
-                          onClick={() => setSnapshotRev(rev.revision)}
-                        >
-                          👁 View ({rev.itemsSnapshot.length})
-                        </button>
+                        <span style={{ fontSize: 11 }}>
+                          {rev.itemsSnapshot.length} item
+                          {rev.itemsSnapshot.length !== 1 ? 's' : ''}
+                        </span>
                       ) : (
                         <span className="text3" style={{ fontSize: 11 }}>
                           Current
                         </span>
                       )}
+                    </td>
+                    <td className="td-ctr">
+                      <RowMenu
+                        items={[
+                          {
+                            key: 'view',
+                            label: 'View',
+                            icon: 'eye',
+                            hidden: !(rev.itemsSnapshot.length > 0),
+                            onSelect: () => setSnapshotRev(rev.revision),
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

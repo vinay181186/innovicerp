@@ -14,13 +14,12 @@
 // plain so the table is not a wall of colour.
 
 import { opSrNo, type PurchaseRequestListItem } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { prBalanceClosedText, prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
 import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
-import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { ROW_TINT, renderRowMenuLink, type DataTableColumn } from '@/ui/data';
 import { RowActions } from '@/ui/layout';
 
 import { ospCanOrder } from '../lib/osp-band';
@@ -214,10 +213,11 @@ export function OutsourceJobExpand({ pr }: { pr: PurchaseRequestListItem }): Rea
   );
 }
 
-/** The row's Action cell — a single Create PO link, shown only when this request
- *  still has quantity to buy and the user may raise a PO. Reuses the same
- *  /purchase-orders/from-pr destination as the bulk action, with just this one
- *  request's id. */
+/** The row's ⋯ menu — a single Create PO item, shown only when this request
+ *  still has quantity to buy and the user may raise a PO (po_create entry, the
+ *  server's rule). Reuses the same /purchase-orders/from-pr destination as the
+ *  bulk action, with just this one request's id (renderRowMenuLink turns the
+ *  `?prId=` into the route's search param). */
 export function OutsourceJobRowActions({
   pr,
   canCreatePo,
@@ -228,16 +228,16 @@ export function OutsourceJobRowActions({
   if (!canCreatePo || !ospCanOrder(pr)) return null;
   return (
     <RowActions
-      extra={
-        <Link
-          to="/purchase-orders/from-pr"
-          search={{ prId: pr.id }}
-          className="btn btn-sm btn-ghost"
-          title="Raise a purchase order from this OSP request"
-        >
-          🛒 Create PO
-        </Link>
-      }
+      renderLink={renderRowMenuLink}
+      items={[
+        {
+          key: 'create-po',
+          label: 'Create PO',
+          icon: 'plus',
+          group: 'workflow',
+          to: `/purchase-orders/from-pr?prId=${encodeURIComponent(pr.id)}`,
+        },
+      ]}
     />
   );
 }

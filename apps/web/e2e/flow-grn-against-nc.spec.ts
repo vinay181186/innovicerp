@@ -20,7 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
-import { clickRowMenuItem, hasRowMenuItem } from './row-menu';
+import { clickRowMenuItem, hasRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -359,7 +359,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     await page.getByText(s.soCode!, { exact: true }).first().waitFor({ timeout: 60_000 });
     await page.getByText(s.soCode!, { exact: true }).first().click();
     await page.waitForTimeout(1800);
-    await page.getByRole('button', { name: /\+ ?Plan/i }).first().click();
+    await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
     await page.waitForTimeout(1300);
     const planQty = page.locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]').first();
     await planQty.waitFor({ state: 'visible', timeout: 30_000 });

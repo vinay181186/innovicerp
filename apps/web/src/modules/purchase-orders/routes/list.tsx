@@ -11,9 +11,11 @@
 // Received · Pending · Value · PO Status — see components/po-list-columns.tsx.
 // Value keeps its price gate (API nulls totalAmount for viewers without price).
 //
-// Row actions (RowActions prop): Edit (edit tier, not closed), Create DC (edit
-// tier, Job Work / Service, not draft), Assign (open-ish POs) — the same gates
-// the retired card / sheet used, carried over verbatim.
+// Row ⋯ menu (RowActions items): Edit (edit tier, not closed) · Create DC
+// (Job Work / Service; DC entry rights, the server's rule; greyed with the
+// reason on a draft / closed / cancelled PO, which the server refuses) ·
+// Assign Task (open-ish POs; hidden for the read-only viewer role, which
+// POST /tasks refuses).
 //
 // Row tint by PO status (rowClassName + ROW_TINT): draft / qc_pending = pending,
 // closed = done, cancelled = cancelled; open and partial carry no tint (active).
@@ -37,9 +39,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { useSession } from '@/lib/session';
+import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, ROW_TINT } from '@/ui/data';
+import { DataTable, Panel, ROW_TINT, renderRowMenuLink } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
@@ -117,12 +120,18 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   // Tier-driven, per department (po_create sits in Purchase). Replaces the old
   // admin-or-manager flag, which collapsed all seven tiers into two and gave a
   // manager the same rights everywhere.
-  //   + New PO          -> entry (L2 Data Entry and up)
-  //   Edit / Create DC  -> edit  (L3 Editor and up; L2 creates but cannot alter)
+  //   + New PO     -> entry (L2 Data Entry and up)
+  //   Edit         -> edit  (L3 Editor and up; L2 creates but cannot alter)
+  //   Create DC    -> ospdc_create entry — the right the DC form and
+  //                   createDeliveryChallan check, not a PO right
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'po_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
+  const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
+  const { data: me } = useSession();
+  const canAssign = Boolean(me) && me?.role !== 'viewer';
+  const [assignPo, setAssignPo] = useState<PurchaseOrderListItem | null>(null);
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
@@ -142,40 +151,41 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
   const columns = useMemo(() => purchaseOrderListColumns(), []);
 
-  // Row actions — Edit · Create DC · Assign, with the gates the retired card and
-  // sheet used, unchanged. No View button: the row click opens the PO.
+  // Row ⋯ menu — Edit · Create DC · Assign Task. No View: the row click opens
+  // the PO.
   const rowActions = (po: PurchaseOrderListItem): React.JSX.Element => (
     <RowActions
       editTo={canEdit && po.status !== 'closed' ? `/purchase-orders/${po.id}/edit` : undefined}
-      renderLink={(p) => <Link {...p} />}
-      extra={
-        <>
-          {/* Job Work AND Service both send material out — same DC lane. */}
-          {canEdit && poSendsMaterialOut(po.poType) && po.status !== 'draft' ? (
-            <Link
-              to="/delivery-challans/new"
-              search={{ poId: po.id }}
-              className="btn btn-ghost btn-sm"
-              title="Create DC"
-            >
-              Create DC
-            </Link>
-          ) : null}
-          {po.status !== 'closed' && po.status !== 'cancelled' ? (
-            <AssignTaskButton
-              linkedRef={{
-                type: 'purchase_order',
-                id: po.id,
-                display: `PO ${po.code}`,
-                navPage: `/purchase-orders/${po.id}`,
-              }}
-              suggestedTitle={`Follow up ${po.code}`}
-              className="btn btn-ghost btn-sm btn-icon"
-              label=""
-            />
-          ) : null}
-        </>
-      }
+      renderLink={renderRowMenuLink}
+      items={[
+        {
+          // Job Work AND Service both send material out — same DC lane. The
+          // server (createDeliveryChallan) refuses a draft, closed or
+          // cancelled PO, so those grey out with the reason.
+          key: 'create-dc',
+          label: 'Create DC',
+          icon: 'truck',
+          group: 'workflow',
+          to: `/delivery-challans/new?poId=${encodeURIComponent(po.id)}`,
+          hidden: !canCreateDc || !poSendsMaterialOut(po.poType),
+          disabledReason:
+            po.status === 'draft'
+              ? 'Not approved yet'
+              : po.status === 'closed'
+                ? 'PO closed'
+                : po.status === 'cancelled'
+                  ? 'PO cancelled'
+                  : undefined,
+        },
+        {
+          key: 'assign',
+          label: 'Assign Task',
+          icon: 'user-round',
+          group: 'assign',
+          hidden: !canAssign || po.status === 'closed' || po.status === 'cancelled',
+          onSelect: () => setAssignPo(po),
+        },
+      ]}
     />
   );
 
@@ -318,6 +328,19 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       )}
 
       <ListFooter total={total} noun="purchase order" limit={LIST_LIMIT} />
+
+      {assignPo ? (
+        <AssignTaskModal
+          linkedRef={{
+            type: 'purchase_order',
+            id: assignPo.id,
+            display: `PO ${assignPo.code}`,
+            navPage: `/purchase-orders/${assignPo.id}`,
+          }}
+          suggestedTitle={`Follow up ${assignPo.code}`}
+          onClose={() => setAssignPo(null)}
+        />
+      ) : null}
     </div>
   );
 }

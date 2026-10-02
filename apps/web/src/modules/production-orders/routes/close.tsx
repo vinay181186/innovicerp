@@ -10,6 +10,7 @@
 // reason it is blocked is shown in its place. On success the page goes to the
 // PO detail, which shows the credited qty.
 
+import { isProductionOrderStopped } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -402,7 +403,12 @@ function ProductionOrderClosePage(): React.JSX.Element {
               <div className="form-label" style={{ marginBottom: 6 }}>
                 Close Ledger
               </div>
-              <PoCloseLedger po={po} canReverse={perms.edit} />
+              {/* Same gate as the detail page and the server: nothing may be
+                  reversed on a short-closed (stopped) order. */}
+              <PoCloseLedger
+                po={po}
+                canReverse={perms.edit && !isProductionOrderStopped(po.status)}
+              />
             </div>
           ) : null}
         </div>

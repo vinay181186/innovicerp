@@ -146,27 +146,24 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
             }
             defaultHidden={REGISTER_DETAIL_IDS}
             onRowClick={(d) => void openFile(d)}
-            rowActions={(d) => (
-              <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => void openFile(d)}
-                >
-                  📎 Open
-                </button>
-                {canDelete ? (
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    disabled={del.isPending}
-                    onClick={() => setPendingDelete(d)}
-                  >
-                    ✕
-                  </button>
-                ) : null}
-              </div>
-            )}
+            rowMenu={(d) => [
+              {
+                key: 'open',
+                label: 'Open',
+                icon: 'paperclip',
+                // The Promise keeps the ⋯ busy until the signed link arrives.
+                onSelect: () => openFile(d),
+              },
+              {
+                key: 'delete',
+                label: 'Delete',
+                icon: 'trash-2',
+                group: 'danger',
+                hidden: !canDelete,
+                disabledReason: del.isPending ? 'Deleting…' : undefined,
+                onSelect: () => setPendingDelete(d),
+              },
+            ]}
           />
         </Panel>
       )}
