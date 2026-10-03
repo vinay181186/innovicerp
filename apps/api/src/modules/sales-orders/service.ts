@@ -55,7 +55,7 @@ import {
 } from '../../lib/errors';
 import { readStockPositionLocked, reconcileLineReservations } from '../../lib/stock-reservation';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { assertActiveParty } from '../../lib/active-party';
 import { emitActivityLog } from '../activity-log/service';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
@@ -99,7 +99,7 @@ import type {
   SoMilestone,
   UpdateSalesOrderInput,
 } from './schema';
-import type { SoTotals } from '@innovic/shared';
+import type { DocumentEditStagedResult, SoTotals } from '@innovic/shared';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -1694,8 +1694,31 @@ export async function updateSalesOrder(
 ): Promise<SalesOrderDetail> {
   // Editing an existing SO is admin-only (managers can still create). A
   // non-admin update is rejected server-side even if the UI is bypassed.
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit
+  // can replay an approved edit for an approver who holds `approve` but not the
+  // admin edit right.
   requireAdminRole(user);
   await requireFormAccess(user, 'so_create', 'edit');
+  return withUserContext(user, (tx) => updateSalesOrderTx(tx, id, input, user, reason));
+}
+
+/**
+ * The body of an SO edit, inside a caller-supplied transaction. Called by
+ * updateSalesOrder (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds one — nesting withUserContext would deadlock
+ * on the SO row locked FOR UPDATE below). Every §20 guard lives here: the
+ * header FOR UPDATE lock, assertUnchangedSinceOpened, the SO_STATUS_MOVES map,
+ * the blocking-docs-on-cancel check, the per-line version checks in mergeLines,
+ * and the stock-reservation reconcile. The caller performs the edit / approve
+ * access check.
+ */
+export async function updateSalesOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateSalesOrderInput,
+  user: AuthContext,
+  reason?: string | null,
+): Promise<SalesOrderDetail> {
   const companyId = requireCompany(user);
   // Money in, same rule as money out. `priceOff` makes "can do the job but must
   // not see the number" a supported setup, so an editor with prices hidden is a
@@ -1705,7 +1728,7 @@ export async function updateSalesOrder(
   // that would overwrite the stored figures. Ignore them: what is stored stands.
   const showMoney = await canSeeFormPrice(user, 'so_create');
 
-  return withUserContext(user, async (tx) => {
+  {
     const existingHdrRows = await tx
       .select()
       .from(salesOrders)
@@ -1863,7 +1886,199 @@ export async function updateSalesOrder(
       milestones,
       clientPoFilePath,
     };
+  }
+}
+
+/**
+ * SO children — lines AND milestones — are NOT staged in this edit-approval pass
+ * (ADR-202 record/header level only). This detects any add / remove / field
+ * change so updateSalesOrderOrStage can REFUSE it clearly instead of silently
+ * dropping it. Mirrors planOpsChanged: compares by id with valuesEqual (the
+ * exact null / empty / numeric / date rules the History diff uses), so a form
+ * that resends unchanged children — which the SO edit form always does — is
+ * correctly read as "no child change" and a header-only edit still stages.
+ */
+function soChildRowsChanged(
+  currentLines: Array<{
+    id: string;
+    itemId: string | null;
+    itemCodeText: string | null;
+    partName: string;
+    material: string | null;
+    drawingNo: string | null;
+    revision: string;
+    drawingFilePath: string | null;
+    uom: string;
+    orderQty: number;
+    rate: string;
+    dueDate: string | null;
+    clientPoLineNo: string | null;
+    status: string;
+    sourceBomMasterId: string | null;
+  }>,
+  currentMilestones: Array<{
+    id: string;
+    lotNo: number;
+    qty: number;
+    dueDate: string | null;
+    remarks: string | null;
+  }>,
+  input: UpdateSalesOrderInput,
+  showMoney: boolean,
+): boolean {
+  if (input.lines !== undefined) {
+    const lines = input.lines;
+    if (lines.length !== currentLines.length) return true;
+    const byId = new Map(currentLines.map((l) => [l.id, l]));
+    const seen = new Set<string>();
+    for (const p of lines) {
+      if (!p.id) return true; // a new line
+      const c = byId.get(p.id);
+      if (!c) return true;
+      seen.add(p.id);
+      if (p.itemId !== undefined && !valuesEqual(p.itemId, c.itemId)) return true;
+      if (p.itemCodeText !== undefined && !valuesEqual(p.itemCodeText, c.itemCodeText)) return true;
+      if (!valuesEqual(p.partName, c.partName)) return true;
+      if (p.material !== undefined && !valuesEqual(p.material, c.material)) return true;
+      if (p.drawingNo !== undefined && !valuesEqual(p.drawingNo, c.drawingNo)) return true;
+      if (!valuesEqual(p.revision, c.revision)) return true;
+      if (p.drawingFilePath !== undefined && !valuesEqual(p.drawingFilePath, c.drawingFilePath))
+        return true;
+      if (p.uom !== undefined && !valuesEqual(p.uom, c.uom)) return true;
+      if (!valuesEqual(p.orderQty, c.orderQty)) return true;
+      // Rate only when the editor may see money — a price-blind payload carries a
+      // default 0 that must not read as a change (mergeLines ignores it too).
+      if (showMoney && p.rate !== undefined && !valuesEqual(p.rate, c.rate)) return true;
+      if (p.dueDate !== undefined && !valuesEqual(p.dueDate, c.dueDate)) return true;
+      if (p.clientPoLineNo !== undefined && !valuesEqual(p.clientPoLineNo, c.clientPoLineNo))
+        return true;
+      if (p.status !== undefined && !valuesEqual(p.status, c.status)) return true;
+      if (p.sourceBomMasterId !== undefined && !valuesEqual(p.sourceBomMasterId, c.sourceBomMasterId))
+        return true;
+    }
+    for (const c of currentLines) if (!seen.has(c.id)) return true; // a removed line
+  }
+
+  if (input.milestones !== undefined) {
+    const ms = input.milestones;
+    if (ms.length !== currentMilestones.length) return true;
+    const byId = new Map(currentMilestones.map((m) => [m.id, m]));
+    const seen = new Set<string>();
+    for (const p of ms) {
+      if (!p.id) return true; // a new milestone
+      const c = byId.get(p.id);
+      if (!c) return true;
+      seen.add(p.id);
+      if (!valuesEqual(p.lotNo, c.lotNo)) return true;
+      if (!valuesEqual(p.qty, c.qty)) return true;
+      if (p.dueDate !== undefined && !valuesEqual(p.dueDate, c.dueDate)) return true;
+      if (p.remarks !== undefined && !valuesEqual(p.remarks, c.remarks)) return true;
+    }
+    for (const c of currentMilestones) if (!seen.has(c.id)) return true; // a removed milestone
+  }
+  return false;
+}
+
+/**
+ * The SO edit entry point the PATCH route calls (ADR-202). When the Document
+ * Edit Approval gate is ON and the SO is LIVE, the header edit is staged for
+ * approval and the request row is returned; otherwise the edit applies directly
+ * through updateSalesOrder. Children (lines / milestones) and status moves are
+ * out of scope this pass and refused clearly so nothing is dropped unapproved.
+ */
+export async function updateSalesOrderOrStage(
+  id: string,
+  input: UpdateSalesOrderInput,
+  user: AuthContext,
+  reason?: string | null,
+): Promise<SalesOrderDetail | DocumentEditStagedResult> {
+  requireAdminRole(user);
+  await requireFormAccess(user, 'so_create', 'edit');
+  const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'so_create');
+
+  // Engine imported dynamically to avoid a static import cycle with
+  // so-edit-registry (which imports updateSalesOrderTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const hdrRows = await tx
+      .select({ status: salesOrders.status })
+      .from(salesOrders)
+      .where(
+        and(
+          eq(salesOrders.id, id),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const status = hdrRows[0]?.status;
+    // "Live" mirrors soEditRegistryEntry.isLive: past draft and not cancelled.
+    if (status === undefined || status === 'draft' || status === 'cancelled') return false;
+
+    // Status moves (cancel / back-to-draft / Draft↔Open) are NOT staged: a cancel
+    // needs a reason and a blocking-documents check that the approval flow cannot
+    // carry. Refuse clearly rather than drop the change unapproved.
+    if (input.header.status !== undefined && input.header.status !== status) {
+      throw new ConflictError(
+        "Changing the Sales Order status isn't available while Document Edit Approval is on — only the SO's own fields go for approval. Turn the gate off to change the status.",
+      );
+    }
+
+    if (input.lines !== undefined || input.milestones !== undefined) {
+      const currentLines = await tx
+        .select({
+          id: salesOrderLines.id,
+          itemId: salesOrderLines.itemId,
+          itemCodeText: salesOrderLines.itemCodeText,
+          partName: salesOrderLines.partName,
+          material: salesOrderLines.material,
+          drawingNo: salesOrderLines.drawingNo,
+          revision: salesOrderLines.revision,
+          drawingFilePath: salesOrderLines.drawingFilePath,
+          uom: salesOrderLines.uom,
+          orderQty: salesOrderLines.orderQty,
+          rate: salesOrderLines.rate,
+          dueDate: salesOrderLines.dueDate,
+          clientPoLineNo: salesOrderLines.clientPoLineNo,
+          status: salesOrderLines.status,
+          sourceBomMasterId: salesOrderLines.sourceBomMasterId,
+        })
+        .from(salesOrderLines)
+        .where(
+          and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)),
+        );
+      const currentMilestones = await tx
+        .select({
+          id: soMilestones.id,
+          lotNo: soMilestones.lotNo,
+          qty: soMilestones.qty,
+          dueDate: soMilestones.dueDate,
+          remarks: soMilestones.remarks,
+        })
+        .from(soMilestones)
+        .where(and(eq(soMilestones.salesOrderId, id), isNull(soMilestones.deletedAt)));
+      if (soChildRowsChanged(currentLines, currentMilestones, input, showMoney)) {
+        throw new ConflictError(
+          "Editing Sales Order lines or milestones isn't available while Document Edit Approval is on yet — only the SO's own fields go for approval. Turn the gate off to edit lines or milestones.",
+        );
+      }
+    }
+    return true;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit(
+      'SalesOrder',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
+    return { staged: true, request };
+  }
+
+  return updateSalesOrder(id, input, user, reason);
 }
 
 /**

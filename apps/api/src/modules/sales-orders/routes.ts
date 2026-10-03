@@ -69,7 +69,7 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(req.params);
     const body = updateSalesOrderInputSchema.parse(req.body);
     const { reason } = editReasonSchema.parse(req.body ?? {});
-    return service.updateSalesOrder(id, body, req.user, reason ?? null);
+    return service.updateSalesOrderOrStage(id, body, req.user, reason ?? null);
   });
 
   // ADR-196 — ERPNext "Close": the header closes short every line that still

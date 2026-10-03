@@ -1,6 +1,7 @@
 // JW detail page (UI-003-04).
 
 import {
+  type DocumentEditChange,
   type JobWorkOrderDetail,
   type JobWorkOrderLine,
   type JwDocumentFile,
@@ -10,6 +11,11 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useHistoryTab } from '@/components/shared/document-history';
@@ -54,6 +60,11 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'jw_create');
+  // ADR-202 — the edit(s) staged against this JWSO and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('JobWorkOrder', id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197: the JWSO's own History tab (hooks run before any early return).
   const historyTab = useHistoryTab({ entity: 'JobWorkOrder', entityId: id, refId: detail?.code });
@@ -170,7 +181,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         backTo="/job-work-orders"
         renderLink={(p) => <Link {...p} />}
         code={detail.code}
-        name={detail.customerName ?? 'Untitled customer'}
+        name={
+          <>
+            {detail.customerName ?? 'Untitled customer'}
+            <Chip changes={pendingChanges} field="customerName" />
+          </>
+        }
         badges={
           <>
             <SoStatusBadge status={detail.status} />
@@ -209,7 +225,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <DetailGrid detail={detail} />
+        <DetailGrid detail={detail} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {uploadFailed ? (
@@ -721,8 +737,11 @@ function LineRow(props: {
   );
 }
 
-function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
-  const { detail } = props;
+function DetailGrid(props: {
+  detail: JobWorkOrderDetail;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { detail, pendingChanges } = props;
   // Remarks can be long; collapse to one line with a "more"/"less" toggle so the
   // strip stays one compact band. Presentation only — no data change.
   const [showAllRemarks, setShowAllRemarks] = useState(false);
@@ -740,17 +759,28 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
   };
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem label="JWSO Date" value={<span className="mono">{fmtDate(detail.jwDate)}</span>} />
+      <StripItem
+        label="JWSO Date"
+        value={
+          <>
+            <span className="mono">{fmtDate(detail.jwDate)}</span>
+            <Chip changes={pendingChanges} field="jwDate" />
+          </>
+        }
+      />
       <StripItem
         label="Client PO No."
         value={
-          detail.clientPoNo ? (
-            <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-              {detail.clientPoNo}
-            </span>
-          ) : (
-            '—'
-          )
+          <>
+            {detail.clientPoNo ? (
+              <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                {detail.clientPoNo}
+              </span>
+            ) : (
+              '—'
+            )}
+            <Chip changes={pendingChanges} field="clientPoNo" />
+          </>
         }
       />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
@@ -775,10 +805,22 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
               ) : null}
             </>
           )}
+          <Chip changes={pendingChanges} field="remarks" />
         </div>
       </div>
     </div>
   );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the JWSO edit diff's field key. Renders
+ *  nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
 }
 
 function StripItem(props: { label: string; value: React.ReactNode }): React.JSX.Element {

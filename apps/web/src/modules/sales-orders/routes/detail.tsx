@@ -15,12 +15,22 @@
 // line. What changed is that this screen no longer draws its own panels,
 // tables, badges, buttons, empty states or delete confirmation.
 
-import type { DrawingSource, SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
+import type {
+  DocumentEditChange,
+  DrawingSource,
+  SalesOrderDetail,
+  SalesOrderLine,
+} from '@innovic/shared';
 import { SO_CLOSABLE_STATUSES } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
@@ -94,6 +104,11 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
+  // ADR-202 — the edit(s) staged against this SO and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('SalesOrder', id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197 — why the SO goes to Trash (required; lands on its History).
@@ -164,7 +179,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
         backLabel="Back to Sales Orders"
         renderLink={(p) => <Link {...p} />}
         code={detail.code}
-        name={detail.customerName ?? 'Untitled customer'}
+        name={
+          <>
+            {detail.customerName ?? 'Untitled customer'}
+            <Chip changes={pendingChanges} field="customerName" />
+          </>
+        }
         badges={
           <>
             <StatusBadge kind="so" status={detail.status} label={SO_STATUS_LABEL[detail.status]} />
@@ -232,7 +252,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <SoReadGrid detail={detail} />
+        <SoReadGrid detail={detail} pendingChanges={pendingChanges} />
         {/* ADR-190 — the SO's money, summed on the server. Null when this
             user's access hides prices, and then the strip is not shown. */}
         {detail.totals ? (
@@ -567,8 +587,11 @@ function SoFilesPanel({
 
 /* ── Header data ────────────────────────────────────────────────────────── */
 
-function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
-  const { detail } = props;
+function SoReadGrid(props: {
+  detail: SalesOrderDetail;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { detail, pendingChanges } = props;
   // Remarks can be long; collapse to one line with a "more"/"less" toggle so the
   // grid stays one compact band. Presentation only — no data change.
   const [showAllRemarks, setShowAllRemarks] = useState(false);
@@ -587,33 +610,50 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
 
   return (
     <ReadGrid>
-      <ReadField label="SO Type" size="md" value={SO_TYPE_LABEL[detail.type]} />
-      <ReadField label="SO Date" size="sm" mono value={fmtDate(detail.soDate)} />
+      <ReadField
+        label="SO Type"
+        size="md"
+        value={withChip(SO_TYPE_LABEL[detail.type], pendingChanges, 'type')}
+      />
+      <ReadField
+        label="SO Date"
+        size="sm"
+        mono
+        value={withChip(fmtDate(detail.soDate), pendingChanges, 'soDate')}
+      />
       <ReadField
         label="Client PO No."
         size="sm"
         mono
-        value={
+        value={withChip(
           detail.clientPoNo ? (
             <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{detail.clientPoNo}</span>
-          ) : null
-        }
+          ) : null,
+          pendingChanges,
+          'clientPoNo',
+        )}
       />
       {detail.gstPercent == null ? null : (
         <ReadField
           label="GST %"
           size="xs"
-          value={
-            <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{detail.gstPercent}%</span>
-          }
+          value={withChip(
+            <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{detail.gstPercent}%</span>,
+            pendingChanges,
+            'gstPercent',
+          )}
         />
       )}
-      <ReadField label="Cost Centre" size="md" value={detail.costCenter} />
+      <ReadField
+        label="Cost Centre"
+        size="md"
+        value={withChip(detail.costCenter, pendingChanges, 'costCenter')}
+      />
       {detail.type === 'component_manufacturing' ? null : (
         <ReadField
           label="BOM"
           size="md"
-          value={
+          value={withChip(
             detail.bomMasterId ? (
               <>
                 <Link
@@ -632,9 +672,12 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
                     ({detail.bomStatus})
                   </span>
                 ) : null}
+                <Chip changes={pendingChanges} field="bomStatus" />
               </>
-            ) : null
-          }
+            ) : null,
+            pendingChanges,
+            'bomMasterId',
+          )}
         />
       )}
       <ReadField
@@ -649,7 +692,7 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
         label="Remarks"
         size="full"
         pre
-        value={
+        value={withChip(
           remarks === '' ? null : remarksLong && !showAllRemarks ? (
             <>
               {`${remarks.slice(0, 80).trimEnd()}…`}
@@ -666,9 +709,39 @@ function SoReadGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
                 </button>
               ) : null}
             </>
-          )
-        }
+          ),
+          pendingChanges,
+          'remarks',
+        )}
       />
     </ReadGrid>
   );
+}
+
+/** ADR-202 — append the amber "→ after" chip to a header field's value when an
+ *  edit to that field is staged. With no pending change the value is returned
+ *  untouched, so ReadField still renders its own em-dash for an empty field. */
+function withChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  field: string,
+): React.ReactNode {
+  const c = headerPendingChange(changes, field);
+  if (!c) return value;
+  return (
+    <>
+      {value == null || value === '' ? '—' : value}
+      <PendingChangeChip after={c.after} />
+    </>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit,
+ *  rendered inline (BOM Status, and the customer name in the header). */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
 }
