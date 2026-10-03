@@ -17,7 +17,7 @@
 // Production Order is raised. Old plans (opsSource 'plan') keep their Edit /
 // Execute / View JC / PR links inside their chip.
 //
-// URL state: ?src=so|jw (toggle), ?soId= (level 2), ?openPlan= (edit modal).
+// URL state: ?src=so|jw (absent = all), ?soId= (level 2), ?openPlan= (edit modal).
 //
 // ADR-199 (table standard, 2026-10-01): the two list surfaces — the SO/JWSO list
 // and the line-search results — now render on the shared FIT <DataTable>
@@ -52,13 +52,13 @@ import { EditPlanModal } from '../components/edit-plan-modal';
 import { OrderDetail } from '../components/order-detail';
 import { OrderList } from '../components/order-list';
 import { SearchResults, useMatchingLines } from '../components/search-results';
-import { type ModalState, type Source } from '../components/planning-shared';
+import { type ModalState, type SourceFilter, sourceNoun } from '../components/planning-shared';
 
 const searchSchema = z.object({
   soId: z.string().uuid().optional(),
   openPlan: z.string().uuid().optional(),
-  /** Which orders level 1 lists. Survives reload / Back. Default 'so'. */
-  src: z.enum(['so', 'jw']).optional(),
+  /** Which orders level 1 lists. Survives reload / Back. Absent = 'all'. */
+  src: z.enum(['all', 'so', 'jw']).optional(),
   /** Level-1 page (ADR-201). */
   page: pageSearchParam,
   /** Level-1 tab while a search term is set (ADR-203); absent = Orders. */
@@ -81,7 +81,7 @@ function PlanningWorkflowPage(): JSX.Element {
     page,
     tab: tabParam,
   } = soPlanningWorkflowRoute.useSearch();
-  const src: Source = srcParam ?? 'so';
+  const src: SourceFilter = srcParam ?? 'all';
   const qc = useQueryClient();
   // Page + write gate (plan_create, Planning dept). Writes on this page (create
   // plan, edit, execute, BOM planning) live in the plans module; here we hide
@@ -102,10 +102,15 @@ function PlanningWorkflowPage(): JSX.Element {
     },
     [navigate],
   );
-  const setSrc = (s: Source): void => {
+  const setSrc = (s: SourceFilter): void => {
     void navigate({
       to: '/planning',
-      search: (prev) => ({ ...prev, src: s, soId: undefined, page: 1 }),
+      search: (prev) => ({
+        ...prev,
+        src: s === 'all' ? undefined : s,
+        soId: undefined,
+        page: 1,
+      }),
       replace: true,
     });
   };
@@ -141,7 +146,7 @@ function PlanningWorkflowPage(): JSX.Element {
   }, [soSearch, searchTerm, navigate]);
   const sf = useServerSortFilter(TABLE_KEYS.planningList, () => gotoPage(1));
   const soList = usePlanningSoList({
-    src,
+    src: src === 'all' ? undefined : src,
     search: searchTerm || undefined,
     sf: sf.param,
     limit: LIST_PAGE_SIZE,
@@ -203,7 +208,7 @@ function PlanningWorkflowPage(): JSX.Element {
             title="SO/JWSO Planning"
             icon="📋"
             count={soList.data ? total : undefined}
-            noun={src === 'jw' ? 'JWSO' : 'SO'}
+            noun={sourceNoun(src)}
             search={soSearch}
             onSearch={setSoSearch}
             searchPlaceholder="Search SO / JWSO No., customer, item code or name, due date, status…"
@@ -214,8 +219,12 @@ function PlanningWorkflowPage(): JSX.Element {
                 aria-label="Order source"
                 title="Order source"
                 value={src}
-                onChange={(e) => setSrc(e.target.value === 'jw' ? 'jw' : 'so')}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSrc(v === 'jw' ? 'jw' : v === 'so' ? 'so' : 'all');
+                }}
               >
+                <option value="all">All</option>
                 <option value="so">SO</option>
                 <option value="jw">JWSO</option>
               </select>
@@ -224,10 +233,10 @@ function PlanningWorkflowPage(): JSX.Element {
               setSoSearch('');
               setSearchTerm('');
               sf.clearFilters();
-              if (src !== 'so') setSrc('so');
+              if (src !== 'all') setSrc('all');
               else gotoPage(1);
             }}
-            filtersActive={soSearch !== '' || src !== 'so' || sf.filtering}
+            filtersActive={soSearch !== '' || src !== 'all' || sf.filtering}
           />
 
           {searching ? (
@@ -277,7 +286,7 @@ function PlanningWorkflowPage(): JSX.Element {
           )}
           <ListFooter
             total={total}
-            noun={src === 'jw' ? 'JWSO' : 'SO'}
+            noun={sourceNoun(src)}
             page={page}
             pageSize={LIST_PAGE_SIZE}
             onPage={gotoPage}

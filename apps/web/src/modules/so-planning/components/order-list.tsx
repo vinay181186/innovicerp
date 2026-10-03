@@ -11,7 +11,7 @@ import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { PageState } from '@/ui/layout';
 import { orderListColumns, orderRowTint } from './order-list-columns';
-import type { Source } from './planning-shared';
+import type { SourceFilter } from './planning-shared';
 
 export function OrderList({
   src,
@@ -21,7 +21,7 @@ export function OrderList({
   onOpen,
   sf,
 }: {
-  src: Source;
+  src: SourceFilter;
   items: PlanningSoListItem[];
   loading: boolean;
   error: string | null;
@@ -45,7 +45,9 @@ export function OrderList({
         loading={loading}
         sortFilterServer={sf}
         emptyText={
-          sf.filtering ? 'No orders match.' : `No open ${src === 'jw' ? 'JWSOs' : 'SOs'} to plan`
+          sf.filtering
+            ? 'No orders match.'
+            : `No open ${src === 'jw' ? 'JWSOs' : src === 'so' ? 'SOs' : 'SOs / JWSOs'} to plan`
         }
         onRowClick={(so) => onOpen(so.soId)}
         rowClassName={(so) => orderRowTint(so.planningStatus)}
