@@ -135,7 +135,7 @@ async function ruleBomPending(
 ): Promise<WorkListItem[]> {
   const rows = await q(
     tx,
-    `SELECT so.code, so.customer_name, so.so_date,
+    `SELECT so.code, so.code || COALESCE(' · ' || NULLIF(btrim(so.internal_so_no), ''), '') AS so_label, so.customer_name, so.so_date,
             MIN(sol.due_date) AS due_date, COALESCE(SUM(sol.order_qty),0)::int AS qty
      FROM sales_orders so
      LEFT JOIN sales_order_lines sol ON sol.sales_order_id = so.id AND sol.deleted_at IS NULL
@@ -153,7 +153,7 @@ async function ruleBomPending(
       dept: 'design',
       severity: sev,
       icon: '📋',
-      title: `SO ${r['code']} — BOM needed`,
+      title: `SO ${r['so_label']} — BOM needed`,
       detail: `${r['customer_name'] ?? ''} · Qty ${Number(r['qty']) || 0} · Due ${r['due_date'] ?? '—'}${dToDue < 0 ? ' (OVERDUE)' : dToDue <= 7 && dToDue >= 0 ? ` (in ${dToDue}d)` : ''}`,
       age,
       actionLabel: 'Create BOM',

@@ -50,6 +50,7 @@ function toSelector(r: Record<string, unknown>): SoQcSelector {
   return {
     id: r['id'] as string,
     code: r['code'] as string,
+    internalSoNo: (r['internalSoNo'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     status: (r['status'] as string | null) ?? 'Open',
     soDate: dateLike(r['soDate']),
@@ -62,7 +63,8 @@ export async function listSoForQc(user: AuthContext): Promise<ListSoForQcRespons
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rs = await tx.execute(sql`
-      SELECT so.id, so.code, so.customer_name AS "customerName", so.status,
+      SELECT so.id, so.code, so.internal_so_no AS "internalSoNo",
+             so.customer_name AS "customerName", so.status,
              so.so_date AS "soDate", so.type
       FROM public.sales_orders so
       WHERE so.company_id = ${companyId}::uuid
@@ -129,7 +131,8 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const soRows = await tx.execute(sql`
-      SELECT so.id, so.code, so.customer_name AS "customerName", so.status,
+      SELECT so.id, so.code, so.internal_so_no AS "internalSoNo",
+             so.customer_name AS "customerName", so.status,
              so.so_date AS "soDate", so.type
       FROM public.sales_orders so
       WHERE so.id = ${soId}::uuid AND so.company_id = ${companyId}::uuid AND so.deleted_at IS NULL

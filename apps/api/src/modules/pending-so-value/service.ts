@@ -84,6 +84,7 @@ export async function getPendingSoValue(
     term === ''
       ? sql``
       : sql`AND (psv.so_code ILIKE ${`%${likeEscape(term)}%`} ESCAPE '\\'
+              OR psv.internal_so_no ILIKE ${`%${likeEscape(term)}%`} ESCAPE '\\'
               OR psv.customer_name ILIKE ${`%${likeEscape(term)}%`} ESCAPE '\\')`;
 
   return withUserContext(user, async (tx) => {
@@ -149,6 +150,7 @@ export async function getPendingSoValue(
         SELECT
           so.id                              AS so_id,
           so.code                            AS so_code,
+          so.internal_so_no                  AS internal_so_no,
           so.customer_name                   AS customer_name,
           so.so_date                         AS so_date,
           sov.earliest_due_date              AS due_date,
@@ -175,7 +177,7 @@ export async function getPendingSoValue(
       tx.execute(sql`
         ${base}
         SELECT
-          psv.so_id, psv.so_code, psv.customer_name,
+          psv.so_id, psv.so_code, psv.internal_so_no, psv.customer_name,
           psv.so_date::text AS so_date, psv.due_date::text AS due_date, psv.status,
           psv.order_value::text AS order_value,
           psv.dispatched_value::text AS dispatched_value,
@@ -207,6 +209,7 @@ export async function getPendingSoValue(
     type Row = {
       so_id: string;
       so_code: string;
+      internal_so_no: string | null;
       customer_name: string | null;
       so_date: string;
       due_date: string | null;
@@ -220,7 +223,7 @@ export async function getPendingSoValue(
     };
     type TotalsRow = Omit<
       Row,
-      'so_id' | 'so_code' | 'customer_name' | 'so_date' | 'due_date' | 'status'
+      'so_id' | 'so_code' | 'internal_so_no' | 'customer_name' | 'so_date' | 'due_date' | 'status'
     > & {
       so_count: number;
     };
@@ -228,6 +231,7 @@ export async function getPendingSoValue(
     const mapped: PendingSoValueRow[] = (pageRows as unknown as Row[]).map((r) => ({
       soId: r.so_id,
       soCode: r.so_code,
+      soInternalNo: r.internal_so_no,
       customerName: r.customer_name,
       soDate: r.so_date,
       dueDate: r.due_date,

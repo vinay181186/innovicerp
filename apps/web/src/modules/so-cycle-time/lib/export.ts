@@ -54,6 +54,7 @@ function stamp(): string {
 export function exportSoCycleTime(rows: SoCycleTimeRow[]): void {
   const out = rows.map((r) => ({
     'SO No.': r.soNo,
+    'Internal SO No.': r.internalSoNo ?? '',
     Customer: r.customer ?? '',
     'SO Type': r.type ? (TYPE_LABEL[r.type] ?? r.type) : '',
     'SO Status': soStatusLabel(r.status),

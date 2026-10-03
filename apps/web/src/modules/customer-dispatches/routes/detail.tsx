@@ -19,6 +19,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { useClient } from '@/modules/clients/api';
 import { useMyCompany } from '@/modules/settings/api';
@@ -83,7 +84,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
           <>
             {d.customer ?? '—'} · SO No.{' '}
             <Link to="/sales-orders/$id" params={{ id: d.salesOrderId }} className="fw-700">
-              {d.soCode ?? '—'}
+              {d.soCode ? soNoWithInternal(d.soCode, d.soInternalNo) : '—'}
             </Link>{' '}
             · {fmtDate(d.dispatchDate)} · {d.totalQty} pcs
             {cancelled ? ' · Cancelled' : ''}

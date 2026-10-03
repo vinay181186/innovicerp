@@ -6,6 +6,7 @@
 // are hidden.
 
 import type { ScSoRow, ScVendorRow } from '@innovic/shared';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { inr } from './sc-format';
 
@@ -111,7 +112,12 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
       kind: 'code',
       header: 'SO / JWSO No.',
       className: 'td-code',
-      render: (s) => s.soCode ?? <span className="text3">No SO / JWSO linked</span>,
+      render: (s) =>
+        s.soCode ? (
+          soNoWithInternal(s.soCode, s.soInternalNo)
+        ) : (
+          <span className="text3">No SO / JWSO linked</span>
+        ),
     },
     {
       id: 'po_lines',

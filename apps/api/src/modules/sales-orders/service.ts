@@ -16,6 +16,7 @@ import {
   ITEM_TYPE_RULES,
   type ItemType,
   deriveSoFulfilmentStatus,
+  internalSoNoError,
   internalSoNoTakenMessage,
   normaliseInternalSoNo,
   normalizeRevision,
@@ -903,6 +904,7 @@ export async function getSalesOrderRelated(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        internalSoNo: salesOrders.internalSoNo,
         soDate: salesOrders.soDate,
         clientId: salesOrders.clientId,
       })
@@ -1197,7 +1199,8 @@ export async function getSalesOrderRelated(
         {
           ts: toIsoDate(header.soDate),
           label: 'Sales Order created',
-          code: header.code,
+          // ADR-207: "IN-SO-00786 · SO-2401" when the SO has an Internal SO No.
+          code: header.internalSoNo ? `${header.code} · ${header.internalSoNo}` : header.code,
           routeKind: 'sales-order',
           linkId: id,
         },
@@ -1436,12 +1439,20 @@ const INTERNAL_SO_NO_UNIQ = 'sales_orders_company_internal_so_no_uniq';
 
 /** True when `e` is a 23505 raised by the Internal SO No. index (the race the
  *  pre-check cannot see: two saves of the same number at the same moment). */
-function isInternalSoNoViolation(e: unknown): boolean {
+export function isInternalSoNoViolation(e: unknown): boolean {
   // A driver wrapper may carry the Postgres error as `cause`.
   const raw = isUniqueViolation(e) ? e : (e as { cause?: unknown } | null)?.cause;
   if (!isUniqueViolation(raw)) return false;
   const pg = raw as { constraint_name?: unknown; constraint?: unknown };
   return (pg.constraint_name ?? pg.constraint) === INTERNAL_SO_NO_UNIQ;
+}
+
+/** 400 when an Internal SO No. breaks the shared format rule. The schema
+ *  already checks it; this is the server backstop for callers that skip the
+ *  schema (the edit-approval replay, internal callers). */
+function assertInternalSoNoValid(internalSoNo: string): void {
+  const err = internalSoNoError(internalSoNo);
+  if (err) throw new ValidationError(err);
 }
 
 /** 409 when another live SO of the company already uses this Internal SO No.
@@ -1505,6 +1516,7 @@ export async function createSalesOrder(
   // A 23505 from ITS index is not a series race, so it becomes the 409 below
   // (a ConflictError, which withUniqueRetry does not retry).
   const internalSoNo = normaliseInternalSoNo(input.header.internalSoNo);
+  assertInternalSoNoValid(internalSoNo);
   return withUniqueRetry(async () => {
     try {
       return await createSalesOrderOnce(input, user, companyId, internalSoNo);
@@ -1838,6 +1850,7 @@ export async function updateSalesOrderTx(
     if (h.internalSoNo !== undefined) {
       const nextInternal = normaliseInternalSoNo(h.internalSoNo);
       if (nextInternal !== existingHdr.internalSoNo) {
+        assertInternalSoNoValid(nextInternal);
         if (nextInternal.toLowerCase() !== (existingHdr.internalSoNo ?? '').toLowerCase()) {
           await assertInternalSoNoFree(tx, companyId, nextInternal, id);
         }

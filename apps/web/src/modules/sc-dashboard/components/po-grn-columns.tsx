@@ -6,6 +6,7 @@
 import type { ScPoSummaryRow, ScRecentGrn } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
@@ -53,7 +54,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
       kind: 'code',
       header: 'SO / JWSO No.',
       className: 'text2',
-      render: (g) => g.soCode ?? '—',
+      render: (g) => (g.soCode ? soNoWithInternal(g.soCode, g.soInternalNo) : '—'),
     },
     {
       id: 'lines',

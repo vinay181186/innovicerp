@@ -54,6 +54,8 @@ export const soTimelineResponseSchema = z.object({
   generatedAt: z.string(),
   soId: z.string().uuid(),
   soCode: z.string(),
+  // ADR-207 — the SO's Internal SO No. (read live from sales_orders).
+  soInternalNo: z.string().nullable().optional(),
   customerName: z.string().nullable(),
   type: z.string(),
   events: z.array(soTimelineEventSchema),

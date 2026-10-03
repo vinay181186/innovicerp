@@ -20,6 +20,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { todayIst } from '@/lib/date';
@@ -246,7 +247,7 @@ function InvoiceNewPage(): React.JSX.Element {
     () =>
       (soOpts?.options ?? []).map((o) => ({
         id: o.salesOrderId,
-        code: o.soCode,
+        code: soNoWithInternal(o.soCode, o.soInternalNo),
         name: o.customer ?? '',
       })),
     [soOpts],

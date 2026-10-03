@@ -9,6 +9,7 @@ import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { soNoWithInternal } from '@/lib/so-number';
 import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
 import {
@@ -269,7 +270,7 @@ export function ComponentSoExpand({
       </table>
       <ConfirmDialog
         open={deletingLine !== null}
-        title={`Delete line ${deletingLine?.lineNo ?? ''} of SO ${so.code}?`}
+        title={`Delete line ${deletingLine?.lineNo ?? ''} of SO ${soNoWithInternal(so.code, so.internalSoNo)}?`}
         message={
           <>
             The line is removed from this Sales Order.

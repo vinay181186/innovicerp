@@ -19,6 +19,8 @@ import type { DbTransaction } from '../db/with-user-context';
 export interface SoPhaseData {
   soId: string;
   soNo: string;
+  /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
+  internalSoNo: string | null;
   customer: string | null;
   type: string | null;
   status: string;
@@ -57,6 +59,7 @@ export function computeDurations(p: SoPhaseTimestamps): SoDurations {
 type PhaseRow = {
   so_id: string;
   so_no: string;
+  internal_so_no: string | null;
   customer: string | null;
   type: string | null;
   status: string;
@@ -98,6 +101,7 @@ export async function loadSoPhaseData(
       SELECT
         so.id AS so_id,
         so.code AS so_no,
+        so.internal_so_no AS internal_so_no,
         COALESCE(cl.name, so.customer_name) AS customer,
         so.type::text AS type,
         so.status::text AS status,
@@ -186,6 +190,7 @@ export async function loadSoPhaseData(
     return {
       soId: r.so_id,
       soNo: r.so_no,
+      internalSoNo: r.internal_so_no,
       customer: r.customer,
       type: r.type,
       status: r.status,

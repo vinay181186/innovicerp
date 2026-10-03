@@ -317,7 +317,7 @@ export async function buildSpecialist(
     );
     const soRows = await q(
       tx,
-      `SELECT so.code, so.so_date, so.customer_name, MIN(sol.due_date) AS due_date FROM sales_orders so LEFT JOIN sales_order_lines sol ON sol.sales_order_id=so.id AND sol.deleted_at IS NULL WHERE so.company_id='${cid}'::uuid AND so.type='equipment' AND so.status NOT IN ('closed','cancelled') AND (so.bom_master_id IS NULL OR so.bom_status='BOM Pending') AND so.deleted_at IS NULL GROUP BY so.id, so.code, so.so_date, so.customer_name ORDER BY so.so_date DESC LIMIT 10`,
+      `SELECT so.code || COALESCE(' · ' || NULLIF(btrim(so.internal_so_no), ''), '') AS code, so.so_date, so.customer_name, MIN(sol.due_date) AS due_date FROM sales_orders so LEFT JOIN sales_order_lines sol ON sol.sales_order_id=so.id AND sol.deleted_at IS NULL WHERE so.company_id='${cid}'::uuid AND so.type='equipment' AND so.status NOT IN ('closed','cancelled') AND (so.bom_master_id IS NULL OR so.bom_status='BOM Pending') AND so.deleted_at IS NULL GROUP BY so.id, so.code, so.so_date, so.customer_name ORDER BY so.so_date DESC LIMIT 10`,
     );
     panels.push({
       title: 'Equipment SOs Awaiting BOM',

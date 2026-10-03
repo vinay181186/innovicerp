@@ -136,7 +136,11 @@ async function shortCloseLinesTx(
   const { companyId, salesOrderId, reason, mode } = args;
 
   const hdrRows = await tx
-    .select({ code: salesOrders.code, status: salesOrders.status })
+    .select({
+      code: salesOrders.code,
+      internalSoNo: salesOrders.internalSoNo,
+      status: salesOrders.status,
+    })
     .from(salesOrders)
     .where(
       and(
@@ -148,9 +152,11 @@ async function shortCloseLinesTx(
     .limit(1);
   const hdr = hdrRows[0];
   if (!hdr) throw new NotFoundError('SO not found. It may have been moved to Trash.');
+  // What the user-facing messages call the SO (ADR-207); logs keep the SO No.
+  const soLabel = hdr.internalSoNo ? `${hdr.code} · ${hdr.internalSoNo}` : hdr.code;
   if (hdr.status === 'draft' || hdr.status === 'cancelled') {
     throw new ValidationError(
-      `${hdr.code} is ${hdr.status === 'draft' ? 'a draft' : 'cancelled'} — there is nothing to close.` +
+      `${soLabel} is ${hdr.status === 'draft' ? 'a draft' : 'cancelled'} — there is nothing to close.` +
         (hdr.status === 'draft' ? ' Cancel the draft instead.' : ''),
     );
   }
@@ -202,7 +208,7 @@ async function shortCloseLinesTx(
   if (eligible.length === 0) {
     if (mode === 'line') throw new NotFoundError('SO line not found. Refresh the page.');
     throw new ConflictError(
-      `${hdr.code} has no line left to close — every line is fully dispatched, cancelled or already closed short.`,
+      `${soLabel} has no line left to close — every line is fully dispatched, cancelled or already closed short.`,
     );
   }
 

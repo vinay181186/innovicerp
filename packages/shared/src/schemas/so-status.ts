@@ -192,6 +192,8 @@ export type SoStatusEquipmentInfo = z.infer<typeof soStatusEquipmentInfoSchema>;
 export const soStatusHeaderSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
+  /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
+  internalSoNo: z.string().nullable().optional(),
   type: z.enum(['component_manufacturing', 'equipment', 'with_material']),
   status: z.enum(SO_STATUSES),
   soDate: z.string(),

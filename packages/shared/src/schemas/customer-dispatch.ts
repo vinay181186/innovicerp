@@ -52,6 +52,8 @@ export type DispatchableLine = z.infer<typeof dispatchableLineSchema>;
 export const dispatchableSoResponseSchema = z.object({
   salesOrderId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   lines: z.array(dispatchableLineSchema),
 });
@@ -109,6 +111,8 @@ export const customerDispatchRowSchema = z.object({
   dispatchDate: z.string(),
   salesOrderId: z.string().uuid(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   transport: z.string().nullable(),
   vehicleNo: z.string().nullable(),
@@ -166,6 +170,8 @@ export const customerDispatchRegisterRowSchema = z.object({
   date: z.string(),
   jcNo: z.string().nullable(), // codes of the JC(s) feeding the SO line
   soNo: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   clientPoLineNo: z.string().nullable(),
   itemCode: z.string().nullable(), // resolved from items master (items.code)
   /** The customer's drawing revision for this register row, read off the SO
@@ -236,6 +242,8 @@ export type CustomerDispatchRegisterResponse = z.infer<
 export const financeSoOptionSchema = z.object({
   salesOrderId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
 });
 export type FinanceSoOption = z.infer<typeof financeSoOptionSchema>;

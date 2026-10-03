@@ -41,6 +41,7 @@ import { SoExpandedPanel } from '../components/so-expanded-panel';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
 import { todayIst } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { fetchSalesOrdersForExport, useSalesOrdersList, useSoftDeleteSalesOrder } from '../api';
 
@@ -202,7 +203,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
         search={searchInput}
         onSearch={setSearchInput}
-        searchPlaceholder="Search SO no., customer, client PO, part name, item code…"
+        searchPlaceholder="Search SO no., Internal SO No., customer, client PO, part name, item code…"
         updating={isFetching && !isLoading}
         filters={
           <>
@@ -379,7 +380,7 @@ function SalesOrdersListPage(): React.JSX.Element {
 
       <ConfirmDialog
         open={deletingSo !== null}
-        title={`Move SO ${deletingSo?.code ?? ''} to Trash?`}
+        title={`Move SO ${deletingSo ? soNoWithInternal(deletingSo.code, deletingSo.internalSoNo) : ''} to Trash?`}
         message={
           <>
             You can restore it from Trash.

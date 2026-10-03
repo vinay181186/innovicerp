@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { soNoWithInternal } from '@/lib/so-number';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -73,7 +74,7 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {it.soNo}
+          {soNoWithInternal(it.soNo, it.soInternalNo)}
         </Link>
       ),
     },
@@ -312,10 +313,10 @@ function StuckDashboardPage(): React.JSX.Element {
           linkedRef={{
             type: 'sales_order',
             id: assignFor.soId,
-            display: `SO ${assignFor.soNo}`,
+            display: `SO ${soNoWithInternal(assignFor.soNo, assignFor.soInternalNo)}`,
             navPage: `/sales-orders/${assignFor.soId}`,
           }}
-          suggestedTitle={`Unstick ${assignFor.soNo} — ${assignFor.stage}`}
+          suggestedTitle={`Unstick ${soNoWithInternal(assignFor.soNo, assignFor.soInternalNo)} — ${assignFor.stage}`}
           onClose={() => setAssignFor(null)}
         />
       ) : null}

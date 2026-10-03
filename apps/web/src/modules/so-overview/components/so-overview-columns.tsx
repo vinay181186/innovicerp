@@ -12,6 +12,7 @@
 import type { SoOverallStatus, SoOverviewRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { ProgressBar, ROW_TINT, type DataTableColumn } from '@/ui/data';
 
 /** Column ids shown inside the ▸ detail row by default (fit engine
@@ -172,7 +173,7 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
           style={{ color: 'var(--cyan)', fontSize: 13, fontWeight: 800 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {row.code}
+          {soNoWithInternal(row.code, row.internalSoNo)}
         </Link>
       ),
     },

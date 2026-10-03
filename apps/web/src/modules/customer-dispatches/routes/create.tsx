@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayIst } from '@/lib/date';
 import { Panel } from '@/ui/data';
@@ -232,7 +233,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     () =>
       (soOpts?.options ?? []).map((o) => ({
         id: o.salesOrderId,
-        code: o.soCode,
+        code: soNoWithInternal(o.soCode, o.soInternalNo),
         name: o.customer ?? '',
       })),
     [soOpts],

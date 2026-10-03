@@ -57,7 +57,7 @@ export async function getSoCostingDetail(
   return withUserContext(user, async (tx) => {
     const headRes = await tx.execute(
       sql.raw(`
-        SELECT so.id AS so_id, so.code AS so_no,
+        SELECT so.id AS so_id, so.code AS so_no, so.internal_so_no AS so_internal_no,
           COALESCE(cl.name, so.customer_name) AS customer,
           COALESCE(so.cost_center, so.code) AS cost_center,
           (SELECT cc.name FROM cost_centers cc
@@ -73,6 +73,7 @@ export async function getSoCostingDetail(
       headRes as unknown as {
         so_id: string;
         so_no: string;
+        so_internal_no: string | null;
         customer: string | null;
         cost_center: string | null;
         cc_name: string | null;
@@ -209,6 +210,7 @@ export async function getSoCostingDetail(
       priceVisible: showMoney,
       soId: head.so_id,
       soNo: head.so_no,
+      soInternalNo: head.so_internal_no,
       customer: head.customer,
       costCenter: head.cost_center,
       costCenterName: head.cc_name,

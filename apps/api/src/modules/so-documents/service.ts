@@ -65,7 +65,7 @@ export async function listSoDocumentOverview(
   return withUserContext(user, async (tx) => {
     const rs = await tx.execute(sql`
       SELECT
-        so.id, so.code AS "soCode", so.customer_name AS "customerName", so.status,
+        so.id, so.code AS "soCode", so.internal_so_no AS "soInternalNo", so.customer_name AS "customerName", so.status,
         COALESCE(fr.cnt, 0)  AS "fileCount",
         COALESCE(fr.sz, 0)   AS "totalSize",
         COALESCE(fa.cnt, 0)  AS "archivedCount",
@@ -96,6 +96,7 @@ export async function listSoDocumentOverview(
       rows: rows(rs).map((r) => ({
         salesOrderId: r['id'] as string,
         soCode: r['soCode'] as string,
+        soInternalNo: (r['soInternalNo'] as string | null) ?? null,
         customerName: (r['customerName'] as string | null) ?? null,
         status: (r['status'] as string | null) ?? 'open',
         fileCount: num(r['fileCount']),
@@ -118,7 +119,8 @@ export async function getSoDocumentDetail(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const soRows = await tx.execute(sql`
-      SELECT so.id, so.code, so.customer_name AS "customerName", so.status
+      SELECT so.id, so.code, so.internal_so_no AS "internalSoNo",
+        so.customer_name AS "customerName", so.status
       FROM public.sales_orders so
       WHERE so.id = ${salesOrderId}::uuid AND so.company_id = ${companyId}::uuid
         AND so.deleted_at IS NULL
@@ -241,6 +243,7 @@ export async function getSoDocumentDetail(
       so: {
         id: soRow['id'] as string,
         code: soRow['code'] as string,
+        internalSoNo: (soRow['internalSoNo'] as string | null) ?? null,
         customerName: (soRow['customerName'] as string | null) ?? null,
         status: (soRow['status'] as string | null) ?? 'open',
       },

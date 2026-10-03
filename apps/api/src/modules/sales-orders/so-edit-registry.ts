@@ -12,14 +12,20 @@
 // direct edit.
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import type { AccessFormKey, UpdateSalesOrderInput } from '@innovic/shared';
+import {
+  type AccessFormKey,
+  type UpdateSalesOrderInput,
+  internalSoNoTakenMessage,
+  normaliseInternalSoNo,
+} from '@innovic/shared';
 import { clients, salesOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import type { DiffField } from '../../lib/audit-trail';
+import { ConflictError } from '../../lib/errors';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
 import { SO_HEADER_FIELDS, SO_MONEY_HEADER_FIELDS } from './edit-log';
-import { updateSalesOrderTx } from './service';
+import { isInternalSoNoViolation, updateSalesOrderTx } from './service';
 
 const SO_FORM_KEY: AccessFormKey = 'so_create';
 
@@ -140,17 +146,26 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
       header: Record<string, unknown>;
       expectedUpdatedAt?: string;
     };
-    await updateSalesOrderTx(
-      tx,
-      id,
-      {
-        header: filtered.header as UpdateSalesOrderInput['header'],
-        expectedUpdatedAt: expectedUpdatedAt ?? undefined,
-      },
-      user,
-      // Record-level only — never a cancel, so no reason is needed here.
-      null,
-    );
+    const header = filtered.header as UpdateSalesOrderInput['header'];
+    try {
+      await updateSalesOrderTx(
+        tx,
+        id,
+        { header, expectedUpdatedAt: expectedUpdatedAt ?? undefined },
+        user,
+        // Record-level only — never a cancel, so no reason is needed here.
+        null,
+      );
+    } catch (e) {
+      // ADR-207 — another SO took this Internal SO No. between staging and
+      // approval (race past assertInternalSoNoFree): a 409, not a 500.
+      if (isInternalSoNoViolation(e) && typeof header.internalSoNo === 'string') {
+        throw new ConflictError(
+          internalSoNoTakenMessage(normaliseInternalSoNo(header.internalSoNo)),
+        );
+      }
+      throw e;
+    }
   },
 
   async loadUpdatedAts(tx, companyId, ids) {

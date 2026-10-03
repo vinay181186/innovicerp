@@ -17,6 +17,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import {
   PENDING_ITEM_SQL,
+  PENDING_SO_SQL,
   PENDING_VENDOR_SQL,
   SC_GRN_SF_COLUMNS,
   SC_PENDING_SF_COLUMNS,
@@ -66,6 +67,7 @@ type PendRow = {
   vendor_code: string | null;
   vendor_name: string | null;
   so_code: string | null;
+  so_internal_no: string | null;
   item_code: string | null;
   item_revision: string | null;
   item_name: string | null;
@@ -89,7 +91,7 @@ export async function listScPending(
   const where = sql`${pendingFrom(companyId)}
     ${contains(PENDING_VENDOR_SQL, input.vendor)}
     ${contains(PENDING_ITEM_SQL, input.item)}
-    ${contains(sql`so.code`, input.so)}
+    ${contains(PENDING_SO_SQL, input.so)}
     ${sfWhere(SC_PENDING_SF_COLUMNS, sf, opts)}`;
   const order = sfOrderBy(
     SC_PENDING_SF_COLUMNS,
@@ -104,7 +106,7 @@ export async function listScPending(
         po.id AS po_id, po.code AS po_no, pol.line_no, po.po_date,
         COALESCE(v.code, vt.code, po.vendor_code_text) AS vendor_code,
         COALESCE(v.name, vt.name, po.vendor_code_text) AS vendor_name,
-        so.code AS so_code,
+        so.code AS so_code, so.internal_so_no AS so_internal_no,
         i.code AS item_code, COALESCE(i.name, pol.item_name) AS item_name,
         -- The customer's drawing revision off the SO line (else the JWSO line),
         -- never items.revision. Cast to text: the column is text only after 0119.
@@ -132,6 +134,7 @@ export async function listScPending(
       vendorCode: r.vendor_code,
       vendorName: r.vendor_name,
       soCode: r.so_code,
+      soInternalNo: r.so_internal_no,
       itemCode: r.item_code,
       itemRevision: r.item_revision,
       itemName: r.item_name,

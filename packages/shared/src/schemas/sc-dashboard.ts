@@ -23,6 +23,8 @@ export type ScVendorRow = z.infer<typeof scVendorRowSchema>;
 export const scSoRowSchema = z.object({
   soRefId: z.string().uuid().nullable(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No. (live from sales_orders), null when none. */
+  soInternalNo: z.string().nullable().optional(),
   lines: z.number().int().nonnegative(),
   uniqueVendors: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
@@ -39,6 +41,8 @@ export const scPoSummaryRowSchema = z.object({
   vendorName: z.string().nullable(),
   vendorCode: z.string().nullable(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No. (live from sales_orders), null when none. */
+  soInternalNo: z.string().nullable().optional(),
   lines: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
@@ -58,6 +62,8 @@ export const scPendingLineSchema = z.object({
   vendorCode: z.string().nullable(),
   vendorName: z.string().nullable(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No. (live from sales_orders), null when none. */
+  soInternalNo: z.string().nullable().optional(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for this line, read off the SO line the
    *  purchase order line was raised against

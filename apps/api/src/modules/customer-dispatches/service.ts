@@ -594,6 +594,7 @@ async function loadSo(
 ): Promise<{
   id: string;
   code: string;
+  internalSoNo: string | null;
   customer: string | null;
   status: string;
   clientId: string | null;
@@ -602,6 +603,7 @@ async function loadSo(
     .select({
       id: salesOrders.id,
       code: salesOrders.code,
+      internalSoNo: salesOrders.internalSoNo,
       customer: salesOrders.customerName,
       status: salesOrders.status,
       clientId: salesOrders.clientId,
@@ -624,7 +626,12 @@ export async function listFinanceSoOptions(user: AuthContext): Promise<FinanceSo
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx
-      .select({ id: salesOrders.id, code: salesOrders.code, customer: salesOrders.customerName })
+      .select({
+        id: salesOrders.id,
+        code: salesOrders.code,
+        internal: salesOrders.internalSoNo,
+        customer: salesOrders.customerName,
+      })
       .from(salesOrders)
       .where(
         and(
@@ -634,7 +641,12 @@ export async function listFinanceSoOptions(user: AuthContext): Promise<FinanceSo
         ),
       )
       .orderBy(desc(salesOrders.code));
-    return rows.map((r) => ({ salesOrderId: r.id, soCode: r.code, customer: r.customer }));
+    return rows.map((r) => ({
+      salesOrderId: r.id,
+      soCode: r.code,
+      soInternalNo: r.internal,
+      customer: r.customer,
+    }));
   });
 }
 
@@ -651,7 +663,13 @@ export async function getDispatchableSo(
     const so = await loadSo(tx, companyId, soId);
     const lines = await loadDispatchable(tx, companyId, soId);
     const out = showMoney ? lines : lines.map((l) => ({ ...l, rate: null }));
-    return { salesOrderId: so.id, soCode: so.code, customer: so.customer, lines: out };
+    return {
+      salesOrderId: so.id,
+      soCode: so.code,
+      soInternalNo: so.internalSoNo,
+      customer: so.customer,
+      lines: out,
+    };
   });
 }
 
@@ -750,14 +768,19 @@ export async function listDispatches(
     // list shows it; the dispatch's saved customer_text is the fallback when
     // the SO has no client_id, and stays the copy the DC print reads.
     const soIds = [...new Set(headers.map((h) => h.salesOrderId))];
-    const liveCustomerRows = soIds.length
+    // LEFT join: the same read also carries the SO's live Internal SO No.
+    // (ADR-207), which an SO without a client still has.
+    const liveSoRows = soIds.length
       ? await tx
-          .select({ soId: salesOrders.id, name: clients.name })
+          .select({ soId: salesOrders.id, name: clients.name, internal: salesOrders.internalSoNo })
           .from(salesOrders)
-          .innerJoin(clients, and(eq(clients.id, salesOrders.clientId), isNull(clients.deletedAt)))
+          .leftJoin(clients, and(eq(clients.id, salesOrders.clientId), isNull(clients.deletedAt)))
           .where(inArray(salesOrders.id, soIds))
       : [];
-    const liveCustomer = new Map(liveCustomerRows.map((r) => [r.soId, r.name]));
+    const liveCustomer = new Map(
+      liveSoRows.filter((r) => r.name !== null).map((r) => [r.soId, r.name as string]),
+    );
+    const liveInternal = new Map(liveSoRows.map((r) => [r.soId, r.internal]));
 
     return {
       total: Number(cnt?.total ?? 0),
@@ -767,6 +790,7 @@ export async function listDispatches(
         return {
           ...rowToHeader(h, a.cnt, a.qty),
           customer: liveCustomer.get(h.salesOrderId) ?? h.customerText,
+          soInternalNo: liveInternal.get(h.salesOrderId) ?? null,
           billedQty,
           billedStatus: billedStatusOf(billedQty, a.qty),
         };
@@ -849,13 +873,18 @@ async function getDispatchInternal(
   // The SO's customer + Client PO No. — the DC print reads the customer's
   // address and GSTIN off the client master.
   const soRows = await tx
-    .select({ clientId: salesOrders.clientId, clientPoNo: salesOrders.clientPoNo })
+    .select({
+      clientId: salesOrders.clientId,
+      clientPoNo: salesOrders.clientPoNo,
+      internalSoNo: salesOrders.internalSoNo,
+    })
     .from(salesOrders)
     .where(eq(salesOrders.id, h.salesOrderId))
     .limit(1);
   const billedQty = (await loadBilledQtyByDispatch(tx, companyId, h.salesOrderId)).get(h.id) ?? 0;
   return {
     ...rowToHeader(h, lines.length, totalQty),
+    soInternalNo: soRows[0]?.internalSoNo ?? null,
     billedQty,
     billedStatus: billedStatusOf(billedQty, totalQty),
     clientId: soRows[0]?.clientId ?? null,

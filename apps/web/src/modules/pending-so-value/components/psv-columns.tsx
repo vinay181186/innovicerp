@@ -17,6 +17,7 @@
 import type { PendingSoValueResponse, PendingSoValueRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
@@ -96,7 +97,7 @@ export function psvColumns(
           title="Open the Sales Order"
           onClick={(e) => e.stopPropagation()}
         >
-          {r.soCode}
+          {soNoWithInternal(r.soCode, r.soInternalNo)}
         </Link>
       ),
     },

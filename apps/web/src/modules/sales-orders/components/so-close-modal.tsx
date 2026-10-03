@@ -7,6 +7,7 @@
 
 import type { SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
 import { useId, useState } from 'react';
+import { soNoWithInternal } from '@/lib/so-number';
 import { Button } from '@/ui/core';
 import { Banner, Modal } from '@/ui/feedback';
 import { FormField } from '@/ui/forms';
@@ -52,7 +53,11 @@ export function SoCloseModal(props: {
 
   return (
     <Modal
-      title={line ? `Close SO ${detail.code} — Line ${line.lineNo}` : `Close SO ${detail.code}`}
+      title={
+        line
+          ? `Close SO ${soNoWithInternal(detail.code, detail.internalSoNo)} — Line ${line.lineNo}`
+          : `Close SO ${soNoWithInternal(detail.code, detail.internalSoNo)}`
+      }
       onClose={onClose}
       size="md"
       maxWidth="520px"

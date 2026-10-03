@@ -21,6 +21,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn, ROW_TINT, type RowMenuItem } from '@/ui/data';
 import { ConfirmDialog, ToastProvider, useToast } from '@/ui/feedback';
@@ -180,7 +181,9 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
       <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 14, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--cyan)' }}>{header.code}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--cyan)' }}>
+              {soNoWithInternal(header.code, header.internalSoNo)}
+            </div>
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
               {TYPE_LABEL[header.type] ?? header.type} · {lines.length} line
               {lines.length === 1 ? '' : 's'}

@@ -18,6 +18,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { soNoWithInternal } from '@/lib/so-number';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -98,7 +99,12 @@ function SoCostingDetailPage(): React.JSX.Element {
           flexWrap: 'wrap',
         }}
       >
-        <Stat label="SO No." value={data.soNo} color="var(--cyan)" fontSize={16} />
+        <Stat
+          label="SO No."
+          value={soNoWithInternal(data.soNo, data.soInternalNo)}
+          color="var(--cyan)"
+          fontSize={16}
+        />
         <Stat label="Customer" value={data.customer ?? '—'} />
         {data.costCenter ? (
           <Stat

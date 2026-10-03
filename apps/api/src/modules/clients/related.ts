@@ -31,8 +31,11 @@ export async function getClientRelated(
     const client = found[0];
     if (!client) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
 
+    // ADR-207: an SO shows as "IN-SO-00786 · SO-2401" when it has an Internal
+    // SO No. (same text as the web soNoWithInternal), read live from the SO.
+    const soNoShown = sql`so.code || COALESCE(' · ' || so.internal_so_no, '')`;
     const soRaw = await tx.execute(sql`
-      SELECT so.id, so.code, so.status::text AS status, so.so_date AS date,
+      SELECT so.id, ${soNoShown} AS code, so.status::text AS status, so.so_date AS date,
              so.client_po_no AS label, count(*) OVER () AS total
       FROM public.sales_orders so
       WHERE so.company_id = ${companyId}::uuid AND so.deleted_at IS NULL
@@ -42,7 +45,7 @@ export async function getClientRelated(
     `);
     const dispatchRaw = await tx.execute(sql`
       SELECT cd.id, cd.code, cd.status::text AS status, cd.dispatch_date AS date,
-             so.code AS label, count(*) OVER () AS total
+             ${soNoShown} AS label, count(*) OVER () AS total
       FROM public.customer_dispatches cd
       JOIN public.sales_orders so ON so.id = cd.sales_order_id AND so.deleted_at IS NULL
       WHERE cd.company_id = ${companyId}::uuid AND cd.deleted_at IS NULL

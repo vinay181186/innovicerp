@@ -43,6 +43,8 @@ export type InvoiceableLine = z.infer<typeof invoiceableLineSchema>;
 export const invoiceableSoResponseSchema = z.object({
   salesOrderId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   clientGst: z.string().nullable(),
   /** The SO's GST % (sales_orders.gst_percent) — the new invoice's default
@@ -164,6 +166,8 @@ export const invoiceRowSchema = z.object({
   invoiceDate: z.string(),
   salesOrderId: z.string().uuid(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   clientName: z.string().nullable(),
   // Money — NULL when the viewer's access hides prices.
   subtotal: z.number().nonnegative().nullable(),

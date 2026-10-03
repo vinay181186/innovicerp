@@ -117,7 +117,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
   const showMoney = await scShowMoney(user);
   const inner = sql`
     SELECT
-      so.id AS so_ref_id, so.code AS so_code,
+      so.id AS so_ref_id, so.code AS so_code, so.internal_so_no AS so_internal_no,
       COUNT(pol.id)::int AS lines,
       COUNT(DISTINCT po.vendor_id)::int AS unique_vendors,
       COALESCE(SUM(pol.qty), 0) AS total_qty,
@@ -129,10 +129,11 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
     LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
     LEFT JOIN sales_orders so ON so.id = sol.sales_order_id
     WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND ${OPEN_PO}
-    GROUP BY so.id, so.code`;
+    GROUP BY so.id, so.code, so.internal_so_no`;
   type SRow = GroupRow & {
     so_ref_id: string | null;
     so_code: string | null;
+    so_internal_no: string | null;
     unique_vendors: number;
   };
   const { rows, total } = await pageOf<SRow>(
@@ -147,6 +148,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
     items: rows.map((r) => ({
       soRefId: r.so_ref_id,
       soCode: r.so_code,
+      soInternalNo: r.so_internal_no,
       lines: n(r.lines),
       uniqueVendors: n(r.unique_vendors),
       totalQty: n(r.total_qty),
@@ -200,7 +202,7 @@ export async function listScPoSummary(
       p.id AS po_id, p.code AS po_no, p.po_date,
       COALESCE(v.name, vt.name, p.vendor_code_text) AS vendor_name,
       COALESCE(v.code, vt.code, p.vendor_code_text) AS vendor_code,
-      so.code AS so_code,
+      so.code AS so_code, so.internal_so_no AS so_internal_no,
       p.lines, p.total_qty, p.received_qty, p.total_val, p.tax_amount,
       p.total_val + p.tax_amount AS grand_total,
       p.status::text AS status,
@@ -219,6 +221,7 @@ export async function listScPoSummary(
     vendor_name: string | null;
     vendor_code: string | null;
     so_code: string | null;
+    so_internal_no: string | null;
     lines: number;
     total_qty: Num;
     received_qty: Num;
@@ -244,6 +247,7 @@ export async function listScPoSummary(
     vendorName: r.vendor_name,
     vendorCode: r.vendor_code,
     soCode: r.so_code,
+    soInternalNo: r.so_internal_no,
     lines: n(r.lines),
     totalQty: n(r.total_qty),
     receivedQty: n(r.received_qty),

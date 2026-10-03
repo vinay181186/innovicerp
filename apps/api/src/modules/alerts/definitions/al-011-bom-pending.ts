@@ -25,7 +25,9 @@ export const al011BomPending: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT so.id AS nav_id, so.code AS so_code,
+      SELECT so.id AS nav_id,
+             -- ADR-207: SO No. · Internal SO No. (live from sales_orders)
+             so.code || COALESCE(' · ' || NULLIF(btrim(so.internal_so_no), ''), '') AS so_code,
              COALESCE(c.name, so.customer_name, '') AS customer,
              COALESCE(so.bom_status, '') AS bom_status, so.so_date
       FROM public.sales_orders so

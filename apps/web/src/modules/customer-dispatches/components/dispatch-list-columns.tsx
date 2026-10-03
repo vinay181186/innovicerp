@@ -9,6 +9,7 @@
 
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import type { CustomerDispatchRow } from '@innovic/shared';
 import type { DispatchGroup } from './dispatch-group';
@@ -71,7 +72,7 @@ export function dispatchListColumns(
       nowrap: true,
       render: (g) => (
         <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-          {g.soNo ?? '—'}
+          {g.soNo ? soNoWithInternal(g.soNo, g.soInternalNo) : '—'}
         </span>
       ),
     },

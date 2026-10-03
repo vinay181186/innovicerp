@@ -43,6 +43,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayIst } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
 import { Banner } from '@/ui/feedback';
@@ -265,7 +266,7 @@ function InvoiceDetailPage(): React.JSX.Element {
       <div style={{ fontSize: 13, marginBottom: 10 }}>
         Customer: <b>{inv.clientName ?? '—'}</b> · SO No.:{' '}
         <Link to="/sales-orders/$id" params={{ id: inv.salesOrderId }} className="fw-700">
-          {inv.soCode ?? '—'}
+          {inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'}
         </Link>{' '}
         · Due Date: <b>{fmtDate(inv.dueDate)}</b>
         {inv.placeOfSupply ? (

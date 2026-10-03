@@ -5,12 +5,13 @@
 
 import type { SoTimelineResponse } from '@innovic/shared';
 import { fmtDateTime } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 
 export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JSX.Element {
   // Legacy L17844: header line is the SO number only — no customer/type/count.
   const header = (
     <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
-      📅 SO Timeline — {data.soCode}
+      📅 SO Timeline — {soNoWithInternal(data.soCode, data.soInternalNo)}
     </div>
   );
 
