@@ -19,19 +19,41 @@
 // ADR-180: Available = Physical − Reserved. Physical and the two Reserved
 // figures stay in the Available cell's tooltip, as before.
 
-import type { PlanningDetailResponse, PlanningLine } from '@innovic/shared';
+import {
+  planningLineStatus,
+  type PlanningLineState,
+  type PlanningDetailResponse,
+  type PlanningLine,
+} from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { planStatusOf, prStatusOf } from './plan-chip';
 import { lineStatusOf } from './planning-shared';
 
+/** The Plan Status ▾ tick list. A `badge` column filters on DISTINCT values, so
+ *  it must offer the five states and not the on-screen label, which carries the
+ *  pending qty ("Partly Planned (450 pending)") and would give one tick box per
+ *  line. */
+const PLANNING_STATE_LABEL: Record<PlanningLineState, string> = {
+  unplanned: 'Unplanned',
+  partly_planned: 'Partly Planned',
+  in_planning: 'In Planning',
+  in_production_no_plan: 'In Production (no plan)',
+  fully_planned: 'Fully Planned',
+};
+
 /** The Plans cell as plain text — the cell's own `title` (so the hover shows
  *  every plan when the column is cut) and what Sort & Filter reads. */
 export function plansCellText(line: PlanningLine): string {
   const parts = [
-    ...line.plans.map((p) => `${p.code} ${planStatusOf(p).label}`),
+    // PRs first, then plans — the same order the ▸ panel uses, so the cell and
+    // the panel never read differently.
     ...line.prs.map((pr) => `${pr.code} ${prStatusOf(pr).label}`),
+    ...line.plans.map((p) => `${p.code} ${planStatusOf(p).label}`),
+    ...(line.directJcQty > 0
+      ? [`${line.directJcCodes.join(', ') || 'Job Card'} In Production (no plan)`]
+      : []),
   ];
   return parts.join(' · ');
 }
@@ -97,8 +119,19 @@ export function planningLineColumns(
           ) : null}
         </>
       ),
-      title: (l) => l.itemName ?? '',
-      filterValue: (l) => l.itemName,
+      // The badge explains why the ⋯ offers Plan (make) or Raise PR (buy), and
+      // this column clips — so the tooltip has to carry it, or a long item name
+      // hides the one word that explains the row.
+      title: (l) =>
+        [
+          l.itemName ?? '',
+          l.itemProcurementType === 'buy' ? 'Buy' : 'Make',
+          l.itemProcurementType === 'buy' && source === 'jw' ? 'Customer material' : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      filterValue: (l) =>
+        `${l.itemName ?? ''} ${l.itemProcurementType === 'buy' ? 'Buy' : 'Make'}`.trim(),
     },
     {
       id: 'order_qty',
@@ -124,8 +157,10 @@ export function planningLineColumns(
           {l.availableQty}
         </span>
       ),
+      // Carries the old COLUMN-header tooltip too ("Physical − Reserved: free
+      // stock"), because a DataTable header takes no title.
       title: (l) =>
-        `Physical ${l.physicalQty} · Reserved (all lines) ${l.totalReservedQty} · Reserved (this line) ${l.reservedQty}`,
+        `Physical − Reserved: free stock. Physical ${l.physicalQty} · Reserved (all lines) ${l.totalReservedQty} · Reserved (this line) ${l.reservedQty}`,
       filterValue: (l) => l.availableQty,
     },
     {
@@ -140,7 +175,10 @@ export function planningLineColumns(
           {l.remaining}
         </span>
       ),
-      title: (l) => `Balance (Order − Dispatched − Reserved) ${l.balanceToPlan}`,
+      // Same: the old header tooltip defined the column, and it was the only
+      // place on the sheet that explained the number the screen is built around.
+      title: (l) =>
+        `Order − Planned − direct Job Cards: still to plan. The same number Plan / Raise PR use. Balance (Order − Dispatched − Reserved) ${l.balanceToPlan}`,
       filterValue: (l) => l.remaining,
     },
     {
@@ -161,13 +199,15 @@ export function planningLineColumns(
       className: 'mono',
       nowrap: true,
       render: (l) => (
-        <span
-          style={{ color: lineStatusOf(l).hasDirectJc ? 'var(--cyan)' : 'var(--text3)' }}
-          title="Job Card(s) created directly from SO Status — counted as covered."
-        >
+        <span style={{ color: l.directJcQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}>
           {l.directJcQty}
         </span>
       ),
+      // Only a line that HAS one gets the explanation; a bare 0 gets no tooltip.
+      title: (l) =>
+        l.directJcQty > 0
+          ? `Job Card(s) created directly from SO Status — counted as covered.${l.directJcCodes.length > 0 ? ` ${l.directJcCodes.join(', ')}` : ''}`
+          : '',
       filterValue: (l) => l.directJcQty,
     },
     {
@@ -211,7 +251,10 @@ export function planningLineColumns(
         const st = lineStatusOf(l);
         return `${st.label} · ${st.pct}%`;
       },
-      filterValue: (l) => lineStatusOf(l).label,
+      // The tick list must offer the five STATES, not one entry per pending qty:
+      // the label reads "Partly Planned (450 pending)", so filtering on it gave
+      // a distinct option for every line on the order.
+      filterValue: (l) => PLANNING_STATE_LABEL[planningLineStatus(l).state],
     },
     {
       // Pinned: the plan code is why a planner opens this screen, so it stays
@@ -223,7 +266,10 @@ export function planningLineColumns(
       align: 'left',
       ellipsis: true,
       render: (l) => {
-        if (l.plans.length === 0 && l.prs.length === 0) {
+        // A line can be covered by a Job Card raised straight off the SO, with
+        // no plan at all. Showing "—" there would say nothing covers a line
+        // that is on the floor right now, so the Job Card stands in for it.
+        if (l.plans.length === 0 && l.prs.length === 0 && l.directJcQty <= 0) {
           return (
             <span className="text3" style={{ fontSize: 11 }}>
               —
@@ -232,18 +278,8 @@ export function planningLineColumns(
         }
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            {l.plans.map((p) => {
-              const st = planStatusOf(p);
-              return (
-                <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
-                    {p.code}
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
-                </span>
-              );
-            })}
-            {/* ADR-171: purchase requests raised from this BUY line. */}
+            {/* ADR-171: purchase requests raised from this BUY line. Same order
+                as the ▸ panel. */}
             {l.prs.map((pr) => {
               const st = prStatusOf(pr);
               return (
@@ -255,6 +291,27 @@ export function planningLineColumns(
                 </span>
               );
             })}
+            {l.plans.map((p) => {
+              const st = planStatusOf(p);
+              return (
+                <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                    {p.code}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
+                </span>
+              );
+            })}
+            {l.directJcQty > 0 ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                  {l.directJcCodes.join(', ') || 'Job Card'}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)' }}>
+                  In Production (no plan)
+                </span>
+              </span>
+            ) : null}
           </span>
         );
       },

@@ -45,8 +45,13 @@ function planItems(
   const isRouteCard = plan.opsSource === 'route_card';
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
+  // Gate on the CODE, not the id. Since the soft-delete guards landed
+  // (ADR-208), a Job Card that was moved to Trash comes back with jcCode null
+  // while plans.jc_id still points at it — offering "Open Job Card" would walk
+  // the planner into a dead document.
   const hasJc =
     plan.jcId !== null &&
+    plan.jcCode !== null &&
     (plan.planStatus === 'jc_created' ||
       plan.planStatus === 'in_production' ||
       plan.planStatus === 'complete' ||
@@ -54,7 +59,7 @@ function planItems(
   return [
     {
       key: `open-jc-${plan.id}`,
-      label: `Open ${plan.jcCode ?? 'Job Card'}`,
+      label: `Open ${plan.jcCode ?? ''}`,
       icon: 'activity',
       group: 'main',
       hidden: !hasJc,

@@ -19,6 +19,16 @@ What did we decide?
 - Option A — rejected because <reason>
 - Option B — rejected because <reason>
 
+### Known follow-up: the order roll-up still uses the old rule
+
+Level 1 classifies an ORDER by coverage percentage (`classifyPlanningPct`), and that
+counts a draft plan as covered. Level 2 now says a draft plan has not been let out. So an
+order covered entirely by draft plans reads "Fully Planned" in the list and "In Planning"
+on its lines. That mismatch is not new — the screen has always shown "In Planning" there
+— but it is the same one-fact-two-rules fault one level up, and ADR-185's audit had driven
+cross-page mismatches to zero. Making the order badge a roll-up of its lines' states is the
+fix; it is a different shape of change and needs its own design.
+
 ### Consequences
 - Positive: <what we gain>
 - Negative: <what we give up>
@@ -11073,6 +11083,12 @@ the ▸ panel with Physical.
   `fully_planned`. Nothing displays that field; the screen already showed "In Planning".
 - `order-line-row.tsx` (`LINE_COLS`, `wrapCell`, `OrderLineRow`) is deleted.
 - 12 specs move from the chip's buttons to the ⋯; `rowMenuLabel` spared ~14 more.
-- Known gap left exactly as it was, not silently fixed: a BUY line covered only by a
-  purchase request still reads "Unplanned" while its percentage climbs, because the state
-  looks at plans and plan-less Job Cards. Pinned by a test.
+- A BUY line covered only by a purchase request still reads "Unplanned" on the screen
+  while its percentage climbs, because the state looks at plans and plan-less Job Cards.
+  That is unchanged for the planner. **On the wire it did change**: `lineStatus` used to
+  report `partial` for that line, because the old API rule classified a percentage and a
+  BUY line's `totalPlanned` counts its PR qty. It now reports `unplanned`, matching the
+  screen. Nothing reads the field, so nothing on any screen moves — but the review was
+  right that the first draft of this ADR claimed no wire change at all. Pinned by a test.
+  Fixing it properly means deciding whether a raised PR counts as "let out"; it is the
+  same question as the level-1 roll-up below, and belongs with it.

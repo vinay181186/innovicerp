@@ -125,11 +125,14 @@ describe('planningLineStatus', () => {
     expect(planningLineStatus(line({ ...base, shortClosed: false })).state).toBe('in_planning');
   });
 
-  // Known gap, carried over unchanged from the screen's old rule so this
-  // refactor changes no behaviour. On a BUY line `totalPlanned` also counts the
-  // qty on raised purchase requests, but the state only looks at plans and
-  // plan-less Job Cards — so a buy line covered by a PR alone still reads
-  // "Unplanned" while its percentage climbs. Fix it deliberately or not at all.
+  // Carried over unchanged from the SCREEN's old rule — a buy line covered by a
+  // purchase request alone has always read "Unplanned" while its percentage
+  // climbs, because the state looks at plans and plan-less Job Cards.
+  // It is NOT unchanged on the wire: the old API rule classified a percentage,
+  // and a BUY line's `totalPlanned` counts its PR qty, so `lineStatus` used to
+  // say `partial` here and now says `unplanned`. Nothing reads that field, so
+  // no screen moves. Fixing it means deciding whether a raised PR counts as
+  // work let out — a decision, not a tidy-up.
   it('a BUY line covered only by a purchase request still reads Unplanned', () => {
     const r = planningLineStatus(line({ orderQty: 10, remaining: 4, totalPlanned: 6, plans: [] }));
     expect(r.state).toBe('unplanned');

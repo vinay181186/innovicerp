@@ -232,7 +232,10 @@ export function PlanChip({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
         </Link>
       ) : null}
 
-      {plan.planStatus === 'pr_created' ? (
+      {/* The code, not the id, decides whether a PR is shown: a soft-deleted PR
+          comes back with a null code while the id survives, and PrLink would
+          then render an empty link after the literal "PR:" (ADR-208). */}
+      {plan.planStatus === 'pr_created' && (plan.foPrCode ?? plan.dpPrCode) ? (
         <span className="mono" style={{ color: 'var(--purple)', fontSize: 11, fontWeight: 700 }}>
           PR:
           <PrLink
