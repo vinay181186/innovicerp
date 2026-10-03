@@ -8,6 +8,7 @@
 import type { QcDocument } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 
@@ -99,7 +100,7 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
       nowrap: true,
       render: (d) => (
         <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-          {d.soCodeText ?? '—'}
+          {d.soCodeText ? soNoWithInternal(d.soCodeText, d.soInternalNo) : '—'}
         </span>
       ),
     },

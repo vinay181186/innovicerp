@@ -93,6 +93,8 @@ export const jcOpEnrichedSchema = z.object({
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
   soCode: z.string().nullable().optional(), // source SO/JW order code (T27)
+  /** ADR-207 — the source SO's Internal SO No. (null on a JW-sourced card). */
+  soInternalNo: z.string().nullable().optional(),
   opSeq: z.number().int().positive(),
   /** The PLANNED machine: jc_ops.machine_id, where the REMAINING qty is routed.
    *  Carried as an id (not only a code) so the Start popup can default its

@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
@@ -144,7 +145,7 @@ export function PendingTpi(props: {
             </span>
           ) : null}
           <div className="text2" style={{ fontSize: 11 }}>
-            {o.soCode ?? '—'} •{' '}
+            {o.soCode ? soNoWithInternal(o.soCode, o.soInternalNo) : '—'} •{' '}
             {/* The item code is the value the inspector matches against the
                 drawing, so it is the darkest text token and bold. The rest of
                 the line — the SO code, the part name, the order quantity —

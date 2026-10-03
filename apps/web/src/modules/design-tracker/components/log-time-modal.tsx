@@ -13,6 +13,7 @@ import {
 import { useState } from 'react';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { DataTable } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -133,7 +134,10 @@ export function LogTimeModal({
           fontSize: 12,
         }}
       >
-        <b style={{ color: 'var(--cyan)' }}>{row.soCodeText ?? '—'}</b> | POL{' '}
+        <b style={{ color: 'var(--cyan)' }}>
+          {row.soCodeText ? soNoWithInternal(row.soCodeText, row.soInternalNo) : '—'}
+        </b>{' '}
+        | POL{' '}
         <b className="mono" style={{ color: 'var(--purple)' }}>
           {row.clientPoLineNo ?? '—'}
         </b>{' '}

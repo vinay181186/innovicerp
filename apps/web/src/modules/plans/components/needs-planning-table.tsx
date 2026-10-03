@@ -20,6 +20,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -71,7 +72,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         nowrap: true,
         render: (r) => (
           <Link to="/sales-orders/$id" params={{ id: r.soId }} className="td-code">
-            {r.soCode}
+            {soNoWithInternal(r.soCode, r.soInternalNo)}
           </Link>
         ),
       },

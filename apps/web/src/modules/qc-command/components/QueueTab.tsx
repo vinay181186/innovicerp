@@ -12,6 +12,7 @@
 import { type QcCommandQueueRow, type QcQueueSort, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type QcPager, TablePager } from './TablePager';
@@ -176,7 +177,11 @@ export function QueueTab({
       id: 'so_code',
       header: 'SO No.',
       nowrap: true,
-      render: (it) => <span style={{ color: 'var(--cyan)' }}>{it.soCode ?? '—'}</span>,
+      render: (it) => (
+        <span style={{ color: 'var(--cyan)' }}>
+          {it.soCode ? soNoWithInternal(it.soCode, it.soInternalNo) : '—'}
+        </span>
+      ),
     },
     {
       id: 'customer',

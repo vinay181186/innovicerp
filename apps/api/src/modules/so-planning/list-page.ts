@@ -34,6 +34,7 @@ export const PLANNING_LIST_SF_FIELDS: MemFieldMap<PlanningSoListItem> = {
 function matchesTerm(r: PlanningSoListItem, needle: string): boolean {
   return [
     r.soCode,
+    r.soInternalNo,
     r.customerName,
     r.soType,
     r.dueDate,

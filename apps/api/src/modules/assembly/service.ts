@@ -321,6 +321,7 @@ export async function getAssemblyTracker(
       header: {
         soId: so.id,
         soCode: so.code,
+        soInternalNo: so.internalSoNo ?? null,
         customerName: so.customerName,
         type: so.type,
         status: so.status,
@@ -499,6 +500,7 @@ export async function listAssemblies(
       return {
         soId: r.soId,
         soCode: r.soCode,
+        soInternalNo: r.soInternalNo,
         customerName: r.customerName,
         bomCode: bom?.bomNo ?? null,
         bomName: bom?.bomName ?? null,

@@ -11,6 +11,8 @@ export const tpiPendingRowSchema = z.object({
   jcCode: z.string(),
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
+  /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
+  soInternalNo: z.string().nullable().default(null),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for the part awaiting third-party
    *  inspection, read off the SO line the job card was raised against
@@ -43,6 +45,8 @@ export const tpiCompletedRowSchema = z.object({
   jcCode: z.string(),
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
+  /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
+  soInternalNo: z.string().nullable().default(null),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision the inspection was carried out against,
    *  read off the SO line behind the job card (job_cards.source_so_line_id →

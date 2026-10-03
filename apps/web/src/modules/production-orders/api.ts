@@ -336,7 +336,9 @@ export function planPickerLabel(p: PlanPickerItem, mode: 'create' | 'close' = 'c
   // CODE/REV so the picker agrees with the PlanSummary under it (ADR-177).
   const item = itemCodeWithRev(p.itemCode ?? p.itemCodeText, p.itemRevision);
   const name = p.itemName ?? p.itemNameText ?? '';
-  const so = p.soCodeText ? `${p.soCodeText}${p.lineNo ? `/${p.lineNo}` : ''}` : '—';
+  const so = p.soCodeText
+    ? `${p.soCodeText}${p.lineNo ? `/${p.lineNo}` : ''}${p.soInternalNo ? ` · ${p.soInternalNo}` : ''}`
+    : '—';
   // POL — the line number printed on the CUSTOMER's own purchase order, ahead
   // of the item code. NOT the `/n` in the SO part, which is OUR line number.
   const pol = p.clientPoLineNo ? `POL ${p.clientPoLineNo}` : '';

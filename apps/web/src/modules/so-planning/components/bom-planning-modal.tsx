@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlansBatch } from '@/modules/plans/api';
@@ -244,7 +245,7 @@ export function BomPlanningModal({
 
   const title =
     mode === 'equipment'
-      ? `📦 Equipment BOM Planning — ${soCode}`
+      ? `📦 Equipment BOM Planning — ${soNoWithInternal(soCode, data?.soInternalNo)}`
       : // The parent IS the SO line, so it is written CODE/REV with the
         // customer's PO line beside it, like every other document.
         `📦 BOM Planning — ${itemCodeWithRev(data?.parentItemCode, data?.parentItemRevision, '')} × ${data?.orderQty ?? ''}`;
@@ -374,7 +375,9 @@ function BomBody({
               <div>
                 <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment SO</span>
                 <br />
-                <b style={{ color: 'var(--cyan)' }}>{data.soCode}</b>
+                <b style={{ color: 'var(--cyan)' }}>
+                  {soNoWithInternal(data.soCode, data.soInternalNo)}
+                </b>
               </div>
               <div>
                 <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment</span>
@@ -417,7 +420,7 @@ function BomBody({
               <div>
                 <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO/JW</span>
                 <br />
-                <b className="mono">{data.soCode}</b>
+                <b className="mono">{soNoWithInternal(data.soCode, data.soInternalNo)}</b>
               </div>
               <div>
                 <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>

@@ -126,7 +126,7 @@ export async function getIncomingQc(
         l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
         h.po_code_text AS "poCode",
         COALESCE(v.name, h.vendor_code_text) AS "vendorName",
-        so.code AS "soCode",
+        so.code AS "soCode", so.internal_so_no AS "soInternalNo",
         jc.code AS "jcCode", jco.op_seq AS "opSeq", jco.operation AS "opName",
         COALESCE(i.code, l.item_code_text) AS "itemCode",
         -- The customer's drawing revision off the SO / JWSO line (never
@@ -150,6 +150,7 @@ export async function getIncomingQc(
       poCode: str(r['poCode']),
       vendorName: str(r['vendorName']),
       soCode: str(r['soCode']),
+      soInternalNo: str(r['soInternalNo']),
       jcCode: str(r['jcCode']),
       opSeq: r['opSeq'] != null ? Number(r['opSeq']) : null,
       opName: str(r['opName']),

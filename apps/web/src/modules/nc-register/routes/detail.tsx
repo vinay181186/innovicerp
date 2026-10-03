@@ -36,6 +36,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -624,7 +625,9 @@ function DetailGrid(props: {
           <b className="cyan">{jcCode ?? '—'}</b>
         </CtxField>
         <CtxField label="SO No.">
-          <b>{detail.soCodeText ?? '—'}</b>
+          <b>
+            {detail.soCodeText ? soNoWithInternal(detail.soCodeText, detail.soInternalNo) : '—'}
+          </b>
         </CtxField>
       </div>
       <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>

@@ -192,6 +192,7 @@ export async function listJcOpsEnriched(
         -- line has no customer PO, so JW-sourced cards are correctly null.
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE(so.code, jw.code) AS "soCode",
+        so.internal_so_no      AS "soInternalNo",
         o.op_seq               AS "opSeq",
         -- The PLANNED machine as an id + its group, so the Start popup can
         -- default the Actual Machine picker to it and open the Group list on

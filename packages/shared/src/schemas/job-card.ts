@@ -34,6 +34,8 @@ export const jobCardSourceSoLinkSchema = z.object({
   salesOrderId: z.string().uuid(),
   salesOrderLineId: z.string().uuid(),
   code: z.string(),
+  /** ADR-207 — the SO's Internal SO No., read live from sales_orders. */
+  internalSoNo: z.string().nullable().optional(),
   lineNo: z.number().int().positive(),
   partName: z.string().nullable(),
 });
@@ -356,6 +358,8 @@ export const jobCardSourceOptionSchema = z.object({
   orderId: z.string().uuid(),
   lineId: z.string().uuid(),
   code: z.string(),
+  /** ADR-207 — Internal SO No. of an SO option (null on a JW option). */
+  internalSoNo: z.string().nullable().optional(),
   lineNo: z.number().int(),
   partName: z.string().nullable(),
   itemCode: z.string().nullable(),

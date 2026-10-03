@@ -53,7 +53,8 @@ export function pendingFrom(companyId: string): SQL {
 // cannot hand the UI a number. POL is the CUSTOMER's PO line (never our line).
 export const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.id AS "jobCardId", jc.code AS "jcCode",
-  vos.op_seq AS "opSeq", so.code AS "soCode", i.code AS "itemCode",
+  vos.op_seq AS "opSeq", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
+  i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   i.name AS "itemName", ${PEND_IS_LAST} AS "isLastOp",
   jo.operation, jc.order_qty AS "orderQty",
@@ -84,7 +85,7 @@ export function logsFrom(companyId: string): SQL {
 
 export const LOGS_SELECT = sql`
   ol.id AS "logId", jc.id AS "jobCardId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
-  so.code AS "soCode", i.code AS "itemCode",
+  so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   sol.client_po_line_no AS "clientPoLineNo", i.name AS "itemName",
   ${LOG_IS_LAST} AS "isLastOp", jo.operation,
@@ -107,6 +108,8 @@ export function opSearchWhere(term: string | undefined): SQL {
   const cols = [
     sql`jc.code`,
     sql`so.code`,
+    // ADR-207: the SO's Internal SO No. finds its rows too.
+    sql`so.internal_so_no`,
     sql`sol.client_po_line_no`,
     sql`i.code`,
     sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
@@ -131,6 +134,7 @@ export function toPendingRow(r: Raw, today: string): QcHistoryPendingRow {
     jcCode: r['jcCode'] as string,
     opSeq: Number(r['opSeq']),
     soCode: s(r['soCode']),
+    soInternalNo: s(r['soInternalNo']),
     itemCode: s(r['itemCode']),
     itemRevision: s(r['itemRevision']),
     itemName: s(r['itemName']),
@@ -156,6 +160,7 @@ export function toLogRow(r: Raw): QcHistoryLogRow {
     jcCode: r['jcCode'] as string,
     opSeq: Number(r['opSeq']),
     soCode: s(r['soCode']),
+    soInternalNo: s(r['soInternalNo']),
     itemCode: s(r['itemCode']),
     itemRevision: s(r['itemRevision']),
     clientPoLineNo: s(r['clientPoLineNo']),

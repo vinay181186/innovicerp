@@ -71,6 +71,8 @@ export const ncRegisterSchema = z.object({
    *  Read `soId ?? soCodeText`: soCodeText stays as the snapshot. */
   soId: z.string().uuid().nullable().default(null),
   soCodeText: z.string().nullable(),
+  /** ADR-207: the SO's Internal SO No., read live off sales_orders (soId). */
+  soInternalNo: z.string().nullable().default(null),
   machineCodeText: z.string().nullable(),
   operatorText: z.string().nullable(),
   rejectedQty: z.string(), // numeric stored as string

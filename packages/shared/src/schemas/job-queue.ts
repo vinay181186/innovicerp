@@ -26,6 +26,8 @@ export const jobQueueRowSchema = z.object({
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No., read live from sales_orders. */
+  soInternalNo: z.string().nullable().default(null),
   soCustomer: z.string().nullable(),
   opSeq: z.number().int().positive(),
   operation: z.string(),

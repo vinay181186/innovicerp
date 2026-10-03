@@ -124,6 +124,7 @@ export async function listDesignProjects(
           dp.code ILIKE ${term} ESCAPE '\\'
           OR dp.project_name ILIKE ${term} ESCAPE '\\'
           OR dp.so_code_text ILIKE ${term} ESCAPE '\\'
+          OR so_i.internal_so_no ILIKE ${term} ESCAPE '\\'
           OR dp.client_text ILIKE ${term} ESCAPE '\\'
         )`
       : sql``;
@@ -150,6 +151,7 @@ export async function listDesignProjects(
         dp.project_name AS "projectName",
         dp.sales_order_id AS "salesOrderId",
         dp.so_code_text AS "soCodeText",
+        so_i.internal_so_no AS "soInternalNo",
         dp.client_id AS "clientId",
         dp.client_text AS "clientText",
         dp.lead_text AS "leadText",
@@ -223,6 +225,7 @@ function toProjectListItem(r: Record<string, unknown>): DesignProjectListItem {
     projectName: String(r['projectName'] ?? ''),
     salesOrderId: (r['salesOrderId'] as string | null) ?? null,
     soCodeText: (r['soCodeText'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     clientId: (r['clientId'] as string | null) ?? null,
     clientText: (r['clientText'] as string | null) ?? null,
     leadText: (r['leadText'] as string | null) ?? null,
@@ -260,6 +263,7 @@ export async function getDesignProjectDetail(
         dp.project_name AS "projectName",
         dp.sales_order_id AS "salesOrderId",
         dp.so_code_text AS "soCodeText",
+        so_i.internal_so_no AS "soInternalNo",
         dp.client_id AS "clientId",
         dp.client_text AS "clientText",
         dp.lead_text AS "leadText",
@@ -282,6 +286,8 @@ export async function getDesignProjectDetail(
         END AS "taskProgressPct",
         COALESCE(i.open_count, 0)::int AS "openIssuesCount"
       FROM public.design_projects dp
+      LEFT JOIN public.sales_orders so_i
+        ON so_i.id = dp.sales_order_id AND so_i.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT COUNT(*)::int AS task_total,
                COUNT(*) FILTER (WHERE status='Completed')::int AS task_done

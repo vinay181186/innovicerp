@@ -213,6 +213,7 @@ export async function listJobCards(
         COALESCE(s.qc_pending_ops, 0)::int   AS "qcPendingOps",
         sol.id   AS "soLineId",   so.id  AS "soId",
         so.code  AS "soCode",     sol.line_no AS "soLineNo",
+        so.internal_so_no AS "soInternalNo",
         sol.part_name AS "soPartName",
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
@@ -364,6 +365,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         COALESCE(s.qc_pending_ops, 0)::int   AS "qcPendingOps",
         sol.id   AS "soLineId",   so.id  AS "soId",
         so.code  AS "soCode",     sol.line_no AS "soLineNo",
+        so.internal_so_no AS "soInternalNo",
         sol.part_name AS "soPartName",
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
@@ -494,6 +496,7 @@ function buildSourceLink(r: Record<string, unknown>): JobCardSourceLink | null {
       salesOrderId: r['soId'] as string,
       salesOrderLineId: r['soLineId'] as string,
       code: r['soCode'] as string,
+      internalSoNo: (r['soInternalNo'] as string | null) ?? null,
       lineNo: Number(r['soLineNo']),
       partName: (r['soPartName'] as string | null) ?? null,
     };
@@ -626,6 +629,7 @@ function toSourceOption(r: Record<string, unknown>): JobCardSourceOption {
     orderId: r['orderId'] as string,
     lineId: r['lineId'] as string,
     code: r['code'] as string,
+    internalSoNo: (r['internalSoNo'] as string | null) ?? null,
     lineNo: Number(r['lineNo'] ?? 0),
     partName: (r['partName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
@@ -652,6 +656,7 @@ async function resolveLinkedSource(
   const rows = (kind === 'so'
     ? await tx.execute(sql`
           SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
+            so.internal_so_no AS "internalSoNo",
             sol.line_no AS "lineNo", sol.part_name AS "partName",
             COALESCE(i.code, sol.item_code_text) AS "itemCode",
             sol.item_id AS "itemId",
@@ -698,6 +703,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
   return withUserContext(user, async (tx) => {
     const result = (await tx.execute(sql`
       SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
+        so.internal_so_no AS "internalSoNo",
         sol.line_no AS "lineNo", sol.part_name AS "partName",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
         COALESCE(cli.name, so.customer_name) AS "customerName",
@@ -713,7 +719,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       LEFT JOIN public.clients cli ON cli.id = so.client_id
       WHERE sol.company_id = ${companyId}::uuid AND sol.deleted_at IS NULL AND so.status != 'closed'
       UNION ALL
-      SELECT 'jw' AS type, jw.id, jwl.id, jw.code, jwl.line_no, jwl.part_name,
+      SELECT 'jw' AS type, jw.id, jwl.id, jw.code, NULL, jwl.line_no, jwl.part_name,
         COALESCE(i2.code, jwl.item_code_text),
         COALESCE(cli2.name, jw.customer_name),
         jwl.order_qty, jwl.due_date, NULL,
@@ -2964,6 +2970,7 @@ export async function getJobCardRelated(
           .select({
             id: salesOrders.id,
             code: salesOrders.code,
+            internalSoNo: salesOrders.internalSoNo,
             status: salesOrders.status,
             date: salesOrders.soDate,
           })
@@ -3238,7 +3245,18 @@ export async function getJobCardRelated(
       'Sales Order',
       '📄',
       'sales-order',
-      so ? [row(so.id, so.code, so.status, so.date)] : [],
+      // ADR-207 — the Internal SO No. rides in the row's secondary label.
+      so
+        ? [
+            row(
+              so.id,
+              so.code,
+              so.status,
+              so.date,
+              so.internalSoNo ? { label: so.internalSoNo } : undefined,
+            ),
+          ]
+        : [],
     );
     const jwSection = section(
       'job-work-order',

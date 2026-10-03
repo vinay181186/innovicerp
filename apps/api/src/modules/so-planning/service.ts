@@ -281,6 +281,7 @@ export async function getPlanningSoList(
       .select({
         soId: salesOrders.id,
         soCode: salesOrders.code,
+        soInternalNo: salesOrders.internalSoNo,
         customerName: liveSoCustomerName().as('customer_name'),
         soType: salesOrders.type,
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
@@ -324,7 +325,13 @@ export async function getPlanningSoList(
           eq(salesOrders.status, 'open'),
         ),
       )
-      .groupBy(salesOrders.id, salesOrders.code, salesOrders.customerName, salesOrders.type)
+      .groupBy(
+        salesOrders.id,
+        salesOrders.code,
+        salesOrders.internalSoNo,
+        salesOrders.customerName,
+        salesOrders.type,
+      )
       .orderBy(desc(salesOrders.code));
 
     // ADR-185 — planned / PR / direct-JC coverage per SO now comes from the
@@ -431,6 +438,7 @@ export async function getPlanningSoList(
       r: {
         soId: string;
         soCode: string;
+        soInternalNo?: string | null;
         customerName: string | null;
         totalLines: number;
         totalQty: number;
@@ -451,6 +459,7 @@ export async function getPlanningSoList(
       return {
         soId: r.soId,
         soCode: r.soCode,
+        soInternalNo: r.soInternalNo ?? null,
         source,
         customerName: r.customerName ?? null,
         soType,
@@ -495,6 +504,7 @@ export async function getPlanningSoDetail(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        internalSoNo: salesOrders.internalSoNo,
         customerName: liveSoCustomerName(),
         type: salesOrders.type,
         clientPoNo: salesOrders.clientPoNo,
@@ -824,6 +834,7 @@ export async function getPlanningSoDetail(
     return {
       soId: so.id,
       soCode: so.code,
+      soInternalNo: so.internalSoNo ?? null,
       source: 'so' as const,
       customerName: so.customerName ?? null,
       soType: so.type,
@@ -1124,6 +1135,7 @@ export async function getPlanningBom(
       .select({
         line: salesOrderLines,
         soCode: salesOrders.code,
+        soInternalNo: salesOrders.internalSoNo,
         soType: salesOrders.type,
         soBomMasterId: salesOrders.bomMasterId,
         itemCode: items.code,
@@ -1192,6 +1204,7 @@ export async function getPlanningBom(
       return {
         soLineId,
         soCode: row.soCode,
+        soInternalNo: row.soInternalNo ?? null,
         bomMasterId: bom.id,
         bomNo: bom.bomNo,
         bomRev: bom.revision,
@@ -1304,6 +1317,7 @@ export async function getPlanningBom(
     return {
       soLineId,
       soCode: row.soCode,
+      soInternalNo: row.soInternalNo ?? null,
       bomMasterId: bom.id,
       bomNo: bom.bomNo,
       bomRev: bom.revision,

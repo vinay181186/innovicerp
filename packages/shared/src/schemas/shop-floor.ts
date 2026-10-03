@@ -28,6 +28,8 @@ export const shopFloorRunningRowSchema = z.object({
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No., read live from sales_orders. */
+  soInternalNo: z.string().nullable().default(null),
   orderQty: z.number().int().nonnegative(),
   doneQty: z.number().int().nonnegative(),
   pendingQty: z.number().int().nonnegative(),

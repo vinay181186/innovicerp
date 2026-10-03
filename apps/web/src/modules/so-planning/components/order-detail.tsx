@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { Banner } from '@/ui/feedback';
 import { useExecutePlan } from '@/modules/plans/api';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
@@ -148,7 +149,7 @@ export function OrderDetail({
                 className="td-code"
                 title="Open the SO"
               >
-                {so.soCode}
+                {soNoWithInternal(so.soCode, so.soInternalNo)}
               </Link>
             )}
           </span>

@@ -4,6 +4,7 @@
 import type { SoMaterial, SoMaterialLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useReleaseParts, useReserveParts } from '../api';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
@@ -89,7 +90,7 @@ export function ReservePartsModal({
 
   return (
     <Shell
-      title={`Reserve Parts — ${data.soCode}`}
+      title={`Reserve Parts — ${soNoWithInternal(data.soCode, data.soInternalNo)}`}
       onClose={onClose}
       footer={
         <>

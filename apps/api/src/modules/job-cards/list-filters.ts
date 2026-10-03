@@ -81,6 +81,7 @@ export function jcListWhere(companyId: string, input: JcListFilterInput): SQL {
           OR i.code ILIKE ${term} ESCAPE '\\'
           OR i.name ILIKE ${term} ESCAPE '\\'
           OR so.code ILIKE ${term} ESCAPE '\\'
+          OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
           OR jw.code ILIKE ${term} ESCAPE '\\'
           OR so.customer_name ILIKE ${term} ESCAPE '\\'
           OR jw.customer_name ILIKE ${term} ESCAPE '\\'

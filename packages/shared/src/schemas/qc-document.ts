@@ -54,6 +54,9 @@ export const qcDocumentSchema = z.object({
   itemName: z.string().nullable().default(null),
   salesOrderId: z.string().uuid().nullable(),
   soCodeText: z.string().nullable(),
+  /** ADR-207: the SO's Internal SO No., read live off sales_orders
+   *  (salesOrderId); null when the document has no SO or the SO has none. */
+  soInternalNo: z.string().nullable().default(null),
   category: z.string(),
   docType: z.string(),
   fileName: z.string(),
@@ -115,6 +118,8 @@ export type QcMatrixQuery = z.infer<typeof qcMatrixQuerySchema>;
 export interface QcMatrixSoOption {
   id: string;
   code: string;
+  /** ADR-207: Internal SO No. (null on older SOs). */
+  internalSoNo?: string | null;
   customerName: string | null;
 }
 
@@ -172,6 +177,8 @@ export interface QcMatrixResponse {
   so: {
     id: string;
     code: string;
+    /** ADR-207: Internal SO No. (null on older SOs). */
+    internalSoNo?: string | null;
     customerName: string | null;
   };
   /** Distinct QC-op column names (legacy fixed order MIR/MCR/DIR/TPI + extras). */

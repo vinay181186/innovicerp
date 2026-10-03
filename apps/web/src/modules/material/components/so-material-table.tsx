@@ -1,6 +1,7 @@
 // Parts of one assembly (Equipment) SO from its BOM: Required = Qty per Set ×
 // Units; Reserved, Issued, Returned, Fitted, To Issue, Still Out.
 import type { SoMaterial, SoMaterialLine } from '@innovic/shared';
+import { soNoWithInternal } from '@/lib/so-number';
 import { RowMenu } from '@/ui/data';
 
 const n = (v: number): string => String(Math.round(v * 1000) / 1000);
@@ -74,7 +75,9 @@ export function SoMaterialTable({
                 title={
                   l.reservedForOthers.length
                     ? 'Reserved for: ' +
-                      l.reservedForOthers.map((b) => `${b.soCode} × ${n(b.qty)}`).join(', ')
+                      l.reservedForOthers
+                        .map((b) => `${soNoWithInternal(b.soCode, b.soInternalNo)} × ${n(b.qty)}`)
+                        .join(', ')
                     : undefined
                 }
               >

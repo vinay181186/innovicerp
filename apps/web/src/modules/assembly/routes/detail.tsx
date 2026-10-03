@@ -26,6 +26,7 @@ import { ArrowLeft, Loader2, Play, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { fmtDate, todayIst } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -352,7 +353,7 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
       <div className="panel-hdr">
         <div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>
-            {header.soCode} — {header.bomName ?? '—'}{' '}
+            {soNoWithInternal(header.soCode, header.soInternalNo)} — {header.bomName ?? '—'}{' '}
             <span className="text3" style={{ fontWeight: 400, fontSize: 12 }}>
               × {header.orderQty} nos
             </span>

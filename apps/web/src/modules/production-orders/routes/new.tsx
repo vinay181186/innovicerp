@@ -34,6 +34,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -567,7 +568,7 @@ function PlanTypeChip({ planType }: { planType: PlanType }): React.JSX.Element {
 /** Read-only recap of the picked plan — what the JC will be built for. */
 function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
   const so = plan.soCodeText
-    ? `${plan.soCodeText}${plan.lineNo ? ` · Ln ${plan.lineNo}` : ''}`
+    ? `${soNoWithInternal(plan.soCodeText, plan.soInternalNo)}${plan.lineNo ? ` · Ln ${plan.lineNo}` : ''}`
     : '—';
   return (
     <div

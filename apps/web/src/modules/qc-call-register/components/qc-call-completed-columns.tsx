@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import { dayDiff } from './qc-sheet';
@@ -100,7 +101,10 @@ function respDaysOf(vm: CompletedVM): number | null {
 }
 function soVendorOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
-  return vm.kind === 'op' ? (vm.row.soCode ?? '—') : (vm.row.vendorName ?? '—');
+  if (vm.kind === 'op') {
+    return vm.row.soCode ? soNoWithInternal(vm.row.soCode, vm.row.soInternalNo) : '—';
+  }
+  return vm.row.vendorName ?? '—';
 }
 function operationOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return `Party GRN · ${pgrnOrderOf(vm.row)}`;

@@ -25,6 +25,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { QC_STAGES, dayDiff, processStage, type QcStage } from './qc-sheet';
 
@@ -96,7 +97,10 @@ export function pendingOverdue(vm: PendingVM): boolean {
 }
 function soVendorOf(vm: PendingVM): string {
   if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
-  return vm.kind === 'op' ? (vm.row.soCode ?? '—') : (vm.row.vendorName ?? '—');
+  if (vm.kind === 'op') {
+    return vm.row.soCode ? soNoWithInternal(vm.row.soCode, vm.row.soInternalNo) : '—';
+  }
+  return vm.row.vendorName ?? '—';
 }
 function operationOf(vm: PendingVM): string {
   if (vm.kind === 'op') return `Op ${opSrNo(vm.row.opSeq)} ${vm.row.operation}`;

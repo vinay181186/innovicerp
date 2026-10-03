@@ -111,6 +111,7 @@ function PlanEditPage(): React.JSX.Element {
         // editor is hidden and `ops` is left out of the PATCH so the server's
         // replace-all never runs against them.
         hideOps={plan.opsSource === 'route_card'}
+        soInternalNo={plan.soInternalNo ?? null}
         isSubmitting={update.isPending}
         submitLabel="Save Changes"
         submitError={update.error instanceof Error ? update.error.message : null}

@@ -19,6 +19,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Fragment } from 'react';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
@@ -172,7 +173,11 @@ export function JcStatTiles({
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
           <div style={lblStyle}>SO / JWSO No.</div>
           <div className="fw-700 mono" style={{ fontSize: 16 }}>
-            {jc.sourceLink?.code ?? '—'}
+            {jc.sourceLink
+              ? jc.sourceLink.type === 'so'
+                ? soNoWithInternal(jc.sourceLink.code, jc.sourceLink.internalSoNo)
+                : jc.sourceLink.code
+              : '—'}
           </div>
           <div style={{ ...noteStyle, marginTop: 2 }}>
             Ln <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {fmtDate(jc.dueDate)}

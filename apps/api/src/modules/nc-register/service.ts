@@ -197,6 +197,8 @@ interface NcJoins {
   itemName?: string | null;
   itemRevision?: string | null;
   clientPoLineNo?: string | null;
+  // ADR-207: the SO's Internal SO No., read live off sales_orders (nc.so_id).
+  soInternalNo?: string | null;
   childJobCardCode?: string | null;
   deliveryChallanCode?: string | null;
   // G8: the NC this row continues (Incoming-QC reject on a GRN that came back
@@ -251,6 +253,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     clientPoLineNo,
     soId: row.soId ?? null,
     soCodeText: row.soCodeText,
+    soInternalNo: joins.soInternalNo ?? null,
     machineCodeText: row.machineCodeText,
     operatorText: row.operatorText,
     rejectedQty: row.rejectedQty,
@@ -447,6 +450,9 @@ export async function listNcRegister(
         nc.item_id AS "itemId", nc.item_code_text AS "itemCodeText",
         nc.item_name_text AS "itemNameText",
         nc.so_id AS "soId", nc.so_code_text AS "soCodeText",
+        -- ADR-207: Internal SO No., live off the NC's SO (one row per NC).
+        (SELECT nso.internal_so_no FROM public.sales_orders nso
+          WHERE nso.id = nc.so_id) AS "soInternalNo",
         nc.machine_code_text AS "machineCodeText",
         nc.operator_text AS "operatorText",
         nc.rejected_qty::text AS "rejectedQty",
@@ -673,6 +679,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     itemNameText: (r['itemNameText'] as string | null) ?? null,
     soId: str('soId'),
     soCodeText: (r['soCodeText'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     machineCodeText: (r['machineCodeText'] as string | null) ?? null,
     operatorText: (r['operatorText'] as string | null) ?? null,
     rejectedQty: r['rejectedQty'] as string,
@@ -783,6 +790,11 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
         SELECT NULLIF(u.full_name, '') FROM public.users u
         WHERE u.id = ${ncRegister.dispositionBy}
       )`,
+      // ADR-207: Internal SO No., live off the NC's SO.
+      soInternalNo: sql<string | null>`(
+        SELECT nso.internal_so_no FROM public.sales_orders nso
+        WHERE nso.id = ${ncRegister.soId}
+      )`,
     })
     .from(ncRegister)
     // Resolve item code/name from the live items master, not the stale
@@ -825,6 +837,7 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     deliveryChallanCode: found.deliveryChallanCode,
     parentNcCode: found.parentNcCode,
     dispositionByName: found.dispositionByName,
+    soInternalNo: found.soInternalNo,
     sourceVendorId: source.sourceVendorId,
     sourceVendorCode: source.sourceVendorCode,
     sourceVendorName: source.sourceVendorName,

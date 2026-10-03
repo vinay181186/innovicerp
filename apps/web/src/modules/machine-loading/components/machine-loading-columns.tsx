@@ -8,6 +8,7 @@ import type { MachineLoadOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ActualMachineLine } from '@/components/shared/machine-split';
+import { SoNo } from '@/components/shared/so-no';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
@@ -185,7 +186,7 @@ export function OpsExpanded({ op }: { op: MachineLoadOp }): React.JSX.Element {
       </Field>
       <Field label="Item Name">{op.itemName?.trim() || '—'}</Field>
       <Field label="SO No.">
-        <span className="mono">{op.soCode ?? '—'}</span>
+        {op.soCode ? <SoNo code={op.soCode} internal={op.soInternalNo} className="mono" /> : '—'}
       </Field>
       <Field label="Priority">
         <span className={`badge ${op.priority === 'high' ? 'b-amber' : 'b-grey'}`}>

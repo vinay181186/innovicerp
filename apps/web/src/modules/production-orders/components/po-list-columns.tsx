@@ -187,6 +187,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
           <span>
             {po.soCodeText}
             {po.lineNo ? <span className="text3">/{po.lineNo}</span> : null}
+            {po.soInternalNo ? ` · ${po.soInternalNo}` : null}
           </span>
         ) : (
           '—'

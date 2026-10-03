@@ -360,6 +360,14 @@ const PLAN_RM_ITEM_CODE_SQL = sql<string | null>`(
   WHERE rmi.id = ${plans.rawMaterialItemId} AND rmi.company_id = ${plans.companyId}
 )`;
 
+/** ADR-207 — the plan's SO's Internal SO No., read live through the SO line
+ *  (never copied onto the plan). A scalar so it cannot multiply the row. */
+const PLAN_SO_INTERNAL_NO_SQL = sql<string | null>`(
+  SELECT so.internal_so_no FROM public.sales_order_lines psol
+  JOIN public.sales_orders so ON so.id = psol.sales_order_id
+  WHERE psol.id = ${plans.soLineId}
+)`;
+
 // ADR-185 — the status a plan's ROW shows (PLAN_EFFECTIVE_STATUSES): the
 // derived status for a live route-card plan (production_complete spelled
 // 'complete', like the stored word the tile uses), the stored status
@@ -402,6 +410,7 @@ export async function listPlans(
       const term = `%${query.search}%`;
       conditions.push(
         sql`(${plans.code} ILIKE ${term} OR ${plans.itemCodeText} ILIKE ${term} OR ${plans.itemNameText} ILIKE ${term} OR ${plans.soCodeText} ILIKE ${term}
+          OR ${PLAN_SO_INTERNAL_NO_SQL} ILIKE ${term}
           OR EXISTS (SELECT 1 FROM public.production_orders po
                        WHERE po.plan_id = ${plans.id} AND po.deleted_at IS NULL
                          AND po.code ILIKE ${term})
@@ -439,6 +448,7 @@ export async function listPlans(
         jcStatus: sql<string | null>`jcs.computed_status`,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+        soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -502,6 +512,7 @@ export async function listPlans(
         const hasRouteCard = Boolean(r.hasRouteCard);
         return {
           ...toPlan(r.plan, r.rmItemCode),
+          soInternalNo: r.soInternalNo ?? null,
           itemCode: r.itemCode ?? null,
           // Null passed through, not coerced to a blank string: the UI has to be
           // able to tell "this plan has no SO line" from "the revision is empty".
@@ -571,6 +582,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+        soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -597,6 +609,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
 
     const detail: PlanDetail = {
       ...toPlan(row.plan, row.rmItemCode),
+      soInternalNo: row.soInternalNo ?? null,
       itemCode: row.itemCode ?? null,
       // Null passed through, not coerced to a blank string: the UI has to be
       // able to tell "this plan has no SO line" from "the revision is empty".
@@ -2457,6 +2470,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           itemRevision: SO_LINE_REVISION,
           clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
           rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+          soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
         })
         .from(plans)
         .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -2522,6 +2536,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
       },
       recentPlans: recentRows.map((r) => ({
         ...toPlan(r.plan, r.rmItemCode),
+        soInternalNo: r.soInternalNo ?? null,
         itemCode: r.itemCode ?? null,
         // Null passed through, not coerced to a blank string: the UI has to be
         // able to tell "this plan has no SO line" from "the revision is empty".
@@ -2600,6 +2615,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
       hasRouteCard: HAS_ROUTE_CARD_SQL,
       rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+      soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
     })
     .from(plans)
     .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -2624,6 +2640,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     .orderBy(asc(planOps.opSeq));
   return {
     ...toPlan(row.plan, row.rmItemCode),
+    soInternalNo: row.soInternalNo ?? null,
     itemCode: row.itemCode ?? null,
     // Null passed through, not coerced to a blank string: the UI has to be able
     // to tell "this plan has no SO line" from "the revision is empty".

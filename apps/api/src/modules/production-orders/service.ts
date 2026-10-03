@@ -354,6 +354,17 @@ const CLIENT_PO_LINE_NO_SQL = sql<string | null>`(
    WHERE sol.id = ${plans.soLineId} LIMIT 1
 )`;
 
+/** ADR-207 — the SO's Internal SO No., read live through the plan's SO line
+ *  (never copied). Keyed on production_orders.plan_id only, so the list's
+ *  count() query (production_orders alone) can search it too. A JWSO-sourced
+ *  order has no SO line and is null. */
+const SO_INTERNAL_NO_SQL = sql<string | null>`(
+  SELECT so.internal_so_no FROM public.plans p
+    JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+    JOIN public.sales_orders so ON so.id = sol.sales_order_id
+   WHERE p.id = ${productionOrders.planId} LIMIT 1
+)`;
+
 const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
 const shortClosedByUser = alias(users, 'po_short_closed_by');
@@ -411,6 +422,7 @@ const poColumns = {
   rawMaterialSizeText: plans.rawMaterialSizeText,
   itemRevision: ITEM_REVISION_SQL,
   clientPoLineNo: CLIENT_PO_LINE_NO_SQL,
+  soInternalNo: SO_INTERNAL_NO_SQL,
   createdByName: createdByUser.fullName,
   closedByName: closedByUser.fullName,
   shortClosedByName: shortClosedByUser.fullName,
@@ -428,6 +440,7 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     planId: r.planId,
     planCodeText: r.planCodeText,
     soCodeText: r.soCodeText,
+    soInternalNo: r.soInternalNo ?? null,
     lineNo: r.lineNo,
     itemId: r.itemId,
     itemCodeText: r.itemCodeText,
@@ -659,6 +672,7 @@ export async function listProductionOrders(
         sql`${productionOrders.itemNameText} ILIKE ${term}`,
         sql`${productionOrders.jcCodeText} ILIKE ${term}`,
         sql`${productionOrders.soCodeText} ILIKE ${term}`,
+        sql`${SO_INTERNAL_NO_SQL} ILIKE ${term}`,
         // POL — the customer's own PO line number, now a column on this list.
         // Written as its own correlated subquery off production_orders.plan_id
         // rather than reusing CLIENT_PO_LINE_NO_SQL, because that fragment

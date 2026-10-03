@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDesignProjectDetail } from '../api';
 import { ChecklistTab } from '../components/checklist-tab';
@@ -103,7 +104,8 @@ function DesignProjectDetailPage(): React.JSX.Element {
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 17, fontWeight: 700 }}>{p.projectName}</div>
           <div className="text3" style={{ fontSize: 11 }}>
-            {p.code} · {p.soCodeText ?? ''} · {p.clientText ?? ''} · Lead: {p.leadText ?? ''}
+            {p.code} · {p.soCodeText ? soNoWithInternal(p.soCodeText, p.soInternalNo) : ''} ·{' '}
+            {p.clientText ?? ''} · Lead: {p.leadText ?? ''}
           </div>
         </div>
         <StatusBadge status={p.status} />
