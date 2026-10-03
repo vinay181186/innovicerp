@@ -54,7 +54,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { diffFields, softDeleteStamp, valuesEqual, type DiffField } from '../../lib/audit-trail';
+import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
 import {
@@ -1662,29 +1662,27 @@ async function renamePoCodeEverywhere(
 }
 
 /**
- * True when the submitted PO lines differ from what is stored (a line added,
- * removed, or any line's item / qty / rate changed). Used by the edit-approval
- * divert to refuse line-level edits it cannot yet stage (Phase 1b). Numeric
- * compare via valuesEqual so "100" vs 100.00 is not a false change.
+ * True when the submitted PO lines ADD or REMOVE a line versus what is stored —
+ * a line with no id (new), a line whose id is not on this PO, or a stored line
+ * the submission omits. Item / qty / rate changes on an EXISTING line are NOT
+ * add/remove and return false: the edit-approval engine stages those for
+ * per-change approval (Phase 1b). Used by the divert, which can stage field
+ * changes but not yet a change to the set of lines.
  */
-function poLinesChanged(
-  current: { id: string; itemId: string | null; qty: number | string; rate: number | string }[],
+function poLinesAddedOrRemoved(
+  current: { id: string }[],
   proposed: UpdatePurchaseOrderInput['lines'],
 ): boolean {
   if (!proposed) return false;
-  if (proposed.length !== current.length) return true;
-  const byId = new Map(current.map((c) => [c.id, c]));
+  const currentIds = new Set(current.map((c) => c.id));
+  const proposedIds = new Set<string>();
   for (const p of proposed) {
     if (!p.id) return true; // a line with no id is a new line
-    const c = byId.get(p.id);
-    if (!c) return true; // references a line that is not on this PO
-    if (
-      !valuesEqual(c.itemId ?? null, p.itemId ?? null) ||
-      !valuesEqual(c.qty, p.qty) ||
-      !valuesEqual(c.rate, p.rate)
-    ) {
-      return true;
-    }
+    if (!currentIds.has(p.id)) return true; // references a line not on this PO
+    proposedIds.add(p.id);
+  }
+  for (const id of currentIds) {
+    if (!proposedIds.has(id)) return true; // a stored line was dropped
   }
   return false;
 }
@@ -1737,24 +1735,20 @@ export async function updatePurchaseOrderOrStage(
     const status = rows[0]?.status;
     // "Live" mirrors poEditRegistryEntry.isLive: past draft and not cancelled.
     if (status === undefined || status === 'draft' || status === 'cancelled') return false;
-    // Phase 1 stages HEADER changes only. A line item/qty/rate change cannot yet
-    // be staged and must NOT ride along unapproved in the payload — refuse it
-    // clearly rather than lose it silently (line-level approval = Phase 1b).
+    // Phase 1b stages HEADER changes and item/qty/rate changes on EXISTING lines.
+    // Adding or removing a line still cannot be staged, so refuse it clearly
+    // rather than let it ride along unapproved — a field change on an existing
+    // line falls through and is staged for per-change approval.
     if (input.lines !== undefined) {
       const current = await tx
-        .select({
-          id: purchaseOrderLines.id,
-          itemId: purchaseOrderLines.itemId,
-          qty: purchaseOrderLines.qty,
-          rate: purchaseOrderLines.rate,
-        })
+        .select({ id: purchaseOrderLines.id })
         .from(purchaseOrderLines)
         .where(
           and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)),
         );
-      if (poLinesChanged(current, input.lines)) {
+      if (poLinesAddedOrRemoved(current, input.lines)) {
         throw new ConflictError(
-          'Editing PO lines (item, quantity or rate) is not yet available while Document Edit Approval is on. For now only header fields — vendor, PO date, due date, tax, PR no. and remarks — can be changed on a live PO. Line-level approval is coming next.',
+          "Adding or removing PO lines isn't available while Document Edit Approval is on — you can change an existing line's item, quantity or rate (it will go for approval). To add or remove lines, turn the gate off.",
         );
       }
     }

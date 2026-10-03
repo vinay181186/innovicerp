@@ -27,8 +27,10 @@ export interface DocEditTarget {
 export interface DocEditRegistryEntry {
   /** Access Control form that gates edit (request) and approve (decide). */
   formKey: AccessFormKey;
-  /** The fields compared, in display order. */
-  diffFields: readonly DiffField[];
+  /** The fields compared, in display order. A FUNCTION of the locked target, not
+   *  a static list: PO line keys (`line:<lineId>:item|qty|rate`) are built from
+   *  the document's CURRENT lines, so the set changes per document (Phase 1b). */
+  diffFields(target: DocEditTarget): readonly DiffField[];
   /** Lock the target row FOR UPDATE and project it. Null = gone / not visible. */
   loadForDiff(tx: DbTransaction, companyId: string, id: string): Promise<DocEditTarget | null>;
   /** The flat current-value snapshot for diffing (keys = diffFields keys). */
