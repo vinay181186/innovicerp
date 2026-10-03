@@ -62,6 +62,10 @@ export const ACCESS_FORMS = [
   { key: 'dispatch_create', dept: 'sales', label: 'Customer Dispatch' },
   // Planning
   { key: 'plan_create', dept: 'planning', label: 'SO/JWSO Planning' },
+  // ADR-205: a route card is planning work, not drawing-office work — it is
+  // what turns a plan into a Job Card. It lives under Planning > Master and
+  // the PLANNING tier governs it (owner, 2026-10-03). Moved from `design`.
+  { key: 'routecard_create', dept: 'planning', label: 'Route Card Master' },
   // Production
   { key: 'jc_create', dept: 'production', label: 'Job Cards' },
   { key: 'prodorder_create', dept: 'production', label: 'Production Orders' },
@@ -71,7 +75,6 @@ export const ACCESS_FORMS = [
   { key: 'operator_create', dept: 'production', label: 'Operator Master' },
   { key: 'rawmat_create', dept: 'production', label: 'Raw Material Master' },
   // Design
-  { key: 'routecard_create', dept: 'design', label: 'Route Card Master' },
   { key: 'bom_create', dept: 'design', label: 'BOM Master' },
   { key: 'design_create', dept: 'design', label: 'Design Tracker' },
   { key: 'dsnproj_create', dept: 'design', label: 'Design Projects' },

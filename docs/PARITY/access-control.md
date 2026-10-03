@@ -100,7 +100,7 @@ Used for sidebar-section visibility (`_hasDeptAccess('sales')` → show Sales se
 | 7 | `op_entry` | production | Op Entry | ✅ shipped |
 | 8 | `machine_create` | production | Machine Master | ✅ shipped |
 | 9 | `operator_create` | production | Operator Master | ✅ shipped |
-| 10 | `routecard_create` | design | Route Cards | ✅ shipped |
+| 10 | `routecard_create` | planning | Route Cards | ✅ shipped (moved from design, ADR-205) |
 | 11 | `bom_create` | design | BOM Master | ✅ shipped |
 | 12 | `item_create` | store | Item Master | ✅ shipped |
 | 13 | `grn_create` | store | GRN | ✅ shipped |
