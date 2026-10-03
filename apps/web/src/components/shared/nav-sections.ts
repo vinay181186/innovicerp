@@ -131,6 +131,9 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/instruments', label: 'Instrument Register', icon: '📏', formKey: 'toolissue_create' },
           { to: '/party-grn', label: 'Party GRN', icon: '📥', formKey: 'party_create' },
           { to: '/customer-material-returns', label: 'Customer Material Return', icon: '📤', formKey: 'party_create' },
+          // Owner 2026-10-03: OSP Outward DC sits in Store → Entry. Access is still
+          // decided by ospdc_create (Purchase tier) — only the menu position moved.
+          { to: '/delivery-challans', label: 'OSP Outward DC', icon: '🚛', formKey: 'ospdc_create' },
         ],
       },
       {
@@ -256,7 +259,8 @@ export const SECTIONS: readonly NavSection[] = [
     modClass: 'purchase',
     icon: '🛒',
     // Mirrors legacy sidebar Purchase block (HTML L520-525 area):
-    // PR / PO / Outsource Jobs / OSP DC / Service PO under Entry, Vendor under
+    // PR / PO / Outsource Jobs / Service PO under Entry (OSP Outward DC moved to
+    // Store → Entry, owner 2026-10-03), Vendor under
     // Master, SC Dashboard under Report.
     groups: [
       {
@@ -264,7 +268,6 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/purchase-requests', label: 'Purchase Requests', icon: '📄', formKey: 'pr_create' },
           { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋', formKey: 'po_create' },
-          { to: '/delivery-challans', label: 'OSP Outward DC', icon: '🚛', formKey: 'ospdc_create' },
         ],
       },
       {
