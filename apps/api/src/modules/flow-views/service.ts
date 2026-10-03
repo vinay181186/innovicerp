@@ -166,6 +166,20 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         WHERE nc.deleted_at IS NULL
         GROUP BY nc.jc_op_id
       ),
+      -- Rejected-at-vendor pieces sent back on a return-to-vendor challan and
+      -- received again (NC rtv_sent / rtv_received). Shown so a row reads
+      -- 30 sent -> 25 ok + 5 back -> 5 returned -> 5 re-received.
+      rtv AS (
+        SELECT nc.jc_op_id,
+          COALESCE(SUM(nc.rtv_sent_qty), 0) AS sent,
+          COALESCE(SUM(nc.rtv_received_qty), 0) AS received
+        FROM public.nc_register nc
+        JOIN ops ON ops.id = nc.jc_op_id
+        WHERE nc.deleted_at IS NULL
+          AND nc.disposition = 'return_to_vendor'
+          AND nc.delivery_challan_id IS NOT NULL
+        GROUP BY nc.jc_op_id
+      ),
       ncs AS (
         SELECT nc.jc_op_id,
           JSON_AGG(JSON_BUILD_OBJECT(
@@ -181,7 +195,9 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         (ops.op_type = 'outsource' OR EXISTS (SELECT 1 FROM opl WHERE opl.jc_op_id = ops.id)
           OR ops.outsource_sent_qty > 0) AS has_osp,
         v.input_avail, v.completed_qty, v.qc_accepted_qty, v.available, v.qc_pending,
-        v.computed_status,
+        v.computed_status, v.at_vendor_qty,
+        COALESCE(rtv.sent, 0) AS rtv_sent,
+        COALESCE(rtv.received, 0) AS rtv_received,
         COALESCE(lg.completed_raw, 0) AS completed_raw,
         COALESCE(lg.prod_rej, 0) AS prod_rej,
         COALESCE(lg.qc_rej, 0) AS qc_rej,
@@ -199,6 +215,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
       LEFT JOIN osp ON osp.jc_op_id = ops.id
       LEFT JOIN loss ON loss.jc_op_id = ops.id
       LEFT JOIN ncs ON ncs.jc_op_id = ops.id
+      LEFT JOIN rtv ON rtv.jc_op_id = ops.id
       ORDER BY ops.op_seq`,
     );
 
@@ -234,6 +251,9 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         lostQty: num(x['lost']),
         sentToVendorQty: num(x['outsource_sent_qty']),
         vendorAcceptedQty: ospAcc,
+        returnedToVendorQty: num(x['rtv_sent']),
+        reReceivedQty: num(x['rtv_received']),
+        atVendorQty: num(x['at_vendor_qty']),
         passedOnQty: passedOn,
         availableQty: num(x['available']),
         qcPendingQty: num(x['qc_pending']),

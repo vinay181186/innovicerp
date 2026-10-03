@@ -128,6 +128,27 @@ const OP_FLOW_COLUMNS: DataTableColumn<OpFlowRow>[] = [
     render: (o) => <Qty v={o.vendorAcceptedQty} na={!o.hasOsp} tone="var(--green2)" />,
   },
   {
+    header: 'Returned to Vendor',
+    align: 'right',
+    nowrap: true,
+    title: () => 'Rejected pieces sent back to the vendor on a return-to-vendor challan',
+    render: (o) => <Qty v={o.returnedToVendorQty} na={!o.hasOsp} tone="var(--amber2)" />,
+  },
+  {
+    header: 'Re-received',
+    align: 'right',
+    nowrap: true,
+    title: () => 'Of the returned pieces, how many the vendor has sent back again',
+    render: (o) => <Qty v={o.reReceivedQty} na={!o.hasOsp} />,
+  },
+  {
+    header: 'At Vendor',
+    align: 'right',
+    nowrap: true,
+    title: () => 'Pieces with the vendor right now',
+    render: (o) => <Qty v={o.atVendorQty} na={!o.hasOsp} />,
+  },
+  {
     header: 'Passed On',
     align: 'right',
     nowrap: true,
@@ -139,7 +160,10 @@ const OP_FLOW_COLUMNS: DataTableColumn<OpFlowRow>[] = [
     header: 'Available',
     align: 'right',
     nowrap: true,
-    title: () => 'Pieces this op can work on now',
+    title: (o) =>
+      o.opType === 'qc'
+        ? 'Pieces still to inspect at this QC op'
+        : 'Pieces this op can work on now',
     render: (o) => <Qty v={o.availableQty} />,
   },
   {

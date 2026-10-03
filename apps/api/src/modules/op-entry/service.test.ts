@@ -694,10 +694,10 @@ describe('op-entry submitQcLog (T-040d)', () => {
     expect(qcOp.pendingQty).toBe(0);
     // pendingQty on a QC op IS qc_pending — same number, one definition.
     expect(qcOp.pendingQty).toBe(qcOp.qcPending);
-    // `available` is untouched by 0087 and still means something else on a QC
-    // op (input − op_log completes, and a QC op never gets a complete log).
-    // That is exactly why the Op Entry table must not print it as "Pending".
-    expect(qcOp.available).toBe(10);
+    // 0196: a QC op's `available` is worked off by its QC entries too
+    // (input − accepted − rejected) — it equals pending, not the whole batch.
+    expect(qcOp.available).toBe(0);
+    expect(qcOp.available).toBe(qcOp.pendingQty);
 
     // Now send the 2 rejects back to op 1 for rework by dispositioning the
     // auto-NC the reject raised — the same row shape nc-register/cascades.ts

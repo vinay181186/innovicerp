@@ -50,6 +50,12 @@ export interface OpFlowRow {
   sentToVendorQty: number;
   /** Σ GRN lines qc_accepted_qty on the op's PO lines. */
   vendorAcceptedQty: number;
+  /** Vendor-rejected pieces sent back on a return-to-vendor challan (NC rtv_sent_qty). */
+  returnedToVendorQty: number;
+  /** Of those, pieces the vendor sent back again (NC rtv_received_qty). */
+  reReceivedQty: number;
+  /** Pieces still with the vendor now (v_jc_op_status.at_vendor_qty). */
+  atVendorQty: number;
   /** What the NEXT op receives from this one (same CASE as 0176 prev_output). */
   passedOnQty: number;
   /** v_jc_op_status.available. */

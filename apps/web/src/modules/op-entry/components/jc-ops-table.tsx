@@ -66,8 +66,8 @@ const OP_TYPE_LABEL: Record<string, string> = {
  *  sub-form itself (OpEntryForm switches on qc-bearing), so the inspection is
  *  made on this screen and the gate is the one the submit enforces —
  *  qc_submit.entry, not qc_submit.view. `qcPending` is the right quantity for a
- *  QC row (a QC op never gets a `complete` log, so `available` there is the
- *  whole batch); with nothing pending there is nothing to inspect.
+ *  QC row (since 0196 a QC op's `available` equals it too); with nothing
+ *  pending there is nothing to inspect.
  */
 function rowAction(
   op: JcOpEnriched,
@@ -237,9 +237,9 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                   <td className="td-num">
                     {/* Available = what can be worked on this op right now —
                         the same number the By Machine view, Machine Loading and
-                        Job Queue show. A qc-bearing op never gets a `complete`
-                        log, so `available` there is the whole batch; its
-                        workable qty is qcPending (what the Inspect button uses). */}
+                        Job Queue show. On a qc-bearing op the workable qty is
+                        qcPending (what the Inspect button uses); since 0196 a
+                        QC op's `available` equals it. */}
                     <span className="mono fw-700 amber" style={{ fontSize: 15 }}>
                       {op.opType === 'qc' || op.qcRequired ? op.qcPending : op.available}
                     </span>

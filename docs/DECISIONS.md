@@ -10951,3 +10951,32 @@ is the point of the move — planners can now reach the page.
   would lie about who may use it.
 - **A new `routecard` department.** One page does not need its own department,
   and every account would have to be re-configured.
+
+## ADR-206: QC op "Available" = still to inspect; Op Qty Flow shows the return-to-vendor cycle
+
+**Date:** 2026-10-03
+**Status:** Accepted
+
+### Context
+On the Job Card "Op Qty Flow" table a QC op's Available always equalled its Input (= Passed On once
+everything passed): `v_jc_op_status.available` sent QC ops through the plain-op branch, which subtracts
+only `complete` op_log rows, and a QC op never has any. ~20 readers use `available` (dashboards' Ready
+Ops, stuck alerts, machine loading / queue hours, Start/Outsource buttons) and inherited the error.
+PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to vendor also read
+"30 sent / 30 accepted / 5 rejected" with the 5 that went back and came back invisible.
+
+### Decision
+- Migration 0196: QC ops get their own branch, `available = GREATEST(0, input − qc_accepted − qc_rejected)`
+  (the existing `pending_qty` QC rule). Process and outsource ops unchanged; same columns/order/types,
+  so CREATE OR REPLACE keeps v_jc_status, v_osp_wip and grants.
+- Op Qty Flow adds Returned to Vendor / Re-received / At Vendor on outsource rows.
+
+### Alternatives Considered
+- Subtract vendor-scrapped pieces from outsource Available — rejected: Production Order close already
+  subtracts op loss (production-orders/service.ts ~280) → double count, JC would look settled.
+- Subtract pieces still at the vendor — deferred: only display readers change; At Vendor column shows it.
+- Fix in-house+OSP lane RTV double subtraction — deferred: outsource-balance cap relies on that branch.
+
+### Consequences
+- Verified on TEST: 63 ops, only 14 QC ops' Available changed, no other column or op moved, every QC
+  op now has Available = Pending. QC entry caps (qc_pending) and production caps untouched.
