@@ -51,6 +51,7 @@ const requireCompany = (user: AuthContext): string => {
 type ListRow = {
   so_id: string;
   so_no: string;
+  so_internal_no: string | null;
   customer: string | null;
   cost_center: string | null;
   cc_name: string | null;
@@ -98,7 +99,8 @@ export async function listSoCosting(
   const term = (input.search ?? '').trim();
   if (term) {
     const pat = `%${likeEscape(term)}%`;
-    where.push(sql`AND (b.so_no ILIKE ${pat} ESCAPE '\\' OR b.customer ILIKE ${pat} ESCAPE '\\'
+    where.push(sql`AND (b.so_no ILIKE ${pat} ESCAPE '\\'
+      OR b.so_internal_no ILIKE ${pat} ESCAPE '\\' OR b.customer ILIKE ${pat} ESCAPE '\\'
       OR b.cost_center ILIKE ${pat} ESCAPE '\\' OR b.cc_name ILIKE ${pat} ESCAPE '\\')`);
   }
   where.push(sfWhere(SO_COSTING_SF_COLUMNS, sf, sfOpts));
@@ -167,7 +169,7 @@ export async function listSoCosting(
         ),
         base AS (
         SELECT
-          so.id AS so_id, so.code AS so_no,
+          so.id AS so_id, so.code AS so_no, so.internal_so_no AS so_internal_no,
           COALESCE(cl.name, so.customer_name) AS customer,
           -- Cost Center is no longer captured on the SO; every SO is its own
           -- cost centre, so fall back to the SO No. when cost_center is empty.
@@ -216,6 +218,7 @@ export async function listSoCosting(
       return {
         soId: r.so_id,
         soNo: r.so_no,
+        soInternalNo: r.so_internal_no,
         customer: r.customer,
         lineCount: Number(r.line_count) || 0,
         totalQty: Number(r.total_qty) || 0,

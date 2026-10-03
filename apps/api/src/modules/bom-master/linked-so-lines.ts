@@ -33,6 +33,7 @@ export async function listBomLinkedSoLines(
       .select({
         salesOrderId: salesOrders.id,
         soCode: salesOrders.code,
+        soInternalNo: salesOrders.internalSoNo,
         soDate: salesOrders.soDate,
         soStatus: salesOrders.status,
         salesOrderLineId: salesOrderLines.id,
@@ -64,6 +65,7 @@ export async function listBomLinkedSoLines(
       lines: rows.map((r) => ({
         salesOrderId: r.salesOrderId,
         soCode: r.soCode,
+        soInternalNo: r.soInternalNo ?? null,
         soDate: String(r.soDate),
         soStatus: String(r.soStatus),
         salesOrderLineId: r.salesOrderLineId,

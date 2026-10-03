@@ -51,6 +51,8 @@ export const machineLoadOpSchema = z.object({
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No., read live from sales_orders. */
+  soInternalNo: z.string().nullable().default(null),
   priority: z.enum(JC_PRIORITIES),
   dueDate: z.string().nullable(),
   orderQty: z.number().int(),

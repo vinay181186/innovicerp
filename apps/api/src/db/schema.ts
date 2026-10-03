@@ -1638,6 +1638,10 @@ export const salesOrders = pgTable(
       .notNull()
       .references(() => companies.id),
     code: text('code').notNull(),
+    // 0197 / ADR-207 — "Internal SO No.": the user-typed office number
+    // (e.g. SO-2401), required on create by the service, unique per company
+    // case-insensitively among live SOs. NULL on SOs made before 0197.
+    internalSoNo: text('internal_so_no'),
     soDate: date('so_date').notNull(),
     clientId: uuid('client_id').references(() => clients.id),
     customerName: text('customer_name'),
@@ -1666,6 +1670,9 @@ export const salesOrders = pgTable(
     uniqueIndex('sales_orders_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('sales_orders_company_internal_so_no_uniq')
+      .on(t.companyId, sql`lower(${t.internalSoNo})`)
+      .where(sql`${t.deletedAt} is null and ${t.internalSoNo} is not null`),
     index('sales_orders_company_client_idx')
       .on(t.companyId, t.clientId)
       .where(sql`${t.deletedAt} is null`),
@@ -6013,6 +6020,13 @@ export const invoices = pgTable(
     paymentTermsDays: integer('payment_terms_days').notNull().default(45),
     dueDate: date('due_date'),
     status: invoiceStatusEnum('status').notNull().default('unpaid'),
+    // ADR-202 Phase 3 (0198): an invoice is a statutory GST document, so a
+    // correction is a reason-logged CANCEL (cancel-and-reissue), never an edit.
+    // Mirror jw_invoices' cancel columns. The INV-#### series is never
+    // renumbered or deleted — a cancelled row is kept so the series stays intact.
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

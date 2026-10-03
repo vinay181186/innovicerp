@@ -43,6 +43,8 @@ export type InvoiceableLine = z.infer<typeof invoiceableLineSchema>;
 export const invoiceableSoResponseSchema = z.object({
   salesOrderId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   clientGst: z.string().nullable(),
   /** The SO's GST % (sales_orders.gst_percent) — the new invoice's default
@@ -164,6 +166,8 @@ export const invoiceRowSchema = z.object({
   invoiceDate: z.string(),
   salesOrderId: z.string().uuid(),
   soCode: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No. (sales_orders.internal_so_no), read live. */
+  soInternalNo: z.string().nullable().optional(),
   clientName: z.string().nullable(),
   // Money — NULL when the viewer's access hides prices.
   subtotal: z.number().nonnegative().nullable(),
@@ -211,6 +215,11 @@ export const invoiceDetailSchema = invoiceRowSchema.extend({
   /** The customer's PO number (`Client PO No.`), read live off the sales order
    *  this invoice bills (sales_orders.client_po_no). Null when not captured. */
   clientPoNo: z.string().nullable().default(null),
+  /** ADR-202 Phase 3 — reason-logged cancel (an invoice is never edited). All
+   *  null on a live invoice. `cancelledBy` is the canceller's resolved name. */
+  cancelledAt: z.string().nullable().default(null),
+  cancelledBy: z.string().nullable().default(null),
+  cancelReason: z.string().nullable().default(null),
   lines: z.array(invoiceLineRowSchema),
   payments: z.array(invoicePaymentRowSchema),
 });

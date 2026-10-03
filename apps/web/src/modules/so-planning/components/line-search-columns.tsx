@@ -9,6 +9,7 @@
 import type { PlanningLine, PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { JwChip, lineStatusOf } from './planning-shared';
 
@@ -39,11 +40,11 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           {so.source === 'jw' ? <JwChip /> : null}
           <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {so.soCode}
+            {soNoWithInternal(so.soCode, so.soInternalNo)}
           </span>
         </span>
       ),
-      filterValue: ({ so }) => so.soCode,
+      filterValue: ({ so }) => soNoWithInternal(so.soCode, so.soInternalNo),
     },
     {
       id: 'ln',

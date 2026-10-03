@@ -21,6 +21,8 @@ export const ASSEMBLY_SF_COLUMNS: SfColumnMap = {
 export interface AssemblySoRow {
   soId: string;
   soCode: string;
+  /** ADR-207 — the SO's Internal SO No. (live). */
+  soInternalNo: string | null;
   customerName: string | null;
   bomMasterId: string | null;
 }
@@ -33,14 +35,16 @@ export async function loadAssemblySoRows(
   const term = input.search ? `%${likeEscape(input.search)}%` : null;
   // SO no., customer, BOM no. and BOM name (the ▸ row) — the row's text.
   const searchFrag = term
-    ? sql`AND (so.code ILIKE ${term} ESCAPE '\\' OR so.customer_name ILIKE ${term} ESCAPE '\\'
+    ? sql`AND (so.code ILIKE ${term} ESCAPE '\\' OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
+        OR so.customer_name ILIKE ${term} ESCAPE '\\'
         OR bm.bom_no ILIKE ${term} ESCAPE '\\' OR bm.bom_name ILIKE ${term} ESCAPE '\\')`
     : sql``;
   const sf = readSf(input.sf);
   const sfFrag = sfWhere(ASSEMBLY_SF_COLUMNS, sf);
   const orderBy = sfOrderBy(ASSEMBLY_SF_COLUMNS, sf, sql`so.code ASC, so.id ASC`);
   const rows = await tx.execute(sql`
-    SELECT so.id AS "soId", so.code AS "soCode", so.customer_name AS "customerName",
+    SELECT so.id AS "soId", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
+           so.customer_name AS "customerName",
            so.bom_master_id AS "bomMasterId"
     FROM public.sales_orders so
     LEFT JOIN public.bom_masters bm ON bm.id = so.bom_master_id AND bm.deleted_at IS NULL
@@ -62,6 +66,7 @@ export async function loadAssemblySoRows(
   return (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
     soId: r['soId'] as string,
     soCode: r['soCode'] as string,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     bomMasterId: (r['bomMasterId'] as string | null) ?? null,
   }));

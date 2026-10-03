@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 
 // Shared, PROVEN step helpers extracted from the green Case 1 run. Reused by the
 // case specs so each flow doesn't re-debug the same forms. All write to prod
@@ -29,20 +29,35 @@ export async function pick(page: Page, ph: RegExp, term: string, optText: RegExp
   await page.waitForTimeout(500);
 }
 
+/** ADR-207 — the SO create form's required Internal SO No. (#internalSoNo,
+ *  prefilled "SO-"). Fills a unique SO-E2E-<time>-<rand> and returns it. */
+export async function fillInternalSoNo(page: Page): Promise<string> {
+  const v = `SO-E2E-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  await page.locator('#internalSoNo').fill(v);
+  return v;
+}
+
+/** ADR-207 — the SO No. is "Auto on save" (empty on create); read it off the
+ *  detail page after save (its header reads "IN-SO-x · SO-y"). */
+export async function soNoFromDetail(page: Page): Promise<string> {
+  await expect(page.locator('body')).toContainText(/IN-SO-\d+/, { timeout: 20_000 });
+  return (/IN-SO-\d+/.exec(await page.locator('body').innerText()) ?? [''])[0];
+}
+
 /** Create a Sales Order (Demo client, given item+qty). Returns the SO number.
  *  Uses a UNIQUE client-PO ref (the field must be unique across SO+JW). */
 export async function createSO(page: Page, qty: number, poTag: string): Promise<string> {
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  const soNo = await page.locator('input[value^="IN-SO-"]').first().inputValue();
   await pick(page, /Type customer code or name/i, 'Demo', /CLI-DEMO — Demo Engineering Works/);
   await page.getByPlaceholder(/Client PO reference/i).fill(`${poTag}-${Date.now()}`);
   await pick(page, /Search item code or name/i, ITEM_CODE, ITEM_LABEL);
   await page.getByPlaceholder('Qty', { exact: true }).first().fill(String(qty));
+  await fillInternalSoNo(page);
   await page.waitForTimeout(400);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await expect(page, 'SO saved').toHaveURL(/sales-orders\/[0-9a-f]{8}-/, { timeout: 20_000 });
-  return soNo;
+  return soNoFromDetail(page);
 }
 
 /** Open the SO in planning, create a Manufacture plan with the given in-house
@@ -79,7 +94,7 @@ export async function planExecuteInhouse(
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(4500);
   const jc = ((await page.locator('body').innerText()).match(/IN-JC-\d{2}-\d+/) || [''])[0];
   return { pln, jc };

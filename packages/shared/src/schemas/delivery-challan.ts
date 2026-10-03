@@ -113,6 +113,7 @@ export const deliveryChallanWithLinesSchema = deliveryChallanSchema.extend({
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(), // resolved from purchase_orders when purchaseOrderId set
   soCode: z.string().nullable(), // resolved through sales_order_lines → sales_orders
+  soInternalNo: z.string().nullable().optional(), // ADR-207 Internal SO No. of that SO, live
   /** The customer's drawing revision of the SO LINE this challan hangs off —
    *  a header-level fact, deliberately not named `itemRevision`, because on a
    *  delivery challan it belongs beside the SO number and not beside a line's
@@ -137,6 +138,7 @@ export const deliveryChallanListItemSchema = deliveryChallanSchema.extend({
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(),
   soCode: z.string().nullable(),
+  soInternalNo: z.string().nullable().optional(), // ADR-207 Internal SO No. of that SO, live
   /** Header-level drawing revision of the SO line behind this challan — see the
    *  full note on the detail shape above. Same rule, same nulls. */
   soLineRevision: z.string().nullable().default(null),

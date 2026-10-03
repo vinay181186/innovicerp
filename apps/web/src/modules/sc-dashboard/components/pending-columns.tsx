@@ -7,6 +7,7 @@ import type { ScPendingLine } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
@@ -63,7 +64,7 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
       kind: 'code',
       header: 'SO / JWSO No.',
       className: 'text2',
-      render: (p) => p.soCode ?? '—',
+      render: (p) => (p.soCode ? soNoWithInternal(p.soCode, p.soInternalNo) : '—'),
     },
     {
       id: 'item_code',

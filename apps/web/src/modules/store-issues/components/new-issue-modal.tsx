@@ -13,6 +13,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useJcMaterial, useSoMaterial } from '../../material/api';
 import { JcMaterialTable } from '../../material/components/jc-material-table';
@@ -205,7 +206,11 @@ export function NewIssueModal({
                 <SalesOrderPicker
                   id="si-so"
                   value={salesOrderId}
-                  valueLabel={soMat.data?.soCode}
+                  valueLabel={
+                    soMat.data
+                      ? soNoWithInternal(soMat.data.soCode, soMat.data.soInternalNo)
+                      : undefined
+                  }
                   onChange={setSalesOrderId}
                 />
               </div>

@@ -22,6 +22,8 @@ import { sfRawParamSchema } from './list-query';
 export const planningSoListItemSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live); null for a JWSO or an old SO. */
+  soInternalNo: z.string().nullable().optional(),
   /** 'so' = sales_orders row, 'jw' = job_work_orders row. Drives which
    *  table the detail endpoint reads and which line link a new plan uses. */
   source: z.enum(['so', 'jw']),
@@ -158,22 +160,33 @@ export const planningLineSchema = z.object({
    *  has always answered "how much may I still use" — only the arithmetic
    *  behind it moved, now that a reservation no longer removes stock from the
    *  shelf. 0 for a free-text line. Also published as `availableQty` below. */
-  stockQty: z.number().int().nonnegative(),
+  stockQty: z.number().nonnegative(),
   /** Qty currently RESERVED (booked) to THIS SO line. */
   reservedQty: z.number().int().nonnegative(),
-  /** What is actually on the shelf for this item, reserved or not (ADR-180). */
-  physicalQty: z.number().int().nonnegative(),
-  /** Reserved to EVERY SO line, not just this one — the committed total. */
-  totalReservedQty: z.number().int().nonnegative(),
+  /** What is actually on the shelf for this item, reserved or not (ADR-180).
+   *  NOT an integer: `item_stock_balances.on_hand_qty` is numeric(14,3), so an
+   *  item sold by weight or length really does hold 12.500. Declaring it `int`
+   *  here was a lie the wire never checked. */
+  physicalQty: z.number().nonnegative(),
+  /** Reserved to EVERY SO line, not just this one — the committed total.
+   *  Fractional for the same reason as `physicalQty`. */
+  totalReservedQty: z.number().nonnegative(),
   /** Already shipped against this SO line (sales_order_lines.dispatched_qty). */
   dispatchedQty: z.number().int().nonnegative(),
-  /** physical − totalReserved. Same number as `stockQty`, named plainly. */
-  availableQty: z.number().int().nonnegative(),
+  /** physical − totalReserved. Same number as `stockQty`, named plainly.
+   *  Fractional for the same reason as `physicalQty`. */
+  availableQty: z.number().nonnegative(),
   /** What still has to be made or bought:
    *  max(0, orderQty − dispatchedQty − reservedQty). Stock reserved to this
    *  line already covers part of the order, so it is not planned again. */
   balanceToPlan: z.number().int().nonnegative(),
-  /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs. */
+  /** Short-closed (ADR-196): the rest of this line will never be made, so it
+   *  reads fully planned and stops asking to be planned. */
+  shortClosed: z.boolean().default(false),
+  /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs.
+   *  Filled from `planningLineStatus()` in `lib/planning-line-status.ts`, which
+   *  is the ONE rule the screen reads too. A line covered only by DRAFT plans
+   *  reports 'partial', not 'fully_planned'. */
   lineStatus: z.enum(['fully_planned', 'partial', 'unplanned']),
   /** Equipment SO with a linked BOM master → show §8 Equipment BOM Planning button. */
   hasEquipmentBom: z.boolean(),
@@ -189,6 +202,8 @@ export type PlanningLine = z.infer<typeof planningLineSchema>;
 export const planningDetailResponseSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live); null for a JWSO or an old SO. */
+  soInternalNo: z.string().nullable().optional(),
   /** 'so' | 'jw' — tells the UI whether a new plan links via soLineId or jwLineId. */
   source: z.enum(['so', 'jw']),
   customerName: z.string().nullable(),
@@ -222,6 +237,8 @@ export type PlanningBomChild = z.infer<typeof planningBomChildSchema>;
 export const planningBomResponseSchema = z.object({
   soLineId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live), null when it has none. */
+  soInternalNo: z.string().nullable().optional(),
   bomMasterId: z.string().uuid(),
   bomNo: z.string(),
   bomRev: z.number().int().nonnegative(),
@@ -317,6 +334,8 @@ export const reservationDetailSchema = z.object({
   /** Null for an assembly reservation (held for the whole SO, not a line). */
   soLineId: z.string().uuid().nullable(),
   soCodeText: z.string(),
+  /** ADR-207 — the Internal SO No. of that SO, read live (null when none). */
+  soInternalNo: z.string().nullable().optional(),
   lineNo: z.number().int().nullable(),
   customerName: z.string().nullable(),
   itemRevision: z.string().nullable(),

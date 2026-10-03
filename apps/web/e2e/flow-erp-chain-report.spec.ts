@@ -58,7 +58,8 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
-import { clickRowMenuItem, hasRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, hasRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 const WEB = 'C:/Innovic_projects/innovic-erp/wt-test/apps/web';
 const STATE_FILE = WEB + '/.playwright/erp-chain-report-state.json';
@@ -758,15 +759,15 @@ async function createSo(page: Page, qty: number, poRef: string): Promise<{ code:
   await page.getByPlaceholder('Qty', { exact: true }).first().fill(String(qty));
   await page.getByPlaceholder('Rev', { exact: true }).first().fill('A');
   await page.getByPlaceholder('₹ Rate', { exact: true }).first().fill('10').catch(() => {});
+  await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await page.waitForURL((u) => !/\/sales-orders\/new/.test(u.pathname), { timeout: 90_000 });
   await page.waitForTimeout(3000);
-  const body = await page.locator('body').innerText();
-  const m = /IN-SO-\d+/.exec(body);
-  expect(m, 'SO code on page after save').toBeTruthy();
+  const code = await soNoFromDetail(page);
+  expect(code, 'SO code on page after save').toMatch(/IN-SO-\d+/);
   const badge = page.locator('.panel-hdr .badge').first();
   const status = (await badge.count()) ? (await badge.innerText()).trim() : '(no badge)';
-  return { code: m![0], url: page.url(), status };
+  return { code, url: page.url(), status };
 }
 
 /** Planning: open the SO, + Plan, set qty, save, clear the suggested route,
@@ -828,9 +829,7 @@ async function planAndExecute(
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-  const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
-  await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
-  await execBtn.click();
+  await executePlanFromMenu(page);
   await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });
   await page.waitForTimeout(1500);
   const body = await page.locator('body').innerText();

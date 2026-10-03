@@ -68,6 +68,8 @@ export type SoDurations = z.infer<typeof soDurationsSchema>;
 export const soCycleTimeRowSchema = z.object({
   soId: z.string().uuid(),
   soNo: z.string(),
+  /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
+  internalSoNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   type: z.string().nullable(),
   status: z.string(),

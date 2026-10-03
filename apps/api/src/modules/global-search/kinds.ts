@@ -73,11 +73,25 @@ export const opLine = (seq: SQL, operation: SQL): SQL =>
 
 export const ref = (label: string | SQL, expr: SQL): KindRef => ({ label, expr });
 
+/** ADR-207 — "IN-SO-00786 · SO-2401": the SO code followed by the live Internal SO No.
+ *  (sales_orders.internal_so_no) when there is one — the same text as the web's
+ *  soNoWithInternal(). NULL when the code is blank, so the ref is still dropped. The
+ *  separator is an SQL literal, never a bound param. */
+export const soCodeWithInternal = (code: SQL, internal: SQL): SQL =>
+  sql`CASE WHEN NULLIF(${code}::text, '') IS NULL THEN NULL
+           WHEN NULLIF(${internal}::text, '') IS NULL THEN ${code}::text
+           ELSE ${code}::text || ' · ' || ${internal}::text END`;
+
 /** An "SO" ref whose column may actually hold a JWSO number (so_code_text, so_no,
  *  so_ref_text all do) — label it by the code's own prefix. The label is a plain SQL
- *  literal, not a bound param, so `label || ' ' || code` stays unambiguous. */
-export const soRef = (expr: SQL): KindRef =>
-  ref(sql`CASE WHEN ${expr} ILIKE 'IN-JW-%' THEN 'JWSO' ELSE 'SO' END`, expr);
+ *  literal, not a bound param, so `label || ' ' || code` stays unambiguous.
+ *  `internal` (ADR-207) is the joined sales_orders.internal_so_no: it is shown after the
+ *  code and, because the ref text is what the term is matched against, typing the
+ *  Internal SO No. finds the document too. The label test still sees the code first. */
+export const soRef = (expr: SQL, internal?: SQL): KindRef => {
+  const shown = internal ? soCodeWithInternal(expr, internal) : expr;
+  return ref(sql`CASE WHEN ${shown} ILIKE 'IN-JW-%' THEN 'JWSO' ELSE 'SO' END`, shown);
+};
 
 /** Standard op-line table config (route_card_ops / plan_ops / jc_ops share the shape). */
 export const opLines = (from: SQL, fk: SQL, extraMatch: SQL[]): KindLines => ({

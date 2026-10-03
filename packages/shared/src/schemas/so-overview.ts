@@ -61,6 +61,8 @@ export type SoOverviewAlerts = z.infer<typeof soOverviewAlertsSchema>;
 export const soOverviewRowSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
+  /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
+  internalSoNo: z.string().nullable().optional(),
   soDate: z.string(),
   customerName: z.string().nullable(),
   clientPoNo: z.string().nullable(),

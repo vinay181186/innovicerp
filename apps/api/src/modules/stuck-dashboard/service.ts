@@ -98,6 +98,23 @@ export async function getStuckDashboard(
       if (item) items.push(item);
     }
 
+    // ADR-207 — the Internal SO No. beside every SO No., read live from
+    // sales_orders in one query (phase rows come from the shared phase engine).
+    const soIds = [...new Set(items.map((i) => i.soId))];
+    if (soIds.length > 0) {
+      const intRows = (await tx.execute(sql`
+        SELECT so.id::text AS id, so.internal_so_no AS internal
+        FROM sales_orders so
+        WHERE so.company_id = ${companyId}::uuid
+          AND so.id IN (${sql.join(
+            soIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
+      `)) as unknown as Array<{ id: string; internal: string | null }>;
+      const internalById = new Map(intRows.map((r) => [r.id, r.internal]));
+      for (const it of items) it.soInternalNo = internalById.get(it.soId) ?? null;
+    }
+
     // Sort by most-over-threshold (legacy L18107).
     items.sort((a, b) => b.days - b.threshold - (a.days - a.threshold));
 

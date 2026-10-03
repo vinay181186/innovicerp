@@ -30,6 +30,7 @@ type RegisterRow = {
   dispatch_date: string;
   jc_no: string | null;
   so_no: string | null;
+  so_internal_no: string | null;
   client_po_line_no: string | null;
   item_code: string | null;
   item_revision: string | null;
@@ -67,7 +68,8 @@ function lineMatch(search: string | undefined): SQL {
   const like = (e: SQL): SQL => sql`COALESCE((${e})::text, '') ILIKE ${pat} ESCAPE '\\'`;
   return sql`(
     ${like(sql`h.code`)} OR ${like(sql`h.status`)} OR ${like(sql`h.dispatch_date::text`)}
-    OR ${like(sql`h.so_code_text`)} OR ${like(sql`sol.client_po_line_no`)}
+    OR ${like(sql`h.so_code_text`)} OR ${like(sql`cso.internal_so_no`)}
+    OR ${like(sql`sol.client_po_line_no`)}
     OR ${like(sql`i.code`)} OR ${like(sql`l.item_code_text`)}
     OR ${like(sql`(COALESCE(i.code, l.item_code_text) || COALESCE('/' || NULLIF(btrim(sol.revision::text), ''), ''))`)}
     OR ${like(sql`l.item_name`)} OR ${like(sql`sol.uom`)}
@@ -124,6 +126,8 @@ export async function listDispatchRegister(
       ? ((await tx.execute(sql`
           SELECT h.id::text AS dispatch_id, h.code AS dispatch_code, h.status,
             h.dispatch_date::text AS dispatch_date, h.so_code_text AS so_no,
+            -- ADR-207 — the SO's Internal SO No., live off the SO.
+            cso.internal_so_no AS so_internal_no,
             -- Live customer name off the client master via the SO (plan v3
             -- Step 4); the saved customer_text only when the SO has no client.
             COALESCE(cli.name, h.customer_text) AS customer, h.remarks,
@@ -240,6 +244,7 @@ export async function listDispatchRegister(
         date: r.dispatch_date,
         jcNo: r.jc_no,
         soNo: r.so_no,
+        soInternalNo: r.so_internal_no ?? null,
         clientPoLineNo: r.client_po_line_no,
         itemCode: r.item_code,
         itemRevision: r.item_revision ?? null,

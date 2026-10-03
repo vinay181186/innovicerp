@@ -52,6 +52,7 @@ const VENDOR = sql`COALESCE(v.name, h.vendor_code_text)`;
 export const INC_PENDING_SELECT = sql`
   l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
   h.po_code_text AS "poCode", ${VENDOR} AS "vendorName", so.code AS "soCode",
+  so.internal_so_no AS "soInternalNo",
   jc.code AS "jcCode", jco.op_seq AS "opSeq", jco.operation AS "opName",
   ${ITEM_CODE} AS "itemCode", ${ITEM_REV} AS "itemRevision",
   sol.client_po_line_no AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
@@ -105,6 +106,7 @@ export function toIncPendingRow(r: Raw): IncomingQcPendingRow {
     poCode: s(r['poCode']),
     vendorName: s(r['vendorName']),
     soCode: s(r['soCode']),
+    soInternalNo: s(r['soInternalNo']),
     jcCode: s(r['jcCode']),
     opSeq: r['opSeq'] != null ? Number(r['opSeq']) : null,
     opName: s(r['opName']),

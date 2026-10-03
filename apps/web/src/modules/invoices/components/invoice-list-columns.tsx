@@ -4,6 +4,7 @@
 import type { ListInvoicesResponse } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { StatusBadge } from '@/ui/core';
 import type { DataTableColumn } from '@/ui/data';
 
@@ -16,6 +17,8 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
   unpaid: 'Unpaid',
   partial: 'Partly Paid',
   paid: 'Paid',
+  // ADR-202 Phase 3 — a reason-logged cancel replaces editing a statutory doc.
+  cancelled: 'Cancelled',
 };
 const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABEL).map(([value, label]) => ({
   value,
@@ -104,7 +107,7 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
       width: priceHidden ? '12%' : '9%',
       className: 'td-code',
       nowrap: true,
-      key: 'soCode',
+      render: (inv) => (inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'),
     },
     {
       id: 'customer',

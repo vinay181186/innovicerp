@@ -19,6 +19,8 @@ export const incomingQcPendingRowSchema = z.object({
   vendorName: z.string().nullable(),
   /** Sales Order this OSP return traces back to (via PO line → jc_op → JC → SO); null for raw-material GRNs. */
   soCode: z.string().nullable(),
+  /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
+  soInternalNo: z.string().nullable().default(null),
   // Job Card / operation this line feeds, off the same PO line → jc_op trace as
   // soCode. All three are null together on a raw-material receipt, which is what
   // the queue renders as "no job card" — the signal that inspecting this line

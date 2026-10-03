@@ -2,6 +2,7 @@ import { expect, test, request as pwRequest, type Page } from '@playwright/test'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 /**
  * Item product image (3D render) + Drawing No. typed on the SO line
@@ -592,9 +593,10 @@ test('S4 SO line: Drawing No. typed, kept on re-pick, on detail, cleared on edit
   test.skip(!s.itemId, 'S1 did not create the item');
 
   await gotoApp(page, '/sales-orders/new', 3000);
-  const soNoInput = page.locator('input[value^="IN-SO-"]').first();
-  await expect(soNoInput).toBeVisible({ timeout: 30_000 });
-  s.soCode = await soNoInput.inputValue();
+  // ADR-207 — SO No. is "Auto on save" (empty here); the required Internal
+  // SO No. is filled just before save and the SO No. read back after it.
+  await expect(page.locator('#internalSoNo')).toBeVisible({ timeout: 30_000 });
+  s.soCode = '';
   saveState(s);
 
   // Client: any existing one — first option for "a".
@@ -649,9 +651,11 @@ test('S4 SO line: Drawing No. typed, kept on re-pick, on detail, cleared on edit
     await page.getByPlaceholder('Qty', { exact: true }).first().fill('1');
     await page.waitForTimeout(400);
     await snap(page, '08-so-form-line-drawing-no');
+    await fillInternalSoNo(page);
     await page.getByRole('button', { name: /Save SO/i }).click();
     await expect(page).toHaveURL(/sales-orders\/[0-9a-f-]{36}/, { timeout: 30_000 });
     s.soId = page.url().match(/sales-orders\/([0-9a-f-]{36})/)![1]!;
+    s.soCode = await soNoFromDetail(page);
     saveState(s);
     return `client "${clientText.slice(0, 40)}", PO ref E2E_IMG-${s.ts} → /sales-orders/${s.soId}`;
   }, { qty: '1', headerStatus: 'created' });

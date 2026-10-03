@@ -40,6 +40,7 @@ export const productionOrdersReport: RegisteredReport = {
       { key: 'po_code', label: 'Production Order No', type: 'text' },
       { key: 'plan_code', label: 'Plan No.', type: 'text' },
       { key: 'so_code', label: 'SO / JWSO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'order_qty', label: 'Order Qty', type: 'number' },
@@ -67,6 +68,7 @@ export const productionOrdersReport: RegisteredReport = {
         po.code AS po_code,
         po.plan_code_text AS plan_code,
         po.so_code_text AS so_code,
+        so.internal_so_no AS so_internal_no,
         po.item_code_text AS item_code,
         po.item_name_text AS item_name,
         po.order_qty::int AS order_qty,
@@ -86,6 +88,12 @@ export const productionOrdersReport: RegisteredReport = {
         po.lost_qty::int AS lost_qty
       FROM public.production_orders po
       LEFT JOIN public.v_jc_status s ON s.job_card_id = po.job_card_id
+      -- ADR-207 — live Internal SO No. through the order's plan → SO line
+      -- (a JWSO plan has no SO line, so the cell stays blank).
+      LEFT JOIN public.plans pl ON pl.id = po.plan_id
+      LEFT JOIN public.sales_order_lines sol ON sol.id = pl.so_line_id
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       WHERE po.company_id = ${companyId}::uuid
         AND po.deleted_at IS NULL
         ${statusFrag}
@@ -96,6 +104,7 @@ export const productionOrdersReport: RegisteredReport = {
       po_code: String(r['po_code'] ?? ''),
       plan_code: String(r['plan_code'] ?? ''),
       so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       item_code: String(r['item_code'] ?? ''),
       item_name: (r['item_name'] as string | null) ?? null,
       order_qty: Number(r['order_qty'] ?? 0),

@@ -53,6 +53,15 @@ function doneCell(op: MachineLoadOp): string {
   return `${op.completedQty}<div style="font-size:9px;font-weight:400">${parts}</div>`;
 }
 
+// SO No. cell (ADR-207): the system SO No., plus a second labelled line with
+// the Internal SO No. when the order has one. JW-sourced rows: code only.
+function soCell(op: MachineLoadOp): string {
+  const code = esc(op.soCode ?? '—');
+  const internal = op.soInternalNo?.trim();
+  if (!internal) return code;
+  return `${code}<div style="font-size:9px">Internal SO No.: ${esc(internal)}</div>`;
+}
+
 function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string {
   const head = `<h2>${esc(machine.machineCode)} — ${esc(machine.name)}</h2>`;
   if (ops.length === 0) {
@@ -66,7 +75,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       <td style="color:#7c3aed;font-weight:700">${esc(o.clientPoLineNo ?? '—')}</td>
       <td style="color:#7c3aed">${esc(itemCodeWithRev(o.itemCode, o.itemRevision))}</td>
       <td>${esc(o.itemName ?? '—')}</td>
-      <td>${esc(o.soCode ?? '—')}</td>
+      <td>${soCell(o)}</td>
       <td style="text-align:center">${opSrNo(o.opSeq)}</td>
       <td>${esc(o.operation)}</td>
       <td>${priorityBadge(o.priority)}</td>

@@ -33,6 +33,7 @@ import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useItemsList } from '@/modules/items/api';
 import { useDefaultRouteOps } from '@/modules/plans/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
@@ -166,7 +167,7 @@ function sourceLabel(o: JobCardSourceOption): string {
   const tag = o.type === 'jw' ? '[JWSO]' : '[SO]';
   const ln = o.lineNo && o.lineNo !== 1 ? ` / L${o.lineNo}` : '';
   const part = o.partName ? ` (${o.partName})` : '';
-  return `${tag} ${o.code}${ln} — ${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`;
+  return `${tag} ${soNoWithInternal(o.code, o.internalSoNo)}${ln} — ${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`;
 }
 
 export function JobCardForm({
@@ -499,7 +500,7 @@ export function JobCardForm({
         const part = o.partName ? ` (${o.partName})` : '';
         return {
           id: o.lineId,
-          code: `${tag} ${o.code}${ln}`,
+          code: `${tag} ${soNoWithInternal(o.code, o.internalSoNo)}${ln}`,
           name: `${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`,
         };
       }),
@@ -936,7 +937,7 @@ export function JobCardForm({
                     [POL:{selectedSource.clientPoLineNo}]
                   </span>
                 ) : null}{' '}
-                — {selectedSource.code}
+                — {soNoWithInternal(selectedSource.code, selectedSource.internalSoNo)}
                 {selectedSource.partName ? (
                   <>
                     {' · '}
@@ -959,8 +960,11 @@ export function JobCardForm({
                   color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--text2)',
                 }}
               >
-                <b style={{ color: 'var(--cyan)' }}>{selectedSource.code}:</b> Order Qty{' '}
-                <b>{selectedSource.orderQty}</b> | Already in JCs <b>{selectedSource.inJc}</b> |{' '}
+                <b style={{ color: 'var(--cyan)' }}>
+                  {soNoWithInternal(selectedSource.code, selectedSource.internalSoNo)}:
+                </b>{' '}
+                Order Qty <b>{selectedSource.orderQty}</b> | Already in JCs{' '}
+                <b>{selectedSource.inJc}</b> |{' '}
                 <b style={{ color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--green)' }}>
                   Available: {selectedSource.remaining}
                 </b>

@@ -42,6 +42,7 @@ function day(v: unknown): ActivityChangeValue {
 // Labels from docs/NAMING.md. Exported so the edit-approval registry
 // (so-edit-registry.ts) diffs the SAME header fields the History tab shows.
 export const SO_HEADER_FIELDS: readonly DiffField[] = [
+  { key: 'internalSoNo', label: 'Internal SO No.' },
   { key: 'soDate', label: 'SO Date', format: day },
   { key: 'customerName', label: 'Customer' },
   { key: 'clientPoNo', label: 'Client PO No.' },

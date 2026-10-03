@@ -49,6 +49,8 @@ export function printDispatchRegister(args: {
   // sales-order number would read as a revision of the order itself. This is a
   // HEADER-grain register, so there is no item code here to hang it off — the
   // SO number is where the revision belongs. Nothing prints when there is none.
+  // ADR-207: the Internal SO No., when the order has one, is its own labelled
+  // line under the SO number, the same way.
   // The SO No. column itself prints only when at least one row has an SO —
   // an OSP DC usually has none, and a column of "—" on every row is noise.
   const showSo = rows.some((d) => Boolean(d.soCode ?? d.soRefText));
@@ -59,7 +61,7 @@ export function printDispatchRegister(args: {
       <td>${esc(fmtDate(d.dcDate))}</td>
       <td>${esc(d.vendorName ?? d.vendorCodeText ?? '—')}</td>
       <td style="font-family:monospace">${esc(d.poCode ?? d.poCodeText ?? '—')}</td>
-      ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(d.soCode ?? d.soRefText ?? '—')}${d.soLineRevision ? `<div style="font-family:inherit;color:#64748b">Drawing Rev ${esc(d.soLineRevision)}</div>` : ''}</td>` : ''}
+      ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(d.soCode ?? d.soRefText ?? '—')}${d.soInternalNo ? `<div style="font-family:inherit;color:#64748b">Internal SO No. ${esc(d.soInternalNo)}</div>` : ''}${d.soLineRevision ? `<div style="font-family:inherit;color:#64748b">Drawing Rev ${esc(d.soLineRevision)}</div>` : ''}</td>` : ''}
       <td style="text-align:center;font-weight:700">${d.lineCount}</td>
       <td style="text-align:right;font-weight:700">${Number(d.totalQty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
       <td style="text-align:center">${statusBadge(d.status)}</td>

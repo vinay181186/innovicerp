@@ -192,6 +192,8 @@ export const purchaseOrderDetailSchema = purchaseOrderSchema.extend({
    *  create / update / approve write-backs return this shape without the join,
    *  and the detail page refetches anyway. */
   soCode: z.string().nullable().optional(),
+  /** ADR-207 — the Internal SO No. of that same Sales Order, read live. */
+  soInternalNo: z.string().nullable().optional(),
   soLineNo: z.number().int().positive().nullable().optional(),
   lines: z.array(purchaseOrderLineSchema),
 });

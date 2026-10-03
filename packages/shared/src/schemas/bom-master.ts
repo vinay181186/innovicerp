@@ -200,6 +200,8 @@ export type UpdateBomMasterInput = z.infer<typeof updateBomMasterInputSchema>;
 export const bomLinkedSoLineSchema = z.object({
   salesOrderId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live), null when it has none. */
+  soInternalNo: z.string().nullable().optional(),
   soDate: z.string(),
   /** The SO header's status. */
   soStatus: z.string(),

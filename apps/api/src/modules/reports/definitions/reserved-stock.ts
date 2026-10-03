@@ -36,6 +36,7 @@ export const reservedStockReport: RegisteredReport = {
     ],
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
@@ -65,6 +66,7 @@ export const reservedStockReport: RegisteredReport = {
       SELECT x.* FROM (
         SELECT
           COALESCE(so.code, r.so_code_text)                   AS so_code,
+          so.internal_so_no                                   AS so_internal_no,
           sol.client_po_line_no                               AS client_po_line_no,
           COALESCE(it.code, r.item_code_text, '—')            AS item_code,
           it.name                                             AS item_name,
@@ -91,6 +93,7 @@ export const reservedStockReport: RegisteredReport = {
         UNION ALL
         SELECT
           COALESCE(so.code, a.so_code_text),
+          so.internal_so_no,
           NULL,
           COALESCE(it.code, '—'),
           it.name,
@@ -120,6 +123,7 @@ export const reservedStockReport: RegisteredReport = {
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       client_po_line_no: (r['client_po_line_no'] as string | null) ?? null,
       item_code: String(r['item_code'] ?? ''),
       item_name: (r['item_name'] as string | null) ?? null,

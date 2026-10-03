@@ -166,7 +166,7 @@ async function computeWidget(
       break;
     }
     case 'so_progress': {
-      const rows = await q(tx, `SELECT so.code, COALESCE(SUM(sol.order_qty),0)::int AS order_qty,
+      const rows = await q(tx, `SELECT so.code || COALESCE(' · ' || NULLIF(btrim(so.internal_so_no), ''), '') AS code, COALESCE(SUM(sol.order_qty),0)::int AS order_qty,
           COALESCE(SUM(rdy.ready),0)::int AS done FROM sales_orders so
           JOIN sales_order_lines sol ON sol.sales_order_id=so.id AND sol.deleted_at IS NULL
           LEFT JOIN LATERAL (

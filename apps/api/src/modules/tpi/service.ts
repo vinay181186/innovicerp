@@ -71,7 +71,7 @@ function completedFrom(companyId: string): SQL {
 
 const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
-  so.code AS "soCode", i.code AS "itemCode",
+  so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   sol.client_po_line_no AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, jc.order_qty AS "orderQty", vos.qc_pending AS "qcPending",
@@ -81,7 +81,7 @@ const PENDING_ORDER = sql`jc.code, vos.op_seq, vos.jc_op_id`;
 
 const COMPLETED_SELECT = sql`
   ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
-  so.code AS "soCode", i.code AS "itemCode",
+  so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   sol.client_po_line_no AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, ol.qty AS "accepted", ol.reject_qty AS "rejected",
@@ -100,6 +100,8 @@ function searchWhere(term: string | undefined, completed: boolean): SQL {
   const cols = [
     sql`jc.code`,
     sql`so.code`,
+    // ADR-207: the SO's Internal SO No. finds its rows too.
+    sql`so.internal_so_no`,
     sql`sol.client_po_line_no`,
     sql`i.code`,
     sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
@@ -119,6 +121,7 @@ function toPending(r: Raw): TpiPendingRow {
     jcCode: r['jcCode'] as string,
     opSeq: Number(r['opSeq']),
     soCode: s(r['soCode']),
+    soInternalNo: s(r['soInternalNo']),
     itemCode: s(r['itemCode']),
     itemRevision: s(r['itemRevision']),
     clientPoLineNo: s(r['clientPoLineNo']),
@@ -137,6 +140,7 @@ function toCompleted(r: Raw): TpiCompletedRow {
     jcCode: r['jcCode'] as string,
     opSeq: Number(r['opSeq']),
     soCode: s(r['soCode']),
+    soInternalNo: s(r['soInternalNo']),
     itemCode: s(r['itemCode']),
     itemRevision: s(r['itemRevision']),
     clientPoLineNo: s(r['clientPoLineNo']),

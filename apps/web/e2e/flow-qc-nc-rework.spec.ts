@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // QC → NC → Rework → Re-QC → Closure, exactly the worked example in §9 of
 // Innovic_ERP_QC_NC_Handling_Procedure_R2-1.pdf, driven through the deployed
@@ -125,7 +126,6 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   // ── 1. Sales Order, one line, qty 10 ──────────────────────────────────────
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  const soCode = await page.locator('input[value^="IN-SO-"]').first().inputValue();
   const client = page.getByPlaceholder(/Type customer code or name/i);
   await client.click();
   await client.fill('Adani');
@@ -145,6 +145,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     .first()
     .fill('10')
     .catch(() => {});
+  const internalSoNo = await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   // The test API can take a while on a cold start: wait for the save to land
   // (the form navigates away from /new) rather than a fixed pause.
@@ -156,11 +157,10 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     `Create SO for item 554117144000 COVER, qty ${ORDER_QTY}`,
     'SO saved',
     async () => {
-      const body = await page.locator('body').innerText();
-      const m = body.match(/IN-SO-\d+/);
-      if (!m) throw new Error('no SO code on page after save');
-      rec('SO', m[0]);
-      return `SO ${m[0]} saved (form suggested ${soCode})`;
+      const code = await soNoFromDetail(page);
+      if (!code) throw new Error('no SO code on page after save');
+      rec('SO', code);
+      return `SO ${code} saved (Internal SO No. ${internalSoNo})`;
     },
     'SO',
   );
@@ -195,9 +195,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   // The modal closes when the save lands; Execute only exists after that.
   await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-  const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
-  await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
-  await execBtn.click();
+  await executePlanFromMenu(page);
   // Execute raises the job card server-side; on the test API that is many
   // seconds. Wait for the code to appear, not for a clock.
   await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });

@@ -13,6 +13,7 @@ import {
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 
 export const QC_HISTORY_DEFAULT_PINNED = ['item_code'];
@@ -26,6 +27,7 @@ interface QcRowBase {
   jcCode: string;
   opSeq: number;
   soCode: string | null;
+  soInternalNo: string | null;
   clientPoLineNo: string | null;
   itemCode: string | null;
   itemRevision: string | null;
@@ -57,7 +59,11 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
       kind: 'code',
       header: 'SO No.',
       className: 'mono',
-      render: (o) => <span style={{ color: 'var(--blue)' }}>{o.soCode ?? '—'}</span>,
+      render: (o) => (
+        <span style={{ color: 'var(--blue)' }}>
+          {o.soCode ? soNoWithInternal(o.soCode, o.soInternalNo) : '—'}
+        </span>
+      ),
     },
     {
       // POL — the CUSTOMER's own purchase-order line number, before the item code.

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clickRowMenuItem, findRowWithMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, findRowWithMenuItem, planningLineRows, EDIT_PLAN_ITEM, EXECUTE_PLAN_ITEM, clickPlanMenuItem, expandPlanningRows, hasPlanMenuItem } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // A multi-item, mixed-type BOM driven the whole way: BOM -> equipment SO ->
 // explosion -> plans -> job cards -> JOB CARD EDITS -> production -> QC ->
@@ -166,7 +167,11 @@ interface PlanCard {
 // which is exactly how step 04 reported "no Edit on the plan" while all four
 // plans existed.
 async function readPlanCards(page: Page): Promise<PlanCard[]> {
-  const spans = page.locator('span.mono.fw-700').filter({ hasText: /^PLN-\d+$/ });
+  // ADR-209: the Plans CELL shows only the code and its status; the chip that
+  // also names the kind (Mfg / Buy / OSP) moved into the row's ▸ panel. Open
+  // every ▸ and read the chips there — reading the grid would call every plan Mfg.
+  await expandPlanningRows(page);
+  const spans = page.locator('tr.dt-caller-row span.mono.fw-700').filter({ hasText: /^PLN-\d+$/ });
   const out: PlanCard[] = [];
   for (let i = 0; i < (await spans.count()); i++) {
     const code = ((await spans.nth(i).textContent()) ?? '').trim();
@@ -179,10 +184,11 @@ async function readPlanCards(page: Page): Promise<PlanCard[]> {
   return out;
 }
 
-/** Click a named button inside the card that carries this PLN code. */
-async function planCardButton(page: Page, code: string, name: RegExp) {
-  const card = page.locator('span.mono.fw-700').filter({ hasText: code }).first().locator('xpath=..');
-  return card.getByRole('button', { name });
+/** Is this plan's action offered in the ⋯ of the line that carries it?
+ *  ADR-209: the chip has no buttons any more — every action is a ⋯ item
+ *  named `<PLN-code> · <action>`. */
+async function planCanDo(page: Page, code: string, name: RegExp): Promise<boolean> {
+  return hasPlanMenuItem(page, code, name);
 }
 
 // Once every line is planned the SO drops out of the planning list, so
@@ -268,7 +274,8 @@ test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  state.soCode = await page.locator('input[value^="IN-SO-"]').first().inputValue().catch(() => '');
+  // ADR-207 — SO No. is "Auto on save"; read it off the detail page after save.
+  state.soCode = '';
 
   await page.locator('select.innovic-select').first().selectOption('equipment');
   await page.waitForTimeout(2500);
@@ -287,11 +294,12 @@ test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   const nums = page.locator('input[type="number"]:visible');
   await nums.nth(0).fill(String(SO_QTY));
   await nums.nth(1).fill(String(RATE)).catch(() => {});
+  await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await page.waitForTimeout(6000);
   const err = await bannerText(page);
   expect(page.url(), `SO save rejected: ${err}`).toMatch(/sales-orders\/[0-9a-f]{8}-/);
-  if (!state.soCode) state.soCode = (await codesOnPage(page, /IN-SO-\d+/))[0] ?? '';
+  state.soCode = await soNoFromDetail(page);
 
   record({
     step: '02',
@@ -372,19 +380,18 @@ test('@bommulti 04 — route + execute the manufacture plans into job cards', as
     // A card offers Edit while In Planning and Execute once Planned — never
     // both. Requiring Edit reported "no Edit on PLN-0046" on plans that were
     // already finalized and simply needed executing.
-    const edit = await planCardButton(page, p.code, /Edit/i);
-    if ((await edit.count()) === 0) {
-      const ready = await planCardButton(page, p.code, /Create JC|Raise PR/);
-      if ((await ready.count()) > 0) {
+    const canEdit = await planCanDo(page, p.code, EDIT_PLAN_ITEM);
+    if (!canEdit) {
+      if (await planCanDo(page, p.code, EXECUTE_PLAN_ITEM)) {
         log(`${p.code} is already Planned — executing straight away`);
-        await ready.click();
+        await clickPlanMenuItem(page, p.code, EXECUTE_PLAN_ITEM);
         await page.waitForTimeout(7000);
       } else {
         record({ step: '04', doc: 'Job Card', code: p.code, qty: '—', status: 'BLOCKED', note: `${p.code} offers neither Edit nor Execute (status ${p.status})` });
       }
       continue;
     }
-    await edit.click();
+    await clickPlanMenuItem(page, p.code, EDIT_PLAN_ITEM);
     await page.waitForTimeout(2500);
 
     // A manufacture plan cannot be finalized with zero operations, and an
@@ -402,12 +409,11 @@ test('@bommulti 04 — route + execute the manufacture plans into job cards', as
     const saveErr = await bannerText(page);
     if (saveErr) log(`Save Plan on ${p.code} said: "${saveErr}"`);
 
-    const exec = await planCardButton(page, p.code, /Create JC|Raise PR/);
-    if ((await exec.count()) === 0) {
+    if (!(await planCanDo(page, p.code, EXECUTE_PLAN_ITEM))) {
       record({ step: '04', doc: 'Job Card', code: p.code, qty: '—', status: 'BLOCKED', note: `no Execute after Save Plan: ${await bannerText(page)}` });
       continue;
     }
-    await exec.click();
+    await clickPlanMenuItem(page, p.code, EXECUTE_PLAN_ITEM);
     await page.waitForTimeout(7000);
   }
 
@@ -604,19 +610,17 @@ test('@bommulti 07 — execute the buy + outsource plans into PRs', async ({ pag
       continue;
     }
     await openSoInPlanning(page);
-    const edit = await planCardButton(page, p.code, /Edit/i);
-    if ((await edit.count()) > 0) {
+    if (await planCanDo(page, p.code, EDIT_PLAN_ITEM)) {
       // Buy / Outsource plans need no ops — Save Plan just finalizes them.
-      await edit.click();
+      await clickPlanMenuItem(page, p.code, EDIT_PLAN_ITEM);
       await page.waitForTimeout(2500);
       await page.getByRole('button', { name: /Save Plan/i }).click();
       await page.waitForTimeout(4500);
       const saveErr = await bannerText(page);
       if (saveErr) log(`Save Plan on ${p.code} (${p.kind}) said: "${saveErr}"`);
     }
-    const exec = await planCardButton(page, p.code, /Create JC|Raise PR/);
-    if ((await exec.count()) > 0) {
-      await exec.click();
+    if (await planCanDo(page, p.code, EXECUTE_PLAN_ITEM)) {
+      await clickPlanMenuItem(page, p.code, EXECUTE_PLAN_ITEM);
       await page.waitForTimeout(7000);
     } else {
       log(`no Execute for ${p.code} (${p.kind}): ${await bannerText(page)}`);

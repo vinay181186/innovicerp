@@ -327,6 +327,31 @@ export async function restoreFromTrash(
       }
     }
 
+    // ADR-207 — Internal SO No. is unique among LIVE Sales Orders (case-
+    // insensitive). A deleted SO may not come back while a live SO now uses
+    // its number; refuse with a plain message instead of a raw 23505.
+    if (entity.type === 'Sales Order') {
+      const taken = (await tx.execute(sql`
+        SELECT gone.internal_so_no AS "internalSoNo", live.code
+        FROM public.sales_orders gone
+        JOIN public.sales_orders live
+          ON live.company_id = gone.company_id
+         AND live.deleted_at IS NULL
+         AND live.id <> gone.id
+         AND lower(live.internal_so_no) = lower(gone.internal_so_no)
+        WHERE gone.id = ${input.id}::uuid
+          AND gone.company_id = ${companyId}::uuid
+          AND gone.internal_so_no IS NOT NULL
+        LIMIT 1
+      `)) as unknown as Array<{ internalSoNo: string; code: string }>;
+      if (taken[0]) {
+        throw new ConflictError(
+          `Cannot restore: Internal SO No. ${taken[0].internalSoNo} is now used by ${taken[0].code}. ` +
+            "Change that order's Internal SO No. first.",
+        );
+      }
+    }
+
     // The header's delete instant, read before it is cleared — the key that
     // picks out the child rows deleted with it.
     const stampRows = (await tx.execute(

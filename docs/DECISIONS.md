@@ -19,6 +19,16 @@ What did we decide?
 - Option A — rejected because <reason>
 - Option B — rejected because <reason>
 
+### Known follow-up: the order roll-up still uses the old rule
+
+Level 1 classifies an ORDER by coverage percentage (`classifyPlanningPct`), and that
+counts a draft plan as covered. Level 2 now says a draft plan has not been let out. So an
+order covered entirely by draft plans reads "Fully Planned" in the list and "In Planning"
+on its lines. That mismatch is not new — the screen has always shown "In Planning" there
+— but it is the same one-fact-two-rules fault one level up, and ADR-185's audit had driven
+cross-page mismatches to zero. Making the order badge a roll-up of its lines' states is the
+fix; it is a different shape of change and needs its own design.
+
 ### Consequences
 - Positive: <what we gain>
 - Negative: <what we give up>
@@ -10980,3 +10990,212 @@ PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to
 ### Consequences
 - Verified on TEST: 63 ops, only 14 QC ops' Available changed, no other column or op moved, every QC
   op now has Available = Pending. QC entry caps (qc_pending) and production caps untouched.
+
+## ADR-207: Internal SO No. beside a system-only SO No.
+
+**Date:** 2026-10-03
+**Status:** Accepted (TEST stack)
+
+Sales Orders get `internal_so_no` (migration 0197), the office's own number (e.g. SO-2401), typed by the user beside the system SO No. The SO No. (`code`, IN-SO-#####) is now system-only: no write input carries it and the server always numbers the order. The Internal SO No. is required on create; SOs made before 0197 stay NULL and are not forced to get one when edited. Format: "SO-" plus letters, digits, `/ - .`, at most 30 characters, trimmed, prefix upper-cased (shared `internalSoNoError`). Unique per company among live SOs, ignoring case (partial unique index; server pre-check and index clash both give the same 409). Editable with SO edit rights through the normal update path (stale check, History row, edit approval). Restore from Trash is refused if the number has since been taken. Shown everywhere as "IN-SO-00786 · SO-2401" (`soNoWithInternal`), always read live from sales_orders — never copied. JWSO is untouched.
+
+## ADR-208: Customer material sent to an OSP vendor counts as used, and "At Vendor" says how much
+**Date:** 2026-10-03
+**Status:** Accepted (owner asked for OSP-on-JWSO to be traced, then said "go" on the fix)
+
+### Context
+Outsourcing an operation on a customer job-work order is allowed, and nothing in the system treats
+a JWSO job differently from a sales-order job: Route Cards, Plans, Production Orders and Job Cards
+all accept `op_type = 'outsource'` with no JW branch. When the **first** operation is the outsourced
+one, the customer's own raw material is what physically leaves the building, on the ordinary OSP
+Outward Delivery Challan (`IN-DC-#####`). That challan is deliberately stock-neutral (ADR-067): it
+moves nothing and only bumps `jc_ops.outsource_sent_qty`.
+
+The customer-material "used" figure counted ONLY `op_log` rows with `log_type = 'complete'` on the
+first op — and an outsourced op can never carry one: `op-entry` refuses in-house logging on an OSP
+op, and Incoming QC mirrors the return onto the NEXT op as `log_type = 'qc'`. So `used` stayed **0
+for ever** and the Job Card reported the pieces as still sitting on the card, through return,
+final QC and dispatch.
+
+That was not cosmetic. Return-to-store and Cancel-issue both cap on the same `used`, so a
+storekeeper could return or cancel the whole Party Material Issue **while the pieces were at the
+vendor**, pushing the JWSO line's register back up to the full accepted qty — after which a
+Customer Material Return of those "recovered" pieces would pass its own balance check, booking us
+as having returned to the customer material that was actually at a subcontractor.
+
+### Decision
+1. **"Sent out from the first op" is material used.** `+ COALESCE(first_op.outsource_sent_qty, 0)`
+   is added to all three copies of the figure: `jcMaterial.used`
+   (`party-material-issues/register.ts`, which is what both limits read), `cmJcUsed`
+   (`job-cards/service.ts` `JC_CUSTOMER_MATERIAL_SELECT`, which drives `onJcQty`), and the gated-JW
+   `rmAvailable.consumed` (the first-op "Customer Material" chip). This is exactly what
+   `v_jc_op_status.available` already does for a plain op (migration 0196), so the material view and
+   the operation view now agree instead of contradicting each other.
+2. The two refusal messages on cancel / return-to-store now say the pieces may be "with the vendor,
+   not on the shelf", because "already worked" was no longer the whole reason.
+3. **The "Customer Material" chip no longer demands the impossible.** With sent-out pieces counted,
+   a healthy fully-outsourced first op sits at `availableQty = 0` for ever. The chip used to turn red
+   and say "issue material" / "Issue more customer material … to continue" — advice the server
+   refuses, because a further issue is capped at `order qty − net issued` which is already 0. Zero now
+   reads two ways: nothing issued yet (red, issue it) versus every issued piece accounted for (quiet,
+   "nothing left to work — every issued piece is either made or out at the vendor").
+4. **A reported `atVendorQty` figure was built and then WITHDRAWN before shipping.** It read the first
+   op's `v_jc_op_status.at_vendor_qty`, and review found that source wrong for this purpose on three
+   counts: the view's figure adds NC return-to-vendor pieces (already processed, not raw customer
+   material); it is per-op, so a later outsourced op would leave the panel reading 0 while the op chip
+   beside it read non-zero — one name over two facts, the §18 fault; and pieces back from the vendor
+   but still in Incoming QC fall out of both that figure and `onJcQty`, so the custody identity does
+   not balance in that window. It also added a second correlated subquery against an expensive view
+   per Job Card list row. **The fact has to be defined before it can be reported: does "customer
+   material at vendor" mean raw material only, or customer-owned work in progress too?** Until the
+   owner answers, the panel shows a correct `On JC` and no At Vendor figure at all, which is better
+   than a figure that contradicts the chip next to it.
+5. **Rejected, with reasons:** naming the customer as material owner on the OSP challan print
+   (owner: no) and a vendor-qualification / customer-consent-to-subcontract gate (owner: it's okay as
+   is). `atVendor` on `jwLineRegister` was skipped — it would need a `v_jc_op_status` join inside
+   per-line loops for a figure no caller reads. An At Vendor column on the `jwso-balance` report was
+   skipped — that report computes its own SQL and does not read `jwLineRegister`, so it is a separate
+   decision.
+
+### Why this is safe
+- **No migration, no schema change, no new ledger writer.** Every edit is read-side SQL inside
+  queries that already existed. `postPartyStockMove` remains the only writer of the customer-material
+  register (§20.1) and the diff contains no INSERT and no UPDATE.
+- **§20.3 already satisfied:** `jcMaterial(tx, …, { lockFirstOp: true })` already takes
+  `FOR UPDATE` on the first `jc_ops` row — the row holding `outsource_sent_qty` — so the new term is
+  read inside the existing lock. No lock was added or moved.
+- **Direction of safety:** `used` can only grow, so `onJcQty` and both caps can only narrow. The
+  change can refuse something it used to allow; it can never permit something previously refused.
+- **No double count — the two terms never count the same PIECE:** nothing writes a `complete` row for
+  a piece returning from a vendor (op-entry refuses in-house logging on an OSP op, Incoming QC writes
+  `qc` on the NEXT op, and NC re-injections are excluded by `log_no NOT LIKE '%LOG-NC-%'`). The
+  ADR-081 dual lane therefore adds two sets of different pieces.
+- **But they are NOT bounded by the issued qty, and that is a known limit.** An earlier draft of this
+  ADR and of the code comment claimed the invariant
+  `Σ complete + outsource_sent_qty ≤ input_avail`; **review showed it does not hold.** The outward
+  gate computes `sendable = inputAvail − inHouseCompleted − outsourceSentQty` with
+  `inHouseCompleted = SUM(qty)` only (`delivery-challans/cascades.ts`) — it ignores `reject_qty`,
+  while this figure counts it. So on a dual-lane op with rejects (order 100, issued 100, 30 good + 20
+  rejected worked, then 70 sent out) `used` reaches 120 against 100 issued, and BOTH reversals refuse
+  permanently. That is the safe direction — refuse, never permit — and the same stance party-GRN
+  cancel already takes when counters disagree, but the storekeeper's only explanation is the refusal
+  text. **OPEN ITEM:** tightening that gate to subtract `reject_qty` is the real fix, and it changes
+  what every OSP send may ship — for sales-order jobs too — so it is deliberately NOT bundled here.
+- **Verified against live production data before shipping:** both live JW Job Cards are gated and
+  both have `outsource_sent_qty = 0`, and no card has `used > netIssued`, so **not one displayed
+  figure moves on production**. The fix activates the first time a first operation is actually
+  outsourced.
+
+### Consequences
+- `outsource_sent_qty` is cumulative and stays up after the pieces return and move down the route, so
+  on a card whose first op was outsourced `used` stays at the sent qty and `On JC` stays
+  correspondingly low. That is correct material accounting — the material WAS consumed by the job —
+  and it is what `v_jc_op_status.available` has always done.
+- The one route by which a cap gets wider again is a genuine reversal of the OSP Outward DC
+  (`delivery-challans/cascades.ts` decrements the counter), which is right: the pieces are back.
+- On a **non-gated** (pre-cutover) JWSO card, pieces could have gone to a vendor with no Party
+  Material Issue booked at all; there `used` can exceed `netIssued` and both reversals will refuse.
+  That is the safe direction, and the new wording is the storekeeper's only explanation. No such card
+  exists on production today (both are gated).
+- Still unrecorded by design: there is no ledger movement for customer material at a vendor. The
+  challan has no `jw_line_id` / `client_id` / `party_material_id` column and the print does not name
+  the owner (owner decision). Had the withdrawn At Vendor figure shipped it would still have been a
+  derived figure, never a movement — `postPartyStockMove` always moves `stock_qty`, so reusing it
+  would have double-debited the register.
+- Found by the `/code-review high` pass on this diff, not by the author: the impossible chip advice
+  (decision 3), the false invariant above, the wrong ADR number on four code comments, and the three
+  reasons the At Vendor source was unfit (decision 4).
+
+## ADR-209: The SO/JWSO Planning line sheet moves onto the one table standard
+
+**Date:** 2026-10-03
+**Status:** Accepted
+**Owner decision:** "i like this new mockup. to build it", then "option b" (keep a slim
+Plans column) and "do as u suggested" (update the specs, take all three server fixes).
+
+### Context
+
+The Planning screen has two tables. Level 1, the SO/JWSO list, moved onto the FIT
+DataTable under ADR-199. Level 2, the per-line sheet, was deliberately left behind
+("Level 2 is unchanged", `routes/workflow.tsx`) on a hand-built `<table>` with fixed
+percentage widths and a 1200px floor.
+
+That exemption is what produced the bug the owner reported. Four columns wrapped, seven
+were told never to clip, and rows ran 57–62px at uneven heights. Due Date painted over
+Plan Status until it was widened to 9%; then "N reserved here" under Available was found
+doing the same thing to To Plan — 29px of overspill at 1440 and 38px at 1280, measured on
+the test site. Patching cells one at a time was losing: ADR-199's own rules ("every row is
+one line", "long text is cut with …", "always fits") make the whole class of bug
+impossible, and the sheet was the only Planning table not covered by them.
+
+ADR-199 exempts "editable FORM line tables". This sheet is not one — it has no inputs; it
+is a read-and-act table. It was simply never converted.
+
+### Decision
+
+1. **The line sheet renders on `<DataTable tableKey="planning-lines">`.** One line per
+   row, numbers right-aligned, long text cut with "…" plus the full text on hover, and the
+   rightmost columns stepping into the row's ▸ panel instead of a scrollbar appearing.
+   Columns ▾, Comfortable/Compact and Sort & Filter come with the engine.
+2. **Sort & Filter runs client-side.** The largest order on production carries 30 lines
+   (11 on average), so there is nothing to page and no endpoint to change.
+3. **Plans stays in the grid, slimmed and pinned** — the plan code and its status only.
+   Its chips, links and detail move to ▸; its buttons move to ⋯. A planner has to see at a
+   glance which lines are planned, and ~8 specs read plan codes out of the page text.
+4. **Every action lives in the row's one ⋯**: the six line actions unchanged, plus each
+   plan's own prefixed with its plan code (`PLN-0013 · Create JC`). The shared menu has
+   four fixed groups and no sub-menus, so the prefix is what keeps several plans readable.
+5. **`rowMenuLabel`** is a new optional DataTable prop so a row's ⋯ can carry its own
+   accessible name again. The engine names every ⋯ "Actions", which suits a document row
+   and not 30 numbered lines — for a screen reader, and for the shared test helper that
+   finds a Planning row by that name.
+6. **One rule for a line's status**, in `packages/shared/src/lib/planning-line-status.ts`.
+   The API filled `lineStatus` from a rounded coverage percentage while the screen threw
+   that away and derived its own from `remaining` plus the plan statuses. On a line fully
+   covered by a DRAFT plan the two disagreed: the API said `fully_planned`, the screen said
+   "In Planning". The screen's rule wins — green must mean work was actually let out — and
+   both sides now read it (CLAUDE.md §20.1).
+7. **ADR-196 is honoured by both sides.** The rule takes `shortClosed` and checks it before
+   every other branch, and the flag is published on the row. Until now only the API kept
+   that promise and the screen quietly did not.
+8. **Stock quantities are not integers.** `item_stock_balances.on_hand_qty` is
+   `numeric(14,3)`, so an item sold by weight or length holds 12.500; 22 such rows exist on
+   the TEST database. The contract declared `int` and nothing validated it. No server code
+   changed — the numbers already passed through; only the declaration was wrong.
+9. **Four joins stop showing deleted documents.** The job-card join and the three
+   purchase-request aliases, on both paths and in `getPlanningBom`, now carry
+   `deleted_at IS NULL`. Zero rows match on either live database today.
+
+### What a planner loses
+
+Two figures now need a ▸ click: the customer's PO line number, which sat under the item
+code, and "N reserved here", which sat under Available and was the overflow. Both are in
+the ▸ panel with Physical.
+
+### Alternatives rejected
+
+- **Patch the Available cell and stop there.** Fixes one symptom; the next stacked
+  sub-line does it again.
+- **Drop the Plans column entirely** (the first mockup). Cleaner grid, but the plan number
+  leaves the screen and ~8 specs that read it from the page text break.
+- **Server-side sort, filter and paging for lines**, mirroring level 1. Nothing to page at
+  30 rows, and every derived column is computed in TypeScript after the fetch, so there is
+  no SQL expression to sort by. Client-side costs nothing and changes no endpoint.
+- **A behaviour-preserving status rule.** Keeping the API's percentage rule would have
+  frozen the disagreement in place.
+
+### Consequences
+
+- No migration, no API contract break: the row keeps every field and gains `shortClosed`.
+- A line covered only by DRAFT plans now reports `partial` to the API where it reported
+  `fully_planned`. Nothing displays that field; the screen already showed "In Planning".
+- `order-line-row.tsx` (`LINE_COLS`, `wrapCell`, `OrderLineRow`) is deleted.
+- 12 specs move from the chip's buttons to the ⋯; `rowMenuLabel` spared ~14 more.
+- A BUY line covered only by a purchase request still reads "Unplanned" on the screen
+  while its percentage climbs, because the state looks at plans and plan-less Job Cards.
+  That is unchanged for the planner. **On the wire it did change**: `lineStatus` used to
+  report `partial` for that line, because the old API rule classified a percentage and a
+  BUY line's `totalPlanned` counts its PR qty. It now reports `unplanned`, matching the
+  screen. Nothing reads the field, so nothing on any screen moves — but the review was
+  right that the first draft of this ADR claimed no wire change at all. Pinned by a test.
+  Fixing it properly means deciding whether a raised PR counts as "let out"; it is the
+  same question as the level-1 roll-up below, and belongs with it.

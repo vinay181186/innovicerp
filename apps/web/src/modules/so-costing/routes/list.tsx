@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { apiFetch } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { inrFormat } from '@/lib/print/doc-print';
+import { soNoWithInternal } from '@/lib/so-number';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -65,7 +66,7 @@ function soCostingColumns(priceHidden: boolean): DataTableColumn<SoCostingRow>[]
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {r.soNo}
+          {soNoWithInternal(r.soNo, r.soInternalNo)}
         </Link>
       ),
     },

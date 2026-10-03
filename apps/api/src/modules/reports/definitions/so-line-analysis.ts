@@ -36,6 +36,7 @@ export const soLineAnalysisReport: RegisteredReport = {
     ],
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'so_date', label: 'SO Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
@@ -76,6 +77,7 @@ export const soLineAnalysisReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT
         so.code                                    AS so_code,
+        so.internal_so_no                          AS so_internal_no,
         so.so_date::text                           AS so_date,
         COALESCE(cl.name, so.customer_name, '—')   AS client_name,
         sol.client_po_line_no                      AS client_po_line_no,
@@ -128,6 +130,7 @@ export const soLineAnalysisReport: RegisteredReport = {
             FROM public.invoice_lines il
             JOIN public.invoices inv
               ON inv.id = il.invoice_id AND inv.deleted_at IS NULL
+              AND inv.status <> 'cancelled'
             WHERE il.sales_order_line_id = sol.id
               AND il.deleted_at IS NULL
           ), 0)::int AS invoiced
@@ -146,6 +149,7 @@ export const soLineAnalysisReport: RegisteredReport = {
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({
       so_code: String(r['so_code'] ?? ''),
+      so_internal_no: textCell(r['so_internal_no']),
       so_date: dateCell(r['so_date']),
       client_name: String(r['client_name'] ?? ''),
       client_po_line_no: textCell(r['client_po_line_no']),

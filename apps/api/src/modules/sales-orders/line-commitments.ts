@@ -203,6 +203,9 @@ export async function readSoLineCommitments(
         eq(invoiceLines.companyId, companyId),
         isNull(invoiceLines.deletedAt),
         isNull(invoices.deletedAt),
+        // A cancelled invoice (ADR-202 Phase 3) no longer commits the line, just
+        // as a cancelled dispatch does not.
+        ne(invoices.status, 'cancelled'),
       ),
     );
   for (const i of invoiceRows) {
@@ -342,6 +345,7 @@ export async function describeSoBlockingDocuments(
         eq(invoices.salesOrderId, salesOrderId),
         eq(invoices.companyId, companyId),
         isNull(invoices.deletedAt),
+        ne(invoices.status, 'cancelled'),
       ),
     );
   hdrInvoices.forEach((i) => pushUnique(invoiceCodes, i.code));

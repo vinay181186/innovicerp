@@ -20,7 +20,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
-import { clickRowMenuItem, hasRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, hasRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -341,13 +342,10 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     await page.getByPlaceholder('Qty', { exact: true }).first().fill(String(ORDER_QTY));
     await page.getByPlaceholder('Rev', { exact: true }).first().fill('A');
     await page.getByPlaceholder('₹ Rate', { exact: true }).first().fill('10').catch(() => {});
+    await fillInternalSoNo(page);
     await page.getByRole('button', { name: /Save SO/i }).click();
     await page.waitForURL((u) => !/\/sales-orders\/new/.test(u.pathname), { timeout: 90_000 });
-    await page.waitForTimeout(2500);
-    const body = await page.locator('body').innerText();
-    const m = /IN-SO-\d+/.exec(body);
-    expect(m, 'SO code on page after save').toBeTruthy();
-    s = writeState({ soCode: m![0] });
+    s = writeState({ soCode: await soNoFromDetail(page) });
     log('C0: SO ' + s.soCode + ' (client PO ref E2E_NC-GRN-' + STAMP + ', qty ' + ORDER_QTY + ')');
   }
 
@@ -378,9 +376,7 @@ test('C0 - build the NC chain: SO -> JC -> Turning 14 -> DIR QC 10 ok / 4 rej ->
     await pickFirst(page, row0.getByPlaceholder('🔍 Machine', { exact: true }), 'cnc');
     await page.getByRole('button', { name: /Save Plan/i }).click();
     await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-    const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
-    await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
-    await execBtn.click();
+    await executePlanFromMenu(page);
     await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });
     await page.waitForTimeout(1500);
     const body = await page.locator('body').innerText();

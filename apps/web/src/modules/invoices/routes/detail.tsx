@@ -43,12 +43,14 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayIst } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
 import { Banner } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
 import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
+import { CancelInvoiceModal } from '../components/cancel-invoice-modal';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { invoiceSheetHtml, printInvoice } from '../lib/print';
 import { splitGst } from '../lib/gst-split';
@@ -58,6 +60,8 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
   unpaid: 'Unpaid',
   partial: 'Partly Paid',
   paid: 'Paid',
+  // ADR-202 Phase 3 — a reason-logged cancel replaces editing a statutory doc.
+  cancelled: 'Cancelled',
 };
 
 export const invoiceDetailRoute = createRoute({
@@ -92,6 +96,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   const [previewHeight, setPreviewHeight] = useState(1123);
 
   const [payOpen, setPayOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayStr());
   const [payAmt, setPayAmt] = useState('');
   // TDS / short amount the customer deducted — counts toward settling.
@@ -162,6 +167,14 @@ function InvoiceDetailPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = inv.priceVisible === false;
+  // ADR-202 Phase 3 — an invoice is never edited; a correction is a reason-logged
+  // cancel. Offer it only to someone who can both edit AND approve this form, only
+  // while the invoice is live, and only before any payment lands (a settled
+  // invoice cannot be unwound here). totalPaid is null when prices are hidden —
+  // those users don't get the action, which is the safe default.
+  const isCancelled = inv.status === 'cancelled';
+  const canCancel =
+    perms.edit && perms.approve && !isCancelled && (inv.totalPaid ?? 0) === 0;
   const stats: { label: string; value: string; size: number; color?: string }[] = priceHidden
     ? []
     : [
@@ -252,9 +265,15 @@ function InvoiceDetailPage(): React.JSX.Element {
                   if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
                 },
               },
+              {
+                label: 'Cancel Invoice',
+                onClick: () => setCancelOpen(true),
+                danger: true,
+                hidden: !canCancel,
+              },
             ]}
           />
-          {perms.entry && inv.status !== 'paid' ? (
+          {perms.entry && inv.status !== 'paid' && !isCancelled ? (
             <button type="button" className="btn btn-primary" onClick={() => setPayOpen((v) => !v)}>
               💳 Add Payment
             </button>
@@ -262,10 +281,32 @@ function InvoiceDetailPage(): React.JSX.Element {
         </div>
       </div>
 
+      {isCancelled ? (
+        <div className="mb-2">
+          <Banner
+            tone="error"
+            accent
+            title="Cancelled — this invoice is no longer a live tax document"
+          >
+            {inv.cancelReason ? (
+              <div>
+                Reason: <b>{inv.cancelReason}</b>
+              </div>
+            ) : null}
+            {inv.cancelledAt ? (
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                Cancelled {inv.cancelledBy ? `by ${inv.cancelledBy} ` : ''}on{' '}
+                {fmtDate(inv.cancelledAt)}
+              </div>
+            ) : null}
+          </Banner>
+        </div>
+      ) : null}
+
       <div style={{ fontSize: 13, marginBottom: 10 }}>
         Customer: <b>{inv.clientName ?? '—'}</b> · SO No.:{' '}
         <Link to="/sales-orders/$id" params={{ id: inv.salesOrderId }} className="fw-700">
-          {inv.soCode ?? '—'}
+          {inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'}
         </Link>{' '}
         · Due Date: <b>{fmtDate(inv.dueDate)}</b>
         {inv.placeOfSupply ? (
@@ -475,6 +516,10 @@ function InvoiceDetailPage(): React.JSX.Element {
       <Panel title="History" bodyPadding="none">
         <DocumentHistory entity="Invoice" entityId={inv.id} refId={inv.code} />
       </Panel>
+
+      {cancelOpen ? (
+        <CancelInvoiceModal id={inv.id} code={inv.code} onClose={() => setCancelOpen(false)} />
+      ) : null}
     </div>
   );
 }

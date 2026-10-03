@@ -95,7 +95,13 @@ export async function getSoMaterial(salesOrderId: string, user: AuthContext): Pr
     const so = await readSoHead(tx, companyId, salesOrderId);
     if (!so) throw new NotFoundError('Sales Order not found.');
     const issues = await readSlipsFor(tx, companyId, { salesOrderId: so.id });
-    const base = { salesOrderId: so.id, soCode: so.code, units: so.units, issues };
+    const base = {
+      salesOrderId: so.id,
+      soCode: so.code,
+      soInternalNo: so.internalSoNo,
+      units: so.units,
+      issues,
+    };
     // No (longer a) BOM: nothing is required, but parts still out on its
     // slips stay listed as "not in BOM" so the store can take them back.
     const hasBom = so.isEquipment && so.bomId != null;

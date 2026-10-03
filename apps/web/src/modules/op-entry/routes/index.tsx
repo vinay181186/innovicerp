@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -391,7 +392,7 @@ function OpEntryPage() {
                 {jcHead?.soCode ? (
                   /* T27: surface the source SO/JW order on Op Entry too. */
                   <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
-                    SO: {jcHead.soCode}
+                    SO: {soNoWithInternal(jcHead.soCode, jcHead.soInternalNo)}
                   </span>
                 ) : null}
                 {ops.isFetching && !ops.isLoading ? (

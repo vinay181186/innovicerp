@@ -165,6 +165,8 @@ export function printJobCard(args: {
   const left = [
     fact('JC No.', jc.code, { strong: true }),
     fact(jc.sourceLink?.type === 'jw' ? 'JWSO No.' : 'SO No.', soNo, { strong: true }),
+    // ADR-207 — the Internal SO No. on its own labelled line, only when set.
+    so?.internalSoNo ? fact('Internal SO No.', so.internalSoNo, { strong: true }) : '',
     fact('Ln', soLine),
     fact('POL', pol),
     fact('Item Name', jc.itemName),

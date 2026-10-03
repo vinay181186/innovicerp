@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clickRowMenuItem, findRowWithMenuItem, planningLineRows } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // A BOM whose three children use the three DIFFERENT line types, driven from
 // creation through to whatever stops it:
@@ -180,7 +181,8 @@ test('@bom3 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  state.soCode = await page.locator('input[value^="IN-SO-"]').first().inputValue().catch(() => '');
+  // ADR-207 — SO No. is "Auto on save"; read it off the detail page after save.
+  state.soCode = '';
 
   // Type first — switching it re-renders the form and would wipe a client
   // picked before it.
@@ -206,11 +208,12 @@ test('@bom3 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   await nums.nth(1).fill(String(RATE)).catch(() => {});
   await page.waitForTimeout(500);
 
+  await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await page.waitForTimeout(6000);
   const err = await bannerText(page);
   expect(page.url(), `SO save rejected: ${err}`).toMatch(/sales-orders\/[0-9a-f]{8}-/);
-  if (!state.soCode) state.soCode = await codeOnPage(page, /IN-SO-\d+/);
+  state.soCode = await soNoFromDetail(page);
 
   record({
     step: '02',

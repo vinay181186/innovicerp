@@ -18,6 +18,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useStopOp } from '@/modules/op-entry/api';
 import { StopOpModal } from '@/modules/op-entry/components/stop-op-modal';
 import { RowMenu } from '@/ui/data';
@@ -273,7 +274,7 @@ export function ShopFloorView(): React.JSX.Element {
                         </td>
                         <td>{r.itemName ?? '—'}</td>
                         <td className="mono text2" style={{ fontSize: 11 }}>
-                          {r.soCode ?? '—'}
+                          {r.soCode ? soNoWithInternal(r.soCode, r.soInternalNo) : '—'}
                         </td>
                         <td className="td-ctr mono">{r.orderQty}</td>
                         <td className="td-ctr green mono fw-700">{r.doneQty}</td>

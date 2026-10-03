@@ -128,6 +128,8 @@ export const designProjectSchema = z.object({
 export type DesignProject = z.infer<typeof designProjectSchema>;
 
 export const designProjectListItemSchema = designProjectSchema.extend({
+  /** ADR-207 — the driving SO's Internal SO No., read live from sales_orders. */
+  soInternalNo: z.string().nullable().default(null),
   taskTotal: z.number().int().nonnegative(),
   taskDone: z.number().int().nonnegative(),
   taskProgressPct: z.number().int().nonnegative(),

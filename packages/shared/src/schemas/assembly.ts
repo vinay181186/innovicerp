@@ -84,6 +84,8 @@ export type AssemblyRollup = z.infer<typeof assemblyRollupSchema>;
 export const assemblyHeaderSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live), null when it has none. */
+  soInternalNo: z.string().nullable().optional(),
   customerName: z.string().nullable(),
   type: z.enum(['component_manufacturing', 'equipment', 'with_material']),
   status: z.enum(SO_STATUSES),
@@ -108,6 +110,8 @@ export type AssemblyTrackerResponse = z.infer<typeof assemblyTrackerResponseSche
 export const assemblyListItemSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live), null when it has none. */
+  soInternalNo: z.string().nullable().optional(),
   customerName: z.string().nullable(),
   bomCode: z.string().nullable(),
   /** BOM master name + revision — legacy prints "BOM: <bomNo> Rev <n>" in the

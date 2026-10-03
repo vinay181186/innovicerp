@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
 import { soTypeLabel } from '../../sales-orders/lib/so-status-label';
 import { useCreateDesignTracker, useNextDesignTrackerCode } from '../api';
@@ -101,13 +102,15 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
           <SearchableSelect
             value={soId}
             valueLabel={
-              selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : undefined
+              selectedSo
+                ? `${soNoWithInternal(selectedSo.code, selectedSo.internalSoNo)} — ${selectedSo.customerName ?? ''}`
+                : undefined
             }
             // SO type beside the customer (e.g. "· Equipment") — design work
             // is mostly on Equipment SOs, so the type tells them apart.
             options={(soData?.items ?? []).map((so) => ({
               id: so.id,
-              code: so.code,
+              code: soNoWithInternal(so.code, so.internalSoNo),
               name: [so.customerName, so.type ? soTypeLabel(so.type) : null]
                 .filter(Boolean)
                 .join(' · '),

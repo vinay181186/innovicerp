@@ -36,6 +36,7 @@ function rowMatches(r: JobQueueRow, term: string): boolean {
     codeRev,
     r.itemName,
     r.soCode,
+    r.soInternalNo,
     r.soCustomer,
     r.operation,
   ].some((v) => v != null && v.toLowerCase().includes(term));

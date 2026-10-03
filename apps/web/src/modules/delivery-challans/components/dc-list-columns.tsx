@@ -11,6 +11,7 @@
 import { DC_STATUSES, type DeliveryChallanListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { DcStatusBadge } from './dc-status-badge';
@@ -112,7 +113,9 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
       nowrap: true,
       render: (dc) => (
         <span className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
-          {dc.soCode ?? dc.soRefText ?? '—'}
+          {dc.soCode || dc.soRefText
+            ? soNoWithInternal(dc.soCode ?? dc.soRefText ?? '', dc.soInternalNo)
+            : '—'}
         </span>
       ),
     },

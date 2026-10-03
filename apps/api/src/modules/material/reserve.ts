@@ -45,9 +45,12 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
-/** "IN-SO-00786 (4), IN-SO-00001 (2)". */
+/** "IN-SO-00786 · SO-2401 (4), IN-SO-00001 (2)" — ADR-207: the Internal SO
+ *  No. follows the SO No. when the holder SO has one. */
 export function holdersText(holders: readonly MaterialHolder[]): string {
-  return holders.map((h) => `${h.soCode} (${h.qty})`).join(', ');
+  return holders
+    .map((h) => `${h.soCode}${h.soInternalNo ? ` · ${h.soInternalNo}` : ''} (${h.qty})`)
+    .join(', ');
 }
 
 async function readOpenAssemblySo(

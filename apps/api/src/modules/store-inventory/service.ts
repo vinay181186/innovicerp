@@ -194,6 +194,7 @@ export async function listReservations(
         clientPoLineNo: salesOrderLines.clientPoLineNo,
         clientName: clients.name,
         soCustomerName: salesOrders.customerName,
+        soInternalNo: salesOrders.internalSoNo,
         productionOrderCode: productionOrders.code,
         jobCardCode: jobCards.code,
         reservedByName: users.fullName,
@@ -224,6 +225,7 @@ export async function listReservations(
         itemCode: row.itemCode ?? r.itemCodeText,
         soLineId: r.soLineId,
         soCodeText: r.soCodeText,
+        soInternalNo: row.soInternalNo ?? null,
         lineNo: r.lineNo,
         // The client master is the live name; the SO's own snapshot is the
         // fallback for an order raised before a client row existed.

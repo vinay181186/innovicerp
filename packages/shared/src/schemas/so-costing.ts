@@ -20,6 +20,8 @@ export type ListSoCostingQuery = z.input<typeof listSoCostingQuerySchema>;
 export const soCostingRowSchema = z.object({
   soId: z.string().uuid(),
   soNo: z.string(),
+  // ADR-207 — the SO's Internal SO No. (read live from sales_orders).
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
@@ -94,6 +96,8 @@ export type SoCostingLine = z.infer<typeof soCostingLineSchema>;
 export const soCostingDetailSchema = z.object({
   soId: z.string().uuid(),
   soNo: z.string(),
+  // ADR-207 — the SO's Internal SO No. (read live from sales_orders).
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   costCenter: z.string().nullable(),
   costCenterName: z.string().nullable(),

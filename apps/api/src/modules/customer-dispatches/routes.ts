@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import { listDispatchRegister } from './register';
+import { updateCustomerDispatchInputSchema } from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -53,6 +54,16 @@ export async function customerDispatchesRoutes(app: FastifyInstance): Promise<vo
     const result = await service.createDispatch(body, req.user);
     reply.code(201);
     return result;
+  });
+
+  // ADR-202 Phase 3 — edit a dispatch's line qty / header travel details. When
+  // the Document Edit Approval gate is on and the dispatch is live, the edit is
+  // staged and a DocumentEditStagedResult is returned; otherwise it applies.
+  app.patch('/customer-dispatches/:id', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = updateCustomerDispatchInputSchema.parse(req.body);
+    return service.updateCustomerDispatchOrStage(id, body, req.user);
   });
 
   app.post('/customer-dispatches/:id/cancel', async (req) => {

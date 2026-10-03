@@ -35,6 +35,7 @@ export const designHoursVsEstimateReport: RegisteredReport = {
     columns: [
       { key: 'tracker_code', label: 'DSN No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'designer', label: 'Designer', type: 'text' },
       { key: 'status', label: 'Design Status', type: 'text' },
@@ -55,6 +56,7 @@ export const designHoursVsEstimateReport: RegisteredReport = {
       SELECT
         dt.code                                      AS tracker_code,
         COALESCE(so.code, dt.so_code_text)           AS so_code,
+        so.internal_so_no                            AS so_internal_no,
         COALESCE(it.code, dt.item_code_text, '—')    AS item_code,
         dt.designer                                  AS designer,
         dt.status                                    AS status,
@@ -87,6 +89,7 @@ export const designHoursVsEstimateReport: RegisteredReport = {
     const rows = (result as unknown as SqlRow[]).map((r) => ({
       tracker_code: String(r['tracker_code'] ?? ''),
       so_code: textCell(r['so_code']),
+      so_internal_no: textCell(r['so_internal_no']),
       item_code: String(r['item_code'] ?? ''),
       designer: String(r['designer'] ?? ''),
       status: String(r['status'] ?? ''),

@@ -218,6 +218,8 @@ export function balanceOf(required: number, got: IssuedReturned | undefined): nu
 export interface SoHead {
   id: string;
   code: string;
+  /** ADR-207 — the SO's Internal SO No. (null on an old SO). */
+  internalSoNo: string | null;
   isEquipment: boolean;
   /** The SO's BOM when it is a valid uuid of a live BOM in this company. */
   bomId: string | null;
@@ -232,12 +234,13 @@ export async function readSoHead(
   salesOrderId: string,
 ): Promise<SoHead | null> {
   const rows = (await tx.execute(sql`
-    SELECT id, code, type::text AS type, status::text AS status, bom_master_id
+    SELECT id, code, internal_so_no, type::text AS type, status::text AS status, bom_master_id
     FROM public.sales_orders
     WHERE id = ${salesOrderId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
   `)) as unknown as Array<{
     id: string;
     code: string;
+    internal_so_no: string | null;
     type: string;
     status: string;
     bom_master_id: string | null;
@@ -263,6 +266,7 @@ export async function readSoHead(
   return {
     id: r.id,
     code: r.code,
+    internalSoNo: r.internal_so_no ?? null,
     isEquipment: r.type === 'equipment',
     bomId,
     units: num(u[0]?.q),
@@ -311,12 +315,20 @@ export async function readBookedForOthers(
   companyId: string,
   itemIds: readonly string[],
   exceptSalesOrderId: string,
-): Promise<Map<string, Array<{ soCode: string; qty: number }>>> {
-  const out = new Map<string, Array<{ soCode: string; qty: number }>>();
+): Promise<Map<string, Array<{ soCode: string; soInternalNo: string | null; qty: number }>>> {
+  const out = new Map<
+    string,
+    Array<{ soCode: string; soInternalNo: string | null; qty: number }>
+  >();
   if (itemIds.length === 0) return out;
   const ids = sql.param(itemIds as string[]);
   const rows = (await tx.execute(sql`
-    SELECT x.item_id, x.so_code_text, SUM(x.held) AS held
+    SELECT x.item_id, x.so_code_text, SUM(x.held) AS held,
+           -- ADR-207 — the holder SO's Internal SO No., read live by its code.
+           (SELECT so.internal_so_no FROM public.sales_orders so
+             WHERE so.company_id = ${companyId}::uuid AND so.code = x.so_code_text
+               AND so.deleted_at IS NULL
+             LIMIT 1) AS so_internal_no
     FROM (
       SELECT r.item_id, r.so_code_text, (r.qty - r.consumed_qty - r.released_qty)::numeric AS held
       FROM public.so_stock_reservations r
@@ -340,10 +352,19 @@ export async function readBookedForOthers(
     GROUP BY x.item_id, x.so_code_text
     HAVING SUM(x.held) > 0
     ORDER BY x.so_code_text
-  `)) as unknown as Array<{ item_id: string; so_code_text: string; held: unknown }>;
+  `)) as unknown as Array<{
+    item_id: string;
+    so_code_text: string;
+    held: unknown;
+    so_internal_no: string | null;
+  }>;
   for (const r of rows) {
     const list = out.get(r.item_id) ?? [];
-    list.push({ soCode: r.so_code_text, qty: roundQty(num(r.held)) });
+    list.push({
+      soCode: r.so_code_text,
+      soInternalNo: r.so_internal_no ?? null,
+      qty: roundQty(num(r.held)),
+    });
     out.set(r.item_id, list);
   }
   return out;

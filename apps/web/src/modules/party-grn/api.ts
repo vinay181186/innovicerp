@@ -1,5 +1,6 @@
 import type {
   CreatePartyGrnInput,
+  DocumentEditStagedResult,
   ListPartyGrnQuery,
   ListPartyGrnResponse,
   PartyGrn,
@@ -86,6 +87,62 @@ export function useCreatePartyGrn(saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Party material stocks changed
+      void qc.invalidateQueries({ queryKey: ['party-materials'] });
+    },
+  });
+}
+
+/** PATCH /party-grn/:id payload (ADR-202 Phase 3). Defined here, not yet in the
+ *  shared contract — the backend half is being built in parallel; this mirrors
+ *  the natural field names so the frontend compiles and works a normal update
+ *  until the staged-edit server lands. Only the header travel fields and, per
+ *  line still waiting for Incoming QC, its Received Qty + line remarks are
+ *  editable; the JWSO and the set of lines cannot change on an existing receipt.
+ *  `reason` rides along for the activity-log entry (ADR-197); `expectedUpdatedAt`
+ *  is the detail's updatedAt for the server's §20.4 concurrency check. */
+export interface UpdatePartyGrnInput {
+  grnDate?: string | undefined;
+  dcNo?: string | undefined;
+  remarks?: string | undefined;
+  receivedBy?: string | undefined;
+  /** One entry per existing line, keyed by party_grn_lines.id — the same id the
+   *  staged-edit diff uses in its `line:<id>:qty` / `line:<id>:remarks` keys. */
+  lines: { id: string; receivedQty?: number | undefined; remarks?: string | undefined }[];
+  reason?: string | undefined;
+  expectedUpdatedAt?: string | undefined;
+}
+
+/**
+ * Edit an existing Party GRN (ADR-202 Phase 3). PATCH /party-grn/:id returns the
+ * updated detail normally, OR a DocumentEditStagedResult when the edit-approval
+ * gate is on and this receipt is live — then nothing changed and the edit is
+ * waiting for approval. Mirrors useUpdateCustomerDispatch: on a staged result
+ * refresh the detail + ['document-edits'] (so the pending chips appear) and stop;
+ * on a normal save invalidate the module lists as an update would.
+ */
+export function useUpdatePartyGrn(id: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<PartyGrnDetail | DocumentEditStagedResult, Error, UpdatePartyGrnInput>({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PartyGrnDetail | DocumentEditStagedResult>(`/party-grn/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (updated) => {
+      // ADR-197 — the receipt's History reads the activity log either way.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the GRN itself — refresh so the expand shows the
+        // new pending-change chips.
+        void qc.invalidateQueries({ queryKey: partyGrnKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
+      void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
+      // A changed Received Qty moves party-material stocks.
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
     },
   });

@@ -10,6 +10,7 @@ import type { QcMatrixRow } from '@innovic/shared';
 import { useCallback, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { ActionMenu, ListHeader, PageState } from '@/ui/layout';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -120,7 +121,7 @@ export function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.E
               value={selectedSo ?? null}
               valueLabel={
                 matrix?.so
-                  ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}`
+                  ? `${soNoWithInternal(matrix.so.code, matrix.so.internalSoNo)}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}`
                   : undefined
               }
               onChange={(id) =>
@@ -129,7 +130,11 @@ export function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.E
               onSearch={setSoSearch}
               loading={soQuery.isFetching}
               placeholder="Search SO No. or customer…"
-              options={sos.map((s) => ({ id: s.id, code: s.code, name: s.customerName ?? '' }))}
+              options={sos.map((s) => ({
+                id: s.id,
+                code: soNoWithInternal(s.code, s.internalSoNo),
+                name: s.customerName ?? '',
+              }))}
             />
           </div>
         }
@@ -229,7 +234,9 @@ export function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.E
           <div>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO</span>
             <br />
-            <b style={{ color: 'var(--cyan)', fontSize: 16 }}>{matrix.so.code}</b>
+            <b style={{ color: 'var(--cyan)', fontSize: 16 }}>
+              {soNoWithInternal(matrix.so.code, matrix.so.internalSoNo)}
+            </b>
           </div>
           <div>
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>Customer</span>

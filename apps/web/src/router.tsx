@@ -42,6 +42,7 @@ import { soCostingDetailRoute } from './modules/so-costing/routes/detail';
 import { customerDispatchListRoute } from './modules/customer-dispatches/routes/list';
 import { customerDispatchNewRoute } from './modules/customer-dispatches/routes/create';
 import { customerDispatchDetailRoute } from './modules/customer-dispatches/routes/detail';
+import { customerDispatchEditRoute } from './modules/customer-dispatches/routes/edit';
 import { taskBoardRoute } from './modules/tasks/routes/board';
 import { dailyTaskReportsRoute } from './modules/daily-task-reports/routes/list';
 import { invoiceListRoute } from './modules/invoices/routes/list';
@@ -54,6 +55,7 @@ import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
 import { deliveryChallansListRoute } from './modules/delivery-challans/routes/list';
 import { deliveryChallanDetailRoute } from './modules/delivery-challans/routes/detail';
 import { deliveryChallanNewRoute } from './modules/delivery-challans/routes/create';
+import { deliveryChallanEditRoute } from './modules/delivery-challans/routes/edit';
 import { deliveryChallanReceiveRoute } from './modules/delivery-challans/routes/receive';
 import { ncRegisterListRoute } from './modules/nc-register/routes/list';
 import { searchRoute } from './modules/search/routes/results';
@@ -96,6 +98,7 @@ import { planNewRoute } from './modules/plans/routes/new';
 import { productionOrdersListRoute } from './modules/production-orders/routes/list';
 import { productionOrderNewRoute } from './modules/production-orders/routes/new';
 import { productionOrderCloseRoute } from './modules/production-orders/routes/close';
+import { productionOrderEditRoute } from './modules/production-orders/routes/edit';
 import { productionOrderDetailRoute } from './modules/production-orders/routes/detail';
 import { purchaseOrdersListRoute } from './modules/purchase-orders/routes/list';
 import { purchaseOrderDetailRoute } from './modules/purchase-orders/routes/detail';
@@ -238,6 +241,7 @@ const routeTree = rootRoute.addChildren([
     productionOrdersListRoute,
     productionOrderNewRoute,
     productionOrderCloseRoute,
+    productionOrderEditRoute,
     productionOrderDetailRoute,
     assemblyListRoute,
     assemblyDetailRoute,
@@ -273,6 +277,7 @@ const routeTree = rootRoute.addChildren([
     deliveryChallansListRoute,
     deliveryChallanNewRoute,
     deliveryChallanDetailRoute,
+    deliveryChallanEditRoute,
     deliveryChallanReceiveRoute,
     // Order matters: /reports/$slug last so /reports beats it for the list view.
     reportsListRoute,
@@ -337,6 +342,7 @@ const routeTree = rootRoute.addChildren([
     customerDispatchListRoute,
     customerDispatchNewRoute,
     customerDispatchDetailRoute,
+    customerDispatchEditRoute,
     taskBoardRoute,
     dailyTaskReportsRoute,
     invoiceListRoute,

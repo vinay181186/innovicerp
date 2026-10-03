@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { findRowWithMenuItem, openRowMenu, planningLineRows } from './row-menu';
+import { findRowWithMenuItem, openRowMenu, planningLineRows, executePlanFromMenu } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // BOM → EQUIPMENT (assembly) SO → INVOICE, end to end.
 //
@@ -220,7 +221,8 @@ test('@bom 02 — create the equipment (assembly) SO with that BOM', async ({ pa
   }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  state.soCode = await page.locator('input[value^="IN-SO-"]').first().inputValue().catch(() => '');
+  // ADR-207 — SO No. is "Auto on save"; read it off the detail page after save.
+  state.soCode = '';
 
   // Switch to Equipment FIRST — that is what turns on the BOM selector, and
   // changing the type re-renders the form, which wiped a client picked before
@@ -257,11 +259,12 @@ test('@bom 02 — create the equipment (assembly) SO with that BOM', async ({ pa
   await nums.nth(1).fill(String(RATE)).catch(() => {});
   await page.waitForTimeout(500);
 
+  await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await page.waitForTimeout(6000);
   const err = await bannerText(page);
   expect(page.url(), `SO save rejected: ${err}`).toMatch(/sales-orders\/[0-9a-f]{8}-/);
-  if (!state.soCode) state.soCode = await codeOnPage(page, /IN-SO-\d+/);
+  state.soCode = await soNoFromDetail(page);
 
   record({
     step: '02',
@@ -396,7 +399,7 @@ test('@bom 04 — add a routing and execute the child plan', async ({ page }) =>
 
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(4000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(6000);
 
   state.jcCode = await codeOnPage(page, /IN-JC-\d{2}-\d+/);

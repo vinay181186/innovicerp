@@ -13,7 +13,7 @@
 // Query plan: batched. List endpoint = 2 round-trips. Detail = 3.
 // BOM endpoint = 5.
 
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, planningLineStatus, toPlanningLineStatus } from '@innovic/shared';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   ItemProcurementType,
@@ -156,7 +156,10 @@ async function loadOspPrsByPlan(
       opSeq: jcOps.opSeq,
     })
     .from(jcOps)
-    .innerJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
+    .innerJoin(
+      purchaseRequests,
+      and(eq(purchaseRequests.id, jcOps.outsourcePrId), isNull(purchaseRequests.deletedAt)),
+    )
     .where(and(inArray(jcOps.jobCardId, jcIds), isNull(jcOps.deletedAt)))
     .orderBy(asc(jcOps.opSeq));
 
@@ -281,6 +284,7 @@ export async function getPlanningSoList(
       .select({
         soId: salesOrders.id,
         soCode: salesOrders.code,
+        soInternalNo: salesOrders.internalSoNo,
         customerName: liveSoCustomerName().as('customer_name'),
         soType: salesOrders.type,
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
@@ -324,7 +328,13 @@ export async function getPlanningSoList(
           eq(salesOrders.status, 'open'),
         ),
       )
-      .groupBy(salesOrders.id, salesOrders.code, salesOrders.customerName, salesOrders.type)
+      .groupBy(
+        salesOrders.id,
+        salesOrders.code,
+        salesOrders.internalSoNo,
+        salesOrders.customerName,
+        salesOrders.type,
+      )
       .orderBy(desc(salesOrders.code));
 
     // ADR-185 — planned / PR / direct-JC coverage per SO now comes from the
@@ -431,6 +441,7 @@ export async function getPlanningSoList(
       r: {
         soId: string;
         soCode: string;
+        soInternalNo?: string | null;
         customerName: string | null;
         totalLines: number;
         totalQty: number;
@@ -451,6 +462,7 @@ export async function getPlanningSoList(
       return {
         soId: r.soId,
         soCode: r.soCode,
+        soInternalNo: r.soInternalNo ?? null,
         source,
         customerName: r.customerName ?? null,
         soType,
@@ -495,6 +507,7 @@ export async function getPlanningSoDetail(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        internalSoNo: salesOrders.internalSoNo,
         customerName: liveSoCustomerName(),
         type: salesOrders.type,
         clientPoNo: salesOrders.clientPoNo,
@@ -563,10 +576,19 @@ export async function getPlanningSoDetail(
               hasRouteCard: HAS_ROUTE_CARD_SQL,
             })
             .from(plans)
-            .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
-            .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
-            .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
-            .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
+            .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
+            .leftJoin(
+              sql`${purchaseRequests} as dp_pr`,
+              sql`dp_pr.id = ${plans.dpPrId} and dp_pr.deleted_at is null`,
+            )
+            .leftJoin(
+              sql`${purchaseRequests} as fo_pr`,
+              sql`fo_pr.id = ${plans.foPrId} and fo_pr.deleted_at is null`,
+            )
+            .leftJoin(
+              sql`${purchaseRequests} as fo_mat_pr`,
+              sql`fo_mat_pr.id = ${plans.foMatPrId} and fo_mat_pr.deleted_at is null`,
+            )
             .where(
               and(
                 inArray(plans.soLineId, lineIds),
@@ -766,7 +788,6 @@ export async function getPlanningSoDetail(
       // What still has to be made or bought. Stock already booked to THIS line
       // covers part of the order, so planning it again would double-count it.
       const balanceToPlan = shortClosed ? 0 : Math.max(0, orderQty - dispatchedQty - reservedQty);
-      const pct = shortClosed ? 100 : orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
       const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
       const hasAssemblyBom =
@@ -812,7 +833,20 @@ export async function getPlanningSoDetail(
         dispatchedQty,
         availableQty,
         balanceToPlan,
-        lineStatus: classifyPlanningPct(pct),
+        shortClosed,
+        // ADR-196: a short-closed line reads fully planned and stops nagging.
+        // The rule checks it first, so a draft plan left on the line cannot
+        // drag it back to "partial".
+        lineStatus: toPlanningLineStatus(
+          planningLineStatus({
+            orderQty,
+            remaining,
+            totalPlanned,
+            directJcQty,
+            plans: linePlans,
+            shortClosed,
+          }).state,
+        ),
         hasEquipmentBom,
         hasAssemblyBom,
         bomMasterId: activeBomId,
@@ -824,6 +858,7 @@ export async function getPlanningSoDetail(
     return {
       soId: so.id,
       soCode: so.code,
+      soInternalNo: so.internalSoNo ?? null,
       source: 'so' as const,
       customerName: so.customerName ?? null,
       soType: so.type,
@@ -910,10 +945,19 @@ async function getJwPlanningDetail(
             hasRouteCard: HAS_ROUTE_CARD_SQL,
           })
           .from(plans)
-          .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
-          .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
-          .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
-          .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
+          .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
+          .leftJoin(
+            sql`${purchaseRequests} as dp_pr`,
+            sql`dp_pr.id = ${plans.dpPrId} and dp_pr.deleted_at is null`,
+          )
+          .leftJoin(
+            sql`${purchaseRequests} as fo_pr`,
+            sql`fo_pr.id = ${plans.foPrId} and fo_pr.deleted_at is null`,
+          )
+          .leftJoin(
+            sql`${purchaseRequests} as fo_mat_pr`,
+            sql`fo_mat_pr.id = ${plans.foMatPrId} and fo_mat_pr.deleted_at is null`,
+          )
           .where(
             and(
               inArray(plans.jwLineId, lineIds),
@@ -1050,7 +1094,6 @@ async function getJwPlanningDetail(
     // as a dispatch. 0 is the honest answer here.
     const dispatchedQty = 0;
     const balanceToPlan = Math.max(0, orderQty - dispatchedQty - reservedQty);
-    const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
     return {
       soLineId: r.line.id,
@@ -1083,7 +1126,19 @@ async function getJwPlanningDetail(
       dispatchedQty,
       availableQty,
       balanceToPlan,
-      lineStatus: classifyPlanningPct(pct),
+      // A job-work line has no short-close of its own (ADR-196 is an SO-line
+      // rule), so it is always false here rather than silently absent.
+      shortClosed: false,
+      lineStatus: toPlanningLineStatus(
+        planningLineStatus({
+          orderQty,
+          remaining,
+          totalPlanned,
+          directJcQty,
+          plans: linePlans,
+          shortClosed: false,
+        }).state,
+      ),
       hasEquipmentBom: false,
       hasAssemblyBom: false,
       bomMasterId: null,
@@ -1124,6 +1179,7 @@ export async function getPlanningBom(
       .select({
         line: salesOrderLines,
         soCode: salesOrders.code,
+        soInternalNo: salesOrders.internalSoNo,
         soType: salesOrders.type,
         soBomMasterId: salesOrders.bomMasterId,
         itemCode: items.code,
@@ -1192,6 +1248,7 @@ export async function getPlanningBom(
       return {
         soLineId,
         soCode: row.soCode,
+        soInternalNo: row.soInternalNo ?? null,
         bomMasterId: bom.id,
         bomNo: bom.bomNo,
         bomRev: bom.revision,
@@ -1242,7 +1299,7 @@ export async function getPlanningBom(
         hasRouteCard: HAS_ROUTE_CARD_SQL,
       })
       .from(plans)
-      .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+      .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
       .where(
         and(
           eq(plans.soLineId, soLineId),
@@ -1304,6 +1361,7 @@ export async function getPlanningBom(
     return {
       soLineId,
       soCode: row.soCode,
+      soInternalNo: row.soInternalNo ?? null,
       bomMasterId: bom.id,
       bomNo: bom.bomNo,
       bomRev: bom.revision,

@@ -70,6 +70,8 @@ export const planSchema = z.object({
   soLineId: z.string().uuid().nullable(),
   jwLineId: z.string().uuid().nullable(),
   soCodeText: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No., read live off sales_orders. */
+  soInternalNo: z.string().nullable().optional(),
   lineNo: z.number().int().positive().nullable(),
 
   itemId: z.string().uuid().nullable(),
@@ -519,6 +521,8 @@ export const unplannedOrderRowSchema = z.object({
   soLineId: z.string().uuid(),
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live), null when it has none. */
+  soInternalNo: z.string().nullable().optional(),
   lineNo: z.number().int().positive(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision typed on this very SO line

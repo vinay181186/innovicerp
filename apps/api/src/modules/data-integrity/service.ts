@@ -119,7 +119,8 @@ const CHECKS: readonly CheckSpec[] = [
     code: 'DI-008',
     label: 'SO Lines with order_qty <= 0',
     buildQuery: (cid) => `
-      SELECT so.code || ' line ' || sol.line_no AS sample
+      -- ADR-207: name the SO as "IN-SO-00786 · SO-2401" when it has an Internal SO No.
+      SELECT so.code || COALESCE(' · ' || so.internal_so_no, '') || ' line ' || sol.line_no AS sample
       FROM sales_order_lines sol
       JOIN sales_orders so ON so.id = sol.sales_order_id
       WHERE sol.company_id = '${cid}'::uuid

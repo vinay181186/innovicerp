@@ -17,6 +17,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
@@ -242,7 +243,9 @@ export function PlanExpanded({ row }: { row: PlanRow }): React.JSX.Element {
         </span>
       </Field>
       <Field label="SO / JWSO No.">
-        <span className="mono">{row.soCodeText ?? '—'}</span>
+        <span className="mono">
+          {row.soCodeText ? soNoWithInternal(row.soCodeText, row.soInternalNo) : '—'}
+        </span>
       </Field>
       <Field label="Ln">{row.lineNo ?? '—'}</Field>
       <Field label="Order Qty">

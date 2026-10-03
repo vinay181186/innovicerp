@@ -4,6 +4,7 @@ import type {
   CustomerDispatchRegisterQuery,
   CustomerDispatchRegisterResponse,
   DispatchableSoResponse,
+  DocumentEditStagedResult,
   FinanceSoOption,
   ListCustomerDispatchesResponse,
 } from '@innovic/shared';
@@ -11,6 +12,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+
+/** PATCH /customer-dispatches/:id payload. Defined here (not in the shared
+ *  contract yet — the backend half is being built in parallel; this mirrors the
+ *  natural field names so the frontend compiles and works a normal update until
+ *  the staged-edit server lands). Only the header fields the create form carries
+ *  and each existing LINE's dispatch qty are editable; the SO and the set of
+ *  items cannot change on an existing dispatch. `reason` rides along for the
+ *  activity-log entry (ADR-197), as on the other edit screens. */
+export interface UpdateCustomerDispatchInput {
+  dispatchDate?: string | undefined;
+  transport?: string | undefined;
+  vehicleNo?: string | undefined;
+  remarks?: string | undefined;
+  /** One entry per existing dispatch line, keyed by customer_dispatch_lines.id —
+   *  the same id the staged-edit diff uses in its `line:<id>:qty` change key. */
+  lines: { id: string; qty: number }[];
+  reason?: string | undefined;
+}
 
 export const dispatchKeys = {
   all: ['customer-dispatches'] as const,
@@ -110,6 +129,44 @@ export function useCreateDispatch(saveKey?: SaveKey) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: dispatchKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
+  });
+}
+
+/**
+ * Edit an existing dispatch (ADR-202). PATCH /customer-dispatches/:id returns the
+ * updated dispatch normally, OR a DocumentEditStagedResult when the edit-approval
+ * gate is on and this dispatch is live — then nothing changed and the edit is
+ * waiting for approval. Mirrors useUpdateSalesOrder: on a staged result refresh
+ * the detail + ['document-edits'] (so the pending chips appear) and stop; on a
+ * normal save invalidate the dispatch caches as an update would.
+ */
+export function useUpdateCustomerDispatch(id: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<
+    CustomerDispatchDetail | DocumentEditStagedResult,
+    Error,
+    UpdateCustomerDispatchInput
+  >({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<CustomerDispatchDetail | DocumentEditStagedResult>(`/customer-dispatches/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (updated) => {
+      // ADR-197 — the dispatch's History tab reads the activity log either way.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the dispatch itself — refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: dispatchKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
+      void qc.invalidateQueries({ queryKey: dispatchKeys.all });
     },
   });
 }

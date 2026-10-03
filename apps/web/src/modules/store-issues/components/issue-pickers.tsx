@@ -1,6 +1,7 @@
 // Pickers for the Item Issue slip — Job Card, Assembly (Equipment) SO and
 // Operator — each a server-searched SearchableSelect.
 import { useMemo, useState } from 'react';
+import { soNoWithInternal } from '@/lib/so-number';
 import { SearchableSelect } from '@/ui/forms';
 import { useJobCardsList } from '../../job-cards/api';
 import { useOperatorsList } from '../../operators/api';
@@ -62,7 +63,7 @@ export function SalesOrderPicker({
     () =>
       (data?.items ?? []).map((so) => ({
         id: so.id,
-        code: so.code,
+        code: soNoWithInternal(so.code, so.internalSoNo),
         name: so.customerName ?? '',
       })),
     [data],

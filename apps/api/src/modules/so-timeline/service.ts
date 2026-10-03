@@ -51,6 +51,7 @@ export async function getSoTimeline(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        internalSoNo: salesOrders.internalSoNo,
         customerName: salesOrders.customerName,
         type: salesOrders.type,
         soDate: salesOrders.soDate,
@@ -86,7 +87,7 @@ export async function getSoTimeline(
       kind: 'so_created',
       icon: '📋',
       label: 'SO Created',
-      detail: `${so.code} — ${so.customerName ?? ''}`,
+      detail: `${so.internalSoNo ? `${so.code} · ${so.internalSoNo}` : so.code} — ${so.customerName ?? ''}`,
       dept: 'sales',
       color: DEPT_COLORS.sales,
     });
@@ -270,6 +271,7 @@ export async function getSoTimeline(
       generatedAt: new Date().toISOString(),
       soId: so.id,
       soCode: so.code,
+      soInternalNo: so.internalSoNo,
       customerName: so.customerName,
       type: so.type,
       events,

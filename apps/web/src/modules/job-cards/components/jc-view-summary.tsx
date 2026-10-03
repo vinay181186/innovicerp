@@ -30,6 +30,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
+import { soNoWithInternal } from '@/lib/so-number';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -449,7 +450,7 @@ export function JcViewSummary({
                     className="mono fw-700"
                     style={codeLink}
                   >
-                    {src.code}
+                    {soNoWithInternal(src.code, src.internalSoNo)}
                   </Link>
                 ) : (
                   <Link

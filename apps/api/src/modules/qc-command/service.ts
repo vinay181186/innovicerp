@@ -67,6 +67,7 @@ interface PendingDbRow {
   clientPoLineNo: string | null;
   itemName: string | null;
   soCode: string | null;
+  soInternalNo: string | null;
   customer: string | null;
   dueDate: unknown;
   qcPending: number;
@@ -84,6 +85,7 @@ interface QcLogDbRow {
   clientPoLineNo: string | null;
   itemName: string | null;
   soCode: string | null;
+  soInternalNo: string | null;
   qty: number;
   rejectQty: number;
   logDate: unknown;
@@ -100,6 +102,7 @@ interface OpGroup {
   clientPoLineNo: string | null;
   itemName: string | null;
   soCode: string | null;
+  soInternalNo: string | null;
   entries: QcLogDbRow[];
 }
 
@@ -143,7 +146,7 @@ export async function getQcCommand(
           -- has selected it all along; the queue was the one place it was
           -- missing, which is why the board could show a JC with no part.
           i.name AS "itemName",
-          so.code AS "soCode",
+          so.code AS "soCode", so.internal_so_no AS "soInternalNo",
           so.customer_name AS "customer", jc.due_date AS "dueDate",
           vos.qc_pending AS "qcPending",
           (SELECT MAX(ol.log_date) FROM public.op_log ol
@@ -181,7 +184,7 @@ export async function getQcCommand(
           -- a job-work line has no customer PO, so it correctly stays null
           -- there. Never sol.line_no, which is OUR line number.
           sol.client_po_line_no AS "clientPoLineNo",
-          i.name AS "itemName", so.code AS "soCode",
+          i.name AS "itemName", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
           COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector"
         FROM public.op_log l
@@ -243,6 +246,7 @@ export async function getQcCommand(
           clientPoLineNo: r.clientPoLineNo ?? null,
           itemName: r.itemName ?? null,
           soCode: r.soCode ?? null,
+          soInternalNo: r.soInternalNo ?? null,
           entries: [],
         };
         groups.set(r.jcOpId, g);
@@ -266,6 +270,7 @@ export async function getQcCommand(
         clientPoLineNo: r.clientPoLineNo ?? null,
         itemName: r.itemName ?? null,
         soCode: r.soCode ?? null,
+        soInternalNo: r.soInternalNo ?? null,
         customer: r.customer ?? null,
         pendingQty: Number(r.qcPending ?? 0),
         ageDays: daysBetween(since, today),
@@ -343,6 +348,7 @@ export async function getQcCommand(
           // the FPY by-item table; the Rework tab simply never passed it on.
           itemName: g.itemName,
           soCode: g.soCode,
+          soInternalNo: g.soInternalNo,
           attempts: g.entries.length,
           totalRejected: g.entries.reduce((s, e) => s + Number(e.rejectQty), 0),
           firstEntry: first,

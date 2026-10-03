@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // FULLY AUTONOMOUS end-to-end: SO → plan(4 ops incl OSP) → execute → op logs →
 // OSP loop (PR→PO→DC→receive→Incoming QC) → final op → dispatch → invoice.
@@ -44,8 +45,6 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // ── 1. Sales Order ──
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  const so = await page.locator('input[value^="IN-SO-"]').first().inputValue();
-  rec('SO', so);
   const client = page.getByPlaceholder(/Type customer code or name/i);
   await client.click();
   await client.fill('Demo');
@@ -59,8 +58,12 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.getByText('559918151000 — SPACER').first().click();
   await page.getByPlaceholder('Qty', { exact: true }).first().fill(QTY);
   await page.getByPlaceholder('₹ Rate', { exact: true }).first().fill('10').catch(() => {});
+  await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
-  await page.waitForTimeout(3500);
+  await expect(page, 'SO saved').toHaveURL(/sales-orders\/[0-9a-f]{8}-/, { timeout: 30_000 });
+  // ADR-207 — SO No. is "Auto on save": read it off the detail page.
+  const so = await soNoFromDetail(page);
+  rec('SO', so);
 
   // ── 2. Plan (4 ops: process, process, OSP, process) + execute ──
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
@@ -101,7 +104,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(4500);
   const body2 = await page.locator('body').innerText();
   const jc = body2.match(/IN-JC-\d{2}-\d+/);

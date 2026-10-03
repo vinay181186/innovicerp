@@ -19,6 +19,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Fragment } from 'react';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
@@ -172,7 +173,11 @@ export function JcStatTiles({
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
           <div style={lblStyle}>SO / JWSO No.</div>
           <div className="fw-700 mono" style={{ fontSize: 16 }}>
-            {jc.sourceLink?.code ?? '—'}
+            {jc.sourceLink
+              ? jc.sourceLink.type === 'so'
+                ? soNoWithInternal(jc.sourceLink.code, jc.sourceLink.internalSoNo)
+                : jc.sourceLink.code
+              : '—'}
           </div>
           <div style={{ ...noteStyle, marginTop: 2 }}>
             Ln <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {fmtDate(jc.dueDate)}
@@ -241,14 +246,21 @@ export function JcStatTiles({
               }}
               title={
                 `Customer material issued to this job card: ${rmAvailable.issuedQty}. ` +
-                `Already produced on the first operation: ${rmAvailable.consumedQty}. ` +
+                // "Taken up", not "produced": when the first operation is
+                // outsourced the pieces sent out to the vendor are gone from
+                // the job card too, and the API counts them here.
+                `Already taken up by the first operation — made here, or sent out to the vendor: ${rmAvailable.consumedQty}. ` +
+                // See jc-op-card.tsx — zero is "all accounted for" as often as
+                // it is "none arrived" once sent-to-vendor counts (ADR-208).
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more customer material from Customer Material Issue to continue.')
+                  : rmAvailable.issuedQty > 0
+                    ? 'Nothing left to work on the first operation — every issued piece is either made or out at the vendor.'
+                    : 'No customer material has been issued to this job card yet — issue it from Customer Material Issue.')
               }
             >
               Customer Material <span className="mono fw-700">{rmAvailable.availableQty}</span>
-              {rmAvailable.availableQty === 0
+              {rmAvailable.availableQty === 0 && rmAvailable.issuedQty === 0
                 ? ' · issue material'
                 : ` of ${rmAvailable.issuedQty} issued`}
             </div>

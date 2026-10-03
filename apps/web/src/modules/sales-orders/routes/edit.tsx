@@ -9,6 +9,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
+import { soNoWithInternal } from '@/lib/so-number';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
@@ -245,7 +246,7 @@ function SalesOrderEditPage(): React.JSX.Element {
         detail={detail}
         /* Legacy _editFullSO L12549 modal title — this route is the all-lines
            editor, so it mirrors that title, not editSOLine's. */
-        title={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
+        title={`Edit SO — ${soNoWithInternal(detail.code, detail.internalSoNo)} (${detail.lines.length} lines)`}
         backLabel="Back to SO"
         onBack={goBack}
         onSubmit={onSubmit}

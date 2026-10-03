@@ -16,7 +16,8 @@ import type {
   ListInvoicesResponse,
 } from '@innovic/shared';
 import { ActivityAction } from '@innovic/shared';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import {
   clients,
   invoiceLines,
@@ -25,6 +26,7 @@ import {
   items,
   salesOrderLines,
   salesOrders,
+  users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -38,6 +40,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { changedByOtherError } from '../../lib/row-lock';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { INVOICE_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
@@ -58,12 +61,22 @@ const requireCompany = (user: AuthContext): string => {
 
 const n = (s: string | number | null): number => Number(s ?? 0) || 0;
 
+// ADR-202 Phase 3 — cancel an invoice. The reason is mandatory and logged.
+// Module-local (the shared invoice schema is frozen); mirrors the JW invoice's
+// cancel input shape.
+export const cancelInvoiceInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type CancelInvoiceInput = z.infer<typeof cancelInvoiceInputSchema>;
+
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 function isOverdue(status: string, dueDate: string | null): boolean {
-  return status !== 'paid' && !!dueDate && dueDate < todayStr();
+  // A paid OR cancelled invoice is never overdue — a cancelled invoice carries
+  // no outstanding amount (ADR-202 Phase 3).
+  return status !== 'paid' && status !== 'cancelled' && !!dueDate && dueDate < todayStr();
 }
 
 // Place of Supply + tax type + the customer's legal copy come from
@@ -149,6 +162,11 @@ export async function listInvoices(
     pat
       ? sql`(${invoices.code} ILIKE ${pat} ESCAPE '\\'
           OR COALESCE(${invoices.soCodeText}, '') ILIKE ${pat} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1 FROM public.sales_orders iso
+            WHERE iso.id = ${invoices.salesOrderId}
+              AND iso.internal_so_no ILIKE ${pat} ESCAPE '\\'
+          )
           OR COALESCE(${invoices.clientNameText}, '') ILIKE ${pat} ESCAPE '\\')`
       : undefined,
     sql`TRUE ${sfWhere(INVOICE_SF_COLUMNS, sfq, sfOpts)}`,
@@ -169,13 +187,25 @@ export async function listInvoices(
       .orderBy(order)
       .offset(input.offset ?? 0);
     const rows = input.limit !== undefined ? await base.limit(input.limit) : await base;
-    const list = rows.map(rowToInvoice);
+    // ADR-207 — each listed invoice's SO Internal SO No., read live off the SO.
+    const soIds = [...new Set(rows.map((r) => r.salesOrderId))];
+    const internalRows = soIds.length
+      ? await tx
+          .select({ id: salesOrders.id, internal: salesOrders.internalSoNo })
+          .from(salesOrders)
+          .where(inArray(salesOrders.id, soIds))
+      : [];
+    const internalBySo = new Map(internalRows.map((r) => [r.id, r.internal]));
+    const list = rows.map((r) => ({
+      ...rowToInvoice(r),
+      soInternalNo: internalBySo.get(r.salesOrderId) ?? null,
+    }));
 
     // The strip and the total — one query over every matching invoice, with
     // the same rules as rowToInvoice (overdue = not paid and past due).
     // TDS / short amounts settle invoices without being money received, so
     // they come off Outstanding Amount but are not added to Total Received.
-    const overdue = sql`(${invoices.status} <> 'paid' AND ${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < ${today})`;
+    const overdue = sql`(${invoices.status} <> 'paid' AND ${invoices.status} <> 'cancelled' AND ${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < ${today})`;
     const [agg] = await tx
       .select({
         total: sql<number>`count(*)::int`,
@@ -311,7 +341,7 @@ async function getInvoiceInternal(
 
   // The customer's PO number off the SO this invoice bills, for the print.
   const soRows = await tx
-    .select({ clientPoNo: salesOrders.clientPoNo })
+    .select({ clientPoNo: salesOrders.clientPoNo, internalSoNo: salesOrders.internalSoNo })
     .from(salesOrders)
     .where(eq(salesOrders.id, inv.salesOrderId))
     .limit(1);
@@ -343,8 +373,17 @@ async function getInvoiceInternal(
       }
     : addrRows[0];
 
+  // ADR-202 Phase 3 — the canceller's name for the cancelled banner.
+  const cancellerRows = inv.cancelledBy
+    ? await tx.select({ name: users.fullName }).from(users).where(eq(users.id, inv.cancelledBy)).limit(1)
+    : [];
+
   return {
     ...rowToInvoice(inv),
+    soInternalNo: soRows[0]?.internalSoNo ?? null,
+    cancelledAt: inv.cancelledAt ? new Date(inv.cancelledAt).toISOString() : null,
+    cancelledBy: cancellerRows[0]?.name ?? null,
+    cancelReason: inv.cancelReason ?? null,
     clientCode: inv.clientCodeText,
     clientGst: inv.clientGstText,
     clientAddressLine1: addr?.addressLine1 ?? null,
@@ -407,7 +446,8 @@ export async function getInvoiceRelated(
       ? await tx
           .select({
             id: salesOrders.id,
-            code: salesOrders.code,
+            // ADR-207: "IN-SO-x · SO-y" (just the SO No. when no Internal SO No.).
+            code: sql<string>`${salesOrders.code} || COALESCE(' · ' || ${salesOrders.internalSoNo}, '')`,
             status: salesOrders.status,
             date: salesOrders.soDate,
           })
@@ -534,7 +574,10 @@ async function loadInvoiceableLines(
           COALESCE((
             SELECT SUM(il.qty) FROM invoice_lines il
             JOIN invoices inv ON inv.id = il.invoice_id
-            WHERE il.sales_order_line_id = sol.id AND inv.deleted_at IS NULL AND il.deleted_at IS NULL
+            -- A cancelled invoice (ADR-202 Phase 3) no longer bills its qty, so
+            -- the To Invoice figure frees it for the reissue (cancel-and-reissue).
+            WHERE il.sales_order_line_id = sol.id AND inv.deleted_at IS NULL
+              AND inv.status <> 'cancelled' AND il.deleted_at IS NULL
           ), 0) AS invoiced_qty
         FROM sales_order_lines sol
         LEFT JOIN items i ON i.id = sol.item_id AND i.deleted_at IS NULL
@@ -571,6 +614,7 @@ export async function getInvoiceableSo(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        internalSoNo: salesOrders.internalSoNo,
         customer: salesOrders.customerName,
         clientId: salesOrders.clientId,
         clientGst: clients.gstNumber,
@@ -601,6 +645,7 @@ export async function getInvoiceableSo(
     return {
       salesOrderId: so.id,
       soCode: so.code,
+      soInternalNo: so.internalSoNo,
       customer: so.customer,
       clientGst: so.clientGst ?? null,
       // ADR-188: the invoice form's defaults come from upstream — GST % from
@@ -913,5 +958,96 @@ export async function addPayment(
     );
 
     return getInvoiceInternal(tx, invoiceId, companyId);
+  });
+}
+
+// ADR-202 Phase 3 — cancel an invoice (cancel-and-reissue).
+//
+// An invoice is a statutory GST document, so a correction is NOT an edit: it is
+// a reason-logged CANCEL, mirroring the JW invoice (ADR-194, cancelJwInvoice).
+// The INV-#### series is NEVER renumbered or deleted — the cancelled row is kept
+// so the number series stays intact. No stock moves (an invoice moves no stock).
+// Cancelling is a high-trust action, so — like cancelDeliveryChallan /
+// cancelPartyGrn — it takes the edit AND approve pair only L5 Department Admin
+// and above hold. Refused if a payment has been recorded (reverse the receipts
+// first) and refused on a double-cancel.
+export async function cancelInvoice(
+  id: string,
+  input: CancelInvoiceInput,
+  user: AuthContext,
+): Promise<InvoiceDetail> {
+  await requireFormAccess(user, 'invoice_create', 'edit');
+  await requireFormAccess(user, 'invoice_create', 'approve');
+  const showMoney = await canSeeFormPrice(user, 'invoice_create');
+  const companyId = requireCompany(user);
+  const userId = user.id;
+  const reason = input.reason.trim();
+  if (!reason) throw new ValidationError('Reason is required to cancel an invoice.');
+
+  return withUserContext(user, async (tx) => {
+    // Cancel once. Lock the invoice row FIRST so a second cancel waits here,
+    // reads 'cancelled' and is refused (never credits the series twice).
+    const rows = await tx
+      .select()
+      .from(invoices)
+      .where(
+        and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)),
+      )
+      .limit(1)
+      .for('update');
+    const inv = rows[0];
+    if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
+    if (inv.status === 'cancelled') {
+      throw new ConflictError(
+        `Invoice ${inv.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+      );
+    }
+
+    // Refuse when any money is recorded against it: the receipts must be
+    // reversed first. totalPaid covers money received; a payment row with only
+    // TDS / short amount (amount 0) is caught by the row count.
+    const [payAgg] = await tx
+      .select({ c: sql<number>`count(*)::int` })
+      .from(invoicePayments)
+      .where(and(eq(invoicePayments.invoiceId, inv.id), isNull(invoicePayments.deletedAt)));
+    const paymentCount = Number(payAgg?.c ?? 0);
+    if (n(inv.totalPaid) > 0 || paymentCount > 0) {
+      throw new ConflictError(
+        `Cannot cancel ${inv.code}: payments are recorded. Reverse the receipts first.`,
+      );
+    }
+
+    // S2 (CLAUDE.md §20) — conditional status write: refuse if the status moved
+    // under us (0 rows updated → someone else got there first).
+    const updated = await tx
+      .update(invoices)
+      .set({
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancelledBy: userId,
+        cancelReason: reason,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      })
+      .where(and(eq(invoices.id, inv.id), ne(invoices.status, 'cancelled')))
+      .returning();
+    if (!updated[0]) throw changedByOtherError(`Invoice ${inv.code}`);
+
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Cancel,
+        entity: 'Invoice',
+        entityId: inv.id,
+        refId: inv.code,
+        reason,
+        detail: `${inv.code} cancelled — ${inv.soCodeText ?? ''}`,
+      },
+      companyId,
+      user,
+    );
+
+    const detail = await getInvoiceInternal(tx, inv.id, companyId);
+    return showMoney ? detail : hideInvoiceDetailMoney(detail);
   });
 }

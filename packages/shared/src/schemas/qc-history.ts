@@ -14,6 +14,8 @@ export const qcHistoryPendingRowSchema = z.object({
   jcCode: z.string(),
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
+  /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
+  soInternalNo: z.string().nullable().default(null),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for this op's part, read off the SO line
    *  the job card was raised against (job_cards.source_so_line_id →
@@ -64,6 +66,8 @@ export const qcHistoryLogRowSchema = z.object({
    *  under "In-Process" (ADR-169). Defaulted so older API builds still parse. */
   isLastOp: z.boolean().default(false),
   soCode: z.string().nullable(),
+  /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
+  soInternalNo: z.string().nullable().default(null),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for the inspected part, read off the SO
    *  line the job card was raised against (job_cards.source_so_line_id →
