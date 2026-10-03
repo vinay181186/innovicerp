@@ -10987,3 +10987,92 @@ PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to
 **Status:** Accepted (TEST stack)
 
 Sales Orders get `internal_so_no` (migration 0197), the office's own number (e.g. SO-2401), typed by the user beside the system SO No. The SO No. (`code`, IN-SO-#####) is now system-only: no write input carries it and the server always numbers the order. The Internal SO No. is required on create; SOs made before 0197 stay NULL and are not forced to get one when edited. Format: "SO-" plus letters, digits, `/ - .`, at most 30 characters, trimmed, prefix upper-cased (shared `internalSoNoError`). Unique per company among live SOs, ignoring case (partial unique index; server pre-check and index clash both give the same 409). Editable with SO edit rights through the normal update path (stale check, History row, edit approval). Restore from Trash is refused if the number has since been taken. Shown everywhere as "IN-SO-00786 · SO-2401" (`soNoWithInternal`), always read live from sales_orders — never copied. JWSO is untouched.
+
+## ADR-208: The SO/JWSO Planning line sheet moves onto the one table standard
+
+**Date:** 2026-10-03
+**Status:** Accepted
+**Owner decision:** "i like this new mockup. to build it", then "option b" (keep a slim
+Plans column) and "do as u suggested" (update the specs, take all three server fixes).
+
+### Context
+
+The Planning screen has two tables. Level 1, the SO/JWSO list, moved onto the FIT
+DataTable under ADR-199. Level 2, the per-line sheet, was deliberately left behind
+("Level 2 is unchanged", `routes/workflow.tsx`) on a hand-built `<table>` with fixed
+percentage widths and a 1200px floor.
+
+That exemption is what produced the bug the owner reported. Four columns wrapped, seven
+were told never to clip, and rows ran 57–62px at uneven heights. Due Date painted over
+Plan Status until it was widened to 9%; then "N reserved here" under Available was found
+doing the same thing to To Plan — 29px of overspill at 1440 and 38px at 1280, measured on
+the test site. Patching cells one at a time was losing: ADR-199's own rules ("every row is
+one line", "long text is cut with …", "always fits") make the whole class of bug
+impossible, and the sheet was the only Planning table not covered by them.
+
+ADR-199 exempts "editable FORM line tables". This sheet is not one — it has no inputs; it
+is a read-and-act table. It was simply never converted.
+
+### Decision
+
+1. **The line sheet renders on `<DataTable tableKey="planning-lines">`.** One line per
+   row, numbers right-aligned, long text cut with "…" plus the full text on hover, and the
+   rightmost columns stepping into the row's ▸ panel instead of a scrollbar appearing.
+   Columns ▾, Comfortable/Compact and Sort & Filter come with the engine.
+2. **Sort & Filter runs client-side.** The largest order on production carries 30 lines
+   (11 on average), so there is nothing to page and no endpoint to change.
+3. **Plans stays in the grid, slimmed and pinned** — the plan code and its status only.
+   Its chips, links and detail move to ▸; its buttons move to ⋯. A planner has to see at a
+   glance which lines are planned, and ~8 specs read plan codes out of the page text.
+4. **Every action lives in the row's one ⋯**: the six line actions unchanged, plus each
+   plan's own prefixed with its plan code (`PLN-0013 · Create JC`). The shared menu has
+   four fixed groups and no sub-menus, so the prefix is what keeps several plans readable.
+5. **`rowMenuLabel`** is a new optional DataTable prop so a row's ⋯ can carry its own
+   accessible name again. The engine names every ⋯ "Actions", which suits a document row
+   and not 30 numbered lines — for a screen reader, and for the shared test helper that
+   finds a Planning row by that name.
+6. **One rule for a line's status**, in `packages/shared/src/lib/planning-line-status.ts`.
+   The API filled `lineStatus` from a rounded coverage percentage while the screen threw
+   that away and derived its own from `remaining` plus the plan statuses. On a line fully
+   covered by a DRAFT plan the two disagreed: the API said `fully_planned`, the screen said
+   "In Planning". The screen's rule wins — green must mean work was actually let out — and
+   both sides now read it (CLAUDE.md §20.1).
+7. **ADR-196 is honoured by both sides.** The rule takes `shortClosed` and checks it before
+   every other branch, and the flag is published on the row. Until now only the API kept
+   that promise and the screen quietly did not.
+8. **Stock quantities are not integers.** `item_stock_balances.on_hand_qty` is
+   `numeric(14,3)`, so an item sold by weight or length holds 12.500; 22 such rows exist on
+   the TEST database. The contract declared `int` and nothing validated it. No server code
+   changed — the numbers already passed through; only the declaration was wrong.
+9. **Four joins stop showing deleted documents.** The job-card join and the three
+   purchase-request aliases, on both paths and in `getPlanningBom`, now carry
+   `deleted_at IS NULL`. Zero rows match on either live database today.
+
+### What a planner loses
+
+Two figures now need a ▸ click: the customer's PO line number, which sat under the item
+code, and "N reserved here", which sat under Available and was the overflow. Both are in
+the ▸ panel with Physical.
+
+### Alternatives rejected
+
+- **Patch the Available cell and stop there.** Fixes one symptom; the next stacked
+  sub-line does it again.
+- **Drop the Plans column entirely** (the first mockup). Cleaner grid, but the plan number
+  leaves the screen and ~8 specs that read it from the page text break.
+- **Server-side sort, filter and paging for lines**, mirroring level 1. Nothing to page at
+  30 rows, and every derived column is computed in TypeScript after the fetch, so there is
+  no SQL expression to sort by. Client-side costs nothing and changes no endpoint.
+- **A behaviour-preserving status rule.** Keeping the API's percentage rule would have
+  frozen the disagreement in place.
+
+### Consequences
+
+- No migration, no API contract break: the row keeps every field and gains `shortClosed`.
+- A line covered only by DRAFT plans now reports `partial` to the API where it reported
+  `fully_planned`. Nothing displays that field; the screen already showed "In Planning".
+- `order-line-row.tsx` (`LINE_COLS`, `wrapCell`, `OrderLineRow`) is deleted.
+- 12 specs move from the chip's buttons to the ⋯; `rowMenuLabel` spared ~14 more.
+- Known gap left exactly as it was, not silently fixed: a BUY line covered only by a
+  purchase request still reads "Unplanned" while its percentage climbs, because the state
+  looks at plans and plan-less Job Cards. Pinned by a test.
