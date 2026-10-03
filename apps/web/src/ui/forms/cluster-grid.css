@@ -1,0 +1,171 @@
+/* ClusterGrid — the create / edit / view layout agreed on the Plan screens
+   (plan-modals-mockup.html, 2026-10-03), as a primitive.
+
+   One cluster = one row of FOUR equal cells, every row full, its name in a
+   104px left gutter (no heading, so naming a group costs no height). Rows are
+   ruled off from each other so grouping is seen, not inferred from spacing.
+   The same grid holds form fields (create / edit) and one-line facts (view),
+   so the three screens of one document line up cell for cell. */
+
+.cl-ident {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding-bottom: var(--sp-2);
+  margin-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  color: var(--text2);
+}
+.cl-ident .cl-ident-code {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text);
+}
+.cl-ident .cl-ident-sep {
+  color: var(--border2);
+}
+
+.cl-grid {
+  container-type: inline-size;
+}
+.cl-row {
+  display: grid;
+  grid-template-columns: 104px repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2) var(--sp-4);
+  align-items: start;
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border);
+}
+.cl-grid > .cl-row:first-child {
+  border-top: none;
+}
+.cl-gut {
+  font-family: var(--hfont);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding-top: 4px;
+  white-space: nowrap;
+}
+
+/* A FormField brings its own .f-* span for the 12-column grid; inside a
+   cluster every cell is ONE of four, and wide ones say so with .cl-span-*. */
+.cl-grid > .cl-row > * {
+  grid-column: span 1;
+  min-width: 0;
+}
+.cl-grid > .cl-row > .cl-gut {
+  grid-column: auto;
+}
+.cl-grid > .cl-row > .cl-span-2 {
+  grid-column: span 2;
+}
+.cl-grid > .cl-row > .cl-span-3 {
+  grid-column: span 3;
+}
+.cl-grid > .cl-row > .cl-span-4 {
+  grid-column: span 4;
+}
+
+/* A read-only fact is ONE line: label left, value right, in its own cell,
+   with a hairline between neighbours so each is visibly its own column. */
+.cl-fact {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-height: 22px;
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+.cl-grid > .cl-row > .cl-gut + .cl-fact {
+  border-left: none;
+  padding-left: 0;
+}
+.cl-fact-k {
+  color: var(--text3);
+  white-space: nowrap;
+  flex: none;
+}
+.cl-fact-v {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cl-fact-v.is-num {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cl-fact-v.is-empty {
+  color: var(--text3);
+  font-weight: 400;
+}
+/* Free text (remarks): may run to several lines, reads left to right. */
+.cl-fact.is-wrap {
+  justify-content: flex-start;
+}
+.cl-fact.is-wrap .cl-fact-v {
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+
+/* The RESULT of a row: what the cells before it add up to. It sits last and
+   carries the 3px green rule, wherever it lands. */
+.cl-grid > .cl-row > .cl-lead,
+.cl-grid > .cl-row > .cl-gut + .cl-lead {
+  border-left: 3px solid var(--green);
+  padding-left: var(--sp-3);
+}
+.cl-lead .cl-fact-k,
+.cl-lead > .form-label {
+  color: var(--text2);
+  font-weight: 600;
+}
+.cl-lead .cl-fact-v {
+  color: var(--green2);
+}
+
+/* Numbers typed into a cluster read like the numbers shown in one. */
+.cl-row .innovic-input.cl-num {
+  text-align: right;
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+@container (max-width: 760px) {
+  .cl-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cl-grid > .cl-row > .cl-gut {
+    grid-column: 1 / -1;
+    padding-top: 0;
+  }
+  .cl-grid > .cl-row > .cl-span-3,
+  .cl-grid > .cl-row > .cl-span-4 {
+    grid-column: 1 / -1;
+  }
+  .cl-grid > .cl-row > .cl-fact:not(.cl-lead) {
+    border-left: none;
+    padding-left: 0;
+  }
+}
+@container (max-width: 440px) {
+  .cl-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cl-grid > .cl-row > .cl-span-2 {
+    grid-column: 1 / -1;
+  }
+}

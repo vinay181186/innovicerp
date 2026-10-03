@@ -301,12 +301,9 @@ function PurchaseRequestEditPage(): React.JSX.Element {
       <PurchaseRequestForm
         mode="edit"
         title="Edit Purchase Request"
-        subtitle={
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-            <span className="td-code">{detail.code}</span>
-            <PrStatusBadge status={detail.status} />
-          </span>
-        }
+        // The PR No. heads the form's identity line, so the header carries
+        // only the status — the same fact is not said twice.
+        subtitle={<PrStatusBadge status={detail.status} />}
         backLabel="Back to PR"
         onBack={goBack}
         detail={detail}

@@ -11258,3 +11258,28 @@ QC were re-sent to the vendor (NC-00001, IN-DC-00002/R1) and came back good, but
 - Server computes Check: Input = Accepted + Rejected + Deviated still open (minus pieces back at the vendor
   on an open return-to-vendor NC) + At vendor + In QC + Pending; `unaccountedQty` 0 = ✓. Screen only shows it.
 - DataTable gains an optional `headGroups` band (opt-in; other tables unchanged).
+
+## ADR-213: Purchase Request Create / Edit / View on one cluster grid (the Plan screens method)
+
+**Date:** 2026-10-03
+**Status:** Accepted (owner: "modify UI of PR create, edit, view as per the planning screens")
+
+### Context
+PR Create/Edit was a 12-column form in field order (PR Type · PR No. · PR Date / Item … ), and the PR view was
+two panels of wrapping fact strips (SO No., POL, Item Code … then a second "Request Detail" panel) with no
+grouping and no sum. The Plan screens method (plan-modals-mockup.html) settled how a create / edit / view
+screen is laid out.
+
+### Decision
+- New primitive `ui/forms/ClusterGrid` (`DocIdent`, `Cluster`, `ClusterFact`): an identity line, then rows of
+  FOUR equal cells, each row a named cluster with its name in a 104px left gutter, hairlines between facts,
+  the row's result last with a 3px green rule. Form fields sit in the same grid as facts.
+- PR Create / Edit: Item (Item Code · Item Name ×2 · PR Qty) → Request (PR Type · PR Date · Due Date ·
+  Operation) → Vendor (Vendor ×2 · Est. Rate · Est. Amount = qty × rate, read-only) → Notes (Remarks ×4).
+  PR No. leaves the grid for the identity line; on Edit the header carries only the status badge.
+- PR View: one panel. Header = PR No. · item name · status · PR Type chip. Identity line = CODE/REV · name ·
+  SO · Ln · POL · JC · Op · PO (only the parts that exist). Quantity (PR Qty · On PO · Short closed ·
+  Pending) → Schedule (PR Date · Approved At · PO Created At · Due Date) → Vendor (Vendor ×2 · Est. Rate ·
+  Est. Amount) → Notes (Operation · Remarks ×3). The separate "Request Detail" panel is gone.
+- Vendor address moves to the Vendor cell's hover text (it belongs on the PO). No API, schema or field-id
+  change; e2e selectors (#itemCodeText, #qty, #estCost …) unchanged.

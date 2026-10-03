@@ -1,5 +1,10 @@
 // PR detail page (UI-003-04).
 //
+// 2026-10-03 layout (the Plan screens method): one panel — the identity line
+// (CODE/REV, SO line, POL, JC op, PO) then four one-line clusters with their
+// names in a left gutter: Quantity (… ending on Pending), Schedule, Vendor
+// (… ending on Est. Amount), Notes. Create / Edit use the same clusters.
+//
 // Styling follows the Sales Order detail screen (modules/sales-orders/routes/
 // detail.tsx), which is the app-wide style reference: shared `.panel` /
 // `.panel-hdr` / `.panel-body` chrome, `.form-label` fact strips, `.btn`
@@ -33,6 +38,7 @@ import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { ConfirmDialog } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
@@ -170,15 +176,6 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     );
   };
 
-  // The SO this PR serves. Set by Planning (an OSP PR raised off a Job Card
-  // carries its SO line); a hand-raised PR has no order behind it, so "—".
-  const soNo = detail.soCode
-    ? `${soNoWithInternal(detail.soCode, detail.soInternalNo)}${detail.soLineNo ? ` · Ln ${detail.soLineNo}` : ''}`
-    : '—';
-  const jcNo = detail.sourceJcCode
-    ? `${detail.sourceJcCode}${detail.sourceJcOpSeq ? ` · Op ${opSrNo(detail.sourceJcOpSeq)}` : ''}`
-    : '—';
-  const vendorCode = detail.vendorCode ?? detail.vendorCodeText ?? '—';
   // CODE/REV. The revision is the customer's drawing revision on the SO line
   // this request was raised against, so it only appears when there is one; a
   // hand-raised PR shows the bare code.
@@ -212,6 +209,9 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                   'Untitled item',
                 )}
               <PrStatusBadge status={detail.status} />
+              {detail.prType ? (
+                <span className="badge b-grey">{PR_TYPE_LABELS[detail.prType]}</span>
+              ) : null}
             </div>
           </div>
           {/* ONE primary next step + an Actions menu for the rest. The step is
@@ -334,84 +334,56 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 : 'Could not delete PR. Try again.'}
             </div>
           ) : null}
-          {/* The facts a buyer scans for, in the SO detail strip idiom. */}
-          <div style={STRIP}>
-            <Fact label="SO No." title={soNo} value={<span className="mono">{soNo}</span>} />
+          {/* WHICH item, order line and job this PR serves — identity, not facts
+              about the PR, so it heads the panel instead of taking grid cells.
+              Parts with nothing behind them (a hand-raised PR has no SO, JC or
+              PO) are left out rather than shown as a row of dashes. */}
+          <DocIdent>
+            <IdentCode>{itemCode}</IdentCode>
+            <Chip changes={pendingChanges} field="itemCodeText" />
+            {detail.itemName ? <span>{detail.itemName}</span> : null}
+            <Chip changes={pendingChanges} field="itemName" />
+            {detail.soCode ? (
+              <>
+                <IdentSep />
+                <span>
+                  SO <IdentCode>{soNoWithInternal(detail.soCode, detail.soInternalNo)}</IdentCode>
+                  {detail.soLineNo ? ` · Ln ${detail.soLineNo}` : ''}
+                </span>
+              </>
+            ) : null}
             {/* POL = the CUSTOMER's own PO line number off the SO line behind
                 this PR. Not our SO line number — the two rarely match. */}
-            <Fact
-              label="POL"
-              title={detail.clientPoLineNo ?? '—'}
-              value={
-                <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                  {detail.clientPoLineNo ?? '—'}
+            {detail.clientPoLineNo ? (
+              <>
+                <IdentSep />
+                <span>
+                  POL{' '}
+                  <b className="mono" style={{ color: 'var(--purple)' }}>
+                    {detail.clientPoLineNo}
+                  </b>
                 </span>
-              }
-            />
-            <Fact
-              label="Item Code"
-              title={itemCode}
-              value={
-                <>
-                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                    {itemCode}
-                  </span>
-                  <Chip changes={pendingChanges} field="itemCodeText" />
-                </>
-              }
-            />
-            <Fact
-              label="Item Name"
-              title={detail.itemName ?? '—'}
-              value={
-                <>
-                  {detail.itemName ?? '—'}
-                  <Chip changes={pendingChanges} field="itemName" />
-                </>
-              }
-            />
-            <Fact
-              label="Vendor"
-              value={
-                <>
-                  <span className="mono">{vendorCode}</span>
-                  <Chip changes={pendingChanges} field="vendor" />
-                  <div>{detail.vendorName ?? '—'}</div>
-                  {detail.vendorAddress ? (
-                    <div className="text2" style={{ fontWeight: 400, fontSize: 12 }}>
-                      {detail.vendorAddress}
-                    </div>
-                  ) : (
-                    <div className="text3" style={{ fontWeight: 400, fontSize: 12 }}>
-                      No address on the vendor master
-                    </div>
-                  )}
-                </>
-              }
-            />
-            <Fact label="JC No." title={jcNo} value={<span className="mono">{jcNo}</span>} />
-            <Fact
-              label="PR Date"
-              title={fmtDate(detail.prDate)}
-              value={
-                <>
-                  <span className="mono">{fmtDate(detail.prDate)}</span>
-                  <Chip changes={pendingChanges} field="prDate" />
-                </>
-              }
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title" style={{ color: 'var(--blue)' }}>
-            Request Detail
-          </div>
-        </div>
-        <div className="panel-body">
-          <OtherDetail detail={detail} pendingChanges={pendingChanges} />
+              </>
+            ) : null}
+            {detail.sourceJcCode ? (
+              <>
+                <IdentSep />
+                <span>
+                  JC <IdentCode>{detail.sourceJcCode}</IdentCode>
+                  {detail.sourceJcOpSeq ? ` · Op ${opSrNo(detail.sourceJcOpSeq)}` : ''}
+                </span>
+              </>
+            ) : null}
+            {detail.poCode ? (
+              <>
+                <IdentSep />
+                <span>
+                  PO <IdentCode>{detail.poCode}</IdentCode>
+                </span>
+              </>
+            ) : null}
+          </DocIdent>
+          <PrFacts detail={detail} pendingChanges={pendingChanges} />
         </div>
       </div>
 
@@ -442,15 +414,12 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   );
 }
 
-/** Fact strip layout — the same wrap/gap the SO detail screen uses. */
-const STRIP: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  alignItems: 'flex-start',
-  gap: '10px 24px',
-};
-
-function OtherDetail(props: {
+/** The PR's facts: four clusters, one line each, in the order the request is
+ *  worked — how much (ending on what is still to order), when, from whom at
+ *  what estimate (ending on the amount), and anything else. Create and Edit
+ *  lay their fields on the same four clusters. PR Type is a header chip, so it
+ *  is not repeated here. */
+function PrFacts(props: {
   detail: PurchaseRequestDetail;
   pendingChanges: readonly DocumentEditChange[];
 }): React.JSX.Element {
@@ -464,6 +433,8 @@ function OtherDetail(props: {
   const qtyNum = Number(detail.qty);
   const total = estCostNum * qtyNum;
   const bal = prOrderBalance(detail);
+  const vendorCode = detail.vendorCode ?? detail.vendorCodeText ?? null;
+  const vendorText = [vendorCode, detail.vendorName].filter(Boolean).join(' — ');
   return (
     <>
       {/* A negative balance means MORE has been ordered than was requested. It is
@@ -478,7 +449,7 @@ function OtherDetail(props: {
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: 12,
-            marginBottom: 10,
+            margin: '8px 0',
             fontWeight: 600,
           }}
         >
@@ -499,7 +470,7 @@ function OtherDetail(props: {
             borderRadius: 6,
             padding: '8px 10px',
             fontSize: 12,
-            marginBottom: 10,
+            margin: '8px 0',
           }}
         >
           <div className="fw-700">🚫 {prBalanceClosedText(bal)}</div>
@@ -514,113 +485,141 @@ function OtherDetail(props: {
           ) : null}
         </div>
       ) : null}
-      <div style={STRIP}>
-        <Fact
-          label="PR Qty"
-          value={
+      <ClusterGrid>
+        {/* An account that adds up: PR Qty − On PO − Short closed = Pending.
+            Pending is the number that decides whether another PO is needed. */}
+        <Cluster name="Quantity">
+          <ClusterFact
+            label="PR Qty"
+            num
+            value={String(detail.qty)}
+            after={<Chip changes={pendingChanges} field="qty" />}
+          />
+          <ClusterFact
+            label="On PO"
+            num
+            title="On live purchase orders (cancelled POs not counted)"
+            value={String(bal.ordered)}
+          />
+          <ClusterFact
+            label="Short closed"
+            num
+            empty={!bal.closed}
+            title={bal.closed ? prBalanceClosedText(bal) : 'Nothing short closed'}
+            value={bal.closed ? String(bal.closedQty) : '—'}
+          />
+          <ClusterFact
+            label="Pending"
+            num
+            lead
+            title={
+              bal.closed
+                ? prBalanceClosedText(bal)
+                : `${bal.label} — ${bal.balance} of ${bal.qty} still to order`
+            }
+            value={
+              <span style={{ color: prBalanceColor(bal.state) }}>
+                {bal.balance < 0 ? `⚠ ${bal.balance}` : String(bal.balance)}
+                {/* Short closed: the banner above already says so. */}
+                {bal.closed ? null : (
+                  <span className="text3" style={{ fontWeight: 400, fontFamily: 'var(--bfont)' }}>
+                    {' '}
+                    · {bal.label}
+                  </span>
+                )}
+              </span>
+            }
+          />
+        </Cluster>
+
+        {/* The dates in the order they happen, ending on when it is needed. */}
+        <Cluster name="Schedule">
+          <ClusterFact
+            label="PR Date"
+            num
+            value={fmtDate(detail.prDate)}
+            after={<Chip changes={pendingChanges} field="prDate" />}
+          />
+          <ClusterFact
+            label="Approved At"
+            num
+            empty={!detail.approvedAt}
+            value={fmtDateTime(detail.approvedAt)}
+          />
+          <ClusterFact
+            label="PO Created At"
+            num
+            empty={!detail.poCreatedAt}
+            value={fmtDateTime(detail.poCreatedAt)}
+          />
+          <ClusterFact
+            label="Due Date"
+            num
+            empty={!detail.requiredDate}
+            value={fmtDate(detail.requiredDate)}
+            after={<Chip changes={pendingChanges} field="requiredDate" />}
+          />
+        </Cluster>
+
+        {/* Who supplies it and the estimate: rate × qty, ending on the amount.
+            The vendor's address is on hover — it belongs on the PO, not here. */}
+        <Cluster name="Vendor">
+          <ClusterFact
+            label="Vendor"
+            span={priceHidden ? 4 : 2}
+            empty={!vendorText}
+            title={
+              vendorText
+                ? `${vendorText}\n${detail.vendorAddress ?? 'No address on the vendor master'}`
+                : undefined
+            }
+            value={vendorText || '—'}
+            after={<Chip changes={pendingChanges} field="vendor" />}
+          />
+          {priceHidden ? null : (
             <>
-              <span className="mono">{String(detail.qty)}</span>
-              <Chip changes={pendingChanges} field="qty" />
+              <ClusterFact
+                label="Est. Rate (₹)"
+                num
+                empty={!(estCostNum > 0)}
+                value={estCostNum > 0 ? inr(estCostNum) : '—'}
+                after={<Chip changes={pendingChanges} field="estCost" />}
+              />
+              <ClusterFact
+                label="Est. Amount"
+                num
+                lead
+                empty={!(total > 0)}
+                value={total > 0 ? inr(total) : '—'}
+              />
             </>
-          }
-        />
-        <Fact
-          label="On PO"
-          title="On live purchase orders (cancelled POs not counted)"
-          value={<span className="mono">{String(bal.ordered)}</span>}
-        />
-        <Fact
-          label="Pending"
-          title={
-            bal.closed
-              ? prBalanceClosedText(bal)
-              : `${bal.label} — ${bal.balance} of ${bal.qty} still to order`
-          }
-          value={
-            <span
-              className="mono"
-              style={{ color: prBalanceColor(bal.state), fontWeight: 700, whiteSpace: 'nowrap' }}
-            >
-              {bal.balance < 0 ? `⚠ ${bal.balance}` : String(bal.balance)}
-              {/* Short closed: the banner above already says so. */}
-              {bal.closed ? null : (
-                <span className="text3" style={{ fontWeight: 400 }}>
-                  {' '}
-                  · {bal.label}
-                </span>
-              )}
-            </span>
-          }
-        />
-        {priceHidden ? null : (
-          <>
-            <Fact
-              label="Est. Rate (₹)"
-              value={
-                <>
-                  <span className="mono">{estCostNum > 0 ? inr(estCostNum) : '—'}</span>
-                  <Chip changes={pendingChanges} field="estCost" />
-                </>
-              }
-            />
-            <Fact
-              label="Est. Amount"
-              value={<span className="mono">{total > 0 ? inr(total) : '—'}</span>}
-            />
-          </>
-        )}
-        <Fact
-          label="Due Date"
-          value={
-            <>
-              <span className="mono">{fmtDate(detail.requiredDate)}</span>
-              <Chip changes={pendingChanges} field="requiredDate" />
-            </>
-          }
-        />
-        <Fact
-          label="Operation"
-          value={
-            <>
-              {detail.operation ?? '—'}
-              <Chip changes={pendingChanges} field="operation" />
-            </>
-          }
-        />
-        <Fact label="PR Type" value={detail.prType ? PR_TYPE_LABELS[detail.prType] : '—'} />
-        <Fact label="PO No." value={<span className="mono">{detail.poCode ?? '—'}</span>} />
-        <Fact
-          label="Approved At"
-          value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}
-        />
-        <Fact
-          label="PO Created At"
-          value={<span className="mono">{fmtDateTime(detail.poCreatedAt)}</span>}
-        />
-      </div>
-      <div className="divider" />
-      <div style={{ minWidth: 0 }}>
-        <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>
-          {detail.remarks ?? '—'}
-          <Chip changes={pendingChanges} field="remarks" />
-        </div>
-      </div>
+          )}
+        </Cluster>
+
+        <Cluster name="Notes">
+          <ClusterFact
+            label="Operation"
+            empty={!detail.operation}
+            title={detail.operation ?? undefined}
+            value={detail.operation ?? '—'}
+            after={<Chip changes={pendingChanges} field="operation" />}
+          />
+          <ClusterFact
+            label="Remarks"
+            span={3}
+            wrap
+            empty={!detail.remarks}
+            value={detail.remarks ?? '—'}
+            after={<Chip changes={pendingChanges} field="remarks" />}
+          />
+        </Cluster>
+      </ClusterGrid>
     </>
   );
 }
 
 const inr = (n: number): string =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-function Fact(props: { label: string; value: React.ReactNode; title?: string }): React.JSX.Element {
-  return (
-    <div style={{ minWidth: 0 }} title={props.title}>
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{props.value}</div>
-    </div>
-  );
-}
 
 /** ADR-202 — the amber "→ after" chip for a record field with a staged edit
  *  waiting for approval. Matched on the PR edit diff's field key. Renders
