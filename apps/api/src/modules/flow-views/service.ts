@@ -160,24 +160,21 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
                 WHEN nc.status = 'closed' AND nc.disposition IN ('scrap', 'make_fresh') THEN nc.rejected_qty
                 WHEN nc.disposition IN ('rework', 'repair') THEN nc.failed_qty
                 ELSE 0
-              END) AS lost
+              END) AS lost,
+          -- Vendor-rejected pieces sent back on a return-to-vendor challan and
+          -- received again (NC rtv_sent / rtv_received), so the row reads
+          -- 30 sent -> 25 ok + 5 back -> 5 returned -> 5 re-received.
+          COALESCE(SUM(nc.rtv_sent_qty) FILTER (
+            WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL), 0) AS rtv_sent,
+          COALESCE(SUM(nc.rtv_received_qty) FILTER (
+            WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL), 0) AS rtv_received,
+          -- Same rule as v_jc_op_status returned_to_vendor.at_vendor_qty (open NCs).
+          GREATEST(0, COALESCE(SUM(nc.rtv_sent_qty - nc.rtv_received_qty) FILTER (
+            WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL
+              AND nc.status <> 'closed'), 0)) AS rtv_at_vendor
         FROM public.nc_register nc
         JOIN ops ON ops.id = nc.jc_op_id
         WHERE nc.deleted_at IS NULL
-        GROUP BY nc.jc_op_id
-      ),
-      -- Rejected-at-vendor pieces sent back on a return-to-vendor challan and
-      -- received again (NC rtv_sent / rtv_received). Shown so a row reads
-      -- 30 sent -> 25 ok + 5 back -> 5 returned -> 5 re-received.
-      rtv AS (
-        SELECT nc.jc_op_id,
-          COALESCE(SUM(nc.rtv_sent_qty), 0) AS sent,
-          COALESCE(SUM(nc.rtv_received_qty), 0) AS received
-        FROM public.nc_register nc
-        JOIN ops ON ops.id = nc.jc_op_id
-        WHERE nc.deleted_at IS NULL
-          AND nc.disposition = 'return_to_vendor'
-          AND nc.delivery_challan_id IS NOT NULL
         GROUP BY nc.jc_op_id
       ),
       ncs AS (
@@ -196,8 +193,14 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
           OR ops.outsource_sent_qty > 0) AS has_osp,
         v.input_avail, v.completed_qty, v.qc_accepted_qty, v.available, v.qc_pending,
         v.computed_status, v.at_vendor_qty,
-        COALESCE(rtv.sent, 0) AS rtv_sent,
-        COALESCE(rtv.received, 0) AS rtv_received,
+        COALESCE(loss.rtv_sent, 0) AS rtv_sent,
+        COALESCE(loss.rtv_received, 0) AS rtv_received,
+        COALESCE(loss.rtv_at_vendor, 0) AS rtv_at_vendor,
+        -- v_jc_op_status counts return-to-vendor pieces in at_vendor_qty only on
+        -- outsource ops / ops with the legacy PO link; a dual-lane op linked
+        -- only through jc_op_po_lines gets them added here so At Vendor agrees
+        -- with Returned to Vendor - Re-received on every row.
+        (ops.op_type <> 'outsource' AND ops.outsource_po_line_id IS NULL) AS rtv_outside_view,
         COALESCE(lg.completed_raw, 0) AS completed_raw,
         COALESCE(lg.prod_rej, 0) AS prod_rej,
         COALESCE(lg.qc_rej, 0) AS qc_rej,
@@ -215,7 +218,6 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
       LEFT JOIN osp ON osp.jc_op_id = ops.id
       LEFT JOIN loss ON loss.jc_op_id = ops.id
       LEFT JOIN ncs ON ncs.jc_op_id = ops.id
-      LEFT JOIN rtv ON rtv.jc_op_id = ops.id
       ORDER BY ops.op_seq`,
     );
 
@@ -253,7 +255,8 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         vendorAcceptedQty: ospAcc,
         returnedToVendorQty: num(x['rtv_sent']),
         reReceivedQty: num(x['rtv_received']),
-        atVendorQty: num(x['at_vendor_qty']),
+        atVendorQty:
+          num(x['at_vendor_qty']) + (x['rtv_outside_view'] === true ? num(x['rtv_at_vendor']) : 0),
         passedOnQty: passedOn,
         availableQty: num(x['available']),
         qcPendingQty: num(x['qc_pending']),

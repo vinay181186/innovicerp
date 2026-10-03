@@ -1,13 +1,14 @@
 -- ============================================================
--- 0196_qc_op_available.sql
--- Job Card "Op Qty Flow" (and every reader of v_jc_op_status.available):
--- a QC op's Available fell into the plain-op branch, which subtracts only
--- 'complete' op_log rows — a QC op never has any — so Available stayed equal
--- to Input (= Passed On once everything passed). QC ops now subtract their QC
--- accepted + rejected, the same rule as pending_qty. Process and outsource ops
--- are unchanged. Same columns, order and types: CREATE OR REPLACE keeps the
--- dependent views (v_jc_status, v_osp_wip) and grants. Body = live
--- pg_get_viewdef (identical on PROD and TEST, 2026-10-03) + this one CASE.
+-- 0196_qc_op_available.sql  (ADR-206)
+-- QC op Available was the whole batch: QC ops fell into the plain-op branch,
+-- which subtracts only 'complete' rows. Now (one rule for available,
+-- pending_qty and qc_pending):
+--   QC worked off = qc accepted + QC rejects still OPEN, where open rejects =
+--   QC rejects - pieces an NC recovered (re-injected as LOG-NC 'qc' rows,
+--   already counted in accepted) - same idea as production_rejected_open_qty.
+-- Process / outsource op formulas unchanged. Same output columns, order and
+-- types -> CREATE OR REPLACE keeps v_jc_status, v_osp_wip and grants.
+-- Body = live pg_get_viewdef (identical PROD/TEST 2026-10-03) + these edits.
 -- Idempotent. Apply to BOTH databases. Rollback: re-run 0176's definition.
 -- ============================================================
 
@@ -29,6 +30,15 @@ CREATE OR REPLACE VIEW public.v_jc_op_status AS
                     WHEN op_log.log_type = 'qc'::op_log_type THEN op_log.reject_qty
                     ELSE 0
                 END) AS qc_rejected_qty,
+            GREATEST(0::bigint, sum(
+                CASE
+                    WHEN op_log.log_type = 'qc'::op_log_type THEN op_log.reject_qty
+                    ELSE 0
+                END) - sum(
+                CASE
+                    WHEN op_log.log_type = 'qc'::op_log_type AND op_log.log_no ~~ 'LOG-NC-%'::text THEN op_log.qty
+                    ELSE 0
+                END)) AS qc_rejected_open_qty,
             GREATEST(0::bigint, sum(
                 CASE
                     WHEN op_log.log_type = 'complete'::op_log_type THEN op_log.reject_qty
@@ -157,24 +167,19 @@ CREATE OR REPLACE VIEW public.v_jc_op_status AS
             WHEN o.op_seq = 1 THEN p.jc_order_qty::numeric
             ELSE COALESCE(p.prev_output, 0::numeric)
         END::integer AS input_avail,
-        CASE
-            -- 0196: a QC op is worked off by its QC entries (accepted + rejected),
-            -- never by 'complete' rows — same rule as pending_qty's QC branch.
-            WHEN o.op_type = 'qc'::op_type THEN GREATEST(0::numeric,
-            CASE
-                WHEN o.op_seq = 1 THEN p.jc_order_qty::numeric
-                ELSE COALESCE(p.prev_output, 0::numeric)
-            END - COALESCE(r.qc_accepted_qty, 0::bigint)::numeric - COALESCE(r.qc_rejected_qty, 0::bigint)::numeric)
-            ELSE GREATEST(0::numeric,
+    GREATEST(0::numeric,
         CASE
             WHEN o.op_seq = 1 THEN p.jc_order_qty::numeric
             ELSE COALESCE(p.prev_output, 0::numeric)
         END -
         CASE
+            -- 0196: a QC op is worked off by its QC entries — accepted plus the
+            -- rejects still open (an NC that recovers pieces re-injects them as
+            -- LOG-NC 'qc' rows, already in accepted).
+            WHEN o.op_type = 'qc'::op_type THEN (COALESCE(r.qc_accepted_qty, 0::bigint) + COALESCE(r.qc_rejected_open_qty, 0::bigint))::numeric
             WHEN o.op_type = 'outsource'::op_type THEN COALESCE(orr.osp_accepted_qty, 0::numeric) + COALESCE(r.qc_accepted_qty, 0::bigint)::numeric
             ELSE (COALESCE(r.completed_qty, 0::bigint) + COALESCE(o.outsource_sent_qty, 0) + COALESCE(r.production_rejected_open_qty, 0::bigint))::numeric
-        END - COALESCE(rtv.open_qty, 0::numeric)) + COALESCE(rw.qty, 0::numeric)
-        END AS available,
+        END - COALESCE(rtv.open_qty, 0::numeric)) + COALESCE(rw.qty, 0::numeric) AS available,
         CASE
             WHEN o.qc_required OR o.op_type = 'qc'::op_type THEN GREATEST(0::numeric,
             CASE
@@ -184,7 +189,7 @@ CREATE OR REPLACE VIEW public.v_jc_op_status AS
                     ELSE COALESCE(p.prev_output, 0::numeric)
                 END
                 ELSE COALESCE(r.completed_qty, 0::bigint)::numeric + COALESCE(orr.osp_accepted_qty, 0::numeric)
-            END - COALESCE(r.qc_accepted_qty, 0::bigint)::numeric - COALESCE(r.qc_rejected_qty, 0::bigint)::numeric)
+            END - COALESCE(r.qc_accepted_qty, 0::bigint)::numeric - COALESCE(r.qc_rejected_open_qty, 0::bigint)::numeric)
             ELSE 0::numeric
         END AS qc_pending,
         CASE
@@ -226,7 +231,7 @@ CREATE OR REPLACE VIEW public.v_jc_op_status AS
                     ELSE COALESCE(p.prev_output, 0::numeric)
                 END
                 ELSE COALESCE(r.completed_qty, 0::bigint)::numeric + COALESCE(orr.osp_accepted_qty, 0::numeric)
-            END - COALESCE(r.qc_accepted_qty, 0::bigint)::numeric - COALESCE(r.qc_rejected_qty, 0::bigint)::numeric) > 0::numeric THEN 'qc_pending'::text
+            END - COALESCE(r.qc_accepted_qty, 0::bigint)::numeric - COALESCE(r.qc_rejected_open_qty, 0::bigint)::numeric) > 0::numeric THEN 'qc_pending'::text
             WHEN rc.jc_op_id IS NOT NULL THEN 'running'::text
             WHEN COALESCE(r.completed_qty, 0::bigint) > 0 OR COALESCE(r.production_rejected_qty, 0::bigint) > 0 OR (COALESCE(r.qc_accepted_qty, 0::bigint) + COALESCE(r.qc_rejected_qty, 0::bigint)) > 0 OR COALESCE(orr.osp_accepted_qty, 0::numeric) > 0::numeric THEN 'in_progress'::text
             WHEN o.op_type = 'outsource'::op_type AND (COALESCE(orr.osp_received_qty, 0::numeric) - COALESCE(orr.osp_accepted_qty, 0::numeric) - COALESCE(orr.osp_rejected_qty, 0::numeric)) > 0::numeric THEN 'received'::text
@@ -260,7 +265,7 @@ CREATE OR REPLACE VIEW public.v_jc_op_status AS
             CASE
                 WHEN o.op_seq = 1 THEN p.jc_order_qty::numeric
                 ELSE COALESCE(p.prev_output, 0::numeric)
-            END - COALESCE(r.qc_accepted_qty, 0::bigint)::numeric - COALESCE(r.qc_rejected_qty, 0::bigint)::numeric)
+            END - COALESCE(r.qc_accepted_qty, 0::bigint)::numeric - COALESCE(r.qc_rejected_open_qty, 0::bigint)::numeric - COALESCE(rtv.open_qty, 0::numeric)) + COALESCE(rw.qty, 0::numeric)
             ELSE GREATEST(0::numeric,
             CASE
                 WHEN o.op_seq = 1 THEN p.jc_order_qty::numeric

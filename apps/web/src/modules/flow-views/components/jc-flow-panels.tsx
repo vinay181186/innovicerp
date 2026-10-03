@@ -2,6 +2,7 @@
 //
 //   Op Qty Flow   one row per op: Input · Completed · Accepted · Rejected ·
 //                 Reworked Back · Lost · Sent to Vendor · Vendor Accepted ·
+//                 Returned to Vendor · Re-received · At Vendor (ADR-206) ·
 //                 Passed On · Available, plus which rule gives Passed On and
 //                 where every reworked-back piece came from ("from rework NC-…").
 //   Rework Tree   the card's top parent → -RW / -RP children → grandchildren,

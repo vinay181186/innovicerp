@@ -734,6 +734,64 @@ describe('op-entry submitQcLog (T-040d)', () => {
     }
   });
 
+  it('0196: QC pieces recovered by an NC are not double-counted in Available / Pending', async () => {
+    // 10 in, QC accepts 5 and rejects 2 -> 3 still to inspect. An NC then
+    // recovers the 2 (Use As Is / rework) and re-injects them as a LOG-NC
+    // 'qc' row (nc-register reinject-log-type.ts) — they are now in accepted
+    // AND still in the original reject. The op must still show 3 to inspect.
+    const id = await ensureFreshFixture();
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    await service.submitQcLog(
+      {
+        jcOpId: id,
+        qty: 5,
+        rejectQty: 2,
+        logDate: '2026-05-03',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+    await db.insert(opLog).values({
+      companyId: admin.companyId!,
+      jcOpId: id,
+      logNo: 'LOG-NC-TEST-0196',
+      logType: 'qc',
+      logDate: '2026-05-04',
+      shift: 'day',
+      qty: 2,
+      rejectQty: 0,
+      operatorName: 'QC-Insp',
+      createdBy: admin.id,
+    });
+
+    const rows = await service.listJcOpsEnriched({ jobCardCode: testJcCode }, admin);
+    const qcOp = rows.find((r) => r.opSeq === 2)!;
+    expect(qcOp.qcAcceptedQty).toBe(7);
+    expect(qcOp.pendingQty).toBe(3);
+    expect(qcOp.qcPending).toBe(3);
+    expect(qcOp.available).toBe(3);
+
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
+    await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+  });
+
   it('backfills qc_call_date from prior op completion log when null', async () => {
     const id = await ensureFreshFixture();
     // Manually clear qcCallDate that submitOpLog would have set. We want to
