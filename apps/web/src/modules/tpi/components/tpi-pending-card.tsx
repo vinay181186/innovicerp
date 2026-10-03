@@ -60,15 +60,15 @@ export function PendingTpi(props: {
     const acc = Number(accept || '0');
     const rej = Number(reject || '0');
     if (!Number.isInteger(acc) || acc < 0 || !Number.isInteger(rej) || rej < 0) {
-      setErr('Accepted and Rejected must be whole numbers, 0 or more.');
+      setErr('Accepted and Deviated must be whole numbers, 0 or more.');
       return;
     }
     if (acc + rej <= 0) {
-      setErr('Enter the Accepted and/or Rejected qty.');
+      setErr('Enter the Accepted and/or Deviated qty.');
       return;
     }
     if (acc + rej > o.qcPending) {
-      setErr(`Accepted + Rejected (${acc + rej}) cannot be more than QC Pending (${o.qcPending}).`);
+      setErr(`Accepted + Deviated (${acc + rej}) cannot be more than QC Pending (${o.qcPending}).`);
       return;
     }
     if (!inspector.trim() || !organization.trim()) {
@@ -268,7 +268,7 @@ export function PendingTpi(props: {
             </div>
             <div className="form-grp">
               <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
-                ❌ Rejected
+                ❌ Deviated
               </label>
               <input
                 type="number"

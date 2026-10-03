@@ -85,7 +85,7 @@ export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
     {
       id: 'rejected',
       kind: 'num',
-      header: 'Rejected',
+      header: 'Deviated',
       align: 'right',
       className: 'mono fw-700',
       render: (l) => (
