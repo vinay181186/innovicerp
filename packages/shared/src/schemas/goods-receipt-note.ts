@@ -157,6 +157,9 @@ export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
+  /** First live line's item code / name (by line_no) for the list's Item columns. */
+  firstItemCode: z.string().nullable().default(null),
+  firstItemName: z.string().nullable().default(null),
   totalReceivedQty: z.number().nonnegative(),
   /** Σ qcAcceptedQty across lines. Legacy renderGRN L26468 column. */
   totalQcAcceptedQty: z.number().nonnegative(),

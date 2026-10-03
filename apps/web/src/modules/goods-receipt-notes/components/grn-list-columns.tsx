@@ -98,6 +98,36 @@ export function goodsReceiptNoteListColumns(
       },
     },
     {
+      id: 'item_code',
+      header: 'Item Code',
+      nowrap: true,
+      // First line's item; "+N more" when the GRN has further lines.
+      render: (grn) =>
+        grn.firstItemCode ? (
+          <>
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {grn.firstItemCode}
+            </span>
+            {grn.lineCount > 1 && (
+              <span className="text3" style={{ fontSize: 11 }}>
+                {' '}
+                +{grn.lineCount - 1} more
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="text3">—</span>
+        ),
+    },
+    {
+      id: 'item_name',
+      header: 'Item Name',
+      align: 'left',
+      ellipsis: true,
+      render: (grn) => grn.firstItemName ?? '—',
+      title: (grn) => grn.firstItemName ?? '',
+    },
+    {
       id: 'received',
       sortFilterField: 'totalReceivedQty',
       filterType: 'num',
