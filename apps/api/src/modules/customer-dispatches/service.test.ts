@@ -21,6 +21,8 @@ import {
   bomMasters,
   customerDispatchLines,
   customerDispatches,
+  invoiceLines,
+  invoices,
   itemStockBalances,
   items,
   salesOrderLines,
@@ -29,7 +31,12 @@ import {
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { cancelDispatch, createDispatch, getDispatchableSo } from './service';
+import {
+  cancelDispatch,
+  createDispatch,
+  getDispatchableSo,
+  updateCustomerDispatch,
+} from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const TEST_PREFIX = 'TDSPB-';
@@ -149,8 +156,130 @@ async function onHand(itemId: string): Promise<number> {
   return Number(rows[0]?.q ?? 0);
 }
 
+async function dispatchedQtyOf(soLineId: string): Promise<number> {
+  const rows = await db
+    .select({ q: salesOrderLines.dispatchedQty })
+    .from(salesOrderLines)
+    .where(eq(salesOrderLines.id, soLineId));
+  return Number(rows[0]?.q ?? 0);
+}
+
+/** One SO with TWO assembly lines, each pointing at its own parent-item BOM, so
+ *  each line's readiness reads its own parent's on-hand stock. */
+async function makeTwoLineFixture(opts: {
+  tag: string;
+  qty1: number;
+  qty2: number;
+}): Promise<{
+  soId: string;
+  soLine1: string;
+  soLine2: string;
+  parent1: string;
+  parent2: string;
+}> {
+  const mkBom = async (parentId: string, compId: string, tag: string): Promise<string> => {
+    const bom = await db
+      .insert(bomMasters)
+      .values({
+        companyId: admin.companyId!,
+        bomNo: `${TEST_PREFIX}${tag}`,
+        bomName: `assembly ${tag}`,
+        parentItemId: parentId,
+        status: 'active',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    await db.insert(bomMasterLines).values({
+      companyId: admin.companyId!,
+      bomMasterId: bom[0]!.id,
+      lineNo: 1,
+      childItemId: compId,
+      qtyPerSet: '1.00',
+      bomType: 'manufacture',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+    return bom[0]!.id;
+  };
+
+  const parent1 = await makeItem(`P1-${opts.tag}`, `Pen1 ${opts.tag}`);
+  const parent2 = await makeItem(`P2-${opts.tag}`, `Pen2 ${opts.tag}`);
+  const comp1 = await makeItem(`X1-${opts.tag}`, `Comp1 ${opts.tag}`);
+  const comp2 = await makeItem(`X2-${opts.tag}`, `Comp2 ${opts.tag}`);
+  const bom1 = await mkBom(parent1, comp1, `${opts.tag}-1`);
+  const bom2 = await mkBom(parent2, comp2, `${opts.tag}-2`);
+
+  const so = await db
+    .insert(salesOrders)
+    .values({
+      companyId: admin.companyId!,
+      code: `${TEST_PREFIX}SO-${opts.tag}`,
+      soDate: '2026-08-01',
+      status: 'open',
+      type: 'component_manufacturing',
+      gstPercent: '18.00',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  const l1 = await db
+    .insert(salesOrderLines)
+    .values({
+      companyId: admin.companyId!,
+      salesOrderId: so[0]!.id,
+      lineNo: 1,
+      itemId: parent1,
+      partName: 'PEN',
+      orderQty: opts.qty1,
+      rate: '100',
+      status: 'open',
+      sourceBomMasterId: bom1,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  const l2 = await db
+    .insert(salesOrderLines)
+    .values({
+      companyId: admin.companyId!,
+      salesOrderId: so[0]!.id,
+      lineNo: 2,
+      itemId: parent2,
+      partName: 'PEN',
+      orderQty: opts.qty2,
+      rate: '100',
+      status: 'open',
+      sourceBomMasterId: bom2,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  return {
+    soId: so[0]!.id,
+    soLine1: l1[0]!.id,
+    soLine2: l2[0]!.id,
+    parent1,
+    parent2,
+  };
+}
+
 async function cleanup(): Promise<void> {
   const ids = itemIds.filter(Boolean);
+  // Invoices reference SOs with RESTRICT, so clear them before the SO rows.
+  const invs = await db
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(like(invoices.code, `${TEST_PREFIX}%`));
+  if (invs.length > 0) {
+    await db.delete(invoiceLines).where(
+      inArray(
+        invoiceLines.invoiceId,
+        invs.map((i) => i.id),
+      ),
+    );
+    await db.delete(invoices).where(like(invoices.code, `${TEST_PREFIX}%`));
+  }
   await db.delete(customerDispatchLines).where(like(customerDispatchLines.itemCodeText, `${TEST_PREFIX}%`));
   await db.delete(customerDispatches).where(like(customerDispatches.soCodeText, `${TEST_PREFIX}%`));
   if (ids.length > 0) {
@@ -259,5 +388,170 @@ describe('customer dispatch — assembly finished-good stock legs', () => {
         admin,
       ),
     ).rejects.toThrow(/cannot be more than Dispatchable \(3\)/);
+  });
+});
+
+describe('customer dispatch — edit (ADR-202 Phase 3): reverse-then-repost', () => {
+  it('raising Ln1 and lowering Ln2 adjusts stock out + dispatched_qty by the deltas', async () => {
+    const { soId, soLine1, soLine2, parent1, parent2 } = await makeTwoLineFixture({
+      tag: 'EDIT',
+      qty1: 10,
+      qty2: 10,
+    });
+    await creditStock(parent1, 10);
+    await creditStock(parent2, 10);
+
+    const dispatch = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-08-03',
+        lines: [
+          { salesOrderLineId: soLine1, qty: 4 },
+          { salesOrderLineId: soLine2, qty: 6 },
+        ],
+      },
+      admin,
+    );
+    // Baseline: on-hand debited, dispatched_qty bumped.
+    expect(await onHand(parent1)).toBe(6);
+    expect(await onHand(parent2)).toBe(4);
+    expect(await dispatchedQtyOf(soLine1)).toBe(4);
+    expect(await dispatchedQtyOf(soLine2)).toBe(6);
+
+    const line1 = dispatch.lines.find((l) => l.salesOrderLineId === soLine1)!;
+    const line2 = dispatch.lines.find((l) => l.salesOrderLineId === soLine2)!;
+
+    // Raise Ln1 4 → 7, lower Ln2 6 → 2.
+    const edited = await updateCustomerDispatch(
+      dispatch.id,
+      {
+        lines: [
+          { id: line1.id, qty: 7 },
+          { id: line2.id, qty: 2 },
+        ],
+      },
+      admin,
+    );
+
+    // Stock reposted at the NEW qtys: 10 − 7 = 3, 10 − 2 = 8.
+    expect(await onHand(parent1)).toBe(3);
+    expect(await onHand(parent2)).toBe(8);
+    expect(await dispatchedQtyOf(soLine1)).toBe(7);
+    expect(await dispatchedQtyOf(soLine2)).toBe(2);
+    // The stored dispatch lines carry the new qtys, and the code revision bumped.
+    expect(edited.lines.find((l) => l.salesOrderLineId === soLine1)!.qty).toBe(7);
+    expect(edited.lines.find((l) => l.salesOrderLineId === soLine2)!.qty).toBe(2);
+    expect(edited.code).toMatch(/\/R2$/);
+  });
+
+  it('refuses lowering a line below what has been invoiced', async () => {
+    const { soId, soLine1, soLine2, parent1, parent2 } = await makeTwoLineFixture({
+      tag: 'INV',
+      qty1: 10,
+      qty2: 10,
+    });
+    await creditStock(parent1, 10);
+    await creditStock(parent2, 10);
+
+    const dispatch = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-08-03',
+        lines: [
+          { salesOrderLineId: soLine1, qty: 5 },
+          { salesOrderLineId: soLine2, qty: 5 },
+        ],
+      },
+      admin,
+    );
+
+    // Invoice 5 pcs against SO line 1.
+    const inv = await db
+      .insert(invoices)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}INV-1`,
+        invoiceDate: '2026-08-04',
+        salesOrderId: soId,
+        soCodeText: `${TEST_PREFIX}SO-INV`,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    await db.insert(invoiceLines).values({
+      companyId: admin.companyId!,
+      invoiceId: inv[0]!.id,
+      lineNo: 1,
+      itemId: parent1,
+      itemName: 'PEN',
+      qty: 5,
+      rate: '100',
+      salesOrderLineId: soLine1,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+
+    const line1 = dispatch.lines.find((l) => l.salesOrderLineId === soLine1)!;
+    const line2 = dispatch.lines.find((l) => l.salesOrderLineId === soLine2)!;
+
+    // Lowering Ln1 5 → 3 falls below the 5 invoiced — refused; nothing changes.
+    await expect(
+      updateCustomerDispatch(
+        dispatch.id,
+        {
+          lines: [
+            { id: line1.id, qty: 3 },
+            { id: line2.id, qty: 5 },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/below invoiced \(Invoiced 5\)/);
+    // Stock + dispatched_qty untouched (the whole edit rolled back).
+    expect(await onHand(parent1)).toBe(5);
+    expect(await dispatchedQtyOf(soLine1)).toBe(5);
+  });
+
+  it('applying only Ln1 (Ln2 kept at its current qty) leaves Ln2 untouched', async () => {
+    // Mirrors the registry applyEdit reconstruction when ONLY Ln1 is approved:
+    // the full line set is resubmitted with Ln2 at its CURRENT qty, so Ln2's
+    // stock + dispatched_qty do not move.
+    const { soId, soLine1, soLine2, parent1, parent2 } = await makeTwoLineFixture({
+      tag: 'PART',
+      qty1: 10,
+      qty2: 10,
+    });
+    await creditStock(parent1, 10);
+    await creditStock(parent2, 10);
+
+    const dispatch = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-08-03',
+        lines: [
+          { salesOrderLineId: soLine1, qty: 4 },
+          { salesOrderLineId: soLine2, qty: 6 },
+        ],
+      },
+      admin,
+    );
+    const line1 = dispatch.lines.find((l) => l.salesOrderLineId === soLine1)!;
+    const line2 = dispatch.lines.find((l) => l.salesOrderLineId === soLine2)!;
+
+    await updateCustomerDispatch(
+      dispatch.id,
+      {
+        lines: [
+          { id: line1.id, qty: 8 }, // approved change
+          { id: line2.id, qty: 6 }, // kept at current (Ln2 not approved)
+        ],
+      },
+      admin,
+    );
+
+    expect(await onHand(parent1)).toBe(2); // 10 − 8
+    expect(await onHand(parent2)).toBe(4); // 10 − 6, unchanged
+    expect(await dispatchedQtyOf(soLine1)).toBe(8);
+    expect(await dispatchedQtyOf(soLine2)).toBe(6);
   });
 });

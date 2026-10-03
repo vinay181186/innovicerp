@@ -11,6 +11,12 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+  linePendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
@@ -36,6 +42,10 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
   const { data: company } = useMyCompany();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
+  // ADR-202 — the edit(s) staged against this dispatch, still awaiting a
+  // decision. Their per-field changes drive the inline amber chips below.
+  const pendingEdit = usePendingEditForDoc('Dispatch', id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   const [previewHeight, setPreviewHeight] = useState(1123);
 
   const docHtml = useMemo(
@@ -83,6 +93,16 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
         onBack={() => void navigate({ to: '/customer-dispatches' })}
         actions={
           <>
+            {perms.edit && !cancelled ? (
+              <Link
+                to="/customer-dispatches/$id/edit"
+                params={{ id: d.id }}
+                className="btn btn-ghost"
+                title="Edit this dispatch"
+              >
+                ✏️ Edit
+              </Link>
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost"
@@ -107,6 +127,47 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
           </>
         }
       />
+
+      {/* ADR-202 — edits staged against this dispatch and waiting for approval.
+          The challan body is a print preview (an iframe), so the pending-change
+          chips live in this compact panel rather than on the printed lines: the
+          current value → the proposed value, in amber, per header field and per
+          line's Dispatch Qty. Hidden entirely when nothing is pending. */}
+      {pendingChanges.length > 0 ? (
+        <Panel title="Changes awaiting approval">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            {[
+              { field: 'dispatchDate', label: 'Dispatch Date' },
+              { field: 'transport', label: 'Transporter' },
+              { field: 'vehicleNo', label: 'Vehicle No.' },
+              { field: 'remarks', label: 'Remarks' },
+            ].map(({ field, label }) => {
+              const c = headerPendingChange(pendingChanges, field);
+              if (!c) return null;
+              return (
+                <div key={field}>
+                  <span className="text3">{label}:</span>{' '}
+                  <span>{c.before == null || c.before === '' ? '—' : String(c.before)}</span>
+                  <PendingChangeChip after={c.after} />
+                </div>
+              );
+            })}
+            {d.lines.map((l) => {
+              const c = linePendingChange(pendingChanges, l.id, 'qty');
+              if (!c) return null;
+              return (
+                <div key={l.id}>
+                  <span className="text3">
+                    Ln {l.lineNo} · {l.itemName} — Dispatch Qty:
+                  </span>{' '}
+                  <span className="mono">{l.qty}</span>
+                  <PendingChangeChip after={c.after} />
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      ) : null}
 
       {/* Plan v3 Step 4 — the challan below keeps each line's saved Item Name;
           where that differs from the item master, say so here (screen only). */}

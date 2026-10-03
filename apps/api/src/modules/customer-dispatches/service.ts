@@ -7,6 +7,7 @@ import type {
   CreateCustomerDispatchInput,
   CustomerDispatchDetail,
   CustomerDispatchLineRow,
+  DocumentEditStagedResult,
   ListCustomerDispatchesQuery,
   CustomerDispatchRow,
   DispatchableLine,
@@ -14,7 +15,7 @@ import type {
   FinanceSoOption,
   ListCustomerDispatchesResponse,
 } from '@innovic/shared';
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, bumpDocRevision, parseDocRevision } from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   clients,
@@ -43,10 +44,17 @@ import {
   readStockPositions,
   unconsumeForDispatch,
 } from '../../lib/stock-reservation';
+import { diffFields } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
+import type { UpdateCustomerDispatchInput } from './schema';
+import {
+  DISPATCH_HEADER_EDIT_FIELDS,
+  dispatchLineDiffFields,
+  dispatchLineQtyKey,
+} from './edit-fields';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -174,6 +182,119 @@ async function moveDispatchStock(
     guard: dir === 'out' ? 'on_hand' : 'none',
     qtyLabel: 'Dispatch Qty',
   });
+}
+
+// ─── Shared in-tx stock primitives (ADR-202 Phase 3) ────────────────────────
+// create, cancel and edit all move dispatch stock the same way. Extracted so the
+// edit's REVERSE-then-REPOST reuses the EXACT create/cancel behaviour (§20.1 one
+// stock writer — every path goes through moveDispatchStock → postStockMove) with
+// no copy-paste that could drift.
+
+// POST one line OUT: bump the SO line's dispatched_qty, ship its booking first,
+// then debit finished-goods stock. The single physical move is moveDispatchStock
+// ('out', guard 'on_hand'). Used by createDispatch (after inserting the line) and
+// by the edit REPOST (after updating the line's qty).
+async function dispatchLineOut(
+  tx: DbTransaction,
+  companyId: string,
+  user: AuthContext,
+  code: string,
+  dispatchDate: string,
+  lineNo: number,
+  line: { salesOrderLineId: string | null; itemId: string | null; qty: number },
+  customerDispatchId: string,
+): Promise<void> {
+  if (line.salesOrderLineId) {
+    // Maintain cumulative dispatched qty on the SO line (single writer).
+    await tx
+      .update(salesOrderLines)
+      .set({
+        dispatchedQty: sql`${salesOrderLines.dispatchedQty} + ${line.qty}`,
+        updatedBy: user.id,
+      })
+      .where(eq(salesOrderLines.id, line.salesOrderLineId));
+    // Ship this line's booking first (writes no ledger row — ADR-180). Shipping
+    // more than is booked is fine; the surplus comes out of free stock.
+    await consumeForLine(
+      tx,
+      {
+        companyId,
+        soLineId: line.salesOrderLineId,
+        qty: line.qty,
+        dispatchCode: code,
+        customerDispatchId,
+      },
+      user,
+    );
+  }
+  // Reduce on-hand stock (finished goods out). Free-text lines (no itemId) and a
+  // 0 qty skip stock inside moveDispatchStock.
+  await moveDispatchStock(
+    tx,
+    companyId,
+    user.id,
+    'out',
+    code,
+    dispatchDate,
+    lineNo,
+    line.itemId,
+    line.qty,
+  );
+}
+
+// REVERSE one line (the inverse of dispatchLineOut): give the dispatched_qty back
+// and put the stock back on the shelf, replaying the EXACT ledger rows this
+// dispatch wrote (loadDispatchedComponents) so a BOM edited between dispatch and
+// reversal never unbalances the ledger. `code` is the code the original 'out'
+// rows carry. Used by cancelDispatch and by the edit REVERSE.
+async function reverseDispatchLineStock(
+  tx: DbTransaction,
+  companyId: string,
+  user: AuthContext,
+  code: string,
+  dispatchDate: string,
+  line: { salesOrderLineId: string | null; lineNo: number; itemId: string | null; qty: number },
+): Promise<void> {
+  if (line.salesOrderLineId) {
+    await tx
+      .update(salesOrderLines)
+      .set({
+        dispatchedQty: sql`GREATEST(0, ${salesOrderLines.dispatchedQty} - ${line.qty})`,
+        updatedBy: user.id,
+      })
+      .where(eq(salesOrderLines.id, line.salesOrderLineId));
+  }
+  // Put back exactly what went out. For a legacy BOM line that is one row per
+  // component, replayed from the ledger (see loadDispatchedComponents).
+  const moved = await loadDispatchedComponents(tx, companyId, code, line.lineNo);
+  if (moved.length > 0) {
+    for (const m of moved) {
+      await moveDispatchStock(
+        tx,
+        companyId,
+        user.id,
+        'in',
+        code,
+        dispatchDate,
+        line.lineNo,
+        m.itemId,
+        m.qty,
+        { code: m.itemCode },
+      );
+    }
+  } else {
+    await moveDispatchStock(
+      tx,
+      companyId,
+      user.id,
+      'in',
+      code,
+      dispatchDate,
+      line.lineNo,
+      line.itemId,
+      line.qty,
+    );
+  }
 }
 
 type DispatchableRow = {
@@ -543,7 +664,12 @@ async function nextCode(tx: DbTransaction, companyId: string): Promise<string> {
     .where(eq(customerDispatches.companyId, companyId));
   let max = 0;
   for (const r of rows) {
-    const m = Number((r.code || '').replace(/\D/g, '')) || 0;
+    // Strip any /R revision suffix FIRST (an edit bumps a dispatch to DSP-0001/R2
+    // — ADR-202 Phase 3): the series number is the digits of the BASE only.
+    // Without this, replace(/\D/g,'') on 'DSP-0001/R2' would read '00012' = 12
+    // and the next dispatch would jump the counter.
+    const base = parseDocRevision(r.code || '').base;
+    const m = Number(base.replace(/\D/g, '')) || 0;
     if (m > max) max = m;
   }
   return `DSP-${String(max + 1).padStart(4, '0')}`;
@@ -888,48 +1014,20 @@ export async function createDispatch(
         createdBy: user.id,
         updatedBy: user.id,
       });
-      // Maintain cumulative dispatched qty on the SO line.
-      await tx
-        .update(salesOrderLines)
-        .set({
-          dispatchedQty: sql`${salesOrderLines.dispatchedQty} + ${l.qty}`,
-          updatedBy: user.id,
-        })
-        .where(eq(salesOrderLines.id, l.salesOrderLineId));
-      // Ship this line's booking first: mark up to `qty` of it consumed. This
-      // writes NO ledger row — the booking never held stock away from the
-      // shelf, so there is nothing to give back (ADR-180). The single 'out' row
-      // below is the only physical movement. Shipping more than is booked is
-      // fine: the surplus simply comes out of free stock and consumeForLine
-      // reports the smaller number. The SO lines were locked FOR UPDATE above,
-      // so two dispatches on one line cannot consume the same booking twice.
-      await consumeForLine(
-        tx,
-        {
-          companyId,
-          soLineId: l.salesOrderLineId,
-          qty: l.qty,
-          dispatchCode: code,
-          customerDispatchId: header.id,
-        },
-        user,
-      );
-      // Reduce on-hand stock (finished goods out). The line's own item leaves
-      // stock at the dispatched qty. For assembly / equipment lines that item is
-      // the parent finished good the Assembly Tracker built and credited into
-      // stock (ADR-115) — we debit it directly, NOT the components (they were
-      // already consumed when the batch was assembled). Free-text lines (no
-      // itemId) skip stock inside moveDispatchStock.
-      await moveDispatchStock(
+      // Bump dispatched_qty, ship the booking, debit finished-goods stock. The
+      // SO lines were locked FOR UPDATE above, so two dispatches on one line
+      // cannot consume the same booking twice. For assembly / equipment lines the
+      // item is the parent finished good the Assembly Tracker credited into stock
+      // (ADR-115) — debited directly, NOT the components.
+      await dispatchLineOut(
         tx,
         companyId,
-        user.id,
-        'out',
+        user,
         code,
         input.dispatchDate,
         lineNo,
-        itemId,
-        l.qty,
+        { salesOrderLineId: l.salesOrderLineId, itemId, qty: l.qty },
+        header.id,
       );
     }
 
@@ -1044,46 +1142,12 @@ export async function cancelDispatch(
 
     // Reverse the dispatched-qty bump + add the stock back on each line.
     for (const l of lineRows) {
-      if (l.salesOrderLineId) {
-        await tx
-          .update(salesOrderLines)
-          .set({
-            dispatchedQty: sql`GREATEST(0, ${salesOrderLines.dispatchedQty} - ${l.qty})`,
-            updatedBy: user.id,
-          })
-          .where(eq(salesOrderLines.id, l.salesOrderLineId));
-      }
-      // Put back exactly what went out. For a BOM line that is one row per
-      // component, replayed from the ledger (see loadDispatchedComponents).
-      const moved = await loadDispatchedComponents(tx, companyId, h.code, l.lineNo);
-      if (moved.length > 0) {
-        for (const m of moved) {
-          await moveDispatchStock(
-            tx,
-            companyId,
-            user.id,
-            'in',
-            h.code,
-            h.dispatchDate,
-            l.lineNo,
-            m.itemId,
-            m.qty,
-            { code: m.itemCode },
-          );
-        }
-      } else {
-        await moveDispatchStock(
-          tx,
-          companyId,
-          user.id,
-          'in',
-          h.code,
-          h.dispatchDate,
-          l.lineNo,
-          l.itemId,
-          l.qty,
-        );
-      }
+      await reverseDispatchLineStock(tx, companyId, user, h.code, h.dispatchDate, {
+        salesOrderLineId: l.salesOrderLineId,
+        lineNo: l.lineNo,
+        itemId: l.itemId,
+        qty: Number(l.qty),
+      });
     }
 
     // The goods are back on the shelf, so the booking they were shipped against
@@ -1121,4 +1185,345 @@ export async function cancelDispatch(
 
     return getDispatchInternal(tx, id, companyId);
   });
+}
+
+// ─── Edit (ADR-202 Phase 3) ──────────────────────────────────────────────────
+//
+// Editing a dispatch's line QTY is STOCK-CRITICAL: on apply it REVERSES the whole
+// dispatch's stock movement (as a cancel would) and REPOSTS the corrected qtys
+// (as a create would), in ONE transaction, reusing the shared primitives above.
+// The reverse first makes the SO lines read as if this dispatch never happened,
+// so the repost validates each new qty as a fresh dispatch against the remaining
+// order — the exact caps createDispatch enforces. §20.1: every stock change goes
+// through moveDispatchStock; dispatched_qty has one writer (the two primitives).
+
+/** The in-tx body — also replayed by the edit-approval engine's applyEdit, which
+ *  already holds the dispatch row FOR UPDATE. */
+export async function updateCustomerDispatchTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateCustomerDispatchInput,
+  user: AuthContext,
+): Promise<CustomerDispatchDetail> {
+  const companyId = requireCompany(user);
+
+  // Lock the dispatch header FIRST — a concurrent edit / cancel waits here.
+  const rows = await tx
+    .select()
+    .from(customerDispatches)
+    .where(
+      and(
+        eq(customerDispatches.id, id),
+        eq(customerDispatches.companyId, companyId),
+        isNull(customerDispatches.deletedAt),
+      ),
+    )
+    .limit(1)
+    .for('update');
+  const h = rows[0];
+  if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
+  if (h.status === 'cancelled') {
+    throw new ConflictError(
+      `Dispatch ${h.code} is Cancelled — a cancelled dispatch can't be edited.`,
+    );
+  }
+
+  const currentLines = await tx
+    .select()
+    .from(customerDispatchLines)
+    .where(
+      and(eq(customerDispatchLines.customerDispatchId, id), isNull(customerDispatchLines.deletedAt)),
+    )
+    .orderBy(asc(customerDispatchLines.lineNo));
+
+  // The line SET is fixed: every input line must be a current line AND every
+  // current line must be in the input. Add / remove is refused — a dispatch's
+  // items come from the SO selection at create; only Dispatch Qty may change.
+  const byId = new Map(currentLines.map((l) => [l.id, l]));
+  const inputById = new Map<string, number>();
+  for (const il of input.lines) {
+    if (!byId.has(il.id)) {
+      throw new ConflictError(
+        `A line in this edit is not on Dispatch ${h.code} — reload the page. ` +
+          `A dispatch's items are fixed from the SO selection.`,
+      );
+    }
+    if (inputById.has(il.id)) {
+      throw new ValidationError(`A dispatch line appears twice in the edit — reload the page.`);
+    }
+    inputById.set(il.id, il.qty);
+  }
+  for (const c of currentLines) {
+    if (!inputById.has(c.id)) {
+      throw new ConflictError(
+        `Dispatch ${h.code}: lines cannot be added or removed — a dispatch's items are ` +
+          `fixed from the SO selection. Only Dispatch Qty can be edited.`,
+      );
+    }
+  }
+  const newQtyById = new Map<string, number>();
+  for (const c of currentLines) newQtyById.set(c.id, inputById.get(c.id) ?? Number(c.qty));
+  if (![...newQtyById.values()].some((q) => q > 0)) {
+    throw new ValidationError('Enter a Dispatch Qty greater than 0 on at least one line.');
+  }
+
+  // Lock the SO lines + their item rows in the SAME id order create / cancel use
+  // (no deadlock; serialises a concurrent dispatch / booking on the same item).
+  const soLineIds = [
+    ...new Set(currentLines.flatMap((l) => (l.salesOrderLineId ? [l.salesOrderLineId] : []))),
+  ];
+  if (soLineIds.length > 0) {
+    await tx
+      .select({ id: salesOrderLines.id })
+      .from(salesOrderLines)
+      .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)))
+      .orderBy(asc(salesOrderLines.id))
+      .for('update');
+    const lineItems = await tx
+      .select({ itemId: salesOrderLines.itemId })
+      .from(salesOrderLines)
+      .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)));
+    const itemIds = [
+      ...new Set(lineItems.map((r) => r.itemId).filter((v): v is string => !!v)),
+    ].sort();
+    for (const itemId of itemIds) {
+      await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
+    }
+  }
+
+  const so = await loadSo(tx, companyId, h.salesOrderId);
+  // The repost is a fresh dispatch against the SO; it must still accept work.
+  assertSoAcceptsWork(so.status, so.code, 'its dispatch cannot be edited');
+
+  // INVOICE GUARD per line, against the NEW qty. The SO line's dispatched_qty
+  // moves by (newQty - currentQty) and must not fall below what is already
+  // invoiced on that SO line (else a live invoice bills goods no longer recorded
+  // as dispatched). Same invoiced SQL as cancelDispatch; general form of the
+  // cancel guard (newQty = 0). For one-dispatch-per-line this is "invoiced > newQty".
+  for (const c of currentLines) {
+    if (!c.salesOrderLineId) continue;
+    const newQty = newQtyById.get(c.id)!;
+    const chk = (await tx.execute(sql`
+      SELECT sol.dispatched_qty::int AS dispatched,
+        COALESCE((
+          SELECT SUM(il.qty) FROM public.invoice_lines il
+          JOIN public.invoices inv ON inv.id = il.invoice_id
+          WHERE il.sales_order_line_id = sol.id
+            AND inv.deleted_at IS NULL AND il.deleted_at IS NULL
+        ), 0)::int AS invoiced
+      FROM public.sales_order_lines sol
+      WHERE sol.id = ${c.salesOrderLineId}::uuid
+      LIMIT 1
+    `)) as unknown as Array<{ dispatched: number; invoiced: number }>;
+    const dispatched = Number(chk[0]?.dispatched ?? 0);
+    const invoiced = Number(chk[0]?.invoiced ?? 0);
+    if (invoiced > dispatched - Number(c.qty) + newQty) {
+      throw new ConflictError(
+        `Cannot edit Dispatch ${h.code} Ln ${c.lineNo} below invoiced (Invoiced ${invoiced}) — ` +
+          `cancel the invoice first.`,
+      );
+    }
+  }
+
+  const oldCode = h.code;
+  const newCode = bumpDocRevision(oldCode);
+  const newDispatchDate = input.dispatchDate ?? h.dispatchDate;
+
+  // ── REVERSE every current line (as a cancel would) under the OLD code, then
+  // give the bookings back. The SO lines now read as if this dispatch never ran.
+  for (const c of currentLines) {
+    await reverseDispatchLineStock(tx, companyId, user, oldCode, h.dispatchDate, {
+      salesOrderLineId: c.salesOrderLineId,
+      lineNo: c.lineNo,
+      itemId: c.itemId,
+      qty: Number(c.qty),
+    });
+  }
+  await unconsumeForDispatch(tx, { companyId, customerDispatchId: id }, user);
+
+  // ── REPOST: validate each new qty against the SO line's Dispatchable / Pending
+  // caps the SAME way createDispatch does (computed on the reversed state).
+  const dispatchable = await loadDispatchable(tx, companyId, h.salesOrderId);
+  const byLine = new Map(dispatchable.map((d) => [d.salesOrderLineId, d]));
+  for (const c of currentLines) {
+    if (!c.salesOrderLineId) continue;
+    const newQty = newQtyById.get(c.id)!;
+    const d = byLine.get(c.salesOrderLineId);
+    if (!d) throw new ValidationError(`Ln ${c.lineNo} is not on SO ${so.code}. Please reload.`);
+    if (newQty > d.availableQty) {
+      throw new ConflictError(
+        `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): Dispatch Qty (${newQty}) cannot be more than ` +
+          `Dispatchable (${d.availableQty}).`,
+      );
+    }
+    if (newQty > d.pendingQty) {
+      throw new ConflictError(
+        `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): Dispatch Qty (${newQty}) cannot be more than ` +
+          `Pending (${d.pendingQty}) — Order Qty ${d.orderQty}, Already Dispatched ${d.dispatchedQty}.`,
+      );
+    }
+  }
+  // Apply the new qtys + move the stock out under the NEW code (so a future
+  // cancel's ledger replay matches the current code).
+  for (const c of currentLines) {
+    const newQty = newQtyById.get(c.id)!;
+    await tx
+      .update(customerDispatchLines)
+      .set({ qty: newQty, updatedBy: user.id })
+      .where(eq(customerDispatchLines.id, c.id));
+    await dispatchLineOut(
+      tx,
+      companyId,
+      user,
+      newCode,
+      newDispatchDate,
+      c.lineNo,
+      { salesOrderLineId: c.salesOrderLineId, itemId: c.itemId, qty: newQty },
+      id,
+    );
+  }
+
+  // ── Header: travel details + the revision bump. Conditional on status (§20.2):
+  // a concurrent cancel that moved status off h.status writes 0 rows here.
+  const headerUpdates: Partial<typeof customerDispatches.$inferInsert> = {
+    code: newCode,
+    updatedBy: user.id,
+    updatedAt: new Date(),
+  };
+  if (input.dispatchDate !== undefined) headerUpdates.dispatchDate = input.dispatchDate;
+  if (input.transport !== undefined) headerUpdates.transport = input.transport ?? null;
+  if (input.vehicleNo !== undefined) headerUpdates.vehicleNo = input.vehicleNo ?? null;
+  if (input.remarks !== undefined) headerUpdates.remarks = input.remarks ?? null;
+  const updatedRows = await tx
+    .update(customerDispatches)
+    .set(headerUpdates)
+    .where(and(eq(customerDispatches.id, id), eq(customerDispatches.status, h.status)))
+    .returning({ id: customerDispatches.id });
+  assertRowUpdated(updatedRows, `Dispatch ${oldCode}`);
+
+  // The reverse / repost may have moved the SO header across fully-shipped.
+  await syncSoDispatchStatus(tx, companyId, h.salesOrderId, so.code, user);
+
+  // ── Activity: EDIT with the before → after list (keys match the registry's
+  // `line:<id>:qty`). The engine emits REQUEST / APPROVE / REJECT for a staged
+  // edit; this is the direct-apply log.
+  const before: Record<string, unknown> = {
+    dispatchDate: h.dispatchDate,
+    transport: h.transport,
+    vehicleNo: h.vehicleNo,
+    remarks: h.remarks,
+  };
+  const after: Record<string, unknown> = {};
+  if (input.dispatchDate !== undefined) after['dispatchDate'] = input.dispatchDate;
+  if (input.transport !== undefined) after['transport'] = input.transport ?? null;
+  if (input.vehicleNo !== undefined) after['vehicleNo'] = input.vehicleNo ?? null;
+  if (input.remarks !== undefined) after['remarks'] = input.remarks ?? null;
+  for (const c of currentLines) {
+    before[dispatchLineQtyKey(c.id)] = Number(c.qty);
+    after[dispatchLineQtyKey(c.id)] = newQtyById.get(c.id)!;
+  }
+  const changes = diffFields(before, after, [
+    ...DISPATCH_HEADER_EDIT_FIELDS,
+    ...dispatchLineDiffFields(currentLines),
+  ]);
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'Dispatch',
+        entityId: id,
+        refId: newCode,
+        changes,
+        ...(input.reason ? { reason: input.reason } : {}),
+        detail: `${oldCode === newCode ? oldCode : `${oldCode} → ${newCode}`} — Dispatch edited`,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  return getDispatchInternal(tx, id, companyId);
+}
+
+/** PUBLIC edit — access-gated wrapper around updateCustomerDispatchTx. */
+export async function updateCustomerDispatch(
+  id: string,
+  input: UpdateCustomerDispatchInput,
+  user: AuthContext,
+): Promise<CustomerDispatchDetail> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'dispatch_create', 'edit');
+  return withUserContext(user, async (tx) => updateCustomerDispatchTx(tx, id, input, user));
+}
+
+/**
+ * The PATCH entry point (ADR-202). When the Document Edit Approval gate is ON and
+ * the dispatch is LIVE (any status but cancelled), the edit is STAGED for approval
+ * and the request row is returned; otherwise it applies directly. Add / remove of
+ * lines is refused clearly on both paths (a dispatch's item set is fixed).
+ */
+export async function updateCustomerDispatchOrStage(
+  id: string,
+  input: UpdateCustomerDispatchInput,
+  user: AuthContext,
+): Promise<CustomerDispatchDetail | DocumentEditStagedResult> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'dispatch_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Imported dynamically to avoid a static import cycle with the registry (which
+  // imports updateCustomerDispatchTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const rows = await tx
+      .select({ status: customerDispatches.status })
+      .from(customerDispatches)
+      .where(
+        and(
+          eq(customerDispatches.id, id),
+          eq(customerDispatches.companyId, companyId),
+          isNull(customerDispatches.deletedAt),
+        ),
+      )
+      .limit(1);
+    const status = rows[0]?.status;
+    // isLive mirrors the registry: a cancelled dispatch is not editable; every
+    // other status is LIVE (a dispatch has no draft state). Nothing to stage
+    // otherwise — fall through to the direct edit, which 404s a missing row.
+    if (status === undefined || status === 'cancelled') return false;
+
+    // Refuse add / remove at stage time too, so a staged edit never silently
+    // drops or invents a line (the registry's applyEdit rebuilds from current
+    // lines; this gives the user a clear message instead).
+    const currentIds = (
+      await tx
+        .select({ id: customerDispatchLines.id })
+        .from(customerDispatchLines)
+        .where(
+          and(
+            eq(customerDispatchLines.customerDispatchId, id),
+            isNull(customerDispatchLines.deletedAt),
+          ),
+        )
+    ).map((r) => r.id);
+    const currentSet = new Set(currentIds);
+    const inputSet = new Set(input.lines.map((l) => l.id));
+    const sameSet =
+      currentSet.size === inputSet.size && [...inputSet].every((x) => currentSet.has(x));
+    if (!sameSet) {
+      throw new ConflictError(
+        `Dispatch ${id}: lines cannot be added or removed — a dispatch's items are fixed from ` +
+          `the SO selection. Only Dispatch Qty can be edited.`,
+      );
+    }
+    return true;
+  });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('Dispatch', id, input, input.expectedUpdatedAt, user);
+    return { staged: true, request };
+  }
+
+  return updateCustomerDispatch(id, input, user);
 }

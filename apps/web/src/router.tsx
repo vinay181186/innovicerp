@@ -42,6 +42,7 @@ import { soCostingDetailRoute } from './modules/so-costing/routes/detail';
 import { customerDispatchListRoute } from './modules/customer-dispatches/routes/list';
 import { customerDispatchNewRoute } from './modules/customer-dispatches/routes/create';
 import { customerDispatchDetailRoute } from './modules/customer-dispatches/routes/detail';
+import { customerDispatchEditRoute } from './modules/customer-dispatches/routes/edit';
 import { taskBoardRoute } from './modules/tasks/routes/board';
 import { dailyTaskReportsRoute } from './modules/daily-task-reports/routes/list';
 import { invoiceListRoute } from './modules/invoices/routes/list';
@@ -337,6 +338,7 @@ const routeTree = rootRoute.addChildren([
     customerDispatchListRoute,
     customerDispatchNewRoute,
     customerDispatchDetailRoute,
+    customerDispatchEditRoute,
     taskBoardRoute,
     dailyTaskReportsRoute,
     invoiceListRoute,
