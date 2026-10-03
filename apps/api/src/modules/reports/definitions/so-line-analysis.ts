@@ -130,6 +130,7 @@ export const soLineAnalysisReport: RegisteredReport = {
             FROM public.invoice_lines il
             JOIN public.invoices inv
               ON inv.id = il.invoice_id AND inv.deleted_at IS NULL
+              AND inv.status <> 'cancelled'
             WHERE il.sales_order_line_id = sol.id
               AND il.deleted_at IS NULL
           ), 0)::int AS invoiced

@@ -204,6 +204,12 @@ export interface DataTableProps<T> {
    * given. The column header is empty (read aloud as "Actions").
    */
   rowMenu?: ((row: T, index: number) => RowMenuItem[]) | undefined;
+  /** Accessible name of a row's ⋯ button, e.g. `Actions for line 3`. Every ⋯ is
+   *  called "Actions" by default, which is right when the row is a document the
+   *  screen names elsewhere. Give this when a screenful of rows is otherwise
+   *  indistinguishable to a screen reader — or to a test — and the row has a
+   *  number of its own to say. */
+  rowMenuLabel?: ((row: T, index: number) => string) | undefined;
   /** How a `rowMenu` item's `to` becomes an SPA link: `(p) => <Link {...p} />`. */
   renderLink?: RenderLink | undefined;
   /** % width of the Action column. Default 10% — budget the caller's own
@@ -284,7 +290,7 @@ export interface DataTableProps<T> {
   wrapClassName?: string | undefined;
   /** @deprecated `list` renders the retired unruled look — un-migrated screens only. */
   variant?: 'sheet' | 'list' | undefined;
-  /** Optional band of group labels above the column headers (ADR-209, Op Qty
+  /** Optional band of group labels above the column headers (ADR-212, Op Qty
    *  Flow). Each entry spans `span` columns; a short band is padded to cover
    *  every column. Drawn by the classic table only (not the fit engine, i.e.
    *  not with `tableKey`). Tables that do not pass it render exactly as before. */

@@ -107,3 +107,23 @@ export function useAddPayment(invoiceId: string) {
     },
   });
 }
+
+/**
+ * Cancel an invoice (ADR-202 Phase 3). An invoice is a statutory document, so it
+ * gets a reason-logged cancel instead of an edit screen — there is intentionally
+ * NO update hook. The reason is required and stored on the cancelled invoice.
+ * Invalidates the invoice detail + list + activity log so every view refreshes
+ * into the cancelled state.
+ */
+export function useCancelInvoice(invoiceId: string) {
+  const qc = useQueryClient();
+  return useMutation<InvoiceDetail, Error, { reason: string }>({
+    mutationFn: ({ reason }) =>
+      apiFetch<InvoiceDetail>(`/invoices/${invoiceId}/cancel`, { method: 'POST', json: { reason } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: invoiceKeys.detail(invoiceId) });
+      void qc.invalidateQueries({ queryKey: invoiceKeys.list() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
+  });
+}

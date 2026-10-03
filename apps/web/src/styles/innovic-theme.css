@@ -1964,7 +1964,7 @@ input[type='radio'] {
   flex: 0 0 auto;
 }
 
-/* ADR-209 — vertical separator between logical column groups (Op Qty Flow),
+/* ADR-212 — vertical separator between logical column groups (Op Qty Flow),
    and the optional group-label band DataTable draws above the headers. */
 .innovic-table th.vsep,
 .innovic-table td.vsep {

@@ -64,7 +64,8 @@ export async function getClientRelated(
       FROM public.invoices inv
       WHERE inv.company_id = ${companyId}::uuid AND inv.deleted_at IS NULL
         AND inv.client_id = ${id}::uuid
-        AND inv.status <> 'paid'
+        -- A cancelled invoice (ADR-202 Phase 3) carries no outstanding amount.
+        AND inv.status NOT IN ('paid', 'cancelled')
       ORDER BY inv.due_date ASC NULLS LAST, inv.code
       LIMIT ${MASTER_RELATED_ROW_CAP}
     `);

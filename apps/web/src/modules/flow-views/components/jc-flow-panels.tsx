@@ -1,6 +1,6 @@
 // Job Card page — two READ-ONLY flow panels (requirement 3.5, Problems 2.1/2.2):
 //
-//   Op Qty Flow   one reconciled row per op (ADR-209): Input · Done · Accepted ·
+//   Op Qty Flow   one reconciled row per op (ADR-212): Input · Done · Accepted ·
 //                 Deviated (NC) · Reworked · Rejected · Pending · Sent · Received ·
 //                 At Vendor · Check ✓, plus notes for NCs, rework loops and
 //                 reversed entries. (Passed On removed: Accepted is what moves on.)
@@ -51,7 +51,7 @@ function NcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
   );
 }
 
-/** ADR-209 — the Op Qty Flow table. One reconciled row per op:
+/** ADR-212 — the Op Qty Flow table. One reconciled row per op:
  *  Accepted + Rejected (final) + Deviated still open + At vendor + In QC +
  *  Pending = Input, so every row shows a Check ✓ (figures from the server; the
  *  screen only displays them). Vertical separators mark the logical groups. */

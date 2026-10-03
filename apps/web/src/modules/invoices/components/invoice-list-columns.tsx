@@ -17,6 +17,8 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
   unpaid: 'Unpaid',
   partial: 'Partly Paid',
   paid: 'Paid',
+  // ADR-202 Phase 3 — a reason-logged cancel replaces editing a statutory doc.
+  cancelled: 'Cancelled',
 };
 const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABEL).map(([value, label]) => ({
   value,

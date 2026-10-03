@@ -55,4 +55,12 @@ export async function invoicesRoutes(app: FastifyInstance): Promise<void> {
     reply.code(201);
     return result;
   });
+
+  // ADR-202 Phase 3: cancel an invoice (reason-logged cancel-and-reissue).
+  app.post('/invoices/:id/cancel', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = service.cancelInvoiceInputSchema.parse(req.body);
+    return service.cancelInvoice(id, body, req.user);
+  });
 }

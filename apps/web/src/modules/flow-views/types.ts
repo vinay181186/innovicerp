@@ -56,7 +56,7 @@ export interface OpFlowRow {
   reReceivedQty: number;
   /** Pieces still with the vendor now (v_jc_op_status.at_vendor_qty). */
   atVendorQty: number;
-  /** ADR-209 reconciled figures (one row per op; see flow-views getOpFlow). */
+  /** ADR-212 reconciled figures (one row per op; see flow-views getOpFlow). */
   /** Made (machine op) · inspected (QC op) · received back incl. re-sent lots (outsource). */
   doneQty: number;
   /** Good pieces that move on to the next op. */
@@ -97,7 +97,7 @@ export interface OpFlowResponse {
   jobCardCode: string;
   orderQty: number;
   ops: OpFlowRow[];
-  /** ADR-209: ordered = finished + Σ (pending + in QC + at vendor + deviated
+  /** ADR-212: ordered = finished + Σ (pending + in QC + at vendor + deviated
    *  open + rejected) over the ops; unaccounted 0 = ✓. Computed on the server. */
   jobCardCheck: {
     ordered: number;

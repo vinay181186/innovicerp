@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 
 // FULL JWSO → INVOICE CHAIN, driven end to end, plus deep element-behaviour
 // checks on the ADR-102 Party GRN guards shipped in 2335e94.
@@ -600,7 +600,7 @@ test('@chain 05 — plan and execute a Job Card for the JWSO line', async ({ pag
 
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3500);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(6000);
 
   state.jcCode = await codeOnPage(page, /IN-JC-\d{2}-\d+/);

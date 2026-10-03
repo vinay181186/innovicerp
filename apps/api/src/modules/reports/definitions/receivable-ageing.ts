@@ -89,6 +89,8 @@ export const receivableAgeingReport: RegisteredReport = {
           ON so.id = inv.sales_order_id AND so.deleted_at IS NULL
         WHERE inv.company_id = ${companyId}::uuid
           AND inv.deleted_at IS NULL
+          -- A cancelled invoice (ADR-202 Phase 3) is not a receivable.
+          AND inv.status <> 'cancelled'
           AND inv.invoice_date <= ${asOn}
           ${customerFrag}
       )

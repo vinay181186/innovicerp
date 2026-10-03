@@ -4,7 +4,8 @@
 // unchanged — this is the same code, relocated so both the SO list, the line
 // search and the per-order detail can share one copy.
 
-import type { PlanningLine, PlanningSoListItem } from '@innovic/shared';
+import { planningLineStatus } from '@innovic/shared';
+import type { PlanningLine, PlanningLineState, PlanningSoListItem } from '@innovic/shared';
 
 /** Which orders level 1 lists — a sales order or a job-work order. */
 export type Source = 'so' | 'jw';
@@ -48,9 +49,23 @@ export function JwChip(): JSX.Element {
   );
 }
 
+/** Each line state → the colour it is shown in. The COLOUR is all the web adds
+ *  to the shared rule: a token name means nothing on the server, so
+ *  `planningLineStatus()` (packages/shared) owns the state, the label and the
+ *  percentage, and this map owns nothing else. */
+const LINE_STATE_COLOR: Record<PlanningLineState, string> = {
+  in_production_no_plan: 'var(--cyan)',
+  in_planning: 'var(--amber)',
+  fully_planned: 'var(--green)',
+  partly_planned: 'var(--amber)',
+  unplanned: 'var(--text3)',
+};
+
 // Plan/line lifecycle → the status label + colour a line is shown with. ONE
-// helper, used by the line row AND the search-results row, so the two views
-// can never disagree about what a line's state is.
+// helper, used by the line table AND the search-results row, so the two views
+// can never disagree about what a line's state is — and it is now a thin
+// wrapper over `planningLineStatus()` in packages/shared, so the API and the
+// screen cannot disagree either (the rule used to be written out twice).
 //  - "executed" = work actually allocated: JC created, outsource/direct PR
 //    raised, in production, or complete.
 //  - covered but plan still a draft (in_planning/planned) → "In Planning"
@@ -64,35 +79,6 @@ export function lineStatusOf(line: PlanningLine): {
   pct: number;
   hasDirectJc: boolean;
 } {
-  const totalQty = line.orderQty;
-  const hasDirectJc = line.directJcQty > 0;
-  const planExecuted = (s: string): boolean =>
-    s === 'jc_created' || s === 'pr_created' || s === 'in_production' || s === 'complete';
-  const allPlansExecuted =
-    line.plans.length > 0 && line.plans.every((p) => planExecuted(p.planStatus));
-  const coveredByDraftPlans = line.remaining <= 0 && line.plans.length > 0 && !allPlansExecuted;
-
-  const coveredQty = Math.min(totalQty, line.totalPlanned + line.directJcQty);
-  const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
-  const label =
-    line.remaining <= 0
-      ? line.plans.length === 0 && hasDirectJc
-        ? 'In Production (no plan)'
-        : coveredByDraftPlans
-          ? 'In Planning'
-          : 'Fully Planned'
-      : line.plans.length > 0 || hasDirectJc
-        ? `Partly Planned (${line.remaining} pending)`
-        : 'Unplanned';
-  const color =
-    line.remaining <= 0
-      ? line.plans.length === 0 && hasDirectJc
-        ? 'var(--cyan)'
-        : coveredByDraftPlans
-          ? 'var(--amber)'
-          : 'var(--green)'
-      : line.plans.length > 0 || hasDirectJc
-        ? 'var(--amber)'
-        : 'var(--text3)';
-  return { label, color, pct, hasDirectJc };
+  const { state, label, pct, hasDirectJc } = planningLineStatus(line);
+  return { label, color: LINE_STATE_COLOR[state], pct, hasDirectJc };
 }

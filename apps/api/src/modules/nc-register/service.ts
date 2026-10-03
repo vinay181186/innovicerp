@@ -54,6 +54,7 @@ import {
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertRowUpdated } from '../../lib/row-lock';
+import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 import { labelOf } from '../../lib/status-labels';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
@@ -420,11 +421,10 @@ export async function listNcRegister(
     // one-challan-per-NC lock, ~L1368-1380): only a disposed return-to-vendor NC
     // with no challan yet. Kept in lock-step so the picker never offers an NC
     // that createNcDc would then refuse, and never a double return of the same
-    // qty. Absent/false = unchanged behaviour.
+    // qty. Absent/false = unchanged behaviour. ADR-211: the predicate lives in
+    // lib/rtv-predicates.ts, shared with GET /delivery-challans/rtv-candidates.
     const pendingRtvChallanFrag = input.pendingRtvChallan
-      ? sql`AND nc.disposition = 'return_to_vendor'::nc_disposition
-            AND nc.status = 'disposed'::nc_status
-            AND nc.delivery_challan_id IS NULL`
+      ? sql`AND ${rtvReadyForChallanSql('nc')}`
       : sql``;
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
@@ -1854,10 +1854,9 @@ export async function createNcDc(
   input: CreateNcDcInput,
   user: AuthContext,
 ): Promise<CreateNcDcResult> {
-  requireOpEntryRole(user);
-  // Two gates: it rewrites the NC (edit on NC Register) AND it raises an
-  // outward challan (entry on OSP DC & Outward).
-  await requireFormAccess(user, 'nc_dispose', 'edit');
+  // ADR-211: OSP Outward DC entry alone raises the return challan; disposing
+  // stays with QC (the NC was already disposed Return to Vendor by QC — this
+  // only books the challan and the NC's rtv ledger that follows from it).
   await requireFormAccess(user, 'ospdc_create', 'entry');
   const companyId = requireCompany(user);
 

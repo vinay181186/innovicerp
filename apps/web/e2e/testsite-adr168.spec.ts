@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
-import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickFirstRowMenuItem, planningLineRows, EDIT_PLAN_ITEM, clickPlanMenuItem } from './row-menu';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -848,8 +848,9 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   } else {
     // Re-open the existing plan for editing ("✏ Edit" while in_planning, "✏" once planned).
     log(`S12: re-opening ${s.planCode} (${planStatusNow}) for edit`);
-    const planRow = page.locator('div').filter({ hasText: s.planCode! }).filter({ has: page.getByRole('button', { name: /✏/ }) }).last();
-    await planRow.getByRole('button', { name: /✏/ }).first().click();
+    // ADR-209: the chip's ✏ button is gone — editing is the line's ⋯ item
+    // "<PLN-code> · Edit plan".
+    await clickPlanMenuItem(page, s.planCode!, EDIT_PLAN_ITEM);
     await page.waitForTimeout(1500);
   }
   await expect(page.locator('table.ops-routing')).toBeVisible({ timeout: 60_000 });

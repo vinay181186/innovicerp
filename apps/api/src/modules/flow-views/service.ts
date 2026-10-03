@@ -153,7 +153,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         SELECT opl.jc_op_id,
           COALESCE(SUM(grl.qc_accepted_qty), 0) AS acc,
           COALESCE(SUM(grl.qc_rejected_qty), 0) AS rej,
-          -- ADR-209: every receipt back from the vendor, incl. the GRN of a lot
+          -- ADR-212: every receipt back from the vendor, incl. the GRN of a lot
           -- re-sent for rework (return-to-vendor) — "Received" on the table.
           COALESCE(SUM(grl.received_qty), 0) AS recv
         FROM opl
@@ -179,7 +179,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
           GREATEST(0, COALESCE(SUM(nc.rtv_sent_qty - nc.rtv_received_qty) FILTER (
             WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL
               AND nc.status <> 'closed'), 0)) AS rtv_at_vendor,
-          -- ADR-209: deviated pieces an NC recovered and that were accepted
+          -- ADR-212: deviated pieces an NC recovered and that were accepted
           -- (rework / repair / use as is / return to vendor) — "Reworked".
           COALESCE(SUM(nc.cleared_qty), 0) AS cleared,
           -- Deviated pieces still waiting on an NC (open NCs: raised − recovered
@@ -261,7 +261,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
           : opType === 'outsource'
             ? ospAcc + qcAccepted
             : num(x['completed_raw']) + ospAcc;
-      // ADR-209 — one reconciled row per op. Every piece that reached the op
+      // ADR-212 — one reconciled row per op. Every piece that reached the op
       // (Input) is in exactly one place:
       //   Accepted + Rejected (final NC decision) + Deviated still open
       //   + At vendor + In QC + Pending  =  Input   -> Check ✓
