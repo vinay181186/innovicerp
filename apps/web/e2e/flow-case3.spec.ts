@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 import { createSO, dispatch, invoice, ITEM_CODE, makeGuard, makeLog, snap } from './case-helpers';
 
 // CASE 3 — FULL OUTSOURCE (plan_type=full_outsource): SO → Plan(Full Outsource)
@@ -47,7 +47,7 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   await snap(page, 'c3', '02-fo-filled');
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(4500);
   await snap(page, 'c3', '03-executed');
   const body = await page.locator('body').innerText();

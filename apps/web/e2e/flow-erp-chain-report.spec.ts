@@ -58,7 +58,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
-import { clickRowMenuItem, hasRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, hasRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 const WEB = 'C:/Innovic_projects/innovic-erp/wt-test/apps/web';
@@ -829,9 +829,7 @@ async function planAndExecute(
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-  const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
-  await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
-  await execBtn.click();
+  await executePlanFromMenu(page);
   await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });
   await page.waitForTimeout(1500);
   const body = await page.locator('body').innerText();

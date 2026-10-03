@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // FULLY AUTONOMOUS end-to-end: SO → plan(4 ops incl OSP) → execute → op logs →
@@ -104,7 +104,7 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(4500);
   const body2 = await page.locator('body').innerText();
   const jc = body2.match(/IN-JC-\d{2}-\d+/);
