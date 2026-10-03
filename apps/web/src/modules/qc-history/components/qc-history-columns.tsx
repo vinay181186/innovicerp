@@ -149,7 +149,7 @@ export function qcPendingColumns(): DataTableColumn<QcHistoryPendingRow>[] {
     ),
     numCol<QcHistoryPendingRow>(
       'rejected',
-      'Rejected',
+      'Deviated',
       (o) => o.qcRejected,
       'var(--red2)',
       'qcRejected',
@@ -181,7 +181,7 @@ export function qcEntryColumns(): DataTableColumn<QcHistoryLogRow>[] {
   return [
     ...leadColumns<QcHistoryLogRow>(),
     numCol<QcHistoryLogRow>('accepted', 'Accepted', (l) => l.accepted, 'var(--green2)', 'accepted'),
-    numCol<QcHistoryLogRow>('rejected', 'Rejected', (l) => l.rejected, 'var(--red2)', 'rejected'),
+    numCol<QcHistoryLogRow>('rejected', 'Deviated', (l) => l.rejected, 'var(--red2)', 'rejected'),
     {
       id: 'qc_date',
       kind: 'date',

@@ -49,7 +49,7 @@ function paretoColumns(pager: QcPager): DataTableColumn<QcParetoRow>[] {
     },
     {
       id: 'rejectedQty',
-      header: 'Rejected',
+      header: 'Deviated',
       align: 'right',
       nowrap: true,
       className: 'mono fw-700',
@@ -116,11 +116,11 @@ export function ParetoTab({
             color: 'var(--text2)',
           }}
         >
-          Top Rejection Reasons — Total: {pareto.totalCount} NCs, {pareto.totalQty} pcs rejected
+          Top Deviation Reasons — Total: {pareto.totalCount} NCs, {pareto.totalQty} pcs deviated
         </div>
         {pager.total === 0 ? (
           <div className="empty-state" style={{ color: 'var(--green2)' }}>
-            No rejections recorded yet.
+            No deviations recorded yet.
           </div>
         ) : (
           <DataTable

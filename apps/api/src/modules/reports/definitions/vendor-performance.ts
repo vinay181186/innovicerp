@@ -12,7 +12,7 @@ export const vendorPerformanceReport: RegisteredReport = {
     slug: 'vendor-performance',
     title: 'Vendor performance scorecard',
     description:
-      'Per vendor, for POs dated in the range (default: last 180 days; draft and cancelled POs left out): lines received, On-Time % (judged on the GRN that completes the line; an incomplete line past its Due Date counts late), Avg Days Late, and Incoming QC reject % for material POs and for OSP (job-work / service) POs.',
+      'Per vendor, for POs dated in the range (default: last 180 days; draft and cancelled POs left out): lines received, On-Time % (judged on the GRN that completes the line; an incomplete line past its Due Date counts late), Avg Days Late, and Incoming QC deviated % for material POs and for OSP (job-work / service) POs.',
     group: 'Purchase',
     dept: 'purchase',
     filters: [
@@ -28,11 +28,11 @@ export const vendorPerformanceReport: RegisteredReport = {
       { key: 'on_time_pct', label: 'On-Time %', type: 'number' },
       { key: 'avg_days_late', label: 'Avg Days Late', type: 'number' },
       { key: 'inspected_qty', label: 'Inspected', type: 'number' },
-      { key: 'rejected_qty', label: 'Rejected', type: 'number' },
-      { key: 'reject_pct', label: 'Reject %', type: 'number' },
+      { key: 'rejected_qty', label: 'Deviated', type: 'number' },
+      { key: 'reject_pct', label: 'Deviated %', type: 'number' },
       { key: 'osp_returned_qty', label: 'OSP Returned', type: 'number' },
-      { key: 'osp_rejected_qty', label: 'OSP Rejected', type: 'number' },
-      { key: 'osp_reject_pct', label: 'OSP Reject %', type: 'number' },
+      { key: 'osp_rejected_qty', label: 'OSP Deviated', type: 'number' },
+      { key: 'osp_reject_pct', label: 'OSP Deviated %', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {

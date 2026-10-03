@@ -1006,7 +1006,7 @@ async function writeProductionLog(
     }
     throw new ValidationError(
       input.rejectQty > 0
-        ? `Completed + Rejected (${input.qty + input.rejectQty}) cannot be more than Available (${snapshot.available}).`
+        ? `Completed + Deviated (${input.qty + input.rejectQty}) cannot be more than Available (${snapshot.available}).`
         : `Completed (${input.qty}) cannot be more than Available (${snapshot.available}).`,
     );
   }
@@ -1108,7 +1108,7 @@ async function writeProductionLog(
         operatorName: input.operatorName,
         detail:
           `${meta.code} ${jcOpRef(op.opSeq, meta.operation)} — ${input.qty} good, ` +
-          `${input.rejectQty} rejected${machinePart} (${row.logNo}, ${logWhen(input.logDate, input.logTime)})` +
+          `${input.rejectQty} deviated${machinePart} (${row.logNo}, ${logWhen(input.logDate, input.logTime)})` +
           (input.stopNote ?? ''),
       },
       companyId,
@@ -1317,7 +1317,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // capping it again would double-count the same restriction.
     if (total > qcPending) {
       throw new ValidationError(
-        `Accepted + Rejected (${total}) cannot be more than QC Pending (${qcPending}).`,
+        `Accepted + Deviated (${total}) cannot be more than QC Pending (${qcPending}).`,
       );
     }
 
@@ -1615,7 +1615,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
           operatorName: inspector,
           detail:
             `${jcCode} ${jcOpRef(op.opSeq, op.operation)} — ${kind}: ${input.qty} accepted, ` +
-            `${input.rejectQty} rejected (${row.logNo}, ${logWhen(input.logDate, input.logTime)})` +
+            `${input.rejectQty} deviated (${row.logNo}, ${logWhen(input.logDate, input.logTime)})` +
             (tpiPart === ' — ' ? '' : tpiPart) +
             (raisedNc ? `; ${raisedNc.ncCode} raised` : ''),
         },

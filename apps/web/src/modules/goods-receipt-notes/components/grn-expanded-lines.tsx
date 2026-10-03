@@ -83,7 +83,7 @@ export function GrnExpandedLines({ grnId }: { grnId: string }): React.JSX.Elemen
       },
       {
         id: 'rejected',
-        header: 'Rejected',
+        header: 'Deviated',
         align: 'right',
         nowrap: true,
         headColor: 'var(--red)',

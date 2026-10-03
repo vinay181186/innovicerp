@@ -172,6 +172,6 @@ export const submitIncomingQcInputSchema = z
     qcReportName: z.string().optional(),
   })
   .refine((v) => v.acceptedQty + v.rejectedQty > 0, {
-    message: 'Enter an accept and/or reject quantity',
+    message: 'Enter an accepted and/or deviated quantity',
   });
 export type SubmitIncomingQcInput = z.infer<typeof submitIncomingQcInputSchema>;

@@ -1303,7 +1303,7 @@ function DataSection() {
             items={[
               { key: 'a', label: 'Received', count: 120, color: 'var(--green2)' },
               { key: 'b', label: 'Balance', count: 30, color: 'var(--red2)' },
-              { key: 'c', label: 'Rejected', count: 0 },
+              { key: 'c', label: 'Deviated', count: 0 },
             ]}
           />
         </State>
@@ -1345,7 +1345,7 @@ function DataSection() {
               { label: 'Ordered', value: 120 },
               { label: 'Dispatched', value: 90, color: 'var(--green2)' },
               { label: 'Balance', value: 30, color: 'var(--red2)' },
-              { label: 'Rejected', value: 0, color: 'var(--text3)' },
+              { label: 'Deviated', value: 0, color: 'var(--text3)' },
             ]}
           />
         </State>
@@ -2256,7 +2256,7 @@ function LayoutSection() {
             <ReadField label="Ordered" value="120" mono />
             <ReadField label="Dispatched" value="90" mono />
             <ReadField label="Balance" value="30" mono />
-            <ReadField label="Rejected" value="0" mono />
+            <ReadField label="Deviated" value="0" mono />
           </ReadGrid>
         </State>
       </Panel>

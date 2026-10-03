@@ -108,7 +108,7 @@ export const partyGrnQcLineInputSchema = z
     rejectReason: z.string().trim().max(500).optional(),
   })
   .refine((l) => l.rejectedQty === 0 || (l.rejectReason?.length ?? 0) > 0, {
-    message: 'A reject reason is required when any quantity is rejected',
+    message: 'A deviation reason is required when any quantity is deviated',
     path: ['rejectReason'],
   });
 export const partyGrnQcInputSchema = z.object({

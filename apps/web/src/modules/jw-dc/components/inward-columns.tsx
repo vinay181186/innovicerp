@@ -74,7 +74,7 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
       id: 'rejected',
       sortFilterField: 'rejectedQty',
       kind: 'num',
-      header: 'Rejected',
+      header: 'Deviated',
       align: 'right',
       headColor: 'var(--red2)',
       className: 'mono',

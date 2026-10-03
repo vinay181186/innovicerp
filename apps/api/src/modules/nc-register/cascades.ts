@@ -405,7 +405,7 @@ export async function disposeNcCascade(
         refId: loaded.code,
         qty,
         changes: [
-          { field: 'rejectedQty', label: 'Rejected Qty', before: rejectedBefore, after: qty },
+          { field: 'rejectedQty', label: 'Deviated Qty', before: rejectedBefore, after: qty },
         ],
         detail:
           `${loaded.code} — ${qty} of ${rejectedBefore} pcs dispositioned; ` +
@@ -441,7 +441,7 @@ export async function disposeNcCascade(
   if (nc.jobCardId === null) {
     if (input.action !== 'scrap' && input.action !== 'return_to_vendor') {
       throw new ValidationError(
-        `NC ${nc.code} is a bought-material reject with no job card — it can only be Scrapped or Returned to Vendor.`,
+        `NC ${nc.code} is a bought-material deviation with no job card — it can only be Scrapped or Returned to Vendor.`,
       );
     }
     if (input.action === 'scrap') {
@@ -1115,7 +1115,7 @@ export async function autoCreateMaterialNcFromIqcReject(
     .returning({ id: ncRegister.id, code: ncRegister.code });
   const nc = inserted[0];
   if (!nc)
-    throw new ValidationError('Could not raise the NC for the rejected material. Try again.');
+    throw new ValidationError('Could not raise the NC for the deviated material. Try again.');
   await emitActivityLog(
     tx,
     {
@@ -1125,7 +1125,7 @@ export async function autoCreateMaterialNcFromIqcReject(
       refId: nc.code,
       qty: ctx.rejectedQty,
       operatorName: ctx.reportedByText,
-      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(3)} (bought material rejected at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
+      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(3)} (bought material deviated at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
     },
     ctx.companyId,
     user,
@@ -1158,7 +1158,7 @@ export async function autoCreateNcFromQcReject(
   user: AuthContext,
 ): Promise<AutoCreateNcResult> {
   if (ctx.rejectedQty <= 0) {
-    throw new ValidationError('Rejected Qty must be more than 0 to raise an NC.');
+    throw new ValidationError('Deviated Qty must be more than 0 to raise an NC.');
   }
 
   // Look up itemId + itemCode from the JC. NC requires itemId NOT NULL +
@@ -1300,7 +1300,7 @@ export async function autoCreateNcFromQcReject(
       refId: row.code,
       qty: row.rejectedQty,
       operatorName: ctx.reportedByText,
-      detail: `${row.code} — ${itemCode || '—'}, ${row.rejectedQty} pcs Rejected at QC (auto NC)`,
+      detail: `${row.code} — ${itemCode || '—'}, ${row.rejectedQty} pcs Deviated at QC (auto NC)`,
     },
     ctx.companyId,
     user,

@@ -152,7 +152,7 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
       id: 'rejected_qty',
       sortFilterField: 'rejectedQty',
       filterType: 'num',
-      header: 'Rejected',
+      header: 'Deviated',
       headColor: 'var(--red)',
       align: 'right',
       nowrap: true,

@@ -17,7 +17,7 @@ export const al009NcRecent: RegisteredAlert = {
       { key: 'nc_date', label: 'NC Date', type: 'date' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'item', label: 'Item Code', type: 'text' },
-      { key: 'rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'status', label: 'NC Status', type: 'text' },
     ],
     defaultActive: true,

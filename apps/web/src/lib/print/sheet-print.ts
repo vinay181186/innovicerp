@@ -628,7 +628,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         (showUomGrn ? '<td class="colh ctr" style="width:14mm">UOM</td>' : '') +
         '<td class="colh ctr" style="width:24mm">Received</td>' +
         '<td class="colh ctr" style="width:22mm">Accepted</td>' +
-        '<td class="colh ctr" style="width:22mm">Rejected</td>' +
+        '<td class="colh ctr" style="width:22mm">Deviated</td>' +
         '<td class="colh ctr" style="width:24mm">QC Status</td>'
       : '<td class="colh ctr" style="width:11mm">Sr No</td>' +
       polHead +

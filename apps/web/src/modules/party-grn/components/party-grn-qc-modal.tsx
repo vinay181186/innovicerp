@@ -90,13 +90,13 @@ export function PartyGrnQcModal({
       const rejRaw = e?.rejected.trim() ?? '';
       // A blank box is not a 0 — Number('') would quietly read it as one.
       if (accRaw === '' || rejRaw === '') {
-        setErr(`Line ${l.lineNo}: Enter Accepted and Rejected (0 if none).`);
+        setErr(`Line ${l.lineNo}: Enter Accepted and Deviated (0 if none).`);
         return;
       }
       const accepted = Number(accRaw);
       const rejected = Number(rejRaw);
       if (!Number.isInteger(accepted) || !Number.isInteger(rejected)) {
-        setErr(`Line ${l.lineNo}: Accepted and Rejected — whole numbers only.`);
+        setErr(`Line ${l.lineNo}: Accepted and Deviated — whole numbers only.`);
         return;
       }
       if (
@@ -106,12 +106,12 @@ export function PartyGrnQcModal({
         rejected < 0 ||
         accepted + rejected !== l.receivedQty
       ) {
-        setErr(`Line ${l.lineNo}: Accepted + Rejected must equal Received (${l.receivedQty}).`);
+        setErr(`Line ${l.lineNo}: Accepted + Deviated must equal Received (${l.receivedQty}).`);
         return;
       }
       const reason = e?.reason.trim() ?? '';
       if (rejected > 0 && !reason) {
-        setErr(`Line ${l.lineNo}: give a reject reason — ${rejected} rejected.`);
+        setErr(`Line ${l.lineNo}: give a deviation reason — ${rejected} deviated.`);
         return;
       }
       lines.push({
@@ -169,7 +169,7 @@ export function PartyGrnQcModal({
         <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
           JWSO <span className="mono fw-700">{row.jwCodeText ?? '—'}</span> ·{' '}
           {row.clientName ?? row.clientCodeText ?? '—'}. Only the accepted qty enters customer
-          stock; rejected pieces are held for return to the customer.
+          stock; deviated pieces are held for return to the customer.
         </div>
 
         {detailQ.isError ? (
@@ -195,8 +195,8 @@ export function PartyGrnQcModal({
                   <th className="th-num">
                     Accepted Qty<span className="req">★</span>
                   </th>
-                  <th className="th-num">Rejected Qty</th>
-                  <th>Reject Reason</th>
+                  <th className="th-num">Deviated Qty</th>
+                  <th>Deviation Reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -243,7 +243,7 @@ export function PartyGrnQcModal({
                           min={0}
                           step={1}
                           className="innovic-input"
-                          aria-label={`Rejected Qty, line ${l.lineNo}`}
+                          aria-label={`Deviated Qty, line ${l.lineNo}`}
                           value={e?.rejected ?? '0'}
                           onChange={(ev) => setEntry(l.id, { rejected: ev.target.value })}
                           style={{ maxWidth: '12ch' }}
@@ -253,7 +253,7 @@ export function PartyGrnQcModal({
                         <input
                           type="text"
                           className="innovic-input"
-                          aria-label={`Reject Reason, line ${l.lineNo}`}
+                          aria-label={`Deviation Reason, line ${l.lineNo}`}
                           autoComplete="off"
                           disabled={!(rejectedNum > 0)}
                           placeholder={rejectedNum > 0 ? 'Required' : ''}

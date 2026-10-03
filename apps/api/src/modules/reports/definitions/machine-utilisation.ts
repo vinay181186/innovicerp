@@ -17,7 +17,7 @@ export const machineUtilisationReport: RegisteredReport = {
     slug: 'machine-utilisation',
     title: 'Machine utilisation',
     description:
-      'Per machine for the date range (last 7 days when no dates are set): Available Hours = days × Shifts/Day × 8 h (an assumed 8-hour shift), Run Hours = Op Entry run sessions on that machine clipped to the range (a session still running counts up to now), Utilisation % = Run ÷ Available. Output and Rejected are the completion entries logged on the machine in the range.',
+      'Per machine for the date range (last 7 days when no dates are set): Available Hours = days × Shifts/Day × 8 h (an assumed 8-hour shift), Run Hours = Op Entry run sessions on that machine clipped to the range (a session still running counts up to now), Utilisation % = Run ÷ Available. Output and Deviated are the completion entries logged on the machine in the range.',
     group: 'Production',
     dept: 'production',
     filters: [
@@ -33,8 +33,8 @@ export const machineUtilisationReport: RegisteredReport = {
       { key: 'run_hours', label: 'Run Hours', type: 'number' },
       { key: 'utilisation_pct', label: 'Utilisation %', type: 'number' },
       { key: 'output_qty', label: 'Completed', type: 'number' },
-      { key: 'reject_qty', label: 'Rejected', type: 'number' },
-      { key: 'reject_pct', label: 'Reject %', type: 'number' },
+      { key: 'reject_qty', label: 'Deviated', type: 'number' },
+      { key: 'reject_pct', label: 'Deviated %', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {

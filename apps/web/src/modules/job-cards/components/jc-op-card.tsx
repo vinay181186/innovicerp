@@ -304,7 +304,7 @@ export function JcOpCard({
       ? ` → Op ${reworkOutSrNos}`
       : '';
   const reworkOut = op.reworkRaisedQty > 0 && reworkOutTo !== '';
-  const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op ${reworkOutSrNos} for rework. Clears when the NC is closed.`;
+  const reworkOutTitle = `${op.reworkRaisedQty} piece(s) deviated here and sent back to Op ${reworkOutSrNos} for rework. Clears when the NC is closed.`;
 
   // Start / End stamps. The DATES are the server's (op.firstLogDate = earliest
   // entry of any kind, op.lastLogDate = latest completion / QC entry — the same
@@ -563,7 +563,7 @@ export function JcOpCard({
               with what became of them underneath — the ✗ / ♻ lines the
               DONE tile used to carry. */}
           <QtyChip
-            label="Rejected"
+            label="Deviated"
             value={op.qcRejectedQty}
             color={op.qcRejectedQty > 0 ? 'var(--red)' : 'var(--text3)'}
             sub={
@@ -689,7 +689,7 @@ export function JcOpCard({
                       <span className="badge b-green">Accepted {op.qcAcceptedQty}</span>
                     ) : null}
                     {op.qcRejectedQty > 0 ? (
-                      <span className="badge b-red">Rejected {op.qcRejectedQty}</span>
+                      <span className="badge b-red">Deviated {op.qcRejectedQty}</span>
                     ) : null}
                   </span>
                 )}
@@ -804,7 +804,7 @@ export function JcOpCard({
                           looked like an ordinary good day (ADR-183). */}
                   {l.rejectQty > 0 ? (
                     <>
-                      {' · Rejected '}
+                      {' · Deviated '}
                       <b style={{ color: 'var(--red2)' }}>{l.rejectQty}</b>
                     </>
                   ) : null}

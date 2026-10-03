@@ -52,7 +52,7 @@ type Verdict = 'ACCEPTED' | 'PARTIAL' | 'REJECTED';
 const VERDICT_LABEL: Record<Verdict, string> = {
   ACCEPTED: 'Accepted',
   PARTIAL: 'Partly Accepted',
-  REJECTED: 'Rejected',
+  REJECTED: 'Deviated',
 };
 
 function itemCodeOf(vm: CompletedVM): string {
@@ -240,7 +240,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'rejected',
-      header: 'Rejected',
+      header: 'Deviated',
       align: 'right',
       nowrap: true,
       headColor: 'var(--red)',

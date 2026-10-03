@@ -14,7 +14,7 @@ export const firstPassYieldReport: RegisteredReport = {
     slug: 'first-pass-yield',
     title: 'First-pass yield',
     description:
-      'Per item and op: Worked (Completed + Production Rejected), Rejected at QC on the same op, and First-Pass Yield % = (Completed − Rejected) ÷ Worked, with the machines actually used. Rework / repair job cards and NC re-entries are left out.',
+      'Per item and op: Worked (Completed + Production Deviated), Deviated at QC on the same op, and First-Pass Yield % = (Completed − Deviated) ÷ Worked, with the machines actually used. Rework / repair job cards and NC re-entries are left out.',
     group: 'Quality',
     dept: 'qc',
     filters: [
@@ -36,10 +36,10 @@ export const firstPassYieldReport: RegisteredReport = {
       { key: 'machines_used', label: 'Machines Used', type: 'text' },
       { key: 'worked_qty', label: 'Worked', type: 'number' },
       { key: 'completed_qty', label: 'Completed', type: 'number' },
-      { key: 'production_rejected_qty', label: 'Production Rejected', type: 'number' },
+      { key: 'production_rejected_qty', label: 'Production Deviated', type: 'number' },
       // NAMING.md: 'Rejected' is the inspection fact; the production-entry
       // reject is the separate 'Production Rejected'.
-      { key: 'qc_rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'qc_rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'fpy_pct', label: 'First-Pass Yield %', type: 'number' },
     ],
   },

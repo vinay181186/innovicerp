@@ -158,7 +158,7 @@ export function goodsReceiptNoteListColumns(
       id: 'rejected',
       sortFilterField: 'totalQcRejectedQty',
       filterType: 'num',
-      header: 'Rejected',
+      header: 'Deviated',
       align: 'right',
       nowrap: true,
       headColor: 'var(--red)',

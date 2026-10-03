@@ -64,7 +64,7 @@ export function CancelCmrModal({
         <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
           Brings <b style={{ color: 'var(--green2)' }}>{row.totalQty}</b> back into the store for{' '}
           <b>{row.jwCode ?? 'this JWSO'}</b>: good material returns to the customer-material
-          register, rejected pieces go back to held on their Party GRN. Cannot be undone.
+          register, deviated pieces go back to held on their Party GRN. Cannot be undone.
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="cmr-cancel-reason">

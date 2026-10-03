@@ -14,7 +14,7 @@ import type { DataTableColumn } from '@/ui/data';
 /** The two kinds of returned line, in the words the store uses. */
 export const CMR_KIND_LABEL: Record<CustomerMaterialReturnKind, string> = {
   good: 'Good — spare',
-  rejected: 'Rejected at QC',
+  rejected: 'Deviated at QC',
 };
 
 const STATUS_OPTIONS = [

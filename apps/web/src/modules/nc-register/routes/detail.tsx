@@ -434,7 +434,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
           items={[
             {
               key: 'rejected',
-              label: 'Rejected',
+              label: 'Deviated',
               count: Number(detail.rejectedQty),
               color: 'var(--red2)',
               title: 'Pieces this NC covers',
@@ -458,7 +458,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               label: 'Open',
               count: ncOpenQty(detail),
               color: 'var(--blue)',
-              title: 'Rejected − Cleared − Rejected Again',
+              title: 'Deviated − Cleared − Rejected Again',
             },
             ...(isRtv
               ? [

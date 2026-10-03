@@ -11,9 +11,9 @@ import { isoDateFilter, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 export const vendorRejectionReport: RegisteredReport = {
   definition: {
     slug: 'vendor-rejection',
-    title: 'Vendor rejection report',
+    title: 'Vendor deviation report',
     description:
-      'Per vendor and item, split Material / OSP: Received, Inspected and Rejected at Incoming QC, Reject %, and the count of NCs raised on those GRN lines. By GRN Date.',
+      'Per vendor and item, split Material / OSP: Received, Inspected and Deviated at Incoming QC, Deviated %, and the count of NCs raised on those GRN lines. By GRN Date.',
     group: 'Quality',
     dept: 'qc',
     filters: [
@@ -28,8 +28,8 @@ export const vendorRejectionReport: RegisteredReport = {
       { key: 'source', label: 'Receipt Source', type: 'text' },
       { key: 'received_qty', label: 'Received', type: 'number' },
       { key: 'inspected_qty', label: 'Inspected', type: 'number' },
-      { key: 'rejected_qty', label: 'Rejected', type: 'number' },
-      { key: 'reject_pct', label: 'Reject %', type: 'number' },
+      { key: 'rejected_qty', label: 'Deviated', type: 'number' },
+      { key: 'reject_pct', label: 'Deviated %', type: 'number' },
       { key: 'nc_count', label: 'NCs', type: 'number' },
     ],
   },

@@ -213,7 +213,7 @@ export const goodsReceiptNoteLineInputSchema = z
     message: 'itemId or itemCodeText is required (per ADR-012 #10)',
   })
   .refine((l) => l.qcAcceptedQty + l.qcRejectedQty <= l.receivedQty, {
-    message: 'qcAcceptedQty + qcRejectedQty cannot exceed receivedQty',
+    message: 'Accepted + Deviated cannot be more than Received',
   });
 export type GoodsReceiptNoteLineInput = z.infer<typeof goodsReceiptNoteLineInputSchema>;
 

@@ -228,11 +228,11 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   <span
                     className="mono"
                     style={{ fontSize: 12, color: l.qty < 0 ? 'var(--red2)' : undefined }}
-                    title="Completed / Rejected"
+                    title="Completed / Deviated"
                   >
                     {l.qty}
                     {l.rejectQty ? (
-                      <span style={{ color: 'var(--red2)' }}> · Rejected {l.rejectQty}</span>
+                      <span style={{ color: 'var(--red2)' }}> · Deviated {l.rejectQty}</span>
                     ) : null}
                   </span>
                   {/* Row action — edit / approve / reject. Logic preserved from

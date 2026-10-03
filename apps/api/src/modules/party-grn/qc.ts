@@ -87,11 +87,13 @@ export async function qcPartyGrn(
       }
       if (q.acceptedQty + q.rejectedQty !== l.receivedQty) {
         throw new ValidationError(
-          `${at}: Accepted (${q.acceptedQty}) + Rejected (${q.rejectedQty}) must equal Received (${l.receivedQty}).`,
+          `${at}: Accepted (${q.acceptedQty}) + Deviated (${q.rejectedQty}) must equal Received (${l.receivedQty}).`,
         );
       }
       if (q.rejectedQty > 0 && !(q.rejectReason ?? '').trim()) {
-        throw new ValidationError(`${at}: give a reject reason for the ${q.rejectedQty} rejected.`);
+        throw new ValidationError(
+          `${at}: give a deviation reason for the ${q.rejectedQty} deviated.`,
+        );
       }
       if (!l.jwLineId || !l.partyMaterialId) {
         throw new ValidationError(
@@ -158,7 +160,7 @@ export async function qcPartyGrn(
       if (accepted > jwLine.orderQty) {
         throw new ConflictError(
           `${at}: accepting ${q.acceptedQty} would take ${jwLine.jwCode} Ln ${jwLine.lineNo} to ` +
-            `${accepted} accepted against an Order Qty of ${jwLine.orderQty}. Reject the extra pieces.`,
+            `${accepted} accepted against an Order Qty of ${jwLine.orderQty}. Mark the extra pieces Deviated.`,
         );
       }
 
@@ -195,7 +197,7 @@ export async function qcPartyGrn(
           qty: q.acceptedQty,
           detail:
             `${l.partyMaterialCodeText} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${l.receivedQty}, ` +
-            `${q.acceptedQty} accepted, ${q.rejectedQty} rejected` +
+            `${q.acceptedQty} accepted, ${q.rejectedQty} deviated` +
             (q.rejectedQty > 0 ? ` (${(q.rejectReason ?? '').trim()})` : ''),
         },
         companyId,

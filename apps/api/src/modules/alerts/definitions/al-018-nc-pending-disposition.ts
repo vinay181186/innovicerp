@@ -16,7 +16,7 @@ export const al018NcPendingDisposition: RegisteredAlert = {
       { key: 'nc_date', label: 'NC Date', type: 'date' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'item', label: 'Item Code', type: 'text' },
-      { key: 'rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'reason_category', label: 'Reason', type: 'text' },
     ],
     defaultActive: true,

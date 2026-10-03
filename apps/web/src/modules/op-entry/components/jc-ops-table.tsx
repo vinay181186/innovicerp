@@ -224,7 +224,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                               fontWeight: 700,
                               marginLeft: 3,
                             }}
-                            title="Rejected at inspection"
+                            title="Deviated at inspection"
                           >
                             ✗{op.qcRejectedQty}
                           </span>

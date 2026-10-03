@@ -67,8 +67,8 @@ export function DcReceiptsPanel({
                     <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Item Code · Name</th>
                     <th className="th-num">Received</th>
-                    <th className="th-num">Rejected</th>
-                    <th>Rejection Reason</th>
+                    <th className="th-num">Deviated</th>
+                    <th>Deviation Reason</th>
                   </tr>
                 </thead>
                 <tbody>

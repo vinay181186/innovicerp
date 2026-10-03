@@ -97,7 +97,7 @@ export function ReverseOpLogModal({
           ) : null}
         </Fact>
         <Fact label="Log No.">{row.logNo}</Fact>
-        <Fact label="Completed / Rejected">
+        <Fact label="Completed / Deviated">
           <span style={{ color: 'var(--green2)' }}>{row.qty}</span>
           <span className="text3"> / </span>
           <span style={{ color: row.rejectQty > 0 ? 'var(--red2)' : 'var(--text3)' }}>

@@ -477,7 +477,7 @@ export async function createPartyGrn(
         throw new ValidationError(
           `${line.jwCode} Ln ${line.lineNo}: Received (${qty}) cannot be more than Pending (${open}) — ` +
             `Order Qty ${line.orderQty}, already received ${already} (accepted, or waiting for Incoming QC). ` +
-            `Rejected pieces do not count.`,
+            `Deviated pieces do not count.`,
         );
       }
     }
@@ -646,7 +646,7 @@ export async function cancelPartyGrn(
     const sentBack = lines.filter((l) => l.rejectedReturnedQty > 0);
     if (sentBack.length > 0) {
       throw new ConflictError(
-        `Cannot cancel ${head.code}: rejected pieces of ` +
+        `Cannot cancel ${head.code}: deviated pieces of ` +
           sentBack.map((l) => `Ln ${l.lineNo} (${l.rejectedReturnedQty})`).join(', ') +
           ` were already sent back on a Customer Material Return. Cancel that return first.`,
       );
@@ -905,7 +905,7 @@ export async function updatePartyGrnTx(
         throw new ConflictError(
           `${at}: Received (${li.receivedQty}) cannot be more than Pending (${open}) — ` +
             `Order Qty ${jwLine.orderQty}, already ${committedOther} on other lines ` +
-            `(accepted, or waiting for Incoming QC). Rejected pieces do not count.`,
+            `(accepted, or waiting for Incoming QC). Deviated pieces do not count.`,
         );
       }
       if (current.partyMaterialId) {

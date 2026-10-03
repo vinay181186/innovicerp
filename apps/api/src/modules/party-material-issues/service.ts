@@ -443,7 +443,7 @@ export async function cancelPartyMaterialIssue(
       if (netAfter < jcm.used) {
         throw new ValidationError(
           `Cannot cancel ${iss.code}: ${jcm.used} piece(s) have already been used on ` +
-            `${iss.jcCodeText ?? 'this JC'} (good + rejected on the first operation, plus any ` +
+            `${iss.jcCodeText ?? 'this JC'} (good + deviated on the first operation, plus any ` +
             `pieces sent out to an OSP vendor) against ` +
             `${jcm.netIssued} issued. Cancelling would leave it short by ${jcm.used - netAfter}. ` +
             `Return the unused pieces to store instead.`,
@@ -547,7 +547,7 @@ export async function returnPartyMaterialIssueToStore(
         throw new ValidationError(
           `Return Qty (${input.qty}) cannot be more than the unused material still on ` +
             `${iss.jcCodeText ?? 'the JC'} (${Math.max(0, onJc)}) — issued ${jcm.netIssued} (net of returns), ` +
-            `already used ${jcm.used} (good + rejected on the first operation, plus any pieces ` +
+            `already used ${jcm.used} (good + deviated on the first operation, plus any pieces ` +
             `sent out to an OSP vendor — those are with the vendor, not on the shelf).`,
         );
       }

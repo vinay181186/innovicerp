@@ -1202,7 +1202,7 @@ export async function getNcRegisterRelated(
     // ── Related sections (lateral soft links) ───────────────────────────────
     const siblingSection = section(
       'sibling-nc',
-      'Split NCs (same rejection)',
+      'Split NCs (same deviation)',
       '⚠',
       'nc',
       siblingRows.map((r) =>
@@ -1335,7 +1335,7 @@ export async function createNcRegister(
       .from(items)
       .where(eq(items.id, input.itemId))
       .limit(1);
-    const uomProblem = qtyUomProblem(input.rejectedQty, uomRows[0]?.uom ?? null, 'Rejected Qty');
+    const uomProblem = qtyUomProblem(input.rejectedQty, uomRows[0]?.uom ?? null, 'Deviated Qty');
     if (uomProblem) throw new ValidationError(uomProblem);
 
     // 0184 — the real SO link. A picked SO (soId) must be a live SO of this
