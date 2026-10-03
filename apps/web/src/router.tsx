@@ -98,6 +98,7 @@ import { planNewRoute } from './modules/plans/routes/new';
 import { productionOrdersListRoute } from './modules/production-orders/routes/list';
 import { productionOrderNewRoute } from './modules/production-orders/routes/new';
 import { productionOrderCloseRoute } from './modules/production-orders/routes/close';
+import { productionOrderEditRoute } from './modules/production-orders/routes/edit';
 import { productionOrderDetailRoute } from './modules/production-orders/routes/detail';
 import { purchaseOrdersListRoute } from './modules/purchase-orders/routes/list';
 import { purchaseOrderDetailRoute } from './modules/purchase-orders/routes/detail';
@@ -240,6 +241,7 @@ const routeTree = rootRoute.addChildren([
     productionOrdersListRoute,
     productionOrderNewRoute,
     productionOrderCloseRoute,
+    productionOrderEditRoute,
     productionOrderDetailRoute,
     assemblyListRoute,
     assemblyDetailRoute,

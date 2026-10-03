@@ -144,6 +144,8 @@ export async function getPendingSoValue(
         FROM public.invoices
         WHERE company_id = ${companyId}::uuid
           AND deleted_at IS NULL
+          -- A cancelled invoice (ADR-202 Phase 3) has no invoiced / outstanding value.
+          AND status <> 'cancelled'
         GROUP BY sales_order_id
       ),
       psv AS (

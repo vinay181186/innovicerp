@@ -125,6 +125,16 @@ const OSP_MOVED_STATUSES: ReadonlySet<string> = new Set(['po_created', 'sent', '
 //     cmJcUsed            first op's Σ (qty + reject_qty) on 'complete' rows —
 //                         a rejected piece used up its material too (ADR-183).
 //                         NC re-injections (LOG-NC-…) are not new material.
+//                         PLUS the first op's outsource_sent_qty (ADR-208):
+//                         pieces sent out on an OSP Outward DC are consumed too.
+//                         The challan is stock-neutral (ADR-067) and an
+//                         outsourced op never carries a 'complete' op_log row,
+//                         so without this term an outsourced first op reported
+//                         its material as still sitting on the card for ever.
+//                         MUST stay identical to jcMaterial().used in
+//                         party-material-issues/register.ts — the Return to
+//                         store / Cancel Issue caps read that one, and the caps
+//                         and this panel have to show the same number.
 const JC_CUSTOMER_MATERIAL_SELECT = sql`
         COALESCE((SELECT SUM(pgl.accepted_qty)
           FROM public.party_grn_lines pgl
@@ -150,7 +160,10 @@ const JC_CUSTOMER_MATERIAL_SELECT = sql`
                                WHERE o.job_card_id = jc.id AND o.deleted_at IS NULL
                                ORDER BY o.op_seq LIMIT 1)
             AND l.log_type = 'complete'
-            AND l.log_no NOT LIKE '%LOG-NC-%'), 0) END::int AS "cmJcUsed",
+            AND l.log_no NOT LIKE '%LOG-NC-%'), 0)
+          + COALESCE((SELECT o.outsource_sent_qty FROM public.jc_ops o
+                       WHERE o.job_card_id = jc.id AND o.deleted_at IS NULL
+                       ORDER BY o.op_seq LIMIT 1), 0) END::int AS "cmJcUsed",
 `;
 
 /** The JC customer-material panel (ADR-203). The first five fields are the
@@ -158,7 +171,9 @@ const JC_CUSTOMER_MATERIAL_SELECT = sql`
  *  register figures (received = accepted on the line, issued = issued on the
  *  line net of returns to store, returned = good returned to the customer,
  *  balance = the line's register balance) and Needed = this card's qty (1
- *  piece per part, owner D1). The four extra fields are THIS card's figures. */
+ *  piece per part, owner D1). The four extra fields are THIS card's figures.
+ *  `usedQty` now includes pieces sent out to an OSP vendor from the first op
+ *  (ADR-208), so `onJcQty` is what is genuinely on the shelf. */
 type JcCustomerMaterial = NonNullable<JobCardListItem['customerMaterial']> & {
   issuedToJcQty: number;
   returnedToStoreQty: number;
@@ -1247,7 +1262,7 @@ export async function getJobCardStatusExtras(
         WHERE j.id = ${id}::uuid AND j.company_id = ${companyId}::uuid
       ),
       first_op AS (
-        SELECT o.id FROM public.jc_ops o
+        SELECT o.id, o.outsource_sent_qty FROM public.jc_ops o
         WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
         ORDER BY o.op_seq LIMIT 1
       )
@@ -1258,10 +1273,16 @@ export async function getJobCardStatusExtras(
         -- (the same figures as the JC customer-material panel).
         COALESCE((SELECT SUM(mi.qty - mi.returned_to_store_qty) FROM public.party_material_issues mi
                   WHERE mi.job_card_id = jc.id AND mi.deleted_at IS NULL), 0)::int AS "issued",
-        COALESCE((SELECT SUM(l.qty + l.reject_qty) FROM public.op_log l
+        -- ADR-208: pieces sent OUT from the first op are consumed as well — the
+        -- OSP Outward DC is stock-neutral (ADR-067) and only bumps this column,
+        -- and an outsourced op can never carry a 'complete' op_log row. Without
+        -- it this chip invited work on pieces that are not in the building.
+        -- Same term as jcMaterial().used and the panel's "cmJcUsed".
+        (COALESCE((SELECT SUM(l.qty + l.reject_qty) FROM public.op_log l
                   WHERE l.jc_op_id = (SELECT id FROM first_op)
                     AND l.log_type = 'complete'
-                    AND l.log_no NOT LIKE '%LOG-NC-%'), 0)::int AS "consumed"
+                    AND l.log_no NOT LIKE '%LOG-NC-%'), 0)
+         + COALESCE((SELECT outsource_sent_qty FROM first_op), 0))::int AS "consumed"
       FROM jc
       WHERE jc.gated = true
     `)) as unknown as Array<{ jwCode: string | null; issued: number; consumed: number }>;

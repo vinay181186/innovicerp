@@ -1153,7 +1153,8 @@ export async function cancelDispatch(
             SELECT SUM(il.qty) FROM public.invoice_lines il
             JOIN public.invoices inv ON inv.id = il.invoice_id
             WHERE il.sales_order_line_id = sol.id
-              AND inv.deleted_at IS NULL AND il.deleted_at IS NULL
+              AND inv.deleted_at IS NULL AND inv.status <> 'cancelled'
+              AND il.deleted_at IS NULL
           ), 0)::int AS invoiced
         FROM public.sales_order_lines sol
         WHERE sol.id = ${l.salesOrderLineId}::uuid
@@ -1338,7 +1339,8 @@ export async function updateCustomerDispatchTx(
           SELECT SUM(il.qty) FROM public.invoice_lines il
           JOIN public.invoices inv ON inv.id = il.invoice_id
           WHERE il.sales_order_line_id = sol.id
-            AND inv.deleted_at IS NULL AND il.deleted_at IS NULL
+            AND inv.deleted_at IS NULL AND inv.status <> 'cancelled'
+            AND il.deleted_at IS NULL
         ), 0)::int AS invoiced
       FROM public.sales_order_lines sol
       WHERE sol.id = ${c.salesOrderLineId}::uuid

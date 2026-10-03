@@ -215,6 +215,11 @@ export const invoiceDetailSchema = invoiceRowSchema.extend({
   /** The customer's PO number (`Client PO No.`), read live off the sales order
    *  this invoice bills (sales_orders.client_po_no). Null when not captured. */
   clientPoNo: z.string().nullable().default(null),
+  /** ADR-202 Phase 3 — reason-logged cancel (an invoice is never edited). All
+   *  null on a live invoice. `cancelledBy` is the canceller's resolved name. */
+  cancelledAt: z.string().nullable().default(null),
+  cancelledBy: z.string().nullable().default(null),
+  cancelReason: z.string().nullable().default(null),
   lines: z.array(invoiceLineRowSchema),
   payments: z.array(invoicePaymentRowSchema),
 });

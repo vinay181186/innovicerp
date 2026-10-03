@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { createSO, makeGuard, makeLog, snap } from './case-helpers';
-import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 
 // CASE 5 — QC OPERATION (in-house + TPI). Build a JC with a process op + a TPI
 // QC op; op-log the process, then do the in-house QC on the TPI op (accept +
@@ -58,7 +58,7 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await snap(page, 'c5', '01-plan-tpi');
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(4500);
   const jc = ((await page.locator('body').innerText()).match(/IN-JC-\d{2}-\d+/) || [''])[0];
   if (jc) log('IN-JC', jc);

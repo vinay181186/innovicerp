@@ -56,6 +56,7 @@
 //     credit nothing for a PO-linked JC; the only credit is the close below.
 
 import { ActivityAction, PRODUCTION_ORDER_STATUS_LABEL } from '@innovic/shared';
+import type { DocumentEditStagedResult, ProductionOrderStatus } from '@innovic/shared';
 import { and, asc, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -81,6 +82,9 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { diffFields, type DiffField } from '../../lib/audit-trail';
+import { fmtDate } from '../../lib/format-date';
 import {
   createReservation,
   readLineItemId,
@@ -109,6 +113,7 @@ import type {
   ProductionOrderListItem,
   ReverseProductionOrderCloseInput,
   ShortCloseProductionOrderInput,
+  UpdateProductionOrderInput,
 } from './schema';
 
 const PO_PREFIX = 'IN-PRO-';
@@ -735,6 +740,201 @@ export async function getNextProductionOrderCode(
   return withUserContext(user, async (tx) => ({
     code: await nextProductionOrderCode(tx, companyId),
   }));
+}
+
+// ─── Edit header (ADR-202 Phase 3, edit-approval) ──────────────────────────
+//
+// HEADER level only. order_qty is reduced with Short Close, never edited (it
+// drives the plan SUM-cap, the Job Card qty snapshot, reservations and the
+// credited / close math), and the identity / status / close fields never change.
+
+/** An order still being made is editable — open or partly closed. A closed or
+ *  short-closed order is frozen (its qty / credit math is settled). Mirrors
+ *  productionOrderEditRegistryEntry.isLive and plans' EDITABLE_STATUSES. */
+export const PRODUCTION_ORDER_EDITABLE_STATUSES: readonly ProductionOrderStatus[] = [
+  'open',
+  'partially_closed',
+];
+
+/** The header fields an Edit compares / stages (screen labels). Qty is NOT here
+ *  (Short Close only); identity / status / close fields are not editable. */
+export const PRODUCTION_ORDER_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'remarks', label: 'Remarks' },
+  {
+    key: 'targetDate',
+    label: 'PRO Target Date',
+    format: (v) => (v == null || v === '' ? null : fmtDate(String(v))),
+  },
+  { key: 'actualSize', label: 'Actual Size' },
+  {
+    key: 'rawMaterialAvailable',
+    label: 'Raw Material Available',
+    format: (v) => (v == null ? null : v ? 'Yes' : 'No'),
+  },
+];
+
+/**
+ * The body of a Production Order header edit, inside a caller-supplied
+ * transaction. Called by updateProductionOrder (which opens the tx) and by the
+ * edit-approval engine's applyEdit (which already holds one). Every §20 guard
+ * lives here: the PO row FOR UPDATE lock, assertUnchangedSinceOpened, the
+ * conditional status write and the explicit updated_at bump. The caller performs
+ * the edit / approve access check.
+ */
+export async function updateProductionOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateProductionOrderInput,
+  user: AuthContext,
+): Promise<ProductionOrderDetail> {
+  const companyId = requireCompany(user);
+  // §20.3 FOR UPDATE: an edit must not race a Close / Short Close on the same
+  // order. The second waits, re-reads the status below, and is refused.
+  const existing = await tx
+    .select()
+    .from(productionOrders)
+    .where(
+      and(
+        eq(productionOrders.id, id),
+        eq(productionOrders.companyId, companyId),
+        isNull(productionOrders.deletedAt),
+      ),
+    )
+    .limit(1)
+    .for('update');
+  const row = existing[0];
+  if (!row) throw new NotFoundError('Production Order not found. Refresh the page.');
+  // §20.4 — refuse the save if someone changed the order after the form opened it.
+  assertUnchangedSinceOpened(row.updatedAt, input.expectedUpdatedAt);
+
+  const status = row.status as ProductionOrderStatus;
+  if (!PRODUCTION_ORDER_EDITABLE_STATUSES.includes(status)) {
+    throw new ValidationError(
+      `Production Order ${row.code} is ${labelOf(PRODUCTION_ORDER_STATUS_LABEL, status)} and can no longer be edited.`,
+    );
+  }
+
+  // The order's qty is NOT editable — it is reduced with Short Close, never an
+  // edit, because order_qty drives the plan SUM-cap, the Job Card snapshot,
+  // reservations and the credited / close math. Refuse a changed value loudly
+  // rather than dropping it silently.
+  if (input.orderQty !== undefined && input.orderQty !== row.orderQty) {
+    throw new ConflictError('Change the Production Order quantity with Short Close, not edit.');
+  }
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.remarks !== undefined) updates['remarks'] = input.remarks ?? null;
+  if (input.targetDate !== undefined) updates['targetDate'] = input.targetDate;
+  if (input.actualSize !== undefined)
+    updates['actualSize'] = input.actualSize?.trim() ? input.actualSize.trim() : null;
+  if (input.rawMaterialAvailable !== undefined)
+    updates['rawMaterialAvailable'] = input.rawMaterialAvailable;
+
+  // ADR-197 — before → after of the editable header fields, read from the row
+  // as it was BEFORE this UPDATE (same transaction).
+  const changes = diffFields(row, updates, PRODUCTION_ORDER_EDIT_FIELDS);
+  updates['updatedAt'] = new Date();
+
+  // §20.2 — conditional status write: only touch the order while it is still in
+  // the status the lock read. 0 rows = it was closed / short-closed first.
+  const written = await tx
+    .update(productionOrders)
+    .set(updates)
+    .where(
+      and(
+        eq(productionOrders.id, id),
+        eq(productionOrders.companyId, companyId),
+        eq(productionOrders.status, status),
+      ),
+    )
+    .returning({ id: productionOrders.id });
+  if (written.length === 0) {
+    throw new ConflictError(
+      `Production Order ${row.code} changed status while you were editing — reload and try again.`,
+    );
+  }
+
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'ProductionOrder',
+        entityId: row.id,
+        refId: row.code,
+        changes,
+        detail: `Edited ${row.code}`,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  return readDetailInTx(tx, id, companyId);
+}
+
+/**
+ * The public Production Order header edit. Changing a saved order is an edit
+ * right. Checked HERE (not in the tx body) so the edit-approval engine's
+ * applyEdit can replay an approved edit for an approver who holds `approve` but
+ * not `edit`.
+ */
+export async function updateProductionOrder(
+  id: string,
+  input: UpdateProductionOrderInput,
+  user: AuthContext,
+): Promise<ProductionOrderDetail> {
+  await requireFormAccess(user, 'prodorder_create', 'edit');
+  return withUserContext(user, (tx) => updateProductionOrderTx(tx, id, input, user));
+}
+
+/**
+ * The edit entry point the HTTP route calls. Edit-approval (ADR-202): when the
+ * company gate is on and the order is still editable (open / partly closed), the
+ * edit is STAGED for approval and a {staged:true, request} result is returned;
+ * otherwise it falls through to updateProductionOrder (today's behaviour).
+ */
+export async function updateProductionOrderOrStage(
+  id: string,
+  input: UpdateProductionOrderInput,
+  user: AuthContext,
+): Promise<ProductionOrderDetail | DocumentEditStagedResult> {
+  await requireFormAccess(user, 'prodorder_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Imported dynamically to avoid a static import cycle with
+  // production-order-edit-registry (which imports updateProductionOrderTx here).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const rows = await tx
+      .select({ status: productionOrders.status })
+      .from(productionOrders)
+      .where(
+        and(
+          eq(productionOrders.id, id),
+          eq(productionOrders.companyId, companyId),
+          isNull(productionOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const status = rows[0]?.status;
+    if (status === undefined) return false;
+    // "Editable" mirrors productionOrderEditRegistryEntry.isLive.
+    return PRODUCTION_ORDER_EDITABLE_STATUSES.includes(status as ProductionOrderStatus);
+  });
+  if (shouldStage) {
+    const request = await requestDocumentEdit(
+      'ProductionOrder',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
+    return { staged: true, request };
+  }
+
+  return updateProductionOrder(id, input, user);
 }
 
 // ─── Create: Plan + Route Card + Target Date → Job Card ───────────────────

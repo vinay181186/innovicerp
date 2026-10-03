@@ -1,7 +1,14 @@
-// The chips shown inside a Planning line's "Plans" cell (PL-4b): one PR chip
+// The chips shown under a Planning line's ▸ detail panel (PL-4b): one PR chip
 // per purchase request (ADR-171) and one plan chip per plan. Split out of
 // routes/workflow.tsx (ADR-199 table standard) so the detail view stays under
-// the 400-line rule — the behaviour is unchanged.
+// the 400-line rule.
+//
+// ADR-199 level-2 conversion: these chips are now READ-ONLY. Every action they
+// used to carry as a button (Edit plan, ⚡ Create JC / Raise PR, + Production
+// Order, View JC) lives in the row's ONE ⋯ menu (planning-line-menu.ts), so a
+// line's actions are in a single place instead of inside a chip in a cell. What
+// stays here is what the planner READS: the plan's code, type, qty, ops count,
+// vendor, status, and real links to the documents it produced.
 
 import {
   PLAN_DERIVED_STATUS_LABEL,
@@ -12,8 +19,7 @@ import {
   type PrStatus,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Activity, Loader2 } from 'lucide-react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { Activity } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 
 // Legacy renders the raw stored status text (`esc(plan.status)`), which in the
@@ -61,6 +67,28 @@ const PR_STATUS_COLOR: Record<PrStatus, string> = {
   po_created: 'var(--green)',
   cancelled: 'var(--text3)',
 };
+
+/** One plan's status as it reads on screen: the derived label for a route-card
+ *  plan (ADR-170), the plan's own status otherwise. ONE helper, so the Plans
+ *  COLUMN and the plan chip in the ▸ panel can never show a plan differently. */
+export function planStatusOf(plan: PlanningPlanSummary): { label: string; color: string } {
+  const isRouteCard = plan.opsSource === 'route_card';
+  return isRouteCard && plan.derivedStatus
+    ? {
+        label: PLAN_DERIVED_STATUS_LABEL[plan.derivedStatus],
+        color: DERIVED_STATUS_COLOR[plan.derivedStatus],
+      }
+    : { label: PLAN_STATUS_LABEL[plan.planStatus], color: PLAN_STATUS_COLOR[plan.planStatus] };
+}
+
+/** One purchase request's status as it reads on screen — the PO number once one
+ *  has been raised from it, which is what the PR chip shows in its place. */
+export function prStatusOf(pr: PlanningLine['prs'][number]): { label: string; color: string } {
+  return {
+    label: pr.status === 'po_created' && pr.poCode ? `PO ${pr.poCode}` : PR_STATUS_LABEL[pr.status],
+    color: PR_STATUS_COLOR[pr.status],
+  };
+}
 
 // ─── PR chip (ADR-171) ───────────────────────────────────────────────────
 
@@ -135,46 +163,17 @@ function PrLink({
   );
 }
 
-/** One plan inside a line's Plans cell: code · type · qty · status, then the
- *  actions that apply.
- *   - opsSource 'plan' (old flow): Edit while in_planning; Execute + Edit
- *     while planned; PR links once raised; View JC once a JC exists.
- *   - opsSource 'route_card' (ADR-170): NO Edit / Execute. The derived status
- *     label, and a link to the Production Order once one exists. */
-export function PlanChip({
-  plan,
-  canEdit,
-  onEdit,
-  onExecute,
-  onViewJc,
-  isExecuting = false,
-  executeError = null,
-}: {
-  plan: PlanningPlanSummary;
-  canEdit: boolean;
-  onEdit: () => void;
-  onExecute: () => void | Promise<void>;
-  onViewJc: () => void;
-  isExecuting?: boolean;
-  executeError?: string | null;
-}): JSX.Element {
+/** One plan inside a line's ▸ panel: code · type · qty · ops · vendor · status,
+ *  then links to whatever it has produced — the Production Order (route-card
+ *  plans, ADR-170), the purchase requests, the Job Card. Read-only: the plan's
+ *  ACTIONS are in the row's ⋯ menu. */
+export function PlanChip({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
   const typeIcon = isDP ? '🛒' : isFO ? '📦' : '🏭';
   const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Make';
   const isRouteCard = plan.opsSource === 'route_card';
-  // Raising a Production Order is its own permission (prodorder_create), not
-  // this page's plan_create — the same gate the Plans list uses.
-  const { data: eff } = useMyAccess();
-  const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
-  const statusLabel =
-    isRouteCard && plan.derivedStatus
-      ? PLAN_DERIVED_STATUS_LABEL[plan.derivedStatus]
-      : PLAN_STATUS_LABEL[plan.planStatus];
-  const stColor =
-    isRouteCard && plan.derivedStatus
-      ? DERIVED_STATUS_COLOR[plan.derivedStatus]
-      : PLAN_STATUS_COLOR[plan.planStatus];
+  const { label: statusLabel, color: stColor } = planStatusOf(plan);
   // Schedule / raw material / remark ride along as a tooltip so the chip stays
   // one line; the Plans page shows them in full.
   const tip = [
@@ -233,67 +232,10 @@ export function PlanChip({
         </Link>
       ) : null}
 
-      {/* Route-card plan ready for its Production Order (ADR-185 derived
-          status 'gen_production_order' = "RC Created"): the next step, same
-          link + gate as the Plans list's Action column. */}
-      {isRouteCard && plan.derivedStatus === 'gen_production_order' && canProductionOrder ? (
-        <Link
-          to="/production-orders/new"
-          search={{ planId: plan.id, planCode: plan.code }}
-          className="btn btn-primary btn-sm"
-          style={{ fontSize: 11 }}
-          title="Raise the Production Order for this plan"
-        >
-          + Production Order
-        </Link>
-      ) : null}
-
-      {/* Old-flow plan actions — unchanged behaviour, compact buttons. */}
-      {!isRouteCard && plan.planStatus === 'in_planning' && canEdit ? (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}
-          onClick={onEdit}
-        >
-          ✏ Edit
-        </button>
-      ) : null}
-      {!isRouteCard && plan.planStatus === 'planned' && canEdit ? (
-        <>
-          <button
-            type="button"
-            className={`btn btn-sm ${executeError ? 'btn-danger' : 'btn-success'}`}
-            style={{ fontSize: 11, fontWeight: 700, opacity: isExecuting ? 0.7 : 1 }}
-            disabled={isExecuting}
-            title={executeError ?? undefined}
-            onClick={onExecute}
-          >
-            {isExecuting ? (
-              <>
-                <Loader2 size={11} className="inline-block animate-spin" /> Creating…
-              </>
-            ) : executeError ? (
-              '⚠ Retry'
-            ) : isDP || isFO ? (
-              '⚡ Raise PR'
-            ) : (
-              '⚡ Create JC'
-            )}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            disabled={isExecuting}
-            onClick={onEdit}
-            title="Edit plan"
-          >
-            ✏
-          </button>
-        </>
-      ) : null}
-      {plan.planStatus === 'pr_created' ? (
+      {/* The code, not the id, decides whether a PR is shown: a soft-deleted PR
+          comes back with a null code while the id survives, and PrLink would
+          then render an empty link after the literal "PR:" (ADR-209). */}
+      {plan.planStatus === 'pr_created' && (plan.foPrCode ?? plan.dpPrCode) ? (
         <span className="mono" style={{ color: 'var(--purple)', fontSize: 11, fontWeight: 700 }}>
           PR:
           <PrLink
@@ -331,20 +273,23 @@ export function PlanChip({
           ))}
         </span>
       ) : null}
+      {/* The Job Card this plan produced — a real link now (ctrl-click / new
+          tab), same condition as the button it replaces. The ⋯ menu carries
+          the same jump for the planner working down the rows. */}
       {plan.jcId &&
       (plan.planStatus === 'jc_created' ||
         plan.planStatus === 'in_production' ||
         plan.planStatus === 'complete' ||
         isRouteCard) ? (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
+        <Link
+          to="/job-cards/$id"
+          params={{ id: plan.jcId }}
+          className="mono fw-700"
           style={{ fontSize: 11, color: 'var(--cyan)' }}
-          onClick={onViewJc}
           title="Open the Job Card"
         >
           <Activity size={11} /> {plan.jcCode ?? 'View JC'}
-        </button>
+        </Link>
       ) : null}
     </div>
   );
