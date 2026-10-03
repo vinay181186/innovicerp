@@ -47,6 +47,7 @@ export const ncRegisterAllReport: RegisteredReport = {
       { key: 'nc_date', label: 'NC Date', type: 'date' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'rejected_qty', label: 'Rejected', type: 'number' },
@@ -77,6 +78,7 @@ export const ncRegisterAllReport: RegisteredReport = {
         jc.code                              AS jc_code,
         -- 0184: the live SO code, else the typed snapshot.
         COALESCE(so.code, nc.so_code_text)   AS so_code,
+        so.internal_so_no                    AS so_internal_no,
         nc.item_code_text                    AS item_code,
         nc.operation_text                    AS operation,
         nc.rejected_qty                      AS rejected_qty,
@@ -107,6 +109,7 @@ export const ncRegisterAllReport: RegisteredReport = {
       nc_date: toDateString(r['nc_date']),
       jc_code: (r['jc_code'] as string | null) ?? null,
       so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       item_code: (r['item_code'] as string | null) ?? null,
       operation: (r['operation'] as string | null) ?? null,
       rejected_qty: Number(r['rejected_qty'] ?? 0),

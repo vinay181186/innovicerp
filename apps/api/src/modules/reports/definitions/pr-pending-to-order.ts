@@ -42,6 +42,7 @@ export const prPendingToOrderReport: RegisteredReport = {
       { key: 'days_pending', label: 'Days Pending', type: 'number' },
       { key: 'approved', label: 'Approved', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
     ],
   },
@@ -66,7 +67,7 @@ export const prPendingToOrderReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT
         x.pr_code, x.pr_date, x.pr_type, x.item_code, x.item_name, x.pr_qty,
-        x.ordered_qty, x.due_date, x.days_pending, x.approved, x.so_code, x.jc_code,
+        x.ordered_qty, x.due_date, x.days_pending, x.approved, x.so_code, x.so_internal_no, x.jc_code,
         (x.pr_qty - x.ordered_qty)::numeric AS pending_qty
       FROM (
         SELECT
@@ -96,6 +97,7 @@ export const prPendingToOrderReport: RegisteredReport = {
           (CURRENT_DATE - pr.pr_date)::int               AS days_pending,
           CASE WHEN pr.approved_at IS NOT NULL THEN 'Yes' ELSE 'No' END AS approved,
           so.code                                        AS so_code,
+          so.internal_so_no                              AS so_internal_no,
           jc.code                                        AS jc_code
         FROM public.purchase_requests pr
         LEFT JOIN public.items it ON it.id = pr.item_id AND it.deleted_at IS NULL
@@ -134,6 +136,7 @@ export const prPendingToOrderReport: RegisteredReport = {
       days_pending: Number(r['days_pending'] ?? 0),
       approved: String(r['approved'] ?? ''),
       so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       jc_code: (r['jc_code'] as string | null) ?? null,
     }));
 

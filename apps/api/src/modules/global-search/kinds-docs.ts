@@ -13,6 +13,10 @@ export const DOC_KINDS: readonly KindMeta[] = [
     date: sql`t.so_date::date`,
     party: sql`COALESCE(c.name, t.customer_name)`,
     text: [sql`t.client_po_no`, sql`t.remarks`, sql`t.cost_center`],
+    // ADR-207 — the Internal SO No. is the first particular ("Internal SO No. SO-2401")
+    // and is matched, so typing it finds the order. doc_no stays the system SO No.
+    // (activity-log links match a result by its exact doc_no).
+    refs: [ref('Internal SO No.', sql`t.internal_so_no`)],
     lines: {
       from: sql`public.sales_order_lines l`,
       fk: sql`l.sales_order_id`,
@@ -63,7 +67,11 @@ export const DOC_KINDS: readonly KindMeta[] = [
     party: sql`COALESCE(v.name, t.vendor_code_text)`,
     text: [sql`t.operation`, sql`t.remarks`],
     shown: [sql`t.item_code_text`, sql`COALESCE(i.name, t.item_name)`],
-    refs: [ref('PO', sql`po.code`), soRef(sql`so.code`), ref('JC', sql`jc.code`)],
+    refs: [
+      ref('PO', sql`po.code`),
+      soRef(sql`so.code`, sql`so.internal_so_no`),
+      ref('JC', sql`jc.code`),
+    ],
     flatLines: [pair(sql`t.item_code_text`, sql`COALESCE(i.name, t.item_name)`)],
     qty: sql`t.qty`,
     status: sql`t.status::text`,
@@ -129,7 +137,10 @@ export const DOC_KINDS: readonly KindMeta[] = [
       LEFT JOIN public.vendors v ON v.id = t.vendor_id
       LEFT JOIN public.purchase_orders po ON po.id = t.purchase_order_id
       LEFT JOIN public.job_cards jc ON jc.id = t.job_card_id
-      LEFT JOIN public.nc_register nc ON nc.id = t.nc_id`,
+      LEFT JOIN public.nc_register nc ON nc.id = t.nc_id
+      -- ADR-207 — so_ref_text is free text with no FK: match the SO by its code.
+      LEFT JOIN public.sales_orders so
+        ON so.company_id = t.company_id AND so.code = t.so_ref_text AND so.deleted_at IS NULL`,
     docNo: sql`t.code`,
     date: sql`t.dc_date::date`,
     party: sql`COALESCE(v.name, t.vendor_code_text)`,
@@ -140,7 +151,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
         'PO',
         sql`COALESCE(po.code, CASE WHEN t.po_code_text ILIKE 'NC%' THEN NULL ELSE t.po_code_text END)`,
       ),
-      soRef(sql`t.so_ref_text`),
+      soRef(sql`t.so_ref_text`, sql`so.internal_so_no`),
       ref('JC', sql`jc.code`),
       ref('NC', sql`nc.code`),
     ],
@@ -178,7 +189,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
     text: [sql`t.remarks`, sql`t.raw_material_grade_text`, sql`t.raw_material_size_text`],
     shown: [sql`i.code`, sql`i.name`],
     refs: [
-      soRef(sql`so.code`),
+      soRef(sql`so.code`, sql`so.internal_so_no`),
       ref('JWSO', sql`jw.code`),
       ref('NC', sql`nc.code`),
       ref('Parent JC', sql`pj.code`),
@@ -195,7 +206,8 @@ export const DOC_KINDS: readonly KindMeta[] = [
     kind: 'nc',
     from: sql`public.nc_register t
       LEFT JOIN public.job_cards jc ON jc.id = t.job_card_id
-      LEFT JOIN public.delivery_challans dc ON dc.id = t.delivery_challan_id`,
+      LEFT JOIN public.delivery_challans dc ON dc.id = t.delivery_challan_id
+      LEFT JOIN public.sales_orders so ON so.id = t.so_id`,
     docNo: sql`t.code`,
     date: sql`t.nc_date::date`,
     party: null,
@@ -210,7 +222,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
     shown: [sql`t.item_code_text`, sql`t.item_name_text`],
     refs: [
       ref('JC', sql`jc.code`),
-      soRef(sql`t.so_code_text`),
+      soRef(sql`t.so_code_text`, sql`so.internal_so_no`),
       ref('Rework JC', sql`t.rework_jc_code_text`),
       ref('DC', sql`dc.code`),
     ],
@@ -227,7 +239,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
     date: sql`t.invoice_date::date`,
     party: sql`COALESCE(c.name, t.client_name_text)`,
     text: [sql`t.remarks`],
-    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`)],
+    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`, sql`so.internal_so_no`)],
     lines: {
       from: sql`public.invoice_lines l`,
       fk: sql`l.invoice_id`,
@@ -243,13 +255,19 @@ export const DOC_KINDS: readonly KindMeta[] = [
     kind: 'plan',
     from: sql`public.plans t
       LEFT JOIN public.job_cards jc ON jc.id = t.jc_id
-      LEFT JOIN public.bom_masters bm ON bm.id = t.bom_master_id`,
+      LEFT JOIN public.bom_masters bm ON bm.id = t.bom_master_id
+      LEFT JOIN public.sales_order_lines sol ON sol.id = t.so_line_id
+      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id`,
     docNo: sql`t.code`,
     date: sql`t.plan_date::date`,
     party: null,
     text: [sql`t.remarks`, sql`t.plan_type::text`],
     shown: [sql`t.item_code_text`, sql`t.item_name_text`],
-    refs: [soRef(sql`t.so_code_text`), ref('JC', sql`jc.code`), ref('BOM', sql`bm.bom_no`)],
+    refs: [
+      soRef(sql`t.so_code_text`, sql`so.internal_so_no`),
+      ref('JC', sql`jc.code`),
+      ref('BOM', sql`bm.bom_no`),
+    ],
     flatLines: [pair(sql`t.item_code_text`, sql`t.item_name_text`)],
     lines: opLines(sql`public.plan_ops l`, sql`l.plan_id`, [sql`l.outsource_vendor_text`]),
     qty: sql`t.plan_qty`,
@@ -299,7 +317,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
     party: sql`COALESCE(c.name, t.client_text)`,
     text: [sql`t.description`, sql`t.lead_text`],
     shown: [sql`t.project_name`],
-    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`)],
+    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`, sql`so.internal_so_no`)],
     flatLines: [sql`NULLIF(t.project_name, '')`],
     qty: null,
     status: sql`t.status::text`,

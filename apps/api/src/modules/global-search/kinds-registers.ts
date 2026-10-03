@@ -64,7 +64,7 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     date: sql`t.dispatch_date::date`,
     party: sql`COALESCE(c.name, t.customer_text)`,
     text: [sql`t.transport`, sql`t.vehicle_no`, sql`t.remarks`],
-    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`)],
+    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`, sql`so.internal_so_no`)],
     lines: {
       from: sql`public.customer_dispatch_lines l`,
       fk: sql`l.customer_dispatch_id`,
@@ -111,7 +111,10 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
   },
   {
     kind: 'capa',
-    from: sql`public.capa_records t`,
+    // ADR-207 — so_no is free text with no FK: match the SO by its code.
+    from: sql`public.capa_records t
+      LEFT JOIN public.sales_orders so
+        ON so.company_id = t.company_id AND so.code = t.so_no AND so.deleted_at IS NULL`,
     docNo: sql`t.code`,
     date: sql`t.capa_date::date`,
     party: null,
@@ -127,7 +130,11 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     // nc_refs is a jsonb array of NC codes — one "NC <code>" entry each.
     refsJson: sql`CASE WHEN jsonb_typeof(t.nc_refs) = 'array'
       THEN (SELECT jsonb_agg('NC ' || e) FROM jsonb_array_elements_text(t.nc_refs) e) END`,
-    refs: [ref('JC', sql`t.jc_no`), soRef(sql`t.so_no`), ref('Item', sql`t.item_code`)],
+    refs: [
+      ref('JC', sql`t.jc_no`),
+      soRef(sql`t.so_no`, sql`so.internal_so_no`),
+      ref('Item', sql`t.item_code`),
+    ],
     flatLines: [sql`NULLIF(t.problem, '')`],
     qty: null,
     status: sql`t.status::text`,
@@ -145,7 +152,7 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     text: [sql`t.purpose`, sql`t.remarks`, sql`t.department`],
     refs: [
       ref('JC', sql`jc.code`),
-      soRef(sql`so.code`),
+      soRef(sql`so.code`, sql`so.internal_so_no`),
       // Pre-0157 typed reference, shown only when no real JC / SO link exists.
       ref(
         sql`NULLIF(t.ref_type, '')`,
@@ -270,7 +277,7 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     party: sql`t.designer`,
     text: [sql`t.remarks`],
     shown: [sql`t.item_code_text`, sql`t.item_name_text`],
-    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`)],
+    refs: [soRef(sql`COALESCE(t.so_code_text, so.code)`, sql`so.internal_so_no`)],
     flatLines: [pair(sql`t.item_code_text`, sql`t.item_name_text`)],
     qty: null,
     status: sql`t.status::text`,
