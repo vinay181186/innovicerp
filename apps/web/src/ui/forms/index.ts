@@ -57,3 +57,7 @@ export type {
 
 export { FileField } from './FileField';
 export type { FileFieldProps, FileFieldVariant, FileFieldSize } from './FileField';
+
+// Cluster layout for create / edit / view screens (Plan screens method, 2026-10-03).
+export { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from './ClusterGrid';
+export type { ClusterFactProps, ClusterProps } from './ClusterGrid';

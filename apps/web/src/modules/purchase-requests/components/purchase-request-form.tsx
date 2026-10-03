@@ -9,10 +9,14 @@
 // (`num_nonnulls(vendor_id, vendor_code_text) >= 1`, ADR-015) demands one of the
 // two. Dropping it would make those PRs unsaveable.
 //
-// Layout (create-page pattern): sticky PageHeader (Cancel + blue Save, Ctrl+S)
-// → one Panel on the 12-column grid, in the order the buyer thinks:
-// PR Type · PR No. · PR Date / Item Code · Item Name · PR Qty /
-// Due Date · Vendor · Est. Rate / Operation / Remarks.
+// Layout (Plan screens method, 2026-10-03): sticky PageHeader (Cancel + blue
+// Save, Ctrl+S) → one Panel: an identity line (PR No., SO line, JC op), then
+// four clusters of four cells, in the order the requester thinks —
+//   Item     Item Code · Item Name (2) · PR Qty
+//   Request  PR Type · PR Date · Due Date · Operation
+//   Vendor   Vendor (2) · Est. Rate · Est. Amount (= qty × rate, the result)
+//   Notes    Remarks (4)
+// The PR view page shows the same clusters in the same order.
 
 import {
   type CreatePurchaseRequestInput,
@@ -21,6 +25,7 @@ import {
   type PurchaseRequest,
   type PurchaseRequestDetail,
   type UpdatePurchaseRequestInput,
+  opSrNo,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useRef } from 'react';
@@ -31,10 +36,11 @@ import {
   cascadeField,
   useFieldCascade,
 } from '@/lib/use-field-cascade';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useItemCodeResolver, useItemCodeSearch } from '@/modules/items/use-item-code-search';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { Cluster, ClusterGrid, DocIdent, FormField, IdentCode, IdentSep } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   PR_FORM_DEFAULTS,
@@ -237,6 +243,10 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   const itemLocked = Boolean(watch('itemId'));
   // The item's unit, shown beside PR Qty (KGS / MTR may be decimal).
   const qtyUom = matchedItem?.uom ?? null;
+  // The estimate the buyer is asking for, worked out as they type.
+  const estQty = Number(watch('qty'));
+  const estRate = Number(watch('estCost'));
+  const estAmount = Number.isFinite(estQty * estRate) ? estQty * estRate : 0;
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
@@ -300,188 +310,233 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
       ) : null}
 
       <Panel>
-        <FormGrid>
-          {/* ── Row 1: PR Type · PR No. · PR Date */}
-          <FormField label="PR Type" size="md" htmlFor="prType">
-            {/* What this PR is FOR, and therefore what the PO it becomes can do:
-                standard ends in a GRN (goods in), service sends the item out on
-                a DC and receives it back (the job-work chain). 'jw_osp' is NOT
-                offered — the system stamps that itself when an outsource JC op
-                raises the PR, and hand-picking it would fake an OSP job with no
-                operation behind it.
-
-                Immutable after create: `updatePurchaseRequestInputSchema` omits
-                prType, so on edit this shows the stored value read-only rather
-                than a dropdown that silently would not save. */}
-            {isEdit ? (
-              <input
-                id="prType"
-                className="innovic-input is-derived"
-                readOnly
-                value={PR_TYPE_LABELS[watch('prType') ?? 'standard']}
-              />
-            ) : (
-              <select
-                id="prType"
-                className="innovic-select"
-                title="Service = buying work (calibration, heat-treat, plating). Its PO sends the item out on a DC instead of receiving stock in."
-                {...register('prType')}
-              >
-                {PR_TYPES.filter((t) => t === 'standard' || t === 'service').map((t) => (
-                  <option key={t} value={t}>
-                    {PR_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            )}
-          </FormField>
-
-          <FormField label="PR No." size="md" htmlFor="code" error={errors.code?.message}>
-            {/* System-generated, never typed. The server allocates the next
-                IN-PR-##### on save. This was a free text box that only defaulted
-                to auto when left blank, which is how PRs ended up numbered
-                "001" / "002" / "009" instead of following the series. */}
-            <input
-              id="code"
-              className="innovic-input is-derived"
-              readOnly
-              tabIndex={-1}
-              value={isEdit ? (watch('code') ?? '') : 'Auto-generated on save'}
-              onChange={() => undefined}
-            />
-          </FormField>
-
-          <FormField label="PR Date" required size="md" htmlFor="prDate">
-            <input
-              id="prDate"
-              type="date"
-              className="innovic-input"
-              {...register('prDate', { required: 'PR Date is required.' })}
-            />
-          </FormField>
-
-          {/* ── Row 2: Item Code · Item Name · PR Qty */}
-          <FormField
-            label="Item Code"
-            required={!isEdit}
-            size="sm"
-            htmlFor="itemCodeText"
-            error={errors.itemCodeText?.message}
-          >
-            {/* Stays a free-text box over a <datalist>, not a picker: a picker can
-                only return a master row's id, and an off-master item is legitimate
-                on a PR (ADR-124). */}
-            <input
-              id="itemCodeText"
-              className="innovic-input"
-              list={PR_ITEM_DATALIST_ID}
-              autoComplete="off"
-              placeholder="🔍 ITM-001"
-              {...register('itemCodeText', {
-                // The ★ is enforced here, in plain words, instead of letting the
-                // server answer with "itemId or itemCodeText is required".
-                validate: (v) => isEdit || Boolean(v?.trim()) || 'Item Code is required.',
-              })}
-            />
-          </FormField>
-
-          <FormField label="Item Name" size="lg" htmlFor="itemName">
-            {/* Rule: item code is the unique key — on-master name is derived +
-                read-only; off-master free text stays editable. */}
-            <input
-              id="itemName"
-              className={itemLocked ? 'innovic-input is-derived' : 'innovic-input'}
-              autoComplete="off"
-              readOnly={itemLocked}
-              title={itemLocked ? 'Auto-filled from Item Master (item code is the key)' : undefined}
-              {...register('itemName')}
-            />
-          </FormField>
-
-          <FormField
-            label={
-              <>
-                PR Qty
-                {qtyUom ? (
-                  <span className="mono" style={{ color: 'var(--text2)', marginLeft: 4 }}>
-                    ({qtyUom})
+        {/* Which PR this is — on create the number does not exist yet. */}
+        <DocIdent>
+          {isEdit ? (
+            <>
+              <IdentCode>{props.detail.code}</IdentCode>
+              {props.detail.soCode ? (
+                <>
+                  <IdentSep />
+                  <span>
+                    SO{' '}
+                    <IdentCode>
+                      {soNoWithInternal(props.detail.soCode, props.detail.soInternalNo)}
+                    </IdentCode>
+                    {props.detail.soLineNo ? ` · Ln ${props.detail.soLineNo}` : ''}
                   </span>
-                ) : null}
-              </>
-            }
-            required
-            size="sm"
-            htmlFor="qty"
-            error={errors.qty?.message}
-          >
-            {/* Decimal for KGS / MTR (3 places); a NOS / SET item stays whole —
-                the server refuses a fraction for it (0172). */}
-            <input
-              id="qty"
-              type="number"
-              min={0}
-              step="any"
-              className="innovic-input"
-              {...register('qty', {
-                valueAsNumber: true,
-                validate: (v) => (Number.isFinite(v) && v > 0) || 'PR Qty must be more than 0.',
-              })}
-            />
-          </FormField>
+                </>
+              ) : null}
+              {props.detail.sourceJcCode ? (
+                <>
+                  <IdentSep />
+                  <span>
+                    JC <IdentCode>{props.detail.sourceJcCode}</IdentCode>
+                    {props.detail.sourceJcOpSeq
+                      ? ` · Op ${opSrNo(props.detail.sourceJcOpSeq)}`
+                      : ''}
+                  </span>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <span>
+              PR No. <span className="text3">— auto-generated on save</span>
+            </span>
+          )}
+        </DocIdent>
 
-          {/* ── Row 3: Due Date · Vendor · Est. Rate */}
-          <FormField label="Due Date" size="sm" htmlFor="requiredDate">
-            <input
-              id="requiredDate"
-              type="date"
-              className="innovic-input"
-              {...register('requiredDate')}
-            />
-          </FormField>
+        {/* Four clusters, four cells each, in the order the requester thinks:
+            WHAT and how many → what kind of buy and by when → who supplies it
+            and roughly what it costs → anything else. The PR view page uses
+            the same clusters in the same order. */}
+        <ClusterGrid>
+          <Cluster name="Item">
+            <FormField
+              label="Item Code"
+              required={!isEdit}
+              htmlFor="itemCodeText"
+              error={errors.itemCodeText?.message}
+            >
+              {/* Stays a free-text box over a <datalist>, not a picker: a picker can
+                  only return a master row's id, and an off-master item is legitimate
+                  on a PR (ADR-124). */}
+              <input
+                id="itemCodeText"
+                className="innovic-input mono fw-700"
+                list={PR_ITEM_DATALIST_ID}
+                autoComplete="off"
+                placeholder="🔍 ITM-001"
+                {...register('itemCodeText', {
+                  // The ★ is enforced here, in plain words, instead of letting the
+                  // server answer with "itemId or itemCodeText is required".
+                  validate: (v) => isEdit || Boolean(v?.trim()) || 'Item Code is required.',
+                })}
+              />
+            </FormField>
 
-          {/* The shared picker brings its own .form-grp; this cell gives it the
-              party width (6/12) on the grid. */}
-          <div className="f-lg">
-            <PrVendorField
-              form={form}
-              carriedVendorText={carriedVendorText}
-              initialLabel={vendorInitialLabel}
-              onPickLabel={(label) => {
-                vendorLabelRef.current = label;
-              }}
-            />
-          </div>
+            <FormField label="Item Name" htmlFor="itemName" className="cl-span-2">
+              {/* Rule: item code is the unique key — on-master name is derived +
+                  read-only; off-master free text stays editable. */}
+              <input
+                id="itemName"
+                className={itemLocked ? 'innovic-input is-derived' : 'innovic-input'}
+                autoComplete="off"
+                readOnly={itemLocked}
+                title={
+                  itemLocked ? 'Auto-filled from Item Master (item code is the key)' : undefined
+                }
+                {...register('itemName')}
+              />
+            </FormField>
 
-          <FormField label="Est. Rate (₹)" size="sm" htmlFor="estCost">
-            <input
-              id="estCost"
-              type="number"
-              step="0.01"
-              min={0}
-              className="innovic-input"
-              {...register('estCost', { valueAsNumber: true })}
-            />
-          </FormField>
+            <FormField
+              label={
+                <>
+                  PR Qty
+                  {qtyUom ? (
+                    <span className="mono" style={{ color: 'var(--text2)', marginLeft: 4 }}>
+                      ({qtyUom})
+                    </span>
+                  ) : null}
+                </>
+              }
+              required
+              htmlFor="qty"
+              error={errors.qty?.message}
+            >
+              {/* Decimal for KGS / MTR (3 places); a NOS / SET item stays whole —
+                  the server refuses a fraction for it (0172). */}
+              <input
+                id="qty"
+                type="number"
+                min={0}
+                step="any"
+                className="innovic-input cl-num"
+                {...register('qty', {
+                  valueAsNumber: true,
+                  validate: (v) => (Number.isFinite(v) && v > 0) || 'PR Qty must be more than 0.',
+                })}
+              />
+            </FormField>
+          </Cluster>
 
-          {/* Status is NOT a field, on create or edit: a new PR is always 'open',
-              stamped by the server, and it advances only via Approve / Reject /
-              Create PO. The Edit page header shows the current status badge. */}
+          <Cluster name="Request">
+            <FormField label="PR Type" htmlFor="prType">
+              {/* What this PR is FOR, and therefore what the PO it becomes can do:
+                  standard ends in a GRN (goods in), service sends the item out on
+                  a DC and receives it back (the job-work chain). 'jw_osp' is NOT
+                  offered — the system stamps that itself when an outsource JC op
+                  raises the PR, and hand-picking it would fake an OSP job with no
+                  operation behind it.
 
-          {/* ── Row 4 / 5: Operation · Remarks */}
-          <FormField label="Operation" size="full" htmlFor="operation">
-            <input
-              id="operation"
-              className="innovic-input"
-              autoComplete="off"
-              placeholder="COATING / TURN / …"
-              {...register('operation')}
-            />
-          </FormField>
+                  Immutable after create: `updatePurchaseRequestInputSchema` omits
+                  prType, so on edit this shows the stored value read-only rather
+                  than a dropdown that silently would not save. */}
+              {isEdit ? (
+                <input
+                  id="prType"
+                  className="innovic-input is-derived"
+                  readOnly
+                  value={PR_TYPE_LABELS[watch('prType') ?? 'standard']}
+                />
+              ) : (
+                <select
+                  id="prType"
+                  className="innovic-select"
+                  title="Service = buying work (calibration, heat-treat, plating). Its PO sends the item out on a DC instead of receiving stock in."
+                  {...register('prType')}
+                >
+                  {PR_TYPES.filter((t) => t === 'standard' || t === 'service').map((t) => (
+                    <option key={t} value={t}>
+                      {PR_TYPE_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
 
-          <FormField label="Remarks" size="full" htmlFor="remarks">
-            <textarea id="remarks" className="innovic-textarea" rows={3} {...register('remarks')} />
-          </FormField>
-        </FormGrid>
+            <FormField label="PR Date" required htmlFor="prDate">
+              <input
+                id="prDate"
+                type="date"
+                className="innovic-input"
+                {...register('prDate', { required: 'PR Date is required.' })}
+              />
+            </FormField>
+
+            <FormField label="Due Date" htmlFor="requiredDate">
+              <input
+                id="requiredDate"
+                type="date"
+                className="innovic-input"
+                {...register('requiredDate')}
+              />
+            </FormField>
+
+            <FormField label="Operation" htmlFor="operation">
+              <input
+                id="operation"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="COATING / TURN / …"
+                {...register('operation')}
+              />
+            </FormField>
+          </Cluster>
+
+          {/* Vendor and the estimate read as one account: rate × qty = amount,
+              ending on the result. Status is NOT a field, on create or edit: a
+              new PR is always 'open', stamped by the server, and it advances
+              only via Approve / Reject / Create PO. */}
+          <Cluster name="Vendor">
+            {/* The shared picker brings its own .form-grp; this cell gives it
+                two of the cluster's four cells. */}
+            <div className="cl-span-2">
+              <PrVendorField
+                form={form}
+                carriedVendorText={carriedVendorText}
+                initialLabel={vendorInitialLabel}
+                onPickLabel={(label) => {
+                  vendorLabelRef.current = label;
+                }}
+              />
+            </div>
+
+            <FormField label="Est. Rate (₹)" htmlFor="estCost">
+              <input
+                id="estCost"
+                type="number"
+                step="0.01"
+                min={0}
+                className="innovic-input cl-num"
+                {...register('estCost', { valueAsNumber: true })}
+              />
+            </FormField>
+
+            <FormField label="Est. Amount (₹)" htmlFor="estAmount" className="cl-lead">
+              <input
+                id="estAmount"
+                className="innovic-input is-derived cl-num"
+                readOnly
+                tabIndex={-1}
+                value={estAmount > 0 ? inr(estAmount) : '—'}
+                title="PR Qty × Est. Rate"
+              />
+            </FormField>
+          </Cluster>
+
+          <Cluster name="Notes">
+            <FormField label="Remarks" htmlFor="remarks" className="cl-span-4">
+              <textarea
+                id="remarks"
+                className="innovic-textarea"
+                rows={2}
+                {...register('remarks')}
+              />
+            </FormField>
+          </Cluster>
+        </ClusterGrid>
       </Panel>
 
       <datalist id={PR_ITEM_DATALIST_ID}>
@@ -494,6 +549,9 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
     </form>
   );
 }
+
+const inr = (n: number): string =>
+  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** "CODE — Name" for the vendor already linked to this PR, so the picker reads
  *  correctly on edit before its own search page has loaded. */

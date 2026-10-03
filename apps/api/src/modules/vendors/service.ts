@@ -6,6 +6,7 @@ import {
   type MasterImportRowResult,
   type MasterRuleIssue,
 } from '@innovic/shared';
+import type { DocumentEditStagedResult } from '@innovic/shared';
 import { vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -47,9 +48,9 @@ const activeLabel = (v: unknown): string | null =>
   v === true ? 'Active' : v === false ? 'Inactive' : null;
 
 /** Every user-editable Vendor Master field, with its screen label, for the
- *  Edit row's Before → After (ADR-197). Entity 'Vendor' is not yet in the
- *  shared ACTIVITY_ENTITIES list (shared frozen for this build). */
-const VENDOR_FIELDS: readonly DiffField[] = [
+ *  Edit row's Before → After (ADR-197). Exported so the edit-approval engine's
+ *  registry entry (vendor-edit-registry.ts) diffs the same set. */
+export const VENDOR_FIELDS: readonly DiffField[] = [
   { key: 'name', label: 'Vendor Name' },
   { key: 'contactPerson', label: 'Contact Person' },
   { key: 'phone', label: 'Phone' },
@@ -601,55 +602,105 @@ export async function updateVendor(
   input: UpdateVendorInput,
   user: AuthContext,
 ): Promise<VendorSaveResponse> {
+  // Access check in the public wrapper, not the tx body, so the edit-approval
+  // engine's applyEdit can replay an approved edit for an approver who holds
+  // `approve` but not `edit`.
+  await requireFormAccess(user, 'vendor_create', 'edit');
+  return withUserContext(user, (tx) => updateVendorTx(tx, id, input, user));
+}
+
+/**
+ * The body of a Vendor edit, inside a caller-supplied transaction. Called by
+ * updateVendor (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one). Every §20 guard lives here: the FOR UPDATE lock,
+ * assertUnchangedSinceOpened and the GST rule. The caller performs the edit /
+ * approve access check.
+ */
+export async function updateVendorTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateVendorInput,
+  user: AuthContext,
+): Promise<VendorSaveResponse> {
+  const companyId = requireCompany(user);
+  // The whole row, read BEFORE the update — the "before" of Before → After.
+  const existing = await tx
+    .select()
+    .from(vendors)
+    .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
+    .for('update')
+    .limit(1);
+  const before = existing[0];
+  if (!before) throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
+  // R5: refuse the save if someone else edited the vendor after this form opened it.
+  assertUnchangedSinceOpened(before.updatedAt, input.expectedUpdatedAt);
+
+  const settings = await loadMasterRuleSettings(tx, companyId);
+  const gst = vendorGstUpdate(before, input);
+  const warnings = applyMasterRules(gst.issues, settings.masterRulesMode, `Vendor ${before.code}`);
+
+  const updates: Record<string, unknown> = {
+    updatedBy: user.id,
+    ...vendorPlainUpdates(input),
+    ...gst.updates,
+  };
+
+  const changes = diffFields(before, updates, VENDOR_FIELDS);
+  const updated = await tx.update(vendors).set(updates).where(eq(vendors.id, id)).returning();
+  const row = updated[0] as unknown as Vendor;
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'Vendor',
+        entityId: row.id,
+        refId: row.code,
+        changes,
+        detail: `Edited ${row.code} — ${row.name}`,
+      },
+      companyId,
+      user,
+    );
+  }
+  return withWarnings(row, warnings);
+}
+
+/**
+ * The Vendor edit entry point the HTTP route calls. Edit-approval (ADR-202):
+ * when the company gate is on and the vendor is still editable (a master is
+ * editable while it is not in Trash), the edit is STAGED for approval and a
+ * {staged:true, request} result is returned; otherwise it falls through to
+ * updateVendor (today's behaviour). A vendor is a single record with no child
+ * lines — there is no line guard.
+ */
+export async function updateVendorOrStage(
+  id: string,
+  input: UpdateVendorInput,
+  user: AuthContext,
+): Promise<VendorSaveResponse | DocumentEditStagedResult> {
   await requireFormAccess(user, 'vendor_create', 'edit');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    // The whole row, read BEFORE the update — the "before" of Before → After.
-    const existing = await tx
-      .select()
+
+  // Imported dynamically to avoid a static import cycle with vendor-edit-registry
+  // (which imports updateVendorTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors vendorEditRegistryEntry.isLive: any live (not-Trash) vendor.
+    const rows = await tx
+      .select({ id: vendors.id })
       .from(vendors)
-      .where(and(eq(vendors.id, id), isNull(vendors.deletedAt)))
-      .for('update')
+      .where(and(eq(vendors.id, id), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)))
       .limit(1);
-    const before = existing[0];
-    if (!before) throw new NotFoundError('Vendor not found. It may have been moved to Trash.');
-    // R5: refuse the save if someone else edited the vendor after this form opened it.
-    assertUnchangedSinceOpened(before.updatedAt, input.expectedUpdatedAt);
-
-    const settings = await loadMasterRuleSettings(tx, companyId);
-    const gst = vendorGstUpdate(before, input);
-    const warnings = applyMasterRules(
-      gst.issues,
-      settings.masterRulesMode,
-      `Vendor ${before.code}`,
-    );
-
-    const updates: Record<string, unknown> = {
-      updatedBy: user.id,
-      ...vendorPlainUpdates(input),
-      ...gst.updates,
-    };
-
-    const changes = diffFields(before, updates, VENDOR_FIELDS);
-    const updated = await tx.update(vendors).set(updates).where(eq(vendors.id, id)).returning();
-    const row = updated[0] as unknown as Vendor;
-    if (changes.length > 0) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Edit,
-          entity: 'Vendor',
-          entityId: row.id,
-          refId: row.code,
-          changes,
-          detail: `Edited ${row.code} — ${row.name}`,
-        },
-        companyId,
-        user,
-      );
-    }
-    return withWarnings(row, warnings);
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('Vendor', id, input, input.expectedUpdatedAt, user);
+    return { staged: true, request };
+  }
+
+  return updateVendor(id, input, user);
 }
 
 export async function softDeleteVendor(

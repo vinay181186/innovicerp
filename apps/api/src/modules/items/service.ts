@@ -22,6 +22,7 @@ import {
   type MasterImportRowResult,
   withPartyMaterialSuffix,
 } from '@innovic/shared';
+import type { DocumentEditStagedResult } from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -83,8 +84,9 @@ function fileName(v: unknown): string | null {
 }
 
 /** Every user-editable Item Master field, with its screen label (NAMING.md),
- *  for the Edit row's Before → After (ADR-197). */
-const ITEM_FIELDS: readonly DiffField[] = [
+ *  for the Edit row's Before → After (ADR-197). Exported so the edit-approval
+ *  engine's registry entry (item-edit-registry.ts) diffs the same set. */
+export const ITEM_FIELDS: readonly DiffField[] = [
   { key: 'name', label: 'Item Name' },
   { key: 'description', label: 'Description' },
   { key: 'drawingNo', label: 'Drawing No.' },
@@ -633,79 +635,132 @@ export async function updateItem(
   user: AuthContext,
 ): Promise<ItemSaveResponse> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
+  // replay an approved edit for an approver who holds `approve` but not `edit`.
+  await requireFormAccess(user, 'item_create', 'edit');
+  return withUserContext(user, (tx) => updateItemTx(tx, id, input, user));
+}
+
+/**
+ * The body of an Item edit, inside a caller-supplied transaction. Called by
+ * updateItem (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one). Every §20 guard lives here: the FOR UPDATE lock,
+ * assertUnchangedSinceOpened, the type-lock / party-suffix guards and the HSN
+ * rule. The caller performs the edit / approve access check.
+ */
+export async function updateItemTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateItemInput,
+  user: AuthContext,
+): Promise<ItemSaveResponse> {
+  const companyId = requireCompany(user);
+  // The whole row, read BEFORE the update — it is the "before" of the
+  // History tab's Before → After (ADR-197).
+  const existing = await tx
+    .select()
+    .from(items)
+    .where(and(eq(items.id, id), isNull(items.deletedAt)))
+    .for('update')
+    .limit(1);
+  if (existing.length === 0) {
+    throw new NotFoundError('Item not found. It may have been moved to Trash.');
+  }
+  // ADR-193 (P23 / P15 phase 4): no switch to or from 'tool', and no change
+  // of Track by Serial No., once stock has moved (type-lock.ts).
+  const cur = existing[0]!;
+  // R5: refuse the save if someone else edited the item after this form opened it.
+  assertUnchangedSinceOpened(cur.updatedAt, input.expectedUpdatedAt);
+  // ADR-195: the item CODE is permanent, and a Party Supplied Material item bakes
+  // the -rm suffix into its code at creation. So the type may never be switched
+  // INTO or OUT OF party-supplied on edit — doing so would leave the code and the
+  // type inconsistent (a -rm code on a non-party item, or a party item without
+  // one). Create a new item instead.
+  if (
+    input.itemType !== undefined &&
+    input.itemType !== cur.itemType &&
+    (input.itemType === 'party_supplied_material' || cur.itemType === 'party_supplied_material')
+  ) {
+    throw new ConflictError(
+      `${cur.code}: Item Type cannot be changed to or from Party Supplied Material — the item code (with its -rm suffix) is permanent. Create a new item instead.`,
+    );
+  }
+  const trackSerial = await checkTypeAndSerialChange(tx, id, cur, input);
+
+  // HSN rule on the MERGED item (type and HSN after this save).
+  const settings = await loadMasterRuleSettings(tx, companyId);
+  const warnings = applyMasterRules(
+    checkItemHsn(
+      {
+        itemType: input.itemType ?? cur.itemType,
+        hsnCode: input.hsnCode !== undefined ? input.hsnCode : cur.hsnCode,
+      },
+      settings,
+    ),
+    settings.masterRulesMode,
+    `Item ${cur.code}`,
+  );
+
+  const updates: Record<string, unknown> = { updatedBy: user.id, ...itemPlainUpdates(input) };
+  if (input.itemType !== undefined) updates.itemType = input.itemType;
+  if (trackSerial !== undefined) updates.trackSerial = trackSerial;
+
+  const changes = diffFields(cur, updates, ITEM_FIELDS);
+  const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
+  const row = updated[0] as unknown as Item;
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'Item',
+        entityId: row.id,
+        refId: row.code,
+        changes,
+        detail: `Edited ${row.code} — ${row.name}`,
+      },
+      companyId,
+      user,
+    );
+  }
+  return withWarnings(row, warnings);
+}
+
+/**
+ * The Item edit entry point the HTTP route calls. Edit-approval (ADR-202): when
+ * the company gate is on and the item is still editable (a master is editable
+ * while it is not in Trash), the edit is STAGED for approval and a
+ * {staged:true, request} result is returned; otherwise it falls through to
+ * updateItem (today's behaviour). An item is a single record with no child
+ * lines — there is no line guard.
+ */
+export async function updateItemOrStage(
+  id: string,
+  input: UpdateItemInput,
+  user: AuthContext,
+): Promise<ItemSaveResponse | DocumentEditStagedResult> {
   await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    // The whole row, read BEFORE the update — it is the "before" of the
-    // History tab's Before → After (ADR-197).
-    const existing = await tx
-      .select()
+
+  // Imported dynamically to avoid a static import cycle with item-edit-registry
+  // (which imports updateItemTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors itemEditRegistryEntry.isLive: any live (not-Trash) item.
+    const rows = await tx
+      .select({ id: items.id })
       .from(items)
-      .where(and(eq(items.id, id), isNull(items.deletedAt)))
-      .for('update')
+      .where(and(eq(items.id, id), eq(items.companyId, companyId), isNull(items.deletedAt)))
       .limit(1);
-    if (existing.length === 0) {
-      throw new NotFoundError('Item not found. It may have been moved to Trash.');
-    }
-    // ADR-193 (P23 / P15 phase 4): no switch to or from 'tool', and no change
-    // of Track by Serial No., once stock has moved (type-lock.ts).
-    const cur = existing[0]!;
-    // R5: refuse the save if someone else edited the item after this form opened it.
-    assertUnchangedSinceOpened(cur.updatedAt, input.expectedUpdatedAt);
-    // ADR-195: the item CODE is permanent, and a Party Supplied Material item bakes
-    // the -rm suffix into its code at creation. So the type may never be switched
-    // INTO or OUT OF party-supplied on edit — doing so would leave the code and the
-    // type inconsistent (a -rm code on a non-party item, or a party item without
-    // one). Create a new item instead.
-    if (
-      input.itemType !== undefined &&
-      input.itemType !== cur.itemType &&
-      (input.itemType === 'party_supplied_material' || cur.itemType === 'party_supplied_material')
-    ) {
-      throw new ConflictError(
-        `${cur.code}: Item Type cannot be changed to or from Party Supplied Material — the item code (with its -rm suffix) is permanent. Create a new item instead.`,
-      );
-    }
-    const trackSerial = await checkTypeAndSerialChange(tx, id, cur, input);
-
-    // HSN rule on the MERGED item (type and HSN after this save).
-    const settings = await loadMasterRuleSettings(tx, companyId);
-    const warnings = applyMasterRules(
-      checkItemHsn(
-        {
-          itemType: input.itemType ?? cur.itemType,
-          hsnCode: input.hsnCode !== undefined ? input.hsnCode : cur.hsnCode,
-        },
-        settings,
-      ),
-      settings.masterRulesMode,
-      `Item ${cur.code}`,
-    );
-
-    const updates: Record<string, unknown> = { updatedBy: user.id, ...itemPlainUpdates(input) };
-    if (input.itemType !== undefined) updates.itemType = input.itemType;
-    if (trackSerial !== undefined) updates.trackSerial = trackSerial;
-
-    const changes = diffFields(cur, updates, ITEM_FIELDS);
-    const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
-    const row = updated[0] as unknown as Item;
-    if (changes.length > 0) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Edit,
-          entity: 'Item',
-          entityId: row.id,
-          refId: row.code,
-          changes,
-          detail: `Edited ${row.code} — ${row.name}`,
-        },
-        companyId,
-        user,
-      );
-    }
-    return withWarnings(row, warnings);
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('Item', id, input, input.expectedUpdatedAt, user);
+    return { staged: true, request };
+  }
+
+  return updateItem(id, input, user);
 }
 
 export async function softDeleteItem(

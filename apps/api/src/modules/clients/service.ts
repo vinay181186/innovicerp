@@ -6,6 +6,7 @@ import {
   type MasterImportRowResult,
   type MasterRuleIssue,
 } from '@innovic/shared';
+import type { DocumentEditStagedResult } from '@innovic/shared';
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -48,9 +49,9 @@ const activeLabel = (v: unknown): string | null =>
   v === true ? 'Active' : v === false ? 'Inactive' : null;
 
 /** Every user-editable Customer Master field, with its screen label, for the
- *  Edit row's Before → After (ADR-197). Entity 'Client' is not yet in the
- *  shared ACTIVITY_ENTITIES list (shared frozen for this build). */
-const CLIENT_FIELDS: readonly DiffField[] = [
+ *  Edit row's Before → After (ADR-197). Exported so the edit-approval engine's
+ *  registry entry (client-edit-registry.ts) diffs the same set. */
+export const CLIENT_FIELDS: readonly DiffField[] = [
   { key: 'name', label: 'Customer' },
   { key: 'gstNumber', label: 'GSTIN' },
   {
@@ -634,57 +635,108 @@ export async function updateClient(
   input: UpdateClientInput,
   user: AuthContext,
 ): Promise<ClientSaveResponse> {
+  // Access checks in the public wrapper, not the tx body, so the edit-approval
+  // engine's applyEdit can replay an approved edit for an approver who holds
+  // `approve` but not `edit`.
+  requireWriteRole(user);
+  await requireFormAccess(user, 'client_create', 'edit');
+  return withUserContext(user, (tx) => updateClientTx(tx, id, input, user));
+}
+
+/**
+ * The body of a Customer edit, inside a caller-supplied transaction. Called by
+ * updateClient (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one). Every §20 guard lives here: the FOR UPDATE lock,
+ * assertUnchangedSinceOpened, the one-name-per-customer check and the GST rule.
+ * The caller performs the edit / approve access check.
+ */
+export async function updateClientTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateClientInput,
+  user: AuthContext,
+): Promise<ClientSaveResponse> {
+  const companyId = requireCompany(user);
+  // The whole row, read BEFORE the update — the "before" of Before → After.
+  const existing = await tx
+    .select()
+    .from(clients)
+    .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
+    .for('update')
+    .limit(1);
+  const before = existing[0];
+  if (!before) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
+  // R5: refuse the save if someone else edited the customer after this form opened it.
+  assertUnchangedSinceOpened(before.updatedAt, input.expectedUpdatedAt);
+  if (input.name !== undefined) await assertClientNameFree(tx, companyId, input.name, id);
+
+  const settings = await loadMasterRuleSettings(tx, companyId);
+  const gst = clientGstUpdate(before, input);
+  const warnings = applyMasterRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`);
+
+  const updates: Record<string, unknown> = {
+    updatedBy: user.id,
+    ...clientPlainUpdates(input),
+    ...gst.updates,
+  };
+
+  const changes = diffFields(before, updates, CLIENT_FIELDS);
+  const updated = await tx.update(clients).set(updates).where(eq(clients.id, id)).returning();
+  const row = updated[0] as unknown as Client;
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'Client',
+        entityId: row.id,
+        refId: row.code,
+        changes,
+        detail: `Edited ${row.code} — ${row.name}`,
+      },
+      companyId,
+      user,
+    );
+  }
+  return withWarnings(row, warnings);
+}
+
+/**
+ * The Customer edit entry point the HTTP route calls. Edit-approval (ADR-202):
+ * when the company gate is on and the customer is still editable (a master is
+ * editable while it is not in Trash), the edit is STAGED for approval and a
+ * {staged:true, request} result is returned; otherwise it falls through to
+ * updateClient (today's behaviour). A customer is a single record with no child
+ * lines — there is no line guard.
+ */
+export async function updateClientOrStage(
+  id: string,
+  input: UpdateClientInput,
+  user: AuthContext,
+): Promise<ClientSaveResponse | DocumentEditStagedResult> {
   requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'edit');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    // The whole row, read BEFORE the update — the "before" of Before → After.
-    const existing = await tx
-      .select()
+
+  // Imported dynamically to avoid a static import cycle with client-edit-registry
+  // (which imports updateClientTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors clientEditRegistryEntry.isLive: any live (not-Trash) customer.
+    const rows = await tx
+      .select({ id: clients.id })
       .from(clients)
-      .where(and(eq(clients.id, id), isNull(clients.deletedAt)))
-      .for('update')
+      .where(and(eq(clients.id, id), eq(clients.companyId, companyId), isNull(clients.deletedAt)))
       .limit(1);
-    const before = existing[0];
-    if (!before) throw new NotFoundError('Customer not found. It may have been moved to Trash.');
-    // R5: refuse the save if someone else edited the customer after this form opened it.
-    assertUnchangedSinceOpened(before.updatedAt, input.expectedUpdatedAt);
-    if (input.name !== undefined) await assertClientNameFree(tx, companyId, input.name, id);
-
-    const settings = await loadMasterRuleSettings(tx, companyId);
-    const gst = clientGstUpdate(before, input);
-    const warnings = applyMasterRules(
-      gst.issues,
-      settings.masterRulesMode,
-      `Customer ${before.code}`,
-    );
-
-    const updates: Record<string, unknown> = {
-      updatedBy: user.id,
-      ...clientPlainUpdates(input),
-      ...gst.updates,
-    };
-
-    const changes = diffFields(before, updates, CLIENT_FIELDS);
-    const updated = await tx.update(clients).set(updates).where(eq(clients.id, id)).returning();
-    const row = updated[0] as unknown as Client;
-    if (changes.length > 0) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Edit,
-          entity: 'Client',
-          entityId: row.id,
-          refId: row.code,
-          changes,
-          detail: `Edited ${row.code} — ${row.name}`,
-        },
-        companyId,
-        user,
-      );
-    }
-    return withWarnings(row, warnings);
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('Client', id, input, input.expectedUpdatedAt, user);
+    return { staged: true, request };
+  }
+
+  return updateClient(id, input, user);
 }
 
 export async function softDeleteClient(

@@ -10,14 +10,17 @@
 import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
+import { clientEditRegistryEntry } from '../clients/client-edit-registry';
 import { customerDispatchEditRegistryEntry } from '../customer-dispatches/customer-dispatch-edit-registry';
 import { dcEditRegistryEntry } from '../delivery-challans/dc-edit-registry';
+import { itemEditRegistryEntry } from '../items/item-edit-registry';
 import { grnEditRegistryEntry } from '../goods-receipt-notes/grn-edit-registry';
 import { jobCardEditRegistryEntry } from '../job-cards/jobcard-edit-registry';
 import { jwEditRegistryEntry } from '../job-work-orders/jw-edit-registry';
 import { ncEditRegistryEntry } from '../nc-register/nc-edit-registry';
 import { partyGrnEditRegistryEntry } from '../party-grn/party-grn-edit-registry';
 import { productionOrderEditRegistryEntry } from '../production-orders/production-order-edit-registry';
+import { vendorEditRegistryEntry } from '../vendors/vendor-edit-registry';
 import { planEditRegistryEntry } from '../plans/plan-edit-registry';
 import { poEditRegistryEntry } from '../purchase-orders/po-edit-registry';
 import { prEditRegistryEntry } from '../purchase-requests/pr-edit-registry';
@@ -98,4 +101,7 @@ export const DOC_EDIT_REGISTRY: Partial<Record<DocumentEditEntity, DocEditRegist
   DeliveryChallan: dcEditRegistryEntry,
   PartyGrn: partyGrnEditRegistryEntry,
   ProductionOrder: productionOrderEditRegistryEntry,
+  Item: itemEditRegistryEntry,
+  Vendor: vendorEditRegistryEntry,
+  Client: clientEditRegistryEntry,
 };

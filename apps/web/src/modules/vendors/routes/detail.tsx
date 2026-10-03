@@ -20,12 +20,17 @@
 //
 // Every row sums to 12, so a value sits in exactly the slot its input occupies.
 
-import { type Vendor, gstCategoryLabel, stateLabel } from '@innovic/shared';
+import { type DocumentEditChange, type Vendor, gstCategoryLabel, stateLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { Panel } from '@/ui/data';
@@ -60,6 +65,11 @@ function VendorDetailPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteVendor();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-202 — the edit(s) staged against this vendor and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('Vendor', vendor?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading vendor…" />;
@@ -111,8 +121,13 @@ function VendorDetailPage(): React.JSX.Element {
         backLabel={BACK_LABEL}
         renderLink={(p) => <Link {...p} />}
         code={vendor.code}
-        name={vendor.name}
-        badges={<StatusBadge kind="active" status={String(vendor.isActive)} />}
+        name={readWithChip(vendor.name, pendingChanges, 'name')}
+        badges={
+          <>
+            <StatusBadge kind="active" status={String(vendor.isActive)} />
+            <Chip changes={pendingChanges} field="isActive" />
+          </>
+        }
         actions={
           <>
             {/* The one next step on a vendor: buy from them. Opens the PO form
@@ -148,7 +163,7 @@ function VendorDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <VendorFacts vendor={vendor} />
+        <VendorFacts vendor={vendor} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {/* Purchase Orders, Delivery Challans Out and GRNs for this vendor
@@ -171,35 +186,98 @@ function VendorDetailPage(): React.JSX.Element {
   );
 }
 
-function VendorFacts(props: { vendor: Vendor }): React.JSX.Element {
-  const { vendor } = props;
+function VendorFacts(props: {
+  vendor: Vendor;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { vendor, pendingChanges: pc } = props;
   return (
     <ReadGrid>
-      <ReadField label="Contact Person" size="lg" value={vendor.contactPerson} />
-      <ReadField label="Email" size="lg" value={vendor.email} />
+      <ReadField
+        label="Contact Person"
+        size="lg"
+        value={readWithChip(vendor.contactPerson, pc, 'contactPerson')}
+      />
+      <ReadField label="Email" size="lg" value={readWithChip(vendor.email, pc, 'email')} />
 
       <ReadField
         label="Rating"
         size="md"
-        value={vendor.rating ? <StatusBadge kind="rating" status={vendor.rating} /> : null}
+        value={readWithChip(
+          vendor.rating ? <StatusBadge kind="rating" status={vendor.rating} /> : null,
+          pc,
+          'rating',
+        )}
       />
-      <ReadField label="Phone" size="md" mono value={vendor.phone} />
-      <ReadField label="GSTIN" size="md" mono value={vendor.gstNumber} />
+      <ReadField label="Phone" size="md" mono value={readWithChip(vendor.phone, pc, 'phone')} />
+      <ReadField label="GSTIN" size="md" mono value={readWithChip(vendor.gstNumber, pc, 'gstNumber')} />
 
-      <ReadField label="GST Category" size="md" value={gstCategoryLabel(vendor.gstCategory)} />
+      <ReadField
+        label="GST Category"
+        size="md"
+        value={readWithChip(gstCategoryLabel(vendor.gstCategory), pc, 'gstCategory')}
+      />
       <ReadField
         label="Payment Terms (days)"
         size="md"
         mono
-        value={vendor.paymentTermsDays ?? null}
+        value={readWithChip(vendor.paymentTermsDays ?? null, pc, 'paymentTermsDays')}
       />
 
-      <ReadField label="City" size="lg" value={vendor.city} />
-      <ReadField label="State" size="md" value={stateLabel(vendor.stateCode) || vendor.state} />
-      <ReadField label="Pincode" size="xs" mono value={vendor.pincode} />
+      <ReadField label="City" size="lg" value={readWithChip(vendor.city, pc, 'city')} />
+      <ReadField
+        label="State"
+        size="md"
+        value={readWithChip(stateLabel(vendor.stateCode) || vendor.state, pc, 'stateCode', 'state')}
+      />
+      <ReadField label="Pincode" size="xs" mono value={readWithChip(vendor.pincode, pc, 'pincode')} />
 
-      <ReadField label="Materials Supplied" size="full" pre value={vendor.materialsSupplied} />
-      <ReadField label="Address" size="full" pre value={vendor.addressLine1} />
+      <ReadField
+        label="Materials Supplied"
+        size="full"
+        pre
+        value={readWithChip(vendor.materialsSupplied, pc, 'materialsSupplied')}
+      />
+      <ReadField
+        label="Address"
+        size="full"
+        pre
+        value={readWithChip(vendor.addressLine1, pc, 'addressLine1')}
+      />
     </ReadGrid>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the Vendor edit diff's field key
+ *  (VENDOR_FIELDS). Renders nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
+/** Compose a ReadField value with its pending-change chip. When no edit is
+ *  staged for any of `fields`, the value is returned untouched so ReadField's
+ *  own empty handling (em dash in --text3) still applies. When one is, the
+ *  current value (or an em dash) is shown with the amber "→ after" chip after
+ *  it. `fields` takes more than one key for a value fed by two columns (State
+ *  shows the State Code's label, so it watches both stateCode and state). */
+function readWithChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  ...fields: string[]
+): React.ReactNode {
+  const c = fields.map((f) => headerPendingChange(changes, f)).find(Boolean);
+  if (!c) return value;
+  const base =
+    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
+  return (
+    <>
+      {base}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

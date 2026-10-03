@@ -26,12 +26,17 @@
 // (plan v3 Step 2) closes the Phone · GSTIN row at md · md · md; State shows
 // "Name (code)" from the State Code, else an old record's free text.
 
-import { type Client, gstCategoryLabel, stateLabel } from '@innovic/shared';
+import { type Client, type DocumentEditChange, gstCategoryLabel, stateLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { Panel } from '@/ui/data';
@@ -67,6 +72,11 @@ function ClientDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'client_create');
   const softDelete = useSoftDeleteClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-202 — the edit(s) staged against this customer and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('Client', client?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -116,8 +126,13 @@ function ClientDetailPage(): React.JSX.Element {
         backLabel={BACK_LABEL}
         renderLink={(p) => <Link {...p} />}
         code={client.code}
-        name={client.name}
-        badges={<StatusBadge kind="active" status={String(client.isActive)} />}
+        name={readWithChip(client.name, pendingChanges, 'name')}
+        badges={
+          <>
+            <StatusBadge kind="active" status={String(client.isActive)} />
+            <Chip changes={pendingChanges} field="isActive" />
+          </>
+        }
         actions={
           <>
             {canEdit ? (
@@ -142,7 +157,7 @@ function ClientDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <ClientFacts client={client} />
+        <ClientFacts client={client} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {/* Sales Orders, dispatches and outstanding invoices for this customer
@@ -165,24 +180,83 @@ function ClientDetailPage(): React.JSX.Element {
   );
 }
 
-function ClientFacts(props: { client: Client }): React.JSX.Element {
-  const { client } = props;
+function ClientFacts(props: {
+  client: Client;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { client, pendingChanges: pc } = props;
   return (
     <ReadGrid>
       {/* Same order as the Customer form: the address block, then contact. */}
-      <ReadField label="Address" size="full" pre value={client.addressLine1} />
+      <ReadField
+        label="Address"
+        size="full"
+        pre
+        value={readWithChip(client.addressLine1, pc, 'addressLine1')}
+      />
 
-      <ReadField label="City" size="lg" value={client.city} />
-      <ReadField label="State" size="md" value={stateLabel(client.stateCode) || client.state} />
-      <ReadField label="Pincode" size="xs" mono value={client.pincode} />
+      <ReadField label="City" size="lg" value={readWithChip(client.city, pc, 'city')} />
+      <ReadField
+        label="State"
+        size="md"
+        value={readWithChip(stateLabel(client.stateCode) || client.state, pc, 'stateCode', 'state')}
+      />
+      <ReadField label="Pincode" size="xs" mono value={readWithChip(client.pincode, pc, 'pincode')} />
 
-      <ReadField label="Contact Person" size="lg" value={client.contactPerson} />
-      <ReadField label="Email" size="lg" value={client.email} />
+      <ReadField
+        label="Contact Person"
+        size="lg"
+        value={readWithChip(client.contactPerson, pc, 'contactPerson')}
+      />
+      <ReadField label="Email" size="lg" value={readWithChip(client.email, pc, 'email')} />
 
-      <ReadField label="Phone" size="md" mono value={client.phone} />
-      <ReadField label="GSTIN" size="md" mono value={client.gstNumber} />
-      <ReadField label="GST Category" size="md" value={gstCategoryLabel(client.gstCategory)} />
-      <ReadField label="Payment Days" size="xs" mono value={client.paymentDays ?? null} />
+      <ReadField label="Phone" size="md" mono value={readWithChip(client.phone, pc, 'phone')} />
+      <ReadField label="GSTIN" size="md" mono value={readWithChip(client.gstNumber, pc, 'gstNumber')} />
+      <ReadField
+        label="GST Category"
+        size="md"
+        value={readWithChip(gstCategoryLabel(client.gstCategory), pc, 'gstCategory')}
+      />
+      <ReadField
+        label="Payment Days"
+        size="xs"
+        mono
+        value={readWithChip(client.paymentDays ?? null, pc, 'paymentDays')}
+      />
     </ReadGrid>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the Client edit diff's field key
+ *  (CLIENT_FIELDS). Renders nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
+/** Compose a ReadField value with its pending-change chip. When no edit is
+ *  staged for any of `fields`, the value is returned untouched so ReadField's
+ *  own empty handling (em dash in --text3) still applies. When one is, the
+ *  current value (or an em dash) is shown with the amber "→ after" chip after
+ *  it. `fields` takes more than one key for a value fed by two columns (State
+ *  shows the State Code's label, so it watches both stateCode and state). */
+function readWithChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  ...fields: string[]
+): React.ReactNode {
+  const c = fields.map((f) => headerPendingChange(changes, f)).find(Boolean);
+  if (!c) return value;
+  const base =
+    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
+  return (
+    <>
+      {base}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

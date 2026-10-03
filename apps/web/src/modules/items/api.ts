@@ -2,6 +2,7 @@ import type {
   BulkCreateItemsInput,
   BulkCreateItemsResponse,
   CreateItemInput,
+  DocumentEditStagedResult,
   Item,
   ListItemsQuery,
   ListItemsResponse,
@@ -120,10 +121,13 @@ export function useBulkCreateItems() {
 
 export function useUpdateItem(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<Item, Error, UpdateItemInput>({
+  // ADR-202 — when the edit-approval gate is on and the item is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated item. The edit page reads the union to tell them apart.
+  return useMutation<Item | DocumentEditStagedResult, Error, UpdateItemInput>({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<Item>(`/items/${id}`, {
+        apiFetch<Item | DocumentEditStagedResult>(`/items/${id}`, {
           method: 'PATCH',
           json: input,
           ...(headers ? { headers } : {}),
@@ -132,6 +136,13 @@ export function useUpdateItem(id: string, saveKey?: SaveKey) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the item itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: itemsKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(itemsKeys.detail(id), updated);
     },
   });
