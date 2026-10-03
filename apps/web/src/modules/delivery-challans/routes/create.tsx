@@ -20,7 +20,7 @@
 //     for an NC would silently break receiving/QC/auto-close (QC-NC-HANDLING-
 //     DESIGN.md §5).
 //
-//   • Against JW PO / DC (ADR-208) — the store knows the JW PO No. or the DC No.
+//   • Against JW PO / DC (ADR-211) — the store knows the JW PO No. or the DC No.
 //     the pieces first went out on, not the NC No. Search by either, pick ONE
 //     return-to-vendor NC behind it, and the SAME Against-NC form opens — so the
 //     save is still useCreateNcDc (one writer, one-challan-per-NC lock). Against
@@ -120,7 +120,7 @@ const SOURCE_META: Record<DcSource, { label: string }> = {
 };
 
 /** One row of the Against PO warning — from GET rtv-candidates or from the
- *  409's details.ncs (ADR-208). */
+ *  409's details.ncs (ADR-211). */
 interface RtvPanelRow {
   ncId: string;
   ncCode: string;
@@ -131,7 +131,7 @@ interface RtvPanelRow {
 }
 
 /** The 409 an Against PO save answers with when return-to-vendor pieces are
- *  waiting on one of its PO lines (ADR-208). */
+ *  waiting on one of its PO lines (ADR-211). */
 function isRtvPendingConflict(e: unknown): e is ApiError & { details: RtvPendingConflictDetails } {
   return (
     e instanceof ApiError &&
@@ -528,7 +528,7 @@ function PoDcFormBody({
   // an L1 Viewer got the whole form and failed only at the API.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
-  // ADR-208 — pieces from this PO waiting to go back to the vendor (an RTV NC
+  // ADR-211 — pieces from this PO waiting to go back to the vendor (an RTV NC
   // ready, or still awaiting QC's decision). The fetch below is only the early
   // warning; the server is the guard (409 rtv_pending on Save).
   const rtv = useRtvCandidates(poId);
@@ -590,7 +590,7 @@ function PoDcFormBody({
     [lineDrafts],
   );
 
-  // ADR-208 warning rows: fetched candidates merged with any the server named in
+  // ADR-211 warning rows: fetched candidates merged with any the server named in
   // a 409 (by ncId, the 409 being fresher), narrowed to the lines being sent.
   const rtvRows = useMemo<RtvPanelRow[]>(() => {
     const byId = new Map<string, RtvPanelRow>();
@@ -742,7 +742,7 @@ function PoDcFormBody({
           ...(po.vendorCodeText ? { vendorCodeText: po.vendorCodeText } : {}),
           transport: transport.trim() || null,
           vehicleNo: vehicleNo.trim() || null,
-          // ADR-208 — the NCs the store saw when it ticked; sent only when ticked.
+          // ADR-211 — the NCs the store saw when it ticked; sent only when ticked.
           ...(rtvConfirmed ? { rtvConfirmedNcIds: rtvRows.map((r) => r.ncId) } : {}),
         },
         lines,
@@ -901,7 +901,7 @@ function PoDcFormBody({
         </FormField>
       </FormGrid>
 
-      {/* ADR-208 — pieces waiting to go back to the vendor on a PO line this
+      {/* ADR-211 — pieces waiting to go back to the vendor on a PO line this
           challan sends. Shown only when there are some; with none, Against PO
           is exactly as before. */}
       {rtv.isError ? (
@@ -1291,7 +1291,7 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
 }
 
 // ═══ Against JW PO / DC — the return-to-vendor challan found by PO / DC No. ═══
-// ADR-208. The store knows the JW PO No. or the DC No. the pieces first went out
+// ADR-211. The store knows the JW PO No. or the DC No. the pieces first went out
 // on, not the NC No. The picker lists the return-to-vendor NCs behind them
 // (GET /delivery-challans/rtv-candidates); picking one opens the EXISTING
 // NcDcFormBody, so the save is still useCreateNcDc — one writer for the RTV qty
@@ -1339,7 +1339,7 @@ function NcDcFormBody({
   const navigate = useNavigate();
   const { data: eff } = useMyAccess();
   // Same gate the NC detail page and the server enforce for this challan
-  // (ADR-208, owner): OSP Outward DC ENTRY alone raises the return challan, on
+  // (ADR-211, owner): OSP Outward DC ENTRY alone raises the return challan, on
   // every route. Disposing the NC stays with QC (nc_dispose) — not needed here.
   // Checked here too because the route is reachable by URL.
   const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;

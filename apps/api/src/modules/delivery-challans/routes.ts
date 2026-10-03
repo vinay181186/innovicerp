@@ -22,7 +22,7 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     return service.listDeliveryChallans(query, req.user);
   });
 
-  // ADR-208 — return-to-vendor NCs by JW PO / DC No. (+New DC → Against JW PO
+  // ADR-211 — return-to-vendor NCs by JW PO / DC No. (+New DC → Against JW PO
   // / DC). Static path, registered before '/:id' (find-my-way prefers static
   // segments anyway, so '/:id' never swallows it).
   app.get('/delivery-challans/rtv-candidates', async (req) => {

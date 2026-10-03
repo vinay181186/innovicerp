@@ -25,7 +25,7 @@ export const deliveryChallansKeys = {
   details: () => [...deliveryChallansKeys.all, 'detail'] as const,
   detail: (id: string) => [...deliveryChallansKeys.details(), id] as const,
   sendable: (poId: string) => [...deliveryChallansKeys.all, 'sendable', poId] as const,
-  /** ADR-208 — every rtv-candidates query (all, or narrowed to one PO). Under
+  /** ADR-211 — every rtv-candidates query (all, or narrowed to one PO). Under
    *  `all`, so useInvalidateNcCascade's deliveryChallansKeys.all invalidation
    *  (fired by a successful create-NC-DC) drops a consumed NC from every list. */
   rtvCandidatesAll: () => [...deliveryChallansKeys.all, 'rtv-candidates'] as const,
@@ -83,7 +83,7 @@ export function useEligibleRtvNcs(enabled = true) {
   });
 }
 
-/** ADR-208 — return-to-vendor NCs behind a JW PO / its DCs: `ready` (QC
+/** ADR-211 — return-to-vendor NCs behind a JW PO / its DCs: `ready` (QC
  *  disposed Return to Vendor, no challan yet) and `awaiting_decision` (still
  *  pending QC). Powers the "Against JW PO / DC" picker (no PO → every
  *  candidate, capped server-side) and the Against PO warning (one PO).

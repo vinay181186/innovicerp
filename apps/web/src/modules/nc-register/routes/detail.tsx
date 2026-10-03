@@ -173,7 +173,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // (L3 Editor and above).
   const canEdit = ncPerms.edit;
   // The RTV challan is an outward DC: OSP Outward DC entry ALONE raises it, on
-  // every route (ADR-208, owner) — no NC edit right needed. Disposing the NC
+  // every route (ADR-211, owner) — no NC edit right needed. Disposing the NC
   // (the gates above) stays with QC.
   const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
   // Delete is not one of the four tier actions, so "L5 Department Admin and

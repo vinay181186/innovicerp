@@ -1,4 +1,4 @@
-// Against JW PO / DC picker (ADR-208) — the pure candidate table + search for
+// Against JW PO / DC picker (ADR-211) — the pure candidate table + search for
 // the "Against JW PO / DC" source on +New DC. It only FINDS a return-to-vendor
 // NC; picking one hands its id back to JwpoDcRtvSection (routes/create.tsx),
 // which opens the existing Against-NC form, so the save is still useCreateNcDc

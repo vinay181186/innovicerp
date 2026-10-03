@@ -1,4 +1,4 @@
-// Return-to-vendor candidates by JW PO / DC No. (ADR-208).
+// Return-to-vendor candidates by JW PO / DC No. (ADR-211).
 //
 // READ-ONLY. Finds the NCs whose rejected pieces are waiting to go back to the
 // vendor, so the store can pick one by the JW PO No. / the DC No. the pieces

@@ -1060,7 +1060,7 @@ async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string>
 
 const RTV_MESSAGE_MAX_NCS = 3;
 
-/** ADR-208 — 409 (details.kind = 'rtv_pending') when any of these PO lines has
+/** ADR-211 — 409 (details.kind = 'rtv_pending') when any of these PO lines has
  *  return-to-vendor pieces waiting that the store has NOT confirmed as
  *  different pieces. Confirmation is per NC: an NC whose id is in
  *  `confirmedNcIds` is let through; any other waiting NC refuses the save, and
@@ -1192,7 +1192,7 @@ export async function createDeliveryChallan(
     // Lock the PO lines first, so a concurrent OSP DC / JW DC Outward on the
     // same line waits here and then reads this challan's qty (no over-send).
     await lockPoLinesForSend(tx, poLineIds, companyId);
-    // ADR-208 — Against PO guard. Checked inside the save's transaction,
+    // ADR-211 — Against PO guard. Checked inside the save's transaction,
     // before any write: a PO line on this challan that has return-to-vendor
     // pieces waiting (NC ready, or vendor-sourced NC awaiting QC's decision)
     // is refused unless the store confirmed THAT NC as different pieces

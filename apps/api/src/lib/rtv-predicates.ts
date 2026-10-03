@@ -1,4 +1,4 @@
-// Return-to-vendor challan predicates (ADR-208) — the ONE SQL definition.
+// Return-to-vendor challan predicates (ADR-211) — the ONE SQL definition.
 //
 // "An NC is ready for its return-to-vendor challan" mirrors the guards that
 // createNcDc (nc-register/service.ts) enforces before it raises the challan:

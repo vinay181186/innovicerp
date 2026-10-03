@@ -230,7 +230,7 @@ export const createDeliveryChallanInputSchema = z.object({
     soRefText: z.string().nullable().optional(),
     transport: z.string().nullable().optional(),
     vehicleNo: z.string().nullable().optional(),
-    /** ADR-208 — the NCs the store saw when it ticked "These are new pieces,
+    /** ADR-211 — the NCs the store saw when it ticked "These are new pieces,
      *  not the ones waiting to go back". The save is refused (409,
      *  details.kind = 'rtv_pending') while any return-to-vendor NC (ready or
      *  awaiting the QC decision) waits on a PO line of this challan and is NOT
@@ -242,7 +242,7 @@ export const createDeliveryChallanInputSchema = z.object({
 });
 export type CreateDeliveryChallanInput = z.infer<typeof createDeliveryChallanInputSchema>;
 
-// ─── Return to Vendor by JW PO / DC No. (ADR-208) ──────────────────────────
+// ─── Return to Vendor by JW PO / DC No. (ADR-211) ──────────────────────────
 // The "Against JW PO / DC" source on +New DC: the store searches by the JW PO
 // No. or the DC No. the pieces first went out on, and gets the return-to-vendor
 // NCs behind it. The challan itself is still raised by POST

@@ -421,7 +421,7 @@ export async function listNcRegister(
     // one-challan-per-NC lock, ~L1368-1380): only a disposed return-to-vendor NC
     // with no challan yet. Kept in lock-step so the picker never offers an NC
     // that createNcDc would then refuse, and never a double return of the same
-    // qty. Absent/false = unchanged behaviour. ADR-208: the predicate lives in
+    // qty. Absent/false = unchanged behaviour. ADR-211: the predicate lives in
     // lib/rtv-predicates.ts, shared with GET /delivery-challans/rtv-candidates.
     const pendingRtvChallanFrag = input.pendingRtvChallan
       ? sql`AND ${rtvReadyForChallanSql('nc')}`
@@ -1854,7 +1854,7 @@ export async function createNcDc(
   input: CreateNcDcInput,
   user: AuthContext,
 ): Promise<CreateNcDcResult> {
-  // ADR-208: OSP Outward DC entry alone raises the return challan; disposing
+  // ADR-211: OSP Outward DC entry alone raises the return challan; disposing
   // stays with QC (the NC was already disposed Return to Vendor by QC — this
   // only books the challan and the NC's rtv ledger that follows from it).
   await requireFormAccess(user, 'ospdc_create', 'entry');
