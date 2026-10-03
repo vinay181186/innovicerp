@@ -70,6 +70,15 @@ export const SECTIONS: readonly NavSection[] = [
         ],
       },
       {
+        // ADR-205: a route card is what turns a plan into a Job Card, so it is
+        // planning's own master, not the drawing office's. Moved out of Design
+        // and listed here only (owner, 2026-10-03).
+        label: 'Master',
+        items: [
+          { to: '/route-cards', label: 'Route Card Master', icon: '🗒', formKey: 'routecard_create' },
+        ],
+      },
+      {
         label: 'Report',
         items: [{ to: '/reports', search: { group: 'Planning' }, label: 'Reports', icon: '📊' }],
       },
@@ -203,12 +212,8 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/design-work-log', label: 'Design Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
           { to: '/bom-masters', label: 'BOM Master', icon: '📦', formKey: 'bom_create' },
           { to: '/design-tracker', label: 'Design Tracker', icon: '🎨', formKey: 'design_create' },
-          {
-            to: '/route-cards',
-            label: 'Route Card Master',
-            icon: '🗒',
-            formKey: 'routecard_create',
-          },
+          // Route Card Master moved to Planning > Master (ADR-205). It is
+          // listed there and nowhere else — one page, one place in the menu.
         ],
       },
       {

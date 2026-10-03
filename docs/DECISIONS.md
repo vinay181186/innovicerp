@@ -10896,3 +10896,58 @@ existed: the app's own create screens.
 - The operation remark does NOT travel to `jc_ops`, so the operator does not yet see it on the Job
   Card. That needs its own column and migration — deliberately out of scope.
 - Header drops from ~300px to ~235px, about four more operation rows visible on a 900px screen.
+## ADR-205: Route Card Master lives under Planning, and the Planning tier governs it
+
+**Date:** 2026-10-03
+**Status:** Accepted
+**Owner decision:** "add route card in planning menu--master" / "acess tier must apply. no need to show at both place".
+
+### Context
+
+Route Card Master sat in the **Design** menu, next to BOM Master and the design
+trackers, and its access key `routecard_create` carried `dept: 'design'`. That
+was where the drawing office put it, but it is not what the card is used for: a
+route card is the operation list that turns a **plan** into a **Job Card**
+(ADR-170 — Production Order = Plan + Route Card + Target Date). The people who
+raise and read it are planners, and the screen that needs it is SO/JWSO
+Planning. A planner with no Design tier could not open it at all.
+
+### Decision
+
+1. Route Card Master moves to **Planning > Master** — a new `Master` group in
+   the Planning menu, the same shape Sales & CRM and Production already use.
+2. It is listed **there and nowhere else**. The Design menu no longer carries
+   it (the owner did not want the same page in two menus).
+3. `routecard_create` moves from `dept: 'design'` to `dept: 'planning'`, so the
+   **Planning** department tier is what grants view / create / edit / approve
+   on route cards. Nothing else about the key changes: the route guards, the
+   API's `requireFormAccess` calls and the global-search gate all keep working
+   off the same key.
+4. The dashboard quick link `/route-cards` is gated by `planning` for the same
+   reason.
+
+### Consequence, and who must be re-granted
+
+Rights are read from the department tier, so moving the key moves which tier is
+read. On the day this ships, three Design people whose Planning tier is only L1
+drop to view-only on route cards and must be re-granted in Access Control
+(either raise their Planning tier or tick Route Card Master as a per-form
+extra, which is additive on top of the tier):
+
+| Person | Design tier | Planning tier | Had | Gets |
+|---|---|---|---|---|
+| Dharmesh Patel | L5 | L1 | view + create + edit + approve | view only |
+| Haresh P. Prajapati | L4 | L1 | view + approve | view only |
+| Mayur J. Patel | L2 | L1 | view + create | view only |
+
+Everyone whose Planning tier is L2 or higher gains what that tier says, which
+is the point of the move — planners can now reach the page.
+
+### Alternatives rejected
+
+- **List it in both menus.** Rejected by the owner: one page, one place.
+- **Keep `dept: 'design'` and only move the menu entry.** The link would then
+  sit in Planning but stay invisible to anyone without a Design tier — the menu
+  would lie about who may use it.
+- **A new `routecard` department.** One page does not need its own department,
+  and every account would have to be re-configured.
