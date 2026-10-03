@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clickRowMenuItem, findRowWithMenuItem, planningLineRows } from './row-menu';
+import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // A multi-item, mixed-type BOM driven the whole way: BOM -> equipment SO ->
 // explosion -> plans -> job cards -> JOB CARD EDITS -> production -> QC ->
@@ -268,7 +269,8 @@ test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  state.soCode = await page.locator('input[value^="IN-SO-"]').first().inputValue().catch(() => '');
+  // ADR-207 — SO No. is "Auto on save"; read it off the detail page after save.
+  state.soCode = '';
 
   await page.locator('select.innovic-select').first().selectOption('equipment');
   await page.waitForTimeout(2500);
@@ -287,11 +289,12 @@ test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   const nums = page.locator('input[type="number"]:visible');
   await nums.nth(0).fill(String(SO_QTY));
   await nums.nth(1).fill(String(RATE)).catch(() => {});
+  await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await page.waitForTimeout(6000);
   const err = await bannerText(page);
   expect(page.url(), `SO save rejected: ${err}`).toMatch(/sales-orders\/[0-9a-f]{8}-/);
-  if (!state.soCode) state.soCode = (await codesOnPage(page, /IN-SO-\d+/))[0] ?? '';
+  state.soCode = await soNoFromDetail(page);
 
   record({
     step: '02',

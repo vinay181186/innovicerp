@@ -11,7 +11,9 @@ import {
 } from '../../lib/errors';
 import * as service from './service';
 
-const TEST_PREFIX = 'T030-';
+// ADR-207 — every test Internal SO No. must start with "SO-"; the cleanup
+// LIKE patterns below match on this prefix.
+const TEST_PREFIX = 'SO-T030-';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
@@ -213,24 +215,24 @@ describe('sales-orders service', () => {
       },
       admin,
     );
-    await expect(
-      service.createSalesOrder(
-        {
-          header: {
-            internalSoNo: code,
-            soDate: '2026-05-02',
-            customerName: 'Dup Co',
-            type: 'component_manufacturing',
-            status: 'open',
-            gstPercent: 18,
-          },
-          lines: [
-            { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
-          ],
+    const dup = service.createSalesOrder(
+      {
+        header: {
+          internalSoNo: code,
+          soDate: '2026-05-02',
+          customerName: 'Dup Co',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
         },
-        admin,
-      ),
-    ).rejects.toBeInstanceOf(ConflictError);
+        lines: [
+          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+        ],
+      },
+      admin,
+    );
+    await expect(dup).rejects.toBeInstanceOf(ConflictError);
+    await expect(dup).rejects.toThrow(/Internal SO No\. .* already exists/);
   });
 
   it('createSalesOrder rejects invalid clientId with ValidationError (not raw FK)', async () => {
