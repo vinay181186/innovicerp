@@ -19,6 +19,7 @@ import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useStockReservations } from '@/modules/plans/api';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -71,10 +72,10 @@ function reservationColumns(itemCode: string): DataTableColumn<ReservationDetail
             className="mono fw-700"
             style={linkStyle}
           >
-            {row.soCodeText}
+            {soNoWithInternal(row.soCodeText, row.soInternalNo)}
           </Link>
         ) : (
-          <PlainRef code={row.soCodeText} />
+          <PlainRef code={soNoWithInternal(row.soCodeText, row.soInternalNo)} />
         ),
     },
     {

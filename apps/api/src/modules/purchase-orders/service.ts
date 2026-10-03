@@ -876,16 +876,22 @@ export async function getPurchaseOrder(
     // source_so_line_id on every line; a hand-raised PO has none, and stays null.
     const soLineId = lineRows.find((r) => r.row.sourceSoLineId)?.row.sourceSoLineId ?? null;
     let soCode: string | null = null;
+    let soInternalNo: string | null = null;
     let soLineNo: number | null = null;
     if (soLineId) {
       const soRows = await tx
-        .select({ code: salesOrders.code, lineNo: salesOrderLines.lineNo })
+        .select({
+          code: salesOrders.code,
+          internalSoNo: salesOrders.internalSoNo,
+          lineNo: salesOrderLines.lineNo,
+        })
         .from(salesOrderLines)
         .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
         .where(and(eq(salesOrderLines.id, soLineId), isNull(salesOrderLines.deletedAt)))
         .limit(1);
       soCode = soRows[0]?.code ?? null;
       soLineNo = soRows[0]?.lineNo ?? null;
+      soInternalNo = soRows[0]?.internalSoNo ?? null;
     }
 
     const header = toPurchaseOrder(headerRow.row);
@@ -904,6 +910,7 @@ export async function getPurchaseOrder(
       vendorName: headerRow.vendorName,
       vendorCode: headerRow.vendorCode,
       soCode,
+      soInternalNo,
       soLineNo,
       lines: showMoney ? lines : lines.map(hidePoLineMoney),
     };
@@ -3856,6 +3863,7 @@ export async function getPurchaseOrderRelated(
       .selectDistinct({
         id: salesOrders.id,
         code: salesOrders.code,
+        internalSoNo: salesOrders.internalSoNo,
         status: salesOrders.status,
         date: salesOrders.soDate,
       })
@@ -3992,7 +4000,7 @@ export async function getPurchaseOrderRelated(
         status: r.status,
         date: toIsoDate(r.date),
         linkId: null,
-        label: null,
+        label: r.internalSoNo,
       })),
     );
     const jcSection = section(

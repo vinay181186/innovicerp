@@ -39,6 +39,7 @@ const HEADER_SELECT = sql`
     si.id, si.code, si.issue_date, si.issue_against,
     si.job_card_id, jc.code AS job_card_code,
     si.sales_order_id, so.code AS sales_order_code,
+    so.internal_so_no AS sales_order_internal_no,
     si.issued_to_operator_id, si.issued_to, si.department,
     si.purpose, si.remarks, si.ref_type, si.ref_no,
     si.item_code_text AS legacy_code, si.qty AS legacy_qty,
@@ -63,6 +64,7 @@ function toListItem(r: Record<string, unknown>): StoreIssueListItem {
     jobCardCode: (r['job_card_code'] as string | null) ?? null,
     salesOrderId: (r['sales_order_id'] as string | null) ?? null,
     salesOrderCode: (r['sales_order_code'] as string | null) ?? null,
+    salesOrderInternalNo: (r['sales_order_internal_no'] as string | null) ?? null,
     operatorId: (r['issued_to_operator_id'] as string | null) ?? null,
     issuedTo: String(r['issued_to'] ?? ''),
     department: (r['department'] as string | null) ?? null,
@@ -96,6 +98,7 @@ export async function listStoreIssues(
           OR si.purpose ILIKE ${term}
           OR jc.code ILIKE ${term}
           OR so.code ILIKE ${term}
+          OR so.internal_so_no ILIKE ${term}
           OR si.item_code_text ILIKE ${term}
           OR EXISTS (
             SELECT 1 FROM public.store_issue_lines sl

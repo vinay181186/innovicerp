@@ -7,6 +7,7 @@
 
 import { ISSUE_AGAINST_LABELS, type StoreIssueListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 
 const ISSUE_AGAINST_OPTIONS = Object.entries(ISSUE_AGAINST_LABELS).map(([value, label]) => ({
@@ -19,7 +20,11 @@ export const ISSUE_REGISTER_HIDDEN_COLUMNS = ['created_on'] as const;
 
 function reference(iss: StoreIssueListItem): string {
   if (iss.issueAgainst === 'job_card') return iss.jobCardCode ?? '—';
-  if (iss.issueAgainst === 'assembly_so') return iss.salesOrderCode ?? '—';
+  if (iss.issueAgainst === 'assembly_so') {
+    return iss.salesOrderCode
+      ? soNoWithInternal(iss.salesOrderCode, iss.salesOrderInternalNo)
+      : '—';
+  }
   return iss.department ?? iss.legacyReference ?? '—';
 }
 

@@ -13,6 +13,7 @@ export async function readAssemblyReservationRows(
 ): Promise<ReservationDetail[]> {
   const rows = (await tx.execute(sql`
     SELECT r.id, r.item_id, COALESCE(i.code, '') AS item_code, r.so_code_text, r.sales_order_id,
+           so.internal_so_no AS so_internal_no,
            COALESCE(c.name, so.customer_name) AS customer_name,
            r.qty::float8 AS qty, r.consumed_qty::float8 AS consumed_qty,
            r.released_qty::float8 AS released_qty, r.status, r.release_reason,
@@ -38,6 +39,7 @@ export async function readAssemblyReservationRows(
       itemCode: (r['item_code'] as string | null) || null,
       soLineId: null,
       soCodeText: String(r['so_code_text'] ?? ''),
+      soInternalNo: (r['so_internal_no'] as string | null) ?? null,
       lineNo: null,
       customerName: (r['customer_name'] as string | null) ?? null,
       itemRevision: null,

@@ -30,6 +30,7 @@ interface WipRawRow {
   client_po_line_no: string | null;
   item_name: string | null;
   so_code: string | null;
+  so_internal_no: string | null;
   vendor_name: string | null;
   vendor_code: string | null;
   order_qty: number;
@@ -55,7 +56,8 @@ export async function listOspWip(
         // box must find it. sol is the SO-line join the FROM below makes.
         sql`AND (w.jc_code ILIKE ${term} ESCAPE '\\' OR w.item_code ILIKE ${term} ESCAPE '\\'
           OR w.item_name ILIKE ${term} ESCAPE '\\' OR w.so_code ILIKE ${term} ESCAPE '\\'
-          OR w.vendor_name ILIKE ${term} ESCAPE '\\' OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\')`
+          OR w.vendor_name ILIKE ${term} ESCAPE '\\' OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+          OR so.internal_so_no ILIKE ${term} ESCAPE '\\')`
       : sql``;
     // Sort & Filter (ADR-200): the register's column filters + sort.
     const sf = readSf(input.sf);
@@ -73,6 +75,10 @@ export async function listOspWip(
       LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      -- ADR-207: the Internal SO No., live off the SAME SO the view's so_code
+      -- comes from (jc.source_so_line_id), joined here so the view is unchanged.
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines rev_jwl
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
       WHERE w.company_id = ${companyId}::uuid
@@ -111,7 +117,8 @@ export async function listOspWip(
         -- off the same SO line the revision above is read from. SO side only:
         -- a job-work line has no customer PO, so JW-sourced ops are correctly
         -- null. Never sol.line_no, which is OUR line number.
-        sol.client_po_line_no AS client_po_line_no
+        sol.client_po_line_no AS client_po_line_no,
+        so.internal_so_no AS so_internal_no
       ${fromFrag}
         ${bucketFrag}
       ORDER BY ${orderBy}
@@ -131,6 +138,7 @@ export async function listOspWip(
       clientPoLineNo: r.client_po_line_no,
       itemName: r.item_name,
       soCode: r.so_code,
+      soInternalNo: r.so_internal_no,
       vendorName: r.vendor_name,
       vendorCode: r.vendor_code,
       orderQty: Number(r.order_qty),

@@ -97,6 +97,10 @@ export function printOspDc(args: {
     ...(dc.soCode || dc.soRefText
       ? [{ label: 'SO No.', value: dc.soCode ?? dc.soRefText ?? '', variant: 'mono' } as const]
       : []),
+    // ADR-207: the Internal SO No. of that SO, on its own labelled line.
+    ...(dc.soInternalNo
+      ? [{ label: 'Internal SO No.', value: dc.soInternalNo, variant: 'mono' } as const]
+      : []),
     { label: 'PO No.', value: linkedPo, variant: 'mono' },
     // NO "Drawing Rev" field. It used to print here, beside the SO and PO
     // numbers, and was removed on the user's instruction (2026-09-11): the

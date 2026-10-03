@@ -7,6 +7,7 @@
 import { type PurchaseRequestListItem, opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { prBalanceClosedText, prOrderBalance } from '../lib/pr-balance';
 
 /** The SO or JC this PR came from — one or the other, like the old card. */
@@ -14,7 +15,7 @@ function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
   if (pr.soCode) {
     return (
       <span style={{ color: 'var(--cyan)' }}>
-        {pr.soCode}
+        {soNoWithInternal(pr.soCode, pr.soInternalNo)}
         {pr.soLineNo ? <span className="text3"> · Ln {pr.soLineNo}</span> : null}
       </span>
     );

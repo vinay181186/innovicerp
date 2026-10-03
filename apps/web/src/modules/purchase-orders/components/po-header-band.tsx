@@ -16,6 +16,7 @@
 
 import type { DocumentEditChange, PurchaseOrderDetail, Vendor } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -221,7 +222,7 @@ export function PoHeaderBand({
             value={
               detail.soCode ? (
                 <span className="mono" style={{ color: 'var(--purple)' }}>
-                  {detail.soCode}
+                  {soNoWithInternal(detail.soCode, detail.soInternalNo)}
                   {detail.soLineNo ? (
                     <span className="text3"> · Ln {detail.soLineNo}</span>
                   ) : null}

@@ -7,6 +7,7 @@
 
 import { opSrNo, type OspWipRow } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 
 export const OSP_AT_VENDOR_DEFAULT_PINNED = ['item_code'];
@@ -82,7 +83,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
       kind: 'code',
       header: 'SO No.',
       className: 'mono text2',
-      render: (r) => r.soCode ?? '—',
+      render: (r) => (r.soCode ? soNoWithInternal(r.soCode, r.soInternalNo) : '—'),
     },
     {
       id: 'vendor',

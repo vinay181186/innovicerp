@@ -38,6 +38,7 @@ export const ospWipRowSchema = z.object({
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
+  soInternalNo: z.string().nullable().optional(), // ADR-207 Internal SO No., live
   vendorName: z.string().nullable(),
   vendorCode: z.string().nullable(),
   /** Ordered qty on the job card. */
