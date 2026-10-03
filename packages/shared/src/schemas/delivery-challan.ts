@@ -230,10 +230,85 @@ export const createDeliveryChallanInputSchema = z.object({
     soRefText: z.string().nullable().optional(),
     transport: z.string().nullable().optional(),
     vehicleNo: z.string().nullable().optional(),
+    /** ADR-208 — the store ticked "These are new pieces, not the ones waiting
+     *  to go back". Required only when a PO line on this challan has pieces
+     *  waiting on a return-to-vendor NC (ready or awaiting the QC decision);
+     *  without it the save is refused with details.kind = 'rtv_pending'.
+     *  Not stored — it is a confirmation, not a fact about the challan. */
+    rtvPendingConfirmed: z.boolean().optional(),
   }),
   lines: z.array(createDeliveryChallanLineInputSchema).min(1),
 });
 export type CreateDeliveryChallanInput = z.infer<typeof createDeliveryChallanInputSchema>;
+
+// ─── Return to Vendor by JW PO / DC No. (ADR-208) ──────────────────────────
+// The "Against JW PO / DC" source on +New DC: the store searches by the JW PO
+// No. or the DC No. the pieces first went out on, and gets the return-to-vendor
+// NCs behind it. The challan itself is still raised by POST
+// /nc-register/:id/create-dc (createNcDc) — this list only FINDS the NC, so the
+// one-challan-per-NC lock and the RTV counting stay in one place.
+
+export const RTV_CANDIDATE_STATES = [
+  /** QC disposed the NC Return to Vendor and no challan exists yet — the exact
+   *  predicate createNcDc accepts (same SQL as pendingRtvChallan). */
+  'ready',
+  /** Vendor-sourced NC still pending QC's decision — shown greyed, never
+   *  selectable. */
+  'awaiting_decision',
+] as const;
+export const rtvCandidateStateSchema = z.enum(RTV_CANDIDATE_STATES);
+export type RtvCandidateState = z.infer<typeof rtvCandidateStateSchema>;
+
+export const rtvCandidateSchema = z.object({
+  ncId: z.string().uuid(),
+  ncCode: z.string(),
+  ncDate: z.string(),
+  state: rtvCandidateStateSchema,
+  itemId: z.string().uuid().nullable(),
+  itemCode: z.string().nullable(),
+  itemCodeText: z.string().nullable(),
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  itemNameText: z.string().nullable(),
+  /** The NC's rejected qty — exactly what the return challan line will carry. */
+  rejectedQty: z.string(),
+  clientPoLineNo: z.string().nullable(),
+  jobCardId: z.string().uuid().nullable(),
+  jcCode: z.string().nullable(),
+  opSeq: z.number().int().nullable(),
+  /** The JW PO the pieces belong to — resolved exactly as createNcDc resolves
+   *  the challan's PO line (origin outsource op's PO line, else the rejected
+   *  GRN line's PO line). Null when it cannot be resolved. */
+  purchaseOrderId: z.string().uuid().nullable(),
+  poCode: z.string().nullable(),
+  purchaseOrderLineId: z.string().uuid().nullable(),
+  /** The OSP DC the rejected pieces came back on (the NC's GRN → its DC).
+   *  Null for an NC logged at the op with no GRN. */
+  sourceDeliveryChallanId: z.string().uuid().nullable(),
+  sourceDeliveryChallanCode: z.string().nullable(),
+  /** Default return vendor — the NC's source vendor (createNcDc's default). */
+  vendorId: z.string().uuid().nullable(),
+  vendorCode: z.string().nullable(),
+  vendorName: z.string().nullable(),
+});
+export type RtvCandidate = z.infer<typeof rtvCandidateSchema>;
+
+export const listRtvCandidatesQuerySchema = z.object({
+  /** Narrow to one JW PO (the Against PO warning). Absent = every candidate. */
+  purchaseOrderId: z.string().uuid().optional(),
+});
+export type ListRtvCandidatesQuery = z.infer<typeof listRtvCandidatesQuerySchema>;
+
+export interface ListRtvCandidatesResponse {
+  items: RtvCandidate[];
+}
+
+/** details on the 409 the Against PO save answers with when RTV pieces are
+ *  waiting on one of its PO lines and rtvPendingConfirmed was not sent. */
+export interface RtvPendingConflictDetails {
+  kind: 'rtv_pending';
+  ncs: { ncCode: string; rejectedQty: string; state: RtvCandidateState; poLineId: string }[];
+}
 
 // ─── Receipts (T-059b — outsource receive-back) ────────────────────────────
 

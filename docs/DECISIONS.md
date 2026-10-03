@@ -10987,3 +10987,37 @@ PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to
 **Status:** Accepted (TEST stack)
 
 Sales Orders get `internal_so_no` (migration 0197), the office's own number (e.g. SO-2401), typed by the user beside the system SO No. The SO No. (`code`, IN-SO-#####) is now system-only: no write input carries it and the server always numbers the order. The Internal SO No. is required on create; SOs made before 0197 stay NULL and are not forced to get one when edited. Format: "SO-" plus letters, digits, `/ - .`, at most 30 characters, trimmed, prefix upper-cased (shared `internalSoNoError`). Unique per company among live SOs, ignoring case (partial unique index; server pre-check and index clash both give the same 409). Editable with SO edit rights through the normal update path (stale check, History row, edit approval). Restore from Trash is refused if the number has since been taken. Shown everywhere as "IN-SO-00786 · SO-2401" (`soNoWithInternal`), always read live from sales_orders — never copied. JWSO is untouched.
+
+## ADR-208: Return-to-vendor challan also from "Against JW PO / DC" on +New DC
+
+**Date:** 2026-10-03
+**Status:** Accepted (owner, 2026-10-03)
+
+### Context
+A return-to-vendor (RTV) challan could be raised only by NC No. (NC page "Create DC", or +New DC →
+Against NC). The store knows the JW PO No. / the DC No. the pieces went out on, not the NC No. Sending
+the rejected pieces on an ordinary Against PO challan instead double counts: the JW PO "sent" rises
+past the order, the NC stays "waiting for challan" (a second challan is possible), and the return is
+booked as an ordinary receipt so the NC never closes.
+
+### Decision
+- +New DC gets a third source, **Against JW PO / DC**: search by PO No. or Sent on DC No., list the
+  RTV NCs behind it (`GET /delivery-challans/rtv-candidates`), pick ONE, and save through the existing
+  `POST /nc-register/:id/create-dc` (createNcDc). One writer for RTV qty (CLAUDE.md §20.1); the
+  one-challan-per-NC lock + 0181 unique index cover every route.
+- "Ready" uses the same SQL predicate as the NC list's `pendingRtvChallan` (one shared fragment).
+  Vendor-sourced NCs still pending QC show greyed as "Waiting for QC Decision".
+- **One challan per NC** (owner) — no multi-NC challan, no schema change.
+- **Permission (owner):** OSP Outward DC **entry** alone raises the RTV challan, on every route
+  (createNcDc no longer needs NC Register edit or the op-entry role). Disposing the NC stays with QC.
+- **Against PO guard:** the save is refused (409, details.kind = 'rtv_pending') when a PO line on
+  the challan has an RTV NC ready or awaiting decision, unless the store ticks "These are new pieces,
+  not the ones waiting to go back" (`rtvPendingConfirmed`, not stored). Checked inside the save's
+  transaction after the PO-line lock. A plain block was rejected: a JW PO with balance still due must
+  be able to send genuinely new pieces.
+
+### Consequences
+- No migration. Old routes (NC page, Against NC, GRN Against NC / JW PO / DC, cancel) unchanged.
+- An NC logged at an outsource op without a GRN, or a repeat reject (tied to the return challan), has
+  no "Sent on DC No." of the original DC — it is found by PO No.
+- Not covered: the store JW DC Outward (jw-dc module) has no such guard.
