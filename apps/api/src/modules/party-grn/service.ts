@@ -13,6 +13,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyGrnInput,
+  DocumentEditStagedResult,
   ListPartyGrnQuery,
   ListPartyGrnResponse,
   PartyGrn,
@@ -24,7 +25,8 @@ import { clients, jobWorkOrders, partyGrn, partyGrnLines, partyMaterials } from 
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { ActivityAction } from '@innovic/shared';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
+import type { UpdatePartyGrnInput } from './schema';
 import {
   AuthorizationError,
   ConflictError,
@@ -762,6 +764,322 @@ export async function cancelPartyGrn(
 
     return { ok: true as const, code: head.code, reversedQty };
   });
+}
+
+// ─── Edit (ADR-202 Phase 3) ──────────────────────────────────────────────────
+//
+// RECORD/HEADER level enrolment of Party GRN in edit-approval. Editable: the
+// header's own fields (GRN Date, Customer Challan No., Remarks, Received By) and,
+// on a line STILL WAITING for Incoming QC only, its Received Qty and Remarks. A
+// line already through QC is frozen (accepted/rejected booked, stock posted), so
+// editing it is refused. Raising a waiting line's Received Qty re-checks the
+// JWSO-line receipt cap under that line's lock (§20.3). Header edits and a
+// waiting-line qty change touch NO stock — nothing enters the customer-material
+// register until QC (postPartyStockMove), which this path never calls.
+
+/** The header fields the edit diff / History compare, with docs/NAMING.md labels. */
+export const PARTY_GRN_HEADER_FIELDS: readonly DiffField[] = [
+  { key: 'grnDate', label: 'GRN Date' },
+  { key: 'dcNo', label: 'Customer Challan No.' },
+  { key: 'remarks', label: 'Remarks' },
+  { key: 'receivedByText', label: 'Received By' },
+];
+
+/** The editable attrs of a waiting-QC line. */
+const PARTY_GRN_LINE_FIELDS: readonly DiffField[] = [
+  { key: 'receivedQty', label: 'Received Qty' },
+  { key: 'remarks', label: 'Remarks' },
+];
+
+/**
+ * The body of a Party GRN edit, inside a caller-supplied transaction. Called by
+ * updatePartyGrn (which opens the tx and ran the access check) and by the
+ * edit-approval engine's applyEdit, which already holds a tx with the GRN row
+ * locked. Locks the header + lines, refuses a line that is not on the GRN or has
+ * already been through Incoming QC, re-checks the receipt cap when a waiting
+ * line's qty is raised, and logs a before → after Edit (ADR-197).
+ */
+export async function updatePartyGrnTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdatePartyGrnInput,
+  user: AuthContext,
+): Promise<PartyGrnDetail> {
+  const companyId = requireCompany(user);
+
+  // Lock the header, then confirm it is live (not cancelled).
+  const headRows = (await tx.execute(sql`
+    SELECT id, code, grn_date AS "grnDate", dc_no AS "dcNo", remarks,
+           received_by_text AS "receivedByText", deleted_at AS "deletedAt"
+      FROM public.party_grn
+     WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
+     FOR UPDATE
+  `)) as unknown as Array<{
+    id: string;
+    code: string;
+    grnDate: unknown;
+    dcNo: string | null;
+    remarks: string | null;
+    receivedByText: string | null;
+    deletedAt: unknown;
+  }>;
+  const head = headRows[0];
+  if (!head) throw new NotFoundError('Party GRN not found. Refresh the page.');
+  if (head.deletedAt != null) {
+    throw new ConflictError(`${head.code} is cancelled — it cannot be edited.`);
+  }
+
+  // Lock every live line (the waiting-QC check and any line edit read these; the
+  // lock serialises against a concurrent QC or cancel of the same GRN).
+  const lineRows = await tx
+    .select()
+    .from(partyGrnLines)
+    .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)))
+    .orderBy(partyGrnLines.lineNo)
+    .for('update');
+  const lineById = new Map(lineRows.map((l) => [l.id, l]));
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  const beforeHeader: Record<string, unknown> = {
+    grnDate: dateLike(head.grnDate),
+    dcNo: head.dcNo,
+    remarks: head.remarks,
+    receivedByText: head.receivedByText,
+  };
+  const headerSet: Record<string, unknown> = {};
+  if (input.grnDate !== undefined) headerSet['grnDate'] = input.grnDate;
+  if (input.dcNo !== undefined) headerSet['dcNo'] = input.dcNo ?? null;
+  if (input.remarks !== undefined) headerSet['remarks'] = input.remarks ?? null;
+  if (input.receivedByText !== undefined) {
+    headerSet['receivedByText'] = input.receivedByText ?? null;
+  }
+
+  // ── Lines (waiting-QC only) ─────────────────────────────────────────────────
+  const now = new Date();
+  const editedLines: Array<{
+    lineNo: number;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+  }> = [];
+  for (const li of input.lines ?? []) {
+    const current = lineById.get(li.id);
+    if (!current) {
+      throw new ConflictError(`A line in this edit is not on ${head.code}. Refresh the page.`);
+    }
+    const at = `${head.code} Ln ${current.lineNo}`;
+    // Only a line still waiting for Incoming QC may be edited.
+    if (!isPendingQc(current)) {
+      throw new ConflictError(
+        `${at} has already been through Incoming QC — its received qty and remarks can no longer be changed.`,
+      );
+    }
+
+    const before: Record<string, unknown> = {
+      receivedQty: current.receivedQty,
+      remarks: current.remarks,
+    };
+    const after: Record<string, unknown> = { ...before };
+    const lineSet: Record<string, unknown> = {};
+
+    if (li.remarks !== undefined) {
+      lineSet['remarks'] = li.remarks ?? null;
+      after['remarks'] = li.remarks ?? null;
+    }
+
+    if (li.receivedQty !== undefined && li.receivedQty !== current.receivedQty) {
+      if (!current.jwLineId) {
+        throw new ConflictError(
+          `${at} has no JWSO line — it was booked before ADR-203 and cannot be edited.`,
+        );
+      }
+      // §20.3 — lock the JWSO line, THEN re-check the receipt cap and that the
+      // new qty cannot fall below what has already been consumed downstream.
+      const jwLine = await lockJwLine(tx, companyId, current.jwLineId);
+      // committed = Σ accepted on QC'd lines + Σ received on waiting lines (this
+      // line's OLD received included); swap in the new received for this line.
+      const committedNow = await jwLineCommittedQty(tx, current.jwLineId);
+      const committedOther = committedNow - current.receivedQty;
+      const committedAfter = committedOther + li.receivedQty;
+      if (committedAfter > jwLine.orderQty) {
+        const open = Math.max(0, jwLine.orderQty - committedOther);
+        throw new ConflictError(
+          `${at}: Received (${li.receivedQty}) cannot be more than Pending (${open}) — ` +
+            `Order Qty ${jwLine.orderQty}, already ${committedOther} on other lines ` +
+            `(accepted, or waiting for Incoming QC). Rejected pieces do not count.`,
+        );
+      }
+      if (current.partyMaterialId) {
+        const registerBalance = await jwLineRegisterBalance(
+          tx,
+          current.jwLineId,
+          current.partyMaterialId,
+        );
+        if (committedAfter < registerBalance) {
+          throw new ConflictError(
+            `${at}: cannot lower Received to ${li.receivedQty} — ${registerBalance} of this ` +
+              `customer material have already been accepted and issued to a Job Card or returned. ` +
+              `Reverse those first.`,
+          );
+        }
+      }
+      lineSet['receivedQty'] = li.receivedQty;
+      after['receivedQty'] = li.receivedQty;
+    }
+
+    if (Object.keys(lineSet).length > 0) {
+      // Conditional on still-pending (§20.2): a QC booked a moment ago (qc_at set)
+      // must not have its received qty overwritten.
+      const booked = await tx
+        .update(partyGrnLines)
+        .set({ ...lineSet, updatedAt: now, updatedBy: user.id })
+        .where(
+          and(
+            eq(partyGrnLines.id, current.id),
+            isNull(partyGrnLines.qcAt),
+            eq(partyGrnLines.acceptedQty, 0),
+            eq(partyGrnLines.rejectedQty, 0),
+            isNull(partyGrnLines.deletedAt),
+          ),
+        )
+        .returning({ id: partyGrnLines.id });
+      if (booked.length === 0) {
+        throw new ConflictError(`${at} was QC'd a moment ago. Refresh the page.`);
+      }
+      editedLines.push({ lineNo: current.lineNo, before, after });
+    }
+  }
+
+  // Apply header + stamp (always bump updatedBy/updatedAt).
+  await tx
+    .update(partyGrn)
+    .set({ ...headerSet, updatedAt: now, updatedBy: user.id })
+    .where(and(eq(partyGrn.id, id), isNull(partyGrn.deletedAt)));
+
+  // ── Audit (ADR-197) — one Edit for the header, one per edited line ──────────
+  const afterHeader: Record<string, unknown> = {
+    grnDate: 'grnDate' in headerSet ? headerSet['grnDate'] : beforeHeader['grnDate'],
+    dcNo: 'dcNo' in headerSet ? headerSet['dcNo'] : beforeHeader['dcNo'],
+    remarks: 'remarks' in headerSet ? headerSet['remarks'] : beforeHeader['remarks'],
+    receivedByText:
+      'receivedByText' in headerSet ? headerSet['receivedByText'] : beforeHeader['receivedByText'],
+  };
+  const headerChanges = diffFields(beforeHeader, afterHeader, PARTY_GRN_HEADER_FIELDS);
+  if (headerChanges.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'PartyGrn',
+        entityId: head.id,
+        refId: head.code,
+        changes: headerChanges,
+        detail: `Edited ${head.code}`,
+      },
+      companyId,
+      user,
+    );
+  }
+  for (const e of editedLines) {
+    const changes = diffFields(e.before, e.after, PARTY_GRN_LINE_FIELDS);
+    if (changes.length === 0) continue;
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'PartyGrn',
+        entityId: head.id,
+        refId: head.code,
+        lineRef: `Line ${e.lineNo}`,
+        changes,
+        detail: `${head.code} Line ${e.lineNo} edited`,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  return loadPartyGrnDetail(tx, companyId, id);
+}
+
+/**
+ * Public Party GRN edit. Changing a saved GRN is `edit` (L5+), not the create
+ * tier — checked HERE, not in the tx body, so the edit-approval engine's
+ * applyEdit (ADR-202) can replay an approved edit for an approver who holds
+ * `approve` but not the edit tier.
+ */
+export async function updatePartyGrn(
+  id: string,
+  input: UpdatePartyGrnInput,
+  user: AuthContext,
+): Promise<PartyGrnDetail> {
+  await requireFormAccess(user, 'party_create', 'edit');
+  return withUserContext(user, (tx) => updatePartyGrnTx(tx, id, input, user));
+}
+
+/**
+ * The Party GRN edit entry point the PATCH route calls (ADR-202 Phase 3). When
+ * the Document Edit Approval gate is ON and the GRN is LIVE (not cancelled and at
+ * least one line still waiting for Incoming QC), the edit is staged for approval
+ * and the request row is returned; otherwise it applies directly. A change to a
+ * line that is not on the GRN or already QC'd is refused with a clear message
+ * instead of being silently dropped (the registry only stages waiting-QC keys).
+ */
+export async function updatePartyGrnOrStage(
+  id: string,
+  input: UpdatePartyGrnInput,
+  user: AuthContext,
+): Promise<PartyGrnDetail | DocumentEditStagedResult> {
+  await requireFormAccess(user, 'party_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Engine imported dynamically to avoid a static import cycle with
+  // party-grn-edit-registry (which imports updatePartyGrnTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const lines = await tx
+      .select({
+        id: partyGrnLines.id,
+        lineNo: partyGrnLines.lineNo,
+        qcAt: partyGrnLines.qcAt,
+        acceptedQty: partyGrnLines.acceptedQty,
+        rejectedQty: partyGrnLines.rejectedQty,
+      })
+      .from(partyGrnLines)
+      .innerJoin(partyGrn, eq(partyGrn.id, partyGrnLines.partyGrnId))
+      .where(
+        and(
+          eq(partyGrnLines.partyGrnId, id),
+          eq(partyGrnLines.companyId, companyId),
+          isNull(partyGrnLines.deletedAt),
+          isNull(partyGrn.deletedAt),
+        ),
+      );
+    if (lines.length === 0) return false; // gone / cancelled — direct path reports it
+    // "Live" = at least one line still waiting for Incoming QC. A fully QC-closed
+    // GRN edits directly, like a draft (header-only, lines are frozen anyway).
+    if (!lines.some(isPendingQc)) return false;
+    // Refuse a change to a line that is no longer editable, rather than drop it.
+    const byId = new Map(lines.map((l) => [l.id, l]));
+    for (const li of input.lines ?? []) {
+      const c = byId.get(li.id);
+      if (!c) {
+        throw new ConflictError('A line in this edit is not on this Party GRN. Refresh the page.');
+      }
+      if (!isPendingQc(c)) {
+        throw new ConflictError(
+          `Line ${c.lineNo} has already been through Incoming QC — it can no longer be edited.`,
+        );
+      }
+    }
+    return true;
+  });
+
+  if (shouldStage) {
+    const request = await requestDocumentEdit('PartyGrn', id, input, input.expectedUpdatedAt, user);
+    return { staged: true, request };
+  }
+  return updatePartyGrn(id, input, user);
 }
 
 function rowToPartyGrn(row: typeof partyGrn.$inferSelect): PartyGrn {

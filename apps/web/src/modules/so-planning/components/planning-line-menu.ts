@@ -46,7 +46,7 @@ function planItems(
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
   // Gate on the CODE, not the id. Since the soft-delete guards landed
-  // (ADR-208), a Job Card that was moved to Trash comes back with jcCode null
+  // (ADR-209), a Job Card that was moved to Trash comes back with jcCode null
   // while plans.jc_id still points at it — offering "Open Job Card" would walk
   // the planner into a dead document.
   const hasJc =

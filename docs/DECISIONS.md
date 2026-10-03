@@ -10998,7 +10998,114 @@ PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to
 
 Sales Orders get `internal_so_no` (migration 0197), the office's own number (e.g. SO-2401), typed by the user beside the system SO No. The SO No. (`code`, IN-SO-#####) is now system-only: no write input carries it and the server always numbers the order. The Internal SO No. is required on create; SOs made before 0197 stay NULL and are not forced to get one when edited. Format: "SO-" plus letters, digits, `/ - .`, at most 30 characters, trimmed, prefix upper-cased (shared `internalSoNoError`). Unique per company among live SOs, ignoring case (partial unique index; server pre-check and index clash both give the same 409). Editable with SO edit rights through the normal update path (stale check, History row, edit approval). Restore from Trash is refused if the number has since been taken. Shown everywhere as "IN-SO-00786 · SO-2401" (`soNoWithInternal`), always read live from sales_orders — never copied. JWSO is untouched.
 
-## ADR-208: The SO/JWSO Planning line sheet moves onto the one table standard
+## ADR-208: Customer material sent to an OSP vendor counts as used, and "At Vendor" says how much
+**Date:** 2026-10-03
+**Status:** Accepted (owner asked for OSP-on-JWSO to be traced, then said "go" on the fix)
+
+### Context
+Outsourcing an operation on a customer job-work order is allowed, and nothing in the system treats
+a JWSO job differently from a sales-order job: Route Cards, Plans, Production Orders and Job Cards
+all accept `op_type = 'outsource'` with no JW branch. When the **first** operation is the outsourced
+one, the customer's own raw material is what physically leaves the building, on the ordinary OSP
+Outward Delivery Challan (`IN-DC-#####`). That challan is deliberately stock-neutral (ADR-067): it
+moves nothing and only bumps `jc_ops.outsource_sent_qty`.
+
+The customer-material "used" figure counted ONLY `op_log` rows with `log_type = 'complete'` on the
+first op — and an outsourced op can never carry one: `op-entry` refuses in-house logging on an OSP
+op, and Incoming QC mirrors the return onto the NEXT op as `log_type = 'qc'`. So `used` stayed **0
+for ever** and the Job Card reported the pieces as still sitting on the card, through return,
+final QC and dispatch.
+
+That was not cosmetic. Return-to-store and Cancel-issue both cap on the same `used`, so a
+storekeeper could return or cancel the whole Party Material Issue **while the pieces were at the
+vendor**, pushing the JWSO line's register back up to the full accepted qty — after which a
+Customer Material Return of those "recovered" pieces would pass its own balance check, booking us
+as having returned to the customer material that was actually at a subcontractor.
+
+### Decision
+1. **"Sent out from the first op" is material used.** `+ COALESCE(first_op.outsource_sent_qty, 0)`
+   is added to all three copies of the figure: `jcMaterial.used`
+   (`party-material-issues/register.ts`, which is what both limits read), `cmJcUsed`
+   (`job-cards/service.ts` `JC_CUSTOMER_MATERIAL_SELECT`, which drives `onJcQty`), and the gated-JW
+   `rmAvailable.consumed` (the first-op "Customer Material" chip). This is exactly what
+   `v_jc_op_status.available` already does for a plain op (migration 0196), so the material view and
+   the operation view now agree instead of contradicting each other.
+2. The two refusal messages on cancel / return-to-store now say the pieces may be "with the vendor,
+   not on the shelf", because "already worked" was no longer the whole reason.
+3. **The "Customer Material" chip no longer demands the impossible.** With sent-out pieces counted,
+   a healthy fully-outsourced first op sits at `availableQty = 0` for ever. The chip used to turn red
+   and say "issue material" / "Issue more customer material … to continue" — advice the server
+   refuses, because a further issue is capped at `order qty − net issued` which is already 0. Zero now
+   reads two ways: nothing issued yet (red, issue it) versus every issued piece accounted for (quiet,
+   "nothing left to work — every issued piece is either made or out at the vendor").
+4. **A reported `atVendorQty` figure was built and then WITHDRAWN before shipping.** It read the first
+   op's `v_jc_op_status.at_vendor_qty`, and review found that source wrong for this purpose on three
+   counts: the view's figure adds NC return-to-vendor pieces (already processed, not raw customer
+   material); it is per-op, so a later outsourced op would leave the panel reading 0 while the op chip
+   beside it read non-zero — one name over two facts, the §18 fault; and pieces back from the vendor
+   but still in Incoming QC fall out of both that figure and `onJcQty`, so the custody identity does
+   not balance in that window. It also added a second correlated subquery against an expensive view
+   per Job Card list row. **The fact has to be defined before it can be reported: does "customer
+   material at vendor" mean raw material only, or customer-owned work in progress too?** Until the
+   owner answers, the panel shows a correct `On JC` and no At Vendor figure at all, which is better
+   than a figure that contradicts the chip next to it.
+5. **Rejected, with reasons:** naming the customer as material owner on the OSP challan print
+   (owner: no) and a vendor-qualification / customer-consent-to-subcontract gate (owner: it's okay as
+   is). `atVendor` on `jwLineRegister` was skipped — it would need a `v_jc_op_status` join inside
+   per-line loops for a figure no caller reads. An At Vendor column on the `jwso-balance` report was
+   skipped — that report computes its own SQL and does not read `jwLineRegister`, so it is a separate
+   decision.
+
+### Why this is safe
+- **No migration, no schema change, no new ledger writer.** Every edit is read-side SQL inside
+  queries that already existed. `postPartyStockMove` remains the only writer of the customer-material
+  register (§20.1) and the diff contains no INSERT and no UPDATE.
+- **§20.3 already satisfied:** `jcMaterial(tx, …, { lockFirstOp: true })` already takes
+  `FOR UPDATE` on the first `jc_ops` row — the row holding `outsource_sent_qty` — so the new term is
+  read inside the existing lock. No lock was added or moved.
+- **Direction of safety:** `used` can only grow, so `onJcQty` and both caps can only narrow. The
+  change can refuse something it used to allow; it can never permit something previously refused.
+- **No double count — the two terms never count the same PIECE:** nothing writes a `complete` row for
+  a piece returning from a vendor (op-entry refuses in-house logging on an OSP op, Incoming QC writes
+  `qc` on the NEXT op, and NC re-injections are excluded by `log_no NOT LIKE '%LOG-NC-%'`). The
+  ADR-081 dual lane therefore adds two sets of different pieces.
+- **But they are NOT bounded by the issued qty, and that is a known limit.** An earlier draft of this
+  ADR and of the code comment claimed the invariant
+  `Σ complete + outsource_sent_qty ≤ input_avail`; **review showed it does not hold.** The outward
+  gate computes `sendable = inputAvail − inHouseCompleted − outsourceSentQty` with
+  `inHouseCompleted = SUM(qty)` only (`delivery-challans/cascades.ts`) — it ignores `reject_qty`,
+  while this figure counts it. So on a dual-lane op with rejects (order 100, issued 100, 30 good + 20
+  rejected worked, then 70 sent out) `used` reaches 120 against 100 issued, and BOTH reversals refuse
+  permanently. That is the safe direction — refuse, never permit — and the same stance party-GRN
+  cancel already takes when counters disagree, but the storekeeper's only explanation is the refusal
+  text. **OPEN ITEM:** tightening that gate to subtract `reject_qty` is the real fix, and it changes
+  what every OSP send may ship — for sales-order jobs too — so it is deliberately NOT bundled here.
+- **Verified against live production data before shipping:** both live JW Job Cards are gated and
+  both have `outsource_sent_qty = 0`, and no card has `used > netIssued`, so **not one displayed
+  figure moves on production**. The fix activates the first time a first operation is actually
+  outsourced.
+
+### Consequences
+- `outsource_sent_qty` is cumulative and stays up after the pieces return and move down the route, so
+  on a card whose first op was outsourced `used` stays at the sent qty and `On JC` stays
+  correspondingly low. That is correct material accounting — the material WAS consumed by the job —
+  and it is what `v_jc_op_status.available` has always done.
+- The one route by which a cap gets wider again is a genuine reversal of the OSP Outward DC
+  (`delivery-challans/cascades.ts` decrements the counter), which is right: the pieces are back.
+- On a **non-gated** (pre-cutover) JWSO card, pieces could have gone to a vendor with no Party
+  Material Issue booked at all; there `used` can exceed `netIssued` and both reversals will refuse.
+  That is the safe direction, and the new wording is the storekeeper's only explanation. No such card
+  exists on production today (both are gated).
+- Still unrecorded by design: there is no ledger movement for customer material at a vendor. The
+  challan has no `jw_line_id` / `client_id` / `party_material_id` column and the print does not name
+  the owner (owner decision). Had the withdrawn At Vendor figure shipped it would still have been a
+  derived figure, never a movement — `postPartyStockMove` always moves `stock_qty`, so reusing it
+  would have double-debited the register.
+- Found by the `/code-review high` pass on this diff, not by the author: the impossible chip advice
+  (decision 3), the false invariant above, the wrong ADR number on four code comments, and the three
+  reasons the At Vendor source was unfit (decision 4).
+
+## ADR-209: The SO/JWSO Planning line sheet moves onto the one table standard
 
 **Date:** 2026-10-03
 **Status:** Accepted

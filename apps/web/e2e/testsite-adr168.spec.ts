@@ -848,7 +848,7 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   } else {
     // Re-open the existing plan for editing ("✏ Edit" while in_planning, "✏" once planned).
     log(`S12: re-opening ${s.planCode} (${planStatusNow}) for edit`);
-    // ADR-208: the chip's ✏ button is gone — editing is the line's ⋯ item
+    // ADR-209: the chip's ✏ button is gone — editing is the line's ⋯ item
     // "<PLN-code> · Edit plan".
     await clickPlanMenuItem(page, s.planCode!, EDIT_PLAN_ITEM);
     await page.waitForTimeout(1500);

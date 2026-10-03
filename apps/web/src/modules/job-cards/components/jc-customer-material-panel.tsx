@@ -1,9 +1,16 @@
 // Customer Material roll-up (R1, ADR-194 + ADR-203) — shown ONLY on a JW-sourced
 // Job Card (jc.customerMaterial is not null). The strip shows THIS Job Card's
-// figures (Needed = JC qty, Issued to JC, Returned to Store, Used = first op good
-// + rejected, On JC); the line below shows the JWSO line's totals. Hidden
-// entirely on an own-material JC. Numbers are right-aligned (owner rule
-// 2026-09-26); no rupee value — party material carries none.
+// figures (Needed = JC qty, Issued to JC, Returned to Store, Used, On JC); the
+// line below shows the JWSO line's totals. Hidden entirely on an own-material
+// JC. Numbers are right-aligned (owner rule 2026-09-26); no rupee value — party
+// material carries none.
+//
+// ADR-208: `Used` now counts pieces sent out to an OSP vendor from the FIRST
+// operation as well as pieces made in house, so `On JC` is what is genuinely on
+// the shelf rather than everything ever issued. A separate "At Vendor" figure
+// was built for this strip and withdrawn before shipping — see the note in
+// packages/shared/src/schemas/job-card.ts for why the fact needs defining
+// first. The JWSO-line group below (Register Balance) is unchanged either way.
 
 import type { JobCardListItem } from '@innovic/shared';
 

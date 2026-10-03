@@ -14,6 +14,7 @@
 import type {
   CloseProductionOrderInput,
   CreateProductionOrderInput,
+  DocumentEditStagedResult,
   JobCardListItem,
   ListPlansQuery,
   ListPlansResponse,
@@ -172,6 +173,61 @@ export function useCreateProductionOrder(saveKey?: SaveKey) {
     onSuccess: (created) => {
       invalidateNeighbours(qc);
       qc.setQueryData(productionOrdersKeys.detail(created.id), created);
+    },
+  });
+}
+
+/**
+ * ADR-202 Phase 3 — the header-level edit payload for an existing Production
+ * Order. Only four header fields are editable (Remarks, PRO Target Date, Actual
+ * Size, Raw Material Available); Order Qty and the identity fields are not. Every
+ * field rides as a string (the shared document-edit diff compares strings), with
+ * `reason` and `expectedUpdatedAt` (R5 conflict guard) carried alongside. Kept
+ * local — a web-only PATCH shape, mirroring UpdateSalesOrderInput's use.
+ */
+export interface UpdateProductionOrderInput {
+  remarks?: string | undefined;
+  targetDate?: string | undefined;
+  actualSize?: string | undefined;
+  rawMaterialAvailable?: boolean | undefined;
+  reason?: string | undefined;
+  expectedUpdatedAt?: string | undefined;
+}
+
+/**
+ * Edit a Production Order's header (ADR-202 Phase 3). When the edit-approval
+ * gate is ON and the order is live, the PATCH returns a DocumentEditStagedResult
+ * (the edit was staged for approval) instead of the updated order; the edit page
+ * reads the union to tell them apart. Until the backend gate lands the PATCH
+ * applies normally and returns the detail — safe.
+ */
+export function useUpdateProductionOrder(id: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<
+    ProductionOrderDetail | DocumentEditStagedResult,
+    Error,
+    UpdateProductionOrderInput
+  >({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<ProductionOrderDetail | DocumentEditStagedResult>(`/production-orders/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (updated) => {
+      if ('staged' in updated) {
+        // Nothing changed on the order itself — refresh so the detail page
+        // shows the new pending-change chips, and the inbox list picks it up.
+        void qc.invalidateQueries({ queryKey: productionOrdersKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+        return;
+      }
+      invalidateNeighbours(qc);
+      qc.setQueryData(productionOrdersKeys.detail(id), updated);
+      void qc.invalidateQueries({ queryKey: productionOrdersKeys.detail(id) });
     },
   });
 }

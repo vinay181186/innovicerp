@@ -7,10 +7,19 @@
 
 import type { PartyGrnLine, PartyGrnListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DocumentHistory } from '@/components/shared/document-history';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+  linePendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
+import { EditPartyGrnModal } from './edit-party-grn-modal';
 
 function lineColumns(): DataTableColumn<PartyGrnLine>[] {
   return [
@@ -131,15 +140,31 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
   const detailQ = usePartyGrnDetail(g.id);
   const lines = detailQ.data?.lines ?? [];
 
+  const { data: eff } = useMyAccess();
+  // Edit is gated by the party_create form's edit action AND the receipt still
+  // having a line waiting for Incoming QC (a fully-QC'd receipt is settled —
+  // nothing here is editable, so no Edit button). Cancel stays the way to undo.
+  const canEdit = effectiveFormPerms(eff, 'party_create').edit;
+  const isLive = g.qcPendingLines > 0;
+  const [editing, setEditing] = useState(false);
+
+  // ADR-202 — edits staged against this receipt and awaiting a decision. Their
+  // per-field changes drive the inline amber chips below (this expand already
+  // hosts the receipt's History, so it is the right surface).
+  const pendingEdit = usePendingEditForDoc('PartyGrn', g.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+
   return (
     <div style={{ padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)' }}>
-      {/* Received By + Remarks — carried on the header, no extra fetch. */}
+      {/* Received By + Remarks — carried on the header, no extra fetch. The ✏️
+          Edit trigger sits here (no detail page); it opens the edit modal. */}
       <div
         className="text3"
         style={{
           fontSize: 'var(--fs-xs)',
           display: 'flex',
           flexWrap: 'wrap',
+          alignItems: 'center',
           gap: 'var(--sp-4)',
           marginBottom: 'var(--sp-2)',
         }}
@@ -150,7 +175,80 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
         <span>
           <b>Remarks:</b> {g.remarks ?? '—'}
         </span>
+        {canEdit && isLive ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => setEditing(true)}
+            title="Edit this GRN"
+          >
+            ✏️ Edit
+          </button>
+        ) : null}
       </div>
+
+      {/* ADR-202 — changes staged against this receipt, waiting for approval:
+          current value → proposed value, in amber, per header field and per
+          waiting line. Hidden entirely when nothing is pending. */}
+      {pendingChanges.length > 0 ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            fontSize: 'var(--fs-xs)',
+            margin: '0 0 var(--sp-2)',
+            padding: 'var(--sp-2)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            background: 'var(--bg2)',
+          }}
+        >
+          <b className="text2">Changes awaiting approval</b>
+          {[
+            { field: 'grnDate', label: 'GRN Date' },
+            { field: 'dcNo', label: 'Customer Challan No.' },
+            { field: 'receivedBy', label: 'Received By' },
+            { field: 'remarks', label: 'Remarks' },
+          ].map(({ field, label }) => {
+            const c = headerPendingChange(pendingChanges, field);
+            if (!c) return null;
+            return (
+              <div key={field}>
+                <span className="text3">{label}:</span>{' '}
+                <span>{c.before == null || c.before === '' ? '—' : String(c.before)}</span>
+                <PendingChangeChip after={c.after} />
+              </div>
+            );
+          })}
+          {lines.map((l) => {
+            const qc = linePendingChange(pendingChanges, l.id, 'qty');
+            const rm = linePendingChange(pendingChanges, l.id, 'remarks');
+            if (!qc && !rm) return null;
+            return (
+              <div key={l.id}>
+                {qc ? (
+                  <div>
+                    <span className="text3">
+                      Ln {l.lineNo} · {l.partyMaterialCodeText} — Received Qty:
+                    </span>{' '}
+                    <span className="mono">{l.receivedQty}</span>
+                    <PendingChangeChip after={qc.after} />
+                  </div>
+                ) : null}
+                {rm ? (
+                  <div>
+                    <span className="text3">Ln {l.lineNo} — Remarks:</span>{' '}
+                    <span>{l.remarks == null || l.remarks === '' ? '—' : l.remarks}</span>
+                    <PendingChangeChip after={rm.after} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       {detailQ.isError ? (
         <div className="empty-state" style={{ color: 'var(--red2)', padding: 8 }}>
@@ -176,6 +274,8 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
           <DocumentHistory entity="PartyGrn" entityId={g.id} refId={g.code} />
         </Panel>
       </div>
+
+      {editing ? <EditPartyGrnModal row={g} onClose={() => setEditing(false)} /> : null}
     </div>
   );
 }

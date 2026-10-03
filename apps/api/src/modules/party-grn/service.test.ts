@@ -324,3 +324,57 @@ describe('party-grn service — cancel (ADR-203)', () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
+
+describe('party-grn service — edit (ADR-202 Phase 3)', () => {
+  it('edits a header field and a waiting-QC line, touching no stock', async () => {
+    const before = await pmStock(pmBId);
+    const grn = await service.createPartyGrn(receipt(line2Id, 10), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+
+    const updated = await service.updatePartyGrn(
+      grn.id,
+      {
+        dcNo: 'DC-EDIT-1',
+        remarks: 'corrected',
+        lines: [{ id: d.lines[0]!.id, receivedQty: 4, remarks: 'short delivery' }],
+      },
+      admin,
+    );
+    expect(updated.dcNo).toBe('DC-EDIT-1');
+    expect(updated.lines[0]!.receivedQty).toBe(4);
+    expect(updated.lines[0]!.remarks).toBe('short delivery');
+    // A waiting-QC line change posts nothing to the register.
+    expect(await pmStock(pmBId)).toEqual(before);
+
+    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+  });
+
+  it('refuses editing a line that is already through Incoming QC', async () => {
+    const grn = await service.createPartyGrn(receipt(line2Id, 5), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+    await qcPartyGrn(
+      grn.id,
+      { lines: [{ lineId: d.lines[0]!.id, acceptedQty: 5, rejectedQty: 0 }] },
+      admin,
+    );
+    await expect(
+      service.updatePartyGrn(grn.id, { lines: [{ id: d.lines[0]!.id, receivedQty: 3 }] }, admin),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+  });
+
+  it('refuses raising a waiting-QC line past the JWSO-line order qty', async () => {
+    const grn = await service.createPartyGrn(receipt(line2Id, 5), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+    await expect(
+      service.updatePartyGrn(
+        grn.id,
+        { lines: [{ id: d.lines[0]!.id, receivedQty: ORDER_QTY + 1000 }] },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+  });
+});

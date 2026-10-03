@@ -70,7 +70,7 @@ export function planningLineRows(page: Page): Locator {
     .filter({ has: page.getByRole('button', { name: /^Actions for line/ }) });
 }
 
-// ── SO Planning: the per-plan actions (ADR-208) ─────────────────────────────
+// ── SO Planning: the per-plan actions (ADR-209) ─────────────────────────────
 // Until the line table moved onto the shared FIT table, a plan's actions were
 // buttons inside its chip in the Plans cell: "⚡ Create JC", "⚡ Raise PR",
 // "✏ Edit". They are ⋯ items now, each prefixed with its plan code so a line

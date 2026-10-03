@@ -167,7 +167,7 @@ interface PlanCard {
 // which is exactly how step 04 reported "no Edit on the plan" while all four
 // plans existed.
 async function readPlanCards(page: Page): Promise<PlanCard[]> {
-  // ADR-208: the Plans CELL shows only the code and its status; the chip that
+  // ADR-209: the Plans CELL shows only the code and its status; the chip that
   // also names the kind (Mfg / Buy / OSP) moved into the row's ▸ panel. Open
   // every ▸ and read the chips there — reading the grid would call every plan Mfg.
   await expandPlanningRows(page);
@@ -185,7 +185,7 @@ async function readPlanCards(page: Page): Promise<PlanCard[]> {
 }
 
 /** Is this plan's action offered in the ⋯ of the line that carries it?
- *  ADR-208: the chip has no buttons any more — every action is a ⋯ item
+ *  ADR-209: the chip has no buttons any more — every action is a ⋯ item
  *  named `<PLN-code> · <action>`. */
 async function planCanDo(page: Page, code: string, name: RegExp): Promise<boolean> {
   return hasPlanMenuItem(page, code, name);
