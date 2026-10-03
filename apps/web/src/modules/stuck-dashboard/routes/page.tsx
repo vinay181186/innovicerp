@@ -313,10 +313,10 @@ function StuckDashboardPage(): React.JSX.Element {
           linkedRef={{
             type: 'sales_order',
             id: assignFor.soId,
-            display: `SO ${soNoWithInternal(assignFor.soNo, assignFor.soInternalNo)}`,
+            display: `SO ${assignFor.soNo}`,
             navPage: `/sales-orders/${assignFor.soId}`,
           }}
-          suggestedTitle={`Unstick ${soNoWithInternal(assignFor.soNo, assignFor.soInternalNo)} — ${assignFor.stage}`}
+          suggestedTitle={`Unstick ${assignFor.soNo} — ${assignFor.stage}`}
           onClose={() => setAssignFor(null)}
         />
       ) : null}

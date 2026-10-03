@@ -222,7 +222,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
     shown: [sql`t.item_code_text`, sql`t.item_name_text`],
     refs: [
       ref('JC', sql`jc.code`),
-      soRef(sql`t.so_code_text`, sql`so.internal_so_no`),
+      soRef(sql`COALESCE(t.so_code_text, so.code)`, sql`so.internal_so_no`),
       ref('Rework JC', sql`t.rework_jc_code_text`),
       ref('DC', sql`dc.code`),
     ],
@@ -264,7 +264,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
     text: [sql`t.remarks`, sql`t.plan_type::text`],
     shown: [sql`t.item_code_text`, sql`t.item_name_text`],
     refs: [
-      soRef(sql`t.so_code_text`, sql`so.internal_so_no`),
+      soRef(sql`COALESCE(t.so_code_text, so.code)`, sql`so.internal_so_no`),
       ref('JC', sql`jc.code`),
       ref('BOM', sql`bm.bom_no`),
     ],
