@@ -56,6 +56,29 @@ export interface OpFlowRow {
   reReceivedQty: number;
   /** Pieces still with the vendor now (v_jc_op_status.at_vendor_qty). */
   atVendorQty: number;
+  /** ADR-209 reconciled figures (one row per op; see flow-views getOpFlow). */
+  /** Made (machine op) · inspected (QC op) · received back incl. re-sent lots (outsource). */
+  doneQty: number;
+  /** Good pieces that move on to the next op. */
+  acceptedQty: number;
+  /** Failed inspection -> NC for a decision (production + QC + incoming QC). Not final. */
+  deviatedQty: number;
+  /** Deviated pieces an NC recovered and that were accepted (Σ NC cleared_qty). */
+  reworkedQty: number;
+  /** FINAL NC decision: scrap / make fresh / failed rework (v_jc_op_status op_loss rule). */
+  rejectedFinalQty: number;
+  /** Deviated pieces still waiting for an NC decision / outcome here. */
+  deviatedOpenQty: number;
+  /** Still to do at this op (to make / to inspect / not yet sent). */
+  pendingQty: number;
+  /** Back from the vendor, waiting for incoming QC. */
+  inQcQty: number;
+  /** Sent to the vendor incl. lots re-sent for rework (return to vendor). */
+  vendorSentQty: number;
+  /** Received back from the vendor incl. re-received lots. */
+  vendorReceivedQty: number;
+  /** Input − (Accepted + Rejected + Deviated open + At vendor + In QC + Pending). 0 = ✓. */
+  unaccountedQty: number;
   /** What the NEXT op receives from this one (same CASE as 0176 prev_output). */
   passedOnQty: number;
   /** v_jc_op_status.available. */

@@ -1,10 +1,9 @@
 // Job Card page — two READ-ONLY flow panels (requirement 3.5, Problems 2.1/2.2):
 //
-//   Op Qty Flow   one row per op: Input · Completed · Accepted · Rejected ·
-//                 Reworked Back · Lost · Sent to Vendor · Vendor Accepted ·
-//                 Returned to Vendor · Re-received · At Vendor (ADR-206) ·
-//                 Passed On · Available, plus which rule gives Passed On and
-//                 where every reworked-back piece came from ("from rework NC-…").
+//   Op Qty Flow   one reconciled row per op (ADR-209): Input · Done · Accepted ·
+//                 Deviated (NC) · Reworked · Rejected · Pending · Sent · Received ·
+//                 At Vendor · Check ✓, plus notes for NCs, rework loops and
+//                 reversed entries. (Passed On removed: Accepted is what moves on.)
 //   Rework Tree   the card's top parent → -RW / -RP children → grandchildren,
 //                 with the qty sent to each child, cleared and rejected again, and every
 //                 NC raised on each card. Hidden when the card has no NC and no
@@ -54,6 +53,25 @@ function NcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
 
 const isQcOp = (o: OpFlowRow): boolean => o.qcRequired || o.opType === 'qc';
 
+/** ADR-209 — the Op Qty Flow table. One reconciled row per op:
+ *  Accepted + Rejected (final) + Deviated still open + At vendor + In QC +
+ *  Pending = Input, so every row shows a Check ✓ (figures from the server; the
+ *  screen only displays them). Vertical separators mark the logical groups. */
+const SEP = 'vsep';
+const doneLabel = (o: OpFlowRow): string =>
+  o.opType === 'qc'
+    ? 'Done = inspected'
+    : o.opType === 'outsource'
+      ? 'Done = received back'
+      : 'Done = made';
+const doneIcon = (o: OpFlowRow): string =>
+  o.opType === 'qc' ? '🔬' : o.opType === 'outsource' ? '🚚' : '🏭';
+const checkText = (o: OpFlowRow): string =>
+  `${o.inputQty} in = ${o.acceptedQty} accepted + ${o.rejectedFinalQty} rejected + ` +
+  `${o.deviatedOpenQty} deviated, NC open + ${o.atVendorQty} at vendor + ` +
+  `${o.inQcQty} in QC + ${o.pendingQty} pending` +
+  (o.unaccountedQty === 0 ? ' ✓' : ` — ${o.unaccountedQty} not accounted for`);
+
 const OP_FLOW_COLUMNS: DataTableColumn<OpFlowRow>[] = [
   {
     header: 'Op',
@@ -65,82 +83,105 @@ const OP_FLOW_COLUMNS: DataTableColumn<OpFlowRow>[] = [
     header: 'Operation',
     align: 'left',
     ellipsis: true,
-    render: (o) => o.operation,
     title: (o) => o.operation,
+    render: (o) => (
+      <div style={{ minWidth: 0 }}>
+        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.operation}</div>
+        <div className="text3" style={{ fontSize: 11 }}>
+          {doneIcon(o)} {doneLabel(o)}
+        </div>
+      </div>
+    ),
   },
   {
     header: 'Input',
     align: 'right',
     nowrap: true,
+    className: SEP,
+    headClassName: SEP,
     title: () => 'What the previous op passed on (Order Qty on the first op)',
     render: (o) => <Qty v={o.inputQty} />,
   },
   {
-    header: 'Completed',
+    header: 'Done',
     align: 'right',
     nowrap: true,
-    render: (o) => <Qty v={o.completedQty} na={o.opType === 'qc'} />,
+    className: SEP,
+    headClassName: SEP,
+    title: doneLabel,
+    render: (o) => <Qty v={o.doneQty} />,
   },
   {
     header: 'Accepted',
     align: 'right',
     nowrap: true,
     headColor: 'var(--green)',
-    render: (o) => <Qty v={o.qcAcceptedQty} na={!isQcOp(o)} tone="var(--green2)" />,
+    className: 'fw-700',
+    title: () => 'Good pieces that move on to the next op',
+    render: (o) => <Qty v={o.acceptedQty} tone="var(--green2)" />,
+  },
+  {
+    header: 'Deviated (NC)',
+    align: 'right',
+    nowrap: true,
+    className: SEP,
+    headClassName: SEP,
+    headColor: 'var(--amber2)',
+    title: (o) =>
+      `Failed inspection → NC for a decision. Production ${o.productionRejectedQty} · QC ${o.qcRejectedQty}` +
+      (o.hasOsp ? ` · Incoming QC ${o.vendorRejectedQty}` : ''),
+    render: (o) => <Qty v={o.deviatedQty} tone="var(--amber2)" />,
+  },
+  {
+    header: 'Reworked',
+    align: 'right',
+    nowrap: true,
+    title: () =>
+      'Deviated pieces an NC recovered (rework / repair / use as is / return to vendor) and that were accepted',
+    render: (o) => <Qty v={o.reworkedQty} tone="var(--cyan)" />,
   },
   {
     header: 'Rejected',
     align: 'right',
     nowrap: true,
     headColor: 'var(--red)',
+    title: () => 'Final NC decision: scrap / make fresh, or failed rework / repair',
+    render: (o) => <Qty v={o.rejectedFinalQty} tone="var(--red2)" />,
+  },
+  {
+    header: 'Pending',
+    align: 'right',
+    nowrap: true,
+    className: SEP,
+    headClassName: SEP,
     title: (o) =>
-      `Production Rejected ${o.productionRejectedQty} · QC Rejected ${o.qcRejectedQty}` +
-      (o.hasOsp ? ` · Rejected at Incoming QC ${o.vendorRejectedQty}` : ''),
-    render: (o) => (
-      <Qty v={o.productionRejectedQty + o.qcRejectedQty + o.vendorRejectedQty} tone="var(--red2)" />
-    ),
+      o.opType === 'qc'
+        ? 'Still to inspect at this QC op'
+        : o.opType === 'outsource'
+          ? 'Not yet sent to the vendor'
+          : 'Still to make at this op' +
+            (o.qcRequired ? ' (plus made pieces waiting for its QC)' : ''),
+    render: (o) => <Qty v={o.pendingQty} tone="var(--amber2)" />,
   },
   {
-    header: 'Reworked Back',
+    header: 'Sent',
+    align: 'right',
+    nowrap: true,
+    className: SEP,
+    headClassName: SEP,
+    title: (o) =>
+      o.returnedToVendorQty > 0
+        ? `${o.vendorSentQty - o.returnedToVendorQty} on outward DCs + ${o.returnedToVendorQty} re-sent for rework`
+        : 'Sent on outward DCs',
+    render: (o) => <Qty v={o.vendorSentQty} na={!o.hasOsp} />,
+  },
+  {
+    header: 'Received',
     align: 'right',
     nowrap: true,
     title: (o) =>
-      o.reworkedBackFrom.length > 0 ? `From rework ${o.reworkedBackFrom.join(', ')}` : 'None',
-    render: (o) => <Qty v={o.reworkedBackQty} tone="var(--cyan)" />,
-  },
-  {
-    header: 'Lost',
-    align: 'right',
-    nowrap: true,
-    title: () =>
-      'Written off on this op: scrap / make fresh, and pieces that failed rework or repair',
-    render: (o) => <Qty v={o.lostQty} tone="var(--red2)" />,
-  },
-  {
-    header: 'Sent to Vendor',
-    align: 'right',
-    nowrap: true,
-    render: (o) => <Qty v={o.sentToVendorQty} na={!o.hasOsp} />,
-  },
-  {
-    header: 'Vendor Accepted',
-    align: 'right',
-    nowrap: true,
-    render: (o) => <Qty v={o.vendorAcceptedQty} na={!o.hasOsp} tone="var(--green2)" />,
-  },
-  {
-    header: 'Returned to Vendor',
-    align: 'right',
-    nowrap: true,
-    title: () => 'Rejected pieces sent back to the vendor on a return-to-vendor challan',
-    render: (o) => <Qty v={o.returnedToVendorQty} na={!o.hasOsp} tone="var(--amber2)" />,
-  },
-  {
-    header: 'Re-received',
-    align: 'right',
-    nowrap: true,
-    title: () => 'Of the returned pieces, how many the vendor has sent back again',
-    render: (o) => <Qty v={o.reReceivedQty} na={!o.hasOsp} />,
+      `Received back incl. re-received lots${o.inQcQty > 0 ? ` · ${o.inQcQty} waiting incoming QC` : ''}`,
+    render: (o) => <Qty v={o.vendorReceivedQty} na={!o.hasOsp} />,
   },
   {
     header: 'At Vendor',
@@ -150,28 +191,35 @@ const OP_FLOW_COLUMNS: DataTableColumn<OpFlowRow>[] = [
     render: (o) => <Qty v={o.atVendorQty} na={!o.hasOsp} />,
   },
   {
-    header: 'Passed On',
-    align: 'right',
+    header: 'Check',
+    align: 'center',
     nowrap: true,
-    className: 'fw-700',
-    title: (o) => o.passedOnRule,
-    render: (o) => <Qty v={o.passedOnQty} />,
-  },
-  {
-    header: 'Available',
-    align: 'right',
-    nowrap: true,
-    title: (o) =>
-      o.opType === 'qc'
-        ? 'Pieces still to inspect at this QC op'
-        : 'Pieces this op can work on now',
-    render: (o) => <Qty v={o.availableQty} />,
+    className: SEP,
+    headClassName: SEP,
+    title: checkText,
+    render: (o) =>
+      o.unaccountedQty === 0 ? (
+        <span className="fw-700" style={{ color: 'var(--green2)' }}>
+          ✓
+        </span>
+      ) : (
+        <span className="fw-700 mono" style={{ color: 'var(--red2)' }}>
+          ⚠ {o.unaccountedQty}
+        </span>
+      ),
   },
   {
     header: 'Op Status',
     nowrap: true,
     render: (o) => <StatusBadge kind="jcop" status={o.status} />,
   },
+];
+
+const OP_FLOW_GROUPS = [
+  { span: 2 },
+  { span: 7, label: 'At this operation', className: SEP },
+  { span: 3, label: 'With vendor (outsource)', color: 'var(--purple2)', className: SEP },
+  { span: 2, className: SEP },
 ];
 
 function OpFlowNotes({ ops }: { ops: OpFlowRow[] }): React.JSX.Element | null {
@@ -189,6 +237,16 @@ function OpFlowNotes({ ops }: { ops: OpFlowRow[] }): React.JSX.Element | null {
             </span>
           ))}{' '}
           (entry LOG-NC-…) — counted in Completed{isQcOp(o) ? ' / Accepted' : ''}.
+        </li>,
+      );
+    }
+    if (o.returnedToVendorQty > 0) {
+      notes.push(
+        <li key={`rtv-${o.jcOpId}`}>
+          {op}: rework loop — sent {o.vendorSentQty - o.returnedToVendorQty}, {o.vendorRejectedQty}{' '}
+          deviated at incoming QC, {o.returnedToVendorQty} re-sent to the vendor, {o.reReceivedQty}{' '}
+          re-received · total sent {o.vendorSentQty}, received {o.vendorReceivedQty}, accepted{' '}
+          {o.acceptedQty}.
         </li>,
       );
     }
@@ -214,12 +272,37 @@ function OpFlowNotes({ ops }: { ops: OpFlowRow[] }): React.JSX.Element | null {
       );
     }
   }
+  const first = ops[0];
+  const last = ops[ops.length - 1];
+  const sum = (
+    k: 'pendingQty' | 'atVendorQty' | 'rejectedFinalQty' | 'deviatedOpenQty' | 'inQcQty',
+  ): number => ops.reduce((a, o) => a + o[k], 0);
+  const rest =
+    sum('rejectedFinalQty') +
+    sum('deviatedOpenQty') +
+    sum('atVendorQty') +
+    sum('inQcQty') +
+    sum('pendingQty');
+  const jcOk = first && last ? first.inputQty === last.acceptedQty + rest : true;
   return (
     <div style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 12, color: 'var(--text2)' }}>
+      {first && last ? (
+        <div style={{ marginBottom: 'var(--sp-1)' }}>
+          <b>Job Card check:</b> {first.inputQty} ordered ={' '}
+          <b style={{ color: 'var(--green2)' }}>{last.acceptedQty} finished</b> +{' '}
+          {sum('pendingQty')} pending + {sum('inQcQty')} in QC + {sum('atVendorQty')} at vendor +{' '}
+          {sum('deviatedOpenQty')} deviated (NC open) + {sum('rejectedFinalQty')} rejected{' '}
+          {jcOk ? (
+            <b style={{ color: 'var(--green2)' }}>✓</b>
+          ) : (
+            <b style={{ color: 'var(--red2)' }}>⚠ does not add up</b>
+          )}
+        </div>
+      ) : null}
       <div style={{ marginBottom: notes.length > 0 ? 'var(--sp-1)' : 0 }}>
-        <b>Passed On</b> is what the next op receives as its Input: Accepted on a QC op or an op
-        with QC · Vendor Accepted on an outsource op · Completed on a plain op. Hover a figure for
-        its make-up.
+        <b>Deviated</b> = failed inspection, sent to an NC for a decision · <b>Reworked</b> = the NC
+        recovered it and it was accepted · <b>Rejected</b> = the final NC decision. Hover ✓ for the
+        row&apos;s sum.
       </div>
       {notes.length > 0 ? <ul style={{ margin: 0, paddingLeft: 18 }}>{notes}</ul> : null}
     </div>
@@ -241,6 +324,7 @@ function OpFlowPanel({ jobCardId }: { jobCardId: string }): React.JSX.Element {
           <>
             <DataTable<OpFlowRow>
               columns={OP_FLOW_COLUMNS}
+              headGroups={OP_FLOW_GROUPS}
               rows={data?.ops ?? []}
               rowKey={(o) => o.jcOpId}
               density="compact"

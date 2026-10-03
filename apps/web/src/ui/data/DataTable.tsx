@@ -160,6 +160,7 @@ function ClassicDataTable<T>({
   className,
   wrapClassName,
   variant = 'sheet',
+  headGroups,
 }: DataTableProps<T>): ReactElement {
   const legacy = variant === 'list';
   const { density: userDensity } = useTableDensity();
@@ -239,6 +240,22 @@ function ClassicDataTable<T>({
           ) : null}
 
           <thead>
+            {headGroups && headGroups.length > 0 ? (
+              <tr className="dt-head-groups">
+                {selectable ? <th className="dt-sel-col" aria-hidden="true" /> : null}
+                {headGroups.map((g, i) => (
+                  <th
+                    key={i}
+                    colSpan={g.span}
+                    scope="colgroup"
+                    className={g.className}
+                    style={g.color ? { color: g.color } : undefined}
+                  >
+                    {g.label ?? null}
+                  </th>
+                ))}
+              </tr>
+            ) : null}
             <tr>
               {selectable ? (
                 <th scope="col" className="dt-sel-col">

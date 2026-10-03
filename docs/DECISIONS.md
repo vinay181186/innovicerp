@@ -11094,3 +11094,24 @@ as having returned to the customer material that was actually at a subcontractor
 - Found by the `/code-review high` pass on this diff, not by the author: the impossible chip advice
   (decision 3), the false invariant above, the wrong ADR number on four code comments, and the three
   reasons the At Vendor source was unfit (decision 4).
+
+## ADR-209: Op Qty Flow — reconciled row per op (Deviated / Reworked / Rejected), Passed On removed
+
+**Date:** 2026-10-03
+**Status:** Accepted (owner approved mock-up JC-Detail-Mockup-v2, actual data of PROD IN-JC-26-00001)
+
+### Context
+On IN-JC-26-00001 Op 40 the table read "Sent 30 · Accepted 30 · Rejected 5": the 5 pieces deviated at incoming
+QC were re-sent to the vendor (NC-00001, IN-DC-00002/R1) and came back good, but the re-sent lot was not in
+"Sent", the rework was invisible, and "Rejected" looked final while it was only the inspection result.
+
+### Decision
+- Columns: Op · Operation · Input │ Done · Accepted │ Deviated (NC) · Reworked · Rejected │ Pending │ Sent ·
+  Received · At Vendor │ Check · Op Status, with vertical separators and a group band ("At this operation",
+  "With vendor (outsource)"). Passed On removed (Accepted is what moves on).
+- Deviated = failed inspection → NC (production + QC + incoming-QC rejects); Reworked = Σ NC cleared_qty;
+  Rejected = FINAL NC decision (v_jc_op_status op_loss rule). Sent = DC + return-to-vendor re-sent; Received
+  = all GRN receipts incl. re-received lots.
+- Server computes Check: Input = Accepted + Rejected + Deviated still open (minus pieces back at the vendor
+  on an open return-to-vendor NC) + At vendor + In QC + Pending; `unaccountedQty` 0 = ✓. Screen only shows it.
+- DataTable gains an optional `headGroups` band (opt-in; other tables unchanged).

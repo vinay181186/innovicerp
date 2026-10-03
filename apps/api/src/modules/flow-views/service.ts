@@ -148,7 +148,10 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
       osp AS (
         SELECT opl.jc_op_id,
           COALESCE(SUM(grl.qc_accepted_qty), 0) AS acc,
-          COALESCE(SUM(grl.qc_rejected_qty), 0) AS rej
+          COALESCE(SUM(grl.qc_rejected_qty), 0) AS rej,
+          -- ADR-209: every receipt back from the vendor, incl. the GRN of a lot
+          -- re-sent for rework (return-to-vendor) — "Received" on the table.
+          COALESCE(SUM(grl.received_qty), 0) AS recv
         FROM opl
         LEFT JOIN public.goods_receipt_note_lines grl
           ON grl.purchase_order_line_id = opl.pol AND grl.deleted_at IS NULL
@@ -171,7 +174,16 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
           -- Same rule as v_jc_op_status returned_to_vendor.at_vendor_qty (open NCs).
           GREATEST(0, COALESCE(SUM(nc.rtv_sent_qty - nc.rtv_received_qty) FILTER (
             WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL
-              AND nc.status <> 'closed'), 0)) AS rtv_at_vendor
+              AND nc.status <> 'closed'), 0)) AS rtv_at_vendor,
+          -- ADR-209: deviated pieces an NC recovered and that were accepted
+          -- (rework / repair / use as is / return to vendor) — "Reworked".
+          COALESCE(SUM(nc.cleared_qty), 0) AS cleared,
+          -- Deviated pieces now back at the vendor or in its re-receipt QC
+          -- (open return-to-vendor NCs): counted under At vendor / In QC, so
+          -- not again as "deviated, NC open".
+          GREATEST(0, COALESCE(SUM(nc.rtv_sent_qty - nc.cleared_qty - nc.failed_qty) FILTER (
+            WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL
+              AND nc.status <> 'closed'), 0)) AS rtv_in_transit
         FROM public.nc_register nc
         JOIN ops ON ops.id = nc.jc_op_id
         WHERE nc.deleted_at IS NULL
@@ -192,7 +204,10 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         (ops.op_type = 'outsource' OR EXISTS (SELECT 1 FROM opl WHERE opl.jc_op_id = ops.id)
           OR ops.outsource_sent_qty > 0) AS has_osp,
         v.input_avail, v.completed_qty, v.qc_accepted_qty, v.available, v.qc_pending,
-        v.computed_status, v.at_vendor_qty,
+        v.computed_status, v.at_vendor_qty, v.in_qc_qty, v.rework_pending_qty,
+        COALESCE(osp.recv, 0) AS osp_recv,
+        COALESCE(loss.cleared, 0) AS cleared,
+        COALESCE(loss.rtv_in_transit, 0) AS rtv_in_transit,
         COALESCE(loss.rtv_sent, 0) AS rtv_sent,
         COALESCE(loss.rtv_received, 0) AS rtv_received,
         COALESCE(loss.rtv_at_vendor, 0) AS rtv_at_vendor,
@@ -234,6 +249,37 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
           : opType === 'outsource'
             ? ospAcc + qcAccepted
             : num(x['completed_raw']) + ospAcc;
+      // ADR-209 — one reconciled row per op. Every piece that reached the op
+      // (Input) is in exactly one place:
+      //   Accepted + Rejected (final NC decision) + Deviated still open
+      //   + At vendor + In QC + Pending  =  Input   -> Check ✓
+      const isOut = opType === 'outsource';
+      const hasOsp = x['has_osp'] === true;
+      const deviated = num(x['prod_rej']) + num(x['qc_rej']) + num(x['osp_rej']);
+      const reworked = num(x['cleared']);
+      const rejectedFinal = num(x['lost']);
+      const deviatedOpen = Math.max(
+        0,
+        deviated - reworked - rejectedFinal - num(x['rtv_in_transit']),
+      );
+      const atVendor =
+        num(x['at_vendor_qty']) + (x['rtv_outside_view'] === true ? num(x['rtv_at_vendor']) : 0);
+      const inQc = hasOsp ? num(x['in_qc_qty']) : 0;
+      const qcWaiting = qcRequired && opType !== 'qc' ? num(x['qc_pending']) : 0;
+      const pending =
+        opType === 'qc'
+          ? num(x['qc_pending'])
+          : isOut
+            ? Math.max(0, num(x['input_avail']) - num(x['outsource_sent_qty'])) + qcWaiting
+            : Math.max(0, num(x['available']) - num(x['rework_pending_qty'])) + qcWaiting;
+      const done =
+        opType === 'qc'
+          ? qcAccepted + num(x['qc_rej'])
+          : isOut
+            ? num(x['osp_recv'])
+            : num(x['completed_raw']);
+      const accounted = passedOn + rejectedFinal + deviatedOpen + atVendor + inQc + pending;
+      const unaccounted = Math.round((num(x['input_avail']) - accounted) * 1000) / 1000;
       return {
         jcOpId: String(x['id']),
         opSeq: num(x['op_seq']),
@@ -255,8 +301,18 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         vendorAcceptedQty: ospAcc,
         returnedToVendorQty: num(x['rtv_sent']),
         reReceivedQty: num(x['rtv_received']),
-        atVendorQty:
-          num(x['at_vendor_qty']) + (x['rtv_outside_view'] === true ? num(x['rtv_at_vendor']) : 0),
+        atVendorQty: atVendor,
+        doneQty: done,
+        acceptedQty: passedOn,
+        deviatedQty: deviated,
+        reworkedQty: reworked,
+        rejectedFinalQty: rejectedFinal,
+        deviatedOpenQty: deviatedOpen,
+        pendingQty: pending,
+        inQcQty: inQc,
+        vendorSentQty: num(x['outsource_sent_qty']) + num(x['rtv_sent']),
+        vendorReceivedQty: num(x['osp_recv']),
+        unaccountedQty: unaccounted,
         passedOnQty: passedOn,
         availableQty: num(x['available']),
         qcPendingQty: num(x['qc_pending']),

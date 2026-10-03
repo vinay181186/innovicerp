@@ -1963,3 +1963,15 @@ input[type='radio'] {
   width: 168px !important;
   flex: 0 0 auto;
 }
+
+/* ADR-209 — vertical separator between logical column groups (Op Qty Flow),
+   and the optional group-label band DataTable draws above the headers. */
+.innovic-table th.vsep,
+.innovic-table td.vsep {
+  border-left: 2px solid var(--border2);
+}
+.innovic-table thead tr.dt-head-groups th {
+  font-size: 11px;
+  text-align: center;
+  border-bottom: 1px solid var(--border2);
+}
