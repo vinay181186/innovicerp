@@ -14,6 +14,12 @@
 
 import type { JobCardListItem } from '@innovic/shared';
 
+/** Wide enough for the longest label in this strip — `Returned to Store`, the
+ *  registered name (docs/NAMING.md row 152), at 11px Source Code Pro: 17
+ *  characters x ~6.6px + the tile's 28px of padding. Raise this if a longer
+ *  label is ever added, rather than letting a label wrap. */
+const TILE_MIN = 142;
+
 function Metric({
   label,
   value,
@@ -26,14 +32,19 @@ function Metric({
   return (
     <div
       style={{
-        flex: '1 1 90px',
-        minWidth: 80,
+        flex: `1 1 ${TILE_MIN}px`,
+        minWidth: TILE_MIN,
         padding: '6px 14px',
         borderLeft: '1px solid var(--border)',
         textAlign: 'right',
       }}
     >
-      <div className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+      {/* nowrap: when one label wrapped to two lines its number dropped a line
+          below every other tile's number and the strip stopped reading as a row
+          (styling skill rule 1 — short values stay on one line). Too narrow for
+          all the tiles and they wrap as WHOLE tiles, label and number together,
+          which is the right failure. */}
+      <div className="mono" style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
         {label}
       </div>
       <div
@@ -66,8 +77,18 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', padding: '4px 0' }}>
         {/* The first cell drops its left border so the row reads as one strip. */}
-        <div style={{ flex: '1 1 90px', minWidth: 80, padding: '6px 14px', textAlign: 'right' }}>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+        <div
+          style={{
+            flex: `1 1 ${TILE_MIN}px`,
+            minWidth: TILE_MIN,
+            padding: '6px 14px',
+            textAlign: 'right',
+          }}
+        >
+          <div
+            className="mono"
+            style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+          >
             Needed
           </div>
           <div className="mono fw-700" style={{ fontSize: 18, lineHeight: 1.2 }}>
