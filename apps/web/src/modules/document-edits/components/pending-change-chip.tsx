@@ -32,16 +32,14 @@ export function headerPendingChange(
   return changes.find((c) => c.field === field);
 }
 
-/** The pending change for a LINE field. The change object carries no line
- *  locator of its own (the frozen contract is {field,label,before,after,id}), so
- *  a line is matched when the change's label names it — "Line {lineNo}" — the
- *  same way the activity-log line reference reads. Degrades to no chip if the
- *  engine labels line changes differently. */
+/** The pending change for a LINE field. Line changes carry a composite field
+ *  key `line:<lineId>:<attr>` (attr = item | qty | rate) so each line's change
+ *  is matched exactly by the line's id — no reliance on label wording. */
 export function linePendingChange(
   changes: readonly DocumentEditChange[],
-  lineNo: number,
-  field: string,
+  lineId: string,
+  attr: 'item' | 'qty' | 'rate',
 ): DocumentEditChange | undefined {
-  const re = new RegExp(`\\bLine\\s*${lineNo}\\b`, 'i');
-  return changes.find((c) => c.field === field && re.test(c.label));
+  const key = `line:${lineId}:${attr}`;
+  return changes.find((c) => c.field === key);
 }

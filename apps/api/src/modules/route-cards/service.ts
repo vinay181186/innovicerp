@@ -539,6 +539,7 @@ async function loadRouteCardDetail(
         program: r.op.program,
         toolNo: r.op.toolNo,
         toolDetails: r.op.toolDetails,
+        remarks: r.op.remarks,
         qcRequired: r.op.qcRequired,
         ospVendorId: r.op.ospVendorId,
         ospVendorCodeText: r.op.ospVendorCodeText,
@@ -596,6 +597,9 @@ interface DiffOp {
   program?: string | null;
   toolNo?: string | null;
   toolDetails?: string | null;
+  // Same reasoning as the four above, for the same reason (0195): a save whose
+  // only change was a remark bumped the revision and logged "No op changes".
+  remarks?: string | null;
   qcRequired?: boolean | null;
 }
 
@@ -654,6 +658,9 @@ export function computeRouteCardDiffNote(oldOps: DiffOp[], newOps: DiffOp[]): st
     }
     if ((oo.toolDetails ?? null) !== (no.toolDetails ?? null)) {
       parts.push(`tool details ${noteVal(oo.toolDetails)} → ${noteVal(no.toolDetails)}`);
+    }
+    if ((oo.remarks ?? null) !== (no.remarks ?? null)) {
+      parts.push(`remarks ${noteVal(oo.remarks)} → ${noteVal(no.remarks)}`);
     }
     if (Boolean(oo.qcRequired) !== Boolean(no.qcRequired)) {
       parts.push(`QC ${oo.qcRequired ? 'yes' : 'no'} → ${no.qcRequired ? 'yes' : 'no'}`);
@@ -728,6 +735,7 @@ const RC_OP_FIELDS: readonly DiffField[] = [
   { key: 'program', label: 'Program No.' },
   { key: 'toolNo', label: 'Tool No.' },
   { key: 'toolDetails', label: 'Tool Details' },
+  { key: 'remarks', label: 'Remarks' },
   { key: 'qcRequired', label: 'QC' },
 ];
 
@@ -1342,6 +1350,7 @@ function assignOpValues(
     program: o.program ?? null,
     toolNo: o.toolNo ?? null,
     toolDetails: o.toolDetails ?? null,
+    remarks: o.remarks ?? null,
     qcRequired: o.qcRequired,
     ospVendorId: o.ospVendorId ?? null,
     ospVendorCodeText: o.ospVendorCodeText ?? null,
@@ -1369,6 +1378,10 @@ function buildOpsSnapshot(
     program: o.program ?? null,
     toolNo: o.toolNo ?? null,
     toolDetails: o.toolDetails ?? null,
+    // In the snapshot too (migration 0195). A field left out of here is gone
+    // from the history the moment the next revision is raised: the op rows are
+    // deleted and re-inserted, and this jsonb is all that remains of the old ones.
+    remarks: o.remarks ?? null,
     ospVendorCode:
       (o.ospVendorId ? vendorsLookup.byId.get(o.ospVendorId)?.code : null) ??
       o.ospVendorCodeText ??
@@ -1397,6 +1410,10 @@ interface ComparableOp {
   program: string | null;
   toolNo: string | null;
   toolDetails: string | null;
+  // remarks is deliberately NOT compared. This equality test is what lets the
+  // auto-save path (Job Card / plan execute) leave an unchanged routing's op
+  // rows alone. Those source documents carry no remarks, so comparing it would
+  // make every auto-save look like a change and blank the note out.
   qcRequired: boolean;
   ospVendorId: string | null;
   ospVendorCodeText: string | null;
@@ -1466,6 +1483,10 @@ interface ReplaceRouteCardOpsParams {
    *  bump, no snapshot row. Used by the auto-save path so re-running the same
    *  routing does not inflate the revision history. */
   skipWhenUnchanged?: boolean;
+  /** Carry each step's existing `remarks` across the delete + re-insert when the
+   *  incoming op supplies none. Set by the AUTO-SAVE only — see the comment at
+   *  the use site for why an explicit card edit must not do this. */
+  preserveRemarks?: boolean;
 }
 
 async function replaceRouteCardOps(
@@ -1502,6 +1523,32 @@ async function replaceRouteCardOps(
     return { newRevision: p.currentRevision, changed: false, oldOps: [], newOps: [] };
   }
 
+  // An auto-save from a Job Card / plan rewrites the routing from a document
+  // that carries no remarks of its own (they deliberately never reach jc_ops),
+  // so a plain re-insert would blank a note the planner typed here. Carry the
+  // old remark forward — but only onto a step that is unmistakably the same one:
+  // same position, same name, same kind. If the step moved or changed, the
+  // remark may no longer be true of it, so it is dropped rather than guessed.
+  // An EXPLICIT card edit never takes this path: there, an emptied box means the
+  // user cleared it on purpose and it must clear.
+  const opsToWrite: CreateRouteCardOpInput[] =
+    p.preserveRemarks === true
+      ? p.ops.map((o, i) => {
+          if (o.remarks != null && o.remarks.trim() !== '') return o;
+          const prev = oldOpRows[i]?.op;
+          if (!prev?.remarks) return o;
+          if (prev.opSeq !== i + 1) return o;
+          if (prev.operation.trim().toUpperCase() !== o.operation.trim().toUpperCase()) return o;
+          if (prev.opType !== o.opType) return o;
+          // Name + position + kind are NOT enough: two DEBURR steps on different
+          // benches are routine, and deleting the first would move the first
+          // one's remark onto the second. The machine / vendor must match too.
+          if (prev.machineId !== (o.machineId ?? null)) return o;
+          if (prev.ospVendorId !== (o.ospVendorId ?? null)) return o;
+          return { ...o, remarks: prev.remarks };
+        })
+      : p.ops;
+
   const oldSnapshot: DiffOp[] = oldOpRows.map((r) => ({
     opSeq: r.op.opSeq,
     machineCode: r.machineCode ?? r.op.machineCodeText ?? null,
@@ -1513,10 +1560,11 @@ async function replaceRouteCardOps(
     program: r.op.program,
     toolNo: r.op.toolNo,
     toolDetails: r.op.toolDetails,
+    remarks: r.op.remarks,
     qcRequired: r.op.qcRequired,
   }));
 
-  const newSnapshot: DiffOp[] = p.ops.map((o, i) => ({
+  const newSnapshot: DiffOp[] = opsToWrite.map((o, i) => ({
     opSeq: i + 1,
     machineCode:
       (o.machineId ? p.machinesLookup.byId.get(o.machineId)?.code : null) ??
@@ -1533,6 +1581,7 @@ async function replaceRouteCardOps(
     program: o.program ?? null,
     toolNo: o.toolNo ?? null,
     toolDetails: o.toolDetails ?? null,
+    remarks: o.remarks ?? null,
     qcRequired: Boolean(o.qcRequired),
   }));
 
@@ -1556,14 +1605,16 @@ async function replaceRouteCardOps(
     .set({ currentRevision: newRevision, updatedBy: user.id, updatedAt: new Date() })
     .where(and(eq(routeCards.id, p.routeCardId), eq(routeCards.companyId, p.companyId)));
 
-  await tx.insert(routeCardOps).values(assignOpValues(p.ops, p.routeCardId, p.companyId, user.id));
+  await tx
+    .insert(routeCardOps)
+    .values(assignOpValues(opsToWrite, p.routeCardId, p.companyId, user.id));
 
   await tx.insert(routeCardRevisions).values({
     companyId: p.companyId,
     routeCardId: p.routeCardId,
     revisionNo: newRevision,
     notes: finalNote,
-    opsSnapshot: buildOpsSnapshot(p.ops, p.machinesLookup, p.vendorsLookup),
+    opsSnapshot: buildOpsSnapshot(opsToWrite, p.machinesLookup, p.vendorsLookup),
     createdBy: user.id,
   });
 
@@ -1748,6 +1799,8 @@ export async function saveRouteCardForItem(
         // operations came back identical. skipWhenUnchanged exists to stop
         // re-running the same plan inflating the history — not to hide this.
         skipWhenUnchanged: rmChanges.length === 0,
+        // The source document has no remarks; keep the card's own (0195).
+        preserveRemarks: true,
       },
       user,
     );

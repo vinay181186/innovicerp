@@ -66,7 +66,10 @@ export async function requestDocumentEdit(
     const after = await entry.afterSnapshot(tx, companyId, input, user);
     // Stable change id = the field key; one open edit per document means a field
     // key is unique within a request.
-    const changes = diffFields(before, after, entry.diffFields).map((c) => ({ ...c, id: c.field }));
+    const changes = diffFields(before, after, entry.diffFields(target)).map((c) => ({
+      ...c,
+      id: c.field,
+    }));
     if (changes.length === 0) throw new ConflictError('Nothing changed to approve.');
 
     const expectedDate = expectedUpdatedAt
@@ -170,7 +173,7 @@ export async function decideDocumentEdit(
     const before = entry.beforeSnapshot(target);
     const after = await entry.afterSnapshot(tx, companyId, req.proposedPayload, user);
     const freshByField = new Map(
-      diffFields(before, after, entry.diffFields).map((c) => [c.field, c]),
+      diffFields(before, after, entry.diffFields(target)).map((c) => [c.field, c]),
     );
 
     const outcomes: DocumentEditDecision[] = [];

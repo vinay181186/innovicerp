@@ -34,7 +34,7 @@ export const LINE_COLS: { key: string; label: string; width: number; title?: str
   {
     key: 'balance',
     label: 'To Plan',
-    width: 6,
+    width: 5,
     title:
       'Order − Planned − direct Job Cards: still to plan. The same number + Plan / + PR use. Hover a number for Balance (Order − Dispatched − Reserved).',
   },
@@ -43,12 +43,18 @@ export const LINE_COLS: { key: string; label: string; width: number; title?: str
   {
     key: 'dispatched',
     label: 'Dispatched',
-    width: 6,
+    width: 5,
     title: 'Already shipped to the customer against this line',
   },
-  { key: 'due', label: 'Due Date', width: 6 },
+  // 9%, not 6%: the one app-wide date format is `26-Sep-2026` (11 mono
+  // characters ≈ 86px at --fs-sm), and 6% of this sheet's 1200px minimum is
+  // 72px — 56px once the cell padding is off, so the date used to paint over
+  // Plan Status. The 3% comes off To Plan, Dispatched and Plans, which hold
+  // short numbers / wrapping chips. Shortening the date instead was not an
+  // option: one format everywhere.
+  { key: 'due', label: 'Due Date', width: 9 },
   { key: 'status', label: 'Plan Status', width: 7 },
-  { key: 'plans', label: 'Plans', width: 25 },
+  { key: 'plans', label: 'Plans', width: 24 },
   { key: 'action', label: '', width: 4, title: 'Actions' },
 ];
 
@@ -213,7 +219,17 @@ export function OrderLineRow({
       >
         {line.dispatchedQty}
       </td>
-      <td className="mono">{fmtDate(line.dueDate)}</td>
+      {/* `td.mono` is overflow:visible by default, which is right for a bare
+          number and wrong for a date: at a narrow width or browser zoom it
+          paints over Plan Status. Clip inside this cell and keep the whole
+          date on hover. */}
+      <td
+        className="mono"
+        style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}
+        title={line.dueDate ? fmtDate(line.dueDate) : undefined}
+      >
+        {fmtDate(line.dueDate)}
+      </td>
       <td style={wrapCell}>
         <span style={{ fontSize: 11, fontWeight: 700, color: status.color }}>{status.label}</span>
         <div className="mono text3" style={{ fontSize: 11 }}>

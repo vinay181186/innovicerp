@@ -835,10 +835,10 @@ function LineRow(props: {
   pendingChanges: readonly DocumentEditChange[];
 }): React.JSX.Element {
   const { line: l, priceHidden, poStatus, pendingChanges } = props;
-  // ADR-202 — a pending edit to this line's Qty / Rate shows as an amber chip.
-  // The PO diff emits Qty as 'qty' and Rate as 'rate'.
-  const qtyPending = linePendingChange(pendingChanges, l.lineNo, 'qty');
-  const ratePending = linePendingChange(pendingChanges, l.lineNo, 'rate');
+  // ADR-202 — a pending edit to this line's Qty / Rate shows as an amber chip,
+  // matched by the line's id (field key `line:<id>:qty` / `line:<id>:rate`).
+  const qtyPending = linePendingChange(pendingChanges, l.id, 'qty');
+  const ratePending = linePendingChange(pendingChanges, l.id, 'rate');
   // When the viewer may not see prices the Rate + Amount columns are dropped
   // from the table entirely (header + cells), not blanked.
   const amount = l.qty * Number(l.rate ?? 0);

@@ -936,11 +936,11 @@ async function routeCardEditPath(page: Page, s: State): Promise<void> {
     await page.waitForTimeout(250);
   }
   await expect(rows).toHaveCount(0);
-  await page.getByRole('button', { name: /Add Outsource Op/ }).click();
+  await page.getByRole('button', { name: /^\+ Outsourced op$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(0).getByPlaceholder(/Vendor code/).fill(VENDOR_CODE);
   await rows.nth(0).getByPlaceholder(/Coating \/ Painting/).fill(`${MARK}Heat treatment`);
-  await page.getByRole('button', { name: /Add QC Op/ }).click();
+  await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(1).getByPlaceholder(/DIR \/ MIR/).fill('dir');
   const saveBtn = page.getByRole('button', { name: /Save Changes/ });
@@ -966,11 +966,11 @@ async function routeCardEditPath(page: Page, s: State): Promise<void> {
 
   await rows.nth(1).locator('button.btn-danger').click();
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Add Op$/ }).click();
+  await page.getByRole('button', { name: /^\+ Add Operation$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(1).getByPlaceholder(/Machine code/).fill(MACHINE_A);
   await rows.nth(1).getByPlaceholder(/od turn/).fill(`${MARK}Deburr`);
-  await page.getByRole('button', { name: /Add QC Op/ }).click();
+  await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(2).getByPlaceholder(/DIR \/ MIR/).fill('dir');
   const saved = page.waitForResponse(isPut, { timeout: 60_000 });
@@ -1021,11 +1021,11 @@ test('S13 (−/+) Route Card: OSP → QC refused; OSP → Process → QC saves',
     await page.waitForTimeout(250);
   }
   await expect(rows).toHaveCount(0);
-  await page.getByRole('button', { name: /Add Outsource Op/ }).click();
+  await page.getByRole('button', { name: /^\+ Outsourced op$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(0).getByPlaceholder(/Vendor code/).fill(VENDOR_CODE);
   await rows.nth(0).getByPlaceholder(/Coating \/ Painting/).fill(`${MARK}Heat treatment`);
-  await page.getByRole('button', { name: /Add QC Op/ }).click();
+  await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(1).getByPlaceholder(/DIR \/ MIR/).fill('dir');
   const saveBtn = page.getByRole('button', { name: /Save Route Card/ });
@@ -1050,11 +1050,11 @@ test('S13 (−/+) Route Card: OSP → QC refused; OSP → Process → QC saves',
   // OSP → Process → QC
   await rows.nth(1).locator('button.btn-danger').click();
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /Add Op$/ }).click();
+  await page.getByRole('button', { name: /^\+ Add Operation$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(1).getByPlaceholder(/Machine code/).fill(MACHINE_A);
   await rows.nth(1).getByPlaceholder(/od turn/).fill(`${MARK}Deburr`);
-  await page.getByRole('button', { name: /Add QC Op/ }).click();
+  await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
   await rows.nth(2).getByPlaceholder(/DIR \/ MIR/).fill('dir');
   const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/route-cards$/.test(new URL(r.url()).pathname), { timeout: 60_000 });

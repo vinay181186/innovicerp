@@ -1,0 +1,25 @@
+-- 0195 — a remark per route-card operation.
+--
+-- WHY: the Route Card says how a part is made, but there was nowhere to record
+-- what the operator or the vendor must know about ONE step — "leave 0.4 mm on
+-- the OD for the grinding op", "send with the DC and a copy of the MTC",
+-- "100 % check, record in the DIR". It was being written into `tool_details`,
+-- which is a tooling field, or left off the card and passed on by word of mouth.
+--
+-- The remark is free text on the operation, never a number and never a status:
+-- nothing computes from it and nothing gates on it.
+--
+-- SHOWN IN THE FORM through the line's "▸ More" row (the pattern Create PO
+-- uses for a per-line remark), not as a column — a remark is long free text and
+-- as a column it either squeezes the grid or gets cut.
+--
+-- The revision snapshot (`route_card_revisions.ops_snapshot`) carries the same
+-- field from this migration on, so raising a revision keeps every operation
+-- remark. Snapshots written before this migration simply have no `remarks` key;
+-- the contract reads it as optional, so old history still loads.
+--
+-- Nullable with no default and no backfill: an existing operation has no remark
+-- and must not be given one. Nothing else in the ERP reads this column yet — it
+-- does NOT travel to the job card op (`jc_ops`) in this migration.
+
+ALTER TABLE route_card_ops ADD COLUMN IF NOT EXISTS remarks text;
