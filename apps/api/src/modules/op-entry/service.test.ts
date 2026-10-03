@@ -694,10 +694,10 @@ describe('op-entry submitQcLog (T-040d)', () => {
     expect(qcOp.pendingQty).toBe(0);
     // pendingQty on a QC op IS qc_pending — same number, one definition.
     expect(qcOp.pendingQty).toBe(qcOp.qcPending);
-    // `available` is untouched by 0087 and still means something else on a QC
-    // op (input − op_log completes, and a QC op never gets a complete log).
-    // That is exactly why the Op Entry table must not print it as "Pending".
-    expect(qcOp.available).toBe(10);
+    // 0196: a QC op's `available` is worked off by its QC entries too
+    // (input − accepted − rejected) — it equals pending, not the whole batch.
+    expect(qcOp.available).toBe(0);
+    expect(qcOp.available).toBe(qcOp.pendingQty);
 
     // Now send the 2 rejects back to op 1 for rework by dispositioning the
     // auto-NC the reject raised — the same row shape nc-register/cascades.ts
@@ -723,6 +723,64 @@ describe('op-entry submitQcLog (T-040d)', () => {
     expect(processOp.pendingQty).toBe(2);
     expect(processOp.pendingQty).toBe(processOp.available);
     expect(after.find((r) => r.opSeq === 2)!.pendingQty).toBe(0);
+
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
+    await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+  });
+
+  it('0196: QC pieces recovered by an NC are not double-counted in Available / Pending', async () => {
+    // 10 in, QC accepts 5 and rejects 2 -> 3 still to inspect. An NC then
+    // recovers the 2 (Use As Is / rework) and re-injects them as a LOG-NC
+    // 'qc' row (nc-register reinject-log-type.ts) — they are now in accepted
+    // AND still in the original reject. The op must still show 3 to inspect.
+    const id = await ensureFreshFixture();
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    await service.submitQcLog(
+      {
+        jcOpId: id,
+        qty: 5,
+        rejectQty: 2,
+        logDate: '2026-05-03',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+    await db.insert(opLog).values({
+      companyId: admin.companyId!,
+      jcOpId: id,
+      logNo: 'LOG-NC-TEST-0196',
+      logType: 'qc',
+      logDate: '2026-05-04',
+      shift: 'day',
+      qty: 2,
+      rejectQty: 0,
+      operatorName: 'QC-Insp',
+      createdBy: admin.id,
+    });
+
+    const rows = await service.listJcOpsEnriched({ jobCardCode: testJcCode }, admin);
+    const qcOp = rows.find((r) => r.opSeq === 2)!;
+    expect(qcOp.qcAcceptedQty).toBe(7);
+    expect(qcOp.pendingQty).toBe(3);
+    expect(qcOp.qcPending).toBe(3);
+    expect(qcOp.available).toBe(3);
 
     await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
     await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
