@@ -13,6 +13,8 @@ export const DOCUMENT_EDIT_ENTITIES = [
   'Plan',
   'SalesOrder',
   'JobWorkOrder',
+  'GoodsReceiptNote',
+  'JobCard',
 ] as const;
 
 export type DocumentEditEntity = (typeof DOCUMENT_EDIT_ENTITIES)[number];

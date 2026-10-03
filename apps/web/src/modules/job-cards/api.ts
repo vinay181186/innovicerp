@@ -1,4 +1,5 @@
 import type {
+  DocumentEditStagedResult,
   JcStatusCountsQuery,
   JcStatusCountsResponse,
   JobCardEditModel,
@@ -130,11 +131,24 @@ export function useCreateJobCard() {
 
 export function useUpdateJobCard(id: string) {
   const qc = useQueryClient();
-  return useMutation<JobCardSaveResult, Error, JobCardWriteInput>({
+  // ADR-202 — when the edit-approval gate is on and the Job Card is live, the
+  // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the saved card. Callers read the union to tell them apart.
+  return useMutation<JobCardSaveResult | DocumentEditStagedResult, Error, JobCardWriteInput>({
     mutationFn: (input) =>
-      apiFetch<JobCardSaveResult>(`/job-cards/${id}`, { method: 'PATCH', json: input }),
+      apiFetch<JobCardSaveResult | DocumentEditStagedResult>(`/job-cards/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: jobCardsKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the Job Card itself — refresh so the status page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(jobCardsKeys.detail(id), updated);
     },
   });

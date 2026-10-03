@@ -78,7 +78,9 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = jobCardUpdateInputSchema.parse(req.body);
-    return service.updateJobCard(id, body, req.user);
+    // Edit-approval (ADR-202): staged for approval when the gate is on and the
+    // card is live; a direct edit otherwise.
+    return service.updateJobCardOrStage(id, body, req.user);
   });
 
   app.delete('/job-cards/:id', async (req, reply) => {

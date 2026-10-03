@@ -20,6 +20,7 @@
 //
 // Tokens only (tokens.css) — no hex.
 import type {
+  DocumentEditChange,
   JcOpEnriched,
   JobCardListItem,
   JobCardRmAvailable,
@@ -29,8 +30,26 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { JcOpFlowCards } from './jc-stat-tiles';
 import { fmtJcDate } from '../lib/fmt-jc-date';
+
+/** ADR-202 — the amber "→ after" chip for a header field with a staged edit,
+ *  rendered inline next to the field's current value. Null when nothing for this
+ *  field is waiting for approval. */
+function JcChip({
+  changes,
+  field,
+}: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(changes, field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
 
 /** The quiet caption in front of a value (`Drawing`, `Due Date`, …). */
 const kvLabel: React.CSSProperties = {
@@ -156,6 +175,7 @@ export function JcViewSummary({
   actualSize,
   drawing,
   onOpenDrawing,
+  pendingChanges,
 }: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
@@ -175,7 +195,12 @@ export function JcViewSummary({
   /** Opens the shared drawing preview — from the drawing thumbnail (image
    *  drawings) or the file name on the Drawing row (PDF / DWG). */
   onOpenDrawing: () => void;
+  /** ADR-202 — staged header edits waiting for approval; each drives an amber
+   *  "→ after" chip beside its field. Empty on the edit screen (chips are a
+   *  read-only, status-page affordance) and on a card with no pending edit. */
+  pendingChanges?: readonly DocumentEditChange[];
 }): React.JSX.Element {
+  const changes = pendingChanges ?? [];
   // ── KPI tiles ──
   // Completed / Pending are the figures the old summary showed: completed =
   // the LAST op's done qty (finished goods are counted only after the last
@@ -317,6 +342,14 @@ export function JcViewSummary({
               ) : null}
             </div>
           </ItemBadge>
+          {/* ADR-202 — a staged change to the Item Code shows here, under the
+              product badge (the code itself lives inside ItemBadge). */}
+          {headerPendingChange(changes, 'itemCode') ? (
+            <div style={{ marginTop: 4 }}>
+              <span style={kvLabel}>New Item Code</span>
+              <JcChip changes={changes} field="itemCode" />
+            </div>
+          ) : null}
           {/* Drawing thumbnail when the drawing is an image (a PDF has none —
               its file name on the Drawing row opens it instead). Opens the
               shared preview. Never `download`: opening a thumbnail is nobody
@@ -404,6 +437,7 @@ export function JcViewSummary({
             ) : (
               '—'
             )}
+            <JcChip changes={changes} field="drawingFilePath" />
           </Kv>
           <Kv label={src?.type === 'jw' ? 'JWSO No. / Ln' : 'SO No. / Ln'}>
             {src ? (
@@ -531,9 +565,10 @@ export function JcViewSummary({
               ))}
             </Kv>
           ) : null}
-          {jc.remarks ? (
+          {jc.remarks || headerPendingChange(changes, 'remarks') ? (
             <Kv label="Remarks">
-              <span style={{ fontWeight: 400, whiteSpace: 'pre-wrap' }}>{jc.remarks}</span>
+              <span style={{ fontWeight: 400, whiteSpace: 'pre-wrap' }}>{jc.remarks || '—'}</span>
+              <JcChip changes={changes} field="remarks" />
             </Kv>
           ) : null}
         </div>
@@ -549,7 +584,16 @@ export function JcViewSummary({
               gap: 6,
             }}
           >
-            <KpiTile label="Order Qty" value={jc.orderQty} tone="plain" />
+            <KpiTile
+              label="Order Qty"
+              value={
+                <>
+                  {jc.orderQty}
+                  <JcChip changes={changes} field="orderQty" />
+                </>
+              }
+              tone="plain"
+            />
             <KpiTile
               label="Completed"
               value={completed}
@@ -601,6 +645,7 @@ export function JcViewSummary({
             style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
           >
             {jc.dueDate ? fmtJcDate(jc.dueDate) : '—'}
+            <JcChip changes={changes} field="dueDate" />
           </div>
           {/* The plan's Customer Dispatch Date (the date the dispatch team
               works to) — "—" on a card with no plan or no date. */}
@@ -616,6 +661,7 @@ export function JcViewSummary({
             <span className={`badge ${jc.priority === 'high' ? 'b-amber' : 'b-grey'}`}>
               {jc.priority === 'high' ? '↑ High' : 'Normal'}
             </span>
+            <JcChip changes={changes} field="priority" />
           </div>
           <div style={kvLabel}>Current Op</div>
           <div className="fw-700" style={{ fontSize: 12.5, textAlign: 'right' }}>

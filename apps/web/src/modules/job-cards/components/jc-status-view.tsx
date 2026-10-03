@@ -21,6 +21,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Download, Loader2, Pencil, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
@@ -73,6 +74,12 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // jc_create edit). Hidden until the access matrix has loaded.
   const { data: eff } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
+
+  // ADR-202 — the edit(s) staged against this Job Card and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // header fields in JcViewSummary. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('JobCard', id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   const [flowOpen, setFlowOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(true);
@@ -250,6 +257,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         actualSize={productionOrder?.actualSize ?? null}
         drawing={drawingRef}
         onOpenDrawing={openDrawing}
+        pendingChanges={pendingChanges}
       />
       {drawingPreviewOpen && drawing ? (
         <FilePreviewModal

@@ -10,6 +10,8 @@
 import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
+import { grnEditRegistryEntry } from '../goods-receipt-notes/grn-edit-registry';
+import { jobCardEditRegistryEntry } from '../job-cards/jobcard-edit-registry';
 import { jwEditRegistryEntry } from '../job-work-orders/jw-edit-registry';
 import { ncEditRegistryEntry } from '../nc-register/nc-edit-registry';
 import { planEditRegistryEntry } from '../plans/plan-edit-registry';
@@ -74,11 +76,18 @@ export interface DocEditRegistryEntry {
   ): Promise<Map<string, Date | string | null>>;
 }
 
-export const DOC_EDIT_REGISTRY: Record<DocumentEditEntity, DocEditRegistryEntry> = {
+// Partial: an entity may be listed in the frozen DOCUMENT_EDIT_ENTITIES before its
+// registry entry is wired (lets each document be enrolled independently, and lets
+// several enrollments land in parallel). getEntry() throws a clear error for an
+// entity that is enumerated but not yet registered — it only fires at runtime when
+// an edit to that document is actually diverted, never at type-check.
+export const DOC_EDIT_REGISTRY: Partial<Record<DocumentEditEntity, DocEditRegistryEntry>> = {
   PurchaseOrder: poEditRegistryEntry,
   PurchaseRequest: prEditRegistryEntry,
   NonConformance: ncEditRegistryEntry,
   Plan: planEditRegistryEntry,
   SalesOrder: soEditRegistryEntry,
   JobWorkOrder: jwEditRegistryEntry,
+  GoodsReceiptNote: grnEditRegistryEntry,
+  JobCard: jobCardEditRegistryEntry,
 };

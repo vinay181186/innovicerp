@@ -5,9 +5,11 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { z } from 'zod';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from '../components/goods-receipt-note-form';
@@ -77,6 +79,9 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useGoodsReceiptNote(id);
   const update = useUpdateGoodsReceiptNote(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE GRN is staged for approval instead of
+  // applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // Tier-driven, per department (Store). This screen had no gate at all —
   // typing the URL handed the form to anyone, including an L1 Viewer and an
   // L2 Data Entry clerk, who deliberately cannot change a saved record.
@@ -104,7 +109,17 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdateGoodsReceiptNoteInput): Promise<void> => {
     setSubmitError(null);
     try {
-      await update.mutateAsync(values);
+      const saved = await update.mutateAsync(values);
+      if (isStagedResult(saved)) {
+        // The edit-approval gate is on and this GRN is live: nothing was changed
+        // on the GRN — the edit is now waiting for approval. Say so, then return
+        // to the GRN (its fields now carry the pending-change chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        exit.leave(
+          () => void navigate({ to: '/goods-receipt-notes/$id', params: { id }, replace: true }),
+        );
+        return;
+      }
       exit.leave(
         () => void navigate({ to: '/goods-receipt-notes/$id', params: { id }, replace: true }),
       );
@@ -158,6 +173,11 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <PageHeader
         sticky
         title="Edit GRN"

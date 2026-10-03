@@ -28,6 +28,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
@@ -784,6 +785,13 @@ export function JobCardForm({
         isEdit && model
           ? await update.mutateAsync(result.payload)
           : await create.mutateAsync(result.payload);
+      // ADR-202 — a live-JC edit may come back staged for approval (nothing
+      // saved on the card). This form is create-only in routing, so the guard
+      // mainly keeps the union type-safe; return to the list if it ever fires.
+      if (isStagedResult(saved)) {
+        exit.leave(goBack);
+        return;
+      }
       // No silent write-back (2026-09-28 form audit): when the save also wrote
       // these operations to the item's Route Card, say so before leaving.
       if (saved.routeCardWriteBack) {
