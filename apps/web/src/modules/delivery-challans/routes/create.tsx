@@ -20,6 +20,13 @@
 //     for an NC would silently break receiving/QC/auto-close (QC-NC-HANDLING-
 //     DESIGN.md §5).
 //
+//   • Against JW PO / DC (ADR-208) — the store knows the JW PO No. or the DC No.
+//     the pieces first went out on, not the NC No. Search by either, pick ONE
+//     return-to-vendor NC behind it, and the SAME Against-NC form opens — so the
+//     save is still useCreateNcDc (one writer, one-challan-per-NC lock). Against
+//     PO also warns when the chosen PO has such pieces waiting, so a return is not
+//     booked as an ordinary send by mistake.
+//
 // Switching source unmounts the other side, so its picks and drafts are dropped
 // (no stale state crosses). The document picked within a source is held in that
 // side's own state; the form body is keyed on the chosen id so its dependent
@@ -31,8 +38,15 @@
 // inbound link uses it and the source is now state, so the search schema carries
 // poId only.
 
-import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/shared';
+import type {
+  CreateDeliveryChallanInput,
+  DcSendableLine,
+  RtvCandidateState,
+  RtvPendingConflictDetails,
+  Uom,
+} from '@innovic/shared';
 import { poSendsMaterialOut, qtyStepForUom, qtyUomProblem, UOMS } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -43,6 +57,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { ApiError } from '@/lib/api';
 import { fmtDate, todayIst } from '@/lib/date';
 import { type ExitConfirm, useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -52,7 +67,13 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import { useCreateDeliveryChallan, useDcSendable, useEligibleRtvNcs } from '../api';
+import {
+  deliveryChallansKeys,
+  useCreateDeliveryChallan,
+  useDcSendable,
+  useEligibleRtvNcs,
+  useRtvCandidates,
+} from '../api';
 
 // poId only. An existing ?poId= link keeps working untouched and preselects the
 // Against-PO source; ?ncId= is dropped because the source is now state, not URL,
@@ -72,7 +93,7 @@ export const deliveryChallanNewRoute = createRoute({
 // One panel, one exit guard for both sources. The "▸ DC AGAINST" selector is
 // state; switching it unmounts the other side so nothing stale crosses over.
 
-type DcSource = 'po' | 'nc';
+type DcSource = 'po' | 'nc' | 'jwpo_dc';
 
 // Button text + icons mirror the GRN unified form's TYPE_META style.
 /** PO status → the words the user reads; the stored codes are unchanged. */
@@ -88,7 +109,26 @@ const PO_STATUS_LABEL: Record<string, string> = {
 const SOURCE_META: Record<DcSource, { label: string }> = {
   po: { label: 'Against PO' },
   nc: { label: 'Against NC' },
+  jwpo_dc: { label: 'Against JW PO / DC' },
 };
+
+/** ADR-208 Return Challan Status — the words the user reads for RtvCandidate.state. */
+const RETURN_STATUS_LABEL: Record<RtvCandidateState, string> = {
+  ready: 'Ready to Send',
+  awaiting_decision: 'Waiting for QC Decision',
+};
+
+/** The 409 an Against PO save answers with when return-to-vendor pieces are
+ *  waiting on one of its PO lines (ADR-208). */
+function isRtvPendingConflict(e: unknown): e is ApiError & { details: RtvPendingConflictDetails } {
+  return (
+    e instanceof ApiError &&
+    e.status === 409 &&
+    typeof e.details === 'object' &&
+    e.details !== null &&
+    (e.details as { kind?: unknown }).kind === 'rtv_pending'
+  );
+}
 
 function DeliveryChallanNewPage(): React.JSX.Element {
   const { poId: initialPoId } = deliveryChallanNewRoute.useSearch();
@@ -104,6 +144,14 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   // Arriving with ?poId= means the PO source, preselected. Otherwise default to
   // Against PO so the original flow is unchanged.
   const [source, setSource] = useState<DcSource>('po');
+  // The search the Against JW PO / DC picker opens with. Set to the PO No. when
+  // the Against PO warning's "Switch" button brings the user over; blank when
+  // the source is picked from the dropdown.
+  const [jwpoSearch, setJwpoSearch] = useState('');
+  const switchToJwpoDc = useCallback((poCode: string) => {
+    setJwpoSearch(poCode);
+    setSource('jwpo_dc');
+  }, []);
 
   // Save lives in the sticky header, but the save handler belongs to whichever
   // form body is mounted (none while a picker is showing). The body reports its
@@ -152,9 +200,12 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             id="dc-source"
             className="innovic-select"
             value={source}
-            onChange={(e) => setSource(e.target.value as DcSource)}
+            onChange={(e) => {
+              setJwpoSearch('');
+              setSource(e.target.value as DcSource);
+            }}
           >
-            {(['po', 'nc'] as const).map((s) => (
+            {(['po', 'nc', 'jwpo_dc'] as const).map((s) => (
               <option key={s} value={s}>
                 {SOURCE_META[s].label}
               </option>
@@ -164,9 +215,16 @@ function DeliveryChallanNewPage(): React.JSX.Element {
 
         {/* Switching source unmounts the other side, dropping its picks/drafts. */}
         {source === 'po' ? (
-          <PoDcSection {...(initialPoId ? { initialPoId } : {})} exit={exit} saveCtl={saveCtl} />
-        ) : (
+          <PoDcSection
+            {...(initialPoId ? { initialPoId } : {})}
+            exit={exit}
+            saveCtl={saveCtl}
+            onSwitchToJwpoDc={switchToJwpoDc}
+          />
+        ) : source === 'nc' ? (
           <NcDcSection exit={exit} saveCtl={saveCtl} />
+        ) : (
+          <JwpoDcRtvSection initialSearch={jwpoSearch} exit={exit} saveCtl={saveCtl} />
         )}
       </div>
     </div>
@@ -274,10 +332,12 @@ function PoDcSection({
   initialPoId,
   exit,
   saveCtl,
+  onSwitchToJwpoDc,
 }: {
   initialPoId?: string;
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
+  onSwitchToJwpoDc: (poCode: string) => void;
 }): React.JSX.Element {
   // The chosen PO. Preselected from ?poId= (the deep link), else null → picker.
   const [poId, setPoId] = useState<string | null>(initialPoId ?? null);
@@ -293,6 +353,7 @@ function PoDcSection({
       onChangePo={() => setPoId(null)}
       exit={exit}
       saveCtl={saveCtl}
+      onSwitchToJwpoDc={onSwitchToJwpoDc}
     />
   );
 }
@@ -434,11 +495,13 @@ function PoDcFormBody({
   onChangePo,
   exit,
   saveCtl,
+  onSwitchToJwpoDc,
 }: {
   poId: string;
   onChangePo: () => void;
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
+  onSwitchToJwpoDc: (poCode: string) => void;
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
@@ -453,6 +516,14 @@ function PoDcFormBody({
   // an L1 Viewer got the whole form and failed only at the API.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
+  // ADR-208 — pieces from this PO waiting to go back to the vendor (an RTV NC
+  // ready, or still awaiting QC's decision). While any exist, Save needs the
+  // store's tick that these are new pieces; otherwise the server refuses (409
+  // rtv_pending) — a return booked as an ordinary send double counts the PO.
+  const rtv = useRtvCandidates(poId);
+  const rtvRows = rtv.data?.items ?? [];
+  const [rtvConfirmed, setRtvConfirmed] = useState(false);
+  const rtvBlocks = rtv.isLoading || (rtvRows.length > 0 && !rtvConfirmed);
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
@@ -527,7 +598,11 @@ function PoDcFormBody({
     transport !== '' ||
     vehicleNo !== '' ||
     lineDrafts.some((l) => l.shipQty !== '' || l.materialText !== '' || l.dcRemarks !== '');
-  useReportSave(saveCtl, { canSave: perms.entry && canSubmit, saving: submitting, dirty });
+  useReportSave(saveCtl, {
+    canSave: perms.entry && canSubmit && !rtvBlocks,
+    saving: submitting,
+    dirty,
+  });
 
   // FLOW HELPER (frontend only): put each line's "Can send now" figure into
   // its Send Now box. Lines whose allowance is not known yet, or is 0, stay
@@ -605,12 +680,20 @@ function PoDcFormBody({
           ...(po.vendorCodeText ? { vendorCodeText: po.vendorCodeText } : {}),
           transport: transport.trim() || null,
           vehicleNo: vehicleNo.trim() || null,
+          // ADR-208 — sent only when the store ticked the confirmation.
+          ...(rtvConfirmed ? { rtvPendingConfirmed: true } : {}),
         },
         lines,
       };
       const created = await create.mutateAsync(input);
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id: created.id } }));
     } catch (e) {
+      // QC disposed an NC on this PO between page load and Save: fetch the
+      // waiting pieces so the warning appears, and make the store tick again.
+      if (isRtvPendingConflict(e)) {
+        setRtvConfirmed(false);
+        void rtv.refetch();
+      }
       setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
     } finally {
       setSubmitting(false);
@@ -730,6 +813,57 @@ function PoDcFormBody({
           />
         </FormField>
       </FormGrid>
+
+      {/* ADR-208 — pieces from this PO waiting to go back to the vendor. Shown
+          only when there are some; with none, Against PO is exactly as before. */}
+      {rtvRows.length > 0 ? (
+        <div
+          role="alert"
+          style={{
+            color: 'var(--amber2)',
+            background: 'var(--amber3)',
+            border: '1px solid var(--amber)',
+            borderRadius: 6,
+            padding: '8px 12px',
+            fontSize: 12,
+            lineHeight: 1.5,
+            margin: 'var(--sp-3) 0 0',
+          }}
+        >
+          <div className="fw-700">
+            These pieces from this PO are waiting to go back to the vendor:
+          </div>
+          <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
+            {rtvRows.map((r) => (
+              <li key={r.ncId}>
+                <b className="mono fw-700">{r.ncCode}</b> —{' '}
+                <b className="mono fw-700" style={{ color: 'var(--text)' }}>
+                  {itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision)}
+                </b>{' '}
+                — {Number(r.rejectedQty)} pcs — {RETURN_STATUS_LABEL[r.state]}
+              </li>
+            ))}
+          </ul>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => onSwitchToJwpoDc(po.code)}
+            >
+              Switch to Against JW PO / DC
+            </button>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={rtvConfirmed}
+                onChange={(e) => setRtvConfirmed(e.target.checked)}
+              />
+              These are new pieces, not the ones waiting to go back
+              <span className="req">★</span>
+            </label>
+          </div>
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -1066,6 +1200,170 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
   );
 }
 
+// ═══ Against JW PO / DC — the return-to-vendor challan found by PO / DC No. ═══
+// ADR-208. The store knows the JW PO No. or the DC No. the pieces first went out
+// on, not the NC No. The picker lists the return-to-vendor NCs behind them
+// (GET /delivery-challans/rtv-candidates); picking one opens the EXISTING
+// NcDcFormBody, so the save is still useCreateNcDc — one writer for the RTV qty
+// and the one-challan-per-NC lock (CLAUDE.md §20.1). One challan per NC.
+
+function JwpoDcRtvSection({
+  initialSearch,
+  exit,
+  saveCtl,
+}: {
+  initialSearch: string;
+  exit: ExitConfirm;
+  saveCtl: DcSaveCtl;
+}): React.JSX.Element {
+  const [ncId, setNcId] = useState<string | null>(null);
+  // Held here, not in the picker, so "Choose a different NC" comes back to the
+  // same search.
+  const [search, setSearch] = useState(initialSearch);
+
+  if (ncId === null) {
+    return <JwpoDcPickerBody search={search} onSearchChange={setSearch} onSelect={setNcId} />;
+  }
+  return (
+    <NcDcFormBody
+      key={ncId}
+      ncId={ncId}
+      onChangeNc={() => setNcId(null)}
+      exit={exit}
+      saveCtl={saveCtl}
+    />
+  );
+}
+
+// The whole candidate set loads in one fetch (capped server-side) and scrolls;
+// the search filters it client-side with the shared matchesSearchTerm across PO
+// No., Sent on DC No., NC No. and the item code. Ready rows can be selected;
+// rows still waiting for QC's decision show greyed with no button.
+function JwpoDcPickerBody({
+  search,
+  onSearchChange,
+  onSelect,
+}: {
+  search: string;
+  onSearchChange: (s: string) => void;
+  onSelect: (ncId: string) => void;
+}): React.JSX.Element {
+  const { data, isLoading, isError } = useRtvCandidates();
+
+  const rows = useMemo(() => {
+    const items = data?.items ?? [];
+    if (search.trim() === '') return items;
+    return items.filter((c) =>
+      matchesSearchTerm(
+        [c.poCode, c.sourceDeliveryChallanCode, c.ncCode, c.itemCode, c.itemCodeText],
+        search,
+      ),
+    );
+  }, [data, search]);
+
+  return (
+    <>
+      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
+        <label className="form-label" htmlFor="dc-jwpo-search">
+          PO No. / Sent on DC No.
+        </label>
+        <input
+          id="dc-jwpo-search"
+          className="innovic-input"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Type the JW PO No. or DC No.…"
+        />
+      </div>
+
+      {isLoading ? (
+        <div className="empty-state">
+          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading NCs…
+        </div>
+      ) : isError ? (
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          Could not load NCs. Try again.
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+          Nothing is waiting to go back to a vendor for this search.
+        </div>
+      ) : (
+        <div className="tbl-wrap">
+          <table className="innovic-table" style={{ width: '100%' }}>
+            <thead>
+              <tr>
+                <th>PO No.</th>
+                <th>Sent on DC No.</th>
+                <th>NC No.</th>
+                {/* POL = the CUSTOMER's own PO line number. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
+                <th>Item Code · Name</th>
+                <th className="th-num">Qty to Return</th>
+                <th>Return Challan Status</th>
+                <th style={{ width: 110 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((c) => {
+                const ready = c.state === 'ready';
+                // Greyed while QC has not decided — shown so the store knows the
+                // pieces exist, never selectable.
+                const codeColor = ready ? 'var(--blue)' : 'var(--text2)';
+                return (
+                  <tr key={c.ncId} style={ready ? undefined : { color: 'var(--text2)' }}>
+                    <td className="mono fw-700" style={{ color: codeColor }}>
+                      {c.poCode ?? '—'}
+                    </td>
+                    <td className="mono fw-700" style={{ color: codeColor }}>
+                      {c.sourceDeliveryChallanCode ?? '—'}
+                    </td>
+                    <td className="mono fw-700" style={{ color: codeColor }}>
+                      {c.ncCode}
+                    </td>
+                    <td
+                      className="mono fw-700"
+                      style={{ color: ready ? 'var(--purple)' : 'var(--text2)' }}
+                    >
+                      {c.clientPoLineNo ?? '—'}
+                    </td>
+                    <td>
+                      <b className="mono fw-700" style={{ color: 'var(--text)' }}>
+                        {itemCodeWithRev(c.itemCode ?? c.itemCodeText, c.itemRevision)}
+                      </b>
+                      <div className="text2" style={{ fontSize: 11 }}>
+                        {c.itemName ?? c.itemNameText ?? '—'}
+                      </div>
+                    </td>
+                    <td
+                      className="mono td-num"
+                      style={{ color: ready ? 'var(--red2)' : 'var(--text2)' }}
+                    >
+                      {Number(c.rejectedQty)}
+                    </td>
+                    <td>{RETURN_STATUS_LABEL[c.state]}</td>
+                    <td>
+                      {ready ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => onSelect(c.ncId)}
+                        >
+                          Select
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 function NcDcFormBody({
   ncId,
   onChangeNc,
@@ -1079,11 +1377,12 @@ function NcDcFormBody({
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: eff } = useMyAccess();
-  // Same gate the NC detail page enforces for this challan (design §5):
-  // nc_dispose EDIT *and* ospdc_create ENTRY. Checked here too — the route is
-  // reachable by URL, and the two-right rule must not be looser via this door.
-  const canCreateDc =
-    effectiveFormPerms(eff, 'nc_dispose').edit && effectiveFormPerms(eff, 'ospdc_create').entry;
+  // Same gate the NC detail page and the server enforce for this challan
+  // (ADR-208, owner): OSP Outward DC ENTRY alone raises the return challan, on
+  // every route. Disposing the NC stays with QC (nc_dispose) — not needed here.
+  // Checked here too because the route is reachable by URL.
+  const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
+  const qc = useQueryClient();
 
   // Reuse the NC detail hook rather than refetch by hand — same cache, same
   // shape. rejectedQty / item fields come straight off it and refresh with ncId.
@@ -1187,6 +1486,11 @@ function NcDcFormBody({
           }),
       );
     } catch (e) {
+      // 409 — another user / route raised this NC's challan first. Refetch the
+      // Against JW PO / DC candidates so the stale row goes from the picker.
+      if (e instanceof ApiError && e.status === 409) {
+        void qc.invalidateQueries({ queryKey: deliveryChallansKeys.rtvCandidatesAll() });
+      }
       setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
     } finally {
       setSubmitting(false);
