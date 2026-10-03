@@ -6020,6 +6020,13 @@ export const invoices = pgTable(
     paymentTermsDays: integer('payment_terms_days').notNull().default(45),
     dueDate: date('due_date'),
     status: invoiceStatusEnum('status').notNull().default('unpaid'),
+    // ADR-202 Phase 3 (0198): an invoice is a statutory GST document, so a
+    // correction is a reason-logged CANCEL (cancel-and-reissue), never an edit.
+    // Mirror jw_invoices' cancel columns. The INV-#### series is never
+    // renumbered or deleted — a cancelled row is kept so the series stays intact.
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references(() => users.id),
+    cancelReason: text('cancel_reason'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

@@ -27,6 +27,7 @@ export async function loadBilledQtyByDispatch(
       SELECT il.sales_order_line_id AS sol_id, SUM(il.qty) AS q
       FROM public.invoice_lines il
       JOIN public.invoices i ON i.id = il.invoice_id AND i.deleted_at IS NULL
+        AND i.status <> 'cancelled'
       WHERE il.company_id = ${companyId}::uuid
         AND il.deleted_at IS NULL
         AND il.sales_order_line_id IS NOT NULL

@@ -600,6 +600,7 @@ export async function listSalesOrders(
           SELECT il.sales_order_line_id, SUM(il.qty) AS billed
           FROM public.invoice_lines il
           JOIN public.invoices inv ON inv.id = il.invoice_id AND inv.deleted_at IS NULL
+            AND inv.status <> 'cancelled'
           WHERE il.company_id = ${companyId}::uuid
             AND il.deleted_at IS NULL
             AND il.sales_order_line_id IS NOT NULL
@@ -789,6 +790,8 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
           eq(invoices.salesOrderId, id),
           isNull(invoices.deletedAt),
           isNull(invoiceLines.deletedAt),
+          // A cancelled invoice (ADR-202 Phase 3) no longer bills the line.
+          ne(invoices.status, 'cancelled'),
         ),
       )
       .groupBy(invoiceLines.salesOrderLineId);
