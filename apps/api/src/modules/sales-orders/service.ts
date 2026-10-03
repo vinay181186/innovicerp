@@ -16,12 +16,14 @@ import {
   ITEM_TYPE_RULES,
   type ItemType,
   deriveSoFulfilmentStatus,
+  internalSoNoTakenMessage,
+  normaliseInternalSoNo,
   normalizeRevision,
   revisionBackwardsMessage,
   revisionGoesBackwards,
   soFulfilmentFactsFromLines,
 } from '@innovic/shared';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   assemblyUnits,
   bomMasters,
@@ -45,7 +47,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
-import { withUniqueRetry } from '../../lib/db-retry';
+import { isUniqueViolation, withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
@@ -490,6 +492,8 @@ export async function listSalesOrders(
     const searchFrag = term
       ? sql`AND (
           so.code ILIKE ${term} ESCAPE '\\'
+          -- ADR-207 — the user-typed Internal SO No. (e.g. SO-2401).
+          OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
           OR so.customer_name ILIKE ${term} ESCAPE '\\'
           OR so.client_po_no ILIKE ${term} ESCAPE '\\'
           OR so.remarks ILIKE ${term} ESCAPE '\\'
@@ -546,7 +550,8 @@ export async function listSalesOrders(
     // mirroring legacy `renderSOmaster` line 11853 (`totalJC=lines.reduce(... j.orderQty ...)`).
     const result = await tx.execute(sql`
       SELECT
-        so.id, so.company_id AS "companyId", so.code, so.so_date AS "soDate",
+        so.id, so.company_id AS "companyId", so.code,
+        so.internal_so_no AS "internalSoNo", so.so_date AS "soDate",
         so.client_id AS "clientId", so.customer_name AS "customerName",
         so.client_po_no AS "clientPoNo", so.type, so.status,
         so.gst_percent::text AS "gstPercent",
@@ -683,6 +688,7 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     id: r['id'] as string,
     companyId: r['companyId'] as string,
     code: r['code'] as string,
+    internalSoNo: (r['internalSoNo'] as string | null) ?? null,
     soDate: dateLike(r['soDate']),
     clientId: (r['clientId'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
@@ -1306,6 +1312,7 @@ function toSalesOrder(row: typeof salesOrders.$inferSelect): SalesOrder {
     id: row.id,
     companyId: row.companyId,
     code: row.code,
+    internalSoNo: row.internalSoNo,
     soDate: row.soDate,
     clientId: row.clientId,
     customerName: row.customerName,
@@ -1422,6 +1429,45 @@ async function readClientPoFilePath(
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
+// ─── Internal SO No. (ADR-207) ─────────────────────────────────────────────
+
+/** The 0197 partial unique index on (company_id, lower(internal_so_no)). */
+const INTERNAL_SO_NO_UNIQ = 'sales_orders_company_internal_so_no_uniq';
+
+/** True when `e` is a 23505 raised by the Internal SO No. index (the race the
+ *  pre-check cannot see: two saves of the same number at the same moment). */
+function isInternalSoNoViolation(e: unknown): boolean {
+  // A driver wrapper may carry the Postgres error as `cause`.
+  const raw = isUniqueViolation(e) ? e : (e as { cause?: unknown } | null)?.cause;
+  if (!isUniqueViolation(raw)) return false;
+  const pg = raw as { constraint_name?: unknown; constraint?: unknown };
+  return (pg.constraint_name ?? pg.constraint) === INTERNAL_SO_NO_UNIQ;
+}
+
+/** 409 when another live SO of the company already uses this Internal SO No.
+ *  (compared case-insensitively — same rule as the index). `excludeId` is the
+ *  SO being edited, so re-saving its own number is fine. */
+async function assertInternalSoNoFree(
+  tx: DbTransaction,
+  companyId: string,
+  internalSoNo: string,
+  excludeId?: string,
+): Promise<void> {
+  const hit = await tx
+    .select({ id: salesOrders.id })
+    .from(salesOrders)
+    .where(
+      and(
+        eq(salesOrders.companyId, companyId),
+        isNull(salesOrders.deletedAt),
+        sql`lower(${salesOrders.internalSoNo}) = lower(${internalSoNo})`,
+        excludeId ? ne(salesOrders.id, excludeId) : undefined,
+      ),
+    )
+    .limit(1);
+  if (hit.length > 0) throw new ConflictError(internalSoNoTakenMessage(internalSoNo));
+}
+
 /** Next IN-SO-##### code in the company series (mirrors nextJwCode). */
 async function nextSoCode(tx: DbTransaction, companyId: string): Promise<string> {
   const rows = await tx
@@ -1451,237 +1497,244 @@ export async function createSalesOrder(
   await requireFormAccess(user, 'so_create', 'entry');
   const companyId = requireCompany(user);
 
-  // Code is server-authoritative: generate the next IN-SO-##### when the client
-  // omits it. withUniqueRetry re-runs in a fresh transaction if two concurrent
-  // creates collide on sales_orders_company_code_uniq (23505).
-  return withUniqueRetry(() =>
-    withUserContext(user, async (tx) => {
-      const code = input.header.code?.trim() || (await nextSoCode(tx, companyId));
-      // Header uniqueness (fast 409 for an explicit caller-supplied duplicate).
-      const dup = await tx
-        .select({ id: salesOrders.id })
-        .from(salesOrders)
-        .where(
-          and(
-            eq(salesOrders.companyId, companyId),
-            eq(salesOrders.code, code),
-            isNull(salesOrders.deletedAt),
-          ),
-        )
-        .limit(1);
-      if (dup.length > 0) {
+  // ADR-207 — the SO No. is SYSTEM ONLY: always the next IN-SO-#####, never a
+  // client-sent code (the create schema no longer carries one). withUniqueRetry
+  // re-runs in a fresh transaction if two concurrent creates collide on
+  // sales_orders_company_code_uniq (23505). The user's own number is the
+  // Internal SO No.: required (schema), unique per company case-insensitively.
+  // A 23505 from ITS index is not a series race, so it becomes the 409 below
+  // (a ConflictError, which withUniqueRetry does not retry).
+  const internalSoNo = normaliseInternalSoNo(input.header.internalSoNo);
+  return withUniqueRetry(async () => {
+    try {
+      return await createSalesOrderOnce(input, user, companyId, internalSoNo);
+    } catch (e) {
+      if (isInternalSoNoViolation(e)) {
+        throw new ConflictError(internalSoNoTakenMessage(internalSoNo));
+      }
+      throw e;
+    }
+  });
+}
+
+/** One create attempt in its own transaction (createSalesOrder retries it). */
+function createSalesOrderOnce(
+  input: CreateSalesOrderInput,
+  user: AuthContext,
+  companyId: string,
+  internalSoNo: string,
+): Promise<SalesOrderDetail> {
+  return withUserContext(user, async (tx) => {
+    const code = await nextSoCode(tx, companyId);
+    await assertInternalSoNoFree(tx, companyId, internalSoNo);
+
+    // Duplicate Client PO No. guard (legacy addSO L12431): a client PO number
+    // must be unique across Sales Orders AND Job Work orders.
+    const poNo = input.header.clientPoNo?.trim();
+    if (poNo) {
+      const [soHit, jwHit] = await Promise.all([
+        tx
+          .select({ code: salesOrders.code })
+          .from(salesOrders)
+          .where(
+            and(
+              eq(salesOrders.companyId, companyId),
+              eq(salesOrders.clientPoNo, poNo),
+              isNull(salesOrders.deletedAt),
+            ),
+          )
+          .limit(1),
+        tx
+          .select({ code: jobWorkOrders.code })
+          .from(jobWorkOrders)
+          .where(
+            and(
+              eq(jobWorkOrders.companyId, companyId),
+              eq(jobWorkOrders.clientPoNo, poNo),
+              isNull(jobWorkOrders.deletedAt),
+            ),
+          )
+          .limit(1),
+      ]);
+      const hit = soHit[0]?.code ?? jwHit[0]?.code;
+      if (hit) {
         throw new ConflictError(
-          `Sales Order No. "${code}" already exists — duplicate not allowed. Please use a unique number.`,
+          `Client PO No. "${poNo}" already exists in ${hit}. Duplicate not allowed.`,
         );
       }
+    }
 
-      // Duplicate Client PO No. guard (legacy addSO L12431): a client PO number
-      // must be unique across Sales Orders AND Job Work orders.
-      const poNo = input.header.clientPoNo?.trim();
-      if (poNo) {
-        const [soHit, jwHit] = await Promise.all([
-          tx
-            .select({ code: salesOrders.code })
-            .from(salesOrders)
-            .where(
-              and(
-                eq(salesOrders.companyId, companyId),
-                eq(salesOrders.clientPoNo, poNo),
-                isNull(salesOrders.deletedAt),
-              ),
-            )
-            .limit(1),
-          tx
-            .select({ code: jobWorkOrders.code })
-            .from(jobWorkOrders)
-            .where(
-              and(
-                eq(jobWorkOrders.companyId, companyId),
-                eq(jobWorkOrders.clientPoNo, poNo),
-                isNull(jobWorkOrders.deletedAt),
-              ),
-            )
-            .limit(1),
-        ]);
-        const hit = soHit[0]?.code ?? jwHit[0]?.code;
-        if (hit) {
-          throw new ConflictError(
-            `Client PO No. "${poNo}" already exists in ${hit}. Duplicate not allowed.`,
-          );
-        }
-      }
+    // Client master link is enforced by the create schema (route boundary).
+    // Snapshot the master client name into customer_name when a client is set.
+    let clientName: string | null = null;
+    if (input.header.clientId) {
+      clientName = await assertClientExists(tx, input.header.clientId, companyId);
+    }
 
-      // Client master link is enforced by the create schema (route boundary).
-      // Snapshot the master client name into customer_name when a client is set.
-      let clientName: string | null = null;
-      if (input.header.clientId) {
-        clientName = await assertClientExists(tx, input.header.clientId, companyId);
-      }
+    // Line FK pre-resolution
+    const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
+    await assertItemIdsExist(tx, directIds, companyId);
+    const codesToResolve = input.lines
+      .filter((l) => !l.itemId && l.itemCodeText)
+      .map((l) => l.itemCodeText!.trim());
+    const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+    await assertNoPartyOwnedItems(tx, [...directIds, ...resolved.values()], companyId);
+    const lineNos = assignLineNos(input.lines, 1);
 
-      // Line FK pre-resolution
-      const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
-      await assertItemIdsExist(tx, directIds, companyId);
-      const codesToResolve = input.lines
-        .filter((l) => !l.itemId && l.itemCodeText)
-        .map((l) => l.itemCodeText!.trim());
-      const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
-      await assertNoPartyOwnedItems(tx, [...directIds, ...resolved.values()], companyId);
-      const lineNos = assignLineNos(input.lines, 1);
+    // Insert header
+    const headerStatus = input.header.status ?? 'open';
+    // S8 — a new SO starts as Draft or Open only; so does each of its lines.
+    assertSoCreateStatus(headerStatus, 'A Sales Order');
+    for (const l of input.lines) {
+      if (l.status) assertSoCreateStatus(l.status, 'A Sales Order line');
+    }
+    // S8 — only an Active BOM may be linked (was checked only by the web).
+    const headerBomId = normBomId(input.header.bomMasterId);
+    if (headerBomId) await assertBomLinkable(tx, companyId, headerBomId);
+    for (const bomId of new Set(input.lines.map((l) => normBomId(l.sourceBomMasterId)))) {
+      if (bomId) await assertBomLinkable(tx, companyId, bomId);
+    }
+    const headerType = input.header.type ?? 'component_manufacturing';
+    const inserted = await tx
+      .insert(salesOrders)
+      .values({
+        companyId,
+        code,
+        internalSoNo,
+        soDate: input.header.soDate,
+        clientId: input.header.clientId ?? null,
+        customerName: clientName ?? input.header.customerName ?? null,
+        clientPoNo: input.header.clientPoNo ?? null,
+        type: headerType,
+        status: headerStatus,
+        gstPercent: gstToString(input.header.gstPercent ?? 18),
+        bomMasterId: headerBomId,
+        bomStatus: input.header.bomStatus ?? null,
+        costCenter: input.header.costCenter ?? null,
+        remarks: input.header.remarks ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning();
+    const header = inserted[0]!;
 
-      // Insert header
-      const headerStatus = input.header.status ?? 'open';
-      // S8 — a new SO starts as Draft or Open only; so does each of its lines.
-      assertSoCreateStatus(headerStatus, 'A Sales Order');
-      for (const l of input.lines) {
-        if (l.status) assertSoCreateStatus(l.status, 'A Sales Order line');
-      }
-      // S8 — only an Active BOM may be linked (was checked only by the web).
-      const headerBomId = normBomId(input.header.bomMasterId);
-      if (headerBomId) await assertBomLinkable(tx, companyId, headerBomId);
-      for (const bomId of new Set(input.lines.map((l) => normBomId(l.sourceBomMasterId)))) {
-        if (bomId) await assertBomLinkable(tx, companyId, bomId);
-      }
-      const headerType = input.header.type ?? 'component_manufacturing';
-      const inserted = await tx
-        .insert(salesOrders)
-        .values({
+    // Insert lines
+    let insertedLines: Array<typeof salesOrderLines.$inferSelect> = [];
+    if (input.lines.length > 0) {
+      const lineValues = input.lines.map((l, i) => {
+        const refs = resolveLineItemRefs(l, resolved);
+        return {
           companyId,
-          code,
-          soDate: input.header.soDate,
-          clientId: input.header.clientId ?? null,
-          customerName: clientName ?? input.header.customerName ?? null,
-          clientPoNo: input.header.clientPoNo ?? null,
-          type: headerType,
-          status: headerStatus,
-          gstPercent: gstToString(input.header.gstPercent ?? 18),
-          bomMasterId: headerBomId,
-          bomStatus: input.header.bomStatus ?? null,
-          costCenter: input.header.costCenter ?? null,
-          remarks: input.header.remarks ?? null,
+          salesOrderId: header.id,
+          lineNo: lineNos[i]!,
+          itemId: refs.itemId,
+          itemCodeText: refs.itemCodeText,
+          partName: l.partName,
+          material: l.material ?? null,
+          drawingNo: l.drawingNo ?? null,
+          // The customer's drawing Rev as the user typed it, upper-cased
+          // (ADR-177: letters are always capital). The input schema makes it
+          // compulsory, so there is nothing to default here — a line is born
+          // holding the Rev printed on the drawing, not at some number the
+          // server made up.
+          revision: normalizeRevision(l.revision),
+          drawingFilePath: l.drawingFilePath ?? null,
+          uom: l.uom,
+          orderQty: l.orderQty,
+          rate: rateToString(l),
+          dueDate: l.dueDate ?? null,
+          clientPoLineNo: l.clientPoLineNo ?? null,
+          status: l.status ?? headerStatus,
+          sourceBomMasterId: l.sourceBomMasterId ?? null,
           createdBy: user.id,
           updatedBy: user.id,
-        })
-        .returning();
-      const header = inserted[0]!;
+        };
+      });
+      insertedLines = await tx.insert(salesOrderLines).values(lineValues).returning();
+      // A line born holding a drawing starts its trail at revision_no 0 with
+      // an 'added' row — without it, the drawing the SO shipped with would be
+      // the one drawing missing from the history. Every line here is brand
+      // new, so the allocator starts from an empty map: nothing can already
+      // have a history row.
+      await insertDrawingRevisions(
+        tx,
+        birthDrawingRevisions(insertedLines, user, makeRevisionNoAllocator(new Map())),
+        companyId,
+      );
+    }
 
-      // Insert lines
-      let insertedLines: Array<typeof salesOrderLines.$inferSelect> = [];
-      if (input.lines.length > 0) {
-        const lineValues = input.lines.map((l, i) => {
-          const refs = resolveLineItemRefs(l, resolved);
-          return {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Create,
+        entity: 'SalesOrder',
+        entityId: header.id,
+        refId: header.code,
+        // ADR-197 — the order's total Order Qty across its lines.
+        qty: insertedLines.reduce((s, l) => s + Number(l.orderQty), 0),
+        detail: soDetail(header.code, header.customerName),
+      },
+      companyId,
+      user,
+    );
+
+    // BOM-8 cascade: for every freshly-inserted line that links a BOM,
+    // walk the BOM's lines and spawn child JCs / PRs. Runs in the same
+    // tx as the SO insert so a cascade failure rolls back the SO.
+    for (const line of insertedLines) {
+      if (line.sourceBomMasterId) {
+        await cascadeBomToSoLine(tx, line.id, user);
+      }
+    }
+
+    // Insert delivery-schedule milestones (ISSUE-015).
+    const inputMilestones = input.milestones ?? [];
+    let insertedMilestones: Array<typeof soMilestones.$inferSelect> = [];
+    if (inputMilestones.length > 0) {
+      insertedMilestones = await tx
+        .insert(soMilestones)
+        .values(
+          inputMilestones.map((m) => ({
             companyId,
             salesOrderId: header.id,
-            lineNo: lineNos[i]!,
-            itemId: refs.itemId,
-            itemCodeText: refs.itemCodeText,
-            partName: l.partName,
-            material: l.material ?? null,
-            drawingNo: l.drawingNo ?? null,
-            // The customer's drawing Rev as the user typed it, upper-cased
-            // (ADR-177: letters are always capital). The input schema makes it
-            // compulsory, so there is nothing to default here — a line is born
-            // holding the Rev printed on the drawing, not at some number the
-            // server made up.
-            revision: normalizeRevision(l.revision),
-            drawingFilePath: l.drawingFilePath ?? null,
-            uom: l.uom,
-            orderQty: l.orderQty,
-            rate: rateToString(l),
-            dueDate: l.dueDate ?? null,
-            clientPoLineNo: l.clientPoLineNo ?? null,
-            status: l.status ?? headerStatus,
-            sourceBomMasterId: l.sourceBomMasterId ?? null,
+            lotNo: m.lotNo,
+            qty: m.qty,
+            dueDate: m.dueDate ?? null,
+            remarks: m.remarks ?? null,
             createdBy: user.id,
             updatedBy: user.id,
-          };
-        });
-        insertedLines = await tx.insert(salesOrderLines).values(lineValues).returning();
-        // A line born holding a drawing starts its trail at revision_no 0 with
-        // an 'added' row — without it, the drawing the SO shipped with would be
-        // the one drawing missing from the history. Every line here is brand
-        // new, so the allocator starts from an empty map: nothing can already
-        // have a history row.
-        await insertDrawingRevisions(
-          tx,
-          birthDrawingRevisions(insertedLines, user, makeRevisionNoAllocator(new Map())),
-          companyId,
-        );
-      }
+          })),
+        )
+        .returning();
+    }
 
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Create,
-          entity: 'SalesOrder',
-          entityId: header.id,
-          refId: header.code,
-          // ADR-197 — the order's total Order Qty across its lines.
-          qty: insertedLines.reduce((s, l) => s + Number(l.orderQty), 0),
-          detail: soDetail(header.code, header.customerName),
-        },
-        companyId,
-        user,
-      );
-
-      // BOM-8 cascade: for every freshly-inserted line that links a BOM,
-      // walk the BOM's lines and spawn child JCs / PRs. Runs in the same
-      // tx as the SO insert so a cascade failure rolls back the SO.
-      for (const line of insertedLines) {
-        if (line.sourceBomMasterId) {
-          await cascadeBomToSoLine(tx, line.id, user);
-        }
-      }
-
-      // Insert delivery-schedule milestones (ISSUE-015).
-      const inputMilestones = input.milestones ?? [];
-      let insertedMilestones: Array<typeof soMilestones.$inferSelect> = [];
-      if (inputMilestones.length > 0) {
-        insertedMilestones = await tx
-          .insert(soMilestones)
-          .values(
-            inputMilestones.map((m) => ({
-              companyId,
-              salesOrderId: header.id,
-              lotNo: m.lotNo,
-              qty: m.qty,
-              dueDate: m.dueDate ?? null,
-              remarks: m.remarks ?? null,
-              createdBy: user.id,
-              updatedBy: user.id,
-            })),
-          )
-          .returning();
-      }
-
-      const createdCodeMap = await resolveItemCodesById(
-        tx,
-        insertedLines.map((l) => l.itemId),
-        companyId,
-      );
-      const createdImageMap = await resolveItemImagesById(
-        tx,
-        insertedLines.map((l) => l.itemId),
-        companyId,
-      );
-      return {
-        ...toSalesOrder(header),
-        createdByName: await resolveUserName(tx, header.createdBy),
-        // ADR-196 — only the detail read works the fulfilment status out (it
-        // needs Billed); the write-back leaves it null and the client re-reads.
-        fulfilmentStatus: null,
-        lines: insertedLines.map((row) =>
-          toSalesOrderLine(
-            row,
-            createdCodeMap.get(row.itemId ?? '') ?? null,
-            createdImageMap.get(row.itemId ?? '') ?? null,
-          ),
+    const createdCodeMap = await resolveItemCodesById(
+      tx,
+      insertedLines.map((l) => l.itemId),
+      companyId,
+    );
+    const createdImageMap = await resolveItemImagesById(
+      tx,
+      insertedLines.map((l) => l.itemId),
+      companyId,
+    );
+    return {
+      ...toSalesOrder(header),
+      createdByName: await resolveUserName(tx, header.createdBy),
+      // ADR-196 — only the detail read works the fulfilment status out (it
+      // needs Billed); the write-back leaves it null and the client re-reads.
+      fulfilmentStatus: null,
+      lines: insertedLines.map((row) =>
+        toSalesOrderLine(
+          row,
+          createdCodeMap.get(row.itemId ?? '') ?? null,
+          createdImageMap.get(row.itemId ?? '') ?? null,
         ),
-        milestones: insertedMilestones.map(toSoMilestone),
-        clientPoFilePath: null,
-      };
-    }),
-  );
+      ),
+      milestones: insertedMilestones.map(toSoMilestone),
+      clientPoFilePath: null,
+    };
+  });
 }
 
 export async function updateSalesOrder(
@@ -1699,7 +1752,17 @@ export async function updateSalesOrder(
   // admin edit right.
   requireAdminRole(user);
   await requireFormAccess(user, 'so_create', 'edit');
-  return withUserContext(user, (tx) => updateSalesOrderTx(tx, id, input, user, reason));
+  try {
+    return await withUserContext(user, (tx) => updateSalesOrderTx(tx, id, input, user, reason));
+  } catch (e) {
+    // ADR-207 — two saves taking the same Internal SO No. at the same moment.
+    if (isInternalSoNoViolation(e) && input.header.internalSoNo) {
+      throw new ConflictError(
+        internalSoNoTakenMessage(normaliseInternalSoNo(input.header.internalSoNo)),
+      );
+    }
+    throw e;
+  }
 }
 
 /**
@@ -1768,6 +1831,19 @@ export async function updateSalesOrderTx(
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
+    // ADR-207 — Internal SO No.: absent = unchanged (an old SO without one is
+    // never forced to get one). A changed number must be free among the other
+    // live SOs (case-insensitive); the History row comes from logSoEdit
+    // (SO_HEADER_FIELDS carries internalSoNo).
+    if (h.internalSoNo !== undefined) {
+      const nextInternal = normaliseInternalSoNo(h.internalSoNo);
+      if (nextInternal !== existingHdr.internalSoNo) {
+        if (nextInternal.toLowerCase() !== (existingHdr.internalSoNo ?? '').toLowerCase()) {
+          await assertInternalSoNoFree(tx, companyId, nextInternal, id);
+        }
+        updates['internalSoNo'] = nextInternal;
+      }
+    }
     if (h.type !== undefined) updates['type'] = h.type;
     // ADR-184 — 'closed' and 'dispatched' are set by the system (dispatch
     // roll-up), never by hand. S8: a manual change must be one the shared
@@ -2016,6 +2092,16 @@ export async function updateSalesOrderOrStage(
     const status = hdrRows[0]?.status;
     // "Live" mirrors soEditRegistryEntry.isLive: past draft and not cancelled.
     if (status === undefined || status === 'draft' || status === 'cancelled') return false;
+
+    // ADR-207 — refuse a taken Internal SO No. now, not after approval.
+    if (input.header.internalSoNo !== undefined) {
+      await assertInternalSoNoFree(
+        tx,
+        companyId,
+        normaliseInternalSoNo(input.header.internalSoNo),
+        id,
+      );
+    }
 
     // Status moves (cancel / back-to-draft / Draft↔Open) are NOT staged: a cancel
     // needs a reason and a blocking-documents check that the approval flow cannot

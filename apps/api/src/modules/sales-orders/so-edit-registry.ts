@@ -74,6 +74,7 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
   beforeSnapshot(target) {
     const d = target.doc;
     return {
+      internalSoNo: d['internalSoNo'] ?? null,
       soDate: d['soDate'],
       customerName: d['customerName'] ?? null,
       clientPoNo: d['clientPoNo'],
@@ -90,6 +91,8 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     const i = input as UpdateSalesOrderInput;
     const h = i.header ?? {};
     const out: Record<string, unknown> = {};
+    // ADR-207 — the schema already normalised it (trim + upper-case "SO-").
+    if (h.internalSoNo !== undefined) out['internalSoNo'] = h.internalSoNo;
     if (h.soDate !== undefined) out['soDate'] = h.soDate;
     if (h.clientPoNo !== undefined) out['clientPoNo'] = h.clientPoNo ?? null;
     if (h.type !== undefined) out['type'] = h.type;

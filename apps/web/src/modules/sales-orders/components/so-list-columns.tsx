@@ -13,6 +13,7 @@
 import { SO_STATUSES, SO_TYPES, type SalesOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
@@ -25,7 +26,7 @@ const SO_STATUS_OPTIONS = SO_STATUSES.map((value) => ({ value, label: SO_STATUS_
 
 /** Columns off by default on the SO Master sheet — passed to the DataTable's
  *  `defaultHidden`. They stay reachable in ▸ / the Columns menu. */
-export const SO_LIST_HIDDEN_COLUMNS = ['created_on'];
+export const SO_LIST_HIDDEN_COLUMNS = ['created_on', 'internal_so_no'];
 
 /** Pieces still owed on the order (NAMING.md "Pending"): ordered − dispatched −
  *  the qty dropped by closing lines short (ADR-196). Never below zero. */
@@ -85,9 +86,20 @@ export function soListColumns(opts: {
           title="Open the SO Master detail page"
           onClick={(e) => e.stopPropagation()}
         >
-          {so.code}
+          {/* ADR-207 — "IN-SO-00786 · SO-2401" (SO No. alone when none). */}
+          {soNoWithInternal(so.code, so.internalSoNo)}
         </Link>
       ),
+    },
+    {
+      // ADR-207 — its own column only so it can be sorted / filtered on its
+      // own; hidden by default because the SO No. cell already shows it.
+      id: 'internal_so_no',
+      sortFilterField: 'internalSoNo',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (so) => so.internalSoNo ?? '—',
     },
     {
       id: 'so_date',

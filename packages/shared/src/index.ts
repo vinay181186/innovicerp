@@ -1,6 +1,7 @@
 export * from './lib/short-name';
 export * from './lib/op-sr-no';
 export * from './lib/revision';
+export * from './lib/internal-so-no';
 export * from './lib/jc-op-sequence';
 export * from './lib/doc-nav-page';
 export * from './lib/report-access';

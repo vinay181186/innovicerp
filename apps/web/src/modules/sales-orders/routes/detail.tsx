@@ -36,6 +36,7 @@ import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
@@ -178,7 +179,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         backTo="/sales-orders"
         backLabel="Back to Sales Orders"
         renderLink={(p) => <Link {...p} />}
-        code={detail.code}
+        code={soNoWithInternal(detail.code, detail.internalSoNo)}
         name={
           <>
             {detail.customerName ?? 'Untitled customer'}
@@ -610,6 +611,17 @@ function SoReadGrid(props: {
 
   return (
     <ReadGrid>
+      {/* ADR-207 — the user-typed number; blank on SOs made before it. */}
+      <ReadField
+        label="Internal SO No."
+        size="sm"
+        mono
+        value={withChip(
+          detail.internalSoNo ? <span className="fw-700">{detail.internalSoNo}</span> : null,
+          pendingChanges,
+          'internalSoNo',
+        )}
+      />
       <ReadField
         label="SO Type"
         size="md"

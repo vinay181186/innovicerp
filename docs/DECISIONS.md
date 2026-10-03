@@ -10980,3 +10980,10 @@ PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to
 ### Consequences
 - Verified on TEST: 63 ops, only 14 QC ops' Available changed, no other column or op moved, every QC
   op now has Available = Pending. QC entry caps (qc_pending) and production caps untouched.
+
+## ADR-207: Internal SO No. beside a system-only SO No.
+
+**Date:** 2026-10-03
+**Status:** Accepted (TEST stack)
+
+Sales Orders get `internal_so_no` (migration 0197), the office's own number (e.g. SO-2401), typed by the user beside the system SO No. The SO No. (`code`, IN-SO-#####) is now system-only: no write input carries it and the server always numbers the order. The Internal SO No. is required on create; SOs made before 0197 stay NULL and are not forced to get one when edited. Format: "SO-" plus letters, digits, `/ - .`, at most 30 characters, trimmed, prefix upper-cased (shared `internalSoNoError`). Unique per company among live SOs, ignoring case (partial unique index; server pre-check and index clash both give the same 409). Editable with SO edit rights through the normal update path (stale check, History row, edit approval). Restore from Trash is refused if the number has since been taken. Shown everywhere as "IN-SO-00786 · SO-2401" (`soNoWithInternal`), always read live from sales_orders — never copied. JWSO is untouched.
