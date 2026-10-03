@@ -50,13 +50,26 @@ import { DC_SF_COLUMNS, DC_SF_JOINS } from './sf-columns';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import {
   ActivityAction,
+  bumpDocRevision,
   opSrNo,
   parseDocRevision,
   qtyUomProblem,
   roundQty,
   withDocRevision,
 } from '@innovic/shared';
-import type { DocumentTraceability, ReceiveDeliveryChallanResponse } from '@innovic/shared';
+import type {
+  DocumentEditStagedResult,
+  DocumentTraceability,
+  ReceiveDeliveryChallanResponse,
+} from '@innovic/shared';
+import { diffFields } from '../../lib/audit-trail';
+import {
+  DC_HEADER_EDIT_FIELDS,
+  dcLineDiffFields,
+  dcLineMaterialKey,
+  dcLineQtyKey,
+  dcLineRemarksKey,
+} from './edit-fields';
 import type {
   CreateDeliveryChallanInput,
   CreateDeliveryChallanReceiptInput,
@@ -67,6 +80,7 @@ import type {
   DeliveryChallanWithLines,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
+  UpdateDeliveryChallanInput,
 } from './schema';
 
 const requireCompany = (user: AuthContext): string => {
@@ -1400,6 +1414,415 @@ export async function cancelDeliveryChallan(
 
     return loadDeliveryChallanWithLines(tx, id, companyId);
   });
+}
+
+// ─── Writes (ADR-202 Phase 3 — EDIT an issued OSP DC) ───────────────────────
+//
+// The OSP DC is STOCK-NEUTRAL (ADR-067): there is NO stock ledger movement and
+// NO rate. Editing a line's Challan Qty drives ONE number — the job-card op
+// counter jc_ops.outsource_sent_qty — so the edit REVERSES that counter for the
+// current qty, then REPOSTS it for the new qty, in one transaction (never
+// postStockMove). The reverse makes the op read as if this DC never sent, so the
+// repost validates each new qty as a fresh send against the op's sendable + the
+// PO line's cumulative-sent cap — the exact caps createDeliveryChallan enforces.
+// §20.1: outsource_sent_qty keeps its single writer (applyOutwardToJcOp /
+// reverseOutwardFromJcOp). The line SET is fixed (a DC's items come from the PO
+// selection); add / remove is refused.
+
+/** The in-tx body — also replayed by the edit-approval engine's applyEdit, which
+ *  already holds the DC row FOR UPDATE. */
+export async function updateDeliveryChallanTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateDeliveryChallanInput,
+  user: AuthContext,
+): Promise<DeliveryChallanWithLines> {
+  const companyId = requireCompany(user);
+
+  // S6 — lock the DC header FIRST: a concurrent edit / cancel / receive waits
+  // here, then re-reads the committed status / receipts and is refused below.
+  const headerRows = await tx
+    .select()
+    .from(deliveryChallans)
+    .where(
+      and(
+        eq(deliveryChallans.id, id),
+        eq(deliveryChallans.companyId, companyId),
+        isNull(deliveryChallans.deletedAt),
+      ),
+    )
+    .limit(1)
+    .for('update');
+  const header = headerRows[0];
+  if (!header) throw new NotFoundError('DC not found. Refresh the page.');
+  // Only an ISSUED DC with no receipts is editable. A received / cancelled DC,
+  // or one with receipts, is settled downstream and must not be re-sent.
+  if (header.status !== 'issued') {
+    throw new ConflictError(
+      `Cannot edit DC ${header.code}: it is ${header.status === 'received' ? 'Received' : 'Cancelled'}. Only an issued DC can be edited.`,
+    );
+  }
+  if (await dcHasActiveReceipts(tx, id)) {
+    throw new ConflictError(
+      `Cannot edit DC ${header.code}: receipts are recorded against it. Cancel those receipts first.`,
+    );
+  }
+  // Return-to-vendor challan (header.ncId): its pieces were counted when they
+  // first went out, so it never adds to outsource_sent_qty and the reverse /
+  // repost below would subtract pieces that were never added. That NC sub-flow
+  // is excluded from this phase.
+  if (header.ncId) {
+    throw new ConflictError(
+      `DC ${header.code} is a return-to-vendor challan raised from an NC — it cannot be edited here.`,
+    );
+  }
+
+  // S6 — lock the DC lines under the same tx. Ordered by lineNo so the diff
+  // labels ("Line 1 · …") read in the order the user sees on screen.
+  const currentLines = await tx
+    .select()
+    .from(deliveryChallanLines)
+    .where(
+      and(eq(deliveryChallanLines.deliveryChallanId, id), isNull(deliveryChallanLines.deletedAt)),
+    )
+    .orderBy(asc(deliveryChallanLines.lineNo))
+    .for('update');
+
+  // The line SET is fixed: every input line must be a current line AND every
+  // current line must be in the input. Add / remove is refused — a DC's items
+  // come from the PO selection at create; only qty / material / remarks change.
+  const byId = new Map(currentLines.map((l) => [l.id, l]));
+  const inputById = new Map<string, UpdateDeliveryChallanInput['lines'][number]>();
+  for (const il of input.lines) {
+    if (!byId.has(il.id)) {
+      throw new ConflictError(
+        `A line in this edit is not on DC ${header.code} — reload the page. ` +
+          `A DC's items are fixed from the PO selection.`,
+      );
+    }
+    if (inputById.has(il.id)) {
+      throw new ValidationError(`A DC line appears twice in the edit — reload the page.`);
+    }
+    inputById.set(il.id, il);
+  }
+  for (const c of currentLines) {
+    if (!inputById.has(c.id)) {
+      throw new ConflictError(
+        `DC ${header.code}: lines cannot be added or removed — a DC's items are fixed from the ` +
+          `PO selection. Only Challan Qty / Material / Remarks can be edited.`,
+      );
+    }
+  }
+
+  // Final per-line values: qty from the input (required), material / remarks kept
+  // at the current value when the input omits them.
+  const newQtyById = new Map<string, number>();
+  for (const c of currentLines) newQtyById.set(c.id, roundQty(inputById.get(c.id)!.qty));
+  if (![...newQtyById.values()].some((q) => q > 0)) {
+    throw new ValidationError('Enter a Challan Qty greater than 0 on at least one line.');
+  }
+
+  // Whole-piece / UOM check per line, exactly as create does (a NOS / SET line is
+  // refused a fraction; an op-linked line's whole-piece rule is re-checked inside
+  // applyOutwardToJcOp below).
+  for (const c of currentLines) {
+    const newQty = newQtyById.get(c.id)!;
+    const problem = qtyUomProblem(newQty, c.uom, 'Qty');
+    if (problem) {
+      throw new ValidationError(
+        `Ln ${c.lineNo}${c.itemCodeText ? ` (${c.itemCodeText})` : ''}: ${problem}`,
+      );
+    }
+  }
+
+  // PO-line cumulative-sent cap (as create does), minus THIS DC's own current
+  // contribution so the edit is validated against the OTHER challans only.
+  const poLineIds = [
+    ...new Set(currentLines.flatMap((l) => (l.purchaseOrderLineId ? [l.purchaseOrderLineId] : []))),
+  ];
+  // ADR-182 — no re-send against an outsource op whose Production Order was short
+  // closed, same as create.
+  for (const poLineId of poLineIds) {
+    await assertProductionOrderNotShortClosedForPoLine(tx, poLineId);
+  }
+  const poLines = await loadPoLineMap(tx, poLineIds, companyId);
+  // Lock the PO lines first (id order), so a concurrent send on the same line
+  // serialises and reads this edit's committed qty.
+  await lockPoLinesForSend(tx, poLineIds, companyId);
+  const alreadySentAll = await sumSentQtyByPoLine(tx, poLineIds, companyId);
+  // This DC's current qty per PO line — the part of alreadySentAll that belongs
+  // to the challan being edited, so the baseline is the other challans only.
+  const thisDcCurrentByPoLine = new Map<string, number>();
+  for (const c of currentLines) {
+    if (!c.purchaseOrderLineId) continue;
+    const prev = thisDcCurrentByPoLine.get(c.purchaseOrderLineId) ?? 0;
+    thisDcCurrentByPoLine.set(c.purchaseOrderLineId, roundQty(prev + Number(c.qty)));
+  }
+  const newIncByPoLine = new Map<string, number>();
+  for (const c of currentLines) {
+    if (!c.purchaseOrderLineId) continue;
+    const prev = newIncByPoLine.get(c.purchaseOrderLineId) ?? 0;
+    newIncByPoLine.set(c.purchaseOrderLineId, roundQty(prev + newQtyById.get(c.id)!));
+  }
+  for (const [poLineId, inc] of newIncByPoLine) {
+    const pol = poLines.get(poLineId)!;
+    const baseline = roundQty((alreadySentAll.get(poLineId) ?? 0) - (thisDcCurrentByPoLine.get(poLineId) ?? 0));
+    const remaining = roundQty(pol.qty - baseline);
+    if (inc > remaining) {
+      throw new ConflictError(
+        `Ln ${pol.lineNo}${pol.itemCodeText ? ` (${pol.itemCodeText})` : ''}: ` +
+          `Qty (${inc}) cannot be more than Pending (${remaining}) — PO Qty ${pol.qty}.`,
+      );
+    }
+  }
+
+  const oldCode = header.code;
+  const newCode = bumpDocRevision(oldCode);
+  const newDcDate = input.dcDate ?? header.dcDate;
+
+  // REVERSE-then-REPOST the op counter per op-linked line (§20.1 single writer).
+  // Run for EVERY op-linked line, not only the ones whose qty changed, so the
+  // op's stored outsource_dc_no is rewritten from the old code to the bumped one
+  // (the only other stored text copy of the DC number — receipts are ruled out
+  // above). The activity log below records a REVERSE / SEND only where qty moved.
+  const opMoves: Array<{
+    jcCode: string;
+    jobCardId: string;
+    opSeq: number;
+    oldQty: number;
+    newQty: number;
+  }> = [];
+  for (const c of currentLines) {
+    if (!c.purchaseOrderLineId) continue;
+    const oldQty = roundQty(Number(c.qty));
+    const newQty = newQtyById.get(c.id)!;
+    // Reverse under the OLD code (clears outsource_dc_no when it matches), then
+    // repost under the NEW code. loadOutwardSendable inside applyOutwardToJcOp
+    // re-validates newQty against the op's sendable on the reversed state.
+    const rev = await reverseOutwardFromJcOp({
+      tx,
+      companyId,
+      adminUserId: user.id,
+      dcCode: oldCode,
+      dcDate: header.dcDate,
+      purchaseOrderLineId: c.purchaseOrderLineId,
+      qty: oldQty,
+    });
+    const app = await applyOutwardToJcOp({
+      tx,
+      companyId,
+      adminUserId: user.id,
+      dcCode: newCode,
+      dcDate: newDcDate,
+      purchaseOrderLineId: c.purchaseOrderLineId,
+      qty: newQty,
+    });
+    const fired = app.fired ? app : rev;
+    if (fired.fired && fired.jcCode && fired.jobCardId && fired.opSeq && oldQty !== newQty) {
+      opMoves.push({
+        jcCode: fired.jcCode,
+        jobCardId: fired.jobCardId,
+        opSeq: fired.opSeq,
+        oldQty,
+        newQty,
+      });
+    }
+  }
+
+  // Apply the new line values (qty + optional material / remarks).
+  for (const c of currentLines) {
+    const il = inputById.get(c.id)!;
+    const lineUpdates: Partial<typeof deliveryChallanLines.$inferInsert> = {
+      qty: newQtyById.get(c.id)!.toFixed(3),
+      updatedBy: user.id,
+    };
+    if (il.materialText !== undefined) lineUpdates.materialText = il.materialText ?? null;
+    if (il.dcRemarks !== undefined) lineUpdates.dcRemarks = il.dcRemarks ?? null;
+    await tx
+      .update(deliveryChallanLines)
+      .set(lineUpdates)
+      .where(eq(deliveryChallanLines.id, c.id));
+  }
+
+  // Header: travel details + the revision bump. Conditional on status (§20.2) —
+  // a concurrent cancel that moved status off 'issued' writes 0 rows here.
+  const headerUpdates: Partial<typeof deliveryChallans.$inferInsert> = {
+    code: newCode,
+    updatedBy: user.id,
+    updatedAt: new Date(),
+  };
+  if (input.dcDate !== undefined) headerUpdates.dcDate = input.dcDate;
+  if (input.transport !== undefined) headerUpdates.transport = input.transport ?? null;
+  if (input.vehicleNo !== undefined) headerUpdates.vehicleNo = input.vehicleNo ?? null;
+  const updatedRows = await tx
+    .update(deliveryChallans)
+    .set(headerUpdates)
+    .where(and(eq(deliveryChallans.id, id), eq(deliveryChallans.status, 'issued')))
+    .returning({ id: deliveryChallans.id });
+  assertRowUpdated(updatedRows, `DC ${oldCode}`);
+
+  // Activity: EDIT with the before → after list (keys match the registry). The
+  // engine emits REQUEST / APPROVE / REJECT for a staged edit; this is the
+  // direct-apply log.
+  const before: Record<string, unknown> = {
+    dcDate: header.dcDate,
+    transport: header.transport,
+    vehicleNo: header.vehicleNo,
+  };
+  const after: Record<string, unknown> = {};
+  if (input.dcDate !== undefined) after['dcDate'] = input.dcDate;
+  if (input.transport !== undefined) after['transport'] = input.transport ?? null;
+  if (input.vehicleNo !== undefined) after['vehicleNo'] = input.vehicleNo ?? null;
+  for (const c of currentLines) {
+    const il = inputById.get(c.id)!;
+    before[dcLineQtyKey(c.id)] = Number(c.qty);
+    after[dcLineQtyKey(c.id)] = newQtyById.get(c.id)!;
+    before[dcLineMaterialKey(c.id)] = c.materialText;
+    before[dcLineRemarksKey(c.id)] = c.dcRemarks;
+    if (il.materialText !== undefined) after[dcLineMaterialKey(c.id)] = il.materialText ?? null;
+    if (il.dcRemarks !== undefined) after[dcLineRemarksKey(c.id)] = il.dcRemarks ?? null;
+  }
+  const changes = diffFields(before, after, [
+    ...DC_HEADER_EDIT_FIELDS,
+    ...dcLineDiffFields(currentLines),
+  ]);
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'DeliveryChallan',
+        entityId: id,
+        refId: newCode,
+        changes,
+        ...(input.reason ? { reason: input.reason } : {}),
+        detail: `${oldCode === newCode ? oldCode : `${oldCode} → ${newCode}`} — DC edited`,
+      },
+      companyId,
+      user,
+    );
+  }
+  // Per-op REVERSE (old qty) + SEND (new qty) for each op whose sent qty moved —
+  // the same pair cancel / create emit, so the Job Card's history shows the shift.
+  for (const op of opMoves) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Reverse,
+        entity: 'JobCard',
+        entityId: op.jobCardId,
+        refId: op.jcCode,
+        opRef: `Op ${opSrNo(op.opSeq)}`,
+        qty: Math.round(op.oldQty),
+        ...(input.reason ? { reason: input.reason } : {}),
+        detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — reversed ${Math.round(op.oldQty)} pcs on ${oldCode} (DC edited)`,
+      },
+      companyId,
+      user,
+    );
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Send,
+        entity: 'JobCard',
+        entityId: op.jobCardId,
+        refId: op.jcCode,
+        opRef: `Op ${opSrNo(op.opSeq)}`,
+        qty: Math.round(op.newQty),
+        detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — sent ${Math.round(op.newQty)} pcs via ${newCode}${header.vendorCodeText ? ` to ${header.vendorCodeText}` : ''} (DC edited)`,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  return loadDeliveryChallanWithLines(tx, id, companyId);
+}
+
+/** PUBLIC edit — access-gated wrapper around updateDeliveryChallanTx. */
+export async function updateDeliveryChallan(
+  id: string,
+  input: UpdateDeliveryChallanInput,
+  user: AuthContext,
+): Promise<DeliveryChallanWithLines> {
+  await requireFormAccess(user, 'ospdc_create', 'edit');
+  return withUserContext(user, async (tx) => updateDeliveryChallanTx(tx, id, input, user));
+}
+
+/**
+ * The PATCH entry point (ADR-202). When the Document Edit Approval gate is ON and
+ * the DC is LIVE (issued, no receipts, not an NC return-to-vendor challan), the
+ * edit is STAGED for approval and the request row is returned; otherwise it
+ * applies directly. Add / remove of lines is refused clearly on both paths.
+ */
+export async function updateDeliveryChallanOrStage(
+  id: string,
+  input: UpdateDeliveryChallanInput,
+  user: AuthContext,
+): Promise<DeliveryChallanWithLines | DocumentEditStagedResult> {
+  await requireFormAccess(user, 'ospdc_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Imported dynamically to avoid a static import cycle with the registry (which
+  // imports updateDeliveryChallanTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const rows = await tx
+      .select({ status: deliveryChallans.status, ncId: deliveryChallans.ncId })
+      .from(deliveryChallans)
+      .where(
+        and(
+          eq(deliveryChallans.id, id),
+          eq(deliveryChallans.companyId, companyId),
+          isNull(deliveryChallans.deletedAt),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    // isLive mirrors the registry: only an issued DC with no receipts and no NC
+    // link is editable. Otherwise fall through to the direct edit, which raises
+    // the precise refusal (404 / status / receipts / nc).
+    if (!row || row.status !== 'issued' || row.ncId) return false;
+    if (await dcHasActiveReceipts(tx, id)) return false;
+
+    // Refuse add / remove at stage time too, so a staged edit never silently
+    // drops or invents a line.
+    const currentIds = (
+      await tx
+        .select({ id: deliveryChallanLines.id })
+        .from(deliveryChallanLines)
+        .where(
+          and(
+            eq(deliveryChallanLines.deliveryChallanId, id),
+            isNull(deliveryChallanLines.deletedAt),
+          ),
+        )
+    ).map((r) => r.id);
+    const currentSet = new Set(currentIds);
+    const inputSet = new Set(input.lines.map((l) => l.id));
+    const sameSet =
+      currentSet.size === inputSet.size && [...inputSet].every((x) => currentSet.has(x));
+    if (!sameSet) {
+      throw new ConflictError(
+        `DC ${id}: lines cannot be added or removed — a DC's items are fixed from the PO ` +
+          `selection. Only Challan Qty / Material / Remarks can be edited.`,
+      );
+    }
+    return true;
+  });
+  if (shouldStage) {
+    const request = await requestDocumentEdit(
+      'DeliveryChallan',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
+    return { staged: true, request };
+  }
+
+  return updateDeliveryChallan(id, input, user);
 }
 
 // ─── Writes (T-059b receive-back) ──────────────────────────────────────────

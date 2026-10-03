@@ -6,6 +6,7 @@ import {
   createDeliveryChallanInputSchema,
   createDeliveryChallanReceiptInputSchema,
   listDeliveryChallansQuerySchema,
+  updateDeliveryChallanInputSchema,
 } from './schema';
 import * as service from './service';
 
@@ -46,6 +47,18 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     const detail = await service.createDeliveryChallan(input, req.user);
     reply.code(201);
     return detail;
+  });
+
+  // ADR-202 Phase 3 — edit an issued OSP DC's line qty / material / remarks and
+  // header travel details. When the Document Edit Approval gate is on and the DC
+  // is live (issued, no receipts, not an NC return-to-vendor challan), the edit is
+  // staged and a DocumentEditStagedResult is returned; otherwise it applies. Line
+  // add / remove is refused (a DC's item set is fixed from the PO selection).
+  app.patch('/delivery-challans/:id', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const input = updateDeliveryChallanInputSchema.parse(req.body);
+    return service.updateDeliveryChallanOrStage(id, input, req.user);
   });
 
   app.post('/delivery-challans/:id/cancel', async (req) => {

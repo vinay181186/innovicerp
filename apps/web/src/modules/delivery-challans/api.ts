@@ -3,6 +3,7 @@ import type {
   CreateDeliveryChallanReceiptInput,
   DcSendablePreview,
   DeliveryChallanWithLines,
+  DocumentEditStagedResult,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
   ListNcRegisterQuery,
@@ -13,6 +14,7 @@ import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@ta
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { ncRegisterKeys } from '@/modules/nc-register/api';
 
 export const deliveryChallansKeys = {
@@ -101,6 +103,32 @@ export function useDcSendable(poId: string | undefined) {
   });
 }
 
+/** PATCH /delivery-challans/:id payload (ADR-202 Phase 3). Defined here — the
+ *  shared contract carries no edit shape for a DC yet; the backend half is being
+ *  built in parallel, so this mirrors the natural field names so the frontend
+ *  compiles and does a normal update until the staged-edit server lands. Only the
+ *  header travel fields (DC Date · Transporter · Vehicle No.) and each existing
+ *  LINE's challan qty / Material / DC Remarks are editable; the PO, the vendor and
+ *  the set of items cannot change on a saved DC. `reason` rides along for the
+ *  activity-log entry (ADR-197); `expectedUpdatedAt` is the optimistic-lock stamp
+ *  the DC was loaded with (rule 20.4). All optional string fields are typed
+ *  `?: string | undefined` for exactOptionalPropertyTypes. */
+export interface UpdateDeliveryChallanInput {
+  dcDate?: string | undefined;
+  transport?: string | undefined;
+  vehicleNo?: string | undefined;
+  /** One entry per existing challan line, keyed by delivery_challan_lines.id —
+   *  the same id the staged-edit diff uses in its `line:<id>:qty` change key. */
+  lines: {
+    id: string;
+    qty: number;
+    materialText?: string | undefined;
+    dcRemarks?: string | undefined;
+  }[];
+  reason?: string | undefined;
+  expectedUpdatedAt?: string | undefined;
+}
+
 export function useCreateDeliveryChallan(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<DeliveryChallanWithLines, Error, CreateDeliveryChallanInput>({
@@ -116,6 +144,45 @@ export function useCreateDeliveryChallan(saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(deliveryChallansKeys.detail(created.id), created);
+    },
+  });
+}
+
+/**
+ * Edit an existing DC (ADR-202 Phase 3). PATCH /delivery-challans/:id returns the
+ * updated DC normally, OR a DocumentEditStagedResult when the edit-approval gate
+ * is on and this DC is live — then nothing changed and the edit is waiting for
+ * approval. Mirrors useUpdateCustomerDispatch: on a staged result refresh the DC
+ * detail + ['document-edits'] (so the pending chips appear) and stop; on a normal
+ * save invalidate the module's caches as an update would. The History tab reads
+ * the activity log either way (ADR-197).
+ */
+export function useUpdateDeliveryChallan(id: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<
+    DeliveryChallanWithLines | DocumentEditStagedResult,
+    Error,
+    UpdateDeliveryChallanInput
+  >({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<DeliveryChallanWithLines | DocumentEditStagedResult>(`/delivery-challans/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if (isStagedResult(updated)) {
+        // Nothing changed on the DC itself — refresh so the detail page shows the
+        // new pending-change chips.
+        void qc.invalidateQueries({ queryKey: deliveryChallansKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
+      void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
+      qc.setQueryData(deliveryChallansKeys.detail(id), updated);
     },
   });
 }

@@ -14,10 +14,16 @@
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Inbox, Loader2, Printer } from 'lucide-react';
+import { ArrowLeft, Ban, Inbox, Loader2, Pencil, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+  linePendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -57,6 +63,10 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
   const cancel = useCancelDeliveryChallan();
+  // ADR-202 — the edit(s) staged against this DC, still awaiting a decision.
+  // Their per-field changes drive the "Changes awaiting approval" panel below.
+  const pendingEdit = usePendingEditForDoc('DeliveryChallan', id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // ADR-197: a cancel must say why — the reason lands on the DC's History.
@@ -151,6 +161,10 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   //              very tier meant to run the department.
   const canReceive = dc.status === 'issued' && perms.entry;
   const canCancel = dc.status === 'issued' && perms.edit && perms.approve;
+  // Edit (ADR-202) -> edit, only while the DC is still issued and nothing has
+  // been received against it (receiving freezes the quantities). The server
+  // re-checks the same guard; the edit screen does too.
+  const canEdit = dc.status === 'issued' && dc.receipts.length === 0 && perms.edit;
 
   // ConfirmDialog shows a rejection inside the dialog; cancelError is kept for
   // the dialog's own error line.
@@ -247,6 +261,16 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
               <Printer size={13} /> Print
             </button>
+            {canEdit ? (
+              <Link
+                to="/delivery-challans/$id/edit"
+                params={{ id: dc.id }}
+                className="btn btn-ghost btn-sm"
+                title="Edit this DC"
+              >
+                <Pencil size={13} /> Edit
+              </Link>
+            ) : null}
             {canReceive ? (
               <Link
                 to="/delivery-challans/$id/receive"
@@ -274,6 +298,72 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
           <HeaderGrid dc={dc} />
         </div>
       </div>
+
+      {/* ADR-202 — edits staged against this DC and waiting for approval. The
+          lines table below has no Material / DC Remarks columns to host inline
+          chips, so every pending change (header travel fields + each line's
+          Challan Qty / Material / Remarks) is shown here as current → proposed in
+          amber. Hidden entirely when nothing is pending. */}
+      {pendingChanges.length > 0 ? (
+        <Panel title="Changes awaiting approval">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+            {[
+              { field: 'dcDate', label: 'DC Date' },
+              { field: 'transport', label: 'Transporter' },
+              { field: 'vehicleNo', label: 'Vehicle No.' },
+            ].map(({ field, label }) => {
+              const c = headerPendingChange(pendingChanges, field);
+              if (!c) return null;
+              return (
+                <div key={field}>
+                  <span className="text3">{label}:</span>{' '}
+                  <span>{c.before == null || c.before === '' ? '—' : String(c.before)}</span>
+                  <PendingChangeChip after={c.after} />
+                </div>
+              );
+            })}
+            {dc.lines.flatMap((l) => {
+              const name = l.itemName ?? l.itemNameText ?? l.itemCodeText;
+              const rows: React.ReactNode[] = [];
+              const qtyC = linePendingChange(pendingChanges, l.id, 'qty');
+              if (qtyC) {
+                rows.push(
+                  <div key={`${l.id}-qty`}>
+                    <span className="text3">
+                      Ln {l.lineNo} · {name} — Challan Qty:
+                    </span>{' '}
+                    <span className="mono">{Number(l.qty)}</span>
+                    <PendingChangeChip after={qtyC.after} />
+                  </div>,
+                );
+              }
+              const matC = linePendingChange(pendingChanges, l.id, 'material');
+              if (matC) {
+                rows.push(
+                  <div key={`${l.id}-material`}>
+                    <span className="text3">Ln {l.lineNo} — Material:</span>{' '}
+                    <span>
+                      {l.materialText == null || l.materialText === '' ? '—' : l.materialText}
+                    </span>
+                    <PendingChangeChip after={matC.after} />
+                  </div>,
+                );
+              }
+              const remC = linePendingChange(pendingChanges, l.id, 'remarks');
+              if (remC) {
+                rows.push(
+                  <div key={`${l.id}-remarks`}>
+                    <span className="text3">Ln {l.lineNo} — Remarks:</span>{' '}
+                    <span>{l.dcRemarks == null || l.dcRemarks === '' ? '—' : l.dcRemarks}</span>
+                    <PendingChangeChip after={remC.after} />
+                  </div>,
+                );
+              }
+              return rows;
+            })}
+          </div>
+        </Panel>
+      ) : null}
 
       <div className="panel">
         <div className="panel-hdr">

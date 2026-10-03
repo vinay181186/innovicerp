@@ -11,6 +11,7 @@ import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
 import { customerDispatchEditRegistryEntry } from '../customer-dispatches/customer-dispatch-edit-registry';
+import { dcEditRegistryEntry } from '../delivery-challans/dc-edit-registry';
 import { grnEditRegistryEntry } from '../goods-receipt-notes/grn-edit-registry';
 import { jobCardEditRegistryEntry } from '../job-cards/jobcard-edit-registry';
 import { jwEditRegistryEntry } from '../job-work-orders/jw-edit-registry';
@@ -92,4 +93,5 @@ export const DOC_EDIT_REGISTRY: Partial<Record<DocumentEditEntity, DocEditRegist
   GoodsReceiptNote: grnEditRegistryEntry,
   JobCard: jobCardEditRegistryEntry,
   Dispatch: customerDispatchEditRegistryEntry,
+  DeliveryChallan: dcEditRegistryEntry,
 };
