@@ -13,11 +13,17 @@
 // an order is short closed the Close form and the ledger's Reverse buttons go
 // away, and a red panel says who stopped it, when and why.
 
+import type { DocumentEditChange } from '@innovic/shared';
 import { isProductionOrderStopped } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -56,14 +62,32 @@ function Fact({
   );
 }
 
+/** The pending change for a header field, if any — the amber "→ after" chip. */
+function Chip({
+  changes,
+  field,
+}: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(changes, field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
 function ProductionOrderDetailPage(): React.JSX.Element {
   const { id } = productionOrderDetailRoute.useParams();
+  const navigate = useNavigate();
   const { data, isLoading, isError, error } = useProductionOrder(id);
   const [shortCloseOpen, setShortCloseOpen] = useState(false);
 
   // Tier-driven (Production). Close is an EDIT on the order, not an entry.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
+
+  // ADR-202 Phase 3 — staged header edits waiting for approval. Their per-field
+  // changes drive the inline amber chips next to each editable fact below.
+  const pendingEdit = usePendingEditForDoc('ProductionOrder', id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   if (isLoading) {
     return (
@@ -109,6 +133,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // Short Close is offered at ANY stage except an order already stopped — the
   // ask is "at any stage". Same `edit` right as Close.
   const showShortCloseButton = !stopped && perms.edit;
+  // ADR-202 Phase 3 — header edit (with approval) is offered only while the
+  // order is still open or partly closed; a closed / short-closed order is
+  // frozen. Same `edit` right as Close. The server re-checks both.
+  const canEdit = perms.edit && (data.status === 'open' || data.status === 'partially_closed');
   const pct =
     data.orderQty > 0 ? Math.min(100, Math.round((data.jcFinishedQty / data.orderQty) * 100)) : 0;
 
@@ -135,6 +163,13 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </Link>
             <ActionMenu
               items={[
+                {
+                  label: '✏️ Edit',
+                  hidden: !canEdit,
+                  title: 'Edit this Production Order (Remarks, PRO Target Date, Actual Size, Raw Material Available)',
+                  onClick: () =>
+                    void navigate({ to: '/production-orders/$id/edit', params: { id: data.id } }),
+                },
                 {
                   label: 'Short Close',
                   danger: true,
@@ -188,6 +223,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           <Fact label="Customer">{data.partyName ?? '—'}</Fact>
           <Fact label="PRO Target Date" mono>
             {fmtDate(data.targetDate)}
+            <Chip changes={pendingChanges} field="targetDate" />
           </Fact>
 
           {/* POL — the line number printed on the CUSTOMER's own purchase
@@ -227,9 +263,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             ) : (
               <span style={{ color: 'var(--red2)' }}>✗ No</span>
             )}
+            <Chip changes={pendingChanges} field="rawMaterialAvailable" />
           </Fact>
           <Fact label="Actual Size" mono>
             {data.actualSize ?? '—'}
+            <Chip changes={pendingChanges} field="actualSize" />
           </Fact>
 
           <Fact label="Route Card">
@@ -263,7 +301,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               · {fmtDate(data.createdAt)}
             </span>
           </Fact>
-          <Fact label="Remarks">{data.remarks ?? '—'}</Fact>
+          <Fact label="Remarks">
+            {data.remarks ?? '—'}
+            <Chip changes={pendingChanges} field="remarks" />
+          </Fact>
         </div>
       </DetailHeader>
 

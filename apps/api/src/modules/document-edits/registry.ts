@@ -16,6 +16,8 @@ import { grnEditRegistryEntry } from '../goods-receipt-notes/grn-edit-registry';
 import { jobCardEditRegistryEntry } from '../job-cards/jobcard-edit-registry';
 import { jwEditRegistryEntry } from '../job-work-orders/jw-edit-registry';
 import { ncEditRegistryEntry } from '../nc-register/nc-edit-registry';
+import { partyGrnEditRegistryEntry } from '../party-grn/party-grn-edit-registry';
+import { productionOrderEditRegistryEntry } from '../production-orders/production-order-edit-registry';
 import { planEditRegistryEntry } from '../plans/plan-edit-registry';
 import { poEditRegistryEntry } from '../purchase-orders/po-edit-registry';
 import { prEditRegistryEntry } from '../purchase-requests/pr-edit-registry';
@@ -94,4 +96,6 @@ export const DOC_EDIT_REGISTRY: Partial<Record<DocumentEditEntity, DocEditRegist
   JobCard: jobCardEditRegistryEntry,
   Dispatch: customerDispatchEditRegistryEntry,
   DeliveryChallan: dcEditRegistryEntry,
+  PartyGrn: partyGrnEditRegistryEntry,
+  ProductionOrder: productionOrderEditRegistryEntry,
 };

@@ -9,6 +9,7 @@ import {
   listProductionOrdersQuerySchema,
   reverseProductionOrderCloseInputSchema,
   shortCloseProductionOrderInputSchema,
+  updateProductionOrderInputSchema,
 } from './schema';
 import * as service from './service';
 
@@ -39,6 +40,15 @@ export async function productionOrdersRoutes(app: FastifyInstance): Promise<void
     const row = await service.createProductionOrder(body, req.user);
     reply.code(201);
     return row;
+  });
+
+  // Edit the order's header (ADR-202 Phase 3). With Document Edit Approval on,
+  // the change is staged for approval; otherwise it applies straight away.
+  app.patch('/production-orders/:id', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = updateProductionOrderInputSchema.parse(req.body);
+    return service.updateProductionOrderOrStage(id, body, req.user);
   });
 
   app.post('/production-orders/:id/close', async (req) => {
