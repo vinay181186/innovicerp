@@ -980,6 +980,12 @@ export const routeCardOps = pgTable(
     program: text('program'),
     toolNo: text('tool_no'),
     toolDetails: text('tool_details'),
+    // Free text about THIS step for whoever runs it (migration 0195): "leave
+    // 0.4 mm for the grind", "send with the DC + MTC copy". Not tooling and
+    // not a status — nothing computes from it. Shown through the form's
+    // "▸ More" row, and carried in route_card_revisions.ops_snapshot so a
+    // revision keeps it. Does NOT travel to jc_ops.
+    remarks: text('remarks'),
     qcRequired: boolean('qc_required').notNull().default(false),
     // OSP step fields (RC-1, migration 0022). Live FK + free-text
     // fallback + lead days. All nullable; only populated when

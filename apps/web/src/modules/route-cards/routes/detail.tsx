@@ -204,7 +204,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               </div>
             </div>
             <div className="form-grp form-full">
-              <span className="form-label">Notes</span>
+              <span className="form-label">Route Card Remarks</span>
               <div className="text2">{detail.notes ?? '—'}</div>
             </div>
           </div>
@@ -240,17 +240,22 @@ function RouteCardDetailPage(): React.JSX.Element {
                 <th>Group</th>
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
-                <th className="td-ctr">Cycle Time (min)</th>
+                <th className="th-num">Cycle Time (min)</th>
                 <th>Program No.</th>
-                <th className="td-ctr">Lead Days</th>
+                <th className="th-num">Lead Days</th>
                 <th>Tool No.</th>
                 <th>Tool Details</th>
+                {/* Migration 0195 — what the operator or the vendor must know
+                    about this ONE step. Long free text, so it ends in an
+                    ellipsis and the shared cell-overflow helper gives the whole
+                    sentence on hover. */}
+                <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
               {detail.ops.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     No operations yet.
                   </td>
                 </tr>
@@ -294,7 +299,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                   return (
                     <tr key={op.id} style={{ background: bg }}>
                       {/* 10, 20, 30 on screen — display rule, see opSrNo */}
-                      <td className="td-ctr mono fw-700" style={{ color: accent }}>
+                      <td className="mono fw-700" style={{ color: accent }}>
                         {opSrNo(op.opSeq)}
                       </td>
                       <td>
@@ -348,11 +353,13 @@ function RouteCardDetailPage(): React.JSX.Element {
                         </span>
                       </td>
                       <td className="fw-700">{op.operation}</td>
-                      <td className="td-ctr mono">{Number(op.cycleTimeMin) || '—'}</td>
+                      <td className="td-num mono">
+                        {op.opType === 'outsource' ? '—' : Number(op.cycleTimeMin) || '—'}
+                      </td>
                       <td className="mono" style={{ fontSize: 12, color: 'var(--blue)' }}>
                         {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
                       </td>
-                      <td className="td-ctr mono" style={{ fontSize: 12 }}>
+                      <td className="td-num mono" style={{ fontSize: 12 }}>
                         {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
                       </td>
                       <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
@@ -360,6 +367,9 @@ function RouteCardDetailPage(): React.JSX.Element {
                       </td>
                       <td className="text3" style={{ fontSize: 12 }}>
                         {op.toolDetails ?? '—'}
+                      </td>
+                      <td className="text2" style={{ fontSize: 12 }}>
+                        {op.remarks ?? '—'}
                       </td>
                     </tr>
                   );
@@ -459,8 +469,8 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
               <th>Route Card Rev</th>
               <th>Revision Date</th>
               <th>Revised By</th>
-              <th>Notes</th>
-              <th className="td-ctr">Ops</th>
+              <th>Revision Note</th>
+              <th className="th-num">Ops</th>
             </tr>
           </thead>
           <tbody>
@@ -473,7 +483,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                     style={{ cursor: 'pointer' }}
                     title={open ? 'Hide the operations' : 'Show the operations at this revision'}
                   >
-                    <td className="td-ctr text3">
+                    <td className="text3">
                       {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                     </td>
                     <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
@@ -488,7 +498,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                     <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
                       {rev.notes ?? '—'}
                     </td>
-                    <td className="td-ctr mono">{rev.opsSnapshot.length}</td>
+                    <td className="td-num mono">{rev.opsSnapshot.length}</td>
                   </tr>
                   {open ? (
                     <tr>
@@ -510,16 +520,17 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                           <table className="innovic-table">
                             <thead>
                               <tr>
-                                <th className="td-ctr">Op</th>
+                                <th>Op</th>
                                 <th>Group</th>
                                 <th>Machine / Vendor</th>
                                 <th>Operation</th>
-                                <th className="td-ctr">Cycle Time (min)</th>
+                                <th className="th-num">Cycle Time (min)</th>
                                 <th>Program No.</th>
-                                <th className="td-ctr">Lead Days</th>
+                                <th className="th-num">Lead Days</th>
                                 <th>Tool No.</th>
                                 <th>Tool Details</th>
-                                <th className="td-ctr">QC</th>
+                                <th>Remarks</th>
+                                <th>QC</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -527,7 +538,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                 const accent = opAccent(op.opType);
                                 return (
                                   <tr key={`${rev.id}-${op.opSeq}`}>
-                                    <td className="td-ctr mono fw-700" style={{ color: accent }}>
+                                    <td className="mono fw-700" style={{ color: accent }}>
                                       {opSrNo(op.opSeq)}
                                     </td>
                                     <td>
@@ -544,8 +555,10 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                         : (op.machineCode ?? '—')}
                                     </td>
                                     <td className="fw-700">{op.operation}</td>
-                                    <td className="td-ctr mono">
-                                      {Number(op.cycleTimeMin) || '—'}
+                                    <td className="td-num mono">
+                                      {op.opType === 'outsource'
+                                        ? '—'
+                                        : Number(op.cycleTimeMin) || '—'}
                                     </td>
                                     <td
                                       className="mono"
@@ -553,7 +566,7 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                     >
                                       {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
                                     </td>
-                                    <td className="td-ctr mono" style={{ fontSize: 12 }}>
+                                    <td className="td-num mono" style={{ fontSize: 12 }}>
                                       {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
                                     </td>
                                     <td
@@ -565,11 +578,16 @@ function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): Rea
                                     <td className="text3" style={{ fontSize: 12 }}>
                                       {op.toolDetails ?? '—'}
                                     </td>
+                                    {/* Optional like qcRequired below: a snapshot
+                                        written before migration 0195 carries no
+                                        remarks key at all. */}
+                                    <td className="text2" style={{ fontSize: 12 }}>
+                                      {op.remarks ?? '—'}
+                                    </td>
                                     {/* undefined means this revision predates the
                                         QC flag being snapshotted. Shown as "not
                                         recorded" — never guessed as a No. */}
                                     <td
-                                      className="td-ctr"
                                       style={{
                                         color:
                                           op.qcRequired === true ? 'var(--green)' : 'var(--text3)',
