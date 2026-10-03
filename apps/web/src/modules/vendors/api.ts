@@ -2,6 +2,7 @@ import type {
   BulkCreateVendorsInput,
   BulkCreateVendorsResponse,
   CreateVendorInput,
+  DocumentEditStagedResult,
   ListVendorsQuery,
   ListVendorsResponse,
   UpdateVendorInput,
@@ -115,10 +116,13 @@ export function useBulkCreateVendors() {
 
 export function useUpdateVendor(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<Vendor, Error, UpdateVendorInput>({
+  // ADR-202 — when the edit-approval gate is on and the vendor is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated vendor. The edit page reads the union to tell them apart.
+  return useMutation<Vendor | DocumentEditStagedResult, Error, UpdateVendorInput>({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<Vendor>(`/vendors/${id}`, {
+        apiFetch<Vendor | DocumentEditStagedResult>(`/vendors/${id}`, {
           method: 'PATCH',
           json: input,
           ...(headers ? { headers } : {}),
@@ -127,6 +131,13 @@ export function useUpdateVendor(id: string, saveKey?: SaveKey) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the vendor itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: vendorsKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(vendorsKeys.detail(id), updated);
     },
   });

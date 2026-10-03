@@ -18,6 +18,8 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { isStagedResult } from '@/modules/document-edits/api';
+import { Banner } from '@/ui/feedback';
 import { PageHeader, PageState } from '@/ui/layout';
 import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -113,6 +115,9 @@ function ItemEditPage(): React.JSX.Element {
   const opened = useOpenedVersion(item?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
+  // ADR-202 — set when an edit to a LIVE item is staged for approval instead of
+  // applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // Same hole on the edit route: the row's Edit link is hidden without edit
   // rights, but the URL was open to anyone signed in.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
@@ -130,6 +135,14 @@ function ItemEditPage(): React.JSX.Element {
     setServerFieldErrors(null);
     try {
       const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
+      if (isStagedResult(saved)) {
+        // The edit-approval gate is on and this item is live: nothing was changed
+        // on the item — the edit is now waiting for approval. Say so, then return
+        // to the item (its fields now carry the pending-change chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        exit.leave(() => void navigate({ to: '/items/$id', params: { id }, replace: true }));
+        return;
+      }
       opened.saved(saved.updatedAt);
       exit.leave(() => void navigate({ to: '/items/$id', params: { id }, replace: true }));
     } catch (err) {
@@ -169,6 +182,11 @@ function ItemEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <ItemForm
         mode="edit"
         item={item}

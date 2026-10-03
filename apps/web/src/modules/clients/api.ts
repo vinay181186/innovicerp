@@ -3,6 +3,7 @@ import type {
   BulkCreateClientsResponse,
   Client,
   CreateClientInput,
+  DocumentEditStagedResult,
   ListClientsQuery,
   ListClientsResponse,
   UpdateClientInput,
@@ -116,10 +117,13 @@ export function useBulkCreateClients() {
 
 export function useUpdateClient(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<Client, Error, UpdateClientInput>({
+  // ADR-202 — when the edit-approval gate is on and the customer is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated customer. The edit page reads the union to tell them apart.
+  return useMutation<Client | DocumentEditStagedResult, Error, UpdateClientInput>({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<Client>(`/clients/${id}`, {
+        apiFetch<Client | DocumentEditStagedResult>(`/clients/${id}`, {
           method: 'PATCH',
           json: input,
           ...(headers ? { headers } : {}),
@@ -128,6 +132,13 @@ export function useUpdateClient(id: string, saveKey?: SaveKey) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the customer itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: clientsKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(clientsKeys.detail(id), updated);
     },
   });

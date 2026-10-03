@@ -62,7 +62,7 @@ export async function itemsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateItemInputSchema.parse(req.body);
-    return service.updateItem(id, body, req.user);
+    return service.updateItemOrStage(id, body, req.user);
   });
 
   app.delete('/items/:id', async (req, reply) => {

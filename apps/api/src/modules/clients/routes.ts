@@ -62,7 +62,7 @@ export async function clientsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateClientInputSchema.parse(req.body);
-    return service.updateClient(id, body, req.user);
+    return service.updateClientOrStage(id, body, req.user);
   });
 
   app.delete('/clients/:id', async (req, reply) => {

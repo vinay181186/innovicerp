@@ -9,6 +9,8 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { isStagedResult } from '@/modules/document-edits/api';
+import { Banner } from '@/ui/feedback';
 import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClient, useCreateClient, useUpdateClient } from '../api';
@@ -88,6 +90,9 @@ function ClientEditPage(): React.JSX.Element {
   const opened = useOpenedVersion(client?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
+  // ADR-202 — set when an edit to a LIVE customer is staged for approval instead of
+  // applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'client_create');
 
@@ -102,6 +107,14 @@ function ClientEditPage(): React.JSX.Element {
     setServerFieldErrors(null);
     try {
       const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
+      if (isStagedResult(saved)) {
+        // The edit-approval gate is on and this customer is live: nothing was changed
+        // on the customer — the edit is now waiting for approval. Say so, then return
+        // to the customer (its fields now carry the pending-change chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        exit.leave(() => void navigate({ to: '/clients/$id', params: { id }, replace: true }));
+        return;
+      }
       opened.saved(saved.updatedAt);
       exit.leave(() => void navigate({ to: '/clients/$id', params: { id }, replace: true }));
     } catch (err) {
@@ -146,6 +159,11 @@ function ClientEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <ClientForm
         mode="edit"
         header={{

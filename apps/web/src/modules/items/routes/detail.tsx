@@ -29,7 +29,12 @@
 // Route Card table (L11799-11802) and Job Card History (L11803-11806) all need
 // route-card / job-card / running-op reads this page does not have.
 
-import { ITEM_PROCUREMENT_TYPE_LABEL, type Item, itemTypeLabel } from '@innovic/shared';
+import {
+  ITEM_PROCUREMENT_TYPE_LABEL,
+  type DocumentEditChange,
+  type Item,
+  itemTypeLabel,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -37,6 +42,11 @@ import { fmtDate } from '@/lib/date';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
@@ -63,6 +73,11 @@ function ItemDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'item_create');
   const softDelete = useSoftDeleteItem();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-202 — the edit(s) staged against this item and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('Item', item?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -137,8 +152,12 @@ function ItemDetailPage(): React.JSX.Element {
             imagePath={item.imagePath}
             codeColor="var(--text)"
           >
-            <div style={{ marginTop: 6 }}>
+            <div
+              style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+            >
               <OnHandBadge itemId={item.id} />
+              {/* ADR-202 — staged change to the item name, shown by the item name. */}
+              <Chip changes={pendingChanges} field="name" />
             </div>
           </ItemBadge>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -169,7 +188,7 @@ function ItemDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <DetailGrid item={item} />
+          <DetailGrid item={item} pendingChanges={pendingChanges} />
         </div>
       </div>
 
@@ -329,35 +348,72 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
   );
 }
 
-function DetailGrid(props: { item: Item }): React.JSX.Element {
-  const { item } = props;
+function DetailGrid(props: {
+  item: Item;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { item, pendingChanges } = props;
   return (
     <div className="form-grid">
-      <Pair label="Item Type" value={itemTypeLabel(item.itemType)} />
+      <Pair
+        label="Item Type"
+        value={itemTypeLabel(item.itemType)}
+        chip={<Chip changes={pendingChanges} field="itemType" />}
+      />
       <div className="form-grp">
         <span className="form-label">Make / Buy</span>
         <div>
           <span className={`badge ${item.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
             {ITEM_PROCUREMENT_TYPE_LABEL[item.procurementType]}
           </span>
+          <Chip changes={pendingChanges} field="procurementType" />
         </div>
       </div>
-      <Pair label="UOM" value={item.uom} />
-      <Pair label="Material" value={item.material ?? '—'} />
-      <Pair label="HSN Code" value={item.hsnCode ?? '—'} />
+      <Pair label="UOM" value={item.uom} chip={<Chip changes={pendingChanges} field="uom" />} />
+      <Pair
+        label="Material"
+        value={item.material ?? '—'}
+        chip={<Chip changes={pendingChanges} field="material" />}
+      />
+      <Pair
+        label="HSN Code"
+        value={item.hsnCode ?? '—'}
+        chip={<Chip changes={pendingChanges} field="hsnCode" />}
+      />
       <div className="form-grp form-full">
         <span className="form-label">Description</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{item.description ?? '—'}</div>
+        <div style={{ whiteSpace: 'pre-wrap' }}>
+          {item.description ?? '—'}
+          <Chip changes={pendingChanges} field="description" />
+        </div>
       </div>
     </div>
   );
 }
 
-function Pair(props: { label: string; value: string }): React.JSX.Element {
+function Pair(props: {
+  label: string;
+  value: string;
+  chip?: React.ReactNode;
+}): React.JSX.Element {
   return (
     <div className="form-grp">
       <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
+      <div style={{ fontWeight: 600 }}>
+        {props.value}
+        {props.chip}
+      </div>
     </div>
   );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the Item edit diff's field key (ITEM_FIELDS).
+ *  Renders nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
 }

@@ -63,7 +63,7 @@ export async function vendorsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateVendorInputSchema.parse(req.body);
-    return service.updateVendor(id, body, req.user);
+    return service.updateVendorOrStage(id, body, req.user);
   });
 
   app.delete('/vendors/:id', async (req, reply) => {
