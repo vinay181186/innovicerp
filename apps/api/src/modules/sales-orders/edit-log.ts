@@ -39,8 +39,9 @@ function day(v: unknown): ActivityChangeValue {
   return fmtDate(v as string | Date);
 }
 
-// Labels from docs/NAMING.md.
-const SO_HEADER_FIELDS: readonly DiffField[] = [
+// Labels from docs/NAMING.md. Exported so the edit-approval registry
+// (so-edit-registry.ts) diffs the SAME header fields the History tab shows.
+export const SO_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'soDate', label: 'SO Date', format: day },
   { key: 'customerName', label: 'Customer' },
   { key: 'clientPoNo', label: 'Client PO No.' },
@@ -51,7 +52,7 @@ const SO_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'costCenter', label: 'Cost Centre' },
   { key: 'remarks', label: 'Remarks' },
 ];
-const SO_MONEY_HEADER_FIELDS: readonly DiffField[] = [{ key: 'gstPercent', label: 'GST %' }];
+export const SO_MONEY_HEADER_FIELDS: readonly DiffField[] = [{ key: 'gstPercent', label: 'GST %' }];
 
 // The customer's drawing revision is never shown alone (NAMING) — the item and
 // its Rev are compared together as CODE/REV.

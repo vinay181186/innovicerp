@@ -21,6 +21,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -324,6 +325,10 @@ function JcStatusEditForm({
     return page;
   }, [vendorsData, ops, knownVendors]);
   const [error, setError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE Job Card is staged for approval instead
+  // of applied; the neutral "Sent for approval" banner shows it before we return
+  // to the status page (whose fields now carry the pending-change chips).
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(true);
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
   const [balanceNote, setBalanceNote] = useState<string | null>(null);
@@ -525,7 +530,16 @@ function JcStatusEditForm({
       return;
     }
     try {
-      await update.mutateAsync(result.payload);
+      const saved = await update.mutateAsync(result.payload);
+      if (isStagedResult(saved)) {
+        // The edit-approval gate is on and this Job Card is live: nothing was
+        // changed on the card — the edit is now waiting for approval. Say so,
+        // then return to the status page (its fields now carry the chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        void queryClient.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
+        exit.leave(goBack);
+        return;
+      }
       void queryClient.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
       void queryClient.invalidateQueries({ queryKey: opEntryKeys.all });
       exit.leave(goBack);
@@ -540,6 +554,23 @@ function JcStatusEditForm({
   return (
     <div>
       {exit.dialog}
+      {stagedNotice ? (
+        <div
+          role="status"
+          style={{
+            color: 'var(--green2)',
+            background: 'rgba(34,197,94,0.08)',
+            border: '1px solid rgba(34,197,94,0.3)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            marginBottom: 10,
+          }}
+        >
+          {stagedNotice}
+        </div>
+      ) : null}
       <RecoveryBanner jc={jc} />
 
       {/* Same restyled header the VIEW shows — the shared JcViewSummary (image

@@ -55,7 +55,7 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateNcRegisterInputSchema.parse(req.body);
-    return service.updateNcRegister(id, body, req.user);
+    return service.updateNcRegisterOrStage(id, body, req.user);
   });
 
   app.delete('/nc-register/:id', async (req, reply) => {

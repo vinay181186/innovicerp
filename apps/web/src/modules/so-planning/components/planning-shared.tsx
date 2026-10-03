@@ -9,6 +9,14 @@ import type { PlanningLine, PlanningSoListItem } from '@innovic/shared';
 /** Which orders level 1 lists — a sales order or a job-work order. */
 export type Source = 'so' | 'jw';
 
+/** The level-1 source dropdown: one source, or both together ('all', default). */
+export type SourceFilter = Source | 'all';
+
+/** Count/footer noun for the level-1 list. */
+export function sourceNoun(src: SourceFilter): string {
+  return src === 'jw' ? 'JWSO' : src === 'so' ? 'SO' : 'SO / JWSO';
+}
+
 export type ModalState =
   | { kind: 'none' }
   | { kind: 'create'; soLineId: string }

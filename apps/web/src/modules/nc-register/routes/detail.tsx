@@ -9,6 +9,7 @@
 
 import {
   type DisposeNcResult,
+  type DocumentEditChange,
   NC_REASON_CATEGORY_LABELS,
   NC_STATUS_MOVES,
   type NcRegister,
@@ -19,6 +20,11 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
 import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -66,6 +72,11 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
   const { data: eff } = useMyAccess();
+  // ADR-202 — edits staged against this NC and still waiting for a decision.
+  // Their per-field changes drive the inline amber chips next to the record
+  // fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('NonConformance', detail?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   const softDelete = useSoftDeleteNcRegister();
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
@@ -407,7 +418,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               {capaError ? <Note tone="red">{capaError}</Note> : null}
             </div>
           ) : null}
-          <DetailGrid detail={detail} jcCode={jcCode} />
+          <DetailGrid detail={detail} jcCode={jcCode} pendingChanges={pendingChanges} />
           {detail.disposition || detail.dispositionDate ? (
             <DispositionBlock detail={detail} />
           ) : null}
@@ -576,8 +587,12 @@ function NcRegisterDetailPage(): React.JSX.Element {
   );
 }
 
-function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React.JSX.Element {
-  const { detail, jcCode } = props;
+function DetailGrid(props: {
+  detail: NcRegister;
+  jcCode: string | null;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { detail, jcCode, pendingChanges } = props;
   // Legacy renders "Op<seq>: <operation>" as one fused field (HTML L22729).
   const operation = detail.operationText ?? detail.qcOperationText;
   // Operation and Machine are no longer BOTH shown — that mixed two unrelated
@@ -603,6 +618,7 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
       >
         <CtxField label="NC Date">
           <b>{fmtDate(detail.ncDate)}</b>
+          <Chip changes={pendingChanges} field="ncDate" />
         </CtxField>
         <CtxField label="JC No.">
           <b className="cyan">{jcCode ?? '—'}</b>
@@ -676,12 +692,22 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
             {operation ?? (detail.opSeq == null ? '—' : '')}
           </InlinePair>
         )}
-        <InlinePair label="Operator:">{detail.operatorText ?? '—'}</InlinePair>
-        <InlinePair label="Reported By:">{detail.reportedByText ?? '—'}</InlinePair>
+        <InlinePair label="Operator:">
+          {detail.operatorText ?? '—'}
+          <Chip changes={pendingChanges} field="operatorText" />
+        </InlinePair>
+        <InlinePair label="Reported By:">
+          {detail.reportedByText ?? '—'}
+          <Chip changes={pendingChanges} field="reportedByText" />
+        </InlinePair>
         <InlinePair label="Reason Category:">
           {NC_REASON_CATEGORY_LABELS[detail.reasonCategory]}
+          <Chip changes={pendingChanges} field="reasonCategory" />
         </InlinePair>
-        <InlinePair label="Defect Description:">{detail.reason ?? '—'}</InlinePair>
+        <InlinePair label="Defect Description:">
+          {detail.reason ?? '—'}
+          <Chip changes={pendingChanges} field="reason" />
+        </InlinePair>
         {detail.timeLogged ? (
           <div className="form-full">
             <span className="text3">⏰ Time Logged:</span> <b>{detail.timeLogged}</b>
@@ -765,4 +791,15 @@ function CtxField(props: { label: string; children: React.ReactNode }): React.JS
       {props.children}
     </div>
   );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the NC edit diff's field key. Renders
+ *  nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
 }

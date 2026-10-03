@@ -1,6 +1,7 @@
 // GRN detail (UI-003-05).
 
 import type {
+  DocumentEditChange,
   GoodsReceiptNoteDetail,
   GoodsReceiptNoteLineDetail,
   GrnQcStatus,
@@ -9,6 +10,11 @@ import type {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { DocumentHistory } from '@/components/shared/document-history';
@@ -38,6 +44,11 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const { id } = goodsReceiptNoteDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useGoodsReceiptNote(id);
+  // ADR-202 — the edit(s) staged against this GRN and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('GoodsReceiptNote', id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   // Tier-driven, per department (Store). Was role admin/manager for Edit and
   // role admin for Delete.
   const { data: eff } = useMyAccess();
@@ -254,7 +265,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <DetailGrid detail={detail} vendor={vendor} />
+          <DetailGrid detail={detail} vendor={vendor} pendingChanges={pendingChanges} />
         </div>
       </div>
 
@@ -390,28 +401,39 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
 function DetailGrid(props: {
   detail: GoodsReceiptNoteDetail;
   vendor: Vendor | null | undefined;
+  pendingChanges: readonly DocumentEditChange[];
 }): React.JSX.Element {
-  const { detail, vendor } = props;
+  const { detail, vendor, pendingChanges } = props;
   const vendorAddress = partyAddressLines(vendor);
   return (
     <div className="form-grid form-grid-3">
-      <Pair label="GRN Date" value={fmtDate(detail.grnDate)} />
+      <Pair label="GRN Date" value={withChip(fmtDate(detail.grnDate), pendingChanges, 'grnDate')} />
       {/* Two different numbers, each shown only when present: our own DC (when
           the GRN came from a DC receive) and the vendor's challan number the
-          storekeeper typed. */}
+          storekeeper typed. The staged-edit field key is `dcNo` (Vendor Challan
+          No.); our own DC code is not editable. */}
       {detail.dcCode ? <Pair label="DC No." value={detail.dcCode} /> : null}
       {detail.dcNo && detail.dcNo !== detail.dcCode ? (
-        <Pair label="Vendor Challan No." value={detail.dcNo} />
+        <Pair label="Vendor Challan No." value={withChip(detail.dcNo, pendingChanges, 'dcNo')} />
       ) : null}
-      <Pair label="Vendor Invoice No." value={detail.invoiceNo ?? '—'} />
+      <Pair
+        label="Vendor Invoice No."
+        value={withChip(detail.invoiceNo, pendingChanges, 'invoiceNo')}
+      />
       {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
           NC code, so it is shown once, under an "NC" label. */}
       {detail.ncCode ? (
         <Pair label="NC No." value={detail.ncCode} />
       ) : (
-        <Pair label="PO No." value={detail.poCode ?? detail.poCodeText ?? '—'} />
+        <Pair
+          label="PO No."
+          value={withChip(detail.poCode ?? detail.poCodeText, pendingChanges, 'poNo')}
+        />
       )}
-      <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText ?? '—'} />
+      <Pair
+        label="Vendor"
+        value={withChip(detail.vendorName ?? detail.vendorCodeText, pendingChanges, 'vendor')}
+      />
       {/* Vendor Code + full address off the vendor master (A26). */}
       <Pair
         label="Vendor Code"
@@ -427,7 +449,9 @@ function DetailGrid(props: {
       />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
+        <div style={{ whiteSpace: 'pre-wrap' }}>
+          {withChip(detail.remarks, pendingChanges, 'remarks')}
+        </div>
       </div>
     </div>
   );
@@ -439,5 +463,24 @@ function Pair(props: { label: string; value: string | React.ReactNode }): React.
       <span className="form-label">{props.label}</span>
       <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>
+  );
+}
+
+/** ADR-202 — append the amber "→ after" chip to a header field's value when an
+ *  edit to that field is staged. With no pending change the value is returned
+ *  as-is (falling back to an em-dash for an empty field). */
+function withChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  field: string,
+): React.ReactNode {
+  const c = headerPendingChange(changes, field);
+  const shown = value == null || value === '' ? '—' : value;
+  if (!c) return shown;
+  return (
+    <>
+      {shown}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

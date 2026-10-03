@@ -40,7 +40,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
-import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { resolveRmItem } from '../../lib/rm-item';
@@ -63,6 +63,7 @@ import {
 } from '@innovic/shared';
 import type {
   CreateRouteCardOpInput,
+  DocumentEditStagedResult,
   DocumentTraceability,
   JcRouteCardWriteBack,
   JobCardSaveResult,
@@ -2055,7 +2056,7 @@ async function runningOpIds(tx: DbTransaction, jobCardId: string): Promise<Set<s
 }
 
 /** Header fields the Job Card form edits, with their screen labels (NAMING). */
-const JC_EDIT_FIELDS = [
+export const JC_EDIT_FIELDS = [
   { key: 'jcDate', label: 'JC Date' },
   { key: 'itemCode', label: 'Item Code' },
   { key: 'orderQty', label: 'JC Qty' },
@@ -2071,590 +2072,734 @@ export async function updateJobCard(
   user: AuthContext,
 ): Promise<JobCardSaveResult> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  // The access check stays in this PUBLIC wrapper, not the tx body, so the
+  // edit-approval engine's applyEdit can replay an approved edit through
+  // updateJobCardTx for an approver who holds `approve` but not `edit` (mirrors
+  // updatePlan / updatePurchaseOrder).
   await requireFormAccess(user, 'jc_create', 'edit');
+  const routeCardWriteBack = await withUserContext(user, (tx) =>
+    updateJobCardTx(tx, id, input, user),
+  );
+  return { ...(await getJobCard(id, user)), routeCardWriteBack };
+}
+
+/**
+ * The body of a Job Card edit, inside a caller-supplied transaction. Called by
+ * updateJobCard (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one, plus the job_cards row FOR UPDATE lock taken in
+ * jobCardEditRegistryEntry.loadForDiff). updateJobCard has no updated_at guard of
+ * its own, so that engine-provided lock is this writer's concurrency guard. Every
+ * existing business guard is preserved verbatim: the short-closed PO freeze, the
+ * NC open-qty cap, item-frozen-after-logs, qty-vs-PO, qty >= completed, the
+ * customer-material floor, line balance, the locked-op guards and the
+ * complete/closed routing freeze. The caller performs the `edit` / `approve`
+ * access check.
+ */
+export async function updateJobCardTx(
+  tx: DbTransaction,
+  id: string,
+  input: JobCardWriteInput,
+  user: AuthContext,
+): Promise<JcRouteCardWriteBack | null> {
   const companyId = requireCompany(user);
   // Money-in rule (mirrors machines.updateMachine): a caller who cannot SEE the
   // outsource cost cannot SET it — their blinded form posts 0, so we keep the
   // stored value instead of letting it zero a cost they were never shown.
   const showMoney = await canSeeFormPrice(user, 'jc_create');
-
   let routeCardWriteBack: JcRouteCardWriteBack | null = null;
-  await withUserContext(user, async (tx) => {
-    const headRows = await tx
+  const headRows = await tx
+    .select({
+      code: jobCards.code,
+      sourceSoLineId: jobCards.sourceSoLineId,
+      sourceJwLineId: jobCards.sourceJwLineId,
+      closedAt: jobCards.closedAt,
+      // Rework / repair child (design §4): drives the always-on terminal QC
+      // and the NC-qty cap below.
+      recoveryKind: jobCards.recoveryKind,
+      parentNcId: jobCards.parentNcId,
+      // ADR-185 — what the card is for and how many, as stored, so the
+      // freeze below can tell a real change from a re-save.
+      itemId: jobCards.itemId,
+      orderQty: jobCards.orderQty,
+      productionOrderId: jobCards.productionOrderId,
+      // ADR-193 phase 3a — kept when the edit payload leaves them out.
+      rawMaterialItemId: jobCards.rawMaterialItemId,
+      rmQtyPerPiece: jobCards.rmQtyPerPiece,
+      // ADR-197 — the before image of every header field the form edits.
+      jcDate: jobCards.jcDate,
+      priority: jobCards.priority,
+      dueDate: jobCards.dueDate,
+      remarks: jobCards.remarks,
+      drawingFilePath: jobCards.drawingFilePath,
+      itemCode: sql<
+        string | null
+      >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
+    })
+    .from(jobCards)
+    .where(
+      and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+    )
+    .limit(1);
+  const head = headRows[0];
+  if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+  // ADR-182 — a short-closed Production Order's card is frozen: it records
+  // what really happened before the order was stopped and must not be edited.
+  await assertProductionOrderNotShortClosed(tx, id);
+
+  // Interlock 2 on the child (design §4): a recovery card can only ever
+  // cover the pieces its NC still has open — rejected less what recovery
+  // has already cleared or failed. More than that would be inventing pieces
+  // the NC never rejected, and the NC could then close with the child still
+  // owing work.
+  if (head.recoveryKind && head.parentNcId) {
+    const ncRows = await tx
       .select({
-        code: jobCards.code,
-        sourceSoLineId: jobCards.sourceSoLineId,
-        sourceJwLineId: jobCards.sourceJwLineId,
-        closedAt: jobCards.closedAt,
-        // Rework / repair child (design §4): drives the always-on terminal QC
-        // and the NC-qty cap below.
-        recoveryKind: jobCards.recoveryKind,
-        parentNcId: jobCards.parentNcId,
-        // ADR-185 — what the card is for and how many, as stored, so the
-        // freeze below can tell a real change from a re-save.
-        itemId: jobCards.itemId,
-        orderQty: jobCards.orderQty,
-        productionOrderId: jobCards.productionOrderId,
-        // ADR-193 phase 3a — kept when the edit payload leaves them out.
-        rawMaterialItemId: jobCards.rawMaterialItemId,
-        rmQtyPerPiece: jobCards.rmQtyPerPiece,
-        // ADR-197 — the before image of every header field the form edits.
-        jcDate: jobCards.jcDate,
-        priority: jobCards.priority,
-        dueDate: jobCards.dueDate,
-        remarks: jobCards.remarks,
-        drawingFilePath: jobCards.drawingFilePath,
-        itemCode: sql<
-          string | null
-        >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
+        rejectedQty: ncRegister.rejectedQty,
+        clearedQty: ncRegister.clearedQty,
+        failedQty: ncRegister.failedQty,
       })
-      .from(jobCards)
-      .where(
-        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
-      )
+      .from(ncRegister)
+      .where(and(eq(ncRegister.id, head.parentNcId), eq(ncRegister.companyId, companyId)))
       .limit(1);
-    const head = headRows[0];
-    if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
-    // ADR-182 — a short-closed Production Order's card is frozen: it records
-    // what really happened before the order was stopped and must not be edited.
-    await assertProductionOrderNotShortClosed(tx, id);
-
-    // Interlock 2 on the child (design §4): a recovery card can only ever
-    // cover the pieces its NC still has open — rejected less what recovery
-    // has already cleared or failed. More than that would be inventing pieces
-    // the NC never rejected, and the NC could then close with the child still
-    // owing work.
-    if (head.recoveryKind && head.parentNcId) {
-      const ncRows = await tx
-        .select({
-          rejectedQty: ncRegister.rejectedQty,
-          clearedQty: ncRegister.clearedQty,
-          failedQty: ncRegister.failedQty,
-        })
-        .from(ncRegister)
-        .where(and(eq(ncRegister.id, head.parentNcId), eq(ncRegister.companyId, companyId)))
-        .limit(1);
-      const nc = ncRows[0];
-      if (nc) {
-        const openQty = Number(nc.rejectedQty) - Number(nc.clearedQty) - Number(nc.failedQty);
-        if (input.orderQty > openQty) {
-          throw new ValidationError(
-            `JC Qty (${input.orderQty}) cannot be more than the NC's open qty (${openQty}).`,
-          );
-        }
-      }
-    }
-
-    const item = await resolveItem(tx, input.itemCode, companyId);
-
-    // ADR-185 — a card's item and qty are facts every other screen repeats
-    // (the order, the plan, the SO line's JC Qty), so they freeze once work
-    // exists:
-    //   - the item cannot change after any production / QC log is on the card;
-    //   - a Production Order's card keeps the ORDER's qty (change the order);
-    //   - no card may drop below what an operation has already completed.
-    const workRows = (await tx.execute(sql`
-      SELECT COUNT(l.id)::int AS logs,
-             COALESCE(MAX(vos.completed_qty), 0)::int AS done,
-             (SELECT po.order_qty FROM public.production_orders po
-              WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_qty,
-             (SELECT po.code FROM public.production_orders po
-              WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_code
-      FROM public.jc_ops o
-      LEFT JOIN public.op_log l ON l.jc_op_id = o.id
-      LEFT JOIN public.v_jc_op_status vos ON vos.jc_op_id = o.id
-      WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
-    `)) as unknown as Array<{
-      logs: number;
-      done: number;
-      po_qty: number | null;
-      po_code: string | null;
-    }>;
-    const work = workRows[0];
-    if (work && Number(work.logs) > 0 && (item.id ?? null) !== (head.itemId ?? null)) {
-      throw new ValidationError(
-        `${head.code} already has production logged — its item cannot be changed. Raise a new card for the other item.`,
-      );
-    }
-    // Only a CHANGE of qty is refused: a card whose qty already differs from
-    // its order (edited before this rule) still saves unchanged.
-    if (
-      work?.po_qty != null &&
-      input.orderQty !== head.orderQty &&
-      input.orderQty !== Number(work.po_qty)
-    ) {
-      throw new ValidationError(
-        `${head.code} belongs to Production Order ${work.po_code ?? ''} — its JC Qty is the order's qty (${work.po_qty}).`,
-      );
-    }
-    if (work && input.orderQty < Number(work.done)) {
-      throw new ValidationError(
-        `JC Qty (${input.orderQty}) cannot be less than what is already completed on ${head.code} (${work.done}).`,
-      );
-    }
-    // ADR-203 — nor below the customer material still issued to it (issued −
-    // returned to store): 1 piece per part, so a smaller card would hold
-    // material it can never use. Floor = max(completed, issued net).
-    if (input.orderQty !== head.orderQty) {
-      const issuedRows = (await tx.execute(sql`
-        SELECT COALESCE(SUM(qty - returned_to_store_qty), 0)::int AS "net"
-        FROM public.party_material_issues
-        WHERE job_card_id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-      `)) as unknown as Array<{ net: number }>;
-      const issuedNet = Number(issuedRows[0]?.net ?? 0);
-      if (input.orderQty < issuedNet) {
+    const nc = ncRows[0];
+    if (nc) {
+      const openQty = Number(nc.rejectedQty) - Number(nc.clearedQty) - Number(nc.failedQty);
+      if (input.orderQty > openQty) {
         throw new ValidationError(
-          `JC Qty (${input.orderQty}) cannot be less than the customer material issued to ${head.code} ` +
-            `(${issuedNet}, after returns to store). Return the spare pieces to store first.`,
+          `JC Qty (${input.orderQty}) cannot be more than the NC's open qty (${openQty}).`,
         );
       }
     }
+  }
 
-    await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
-    // The generated terminal QC op comes back on edit with an id. If the person
-    // has since retyped an op to OSP, that op is stale (Rule B never gates an
-    // outsource JC with a terminal QC) — drop it before anything else looks at
-    // the routing, or the "no QC directly after OSP" rule below would blame an
-    // op nobody entered. `userOps` is the routing as the person meant it.
-    const started = await startedOpIds(tx, id);
-    const userOps = stripStaleGeneratedTerminalQc(input.ops, {
-      recoveryKind: head.recoveryKind,
-      isStarted: (o) => !!o.id && started.has(o.id),
-    });
-    const ops = withTerminalQcOp(userOps, { recoveryKind: head.recoveryKind });
-    const types = validateOps(ops);
-    const machineMap = await resolveCodeMap(
-      tx,
-      machines,
-      ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
-      companyId,
-      'Machine',
+  const item = await resolveItem(tx, input.itemCode, companyId);
+
+  // ADR-185 — a card's item and qty are facts every other screen repeats
+  // (the order, the plan, the SO line's JC Qty), so they freeze once work
+  // exists:
+  //   - the item cannot change after any production / QC log is on the card;
+  //   - a Production Order's card keeps the ORDER's qty (change the order);
+  //   - no card may drop below what an operation has already completed.
+  const workRows = (await tx.execute(sql`
+    SELECT COUNT(l.id)::int AS logs,
+           COALESCE(MAX(vos.completed_qty), 0)::int AS done,
+           (SELECT po.order_qty FROM public.production_orders po
+            WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_qty,
+           (SELECT po.code FROM public.production_orders po
+            WHERE po.id = ${head.productionOrderId ?? null}::uuid AND po.deleted_at IS NULL) AS po_code
+    FROM public.jc_ops o
+    LEFT JOIN public.op_log l ON l.jc_op_id = o.id
+    LEFT JOIN public.v_jc_op_status vos ON vos.jc_op_id = o.id
+    WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
+  `)) as unknown as Array<{
+    logs: number;
+    done: number;
+    po_qty: number | null;
+    po_code: string | null;
+  }>;
+  const work = workRows[0];
+  if (work && Number(work.logs) > 0 && (item.id ?? null) !== (head.itemId ?? null)) {
+    throw new ValidationError(
+      `${head.code} already has production logged — its item cannot be changed. Raise a new card for the other item.`,
     );
-    const vendorMap = await resolveCodeMap(
-      tx,
-      vendors,
-      ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
-      companyId,
-      'Vendor',
+  }
+  // Only a CHANGE of qty is refused: a card whose qty already differs from
+  // its order (edited before this rule) still saves unchanged.
+  if (
+    work?.po_qty != null &&
+    input.orderQty !== head.orderQty &&
+    input.orderQty !== Number(work.po_qty)
+  ) {
+    throw new ValidationError(
+      `${head.code} belongs to Production Order ${work.po_code ?? ''} — its JC Qty is the order's qty (${work.po_qty}).`,
     );
-
-    // Existing ops + which are locked. An op is locked when it has started (any
-    // op_log/running session) OR — for an outsource op — it is already committed
-    // to a PR/PO/DC. A locked op can't be removed, retyped, or re-sequenced.
-    const existing = await tx
-      .select({
-        id: jcOps.id,
-        opType: jcOps.opType,
-        opSeq: jcOps.opSeq,
-        machineCodeText: jcOps.machineCodeText,
-        // Routing detail — read so the route-card auto-save below can tell a
-        // real routing change from an edit that only touched the header.
-        operation: jcOps.operation,
-        cycleTimeMin: jcOps.cycleTimeMin,
-        program: jcOps.program,
-        toolNo: jcOps.toolNo,
-        toolDetails: jcOps.toolDetails,
-        qcRequired: jcOps.qcRequired,
-        outsourceVendorText: jcOps.outsourceVendorText,
-        outsourceStatus: jcOps.outsourceStatus,
-        outsourcePrId: jcOps.outsourcePrId,
-        outsourcePoLineId: jcOps.outsourcePoLineId,
-        outsourceCost: jcOps.outsourceCost,
-        prStatus: purchaseRequests.status,
-        prDeletedAt: purchaseRequests.deletedAt,
-      })
-      .from(jcOps)
-      .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
-      .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
-    const existingById = new Map(existing.map((o) => [o.id, o]));
-    // Routing rule: a QC op may not sit directly after an OSP op. Checked on
-    // the USER's ops (input.ops, never the list with the appended terminal QC).
-    // Rework/repair children are exempt (the server itself appends the terminal
-    // QC after an outsource-last routing there). Pairs already saved side by
-    // side on this JC are grandfathered so old JCs stay editable.
-    if (!head.recoveryKind) {
-      assertNoQcDirectlyAfterOutsource(userOps, grandfatheredOspQcPairs(existing));
-    }
-    const running = await runningOpIds(tx, id);
-    // Committed = outsource op whose PR/PO/DC paperwork already points at it;
-    // removing/retyping/moving it would orphan that paperwork.
-    //
-    // ADR-101: only LIVE paperwork commits an op. Cancelling the PR is exactly
-    // how a user frees a mistaken outsource op, so a `pr_raised` stamp whose PR
-    // was later cancelled (or soft-deleted) is stale and must not keep the op
-    // frozen. Real commitments still latch: a PO line pointing at the op, or a
-    // status past PO issue (material has physically moved to the vendor).
-    const committed = new Set(
-      existing
-        .filter(
-          (o) =>
-            o.outsourcePoLineId != null ||
-            OSP_MOVED_STATUSES.has(o.outsourceStatus ?? '') ||
-            (o.outsourcePrId != null && o.prDeletedAt == null && o.prStatus !== 'cancelled'),
-        )
-        .map((o) => o.id),
+  }
+  if (work && input.orderQty < Number(work.done)) {
+    throw new ValidationError(
+      `JC Qty (${input.orderQty}) cannot be less than what is already completed on ${head.code} (${work.done}).`,
     );
-    // `ops` may carry an appended Final Inspection QC op (no id) — harmless for payloadIds
-    // (id-filtered) but the upsert loop below must iterate `ops` so it lands.
-    const payloadIds = new Set(ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
-    // Each kept op's NEW op_seq = its 1-based position in the payload.
-    const newSeqById = new Map<string, number>();
-    ops.forEach((o, i) => {
-      if (o.id) newSeqById.set(o.id, i + 1);
-    });
-
-    // Freeze guard: once the JC is complete/closed, its routing is frozen — no
-    // add / remove / reorder / retype (mirrors the PO/JWSO status-immutable rule).
-    const statusRows = (await tx.execute(sql`
-      SELECT COALESCE(computed_status, 'no_ops') AS s
-      FROM public.v_jc_status WHERE job_card_id = ${id}::uuid
-    `)) as unknown as Array<{ s: string }>;
-    const computedStatus = statusRows[0]?.s ?? 'no_ops';
-    const finished =
-      head.closedAt != null || computedStatus === 'complete' || computedStatus === 'closed';
-    if (finished) {
-      const structurallyChanged =
-        existing.some((ex) => !payloadIds.has(ex.id)) ||
-        ops.some((o, i) => {
-          if (!o.id || !existingById.has(o.id)) return true; // added op
-          const ex = existingById.get(o.id)!;
-          return ex.opSeq !== i + 1 || o.opType !== ex.opType; // moved or retyped
-        });
-      if (structurallyChanged) {
-        throw new ValidationError(
-          'This JC is Completed, so its operations cannot change. Reopen it first.',
-        );
-      }
+  }
+  // ADR-203 — nor below the customer material still issued to it (issued −
+  // returned to store): 1 piece per part, so a smaller card would hold
+  // material it can never use. Floor = max(completed, issued net).
+  if (input.orderQty !== head.orderQty) {
+    const issuedRows = (await tx.execute(sql`
+      SELECT COALESCE(SUM(qty - returned_to_store_qty), 0)::int AS "net"
+      FROM public.party_material_issues
+      WHERE job_card_id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+    `)) as unknown as Array<{ net: number }>;
+    const issuedNet = Number(issuedRows[0]?.net ?? 0);
+    if (input.orderQty < issuedNet) {
+      throw new ValidationError(
+        `JC Qty (${input.orderQty}) cannot be less than the customer material issued to ${head.code} ` +
+          `(${issuedNet}, after returns to store). Return the spare pieces to store first.`,
+      );
     }
+  }
 
-    // Machine swaps made through THIS form, collected for the activity log.
-    // Before 0095 the form could not change a started op's machine at all, so
-    // there was nothing to record; now it can, and a swap that leaves only the
-    // generic "Updated <JC>" line is untraceable (ADR-125).
-    const machineSwaps: string[] = [];
-    // ADR-197 — before → after of the routing, per op: machine / vendor /
-    // operation on a kept op, and ops added or removed.
-    const opChanges: ActivityChange[] = [];
+  await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
+  // The generated terminal QC op comes back on edit with an id. If the person
+  // has since retyped an op to OSP, that op is stale (Rule B never gates an
+  // outsource JC with a terminal QC) — drop it before anything else looks at
+  // the routing, or the "no QC directly after OSP" rule below would blame an
+  // op nobody entered. `userOps` is the routing as the person meant it.
+  const started = await startedOpIds(tx, id);
+  const userOps = stripStaleGeneratedTerminalQc(input.ops, {
+    recoveryKind: head.recoveryKind,
+    isStarted: (o) => !!o.id && started.has(o.id),
+  });
+  const ops = withTerminalQcOp(userOps, { recoveryKind: head.recoveryKind });
+  const types = validateOps(ops);
+  const machineMap = await resolveCodeMap(
+    tx,
+    machines,
+    ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
+    companyId,
+    'Machine',
+  );
+  const vendorMap = await resolveCodeMap(
+    tx,
+    vendors,
+    ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
+    companyId,
+    'Vendor',
+  );
 
-    // Guard: a locked op may not be removed, retyped, or re-sequenced. `started`
-    // wins over `committed` so its (logged-work) message shows when both apply.
-    for (const ex of existing) {
-      const isStarted = started.has(ex.id);
-      const isCommitted = committed.has(ex.id);
-      if (!isStarted && !isCommitted) continue;
-      // display rule — see opSrNo in @innovic/shared
-      const subject = isStarted
-        ? `Op ${opSrNo(ex.opSeq)} — it already has logged work`
-        : `Op ${opSrNo(ex.opSeq)} — its PR / PO exists. Cancel it first`;
-      if (!payloadIds.has(ex.id)) {
-        throw new ValidationError(`Cannot remove ${subject}.`);
-      }
-      const inPayload = ops.find((o) => o.id === ex.id);
-      if (inPayload && inPayload.opType !== ex.opType) {
-        throw new ValidationError(`Cannot change the type of ${subject}.`);
-      }
-      const newSeq = newSeqById.get(ex.id);
-      if (newSeq !== undefined && newSeq !== ex.opSeq) {
-        throw new ValidationError(`Cannot move ${subject}.`);
-      }
-      // Machine change on a started op is ALLOWED. Since migration 0095 each
-      // op_log row permanently carries the machine that produced its qty, so
-      // `jc_ops.machine_id` no longer owns the history — it only says which
-      // machine runs the REMAINING qty (50 pcs on CNC-01, balance on CNC-02,
-      // both kept). The one case still blocked matches changeJcOpMachine and
-      // ADR-084: an OPEN in-house session's pieces reach op_log — with their
-      // machine stamped — only when the session is stopped, so the machine must
-      // not move out from under it. Only process ops carry a machine.
-      if (
-        running.has(ex.id) &&
-        inPayload &&
-        inPayload.opType === 'process' &&
-        (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
-      ) {
-        throw new ValidationError('Stop Operation first, then change the machine.');
-      }
-      if (
-        inPayload &&
-        inPayload.opType === 'process' &&
-        (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
-      ) {
-        // display rule — see opSrNo in @innovic/shared
-        machineSwaps.push(
-          `Op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
-        );
-      }
-    }
+  // Existing ops + which are locked. An op is locked when it has started (any
+  // op_log/running session) OR — for an outsource op — it is already committed
+  // to a PR/PO/DC. A locked op can't be removed, retyped, or re-sequenced.
+  const existing = await tx
+    .select({
+      id: jcOps.id,
+      opType: jcOps.opType,
+      opSeq: jcOps.opSeq,
+      machineCodeText: jcOps.machineCodeText,
+      // Routing detail — read so the route-card auto-save below can tell a
+      // real routing change from an edit that only touched the header.
+      operation: jcOps.operation,
+      cycleTimeMin: jcOps.cycleTimeMin,
+      program: jcOps.program,
+      toolNo: jcOps.toolNo,
+      toolDetails: jcOps.toolDetails,
+      qcRequired: jcOps.qcRequired,
+      outsourceVendorText: jcOps.outsourceVendorText,
+      outsourceStatus: jcOps.outsourceStatus,
+      outsourcePrId: jcOps.outsourcePrId,
+      outsourcePoLineId: jcOps.outsourcePoLineId,
+      outsourceCost: jcOps.outsourceCost,
+      prStatus: purchaseRequests.status,
+      prDeletedAt: purchaseRequests.deletedAt,
+    })
+    .from(jcOps)
+    .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
+    .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
+  const existingById = new Map(existing.map((o) => [o.id, o]));
+  // Routing rule: a QC op may not sit directly after an OSP op. Checked on
+  // the USER's ops (input.ops, never the list with the appended terminal QC).
+  // Rework/repair children are exempt (the server itself appends the terminal
+  // QC after an outsource-last routing there). Pairs already saved side by
+  // side on this JC are grandfathered so old JCs stay editable.
+  if (!head.recoveryKind) {
+    assertNoQcDirectlyAfterOutsource(userOps, grandfatheredOspQcPairs(existing));
+  }
+  const running = await runningOpIds(tx, id);
+  // Committed = outsource op whose PR/PO/DC paperwork already points at it;
+  // removing/retyping/moving it would orphan that paperwork.
+  //
+  // ADR-101: only LIVE paperwork commits an op. Cancelling the PR is exactly
+  // how a user frees a mistaken outsource op, so a `pr_raised` stamp whose PR
+  // was later cancelled (or soft-deleted) is stale and must not keep the op
+  // frozen. Real commitments still latch: a PO line pointing at the op, or a
+  // status past PO issue (material has physically moved to the vendor).
+  const committed = new Set(
+    existing
+      .filter(
+        (o) =>
+          o.outsourcePoLineId != null ||
+          OSP_MOVED_STATUSES.has(o.outsourceStatus ?? '') ||
+          (o.outsourcePrId != null && o.prDeletedAt == null && o.prStatus !== 'cancelled'),
+      )
+      .map((o) => o.id),
+  );
+  // `ops` may carry an appended Final Inspection QC op (no id) — harmless for payloadIds
+  // (id-filtered) but the upsert loop below must iterate `ops` so it lands.
+  const payloadIds = new Set(ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
+  // Each kept op's NEW op_seq = its 1-based position in the payload.
+  const newSeqById = new Map<string, number>();
+  ops.forEach((o, i) => {
+    if (o.id) newSeqById.set(o.id, i + 1);
+  });
 
-    for (let i = 0; i < ops.length; i += 1) {
-      const o = ops[i]!;
-      const t = types[i]!;
-      const ex = o.id ? existingById.get(o.id) : undefined;
-      const sr = opSrNo(i + 1);
-      if (!ex) {
-        opChanges.push({
-          field: `op.${i + 1}`,
-          label: `Op ${sr}`,
-          before: null,
-          after: o.operation,
-        });
-        continue;
-      }
-      if (t === 'process' && (ex.machineCodeText ?? '') !== (o.machineCode ?? '')) {
-        opChanges.push({
-          field: `op.${i + 1}.machine`,
-          label: `Op ${sr} Machine`,
-          before: ex.machineCodeText ?? null,
-          after: o.machineCode || null,
-        });
-      }
-      if (t === 'outsource' && (ex.outsourceVendorText ?? '') !== (o.outsourceVendorCode ?? '')) {
-        opChanges.push({
-          field: `op.${i + 1}.vendor`,
-          label: `Op ${sr} Vendor`,
-          before: ex.outsourceVendorText ?? null,
-          after: o.outsourceVendorCode || null,
-        });
-      }
-      if (ex.operation !== o.operation) {
-        opChanges.push({
-          field: `op.${i + 1}.operation`,
-          label: `Op ${sr} Operation`,
-          before: ex.operation,
-          after: o.operation,
-        });
-      }
-      if (ex.opType !== t) {
-        opChanges.push({
-          field: `op.${i + 1}.type`,
-          label: `Op ${sr} Type`,
-          before: ex.opType,
-          after: t,
-        });
-      }
-    }
-    for (const ex of existing) {
-      if (payloadIds.has(ex.id)) continue;
-      opChanges.push({
-        field: `op.removed.${ex.opSeq}`,
-        label: `Op ${opSrNo(ex.opSeq)} (removed)`,
-        before: ex.operation,
-        after: null,
-      });
-    }
-
-    const now = new Date();
-    // 1. Soft-delete removed ops (all guaranteed un-started by the guard above).
-    const removedIds = existing.filter((o) => !payloadIds.has(o.id)).map((o) => o.id);
-
-    // Did the ROUTING actually change? Compared against the pre-edit rows read
-    // above, so an edit that only touched the header (due date, remarks, qty)
-    // leaves the item's route card completely alone.
-    const opsChanged =
-      removedIds.length > 0 ||
-      ops.length !== existing.length ||
+  // Freeze guard: once the JC is complete/closed, its routing is frozen — no
+  // add / remove / reorder / retype (mirrors the PO/JWSO status-immutable rule).
+  const statusRows = (await tx.execute(sql`
+    SELECT COALESCE(computed_status, 'no_ops') AS s
+    FROM public.v_jc_status WHERE job_card_id = ${id}::uuid
+  `)) as unknown as Array<{ s: string }>;
+  const computedStatus = statusRows[0]?.s ?? 'no_ops';
+  const finished =
+    head.closedAt != null || computedStatus === 'complete' || computedStatus === 'closed';
+  if (finished) {
+    const structurallyChanged =
+      existing.some((ex) => !payloadIds.has(ex.id)) ||
       ops.some((o, i) => {
-        const ex = o.id ? existingById.get(o.id) : undefined;
-        if (!ex) return true; // added op
-        const t = types[i]!;
-        const machineText = t === 'process' ? (o.machineCode ?? '') : t === 'qc' ? 'QC' : '';
-        return (
-          ex.opSeq !== i + 1 ||
-          ex.opType !== t ||
-          ex.operation !== o.operation ||
-          Number(ex.cycleTimeMin) !== Number(o.cycleTimeMin || 0) ||
-          (ex.machineCodeText ?? '') !== machineText ||
-          (ex.program ?? '') !== (o.program ?? '') ||
-          (ex.toolNo ?? '') !== (o.toolNo ?? '') ||
-          (ex.toolDetails ?? '') !== (o.toolDetails ?? '') ||
-          Boolean(ex.qcRequired) !== (t === 'qc' ? true : Boolean(o.qcRequired)) ||
-          (ex.outsourceVendorText ?? '') !==
-            (t === 'outsource' ? (o.outsourceVendorCode ?? '') : '')
-        );
+        if (!o.id || !existingById.has(o.id)) return true; // added op
+        const ex = existingById.get(o.id)!;
+        return ex.opSeq !== i + 1 || o.opType !== ex.opType; // moved or retyped
       });
+    if (structurallyChanged) {
+      throw new ValidationError(
+        'This JC is Completed, so its operations cannot change. Reopen it first.',
+      );
+    }
+  }
 
-    if (removedIds.length > 0) {
-      await tx
-        .update(jcOps)
-        .set({ deletedAt: now, updatedBy: user.id })
-        .where(inArray(jcOps.id, removedIds));
+  // Machine swaps made through THIS form, collected for the activity log.
+  // Before 0095 the form could not change a started op's machine at all, so
+  // there was nothing to record; now it can, and a swap that leaves only the
+  // generic "Updated <JC>" line is untraceable (ADR-125).
+  const machineSwaps: string[] = [];
+  // ADR-197 — before → after of the routing, per op: machine / vendor /
+  // operation on a kept op, and ops added or removed.
+  const opChanges: ActivityChange[] = [];
+
+  // Guard: a locked op may not be removed, retyped, or re-sequenced. `started`
+  // wins over `committed` so its (logged-work) message shows when both apply.
+  for (const ex of existing) {
+    const isStarted = started.has(ex.id);
+    const isCommitted = committed.has(ex.id);
+    if (!isStarted && !isCommitted) continue;
+    // display rule — see opSrNo in @innovic/shared
+    const subject = isStarted
+      ? `Op ${opSrNo(ex.opSeq)} — it already has logged work`
+      : `Op ${opSrNo(ex.opSeq)} — its PR / PO exists. Cancel it first`;
+    if (!payloadIds.has(ex.id)) {
+      throw new ValidationError(`Cannot remove ${subject}.`);
     }
-    // 2. Park kept ops' opSeq out of the 1..N range to avoid unique collisions
-    //    while we renumber (jc_ops unique on (job_card_id, op_seq)).
-    const keptIds = ops
-      .map((o) => o.id)
-      .filter((x): x is string => Boolean(x) && existingById.has(x!));
-    if (keptIds.length > 0) {
-      await tx
-        .update(jcOps)
-        .set({ opSeq: sql`${jcOps.opSeq} + 100000` })
-        .where(inArray(jcOps.id, keptIds));
+    const inPayload = ops.find((o) => o.id === ex.id);
+    if (inPayload && inPayload.opType !== ex.opType) {
+      throw new ValidationError(`Cannot change the type of ${subject}.`);
     }
-    // 3. Upsert ops in payload order (final op_seq = index + 1). Iterates `ops`
-    //    (not input.ops) so an appended Final Inspection QC op is inserted as the last op.
-    for (let i = 0; i < ops.length; i += 1) {
-      const o = ops[i]!;
+    const newSeq = newSeqById.get(ex.id);
+    if (newSeq !== undefined && newSeq !== ex.opSeq) {
+      throw new ValidationError(`Cannot move ${subject}.`);
+    }
+    // Machine change on a started op is ALLOWED. Since migration 0095 each
+    // op_log row permanently carries the machine that produced its qty, so
+    // `jc_ops.machine_id` no longer owns the history — it only says which
+    // machine runs the REMAINING qty (50 pcs on CNC-01, balance on CNC-02,
+    // both kept). The one case still blocked matches changeJcOpMachine and
+    // ADR-084: an OPEN in-house session's pieces reach op_log — with their
+    // machine stamped — only when the session is stopped, so the machine must
+    // not move out from under it. Only process ops carry a machine.
+    if (
+      running.has(ex.id) &&
+      inPayload &&
+      inPayload.opType === 'process' &&
+      (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
+    ) {
+      throw new ValidationError('Stop Operation first, then change the machine.');
+    }
+    if (
+      inPayload &&
+      inPayload.opType === 'process' &&
+      (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
+    ) {
+      // display rule — see opSrNo in @innovic/shared
+      machineSwaps.push(
+        `Op ${opSrNo(ex.opSeq)} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
+      );
+    }
+  }
+
+  for (let i = 0; i < ops.length; i += 1) {
+    const o = ops[i]!;
+    const t = types[i]!;
+    const ex = o.id ? existingById.get(o.id) : undefined;
+    const sr = opSrNo(i + 1);
+    if (!ex) {
+      opChanges.push({
+        field: `op.${i + 1}`,
+        label: `Op ${sr}`,
+        before: null,
+        after: o.operation,
+      });
+      continue;
+    }
+    if (t === 'process' && (ex.machineCodeText ?? '') !== (o.machineCode ?? '')) {
+      opChanges.push({
+        field: `op.${i + 1}.machine`,
+        label: `Op ${sr} Machine`,
+        before: ex.machineCodeText ?? null,
+        after: o.machineCode || null,
+      });
+    }
+    if (t === 'outsource' && (ex.outsourceVendorText ?? '') !== (o.outsourceVendorCode ?? '')) {
+      opChanges.push({
+        field: `op.${i + 1}.vendor`,
+        label: `Op ${sr} Vendor`,
+        before: ex.outsourceVendorText ?? null,
+        after: o.outsourceVendorCode || null,
+      });
+    }
+    if (ex.operation !== o.operation) {
+      opChanges.push({
+        field: `op.${i + 1}.operation`,
+        label: `Op ${sr} Operation`,
+        before: ex.operation,
+        after: o.operation,
+      });
+    }
+    if (ex.opType !== t) {
+      opChanges.push({
+        field: `op.${i + 1}.type`,
+        label: `Op ${sr} Type`,
+        before: ex.opType,
+        after: t,
+      });
+    }
+  }
+  for (const ex of existing) {
+    if (payloadIds.has(ex.id)) continue;
+    opChanges.push({
+      field: `op.removed.${ex.opSeq}`,
+      label: `Op ${opSrNo(ex.opSeq)} (removed)`,
+      before: ex.operation,
+      after: null,
+    });
+  }
+
+  const now = new Date();
+  // 1. Soft-delete removed ops (all guaranteed un-started by the guard above).
+  const removedIds = existing.filter((o) => !payloadIds.has(o.id)).map((o) => o.id);
+
+  // Did the ROUTING actually change? Compared against the pre-edit rows read
+  // above, so an edit that only touched the header (due date, remarks, qty)
+  // leaves the item's route card completely alone.
+  const opsChanged =
+    removedIds.length > 0 ||
+    ops.length !== existing.length ||
+    ops.some((o, i) => {
+      const ex = o.id ? existingById.get(o.id) : undefined;
+      if (!ex) return true; // added op
       const t = types[i]!;
-      // Preserve the stored cost when the editor cannot see money (see the
-      // money-in note above); otherwise take the posted value.
-      const postedCost = NUM(t === 'outsource' ? o.outsourceCost || 0 : 0);
-      const exCost = o.id ? existingById.get(o.id)?.outsourceCost : undefined;
-      const outsourceCostVal = showMoney || exCost == null ? postedCost : NUM(Number(exCost) || 0);
-      const vals = {
-        machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,
-        machineCodeText: t === 'process' ? (o.machineCode ?? null) : t === 'qc' ? 'QC' : null,
-        operation: o.operation,
-        opType: t,
-        cycleTimeMin: NUM(o.cycleTimeMin || 0),
-        program: o.program ?? null,
-        toolNo: o.toolNo ?? null,
-        toolDetails: o.toolDetails ?? null,
-        qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
-        outsourceVendorId:
-          t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
-        outsourceVendorText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
-        outsourceCost: outsourceCostVal,
-        updatedBy: user.id,
-        updatedAt: now,
-      };
-      if (o.id && existingById.has(o.id)) {
-        await tx
-          .update(jcOps)
-          .set({ ...vals, opSeq: i + 1 })
-          .where(eq(jcOps.id, o.id));
-      } else {
-        await tx.insert(jcOps).values({
-          companyId,
-          jobCardId: id,
-          opSeq: i + 1,
-          ...vals,
-          createdBy: user.id,
-        });
-      }
-    }
-
-    // 3b. Auto-raise a JW_OSP purchase request for every op that is now
-    //     outsource but not yet linked to a PR (see autoRaiseOspPrs).
-    const raisedPrCodes = await autoRaiseOspPrs(tx, {
-      companyId,
-      jobCardId: id,
-      jcCode: head.code,
-      jcDate: input.jcDate,
-      orderQty: input.orderQty,
-      item,
-      sourceSoLineId: head.sourceSoLineId,
-      origin: 'JC edit',
-      userId: user.id,
+      const machineText = t === 'process' ? (o.machineCode ?? '') : t === 'qc' ? 'QC' : '';
+      return (
+        ex.opSeq !== i + 1 ||
+        ex.opType !== t ||
+        ex.operation !== o.operation ||
+        Number(ex.cycleTimeMin) !== Number(o.cycleTimeMin || 0) ||
+        (ex.machineCodeText ?? '') !== machineText ||
+        (ex.program ?? '') !== (o.program ?? '') ||
+        (ex.toolNo ?? '') !== (o.toolNo ?? '') ||
+        (ex.toolDetails ?? '') !== (o.toolDetails ?? '') ||
+        Boolean(ex.qcRequired) !== (t === 'qc' ? true : Boolean(o.qcRequired)) ||
+        (ex.outsourceVendorText ?? '') !==
+          (t === 'outsource' ? (o.outsourceVendorCode ?? '') : '')
+      );
     });
 
-    // 4. Header.
-    // Resolved once, up here: the header write below AND the route-card
-    // auto-save at step 6 both need it, and resolving it twice would run the
-    // master lookups twice for the same answer.
-    const rawMaterial = await resolveJcRawMaterial(tx, companyId, input, {
-      rawMaterialItemId: head.rawMaterialItemId,
-      rmQtyPerPiece: head.rmQtyPerPiece,
-    });
+  if (removedIds.length > 0) {
     await tx
-      .update(jobCards)
-      .set({
+      .update(jcOps)
+      .set({ deletedAt: now, updatedBy: user.id })
+      .where(inArray(jcOps.id, removedIds));
+  }
+  // 2. Park kept ops' opSeq out of the 1..N range to avoid unique collisions
+  //    while we renumber (jc_ops unique on (job_card_id, op_seq)).
+  const keptIds = ops
+    .map((o) => o.id)
+    .filter((x): x is string => Boolean(x) && existingById.has(x!));
+  if (keptIds.length > 0) {
+    await tx
+      .update(jcOps)
+      .set({ opSeq: sql`${jcOps.opSeq} + 100000` })
+      .where(inArray(jcOps.id, keptIds));
+  }
+  // 3. Upsert ops in payload order (final op_seq = index + 1). Iterates `ops`
+  //    (not input.ops) so an appended Final Inspection QC op is inserted as the last op.
+  for (let i = 0; i < ops.length; i += 1) {
+    const o = ops[i]!;
+    const t = types[i]!;
+    // Preserve the stored cost when the editor cannot see money (see the
+    // money-in note above); otherwise take the posted value.
+    const postedCost = NUM(t === 'outsource' ? o.outsourceCost || 0 : 0);
+    const exCost = o.id ? existingById.get(o.id)?.outsourceCost : undefined;
+    const outsourceCostVal = showMoney || exCost == null ? postedCost : NUM(Number(exCost) || 0);
+    const vals = {
+      machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,
+      machineCodeText: t === 'process' ? (o.machineCode ?? null) : t === 'qc' ? 'QC' : null,
+      operation: o.operation,
+      opType: t,
+      cycleTimeMin: NUM(o.cycleTimeMin || 0),
+      program: o.program ?? null,
+      toolNo: o.toolNo ?? null,
+      toolDetails: o.toolDetails ?? null,
+      qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
+      outsourceVendorId:
+        t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
+      outsourceVendorText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
+      outsourceCost: outsourceCostVal,
+      updatedBy: user.id,
+      updatedAt: now,
+    };
+    if (o.id && existingById.has(o.id)) {
+      await tx
+        .update(jcOps)
+        .set({ ...vals, opSeq: i + 1 })
+        .where(eq(jcOps.id, o.id));
+    } else {
+      await tx.insert(jcOps).values({
+        companyId,
+        jobCardId: id,
+        opSeq: i + 1,
+        ...vals,
+        createdBy: user.id,
+      });
+    }
+  }
+
+  // 3b. Auto-raise a JW_OSP purchase request for every op that is now
+  //     outsource but not yet linked to a PR (see autoRaiseOspPrs).
+  const raisedPrCodes = await autoRaiseOspPrs(tx, {
+    companyId,
+    jobCardId: id,
+    jcCode: head.code,
+    jcDate: input.jcDate,
+    orderQty: input.orderQty,
+    item,
+    sourceSoLineId: head.sourceSoLineId,
+    origin: 'JC edit',
+    userId: user.id,
+  });
+
+  // 4. Header.
+  // Resolved once, up here: the header write below AND the route-card
+  // auto-save at step 6 both need it, and resolving it twice would run the
+  // master lookups twice for the same answer.
+  const rawMaterial = await resolveJcRawMaterial(tx, companyId, input, {
+    rawMaterialItemId: head.rawMaterialItemId,
+    rmQtyPerPiece: head.rmQtyPerPiece,
+  });
+  await tx
+    .update(jobCards)
+    .set({
+      jcDate: input.jcDate,
+      itemId: item.id,
+      orderQty: input.orderQty,
+      priority: input.priority,
+      dueDate: input.dueDate ?? null,
+      drawingFilePath: input.drawingFilePath ?? null,
+      remarks: input.remarks ?? null,
+      // Source is IMMUTABLE on update: preserve the existing SO/JW line link
+      // regardless of what the payload sends (an omitted source must NOT null
+      // the link, and an edit must NOT re-point the JC at a different line).
+      sourceSoLineId: head.sourceSoLineId,
+      sourceJwLineId: head.sourceJwLineId,
+      // Raw material: same resolve-then-snapshot rule as create. The form
+      // always sends both sides, so clearing a picker clears the JC.
+      // Hoisted above rather than resolved inline because the route-card
+      // auto-save further down needs the same values.
+      ...rawMaterial,
+      updatedBy: user.id,
+      updatedAt: now,
+    })
+    .where(eq(jobCards.id, id));
+
+  // 5. QC docs — register any new ones (dedup by storage path). Removal of an
+  //    existing doc is done via the file_registry/SO-Documents delete UI.
+  if (input.qcDocs.length > 0) {
+    const have = await tx
+      .select({ p: fileRegistry.storagePath })
+      .from(fileRegistry)
+      .where(and(eq(fileRegistry.jobCardId, id), isNull(fileRegistry.deletedAt)));
+    const havePaths = new Set(have.map((r) => r.p));
+    const fresh = input.qcDocs.filter((d) => !havePaths.has(d.storagePath));
+    await registerQcDocs(
+      tx,
+      { ...input, qcDocs: fresh },
+      {
+        companyId,
+        jobCardId: id,
+        jcCode: head.code,
+        userId: user.id,
+      },
+    );
+  }
+
+  // 6. Route-card auto-save (ADR-051 write half) — only when the routing
+  //    itself changed, and only from the ops the user submitted (the appended
+  //    terminal QC op is filtered out inside saveRouteCardForItem).
+  if (opsChanged && userOps.length > 0) {
+    routeCardWriteBack = await saveRouteCardForItem(
+      tx,
+      companyId,
+      item.id,
+      toRouteCardOps(userOps, types.slice(0, userOps.length), machineMap, vendorMap),
+      user,
+      head.code,
+      // Review M1: an RM pair the form did not send (stored fallback) must
+      // never overwrite the Route Card — only what the user sent may.
+      rawMaterial.rmSent
+        ? rawMaterial
+        : { ...rawMaterial, rawMaterialItemId: null, rmQtyPerPiece: null },
+    );
+  }
+
+  const changes: ActivityChange[] = [
+    ...diffFields(
+      head,
+      {
         jcDate: input.jcDate,
-        itemId: item.id,
+        itemCode: item.code,
         orderQty: input.orderQty,
         priority: input.priority,
         dueDate: input.dueDate ?? null,
-        drawingFilePath: input.drawingFilePath ?? null,
         remarks: input.remarks ?? null,
-        // Source is IMMUTABLE on update: preserve the existing SO/JW line link
-        // regardless of what the payload sends (an omitted source must NOT null
-        // the link, and an edit must NOT re-point the JC at a different line).
-        sourceSoLineId: head.sourceSoLineId,
-        sourceJwLineId: head.sourceJwLineId,
-        // Raw material: same resolve-then-snapshot rule as create. The form
-        // always sends both sides, so clearing a picker clears the JC.
-        // Hoisted above rather than resolved inline because the route-card
-        // auto-save further down needs the same values.
-        ...rawMaterial,
-        updatedBy: user.id,
-        updatedAt: now,
-      })
-      .where(eq(jobCards.id, id));
+        drawingFilePath: input.drawingFilePath ?? null,
+      },
+      JC_EDIT_FIELDS,
+    ),
+    ...opChanges,
+  ];
+  if (changes.length > 0 || raisedPrCodes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'JobCard',
+        entityId: id,
+        changes,
+        detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}${
+          raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
+        }${machineSwaps.length ? ` · machine changed: ${machineSwaps.join('; ')}` : ''}`,
+        refId: head.code,
+      },
+      companyId,
+      user,
+    );
+  }
 
-    // 5. QC docs — register any new ones (dedup by storage path). Removal of an
-    //    existing doc is done via the file_registry/SO-Documents delete UI.
-    if (input.qcDocs.length > 0) {
-      const have = await tx
-        .select({ p: fileRegistry.storagePath })
-        .from(fileRegistry)
-        .where(and(eq(fileRegistry.jobCardId, id), isNull(fileRegistry.deletedAt)));
-      const havePaths = new Set(have.map((r) => r.p));
-      const fresh = input.qcDocs.filter((d) => !havePaths.has(d.storagePath));
-      await registerQcDocs(
-        tx,
-        { ...input, qcDocs: fresh },
-        {
-          companyId,
-          jobCardId: id,
-          jcCode: head.code,
-          userId: user.id,
-        },
-      );
-    }
+  return routeCardWriteBack;
+}
 
-    // 6. Route-card auto-save (ADR-051 write half) — only when the routing
-    //    itself changed, and only from the ops the user submitted (the appended
-    //    terminal QC op is filtered out inside saveRouteCardForItem).
-    if (opsChanged && userOps.length > 0) {
-      routeCardWriteBack = await saveRouteCardForItem(
-        tx,
-        companyId,
-        item.id,
-        toRouteCardOps(userOps, types.slice(0, userOps.length), machineMap, vendorMap),
-        user,
-        head.code,
-        // Review M1: an RM pair the form did not send (stored fallback) must
-        // never overwrite the Route Card — only what the user sent may.
-        rawMaterial.rmSent
-          ? rawMaterial
-          : { ...rawMaterial, rawMaterialItemId: null, rmQtyPerPiece: null },
-      );
-    }
+/**
+ * True when the submitted operations ADD, REMOVE, re-sequence or change any op
+ * versus what is stored on the Job Card. Mirrors planOpsChanged: this pass stages
+ * only the JC's RECORD (header) fields, so an ops change cannot ride along
+ * unapproved — updateJobCardOrStage refuses it when the gate is on. Compared by
+ * position + id so a pure reorder is caught too. Machine is compared only for
+ * process ops and vendor only for outsource ops (the stored *_text columns carry
+ * a value only for that type), matching updateJobCardTx's own opsChanged check.
+ */
+function jcOpsChanged(
+  current: ReadonlyArray<{
+    id: string;
+    operation: string | null;
+    opType: string;
+    cycleTimeMin: string | number | null;
+    machineCodeText: string | null;
+    program: string | null;
+    toolNo: string | null;
+    toolDetails: string | null;
+    qcRequired: boolean | null;
+    outsourceVendorText: string | null;
+  }>,
+  proposed: readonly JcOpInput[],
+): boolean {
+  if (proposed.length !== current.length) return true;
+  const norm = (v: string | null | undefined): string | null => (v == null || v === '' ? null : v);
+  for (let i = 0; i < proposed.length; i += 1) {
+    const p = proposed[i]!;
+    const c = current[i];
+    // No id = a new op; a different id at this position = added / removed /
+    // re-sequenced. Either way the routing changed.
+    if (!p.id || !c || c.id !== p.id) return true;
+    if (norm(p.operation) !== norm(c.operation)) return true;
+    if (p.opType !== c.opType) return true;
+    if (Number(p.cycleTimeMin || 0) !== Number(c.cycleTimeMin ?? 0)) return true;
+    if (norm(p.program) !== norm(c.program)) return true;
+    if (norm(p.toolNo) !== norm(c.toolNo)) return true;
+    if (norm(p.toolDetails) !== norm(c.toolDetails)) return true;
+    if (Boolean(p.qcRequired) !== Boolean(c.qcRequired)) return true;
+    const pMachine = p.opType === 'process' ? norm(p.machineCode) : null;
+    const cMachine = c.opType === 'process' ? norm(c.machineCodeText) : null;
+    if (pMachine !== cMachine) return true;
+    const pVendor = p.opType === 'outsource' ? norm(p.outsourceVendorCode) : null;
+    const cVendor = c.opType === 'outsource' ? norm(c.outsourceVendorText) : null;
+    if (pVendor !== cVendor) return true;
+  }
+  return false;
+}
 
-    const changes: ActivityChange[] = [
-      ...diffFields(
-        head,
-        {
-          jcDate: input.jcDate,
-          itemCode: item.code,
-          orderQty: input.orderQty,
-          priority: input.priority,
-          dueDate: input.dueDate ?? null,
-          remarks: input.remarks ?? null,
-          drawingFilePath: input.drawingFilePath ?? null,
-        },
-        JC_EDIT_FIELDS,
-      ),
-      ...opChanges,
-    ];
-    if (changes.length > 0 || raisedPrCodes.length > 0) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Edit,
-          entity: 'JobCard',
-          entityId: id,
-          changes,
-          detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}${
-            raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
-          }${machineSwaps.length ? ` · machine changed: ${machineSwaps.join('; ')}` : ''}`,
-          refId: head.code,
-        },
-        companyId,
-        user,
-      );
+/**
+ * The Job Card edit entry point the HTTP route calls. Edit-approval (ADR-202):
+ * when the company's gate is on, an edit to a LIVE Job Card is STAGED for
+ * per-change approval and a {staged:true, request} result is returned; a
+ * complete / closed card and a gate-off company fall through to updateJobCard
+ * (today's behaviour). Only the Job Card's own HEADER fields can be staged —
+ * changing any operation is refused while the gate is on (jcOpsChanged), never
+ * silently dropped.
+ */
+export async function updateJobCardOrStage(
+  id: string,
+  input: JobCardWriteInput,
+  user: AuthContext,
+): Promise<JobCardSaveResult | DocumentEditStagedResult> {
+  await requireFormAccess(user, 'jc_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Engine imported dynamically to avoid a static import cycle with
+  // jobcard-edit-registry (which imports updateJobCardTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Live" mirrors jobCardEditRegistryEntry.isLive: editable while not
+    // complete / closed. A completed/closed card edits directly (today's rule).
+    const headRows = (await tx.execute(sql`
+      SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt"
+      FROM public.job_cards jc
+      LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
+      WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
+      LIMIT 1
+    `)) as unknown as Array<{ status: string; closedAt: unknown }>;
+    const head = headRows[0];
+    if (!head) return false;
+    const live = head.closedAt == null && head.status !== 'complete' && head.status !== 'closed';
+    if (!live) return false;
+    // Only HEADER fields go for approval. An ops add / remove / change cannot be
+    // staged, so refuse it clearly rather than let it ride along unapproved.
+    if (input.ops !== undefined) {
+      const currentOps = await tx
+        .select({
+          id: jcOps.id,
+          operation: jcOps.operation,
+          opType: jcOps.opType,
+          cycleTimeMin: jcOps.cycleTimeMin,
+          machineCodeText: jcOps.machineCodeText,
+          program: jcOps.program,
+          toolNo: jcOps.toolNo,
+          toolDetails: jcOps.toolDetails,
+          qcRequired: jcOps.qcRequired,
+          outsourceVendorText: jcOps.outsourceVendorText,
+        })
+        .from(jcOps)
+        .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)))
+        .orderBy(asc(jcOps.opSeq));
+      if (jcOpsChanged(currentOps, input.ops)) {
+        throw new ConflictError(
+          "Editing Job Card operations isn't available while Document Edit Approval is on yet — only the Job Card's own fields go for approval. Turn the gate off to edit operations.",
+        );
+      }
     }
+    return true;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('JobCard', id, input, undefined, user);
+    return { staged: true, request };
+  }
 
-  return { ...(await getJobCard(id, user)), routeCardWriteBack };
+  return updateJobCard(id, input, user);
 }
 
 export async function deleteJobCard(

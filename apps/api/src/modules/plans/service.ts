@@ -20,6 +20,7 @@ import type {
   CreatePlansBatchInput,
   CreateRouteCardOpInput,
   DefaultRouteOpsResponse,
+  DocumentEditStagedResult,
   DocumentTraceability,
   ListPlansQuery,
   ListPlansResponse,
@@ -117,7 +118,7 @@ function todayIso(): string {
   }).format(new Date());
 }
 
-const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
+export const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
 
 // Placeholder vendor text stamped on an auto-raised OSP PR when the outsource op
 // carries no vendor — the PR stays valid (needs vendorId OR vendorCodeText) and
@@ -175,7 +176,7 @@ const dateLabel = (v: unknown): string | null =>
  *  Money (Unit Cost, Rate, OSP Cost) is deliberately NOT here: a Viewer who may
  *  not see prices can still open the History tab, so a cost change would leak
  *  through the before → after column. */
-function planEditFields(rmItemCodeById: Map<string, string>): readonly DiffField[] {
+export function planEditFields(rmItemCodeById: Map<string, string>): readonly DiffField[] {
   return [
     { key: 'planDate', label: 'Plan Date', format: dateLabel },
     {
@@ -1082,329 +1083,446 @@ async function createPlanInTx(
   return getPlanInTx(tx, plan.id, companyId);
 }
 
+/**
+ * True when the submitted plan operations ADD, REMOVE, re-sequence or change any
+ * op versus what is stored. Mirrors poLinesAddedOrRemoved but also catches field
+ * changes, because this pass stages only the plan's RECORD fields — an ops change
+ * cannot ride along unapproved. Route-card–derived fields (program / toolNo /
+ * toolDetails / machineId / outsourceVendorId) are restored from the stored op
+ * when the payload sends them null (updatePlanTx: `op.x ?? prior.x`), so only a
+ * NON-NULL payload value that differs from the stored one counts as a change.
+ */
+function planOpsChanged(
+  current: ReadonlyArray<{
+    opSeq: number;
+    operation: string;
+    machineId: string | null;
+    program: string | null;
+    toolNo: string | null;
+    toolDetails: string | null;
+    outsourceVendorId: string | null;
+    outsourceVendorText: string | null;
+  }>,
+  proposed: readonly PlanOpInput[],
+): boolean {
+  if (proposed.length !== current.length) return true;
+  const norm = (v: string | null | undefined): string | null => (v == null || v === '' ? null : v);
+  const bySeq = new Map(current.map((o) => [o.opSeq, o]));
+  for (const pOp of proposed) {
+    const c = bySeq.get(pOp.opSeq);
+    if (!c) return true; // op added or re-sequenced
+    if (norm(pOp.operation) !== norm(c.operation)) return true;
+    if (norm(pOp.outsourceVendorText) !== norm(c.outsourceVendorText)) return true;
+    if (pOp.machineId != null && pOp.machineId !== c.machineId) return true;
+    if (pOp.outsourceVendorId != null && pOp.outsourceVendorId !== c.outsourceVendorId) return true;
+    if (pOp.program != null && norm(pOp.program) !== norm(c.program)) return true;
+    if (pOp.toolNo != null && norm(pOp.toolNo) !== norm(c.toolNo)) return true;
+    if (pOp.toolDetails != null && norm(pOp.toolDetails) !== norm(c.toolDetails)) return true;
+  }
+  return false;
+}
+
 export async function updatePlan(
   id: string,
   input: UpdatePlanInput,
   user: AuthContext,
 ): Promise<PlanDetail> {
   requireWriteRole(user);
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
+  // replay an approved edit for an approver who holds `approve` but not `edit`.
+  await requireFormAccess(user, 'plan_create', 'edit');
+  return withUserContext(user, (tx) => updatePlanTx(tx, id, input, user));
+}
+
+/**
+ * The body of a plan edit, inside a caller-supplied transaction. Called by
+ * updatePlan (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one). Every §20 guard lives here: the plan FOR UPDATE
+ * lock, assertUnchangedSinceOpened, the coverage / below-covered caps, the
+ * raw-material-retyped-while-live guard, the over-plan qty cap and the explicit
+ * updated_at bump. The caller performs the edit / approve access check.
+ */
+export async function updatePlanTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdatePlanInput,
+  user: AuthContext,
+): Promise<PlanDetail> {
+  const companyId = requireCompany(user);
+  // FOR UPDATE: since ADR-182 a plan stays 'planned' while it is only PART
+  // covered by Production Orders, so an edit can now land at the same moment
+  // as a create. Both take this lock, so the coverage figure read below is
+  // the one the create either saw or will re-read.
+  const existing = await tx
+    .select()
+    .from(plans)
+    .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
+    .limit(1)
+    .for('update');
+  const row = existing[0];
+  if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+  // R5: refuse the save if someone else edited the plan after this form opened it.
+  assertUnchangedSinceOpened(row.updatedAt, input.expectedUpdatedAt);
+
+  if (!EDITABLE_STATUSES.includes(row.planStatus)) {
+    throw new ValidationError(
+      `Plan ${row.code} is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}. Only In Planning or Planned plans can be edited.`,
+    );
+  }
+
+  // ADR-182 review — 'planned' no longer means "nothing has been made from
+  // this plan". A plan of 50 with a live order for 20 is still 'planned' so
+  // the other 30 can be ordered, and that re-opened a door the old
+  // one-order-per-plan rule kept shut: the plan could be cut below what its
+  // Job Cards are already building, or have its raw material re-typed after
+  // the card had snapshotted it. Both are refused while live work exists.
+  // ADR-184: a stopped order counts what it credited (lib/plan-order-coverage.ts).
+  const { coveredQty } = await readPlanOrderCoverage(tx, row.id);
+  if (coveredQty > 0) {
+    const resultingPlanQty = input.planQty ?? row.planQty;
+    const belowCovered = planQtyBelowCoveredError(row.code, resultingPlanQty, coveredQty);
+    if (belowCovered) throw new ValidationError(belowCovered);
+
+    const changed = <T>(sent: T | undefined, stored: T | null | undefined): boolean =>
+      sent !== undefined && (sent ?? null) !== (stored ?? null);
+    const rawMaterialRetyped =
+      changed(input.rawMaterialGradeId, row.rawMaterialGradeId) ||
+      changed(input.rawMaterialGradeText, row.rawMaterialGradeText) ||
+      changed(input.rawMaterialSizeId, row.rawMaterialSizeId) ||
+      changed(input.rawMaterialSizeText, row.rawMaterialSizeText) ||
+      changed(input.rawMaterialItemId, row.rawMaterialItemId) ||
+      changed(input.rmQtyPerPiece, row.rmQtyPerPiece);
+    // ADR-184 review — only an order STILL BEING MADE has a card that copied
+    // the raw material and would disagree with the plan. A stopped order's
+    // credited pieces count toward Covered (above) but no longer lock the
+    // material: the remake order for the Pending qty may need a new one.
+    const liveRows = (await tx.execute(sql`
+      SELECT COALESCE(ARRAY_AGG(po.code ORDER BY po.code), '{}') AS codes
+      FROM public.production_orders po
+      WHERE po.plan_id = ${row.id}::uuid
+        AND po.deleted_at IS NULL
+        AND po.status IN ('open', 'partially_closed')
+    `)) as unknown as Array<{ codes: string[] | null }>;
+    const liveOrderCodes = liveRows[0]?.codes ?? [];
+    if (rawMaterialRetyped && liveOrderCodes.length > 0) {
+      throw new ValidationError(
+        `Cannot change raw material: Production Order ${liveOrderCodes.join(', ')} exists. Short close it first.`,
+      );
+    }
+  }
+
+  // Direct Purchase is not valid for a job-work (JWSO) plan.
+  const resultingType = input.planType ?? row.planType;
+  if (resultingType === 'direct_purchase' && row.jwLineId) {
+    throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
+  }
+
+  // ADR-170 — a route-card-driven plan has no operations of its own; they
+  // come from the item's Route Card when the Production Order is created.
+  // Qty / dates / raw material / remarks stay editable as before. Its plan
+  // TYPE is the route card's too (re-stamped when the Production Order is
+  // created), so a client-sent planType is ignored below rather than refused.
+  if (row.opsSource === 'route_card' && input.ops !== undefined) {
+    throw new ValidationError(
+      'This plan takes its operations from the Route Card in Item Master — edit the Route Card there instead',
+    );
+  }
+
+  // Over-plan guard on qty change: cap at the line's remaining qty, excluding
+  // this plan's own current qty from the "already planned" sum.
+  if (input.planQty !== undefined && input.planQty !== row.planQty) {
+    await assertPlanQtyWithinRemaining(tx, companyId, {
+      soLineId: row.soLineId,
+      jwLineId: row.jwLineId,
+      planQty: input.planQty,
+      excludePlanId: id,
+      // Editing a BOM child plan's qty must use the same child-level cap the
+      // create path uses, or the edit would re-impose the parent-line limit.
+      bomMasterId: row.bomMasterId,
+      bomChildCode: row.bomChildCode,
+    });
+  }
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.planDate !== undefined) updates['planDate'] = input.planDate;
+  if (input.planType !== undefined && row.opsSource !== 'route_card') {
+    updates['planType'] = input.planType;
+  }
+  if (input.orderQty !== undefined) updates['orderQty'] = input.orderQty;
+  if (input.planQty !== undefined) updates['planQty'] = input.planQty;
+  if (input.plannedStartDate !== undefined) updates['plannedStartDate'] = input.plannedStartDate;
+  if (input.plannedEndDate !== undefined) updates['plannedEndDate'] = input.plannedEndDate;
+  // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
+  if (input.customerDispatchDate !== undefined)
+    updates['customerDispatchDate'] = input.customerDispatchDate;
+  // Raw material (0106). Each of the four is written only when the payload
+  // carries it, so clearing the grade on the form (null) is honoured while an
+  // omitted field leaves the stored value alone.
+  if (input.rawMaterialGradeId !== undefined)
+    updates['rawMaterialGradeId'] = input.rawMaterialGradeId;
+  if (input.rawMaterialGradeText !== undefined)
+    updates['rawMaterialGradeText'] = input.rawMaterialGradeText;
+  if (input.rawMaterialSizeId !== undefined)
+    updates['rawMaterialSizeId'] = input.rawMaterialSizeId;
+  if (input.rawMaterialSizeText !== undefined)
+    updates['rawMaterialSizeText'] = input.rawMaterialSizeText;
+  // ADR-193 phase 3a — RM item + qty per piece. Same "only when sent" rule,
+  // but validated as a PAIR: a field left out keeps its stored value, and
+  // the resulting pair must still be both-set or both-null.
+  if (input.rawMaterialItemId !== undefined || input.rmQtyPerPiece !== undefined) {
+    const rmItem = await resolveRmItem(tx, companyId, {
+      rawMaterialItemId:
+        input.rawMaterialItemId !== undefined ? input.rawMaterialItemId : row.rawMaterialItemId,
+      rmQtyPerPiece: input.rmQtyPerPiece !== undefined ? input.rmQtyPerPiece : row.rmQtyPerPiece,
+    });
+    updates['rawMaterialItemId'] = rmItem.rawMaterialItemId;
+    updates['rmQtyPerPiece'] = rmItem.rmQtyPerPiece;
+  }
+  if (input.dpVendorId !== undefined) updates['dpVendorId'] = input.dpVendorId;
+  if (input.dpVendorCodeText !== undefined) updates['dpVendorCodeText'] = input.dpVendorCodeText;
+  if (input.dpCost !== undefined) updates['dpCost'] = numericToString(input.dpCost);
+  if (input.dpRemarks !== undefined) updates['dpRemarks'] = input.dpRemarks;
+  if (input.foVendorId !== undefined) updates['foVendorId'] = input.foVendorId;
+  if (input.foVendorCodeText !== undefined) updates['foVendorCodeText'] = input.foVendorCodeText;
+  if (input.foProcess !== undefined) updates['foProcess'] = input.foProcess;
+  if (input.foRate !== undefined) updates['foRate'] = numericToString(input.foRate);
+  if (input.foMaterialSrc !== undefined) updates['foMaterialSrc'] = input.foMaterialSrc;
+  if (input.foDeliveryDate !== undefined) updates['foDeliveryDate'] = input.foDeliveryDate;
+  if (input.foCostCenter !== undefined) updates['foCostCenter'] = input.foCostCenter;
+  if (input.foRemarks !== undefined) updates['foRemarks'] = input.foRemarks;
+  if (input.requiredDocs !== undefined) updates['requiredDocs'] = input.requiredDocs;
+  if (input.remarks !== undefined) updates['remarks'] = input.remarks;
+
+  // T1 (plan-rm-backfill) — an EDIT of a plan whose raw material is STILL
+  // BLANK fills it from the item's Route Card. The create path has defaulted
+  // the RM item pair since ADR-193; the edit path had no Route Card default
+  // at all, so a plan made before the item's card existed (the designed
+  // `route_card_pending` flow) stayed blank even when the planner re-saved
+  // it.
+  //
+  // Same contract as create, read against the STORED row: a field the
+  // payload does not carry AND that is still blank in the database is
+  // filled; a field sent as null (the user cleared it) stays null; a sent
+  // value is untouched. Only a plan nothing has been made from yet is
+  // touched — a Job Card (jc_id) or any covered qty means the plan's blank
+  // was already copied downstream, and plan-vs-card must not drift.
+  const canDefaultRm = row.jcId === null && coveredQty === 0;
+  const defaultGrade =
+    canDefaultRm &&
+    input.rawMaterialGradeId === undefined &&
+    input.rawMaterialGradeText === undefined &&
+    row.rawMaterialGradeId === null &&
+    row.rawMaterialGradeText === null;
+  const defaultSize =
+    canDefaultRm &&
+    input.rawMaterialSizeId === undefined &&
+    input.rawMaterialSizeText === undefined &&
+    row.rawMaterialSizeId === null &&
+    row.rawMaterialSizeText === null;
+  const defaultRmItem =
+    canDefaultRm &&
+    input.rawMaterialItemId === undefined &&
+    input.rmQtyPerPiece === undefined &&
+    row.rawMaterialItemId === null &&
+    row.rmQtyPerPiece === null;
+  /** The card a value nobody typed came from — named in the History row. */
+  let rmSourceCardCode: string | null = null;
+  if (row.itemId && (defaultGrade || defaultSize || defaultRmItem)) {
+    const rcRm = await readRouteCardRawMaterial(tx, companyId, row.itemId);
+    if (rcRm) {
+      // id AND text together — text without the id displays a grade that is
+      // not linked to the master.
+      if (
+        defaultGrade &&
+        (rcRm.rawMaterialGradeId !== null || rcRm.rawMaterialGradeText !== null)
+      ) {
+        updates['rawMaterialGradeId'] = rcRm.rawMaterialGradeId;
+        updates['rawMaterialGradeText'] = rcRm.rawMaterialGradeText;
+        rmSourceCardCode = rcRm.routeCardCode;
+      }
+      if (defaultSize && (rcRm.rawMaterialSizeId !== null || rcRm.rawMaterialSizeText !== null)) {
+        updates['rawMaterialSizeId'] = rcRm.rawMaterialSizeId;
+        updates['rawMaterialSizeText'] = rcRm.rawMaterialSizeText;
+        rmSourceCardCode = rcRm.routeCardCode;
+      }
+      if (defaultRmItem && routeCardHasRmItem(rcRm)) {
+        // Review M3 (create path): a Route Card default the user never typed
+        // must not block the save — if the pair no longer passes the rule
+        // (RM item retyped to a non-material type), it is dropped.
+        const rcRmItem = await resolveRmItem(tx, companyId, {
+          rawMaterialItemId: rcRm.rawMaterialItemId,
+          rmQtyPerPiece: rcRm.rmQtyPerPiece,
+        }).catch(() => null);
+        if (rcRmItem) {
+          updates['rawMaterialItemId'] = rcRmItem.rawMaterialItemId;
+          updates['rmQtyPerPiece'] = rcRmItem.rmQtyPerPiece;
+          rmSourceCardCode = rcRm.routeCardCode;
+        }
+      }
+    }
+  }
+
+  // ADR-197 — before → after: the row locked above (stored values) against
+  // what is about to be written.
+  const rmIds = [row.rawMaterialItemId, updates['rawMaterialItemId']].filter(
+    (v): v is string => typeof v === 'string',
+  );
+  const rmItemCodeById = new Map<string, string>();
+  if (rmIds.length > 0) {
+    const rmRows = await tx
+      .select({ id: items.id, code: items.code })
+      .from(items)
+      .where(inArray(items.id, rmIds));
+    for (const r of rmRows) rmItemCodeById.set(r.id, r.code);
+  }
+  const changes = diffFields(row, updates, planEditFields(rmItemCodeById));
+  // R5: plans has no set_updated_at trigger until 0187, so bump the version
+  // here — every edit must move updated_at for the next edit-conflict check.
+  updates['updatedAt'] = new Date();
+
+  await tx.update(plans).set(updates).where(eq(plans.id, id));
+
+  // Ops replace-all when provided. The edit form payload does NOT carry the
+  // route-card–derived fields (program / toolNo / toolDetails / machineId), so
+  // a naive soft-delete + reinsert would wipe them on every edit. Load the
+  // existing ops first, key them by opSeq, and restore those fields onto any
+  // new op whose opSeq matches — but only where the payload itself does not
+  // supply a value (`?? prior`). New ops with no matching opSeq keep null, as
+  // before.
+  //
+  // outsourceVendorId (the live vendor FK) is restored too, but ONLY when the
+  // op still names the same vendor in text. The payload carries the vendor as
+  // text and never as an id, so a blind `?? prior` would keep pointing at the
+  // OLD vendor after someone retyped the vendor on the op — and execute reads
+  // the FK in preference to the text, which would raise the OSP PR against the
+  // wrong vendor. Text changed → the stale FK is dropped, exactly as today.
+  if (input.ops !== undefined) {
+    const priorOps = await tx
+      .select({
+        opSeq: planOps.opSeq,
+        operation: planOps.operation,
+        program: planOps.program,
+        toolNo: planOps.toolNo,
+        toolDetails: planOps.toolDetails,
+        machineId: planOps.machineId,
+        outsourceVendorId: planOps.outsourceVendorId,
+        outsourceVendorText: planOps.outsourceVendorText,
+      })
+      .from(planOps)
+      .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
+    const priorBySeq = new Map(priorOps.map((op) => [op.opSeq, op]));
+    const opsBefore = opsSummary(priorOps);
+    const opsAfter = opsSummary(input.ops);
+    if (opsBefore !== opsAfter) {
+      changes.push({ field: 'ops', label: 'Operations', before: opsBefore, after: opsAfter });
+    }
+
+    await tx
+      .update(planOps)
+      .set({ ...softDeleteStamp(user), updatedBy: user.id })
+      .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
+    if (input.ops.length > 0) {
+      const preservedOps = input.ops.map((op) => {
+        const prior = priorBySeq.get(op.opSeq);
+        if (!prior) return op;
+        const sameVendorText =
+          (op.outsourceVendorText ?? '') === (prior.outsourceVendorText ?? '');
+        return {
+          ...op,
+          program: op.program ?? prior.program,
+          toolNo: op.toolNo ?? prior.toolNo,
+          toolDetails: op.toolDetails ?? prior.toolDetails,
+          machineId: op.machineId ?? prior.machineId,
+          outsourceVendorId:
+            op.outsourceVendorId ?? (sameVendorText ? prior.outsourceVendorId : null),
+        };
+      });
+      await insertOps(tx, companyId, id, preservedOps, user);
+    }
+  }
+
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'Plan',
+        entityId: row.id,
+        refId: row.code,
+        changes,
+        // ADR-197 — say where a value nobody typed came from.
+        detail: rmSourceCardCode
+          ? `Edited ${row.code} — raw material filled from Route Card ${rmSourceCardCode}`
+          : `Edited ${row.code}`,
+      },
+      companyId,
+      user,
+    );
+  }
+
+  return getPlanInTx(tx, id, companyId);
+}
+
+/**
+ * The plan edit entry point the HTTP route calls. Edit-approval (ADR-202): when
+ * the company gate is on and the plan is still editable (In Planning / Planned),
+ * the edit is STAGED for approval and a {staged:true, request} result is
+ * returned; otherwise it falls through to updatePlan (today's behaviour).
+ *
+ * Child-row guard: this pass stages the plan's RECORD fields only. A submitted
+ * ops change cannot be staged yet, so it is refused clearly rather than silently
+ * dropped — turn the gate off to edit operations.
+ */
+export async function updatePlanOrStage(
+  id: string,
+  input: UpdatePlanInput,
+  user: AuthContext,
+): Promise<PlanDetail | DocumentEditStagedResult> {
+  requireWriteRole(user);
   await requireFormAccess(user, 'plan_create', 'edit');
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    // FOR UPDATE: since ADR-182 a plan stays 'planned' while it is only PART
-    // covered by Production Orders, so an edit can now land at the same moment
-    // as a create. Both take this lock, so the coverage figure read below is
-    // the one the create either saw or will re-read.
-    const existing = await tx
-      .select()
+  // Imported dynamically to avoid a static import cycle with plan-edit-registry
+  // (which imports updatePlanTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const rows = await tx
+      .select({ planStatus: plans.planStatus })
       .from(plans)
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
-      .limit(1)
-      .for('update');
-    const row = existing[0];
-    if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
-    // R5: refuse the save if someone else edited the plan after this form opened it.
-    assertUnchangedSinceOpened(row.updatedAt, input.expectedUpdatedAt);
-
-    if (!EDITABLE_STATUSES.includes(row.planStatus)) {
-      throw new ValidationError(
-        `Plan ${row.code} is ${labelOf(PLAN_STATUS_LABEL, row.planStatus)}. Only In Planning or Planned plans can be edited.`,
-      );
-    }
-
-    // ADR-182 review — 'planned' no longer means "nothing has been made from
-    // this plan". A plan of 50 with a live order for 20 is still 'planned' so
-    // the other 30 can be ordered, and that re-opened a door the old
-    // one-order-per-plan rule kept shut: the plan could be cut below what its
-    // Job Cards are already building, or have its raw material re-typed after
-    // the card had snapshotted it. Both are refused while live work exists.
-    // ADR-184: a stopped order counts what it credited (lib/plan-order-coverage.ts).
-    const { coveredQty } = await readPlanOrderCoverage(tx, row.id);
-    if (coveredQty > 0) {
-      const resultingPlanQty = input.planQty ?? row.planQty;
-      const belowCovered = planQtyBelowCoveredError(row.code, resultingPlanQty, coveredQty);
-      if (belowCovered) throw new ValidationError(belowCovered);
-
-      const changed = <T>(sent: T | undefined, stored: T | null | undefined): boolean =>
-        sent !== undefined && (sent ?? null) !== (stored ?? null);
-      const rawMaterialRetyped =
-        changed(input.rawMaterialGradeId, row.rawMaterialGradeId) ||
-        changed(input.rawMaterialGradeText, row.rawMaterialGradeText) ||
-        changed(input.rawMaterialSizeId, row.rawMaterialSizeId) ||
-        changed(input.rawMaterialSizeText, row.rawMaterialSizeText) ||
-        changed(input.rawMaterialItemId, row.rawMaterialItemId) ||
-        changed(input.rmQtyPerPiece, row.rmQtyPerPiece);
-      // ADR-184 review — only an order STILL BEING MADE has a card that copied
-      // the raw material and would disagree with the plan. A stopped order's
-      // credited pieces count toward Covered (above) but no longer lock the
-      // material: the remake order for the Pending qty may need a new one.
-      const liveRows = (await tx.execute(sql`
-        SELECT COALESCE(ARRAY_AGG(po.code ORDER BY po.code), '{}') AS codes
-        FROM public.production_orders po
-        WHERE po.plan_id = ${row.id}::uuid
-          AND po.deleted_at IS NULL
-          AND po.status IN ('open', 'partially_closed')
-      `)) as unknown as Array<{ codes: string[] | null }>;
-      const liveOrderCodes = liveRows[0]?.codes ?? [];
-      if (rawMaterialRetyped && liveOrderCodes.length > 0) {
-        throw new ValidationError(
-          `Cannot change raw material: Production Order ${liveOrderCodes.join(', ')} exists. Short close it first.`,
-        );
-      }
-    }
-
-    // Direct Purchase is not valid for a job-work (JWSO) plan.
-    const resultingType = input.planType ?? row.planType;
-    if (resultingType === 'direct_purchase' && row.jwLineId) {
-      throw new ValidationError('A Buy plan is not allowed for a JWSO order.');
-    }
-
-    // ADR-170 — a route-card-driven plan has no operations of its own; they
-    // come from the item's Route Card when the Production Order is created.
-    // Qty / dates / raw material / remarks stay editable as before. Its plan
-    // TYPE is the route card's too (re-stamped when the Production Order is
-    // created), so a client-sent planType is ignored below rather than refused.
-    if (row.opsSource === 'route_card' && input.ops !== undefined) {
-      throw new ValidationError(
-        'This plan takes its operations from the Route Card in Item Master — edit the Route Card there instead',
-      );
-    }
-
-    // Over-plan guard on qty change: cap at the line's remaining qty, excluding
-    // this plan's own current qty from the "already planned" sum.
-    if (input.planQty !== undefined && input.planQty !== row.planQty) {
-      await assertPlanQtyWithinRemaining(tx, companyId, {
-        soLineId: row.soLineId,
-        jwLineId: row.jwLineId,
-        planQty: input.planQty,
-        excludePlanId: id,
-        // Editing a BOM child plan's qty must use the same child-level cap the
-        // create path uses, or the edit would re-impose the parent-line limit.
-        bomMasterId: row.bomMasterId,
-        bomChildCode: row.bomChildCode,
-      });
-    }
-
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.planDate !== undefined) updates['planDate'] = input.planDate;
-    if (input.planType !== undefined && row.opsSource !== 'route_card') {
-      updates['planType'] = input.planType;
-    }
-    if (input.orderQty !== undefined) updates['orderQty'] = input.orderQty;
-    if (input.planQty !== undefined) updates['planQty'] = input.planQty;
-    if (input.plannedStartDate !== undefined) updates['plannedStartDate'] = input.plannedStartDate;
-    if (input.plannedEndDate !== undefined) updates['plannedEndDate'] = input.plannedEndDate;
-    // Customer Dispatch Date (0137) — the day the goods must leave for the customer.
-    if (input.customerDispatchDate !== undefined)
-      updates['customerDispatchDate'] = input.customerDispatchDate;
-    // Raw material (0106). Each of the four is written only when the payload
-    // carries it, so clearing the grade on the form (null) is honoured while an
-    // omitted field leaves the stored value alone.
-    if (input.rawMaterialGradeId !== undefined)
-      updates['rawMaterialGradeId'] = input.rawMaterialGradeId;
-    if (input.rawMaterialGradeText !== undefined)
-      updates['rawMaterialGradeText'] = input.rawMaterialGradeText;
-    if (input.rawMaterialSizeId !== undefined)
-      updates['rawMaterialSizeId'] = input.rawMaterialSizeId;
-    if (input.rawMaterialSizeText !== undefined)
-      updates['rawMaterialSizeText'] = input.rawMaterialSizeText;
-    // ADR-193 phase 3a — RM item + qty per piece. Same "only when sent" rule,
-    // but validated as a PAIR: a field left out keeps its stored value, and
-    // the resulting pair must still be both-set or both-null.
-    if (input.rawMaterialItemId !== undefined || input.rmQtyPerPiece !== undefined) {
-      const rmItem = await resolveRmItem(tx, companyId, {
-        rawMaterialItemId:
-          input.rawMaterialItemId !== undefined ? input.rawMaterialItemId : row.rawMaterialItemId,
-        rmQtyPerPiece: input.rmQtyPerPiece !== undefined ? input.rmQtyPerPiece : row.rmQtyPerPiece,
-      });
-      updates['rawMaterialItemId'] = rmItem.rawMaterialItemId;
-      updates['rmQtyPerPiece'] = rmItem.rmQtyPerPiece;
-    }
-    if (input.dpVendorId !== undefined) updates['dpVendorId'] = input.dpVendorId;
-    if (input.dpVendorCodeText !== undefined) updates['dpVendorCodeText'] = input.dpVendorCodeText;
-    if (input.dpCost !== undefined) updates['dpCost'] = numericToString(input.dpCost);
-    if (input.dpRemarks !== undefined) updates['dpRemarks'] = input.dpRemarks;
-    if (input.foVendorId !== undefined) updates['foVendorId'] = input.foVendorId;
-    if (input.foVendorCodeText !== undefined) updates['foVendorCodeText'] = input.foVendorCodeText;
-    if (input.foProcess !== undefined) updates['foProcess'] = input.foProcess;
-    if (input.foRate !== undefined) updates['foRate'] = numericToString(input.foRate);
-    if (input.foMaterialSrc !== undefined) updates['foMaterialSrc'] = input.foMaterialSrc;
-    if (input.foDeliveryDate !== undefined) updates['foDeliveryDate'] = input.foDeliveryDate;
-    if (input.foCostCenter !== undefined) updates['foCostCenter'] = input.foCostCenter;
-    if (input.foRemarks !== undefined) updates['foRemarks'] = input.foRemarks;
-    if (input.requiredDocs !== undefined) updates['requiredDocs'] = input.requiredDocs;
-    if (input.remarks !== undefined) updates['remarks'] = input.remarks;
-
-    // T1 (plan-rm-backfill) — an EDIT of a plan whose raw material is STILL
-    // BLANK fills it from the item's Route Card. The create path has defaulted
-    // the RM item pair since ADR-193; the edit path had no Route Card default
-    // at all, so a plan made before the item's card existed (the designed
-    // `route_card_pending` flow) stayed blank even when the planner re-saved
-    // it.
-    //
-    // Same contract as create, read against the STORED row: a field the
-    // payload does not carry AND that is still blank in the database is
-    // filled; a field sent as null (the user cleared it) stays null; a sent
-    // value is untouched. Only a plan nothing has been made from yet is
-    // touched — a Job Card (jc_id) or any covered qty means the plan's blank
-    // was already copied downstream, and plan-vs-card must not drift.
-    const canDefaultRm = row.jcId === null && coveredQty === 0;
-    const defaultGrade =
-      canDefaultRm &&
-      input.rawMaterialGradeId === undefined &&
-      input.rawMaterialGradeText === undefined &&
-      row.rawMaterialGradeId === null &&
-      row.rawMaterialGradeText === null;
-    const defaultSize =
-      canDefaultRm &&
-      input.rawMaterialSizeId === undefined &&
-      input.rawMaterialSizeText === undefined &&
-      row.rawMaterialSizeId === null &&
-      row.rawMaterialSizeText === null;
-    const defaultRmItem =
-      canDefaultRm &&
-      input.rawMaterialItemId === undefined &&
-      input.rmQtyPerPiece === undefined &&
-      row.rawMaterialItemId === null &&
-      row.rmQtyPerPiece === null;
-    /** The card a value nobody typed came from — named in the History row. */
-    let rmSourceCardCode: string | null = null;
-    if (row.itemId && (defaultGrade || defaultSize || defaultRmItem)) {
-      const rcRm = await readRouteCardRawMaterial(tx, companyId, row.itemId);
-      if (rcRm) {
-        // id AND text together — text without the id displays a grade that is
-        // not linked to the master.
-        if (
-          defaultGrade &&
-          (rcRm.rawMaterialGradeId !== null || rcRm.rawMaterialGradeText !== null)
-        ) {
-          updates['rawMaterialGradeId'] = rcRm.rawMaterialGradeId;
-          updates['rawMaterialGradeText'] = rcRm.rawMaterialGradeText;
-          rmSourceCardCode = rcRm.routeCardCode;
-        }
-        if (defaultSize && (rcRm.rawMaterialSizeId !== null || rcRm.rawMaterialSizeText !== null)) {
-          updates['rawMaterialSizeId'] = rcRm.rawMaterialSizeId;
-          updates['rawMaterialSizeText'] = rcRm.rawMaterialSizeText;
-          rmSourceCardCode = rcRm.routeCardCode;
-        }
-        if (defaultRmItem && routeCardHasRmItem(rcRm)) {
-          // Review M3 (create path): a Route Card default the user never typed
-          // must not block the save — if the pair no longer passes the rule
-          // (RM item retyped to a non-material type), it is dropped.
-          const rcRmItem = await resolveRmItem(tx, companyId, {
-            rawMaterialItemId: rcRm.rawMaterialItemId,
-            rmQtyPerPiece: rcRm.rmQtyPerPiece,
-          }).catch(() => null);
-          if (rcRmItem) {
-            updates['rawMaterialItemId'] = rcRmItem.rawMaterialItemId;
-            updates['rmQtyPerPiece'] = rcRmItem.rmQtyPerPiece;
-            rmSourceCardCode = rcRm.routeCardCode;
-          }
-        }
-      }
-    }
-
-    // ADR-197 — before → after: the row locked above (stored values) against
-    // what is about to be written.
-    const rmIds = [row.rawMaterialItemId, updates['rawMaterialItemId']].filter(
-      (v): v is string => typeof v === 'string',
-    );
-    const rmItemCodeById = new Map<string, string>();
-    if (rmIds.length > 0) {
-      const rmRows = await tx
-        .select({ id: items.id, code: items.code })
-        .from(items)
-        .where(inArray(items.id, rmIds));
-      for (const r of rmRows) rmItemCodeById.set(r.id, r.code);
-    }
-    const changes = diffFields(row, updates, planEditFields(rmItemCodeById));
-    // R5: plans has no set_updated_at trigger until 0187, so bump the version
-    // here — every edit must move updated_at for the next edit-conflict check.
-    updates['updatedAt'] = new Date();
-
-    await tx.update(plans).set(updates).where(eq(plans.id, id));
-
-    // Ops replace-all when provided. The edit form payload does NOT carry the
-    // route-card–derived fields (program / toolNo / toolDetails / machineId), so
-    // a naive soft-delete + reinsert would wipe them on every edit. Load the
-    // existing ops first, key them by opSeq, and restore those fields onto any
-    // new op whose opSeq matches — but only where the payload itself does not
-    // supply a value (`?? prior`). New ops with no matching opSeq keep null, as
-    // before.
-    //
-    // outsourceVendorId (the live vendor FK) is restored too, but ONLY when the
-    // op still names the same vendor in text. The payload carries the vendor as
-    // text and never as an id, so a blind `?? prior` would keep pointing at the
-    // OLD vendor after someone retyped the vendor on the op — and execute reads
-    // the FK in preference to the text, which would raise the OSP PR against the
-    // wrong vendor. Text changed → the stale FK is dropped, exactly as today.
+      .limit(1);
+    const status = rows[0]?.planStatus;
+    // "Editable" mirrors planEditRegistryEntry.isLive: In Planning or Planned.
+    if (status === undefined || !EDITABLE_STATUSES.includes(status)) return false;
     if (input.ops !== undefined) {
-      const priorOps = await tx
+      const currentOps = await tx
         .select({
           opSeq: planOps.opSeq,
           operation: planOps.operation,
+          machineId: planOps.machineId,
           program: planOps.program,
           toolNo: planOps.toolNo,
           toolDetails: planOps.toolDetails,
-          machineId: planOps.machineId,
           outsourceVendorId: planOps.outsourceVendorId,
           outsourceVendorText: planOps.outsourceVendorText,
         })
         .from(planOps)
         .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
-      const priorBySeq = new Map(priorOps.map((op) => [op.opSeq, op]));
-      const opsBefore = opsSummary(priorOps);
-      const opsAfter = opsSummary(input.ops);
-      if (opsBefore !== opsAfter) {
-        changes.push({ field: 'ops', label: 'Operations', before: opsBefore, after: opsAfter });
-      }
-
-      await tx
-        .update(planOps)
-        .set({ ...softDeleteStamp(user), updatedBy: user.id })
-        .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
-      if (input.ops.length > 0) {
-        const preservedOps = input.ops.map((op) => {
-          const prior = priorBySeq.get(op.opSeq);
-          if (!prior) return op;
-          const sameVendorText =
-            (op.outsourceVendorText ?? '') === (prior.outsourceVendorText ?? '');
-          return {
-            ...op,
-            program: op.program ?? prior.program,
-            toolNo: op.toolNo ?? prior.toolNo,
-            toolDetails: op.toolDetails ?? prior.toolDetails,
-            machineId: op.machineId ?? prior.machineId,
-            outsourceVendorId:
-              op.outsourceVendorId ?? (sameVendorText ? prior.outsourceVendorId : null),
-          };
-        });
-        await insertOps(tx, companyId, id, preservedOps, user);
+      if (planOpsChanged(currentOps, input.ops)) {
+        throw new ConflictError(
+          "Editing plan operations isn't available while Document Edit Approval is on yet — only the plan's own fields go for approval. Turn the gate off to edit operations.",
+        );
       }
     }
-
-    if (changes.length > 0) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Edit,
-          entity: 'Plan',
-          entityId: row.id,
-          refId: row.code,
-          changes,
-          // ADR-197 — say where a value nobody typed came from.
-          detail: rmSourceCardCode
-            ? `Edited ${row.code} — raw material filled from Route Card ${rmSourceCardCode}`
-            : `Edited ${row.code}`,
-        },
-        companyId,
-        user,
-      );
-    }
-
-    return getPlanInTx(tx, id, companyId);
+    return true;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('Plan', id, input, input.expectedUpdatedAt, user);
+    return { staged: true, request };
+  }
+
+  return updatePlan(id, input, user);
 }
 
 /** Transition: in_planning → planned. Single forward state move shipped in

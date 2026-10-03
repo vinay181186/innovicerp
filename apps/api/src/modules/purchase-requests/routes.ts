@@ -44,7 +44,7 @@ export async function purchaseRequestsRoutes(app: FastifyInstance): Promise<void
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updatePurchaseRequestInputSchema.parse(req.body);
-    return service.updatePurchaseRequest(id, body, req.user);
+    return service.updatePurchaseRequestOrStage(id, body, req.user);
   });
 
   app.post('/purchase-requests/:id/approve', async (req) => {

@@ -10,6 +10,7 @@ import { type SQL, type SQLWrapper, and, eq, inArray, isNull, or, sql } from 'dr
 import { alias } from 'drizzle-orm/pg-core';
 import {
   ActivityAction,
+  type DocumentEditStagedResult,
   type DocumentTraceability,
   ITEM_TYPE_RULES,
   type ItemType,
@@ -85,7 +86,7 @@ function prDetail(
 }
 
 /** Vendor id → code, for the Vendor row of an EDIT's before → after. */
-async function loadVendorCodes(
+export async function loadVendorCodes(
   tx: DbTransaction,
   companyId: string,
   ids: (string | null)[],
@@ -102,7 +103,7 @@ async function loadVendorCodes(
 /** The PR fields the edit form changes, with their screen labels (ADR-197,
  *  labels as on purchase-request-form.tsx / docs/NAMING.md). `vendor` is the
  *  vendor code as shown (picker or typed), computed by the caller. */
-const PR_EDIT_FIELDS: readonly DiffField[] = [
+export const PR_EDIT_FIELDS: readonly DiffField[] = [
   { key: 'prDate', label: 'PR Date' },
   { key: 'vendor', label: 'Vendor' },
   { key: 'itemCodeText', label: 'Item Code' },
@@ -449,7 +450,7 @@ export function deriveBalanceQty(input: {
  * guards and the shape they return). One indexed round-trip, no N+1: the write
  * paths handle a single PR by id.
  */
-async function loadOrderedQty(
+export async function loadOrderedQty(
   tx: DbTransaction,
   pr: { id: string; qty: number; poId: string | null },
 ): Promise<number> {
@@ -1164,13 +1165,206 @@ export async function updatePurchaseRequest(
   user: AuthContext,
 ): Promise<PurchaseRequest> {
   // Changing a SAVED PR is an edit right — L3 Editor and above. An L2 Data
-  // Entry can create one but deliberately cannot alter it afterwards.
+  // Entry can create one but deliberately cannot alter it afterwards. Checked
+  // HERE, not in the tx body, so the edit-approval engine's applyEdit can replay
+  // an approved edit for an approver who holds `approve` but not `edit`.
+  await requireFormAccess(user, 'pr_create', 'edit');
+  return withUserContext(user, (tx) => updatePurchaseRequestTx(tx, id, input, user));
+}
+
+/**
+ * The body of a PR edit, inside a caller-supplied transaction. Called by
+ * updatePurchaseRequest (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds one). Every §20 guard lives here: the PR row
+ * FOR UPDATE lock, assertUnchangedSinceOpened, the locked-if-on-a-live-PO guard
+ * and the FK re-validation. The caller performs the edit / approve access check.
+ */
+export async function updatePurchaseRequestTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdatePurchaseRequestInput,
+  user: AuthContext,
+): Promise<PurchaseRequest> {
+  const companyId = requireCompany(user);
+  const existing = await tx
+    .select()
+    .from(purchaseRequests)
+    .where(
+      and(
+        eq(purchaseRequests.id, id),
+        eq(purchaseRequests.companyId, companyId),
+        isNull(purchaseRequests.deletedAt),
+      ),
+    )
+    .for('update')
+    .limit(1);
+  if (existing.length === 0) {
+    throw new NotFoundError('PR not found. It may have been moved to Trash.');
+  }
+  // R5: refuse the save if someone else edited the PR after this form opened it.
+  assertUnchangedSinceOpened(existing[0]!.updatedAt, input.expectedUpdatedAt);
+  // A PR with quantity on a LIVE purchase order is locked — no further edits.
+  //
+  // This used to test the boolean (`po_id IS NOT NULL OR status='po_created'`),
+  // which left a PR dead forever once its only PO was cancelled: nothing ever
+  // wrote the flag back. It now asks how much is actually on order, so a PR
+  // whose PO was cancelled becomes editable again on its own, while one with
+  // any live quantity stays locked exactly as before.
+  const orderedQty = await loadOrderedQty(tx, existing[0]!);
+  if (orderedQty > 0) {
+    throw new ConflictError(`Cannot edit PR ${existing[0]!.code}: it is linked to a PO.`);
+  }
+
+  if (input.vendorId !== undefined && input.vendorId !== null) {
+    await assertVendorExists(tx, input.vendorId, companyId, existing[0]!.vendorId);
+  }
+  if (input.itemId !== undefined && input.itemId !== null) {
+    await assertItemExists(tx, input.itemId, companyId);
+  }
+  if (input.sourceJcOpId !== undefined && input.sourceJcOpId !== null) {
+    await assertJcOpExists(tx, input.sourceJcOpId, companyId);
+  }
+  if (input.sourceSoLineId !== undefined && input.sourceSoLineId !== null) {
+    await assertSoLineExists(tx, input.sourceSoLineId, companyId);
+  }
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.prDate !== undefined) updates['prDate'] = input.prDate;
+  // Status is IMMUTABLE on a raw edit — it only advances through the
+  // approve / reject / create-PO service actions (mirrors updateJobCard /
+  // updatePurchaseOrder). Any `status` in the payload is ignored so the edit
+  // form can never skip the approvedBy/approvedAt stamp (ISSUE-025).
+  if (input.vendorId !== undefined) updates['vendorId'] = input.vendorId ?? null;
+  if (input.vendorCodeText !== undefined)
+    updates['vendorCodeText'] = input.vendorCodeText ?? null;
+  // Same back-stop on edit: a changed code that names a real master item
+  // re-links the PR instead of leaving it as bare text.
+  if (input.itemId !== undefined) {
+    updates['itemId'] = input.itemId ?? null;
+  } else if (input.itemCodeText !== undefined && input.itemCodeText !== null) {
+    const reResolved = await resolveItemIdByCode(tx, input.itemCodeText, companyId);
+    if (reResolved) updates['itemId'] = reResolved;
+  }
+  if ('itemId' in updates && updates['itemId'] !== existing[0]!.itemId) {
+    await assertItemNotPartyOwned(tx, updates['itemId'] as string | null, companyId);
+  }
+  if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
+  if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;
+  if (input.qty !== undefined) updates['qty'] = input.qty;
+  // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+  await assertLineQtysFitUom(
+    tx,
+    companyId,
+    [
+      {
+        itemId: 'itemId' in updates ? (updates['itemId'] as string | null) : existing[0]!.itemId,
+        qty: input.qty ?? existing[0]!.qty,
+      },
+    ],
+    'PR Qty',
+  );
+  // Money in, same rule as money out: a caller who cannot SEE the estimated
+  // cost cannot SET it either — their payload's estCost is ignored and the
+  // stored figure stands. `priceOff` makes "can do the job but must not see
+  // the number" a supported setup, so an editor with prices hidden is real.
+  if (input.estCost !== undefined && (await canSeeFormPrice(user, 'pr_create'))) {
+    updates['estCost'] = estCostToString(input.estCost);
+  }
+  if (input.requiredDate !== undefined) updates['requiredDate'] = input.requiredDate ?? null;
+  // ADR-189 — the JC-op link is written only by the system when an outsource
+  // op raises its PR (such a PR skips PR approval), so it is never set by hand.
+  if (
+    input.sourceJcOpId !== undefined &&
+    (input.sourceJcOpId ?? null) !== (existing[0]!.sourceJcOpId ?? null)
+  ) {
+    throw new ValidationError('The Job Card operation link of a PR is set by the system only.');
+  }
+  if (input.sourceSoLineId !== undefined)
+    updates['sourceSoLineId'] = input.sourceSoLineId ?? null;
+  if (input.operation !== undefined) updates['operation'] = input.operation ?? null;
+  if (input.remarks !== undefined) updates['remarks'] = input.remarks ?? null;
+
+  // ADR-197 — before → after of every field the edit form can change, read
+  // from the row as it was BEFORE this UPDATE (same transaction).
+  const vendorCodeById = await loadVendorCodes(tx, companyId, [
+    existing[0]!.vendorId,
+    (updates['vendorId'] as string | null | undefined) ?? null,
+  ]);
+  // The Vendor is ONE fact on screen (the picker id, or an older PR's typed
+  // code), so it is compared as the code a person reads, not as two columns.
+  const vendorShown = (vid: string | null | undefined, text: string | null | undefined) =>
+    (vid ? vendorCodeById.get(vid) : undefined) ?? text ?? null;
+  const before = existing[0]!;
+  const changes = diffFields(
+    { ...before, vendor: vendorShown(before.vendorId, before.vendorCodeText) },
+    {
+      ...updates,
+      ...('vendorId' in updates || 'vendorCodeText' in updates
+        ? {
+            vendor: vendorShown(
+              'vendorId' in updates ? (updates['vendorId'] as string | null) : before.vendorId,
+              'vendorCodeText' in updates
+                ? (updates['vendorCodeText'] as string | null)
+                : before.vendorCodeText,
+            ),
+          }
+        : {}),
+    },
+    PR_EDIT_FIELDS,
+  );
+
+  await tx.update(purchaseRequests).set(updates).where(eq(purchaseRequests.id, id));
+
+  const reread = await tx
+    .select()
+    .from(purchaseRequests)
+    .where(eq(purchaseRequests.id, id))
+    .limit(1);
+  const row = reread[0]!;
+  // Nothing actually changed → no EDIT row (a Save with no edits).
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'PurchaseRequest',
+        entityId: row.id,
+        refId: row.code,
+        changes,
+        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+      },
+      companyId,
+      user,
+    );
+  }
+  // The guard above proved this PR has nothing on a live PO, and this
+  // transaction has not created one.
+  return toPurchaseRequest(row, orderedQty);
+}
+
+/**
+ * The PR edit entry point the HTTP route calls. Edit-approval (ADR-202): when
+ * the company gate is on and the PR is still editable (nothing on a live PO),
+ * the edit is STAGED for approval and a {staged:true, request} result is
+ * returned; otherwise it falls through to updatePurchaseRequest (today's
+ * behaviour). A PR carries a single item on its own record — no child lines —
+ * so there is no line guard.
+ */
+export async function updatePurchaseRequestOrStage(
+  id: string,
+  input: UpdatePurchaseRequestInput,
+  user: AuthContext,
+): Promise<PurchaseRequest | DocumentEditStagedResult> {
   await requireFormAccess(user, 'pr_create', 'edit');
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
-      .select()
+  // Imported dynamically to avoid a static import cycle with pr-edit-registry
+  // (which imports updatePurchaseRequestTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const rows = await tx
+      .select({ id: purchaseRequests.id, qty: purchaseRequests.qty, poId: purchaseRequests.poId })
       .from(purchaseRequests)
       .where(
         and(
@@ -1179,151 +1373,24 @@ export async function updatePurchaseRequest(
           isNull(purchaseRequests.deletedAt),
         ),
       )
-      .for('update')
       .limit(1);
-    if (existing.length === 0) {
-      throw new NotFoundError('PR not found. It may have been moved to Trash.');
-    }
-    // R5: refuse the save if someone else edited the PR after this form opened it.
-    assertUnchangedSinceOpened(existing[0]!.updatedAt, input.expectedUpdatedAt);
-    // A PR with quantity on a LIVE purchase order is locked — no further edits.
-    //
-    // This used to test the boolean (`po_id IS NOT NULL OR status='po_created'`),
-    // which left a PR dead forever once its only PO was cancelled: nothing ever
-    // wrote the flag back. It now asks how much is actually on order, so a PR
-    // whose PO was cancelled becomes editable again on its own, while one with
-    // any live quantity stays locked exactly as before.
-    const orderedQty = await loadOrderedQty(tx, existing[0]!);
-    if (orderedQty > 0) {
-      throw new ConflictError(`Cannot edit PR ${existing[0]!.code}: it is linked to a PO.`);
-    }
-
-    if (input.vendorId !== undefined && input.vendorId !== null) {
-      await assertVendorExists(tx, input.vendorId, companyId, existing[0]!.vendorId);
-    }
-    if (input.itemId !== undefined && input.itemId !== null) {
-      await assertItemExists(tx, input.itemId, companyId);
-    }
-    if (input.sourceJcOpId !== undefined && input.sourceJcOpId !== null) {
-      await assertJcOpExists(tx, input.sourceJcOpId, companyId);
-    }
-    if (input.sourceSoLineId !== undefined && input.sourceSoLineId !== null) {
-      await assertSoLineExists(tx, input.sourceSoLineId, companyId);
-    }
-
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.prDate !== undefined) updates['prDate'] = input.prDate;
-    // Status is IMMUTABLE on a raw edit — it only advances through the
-    // approve / reject / create-PO service actions (mirrors updateJobCard /
-    // updatePurchaseOrder). Any `status` in the payload is ignored so the edit
-    // form can never skip the approvedBy/approvedAt stamp (ISSUE-025).
-    if (input.vendorId !== undefined) updates['vendorId'] = input.vendorId ?? null;
-    if (input.vendorCodeText !== undefined)
-      updates['vendorCodeText'] = input.vendorCodeText ?? null;
-    // Same back-stop on edit: a changed code that names a real master item
-    // re-links the PR instead of leaving it as bare text.
-    if (input.itemId !== undefined) {
-      updates['itemId'] = input.itemId ?? null;
-    } else if (input.itemCodeText !== undefined && input.itemCodeText !== null) {
-      const reResolved = await resolveItemIdByCode(tx, input.itemCodeText, companyId);
-      if (reResolved) updates['itemId'] = reResolved;
-    }
-    if ('itemId' in updates && updates['itemId'] !== existing[0]!.itemId) {
-      await assertItemNotPartyOwned(tx, updates['itemId'] as string | null, companyId);
-    }
-    if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
-    if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;
-    if (input.qty !== undefined) updates['qty'] = input.qty;
-    // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
-    await assertLineQtysFitUom(
-      tx,
-      companyId,
-      [
-        {
-          itemId: 'itemId' in updates ? (updates['itemId'] as string | null) : existing[0]!.itemId,
-          qty: input.qty ?? existing[0]!.qty,
-        },
-      ],
-      'PR Qty',
-    );
-    // Money in, same rule as money out: a caller who cannot SEE the estimated
-    // cost cannot SET it either — their payload's estCost is ignored and the
-    // stored figure stands. `priceOff` makes "can do the job but must not see
-    // the number" a supported setup, so an editor with prices hidden is real.
-    if (input.estCost !== undefined && (await canSeeFormPrice(user, 'pr_create'))) {
-      updates['estCost'] = estCostToString(input.estCost);
-    }
-    if (input.requiredDate !== undefined) updates['requiredDate'] = input.requiredDate ?? null;
-    // ADR-189 — the JC-op link is written only by the system when an outsource
-    // op raises its PR (such a PR skips PR approval), so it is never set by hand.
-    if (
-      input.sourceJcOpId !== undefined &&
-      (input.sourceJcOpId ?? null) !== (existing[0]!.sourceJcOpId ?? null)
-    ) {
-      throw new ValidationError('The Job Card operation link of a PR is set by the system only.');
-    }
-    if (input.sourceSoLineId !== undefined)
-      updates['sourceSoLineId'] = input.sourceSoLineId ?? null;
-    if (input.operation !== undefined) updates['operation'] = input.operation ?? null;
-    if (input.remarks !== undefined) updates['remarks'] = input.remarks ?? null;
-
-    // ADR-197 — before → after of every field the edit form can change, read
-    // from the row as it was BEFORE this UPDATE (same transaction).
-    const vendorCodeById = await loadVendorCodes(tx, companyId, [
-      existing[0]!.vendorId,
-      (updates['vendorId'] as string | null | undefined) ?? null,
-    ]);
-    // The Vendor is ONE fact on screen (the picker id, or an older PR's typed
-    // code), so it is compared as the code a person reads, not as two columns.
-    const vendorShown = (vid: string | null | undefined, text: string | null | undefined) =>
-      (vid ? vendorCodeById.get(vid) : undefined) ?? text ?? null;
-    const before = existing[0]!;
-    const changes = diffFields(
-      { ...before, vendor: vendorShown(before.vendorId, before.vendorCodeText) },
-      {
-        ...updates,
-        ...('vendorId' in updates || 'vendorCodeText' in updates
-          ? {
-              vendor: vendorShown(
-                'vendorId' in updates ? (updates['vendorId'] as string | null) : before.vendorId,
-                'vendorCodeText' in updates
-                  ? (updates['vendorCodeText'] as string | null)
-                  : before.vendorCodeText,
-              ),
-            }
-          : {}),
-      },
-      PR_EDIT_FIELDS,
-    );
-
-    await tx.update(purchaseRequests).set(updates).where(eq(purchaseRequests.id, id));
-
-    const reread = await tx
-      .select()
-      .from(purchaseRequests)
-      .where(eq(purchaseRequests.id, id))
-      .limit(1);
-    const row = reread[0]!;
-    // Nothing actually changed → no EDIT row (a Save with no edits).
-    if (changes.length > 0) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Edit,
-          entity: 'PurchaseRequest',
-          entityId: row.id,
-          refId: row.code,
-          changes,
-          detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
-        },
-        companyId,
-        user,
-      );
-    }
-    // The guard above proved this PR has nothing on a live PO, and this
-    // transaction has not created one.
-    return toPurchaseRequest(row, orderedQty);
+    const pr = rows[0];
+    if (!pr) return false;
+    // "Editable" mirrors prEditRegistryEntry.isLive: a PR with nothing on a live PO.
+    return (await loadOrderedQty(tx, pr)) === 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit(
+      'PurchaseRequest',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
+    return { staged: true, request };
+  }
+
+  return updatePurchaseRequest(id, input, user);
 }
 
 // ─── Approval actions (mirror approvePurchaseOrder / rejectPurchaseOrder) ────

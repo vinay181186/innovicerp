@@ -11,6 +11,7 @@
 import { and, asc, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
 import {
   ActivityAction,
+  type DocumentEditStagedResult,
   type DocumentTraceability,
   type RelatedDoc,
   NC_DISPOSITION_LABELS,
@@ -1409,7 +1410,7 @@ export async function createNcRegister(
 }
 
 /** The user-editable NC fields, with their screen labels (ADR-197 EDIT row). */
-const NC_EDIT_FIELDS: readonly DiffField[] = [
+export const NC_EDIT_FIELDS: readonly DiffField[] = [
   { key: 'ncDate', label: 'NC Date' },
   {
     key: 'reasonCategory',
@@ -1431,16 +1432,109 @@ export async function updateNcRegister(
 ): Promise<NcRegister> {
   requireOpEntryRole(user);
   // Changing a saved NC is `edit`, not `entry` — an L2 Data Entry hand may
-  // raise an NC but must not go back and rewrite the reason on one.
+  // raise an NC but must not go back and rewrite the reason on one. Checked HERE,
+  // not in the tx body, so the edit-approval engine's applyEdit can replay an
+  // approved edit for an approver who holds `approve` but not `edit`.
+  await requireFormAccess(user, 'nc_dispose', 'edit');
+  return withUserContext(user, (tx) => updateNcRegisterTx(tx, id, input, user));
+}
+
+/**
+ * The body of an NC edit, inside a caller-supplied transaction. Called by
+ * updateNcRegister (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds one). Every §20 guard lives here: lockNcRow,
+ * the status-conditional `UPDATE … WHERE status='pending'` and its 0-row check.
+ * The caller performs the edit / approve access check.
+ */
+export async function updateNcRegisterTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateNcRegisterInput,
+  user: AuthContext,
+): Promise<NcRegister> {
+  const companyId = requireCompany(user);
+  await lockNcRow(tx, id, companyId);
+  // Full row, read BEFORE the update — the before side of the EDIT's
+  // before → after list (ADR-197).
+  const existing = await tx
+    .select()
+    .from(ncRegister)
+    .where(
+      and(
+        eq(ncRegister.id, id),
+        eq(ncRegister.companyId, companyId),
+        isNull(ncRegister.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (existing.length === 0) {
+    throw new NotFoundError('NC not found. It may have been moved to Trash.');
+  }
+  if (existing[0]!.status !== 'pending') {
+    throw new ConflictError(
+      `This NC is ${labelOf(NC_STATUS_LABELS, existing[0]!.status)}. Only NC Raised NCs can be edited.`,
+    );
+  }
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.ncDate !== undefined) updates['ncDate'] = input.ncDate;
+  if (input.reasonCategory !== undefined) updates['reasonCategory'] = input.reasonCategory;
+  if (input.reason !== undefined) updates['reason'] = input.reason ?? null;
+  if (input.reportedByText !== undefined)
+    updates['reportedByText'] = input.reportedByText ?? null;
+  if (input.operatorText !== undefined) updates['operatorText'] = input.operatorText ?? null;
+
+  const edited = await tx
+    .update(ncRegister)
+    .set(updates)
+    .where(and(eq(ncRegister.id, id), eq(ncRegister.status, 'pending')))
+    .returning({ id: ncRegister.id });
+  assertRowUpdated(edited, `NC ${existing[0]!.code}`);
+
+  const reread = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
+  const row = reread[0]!;
+  const changes = diffFields(existing[0]!, updates, NC_EDIT_FIELDS);
+  if (changes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'NonConformance',
+        entityId: row.id,
+        refId: row.code,
+        changes,
+        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
+      },
+      companyId,
+      user,
+    );
+  }
+  return toNcRegister(row);
+}
+
+/**
+ * The NC edit entry point the HTTP route calls. Edit-approval (ADR-202): when
+ * the company gate is on and the NC is still editable (status 'pending'), the
+ * edit is STAGED for approval and a {staged:true, request} result is returned;
+ * otherwise it falls through to updateNcRegister (today's behaviour). An NC is a
+ * single record with no child lines, so there is no line guard.
+ */
+export async function updateNcRegisterOrStage(
+  id: string,
+  input: UpdateNcRegisterInput,
+  user: AuthContext,
+): Promise<NcRegister | DocumentEditStagedResult> {
+  requireOpEntryRole(user);
   await requireFormAccess(user, 'nc_dispose', 'edit');
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    await lockNcRow(tx, id, companyId);
-    // Full row, read BEFORE the update — the before side of the EDIT's
-    // before → after list (ADR-197).
-    const existing = await tx
-      .select()
+  // Imported dynamically to avoid a static import cycle with nc-edit-registry
+  // (which imports updateNcRegisterTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const rows = await tx
+      .select({ status: ncRegister.status })
       .from(ncRegister)
       .where(
         and(
@@ -1450,50 +1544,18 @@ export async function updateNcRegister(
         ),
       )
       .limit(1);
-    if (existing.length === 0) {
-      throw new NotFoundError('NC not found. It may have been moved to Trash.');
-    }
-    if (existing[0]!.status !== 'pending') {
-      throw new ConflictError(
-        `This NC is ${labelOf(NC_STATUS_LABELS, existing[0]!.status)}. Only NC Raised NCs can be edited.`,
-      );
-    }
-
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.ncDate !== undefined) updates['ncDate'] = input.ncDate;
-    if (input.reasonCategory !== undefined) updates['reasonCategory'] = input.reasonCategory;
-    if (input.reason !== undefined) updates['reason'] = input.reason ?? null;
-    if (input.reportedByText !== undefined)
-      updates['reportedByText'] = input.reportedByText ?? null;
-    if (input.operatorText !== undefined) updates['operatorText'] = input.operatorText ?? null;
-
-    const edited = await tx
-      .update(ncRegister)
-      .set(updates)
-      .where(and(eq(ncRegister.id, id), eq(ncRegister.status, 'pending')))
-      .returning({ id: ncRegister.id });
-    assertRowUpdated(edited, `NC ${existing[0]!.code}`);
-
-    const reread = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
-    const row = reread[0]!;
-    const changes = diffFields(existing[0]!, updates, NC_EDIT_FIELDS);
-    if (changes.length > 0) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Edit,
-          entity: 'NonConformance',
-          entityId: row.id,
-          refId: row.code,
-          changes,
-          detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
-        },
-        companyId,
-        user,
-      );
-    }
-    return toNcRegister(row);
+    // "Editable" mirrors ncEditRegistryEntry.isLive: only an NC Raised NC.
+    return rows[0]?.status === 'pending';
   });
+  if (shouldStage) {
+    // UpdateNcRegisterInput carries no expectedUpdatedAt — NC relies on its
+    // status-conditional UPDATE under lockNcRow, not an optimistic-lock token,
+    // so none is sent and the engine's drift check is a no-op for it.
+    const request = await requestDocumentEdit('NonConformance', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateNcRegister(id, input, user);
 }
 
 // ─── Dispose (T-040b, reshaped for design §1–§4) ─────────────────────────

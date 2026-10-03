@@ -11,7 +11,12 @@ import type { PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
-import { JwChip, ORDER_STATUS_BADGE, ORDER_STATUS_LABEL, type Source } from './planning-shared';
+import {
+  JwChip,
+  ORDER_STATUS_BADGE,
+  ORDER_STATUS_LABEL,
+  type SourceFilter,
+} from './planning-shared';
 
 /**
  * Row tint by the order's plan status (ADR-199 Wave A, ROW_TINT): a soft wash
@@ -39,11 +44,11 @@ const TYPE_OPTIONS = ['component_manufacturing', 'equipment', 'with_material', '
   (value) => ({ value, label: soTypeLabel(value) }),
 );
 
-export function orderListColumns(src: Source): DataTableColumn<PlanningSoListItem>[] {
+export function orderListColumns(src: SourceFilter): DataTableColumn<PlanningSoListItem>[] {
   return [
     {
       id: 'so_code',
-      header: src === 'jw' ? 'JWSO No.' : 'SO No.',
+      header: src === 'jw' ? 'JWSO No.' : src === 'so' ? 'SO No.' : 'SO / JWSO No.',
       kind: 'code',
       sortFilterField: 'soCode',
       nowrap: true,
@@ -67,7 +72,7 @@ export function orderListColumns(src: Source): DataTableColumn<PlanningSoListIte
     },
     {
       id: 'so_type',
-      header: src === 'jw' ? 'JWSO Type' : 'SO Type',
+      header: src === 'jw' ? 'JWSO Type' : src === 'so' ? 'SO Type' : 'SO / JWSO Type',
       kind: 'badge',
       sortFilterField: 'soType',
       filterOptions: TYPE_OPTIONS,

@@ -1,5 +1,6 @@
 import type {
   CreatePurchaseRequestInput,
+  DocumentEditStagedResult,
   ListPurchaseRequestsQuery,
   ListPurchaseRequestsResponse,
   PurchaseRequest,
@@ -84,10 +85,13 @@ export function useCreatePurchaseRequest(saveKey?: SaveKey) {
 
 export function useUpdatePurchaseRequest(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<PurchaseRequest, Error, UpdatePurchaseRequestInput>({
+  // ADR-202 — when the edit-approval gate is on and the PR is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated PR. The edit page reads the union to tell them apart.
+  return useMutation<PurchaseRequest | DocumentEditStagedResult, Error, UpdatePurchaseRequestInput>({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<PurchaseRequest>(`/purchase-requests/${id}`, {
+        apiFetch<PurchaseRequest | DocumentEditStagedResult>(`/purchase-requests/${id}`, {
           method: 'PATCH',
           json: input,
           ...(headers ? { headers } : {}),
@@ -97,6 +101,13 @@ export function useUpdatePurchaseRequest(id: string, saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       // ADR-197 — the PR's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the PR itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(purchaseRequestsKeys.detail(id), updated);
     },
   });

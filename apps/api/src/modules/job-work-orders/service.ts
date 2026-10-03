@@ -17,6 +17,7 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   ActivityChange,
+  DocumentEditStagedResult,
   DocumentTraceability,
   EnsureJwRmItemInput,
   EnsureJwRmItemResponse,
@@ -41,7 +42,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
-import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -1176,7 +1177,28 @@ export async function updateJobWorkOrder(
   user: AuthContext,
 ): Promise<JobWorkOrderDetail> {
   requireWriteRole(user);
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
+  // replay an approved edit for an approver who holds `approve` but not `edit`.
   await requireFormAccess(user, 'jw_create', 'edit');
+  return withUserContext(user, (tx) => updateJobWorkOrderTx(tx, id, input, user));
+}
+
+/**
+ * The body of a JWSO edit, inside a caller-supplied transaction. Called by
+ * updateJobWorkOrder (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds one — nesting withUserContext would deadlock on
+ * the header / lines locked FOR UPDATE below). Every §20 guard lives here: the
+ * header FOR UPDATE lock, assertUnchangedSinceOpened, the live-line lock +
+ * customer-immutable-while-used check, the per-line merge version checks, the RM
+ * wiring and the server-owned header-status recompute. The caller performs the
+ * `edit` / `approve` access check.
+ */
+export async function updateJobWorkOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateJobWorkOrderInput,
+  user: AuthContext,
+): Promise<JobWorkOrderDetail> {
   const companyId = requireCompany(user);
   // Money in, same rule as money out. `priceOff` makes "can do the job but must
   // not see the number" a supported setup, so an editor with prices hidden is a
@@ -1184,7 +1206,7 @@ export async function updateJobWorkOrder(
   // Ignore them here — what is stored stands.
   const showMoney = await canSeeFormPrice(user, 'jw_create');
 
-  return withUserContext(user, async (tx) => {
+  {
     const existingHdrRows = await tx
       .select()
       .from(jobWorkOrders)
@@ -1331,7 +1353,143 @@ export async function updateJobWorkOrder(
     }
 
     return loadJobWorkOrderDetail(tx, id, companyId, showMoney);
+  }
+}
+
+/**
+ * JWSO child lines are NOT staged in this edit-approval pass (ADR-202 record /
+ * header level only). This detects any add / remove / field change so
+ * updateJobWorkOrderOrStage can REFUSE it clearly instead of silently dropping
+ * it. Mirrors planOpsChanged: compares by id with valuesEqual (the exact null /
+ * empty / numeric / date rules the History diff uses), so a form that resends
+ * unchanged lines — which the JWSO edit form always does — is correctly read as
+ * "no line change" and a header-only edit still stages. `rmItemId` is skipped:
+ * it is server-derived, never sent.
+ */
+function jwLinesChanged(
+  current: Array<{
+    id: string;
+    itemId: string | null;
+    partName: string;
+    material: string | null;
+    drawingNo: string | null;
+    revision: string;
+    drawingFilePath: string | null;
+    uom: string;
+    orderQty: number;
+    rate: string;
+    dueDate: string | null;
+    sourceBomMasterId: string | null;
+  }>,
+  proposed: readonly JobWorkOrderLineInput[],
+  showMoney: boolean,
+): boolean {
+  if (proposed.length !== current.length) return true;
+  const byId = new Map(current.map((l) => [l.id, l]));
+  const seen = new Set<string>();
+  for (const p of proposed) {
+    if (!p.id) return true; // a new line
+    const c = byId.get(p.id);
+    if (!c) return true;
+    seen.add(p.id);
+    if (!valuesEqual(p.itemId, c.itemId)) return true;
+    if (!valuesEqual(p.partName, c.partName)) return true;
+    if (p.material !== undefined && !valuesEqual(p.material, c.material)) return true;
+    if (p.drawingNo !== undefined && !valuesEqual(p.drawingNo, c.drawingNo)) return true;
+    if (p.revision !== undefined && !valuesEqual(p.revision, c.revision)) return true;
+    if (p.drawingFilePath !== undefined && !valuesEqual(p.drawingFilePath, c.drawingFilePath))
+      return true;
+    if (p.uom !== undefined && !valuesEqual(p.uom, c.uom)) return true;
+    if (!valuesEqual(p.orderQty, c.orderQty)) return true;
+    // Rate only when the editor may see money — a price-blind payload carries a
+    // default that must not read as a change (mergeLines ignores it too).
+    if (showMoney && p.rate !== undefined && !valuesEqual(p.rate, c.rate)) return true;
+    if (p.dueDate !== undefined && !valuesEqual(p.dueDate, c.dueDate)) return true;
+    if (p.sourceBomMasterId !== undefined && !valuesEqual(p.sourceBomMasterId, c.sourceBomMasterId))
+      return true;
+  }
+  for (const c of current) if (!seen.has(c.id)) return true; // a removed line
+  return false;
+}
+
+/**
+ * The JWSO edit entry point the PATCH route calls (ADR-202). When the Document
+ * Edit Approval gate is ON and the JWSO is LIVE, the header edit is staged for
+ * approval and the request row is returned; otherwise the edit applies directly
+ * through updateJobWorkOrder. Child lines are out of scope this pass and refused
+ * clearly so nothing is dropped unapproved. (JWSO status is server-owned and
+ * never carried on the payload, so there is no status move to guard here.)
+ */
+export async function updateJobWorkOrderOrStage(
+  id: string,
+  input: UpdateJobWorkOrderInput,
+  user: AuthContext,
+): Promise<JobWorkOrderDetail | DocumentEditStagedResult> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'jw_create', 'edit');
+  const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'jw_create');
+
+  // Engine imported dynamically to avoid a static import cycle with
+  // jw-edit-registry (which imports updateJobWorkOrderTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const hdrRows = await tx
+      .select({ status: jobWorkOrders.status })
+      .from(jobWorkOrders)
+      .where(
+        and(
+          eq(jobWorkOrders.id, id),
+          eq(jobWorkOrders.companyId, companyId),
+          isNull(jobWorkOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const status = hdrRows[0]?.status;
+    // "Live" mirrors jwEditRegistryEntry.isLive: past draft and not cancelled.
+    if (status === undefined || status === 'draft' || status === 'cancelled') return false;
+
+    if (input.lines !== undefined) {
+      const currentLines = await tx
+        .select({
+          id: jobWorkOrderLines.id,
+          itemId: jobWorkOrderLines.itemId,
+          partName: jobWorkOrderLines.partName,
+          material: jobWorkOrderLines.material,
+          drawingNo: jobWorkOrderLines.drawingNo,
+          revision: jobWorkOrderLines.revision,
+          drawingFilePath: jobWorkOrderLines.drawingFilePath,
+          uom: jobWorkOrderLines.uom,
+          orderQty: jobWorkOrderLines.orderQty,
+          rate: jobWorkOrderLines.rate,
+          dueDate: jobWorkOrderLines.dueDate,
+          sourceBomMasterId: jobWorkOrderLines.sourceBomMasterId,
+        })
+        .from(jobWorkOrderLines)
+        .where(
+          and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)),
+        );
+      if (jwLinesChanged(currentLines, input.lines, showMoney)) {
+        throw new ConflictError(
+          "Editing Job Work Order lines isn't available while Document Edit Approval is on yet — only the JWSO's own fields go for approval. Turn the gate off to edit lines.",
+        );
+      }
+    }
+    return true;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit(
+      'JobWorkOrder',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
+    return { staged: true, request };
+  }
+
+  return updateJobWorkOrder(id, input, user);
 }
 
 /** ADR-197 — one line's add / edit / remove, logged by updateJobWorkOrder. */
@@ -1343,8 +1501,11 @@ interface JwLineLog {
   changes?: ActivityChange[];
 }
 
-/** JWSO header fields compared on Edit — labels as on the JWSO form. */
-const JW_HEADER_FIELDS: readonly DiffField[] = [
+/** JWSO header fields compared on Edit — labels as on the JWSO form. Exported so
+ *  the edit-approval registry (jw-edit-registry.ts) diffs the SAME header fields
+ *  the History tab shows. `gstPercent` is only emitted when the actor may see
+ *  money (afterSnapshot gates it), so a price-blind editor never moves it. */
+export const JW_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'jwDate', label: 'JWSO Date' },
   { key: 'customerName', label: 'Customer' },
   { key: 'clientPoNo', label: 'Client PO No.' },

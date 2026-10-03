@@ -20,10 +20,15 @@
 // edited nor rejected once any PO existed, and the 90 sat in the "still to buy"
 // list forever.
 
-import { type PurchaseRequestDetail, opSrNo } from '@innovic/shared';
+import { type DocumentEditChange, type PurchaseRequestDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
@@ -56,6 +61,11 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = usePurchaseRequest(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'pr_create');
+  // ADR-202 — the edit(s) staged against this PR and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('PurchaseRequest', detail?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   // Create PO is a PURCHASE ORDER action that merely starts from this PR, so it
   // follows po_create — not pr_create. The page it opens
   // (/purchase-orders/from-pr) guards on po_create.entry, and a button gated on
@@ -341,17 +351,30 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               label="Item Code"
               title={itemCode}
               value={
-                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {itemCode}
-                </span>
+                <>
+                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {itemCode}
+                  </span>
+                  <Chip changes={pendingChanges} field="itemCodeText" />
+                </>
               }
             />
-            <Fact label="Item Name" title={detail.itemName ?? '—'} value={detail.itemName ?? '—'} />
+            <Fact
+              label="Item Name"
+              title={detail.itemName ?? '—'}
+              value={
+                <>
+                  {detail.itemName ?? '—'}
+                  <Chip changes={pendingChanges} field="itemName" />
+                </>
+              }
+            />
             <Fact
               label="Vendor"
               value={
                 <>
                   <span className="mono">{vendorCode}</span>
+                  <Chip changes={pendingChanges} field="vendor" />
                   <div>{detail.vendorName ?? '—'}</div>
                   {detail.vendorAddress ? (
                     <div className="text2" style={{ fontWeight: 400, fontSize: 12 }}>
@@ -369,7 +392,12 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             <Fact
               label="PR Date"
               title={fmtDate(detail.prDate)}
-              value={<span className="mono">{fmtDate(detail.prDate)}</span>}
+              value={
+                <>
+                  <span className="mono">{fmtDate(detail.prDate)}</span>
+                  <Chip changes={pendingChanges} field="prDate" />
+                </>
+              }
             />
           </div>
         </div>
@@ -382,7 +410,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <OtherDetail detail={detail} />
+          <OtherDetail detail={detail} pendingChanges={pendingChanges} />
         </div>
       </div>
 
@@ -421,8 +449,11 @@ const STRIP: React.CSSProperties = {
   gap: '10px 24px',
 };
 
-function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Element {
-  const { detail } = props;
+function OtherDetail(props: {
+  detail: PurchaseRequestDetail;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { detail, pendingChanges } = props;
   // Money hidden for L1 Viewers: the API nulls estCost, so the cost fields are
   // dropped entirely (not shown as '—').
   // Told by the server, not inferred from a null money field: a null also means
@@ -483,7 +514,15 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         </div>
       ) : null}
       <div style={STRIP}>
-        <Fact label="PR Qty" value={<span className="mono">{String(detail.qty)}</span>} />
+        <Fact
+          label="PR Qty"
+          value={
+            <>
+              <span className="mono">{String(detail.qty)}</span>
+              <Chip changes={pendingChanges} field="qty" />
+            </>
+          }
+        />
         <Fact
           label="On PO"
           title="On live purchase orders (cancelled POs not counted)"
@@ -516,7 +555,12 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
           <>
             <Fact
               label="Est. Rate (₹)"
-              value={<span className="mono">{estCostNum > 0 ? inr(estCostNum) : '—'}</span>}
+              value={
+                <>
+                  <span className="mono">{estCostNum > 0 ? inr(estCostNum) : '—'}</span>
+                  <Chip changes={pendingChanges} field="estCost" />
+                </>
+              }
             />
             <Fact
               label="Est. Amount"
@@ -526,9 +570,22 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
         )}
         <Fact
           label="Due Date"
-          value={<span className="mono">{fmtDate(detail.requiredDate)}</span>}
+          value={
+            <>
+              <span className="mono">{fmtDate(detail.requiredDate)}</span>
+              <Chip changes={pendingChanges} field="requiredDate" />
+            </>
+          }
         />
-        <Fact label="Operation" value={detail.operation ?? '—'} />
+        <Fact
+          label="Operation"
+          value={
+            <>
+              {detail.operation ?? '—'}
+              <Chip changes={pendingChanges} field="operation" />
+            </>
+          }
+        />
         <Fact label="PR Type" value={detail.prType ? PR_TYPE_LABELS[detail.prType] : '—'} />
         <Fact label="PO No." value={<span className="mono">{detail.poCode ?? '—'}</span>} />
         <Fact
@@ -543,7 +600,10 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
       <div className="divider" />
       <div style={{ minWidth: 0 }}>
         <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
+        <div style={{ whiteSpace: 'pre-wrap' }}>
+          {detail.remarks ?? '—'}
+          <Chip changes={pendingChanges} field="remarks" />
+        </div>
       </div>
     </>
   );
@@ -559,4 +619,15 @@ function Fact(props: { label: string; value: React.ReactNode; title?: string }):
       <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{props.value}</div>
     </div>
   );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the PR edit diff's field key. Renders
+ *  nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
 }

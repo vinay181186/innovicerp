@@ -2,6 +2,7 @@ import type {
   CreatePlanInput,
   CreatePlansBatchInput,
   DefaultRouteOpsResponse,
+  DocumentEditStagedResult,
   ExecutePlanResultShape,
   ListPlansQuery,
   ListPlansResponse,
@@ -233,18 +234,26 @@ export function useStockReservations(query: ListReservationsQuery, enabled = tru
 
 export function useUpdatePlan(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: UpdatePlanInput) =>
+  // ADR-202 — when the edit-approval gate is on and the plan is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated plan. The edit page reads the union to tell them apart.
+  return useMutation<PlanDetail | DocumentEditStagedResult, Error, UpdatePlanInput>({
+    mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<PlanDetail>(`/plans/${id}`, {
+        apiFetch<PlanDetail | DocumentEditStagedResult>(`/plans/${id}`, {
           method: 'PATCH',
           json: input,
           ...(headers ? { headers } : {}),
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the plan itself — refresh so the detail page shows
+        // the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+      }
     },
   });
 }

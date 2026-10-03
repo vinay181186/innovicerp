@@ -1,10 +1,15 @@
 // Plan detail (PL-4). Shows full plan + ops + linked entities + actions.
 
-import type { PlanStatus, PlanType } from '@innovic/shared';
+import type { DocumentEditChange, PlanStatus, PlanType } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -52,6 +57,11 @@ function PlanDetailPage(): React.JSX.Element {
   const { id } = planDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: plan, isLoading, isError, error } = usePlan(id);
+  // ADR-202 — edits staged against this plan and still waiting for a decision.
+  // Their per-field changes drive the inline amber chips next to the record
+  // fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('Plan', plan?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   const finalize = useFinalizePlan();
   const execute = useExecutePlan();
   const { data: eff } = useMyAccess();
@@ -161,6 +171,7 @@ function PlanDetailPage(): React.JSX.Element {
               <span className="text3" style={{ fontSize: 12 }}>
                 {TYPE_LABEL[plan.planType]}
               </span>
+              <Chip changes={pendingChanges} field="planType" />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -237,9 +248,33 @@ function PlanDetailPage(): React.JSX.Element {
           ) : null}
 
           <Grid>
-            <KV label="Plan Date" value={fmtDate(plan.planDate)} />
-            <KV label="Order Qty" value={plan.orderQty} />
-            <KV label="Plan Qty" value={plan.planQty} />
+            <KV
+              label="Plan Date"
+              value={
+                <>
+                  {fmtDate(plan.planDate)}
+                  <Chip changes={pendingChanges} field="planDate" />
+                </>
+              }
+            />
+            <KV
+              label="Order Qty"
+              value={
+                <>
+                  {plan.orderQty}
+                  <Chip changes={pendingChanges} field="orderQty" />
+                </>
+              }
+            />
+            <KV
+              label="Plan Qty"
+              value={
+                <>
+                  {plan.planQty}
+                  <Chip changes={pendingChanges} field="planQty" />
+                </>
+              }
+            />
             {/* ADR-185 — the same Covered / Pending the Plans list shows for
                 this plan (one SQL definition serves both). Route-card plans only. */}
             {plan.derivedStatus ? (
@@ -248,14 +283,54 @@ function PlanDetailPage(): React.JSX.Element {
                 <KV label="Pending" value={plan.pendingQty} />
               </>
             ) : null}
-            <KV label="Planned Start Date" value={fmtDate(plan.plannedStartDate)} />
-            <KV label="Planned End Date" value={fmtDate(plan.plannedEndDate)} />
-            <KV label="Customer Dispatch Date" value={fmtDate(plan.customerDispatchDate)} />
+            <KV
+              label="Planned Start Date"
+              value={
+                <>
+                  {fmtDate(plan.plannedStartDate)}
+                  <Chip changes={pendingChanges} field="plannedStartDate" />
+                </>
+              }
+            />
+            <KV
+              label="Planned End Date"
+              value={
+                <>
+                  {fmtDate(plan.plannedEndDate)}
+                  <Chip changes={pendingChanges} field="plannedEndDate" />
+                </>
+              }
+            />
+            <KV
+              label="Customer Dispatch Date"
+              value={
+                <>
+                  {fmtDate(plan.customerDispatchDate)}
+                  <Chip changes={pendingChanges} field="customerDispatchDate" />
+                </>
+              }
+            />
             {/* Raw material — read-only here; both are optional, so a plan with
                 neither still shows the pair as dashes rather than hiding them
                 (a missing grade is a planning gap worth seeing). */}
-            <KV label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
-            <KV label="RM Size" value={plan.rawMaterialSizeText ?? '—'} />
+            <KV
+              label="RM Grade"
+              value={
+                <>
+                  {plan.rawMaterialGradeText ?? '—'}
+                  <Chip changes={pendingChanges} field="rawMaterialGradeText" />
+                </>
+              }
+            />
+            <KV
+              label="RM Size"
+              value={
+                <>
+                  {plan.rawMaterialSizeText ?? '—'}
+                  <Chip changes={pendingChanges} field="rawMaterialSizeText" />
+                </>
+              }
+            />
             {/* `CODE/REV` — the customer's drawing revision from the SO line this
                 plan was raised against; a JW-sourced or ad-hoc plan has none and
                 keeps the bare code, with no trailing slash. */}
@@ -288,10 +363,28 @@ function PlanDetailPage(): React.JSX.Element {
                 Buy
               </div>
               <Grid>
-                <KV label="Vendor" value={plan.dpVendorCodeText ?? '—'} />
+                <KV
+                  label="Vendor"
+                  value={
+                    <>
+                      {plan.dpVendorCodeText ?? '—'}
+                      <Chip changes={pendingChanges} field="dpVendorCodeText" />
+                    </>
+                  }
+                />
                 {priceHidden ? null : <KV label="Cost" value={plan.dpCost ?? '—'} />}
                 <KV label="PR" value={plan.dpPrId ? '✓ Created' : '—'} />
-                {plan.dpRemarks ? <KV label="Remarks" value={plan.dpRemarks} /> : null}
+                {plan.dpRemarks || headerPendingChange(pendingChanges, 'dpRemarks') ? (
+                  <KV
+                    label="Remarks"
+                    value={
+                      <>
+                        {plan.dpRemarks ?? '—'}
+                        <Chip changes={pendingChanges} field="dpRemarks" />
+                      </>
+                    }
+                  />
+                ) : null}
               </Grid>
             </>
           ) : null}
@@ -302,15 +395,65 @@ function PlanDetailPage(): React.JSX.Element {
                 Full Outsource
               </div>
               <Grid>
-                <KV label="JW Vendor" value={plan.foVendorCodeText ?? '—'} />
-                <KV label="Process" value={plan.foProcess ?? '—'} />
+                <KV
+                  label="JW Vendor"
+                  value={
+                    <>
+                      {plan.foVendorCodeText ?? '—'}
+                      <Chip changes={pendingChanges} field="foVendorCodeText" />
+                    </>
+                  }
+                />
+                <KV
+                  label="Process"
+                  value={
+                    <>
+                      {plan.foProcess ?? '—'}
+                      <Chip changes={pendingChanges} field="foProcess" />
+                    </>
+                  }
+                />
                 {priceHidden ? null : <KV label="Rate" value={plan.foRate ?? '—'} />}
-                <KV label="Material Source" value={plan.foMaterialSrc ?? '—'} />
-                <KV label="Delivery Date" value={fmtDate(plan.foDeliveryDate)} />
-                <KV label="Cost Centre" value={plan.foCostCenter ?? '—'} />
+                <KV
+                  label="Material Source"
+                  value={
+                    <>
+                      {plan.foMaterialSrc ?? '—'}
+                      <Chip changes={pendingChanges} field="foMaterialSrc" />
+                    </>
+                  }
+                />
+                <KV
+                  label="Delivery Date"
+                  value={
+                    <>
+                      {fmtDate(plan.foDeliveryDate)}
+                      <Chip changes={pendingChanges} field="foDeliveryDate" />
+                    </>
+                  }
+                />
+                <KV
+                  label="Cost Centre"
+                  value={
+                    <>
+                      {plan.foCostCenter ?? '—'}
+                      <Chip changes={pendingChanges} field="foCostCenter" />
+                    </>
+                  }
+                />
                 <KV label="JW PR" value={plan.foPrId ? '✓ Created' : '—'} />
                 <KV label="Material PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
-                {plan.foRemarks ? <KV label="Remarks" value={plan.foRemarks} /> : null}
+                {plan.foRemarks || headerPendingChange(pendingChanges, 'foRemarks') ? (
+                  <KV
+                    label="Remarks"
+                    value={
+                      <>
+                        {plan.foRemarks ?? '—'}
+                        <Chip changes={pendingChanges} field="foRemarks" />
+                      </>
+                    }
+                  />
+                ) : null}
               </Grid>
             </>
           ) : null}
@@ -344,7 +487,7 @@ function PlanDetailPage(): React.JSX.Element {
             </div>
           ) : null}
 
-          {plan.remarks ? (
+          {plan.remarks || headerPendingChange(pendingChanges, 'remarks') ? (
             <div style={{ marginTop: 12 }}>
               <div
                 className="text3"
@@ -355,7 +498,10 @@ function PlanDetailPage(): React.JSX.Element {
               >
                 Remarks
               </div>
-              <div style={{ fontSize: 13 }}>{plan.remarks}</div>
+              <div style={{ fontSize: 13 }}>
+                {plan.remarks ?? '—'}
+                <Chip changes={pendingChanges} field="remarks" />
+              </div>
             </div>
           ) : null}
         </div>
@@ -448,4 +594,15 @@ function KV({ label, value }: { label: string; value: React.ReactNode }): React.
       <div style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{value}</div>
     </div>
   );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the plan edit diff's field key. Renders
+ *  nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
 }

@@ -43,12 +43,13 @@ import {
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
-import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, resolveGrnLineJobCardId } from './cascades';
 import {
   ActivityAction,
+  type DocumentEditStagedResult,
   type DocumentTraceability,
   poSendsMaterialOut,
   type RelatedDoc,
@@ -81,7 +82,7 @@ function grnDetail(code: string, vendorCodeText: string | null | undefined): str
 // once after the UPDATE, so a code typed as text and a code picked from the
 // master compare the same.
 
-const GRN_HEADER_FIELDS: readonly DiffField[] = [
+export const GRN_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'grnDate', label: 'GRN Date' },
   { key: 'poNo', label: 'PO No.' },
   { key: 'vendor', label: 'Vendor' },
@@ -109,7 +110,10 @@ interface GrnAuditSnapshot {
   lines: Map<string, GrnAuditLine>;
 }
 
-async function readGrnAuditSnapshot(tx: DbTransaction, grnId: string): Promise<GrnAuditSnapshot> {
+export async function readGrnAuditSnapshot(
+  tx: DbTransaction,
+  grnId: string,
+): Promise<GrnAuditSnapshot> {
   const hdr = await tx
     .select({
       grnDate: goodsReceiptNotes.grnDate,
@@ -630,6 +634,8 @@ export async function listGoodsReceiptNotes(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
+        first_line.item_code AS "firstItemCode",
+        first_line.item_name AS "firstItemName",
         COALESCE(line_agg.total_received_qty, 0)::float8 AS "totalReceivedQty",
         COALESCE(line_agg.qc_accepted_qty, 0)::float8 AS "totalQcAcceptedQty",
         COALESCE(line_agg.qc_rejected_qty, 0)::float8 AS "totalQcRejectedQty",
@@ -649,6 +655,19 @@ export async function listGoodsReceiptNotes(
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
       ${lineAggJoin}
+      -- Item Code / Item Name columns: the GRN's first live line (by line_no).
+      -- Page query only — one row per GRN, so no count changes.
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(fi.code, fl.item_code_text) AS item_code,
+          COALESCE(fl.item_name, fi.name) AS item_name
+        FROM public.goods_receipt_note_lines fl
+        LEFT JOIN public.items fi ON fi.id = fl.item_id AND fi.deleted_at IS NULL
+        WHERE fl.goods_receipt_note_id = grn.id
+          AND fl.deleted_at IS NULL
+        ORDER BY fl.line_no ASC
+        LIMIT 1
+      ) first_line ON TRUE
       WHERE grn.company_id = ${companyId}::uuid
         AND grn.deleted_at IS NULL
         ${searchFrag}
@@ -743,6 +762,8 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     vendorName: (r['vendorName'] as string | null) ?? null,
     poCode: (r['poCode'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
+    firstItemCode: (r['firstItemCode'] as string | null) ?? null,
+    firstItemName: (r['firstItemName'] as string | null) ?? null,
     totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),
     totalQcAcceptedQty: Number(r['totalQcAcceptedQty'] ?? 0),
     totalQcRejectedQty: Number(r['totalQcRejectedQty'] ?? 0),
@@ -1243,11 +1264,30 @@ export async function updateGoodsReceiptNote(
   user: AuthContext,
 ): Promise<GoodsReceiptNoteDetail> {
   // Changing a saved GRN is `edit`, so L2 (create-only) is correctly refused —
-  // that is the whole point of the Data Entry tier.
+  // that is the whole point of the Data Entry tier. Checked HERE, not in the tx
+  // body, so the edit-approval engine's applyEdit (ADR-202) can replay an
+  // approved edit for an approver who holds `approve` but not the edit tier.
   await requireFormAccess(user, 'grn_create', 'edit');
-  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => updateGoodsReceiptNoteTx(tx, id, input, user));
+}
 
-  return withUserContext(user, async (tx) => {
+/**
+ * The body of a GRN edit, inside a caller-supplied transaction. Called by
+ * updateGoodsReceiptNote (which opens the tx and ran the access check) and by the
+ * edit-approval engine's applyEdit, which already holds a tx with the GRN row
+ * locked FOR UPDATE — nesting withUserContext there would read a connection that
+ * cannot see the uncommitted lock. Every existing guard is unchanged: vendor /
+ * PO existence, the ADR-189 QC-frozen per-line checks in mergeLines, and the
+ * before → after History diff.
+ */
+export async function updateGoodsReceiptNoteTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateGoodsReceiptNoteInput,
+  user: AuthContext,
+): Promise<GoodsReceiptNoteDetail> {
+  const companyId = requireCompany(user);
+  {
     const existingHdrRows = await tx
       .select()
       .from(goodsReceiptNotes)
@@ -1309,7 +1349,150 @@ export async function updateGoodsReceiptNote(
     // (ADR-057) — a nested withUserContext would read a connection that cannot
     // see this transaction's uncommitted UPDATE and return stale rows.
     return getGoodsReceiptNoteInternal(tx, updatedHdr.id, companyId);
+  }
+}
+
+/**
+ * GRN children — the received lines — are NOT staged in this edit-approval pass
+ * (ADR-202 record/header level only). This detects any add / remove / field
+ * change so updateGoodsReceiptNoteOrStage can REFUSE it clearly instead of
+ * silently dropping it. Mirrors soChildRowsChanged: compares by id with
+ * valuesEqual (the exact null / empty / numeric / date rules the History diff
+ * uses), so a form that resends unchanged lines — which the GRN edit form always
+ * does (option-C merge) — reads as "no child change" and a header-only edit
+ * still stages. GRN lines carry no price, so there is no money-gated field.
+ */
+function grnChildRowsChanged(
+  currentLines: Array<{
+    id: string;
+    purchaseOrderLineId: string | null;
+    itemId: string | null;
+    itemCodeText: string | null;
+    itemName: string;
+    receivedQty: number;
+    dcRefNo: string | null;
+    qcStatus: string;
+    qcAcceptedQty: number;
+    qcRejectedQty: number;
+    qcDate: string | null;
+    qcRemarks: string | null;
+    remarks: string | null;
+  }>,
+  inputLines: GoodsReceiptNoteLineInput[],
+): boolean {
+  if (inputLines.length !== currentLines.length) return true;
+  const byId = new Map(currentLines.map((l) => [l.id, l]));
+  const seen = new Set<string>();
+  for (const p of inputLines) {
+    if (!p.id) return true; // a new line
+    const c = byId.get(p.id);
+    if (!c) return true;
+    seen.add(p.id);
+    if (p.purchaseOrderLineId !== undefined && !valuesEqual(p.purchaseOrderLineId, c.purchaseOrderLineId))
+      return true;
+    if (p.itemId !== undefined && !valuesEqual(p.itemId, c.itemId)) return true;
+    if (p.itemCodeText !== undefined && !valuesEqual(p.itemCodeText, c.itemCodeText)) return true;
+    if (!valuesEqual(p.itemName, c.itemName)) return true;
+    if (!valuesEqual(p.receivedQty, c.receivedQty)) return true;
+    if (p.dcRefNo !== undefined && !valuesEqual(p.dcRefNo, c.dcRefNo)) return true;
+    if (p.qcStatus !== undefined && !valuesEqual(p.qcStatus, c.qcStatus)) return true;
+    if (p.qcAcceptedQty !== undefined && !valuesEqual(p.qcAcceptedQty, c.qcAcceptedQty)) return true;
+    if (p.qcRejectedQty !== undefined && !valuesEqual(p.qcRejectedQty, c.qcRejectedQty)) return true;
+    if (p.qcDate !== undefined && !valuesEqual(p.qcDate, c.qcDate)) return true;
+    if (p.qcRemarks !== undefined && !valuesEqual(p.qcRemarks, c.qcRemarks)) return true;
+    if (p.remarks !== undefined && !valuesEqual(p.remarks, c.remarks)) return true;
+  }
+  for (const c of currentLines) if (!seen.has(c.id)) return true; // a removed line
+  return false;
+}
+
+/**
+ * The GRN edit entry point the PATCH route calls (ADR-202). When the Document
+ * Edit Approval gate is ON and the GRN is LIVE (not fully QC-closed), the header
+ * edit is staged for approval and the request row is returned; otherwise the
+ * edit applies directly through updateGoodsReceiptNote. Line changes are out of
+ * scope this pass and refused clearly so nothing is dropped unapproved.
+ */
+export async function updateGoodsReceiptNoteOrStage(
+  id: string,
+  input: UpdateGoodsReceiptNoteInput,
+  user: AuthContext,
+): Promise<GoodsReceiptNoteDetail | DocumentEditStagedResult> {
+  await requireFormAccess(user, 'grn_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Engine imported dynamically to avoid a static import cycle with
+  // grn-edit-registry (which imports updateGoodsReceiptNoteTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    const hdrRows = await tx
+      .select({ id: goodsReceiptNotes.id })
+      .from(goodsReceiptNotes)
+      .where(
+        and(
+          eq(goodsReceiptNotes.id, id),
+          eq(goodsReceiptNotes.companyId, companyId),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (hdrRows.length === 0) return false;
+    // "Live" mirrors grnEditRegistryEntry.isLive: at least one line still has QC
+    // qty remaining (grnStatus 'pending'). A fully QC-closed GRN edits directly.
+    const waiting = await tx
+      .select({ id: goodsReceiptNoteLines.id })
+      .from(goodsReceiptNoteLines)
+      .where(
+        and(
+          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
+          isNull(goodsReceiptNoteLines.deletedAt),
+          sql`(${goodsReceiptNoteLines.receivedQty} - ${goodsReceiptNoteLines.qcAcceptedQty} - ${goodsReceiptNoteLines.qcRejectedQty}) > 0`,
+        ),
+      )
+      .limit(1);
+    if (waiting.length === 0) return false;
+
+    if (input.lines !== undefined) {
+      const currentLines = await tx
+        .select({
+          id: goodsReceiptNoteLines.id,
+          purchaseOrderLineId: goodsReceiptNoteLines.purchaseOrderLineId,
+          itemId: goodsReceiptNoteLines.itemId,
+          itemCodeText: goodsReceiptNoteLines.itemCodeText,
+          itemName: goodsReceiptNoteLines.itemName,
+          receivedQty: goodsReceiptNoteLines.receivedQty,
+          dcRefNo: goodsReceiptNoteLines.dcRefNo,
+          qcStatus: goodsReceiptNoteLines.qcStatus,
+          qcAcceptedQty: goodsReceiptNoteLines.qcAcceptedQty,
+          qcRejectedQty: goodsReceiptNoteLines.qcRejectedQty,
+          qcDate: goodsReceiptNoteLines.qcDate,
+          qcRemarks: goodsReceiptNoteLines.qcRemarks,
+          remarks: goodsReceiptNoteLines.remarks,
+        })
+        .from(goodsReceiptNoteLines)
+        .where(
+          and(
+            eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
+            isNull(goodsReceiptNoteLines.deletedAt),
+          ),
+        );
+      if (grnChildRowsChanged(currentLines, input.lines)) {
+        throw new ConflictError(
+          "Editing GRN lines isn't available while Document Edit Approval is on yet — only the GRN's own fields go for approval. Turn the gate off to edit lines.",
+        );
+      }
+    }
+    return true;
   });
+  if (shouldStage) {
+    // The GRN update input carries no expectedUpdatedAt token (last-write-wins,
+    // unchanged); the engine falls back to the freshly-loaded updated_at.
+    const request = await requestDocumentEdit('GoodsReceiptNote', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateGoodsReceiptNote(id, input, user);
 }
 
 async function mergeLines(

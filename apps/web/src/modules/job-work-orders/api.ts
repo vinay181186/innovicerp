@@ -1,5 +1,6 @@
 import type {
   CreateJobWorkOrderInput,
+  DocumentEditStagedResult,
   EnsureJwRmItemInput,
   EnsureJwRmItemResponse,
   JobWorkOrderDetail,
@@ -75,10 +76,17 @@ export function useCreateJobWorkOrder(saveKey?: SaveKey) {
 
 export function useUpdateJobWorkOrder(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<JobWorkOrderDetail, Error, UpdateJobWorkOrderInput>({
+  // ADR-202 — when the edit-approval gate is on and the JWSO is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated JWSO. The edit page reads the union to tell them apart.
+  return useMutation<
+    JobWorkOrderDetail | DocumentEditStagedResult,
+    Error,
+    UpdateJobWorkOrderInput
+  >({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<JobWorkOrderDetail>(`/job-work-orders/${id}`, {
+        apiFetch<JobWorkOrderDetail | DocumentEditStagedResult>(`/job-work-orders/${id}`, {
           method: 'PATCH',
           json: input,
           ...(headers ? { headers } : {}),
@@ -86,8 +94,15 @@ export function useUpdateJobWorkOrder(id: string, saveKey?: SaveKey) {
       ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
-      qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the JWSO itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
+      qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);
     },
   });
 }

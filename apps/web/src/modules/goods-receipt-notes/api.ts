@@ -1,5 +1,6 @@
 import type {
   CreateGoodsReceiptNoteInput,
+  DocumentEditStagedResult,
   GoodsReceiptNoteDetail,
   ListGoodsReceiptNotesQuery,
   ListGoodsReceiptNotesResponse,
@@ -83,14 +84,28 @@ export function useCreateGoodsReceiptNote(saveKey?: SaveKey) {
 
 export function useUpdateGoodsReceiptNote(id: string) {
   const qc = useQueryClient();
-  return useMutation<GoodsReceiptNoteDetail, Error, UpdateGoodsReceiptNoteInput>({
+  // ADR-202 — when the edit-approval gate is on and the GRN is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated GRN. The edit page reads the union to tell them apart.
+  return useMutation<
+    GoodsReceiptNoteDetail | DocumentEditStagedResult,
+    Error,
+    UpdateGoodsReceiptNoteInput
+  >({
     mutationFn: (input) =>
-      apiFetch<GoodsReceiptNoteDetail>(`/goods-receipt-notes/${id}`, {
+      apiFetch<GoodsReceiptNoteDetail | DocumentEditStagedResult>(`/goods-receipt-notes/${id}`, {
         method: 'PATCH',
         json: input,
       }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: goodsReceiptNotesKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the GRN itself — refresh so the detail page shows
+        // the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: goodsReceiptNotesKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(goodsReceiptNotesKeys.detail(id), updated);
       invalidatePoCaches(qc);
     },

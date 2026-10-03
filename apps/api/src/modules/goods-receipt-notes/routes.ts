@@ -45,7 +45,7 @@ export async function goodsReceiptNotesRoutes(app: FastifyInstance): Promise<voi
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateGoodsReceiptNoteInputSchema.parse(req.body);
-    return service.updateGoodsReceiptNote(id, body, req.user);
+    return service.updateGoodsReceiptNoteOrStage(id, body, req.user);
   });
 
   app.delete('/goods-receipt-notes/:id', async (req, reply) => {

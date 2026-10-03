@@ -2,9 +2,19 @@
 // name (§18 — one fact, one name) so the request's REQUEST / APPROVE / REJECT
 // trail renders on the document's own History tab with no new view.
 //
-// This list grows by exactly one entry per rollout batch. Phase 1 enrols only
-// Purchase Order; Phase 2 adds the other transactional documents and masters;
-// Phase 3 adds the four documents that gain edit screens.
-export const DOCUMENT_EDIT_ENTITIES = ['PurchaseOrder'] as const;
+// This list grows one batch at a time. Phase 1 enrolled Purchase Order; Phase 2
+// adds the other transactional documents (and later masters); Phase 3 adds the
+// four documents that gain edit screens. Each value is that document's canonical
+// ActivityLog entity name.
+export const DOCUMENT_EDIT_ENTITIES = [
+  'PurchaseOrder',
+  'PurchaseRequest',
+  'NonConformance',
+  'Plan',
+  'SalesOrder',
+  'JobWorkOrder',
+  'GoodsReceiptNote',
+  'JobCard',
+] as const;
 
 export type DocumentEditEntity = (typeof DOCUMENT_EDIT_ENTITIES)[number];

@@ -3,12 +3,21 @@
 // (./service.ts) is entity-agnostic: it drives everything through this table, so
 // Phase 2 adds a document by adding one entry here — no engine change.
 //
-// Phase 1 enrols only PurchaseOrder.
+// Phase 1 enrolled PurchaseOrder; Phase 2a added PurchaseRequest, NonConformance
+// and Plan at RECORD/HEADER level; Phase 2b adds SalesOrder and JobWorkOrder,
+// also at RECORD/HEADER level (their child lines / milestones are not staged).
 
 import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
+import { grnEditRegistryEntry } from '../goods-receipt-notes/grn-edit-registry';
+import { jobCardEditRegistryEntry } from '../job-cards/jobcard-edit-registry';
+import { jwEditRegistryEntry } from '../job-work-orders/jw-edit-registry';
+import { ncEditRegistryEntry } from '../nc-register/nc-edit-registry';
+import { planEditRegistryEntry } from '../plans/plan-edit-registry';
 import { poEditRegistryEntry } from '../purchase-orders/po-edit-registry';
+import { prEditRegistryEntry } from '../purchase-requests/pr-edit-registry';
+import { soEditRegistryEntry } from '../sales-orders/so-edit-registry';
 
 /** The locked (or read) target document, projected to just what the engine
  *  needs: the row for diffing, its optimistic-lock token, its code, and whether
@@ -67,6 +76,18 @@ export interface DocEditRegistryEntry {
   ): Promise<Map<string, Date | string | null>>;
 }
 
-export const DOC_EDIT_REGISTRY: Record<DocumentEditEntity, DocEditRegistryEntry> = {
+// Partial: an entity may be listed in the frozen DOCUMENT_EDIT_ENTITIES before its
+// registry entry is wired (lets each document be enrolled independently, and lets
+// several enrollments land in parallel). getEntry() throws a clear error for an
+// entity that is enumerated but not yet registered — it only fires at runtime when
+// an edit to that document is actually diverted, never at type-check.
+export const DOC_EDIT_REGISTRY: Partial<Record<DocumentEditEntity, DocEditRegistryEntry>> = {
   PurchaseOrder: poEditRegistryEntry,
+  PurchaseRequest: prEditRegistryEntry,
+  NonConformance: ncEditRegistryEntry,
+  Plan: planEditRegistryEntry,
+  SalesOrder: soEditRegistryEntry,
+  JobWorkOrder: jwEditRegistryEntry,
+  GoodsReceiptNote: grnEditRegistryEntry,
+  JobCard: jobCardEditRegistryEntry,
 };
