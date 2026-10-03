@@ -429,20 +429,20 @@ export function OpEntryForm({
     // that is allowed to go unanswered.
     const rejNum = Number(rejectQty || '0');
     if (!Number.isInteger(qtyNum) || qtyNum < 0 || !Number.isInteger(rejNum) || rejNum < 0) {
-      setErrorMessage('Completed and Rejected must be 0 or a whole number.');
+      setErrorMessage('Completed and Deviated must be 0 or a whole number.');
       return;
     }
     // ADR-183: "0 good, 9 rejected" is a real entry (a scrapped batch) and
     // raises an NC on the server. Only an entry with nothing in it is refused.
     if (qtyNum + rejNum <= 0) {
-      setErrorMessage('Enter a quantity — Completed, Rejected, or both.');
+      setErrorMessage('Enter a quantity — Completed, Deviated, or both.');
       return;
     }
     // Rejected pieces consume the op's available qty too, so the cap is on
     // the two together. The server re-checks under a row lock.
     if (qtyNum + rejNum > op.available) {
       setErrorMessage(
-        `Completed + Rejected (${qtyNum + rejNum}) cannot be more than Available (${op.available}).`,
+        `Completed + Deviated (${qtyNum + rejNum}) cannot be more than Available (${op.available}).`,
       );
       return;
     }
@@ -489,16 +489,16 @@ export function OpEntryForm({
     const qtyNum = Number(qty || '0');
     const rejNum = Number(rejectQty || '0');
     if (!Number.isInteger(qtyNum) || qtyNum < 0 || !Number.isInteger(rejNum) || rejNum < 0) {
-      setErrorMessage('Accepted and Rejected must be 0 or a whole number.');
+      setErrorMessage('Accepted and Deviated must be 0 or a whole number.');
       return;
     }
     if (qtyNum + rejNum <= 0) {
-      setErrorMessage('Enter a quantity — Accepted, Rejected, or both.');
+      setErrorMessage('Enter a quantity — Accepted, Deviated, or both.');
       return;
     }
     if (qtyNum + rejNum > op.qcPending) {
       setErrorMessage(
-        `Accepted + Rejected (${qtyNum + rejNum}) cannot be more than QC Pending (${op.qcPending}).`,
+        `Accepted + Deviated (${qtyNum + rejNum}) cannot be more than QC Pending (${op.qcPending}).`,
       );
       return;
     }
@@ -592,13 +592,13 @@ export function OpEntryForm({
     }
     const rejNum = Number(rejectQty || '0');
     if (!Number.isInteger(rejNum) || rejNum < 0) {
-      setErrorMessage('Rejected must be 0 or a whole number.');
+      setErrorMessage('Deviated must be 0 or a whole number.');
       return;
     }
     // Same cap as Log: rejected pieces consume available too (ADR-183).
     if (qtyNum + rejNum > op.available) {
       setErrorMessage(
-        `Completed + Rejected (${qtyNum + rejNum}) cannot be more than Available (${op.available}).`,
+        `Completed + Deviated (${qtyNum + rejNum}) cannot be more than Available (${op.available}).`,
       );
       return;
     }
@@ -709,7 +709,7 @@ export function OpEntryForm({
             </Link>
           </span>
         ))}{' '}
-        raised for <b className="mono">{ncNotice.rejected}</b> rejected pcs.
+        raised for <b className="mono">{ncNotice.rejected}</b> deviated pcs.
       </div>
       {onSubmitted ? (
         <button type="button" className="btn btn-sm" onClick={() => onSubmitted()}>
@@ -913,7 +913,7 @@ export function OpEntryForm({
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="opf-rej">
-                  Rejected
+                  Deviated
                 </label>
                 <input
                   id="opf-rej"
@@ -1200,7 +1200,7 @@ export function OpEntryForm({
                 </div>
                 <div className="form-grp">
                   <label className="form-label" htmlFor="opf-rej">
-                    Rejected
+                    Deviated
                   </label>
                   {/* Optional — left blank it counts as none scrapped. */}
                   <input

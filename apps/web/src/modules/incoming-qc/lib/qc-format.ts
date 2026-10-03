@@ -32,7 +32,10 @@ export function dispColor(d: IncomingQcCompletedRow['disposition']): string {
   return 'var(--green)';
 }
 
-/** Screen word for the stored QC result code. */
+/** Screen word for the stored QC result code. A piece that fails inspection
+ *  is shown as "Deviated" (ADR-212 follow-up); the stored code stays 'Rejected'. */
 export function dispLabel(d: IncomingQcCompletedRow['disposition']): string {
-  return d === 'Partial Accept' ? 'Partly Accepted' : d;
+  if (d === 'Partial Accept') return 'Partly Accepted';
+  if (d === 'Rejected') return 'Deviated';
+  return d;
 }

@@ -499,7 +499,7 @@ export const submitOpLogInputSchema = z
     remarks: z.string().max(500).optional(),
   })
   .refine((v) => v.qty + (v.rejectQty ?? 0) > 0, {
-    message: 'Enter a quantity — good, rejected, or both',
+    message: 'Enter a quantity — good, deviated, or both',
     path: ['qty'],
   });
 export type SubmitOpLogInput = z.infer<typeof submitOpLogInputSchema>;
@@ -612,7 +612,7 @@ export const submitQcLogInputSchema = z
     qcReportName: z.string().nullable().optional(),
   })
   .refine((i) => i.qty + i.rejectQty > 0, {
-    message: 'Enter accepted qty and/or reject qty (legacy line 3895)',
+    message: 'Enter accepted qty and/or deviated qty (legacy line 3895)',
   });
 export type SubmitQcLogInput = z.infer<typeof submitQcLogInputSchema>;
 

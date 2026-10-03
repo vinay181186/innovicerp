@@ -265,7 +265,7 @@ export async function reverseOpLog(
     `)) as unknown as Array<{ code: string }>;
     if (ncRows.length > 0) {
       throw new ValidationError(
-        `${row.logNo} raised ${ncRows.map((n) => n.code).join(', ')} — its rejects are being handled ` +
+        `${row.logNo} raised ${ncRows.map((n) => n.code).join(', ')} — its deviated pieces are being handled ` +
           'on that NC, so the entry cannot be reversed.',
       );
     }
@@ -347,7 +347,7 @@ export async function reverseOpLog(
         detail:
           `Reverses ${row.logNo} (${row.logType === 'qc' ? 'QC' : 'production'} entry of ` +
           `${logWhen(row.logDate, row.startTime)}): ${row.qty} ${row.logType === 'qc' ? 'accepted' : 'good'}, ` +
-          `${row.rejectQty} rejected taken back — entry ${rev.logNo}`,
+          `${row.rejectQty} deviated taken back — entry ${rev.logNo}`,
       },
       companyId,
       user,

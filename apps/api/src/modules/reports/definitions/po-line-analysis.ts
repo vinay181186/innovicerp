@@ -21,7 +21,7 @@ export const poLineAnalysisReport: RegisteredReport = {
     slug: 'po-line-analysis',
     title: 'PO line analysis',
     description:
-      'Every PO line with Qty, Received, Incoming QC Accepted / Rejected, Pending, Pending Value and Days Late. Draft and cancelled POs are left out unless picked in PO Status. A short-closed or closed PO has nothing Pending.',
+      'Every PO line with Qty, Received, Incoming QC Accepted / Deviated, Pending, Pending Value and Days Late. Draft and cancelled POs are left out unless picked in PO Status. A short-closed or closed PO has nothing Pending.',
     group: 'Purchase',
     dept: 'purchase',
     showsMoney: true,
@@ -45,7 +45,7 @@ export const poLineAnalysisReport: RegisteredReport = {
       { key: 'qty', label: 'PO Qty', type: 'number' },
       { key: 'received_qty', label: 'Received', type: 'number' },
       { key: 'qc_accepted_qty', label: 'Accepted', type: 'number' },
-      { key: 'qc_rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'qc_rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'pending_qty', label: 'Pending', type: 'number' },
       { key: 'rate', label: 'Rate', type: 'number' },
       { key: 'pending_value', label: 'Pending Value', type: 'number' },

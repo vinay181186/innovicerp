@@ -172,9 +172,10 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // Dispose / close / create DC / Edit all rewrite a saved NC → `edit`
   // (L3 Editor and above).
   const canEdit = ncPerms.edit;
-  // The RTV challan is an outward DC, so it also needs the OSP DC entry right
-  // (design §5 gate: nc_dispose edit AND ospdc_create entry).
-  const canCreateDc = canEdit && effectiveFormPerms(eff, 'ospdc_create').entry;
+  // The RTV challan is an outward DC: OSP Outward DC entry ALONE raises it, on
+  // every route (ADR-211, owner) — no NC edit right needed. Disposing the NC
+  // (the gates above) stays with QC.
+  const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
   // Delete is not one of the four tier actions, so "L5 Department Admin and
   // above" is expressed as the pair only L5/L6 hold: L3 has edit without
   // approve, L4 has approve without edit. Was admin-only, which locked out the
@@ -433,7 +434,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
           items={[
             {
               key: 'rejected',
-              label: 'Rejected',
+              label: 'Deviated',
               count: Number(detail.rejectedQty),
               color: 'var(--red2)',
               title: 'Pieces this NC covers',
@@ -457,7 +458,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               label: 'Open',
               count: ncOpenQty(detail),
               color: 'var(--blue)',
-              title: 'Rejected − Cleared − Rejected Again',
+              title: 'Deviated − Cleared − Rejected Again',
             },
             ...(isRtv
               ? [

@@ -11,7 +11,7 @@ export const operatorProductivityReport: RegisteredReport = {
     slug: 'operator-productivity',
     title: 'Operator productivity',
     description:
-      'Per-operator total qty, entry count and reject rate over a date range, from Op Entry. Operators with no entries in the window do not appear.',
+      'Per-operator total qty, entry count and deviation rate over a date range, from Op Entry. Operators with no entries in the window do not appear.',
     group: 'Production',
     dept: 'production',
     filters: [
@@ -22,8 +22,8 @@ export const operatorProductivityReport: RegisteredReport = {
       { key: 'operator_name', label: 'Operator', type: 'text' },
       { key: 'log_count', label: 'Log Count', type: 'number' },
       { key: 'total_qty', label: 'Completed', type: 'number' },
-      { key: 'total_reject_qty', label: 'Rejected', type: 'number' },
-      { key: 'reject_pct', label: 'Rejected %', type: 'number' },
+      { key: 'total_reject_qty', label: 'Deviated', type: 'number' },
+      { key: 'reject_pct', label: 'Deviated %', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {

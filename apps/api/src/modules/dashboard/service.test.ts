@@ -115,7 +115,7 @@ describe('dashboard service', () => {
     expect(ncTile).toBeDefined();
     if (ncTile && ncTile.count > 0) {
       expect(ncTile.secondary).not.toBeNull();
-      expect(ncTile.secondary?.label).toBe('rejected qty');
+      expect(ncTile.secondary?.label).toBe('deviated qty');
       expect(Number(ncTile.secondary?.value)).toBeGreaterThanOrEqual(0);
     } else {
       expect(ncTile?.secondary).toBeNull();

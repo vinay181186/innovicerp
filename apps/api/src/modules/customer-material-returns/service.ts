@@ -434,7 +434,7 @@ export async function createCustomerMaterialReturn(
       }
       if (ln.kind === 'rejected' && !ln.partyGrnLineId) {
         throw new ValidationError(
-          `Row #${idx + 1}: pick the Party GRN the rejected pieces came in on.`,
+          `Row #${idx + 1}: pick the Party GRN the deviated pieces came in on.`,
         );
       }
       if (ln.kind === 'good' && ln.partyGrnLineId) {
@@ -547,7 +547,7 @@ export async function createCustomerMaterialReturn(
         }
         if (g.qcAt == null) {
           throw new ValidationError(
-            `Row #${idx + 1}: ${g.grnCode} is still waiting for Incoming QC — nothing is rejected yet.`,
+            `Row #${idx + 1}: ${g.grnCode} is still waiting for Incoming QC — nothing is deviated yet.`,
           );
         }
         // Cap in the WHERE: 0 rows = the held pieces were taken by someone else.
@@ -563,8 +563,8 @@ export async function createCustomerMaterialReturn(
         if (bumped.length === 0) {
           const held = Number(g.rejectedQty) - Number(g.rejectedReturnedQty);
           throw new ConflictError(
-            `Row #${idx + 1}: Qty (${ln.qty}) cannot be more than the rejected pieces still held on ` +
-              `${g.grnCode} for ${where} (${Math.max(0, held)}) — Rejected ${g.rejectedQty}, ` +
+            `Row #${idx + 1}: Qty (${ln.qty}) cannot be more than the deviated pieces still held on ` +
+              `${g.grnCode} for ${where} (${Math.max(0, held)}) — Deviated ${g.rejectedQty}, ` +
               `already returned ${g.rejectedReturnedQty}.`,
           );
         }
@@ -580,7 +580,7 @@ export async function createCustomerMaterialReturn(
           createdBy: userId,
           updatedBy: userId,
         });
-        summary.push(`${where} rejected ${ln.qty} (${g.grnCode})`);
+        summary.push(`${where} deviated ${ln.qty} (${g.grnCode})`);
       }
       totalQty += ln.qty;
     }
@@ -695,7 +695,7 @@ export async function cancelCustomerMaterialReturn(
       } else {
         if (!l.partyGrnLineId) {
           throw new ConflictError(
-            `${head.code}: a rejected row has no Party GRN line — cannot reverse it.`,
+            `${head.code}: a deviated row has no Party GRN line — cannot reverse it.`,
           );
         }
         const lowered = (await tx.execute(sql`
@@ -707,7 +707,7 @@ export async function cancelCustomerMaterialReturn(
         `)) as unknown as Array<{ id: string }>;
         if (lowered.length === 0) {
           throw new ConflictError(
-            `${head.code}: the Party GRN line's returned-rejected total is less than ${qty}, so it cannot be lowered. ` +
+            `${head.code}: the Party GRN line's returned-deviated total is less than ${qty}, so it cannot be lowered. ` +
               `Ask an administrator to check this GRN.`,
           );
         }

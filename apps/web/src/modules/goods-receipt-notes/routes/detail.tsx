@@ -274,7 +274,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
           <div className="panel-title">Line Items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             Received <b style={{ color: 'var(--text)' }}>{totalReceived}</b> · Accepted{' '}
-            <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · Rejected{' '}
+            <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · Deviated{' '}
             <b style={{ color: 'var(--red2)' }}>{totalRejected}</b>
           </span>
         </div>
@@ -293,7 +293,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 <th>Vendor Challan No.</th>
                 <th>QC Status</th>
                 <th className="th-num">Accepted</th>
-                <th className="th-num">Rejected</th>
+                <th className="th-num">Deviated</th>
                 <th>QC Date</th>
               </tr>
             </thead>

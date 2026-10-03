@@ -50,7 +50,7 @@ export const ncRegisterAllReport: RegisteredReport = {
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'operation', label: 'Operation', type: 'text' },
-      { key: 'rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'reason_category', label: 'Reason', type: 'text' },
       { key: 'details', label: 'Details', type: 'text' },
       { key: 'disposition', label: 'Disposition', type: 'text' },

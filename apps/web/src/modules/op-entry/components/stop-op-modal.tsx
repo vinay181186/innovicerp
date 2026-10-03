@@ -426,7 +426,7 @@ export function StopOpModal({
             </div>
             <div className="form-grp" style={{ width: 150 }}>
               <label className="form-label" htmlFor="stop-op-rej">
-                Rejected
+                Deviated
               </label>
               <input
                 id="stop-op-rej"
@@ -460,12 +460,12 @@ export function StopOpModal({
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {target.availableQty}
             </b>{' '}
-            pcs (Completed + Rejected). Enter <b className="mono">0</b> if nothing was made.
+            pcs (Completed + Deviated). Enter <b className="mono">0</b> if nothing was made.
           </div>
 
           {overCap ? (
             <div style={{ fontSize: 11, color: 'var(--red2)' }}>
-              Completed + Rejected ({totalNum}) cannot be more than Available ({target.availableQty}
+              Completed + Deviated ({totalNum}) cannot be more than Available ({target.availableQty}
               ).
             </div>
           ) : null}
@@ -476,7 +476,7 @@ export function StopOpModal({
           ) : null}
           {qtyIsJunk || rejIsJunk ? (
             <div style={{ fontSize: 11, color: 'var(--red2)' }}>
-              Enter whole numbers (0 or more) in {qtyIsJunk ? 'Completed' : 'Rejected'}.
+              Enter whole numbers (0 or more) in {qtyIsJunk ? 'Completed' : 'Deviated'}.
             </div>
           ) : null}
           {/* Naming what is still empty, rather than just greying the button out

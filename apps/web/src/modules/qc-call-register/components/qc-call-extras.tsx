@@ -121,7 +121,7 @@ export function RaisedNcBanner(props: { nc: RaisedNc; onDismiss: () => void }): 
         </>
       }
     >
-      The rejected qty from the QC Inspection just saved is on this NC until it is disposed.
+      The deviated qty from the QC Inspection just saved is on this NC until it is disposed.
     </Banner>
   );
 }

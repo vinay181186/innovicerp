@@ -57,7 +57,7 @@ export async function exportOpLog(
     'Actual Machine': r.machineCode ?? '',
     Operation: r.operation ?? '',
     Completed: r.qty,
-    Rejected: r.rejectQty,
+    Deviated: r.rejectQty,
     Operator: r.operatorName ?? '',
     Remarks: r.remarks ?? '',
     'Logged By': r.createdByName ?? '',

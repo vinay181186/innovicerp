@@ -468,7 +468,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
                 <div className="form-grp">
                   <label className="form-label" htmlFor="rejectedQty">
-                    Rejected<span className="req">★</span>
+                    Deviated<span className="req">★</span>
                   </label>
                   <input
                     id="rejectedQty"
@@ -482,8 +482,8 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                       // The unit rule (whole pieces for NOS / SET) is the server's.
                       validate: (v) =>
                         !(v > 0)
-                          ? 'Rejected must be more than 0.'
-                          : (qtyUomProblem(v, null, 'Rejected') ?? true),
+                          ? 'Deviated must be more than 0.'
+                          : (qtyUomProblem(v, null, 'Deviated') ?? true),
                     })}
                   />
                   {errors.rejectedQty?.message ? (

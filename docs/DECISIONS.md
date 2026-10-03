@@ -11199,3 +11199,87 @@ the ▸ panel with Physical.
   right that the first draft of this ADR claimed no wire change at all. Pinned by a test.
   Fixing it properly means deciding whether a raised PR counts as "let out"; it is the
   same question as the level-1 roll-up below, and belongs with it.
+
+## ADR-211: Return-to-vendor challan also from "Against JW PO / DC" on +New DC
+
+**Date:** 2026-10-03
+**Status:** Accepted (owner, 2026-10-03)
+
+### Context
+
+A return-to-vendor (RTV) challan could be raised only by NC No. (NC page "Create DC", or +New DC →
+Against NC). The store knows the JW PO No. / the DC No. the pieces went out on, not the NC No. Sending
+the rejected pieces on an ordinary Against PO challan instead double counts: the JW PO "sent" rises
+past the order, the NC stays "waiting for challan" (a second challan is possible), and the return is
+booked as an ordinary receipt so the NC never closes.
+
+### Decision
+
+- +New DC gets a third source, **Against JW PO / DC**: search by PO No. or Sent on DC No., list the
+  RTV NCs behind it (`GET /delivery-challans/rtv-candidates`), pick ONE, and save through the existing
+  `POST /nc-register/:id/create-dc` (createNcDc). One writer for RTV qty (CLAUDE.md §20.1); the
+  one-challan-per-NC lock + 0181 unique index cover every route.
+- "Ready" uses the same SQL predicate as the NC list's `pendingRtvChallan` (one shared fragment).
+  Vendor-sourced NCs still pending QC show greyed as "Waiting for QC Decision".
+- **One challan per NC** (owner) — no multi-NC challan, no schema change.
+- **Permission (owner):** OSP Outward DC **entry** alone raises the RTV challan, on every route
+  (createNcDc no longer needs NC Register edit or the op-entry role). Disposing the NC stays with QC.
+- **Against PO guard:** the save is refused (409, details.kind = 'rtv_pending') when a PO line on
+  the challan has an RTV NC ready or awaiting decision, unless the store ticks "These are new pieces,
+  not the ones waiting to go back" (`rtvConfirmedNcIds` = the NCs shown when ticked, not stored; an NC
+  not in that list blocks again). Checked inside the save's transaction, before any write. The NC
+  writers do not take the PO-line lock, so an NC committed in the same instant as the save can slip
+  past; the next save re-checks. A plain block was rejected: a JW PO with balance still due must be
+  able to send genuinely new pieces.
+
+### Consequences
+
+- No migration. Old routes (NC page, Against NC, GRN Against NC / JW PO / DC, cancel) unchanged.
+- An NC logged at an outsource op without a GRN, or a repeat reject (tied to the return challan), has
+  no "Sent on DC No." of the original DC — it is found by PO No.
+- Not covered: the store JW DC Outward (jw-dc module) has no such guard.
+## ADR-212: Op Qty Flow — reconciled row per op (Deviated / Reworked / Rejected), Passed On removed
+
+**Date:** 2026-10-03
+**Status:** Accepted (owner approved mock-up JC-Detail-Mockup-v2, actual data of PROD IN-JC-26-00001)
+
+### Context
+On IN-JC-26-00001 Op 40 the table read "Sent 30 · Accepted 30 · Rejected 5": the 5 pieces deviated at incoming
+QC were re-sent to the vendor (NC-00001, IN-DC-00002/R1) and came back good, but the re-sent lot was not in
+"Sent", the rework was invisible, and "Rejected" looked final while it was only the inspection result.
+
+### Decision
+- Columns: Op · Operation · Input │ Done · Accepted │ Deviated (NC) · Reworked · Rejected │ Pending │ Sent ·
+  Received · At Vendor │ Check · Op Status, with vertical separators and a group band ("At this operation",
+  "With vendor (outsource)"). Passed On removed (Accepted is what moves on).
+- Deviated = failed inspection → NC (production + QC + incoming-QC rejects); Reworked = Σ NC cleared_qty;
+  Rejected = FINAL NC decision (v_jc_op_status op_loss rule). Sent = DC + return-to-vendor re-sent; Received
+  = all GRN receipts incl. re-received lots.
+- Server computes Check: Input = Accepted + Rejected + Deviated still open (minus pieces back at the vendor
+  on an open return-to-vendor NC) + At vendor + In QC + Pending; `unaccountedQty` 0 = ✓. Screen only shows it.
+- DataTable gains an optional `headGroups` band (opt-in; other tables unchanged).
+
+## ADR-213: Purchase Request Create / Edit / View on one cluster grid (the Plan screens method)
+
+**Date:** 2026-10-03
+**Status:** Accepted (owner: "modify UI of PR create, edit, view as per the planning screens")
+
+### Context
+PR Create/Edit was a 12-column form in field order (PR Type · PR No. · PR Date / Item … ), and the PR view was
+two panels of wrapping fact strips (SO No., POL, Item Code … then a second "Request Detail" panel) with no
+grouping and no sum. The Plan screens method (plan-modals-mockup.html) settled how a create / edit / view
+screen is laid out.
+
+### Decision
+- New primitive `ui/forms/ClusterGrid` (`DocIdent`, `Cluster`, `ClusterFact`): an identity line, then rows of
+  FOUR equal cells, each row a named cluster with its name in a 104px left gutter, hairlines between facts,
+  the row's result last with a 3px green rule. Form fields sit in the same grid as facts.
+- PR Create / Edit: Item (Item Code · Item Name ×2 · PR Qty) → Request (PR Type · PR Date · Due Date ·
+  Operation) → Vendor (Vendor ×2 · Est. Rate · Est. Amount = qty × rate, read-only) → Notes (Remarks ×4).
+  PR No. leaves the grid for the identity line; on Edit the header carries only the status badge.
+- PR View: one panel. Header = PR No. · item name · status · PR Type chip. Identity line = CODE/REV · name ·
+  SO · Ln · POL · JC · Op · PO (only the parts that exist). Quantity (PR Qty · On PO · Short closed ·
+  Pending) → Schedule (PR Date · Approved At · PO Created At · Due Date) → Vendor (Vendor ×2 · Est. Rate ·
+  Est. Amount) → Notes (Operation · Remarks ×3). The separate "Request Detail" panel is gone.
+- Vendor address moves to the Vendor cell's hover text (it belongs on the PO). No API, schema or field-id
+  change; e2e selectors (#itemCodeText, #qty, #estCost …) unchanged.

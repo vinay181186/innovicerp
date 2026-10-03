@@ -177,7 +177,7 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
         title: 'NCs pending dispose',
         count: ncCount,
         secondary:
-          ncCount > 0 ? { label: 'rejected qty', value: Number(ncSumRejected).toFixed(0) } : null,
+          ncCount > 0 ? { label: 'deviated qty', value: Number(ncSumRejected).toFixed(0) } : null,
         severity: severityForCount(ncCount, 1, 5),
         route: '/nc-register?status=pending',
         hint: null,

@@ -132,7 +132,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
       headColor: 'var(--green2)',
       title: 'Accepted at incoming QC',
     }),
-    qty('rejected', 'Rejected', (r) => r.rejectedQty, 'var(--red)', { sf: 'rejectedQty' }),
+    qty('rejected', 'Deviated', (r) => r.rejectedQty, 'var(--red)', { sf: 'rejectedQty' }),
     qty('not_sent', 'Not Sent', (r) => r.notSentQty, 'var(--blue)', {
       sf: 'notSentQty',
       headColor: 'var(--blue)',

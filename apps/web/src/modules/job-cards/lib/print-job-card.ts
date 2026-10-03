@@ -196,7 +196,7 @@ export function printJobCard(args: {
       <th style="width:16mm">Start<br>Date</th>
       <th style="width:16mm">End<br>Date</th>
       <th style="width:11mm">Accepted</th>
-      <th style="width:13mm">Rejected</th>
+      <th style="width:13mm">Deviated</th>
       <th style="width:22mm">Logged By</th>
     </tr></thead>
     <tbody>${rows}</tbody>

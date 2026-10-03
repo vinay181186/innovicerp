@@ -117,7 +117,7 @@ export function exportJobCardExcel(args: {
     'Machine Split',
     'Available',
     'Accepted',
-    'Rejected',
+    'Deviated',
     'QC Pending',
     'Op Status',
   ];
@@ -160,7 +160,7 @@ export function exportJobCardExcel(args: {
     // (ADR-164). Same name unless the op was run elsewhere.
     'Planned Machine',
     'Completed',
-    'Rejected',
+    'Deviated',
     'Operator',
     'Remarks',
   ];

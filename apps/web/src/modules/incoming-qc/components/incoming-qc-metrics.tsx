@@ -40,7 +40,7 @@ export function IncomingQcMetricsStrip({ m }: { m: IncomingQcMetrics }): React.J
         },
         {
           key: 'todayRejected',
-          label: 'Today Rejected',
+          label: 'Today Deviated',
           count: m.todayRejectedQty,
           color: 'var(--red2)',
         },

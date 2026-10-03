@@ -355,7 +355,7 @@ export function JcOpEditCard({
                       <div style={{ fontSize: 11, color: 'var(--green2)' }}>✓ accepted</div>
                       {en.qcRejectedQty > 0 ? (
                         <div style={{ fontSize: 11, color: 'var(--red2)' }}>
-                          ✗{en.qcRejectedQty} rejected
+                          ✗{en.qcRejectedQty} deviated
                         </div>
                       ) : null}
                     </>

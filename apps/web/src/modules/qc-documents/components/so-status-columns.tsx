@@ -78,7 +78,7 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
       </span>
       {op.rejected > 0 ? (
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red2)', marginLeft: 2 }}>
-          {op.rejected} Rejected
+          {op.rejected} Deviated
         </span>
       ) : null}
       {op.pending > 0 ? (

@@ -33,7 +33,7 @@ export const dailyOpLogReport: RegisteredReport = {
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'operator_name', label: 'Operator', type: 'text' },
       { key: 'qty', label: 'Completed', type: 'number' },
-      { key: 'reject_qty', label: 'Rejected', type: 'number' },
+      { key: 'reject_qty', label: 'Deviated', type: 'number' },
       { key: 'shift', label: 'Shift', type: 'text' },
     ],
     // ADR-190 — jc_code opens the document; jc_id is not a column.

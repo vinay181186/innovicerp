@@ -550,7 +550,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     </div>
 
                     <div className="form-grp">
-                      <label className="form-label">Rejected</label>
+                      <label className="form-label">Deviated</label>
                       <input
                         type="number"
                         min={0}

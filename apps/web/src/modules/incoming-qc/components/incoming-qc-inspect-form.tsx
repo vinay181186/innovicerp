@@ -147,16 +147,16 @@ export function useIncomingQcInspect(props: {
     const max3dp = (n: number): boolean =>
       Number.isFinite(n) && Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-6;
     if (!max3dp(acc) || acc < 0 || !max3dp(rej) || rej < 0) {
-      setErr('Accepted and Rejected must be 0 or more, with at most 3 decimals.');
+      setErr('Accepted and Deviated must be 0 or more, with at most 3 decimals.');
       return;
     }
     const total = Math.round((acc + rej) * 1000) / 1000;
     if (total <= 0) {
-      setErr('Enter the Accepted and/or Rejected qty.');
+      setErr('Enter the Accepted and/or Deviated qty.');
       return;
     }
     if (total > o.pendingQty) {
-      setErr(`Accepted + Rejected (${total}) cannot be more than QC Pending (${o.pendingQty}).`);
+      setErr(`Accepted + Deviated (${total}) cannot be more than QC Pending (${o.pendingQty}).`);
       return;
     }
     if (!qcBy.trim()) {
@@ -323,7 +323,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
         <div className="form-grp">
           <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
-            Rejected
+            Deviated
           </label>
           <input
             type="number"

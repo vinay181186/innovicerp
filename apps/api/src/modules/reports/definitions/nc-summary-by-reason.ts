@@ -17,7 +17,7 @@ export const ncSummaryByReasonReport: RegisteredReport = {
     slug: 'nc-summary-by-reason',
     title: 'NC Register - Disposition by Reason',
     description:
-      'NCs grouped by reason category — count, rejected qty, and a per-disposition breakdown (Rework / Scrap / Use As Is / RTV / Make Fresh) with a TOTAL row. Useful for the QC review meeting.',
+      'NCs grouped by reason category — count, deviated qty, and a per-disposition breakdown (Rework / Scrap / Use As Is / RTV / Make Fresh) with a TOTAL row. Useful for the QC review meeting.',
     group: 'Quality',
     dept: 'qc',
     filters: [
@@ -27,7 +27,7 @@ export const ncSummaryByReasonReport: RegisteredReport = {
     columns: [
       { key: 'reason_category', label: 'Reason', type: 'text' },
       { key: 'nc_count', label: 'NC Count', type: 'number' },
-      { key: 'total_rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'total_rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'rework_count', label: 'Rework', type: 'number' },
       { key: 'scrap_count', label: 'Scrap', type: 'number' },
       { key: 'use_as_is_count', label: 'Use As Is', type: 'number' },

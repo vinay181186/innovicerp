@@ -290,4 +290,16 @@ export interface DataTableProps<T> {
   wrapClassName?: string | undefined;
   /** @deprecated `list` renders the retired unruled look — un-migrated screens only. */
   variant?: 'sheet' | 'list' | undefined;
+  /** Optional band of group labels above the column headers (ADR-212, Op Qty
+   *  Flow). Each entry spans `span` columns; a short band is padded to cover
+   *  every column. Drawn by the classic table only (not the fit engine, i.e.
+   *  not with `tableKey`). Tables that do not pass it render exactly as before. */
+  headGroups?: ReadonlyArray<DataTableHeadGroup> | undefined;
+}
+
+export interface DataTableHeadGroup {
+  label?: ReactNode;
+  span: number;
+  color?: string | undefined;
+  className?: string | undefined;
 }

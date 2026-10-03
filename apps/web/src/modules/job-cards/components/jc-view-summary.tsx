@@ -608,11 +608,12 @@ export function JcViewSummary({
               title="Started, not yet finished."
             />
             <KpiTile
-              label="Rejected"
+              label="Deviated"
               value={rejected ?? '—'}
               tone="red"
               title={
-                'Rejected, not recovered.' + (openNcCount > 0 ? ` ${openNcCount} NC(s) open.` : '')
+                'Deviated and not yet recovered (open NCs, plus pieces scrapped).' +
+                (openNcCount > 0 ? ` ${openNcCount} NC(s) open.` : '')
               }
             />
             {/* Amber while pieces are still owed; green once the order is

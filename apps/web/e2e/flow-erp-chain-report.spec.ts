@@ -963,7 +963,7 @@ async function readGrnDetail(page: Page, grnId: string) {
   const table = page.locator('table.innovic-table').filter({ has: page.locator('th', { hasText: /^Received$/i }) }).first();
   const recIdx = await colIndex(table, /^Received$/i);
   const accIdx = await colIndex(table, /^Accepted$/i);
-  const rejIdx = await colIndex(table, /^Rejected$/i);
+  const rejIdx = await colIndex(table, /^Deviated$/i);
   const qcIdx = await colIndex(table, /^QC Status$/i);
   const rows = table.locator('tbody tr');
   const n = await rows.count();

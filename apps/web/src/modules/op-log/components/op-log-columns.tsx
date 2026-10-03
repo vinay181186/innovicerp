@@ -229,7 +229,7 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       id: 'rejected',
       sortFilterField: 'rejectQty',
       kind: 'num',
-      header: 'Rejected',
+      header: 'Deviated',
       align: 'right',
       headColor: 'var(--red2)',
       className: 'mono fw-700',

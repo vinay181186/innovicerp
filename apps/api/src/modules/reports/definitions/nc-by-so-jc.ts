@@ -25,7 +25,7 @@ export const ncBySoJcReport: RegisteredReport = {
     slug: 'nc-by-so-jc',
     title: 'NC by SO/JC',
     description:
-      'NCs grouped by Sales Order (falling back to Job Card) — count, rejected qty, pending vs closed. Pinpoints which orders are generating quality issues.',
+      'NCs grouped by Sales Order (falling back to Job Card) — count, deviated qty, pending vs closed. Pinpoints which orders are generating quality issues.',
     group: 'Quality',
     dept: 'qc',
     filters: [
@@ -36,7 +36,7 @@ export const ncBySoJcReport: RegisteredReport = {
       { key: 'so_jc', label: 'SO No. / JC No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'nc_count', label: 'NC Count', type: 'number' },
-      { key: 'total_rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'total_rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'pending_count', label: 'Pending NCs', type: 'number' },
       { key: 'closed_count', label: 'Closed NCs', type: 'number' },
     ],

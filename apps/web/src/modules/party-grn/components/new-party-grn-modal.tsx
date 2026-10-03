@@ -298,7 +298,7 @@ export function NewPartyGrnModal({
           Line Items
           <span className="text3" style={{ fontWeight: 400, marginLeft: 8 }}>
             Enter Received Qty for the lines on this challan — leave blank to skip. Accepted /
-            Rejected are entered later by Incoming QC.
+            Deviated are entered later by Incoming QC.
           </span>
         </div>
 

@@ -34,7 +34,7 @@ export const grnQcLogReport: RegisteredReport = {
       { key: 'received_qty', label: 'Received', type: 'number' },
       { key: 'qc_status', label: 'QC Status', type: 'text' },
       { key: 'qc_accepted_qty', label: 'Accepted', type: 'number' },
-      { key: 'qc_rejected_qty', label: 'Rejected', type: 'number' },
+      { key: 'qc_rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'qc_date', label: 'QC Date', type: 'date' },
       { key: 'po_code', label: 'PO No.', type: 'text' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },

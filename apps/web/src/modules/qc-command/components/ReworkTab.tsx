@@ -104,7 +104,7 @@ const columns: DataTableColumn<QcReworkRow>[] = [
   },
   {
     id: 'rejected',
-    header: 'Rejected',
+    header: 'Deviated',
     align: 'right',
     nowrap: true,
     className: 'mono fw-700',
