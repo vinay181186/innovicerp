@@ -102,6 +102,29 @@ describe('planningLineStatus', () => {
     expect(r.pct).toBe(31);
   });
 
+  // ADR-196: short-close ends the line. It must beat every branch below,
+  // including a draft plan still sitting on it — which is exactly the case the
+  // screen used to get wrong while the API got it right.
+  it('a short-closed line reads Fully Planned whatever is on it', () => {
+    for (const over of [
+      { remaining: 60, totalPlanned: 40, plans: [{ planStatus: 'planned' }] },
+      { remaining: 100, totalPlanned: 0, plans: [] },
+      { remaining: 0, totalPlanned: 100, plans: [{ planStatus: 'in_planning' }] },
+    ]) {
+      const r = planningLineStatus(line({ ...over, shortClosed: true }));
+      expect(r.state).toBe('fully_planned');
+      expect(r.label).toBe('Fully Planned');
+      expect(r.pct).toBe(100);
+      expect(toPlanningLineStatus(r.state)).toBe('fully_planned');
+    }
+  });
+
+  it('shortClosed left out behaves exactly as false', () => {
+    const base = { remaining: 0, totalPlanned: 100, plans: [{ planStatus: 'planned' }] };
+    expect(planningLineStatus(line(base)).state).toBe('in_planning');
+    expect(planningLineStatus(line({ ...base, shortClosed: false })).state).toBe('in_planning');
+  });
+
   // Known gap, carried over unchanged from the screen's old rule so this
   // refactor changes no behaviour. On a BUY line `totalPlanned` also counts the
   // qty on raised purchase requests, but the state only looks at plans and

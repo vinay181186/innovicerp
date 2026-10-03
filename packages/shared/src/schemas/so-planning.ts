@@ -180,6 +180,9 @@ export const planningLineSchema = z.object({
    *  max(0, orderQty − dispatchedQty − reservedQty). Stock reserved to this
    *  line already covers part of the order, so it is not planned again. */
   balanceToPlan: z.number().int().nonnegative(),
+  /** Short-closed (ADR-196): the rest of this line will never be made, so it
+   *  reads fully planned and stops asking to be planned. */
+  shortClosed: z.boolean().default(false),
   /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs.
    *  Filled from `planningLineStatus()` in `lib/planning-line-status.ts`, which
    *  is the ONE rule the screen reads too. A line covered only by DRAFT plans

@@ -45,6 +45,11 @@ export interface PlanningLineStatusInput {
   directJcQty: number;
   /** The live plans on this line — only their status is read. */
   plans: readonly { planStatus: string }[];
+  /** Short-closed: the customer's order for this line is finished early, so
+   *  whatever is still unmade will never be made (ADR-196). Such a line "reads
+   *  fully planned" and must stop nagging, even when a draft plan is still
+   *  sitting on it. Defaults to false. */
+  shortClosed?: boolean | undefined;
 }
 
 /** A plan whose work has actually been let out: a Job Card exists, a purchase
@@ -78,6 +83,11 @@ export interface PlanningLineStatusResult {
  */
 export function planningLineStatus(line: PlanningLineStatusInput): PlanningLineStatusResult {
   const hasDirectJc = line.directJcQty > 0;
+  // ADR-196 wins over everything below: a short-closed line is done, whatever
+  // is or is not planned on it. Checked first so no later branch can override it.
+  if (line.shortClosed === true) {
+    return { state: 'fully_planned', label: 'Fully Planned', pct: 100, hasDirectJc };
+  }
   const hasPlans = line.plans.length > 0;
   const allPlansExecuted = hasPlans && line.plans.every((p) => isPlanExecuted(p.planStatus));
   const covered = line.remaining <= 0;
