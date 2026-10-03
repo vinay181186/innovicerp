@@ -1,6 +1,7 @@
 import type {
   CloseSalesOrderInput,
   CreateSalesOrderInput,
+  DocumentEditStagedResult,
   ListSalesOrdersQuery,
   ListSalesOrdersResponse,
   SalesOrderDetail,
@@ -118,10 +119,17 @@ export function useUpdateSalesOrder(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   // `reason` (ADR-197) rides beside the shared payload: required by the server
   // when the save cancels the SO, and written on a removed / cancelled line.
-  return useMutation<SalesOrderDetail, Error, UpdateSalesOrderInput & { reason?: string }>({
+  // ADR-202 — when the edit-approval gate is on and the SO is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated SO. The edit page reads the union to tell them apart.
+  return useMutation<
+    SalesOrderDetail | DocumentEditStagedResult,
+    Error,
+    UpdateSalesOrderInput & { reason?: string }
+  >({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<SalesOrderDetail>(`/sales-orders/${id}`, {
+        apiFetch<SalesOrderDetail | DocumentEditStagedResult>(`/sales-orders/${id}`, {
           method: 'PATCH',
           json: input,
           ...(headers ? { headers } : {}),
@@ -131,6 +139,13 @@ export function useUpdateSalesOrder(id: string, saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
       // ADR-197 — the SO's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the SO itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(salesOrdersKeys.detail(id), updated);
       // ADR-196 — the write-back carries no fulfilment status or Billed (only
       // the detail read works them out), so re-read the detail behind it.

@@ -55,7 +55,7 @@ export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateJobWorkOrderInputSchema.parse(req.body);
-    return service.updateJobWorkOrder(id, body, req.user);
+    return service.updateJobWorkOrderOrStage(id, body, req.user);
   });
 
   app.delete('/job-work-orders/:id', async (req, reply) => {

@@ -4,12 +4,14 @@ import type { CreateSalesOrderInput, UpdateSalesOrderInput } from '@innovic/shar
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { uploadSoDocFile, useCreateSoDocument } from '@/modules/so-documents/api';
 import { useCreateSalesOrder, useSalesOrder, useUpdateSalesOrder } from '../api';
 import { SalesOrderForm } from '../components/sales-order-form';
@@ -150,6 +152,9 @@ function SalesOrderEditPage(): React.JSX.Element {
   // edit is refused (409 edit_conflict) and its message shows in the banner.
   const opened = useOpenedVersion(detail?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE SO is staged for approval instead of
+  // applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const goBack = useCallback(
     () => void navigate({ to: '/sales-orders/$id', params: { id } }),
     [navigate, id],
@@ -187,6 +192,14 @@ function SalesOrderEditPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
+      if (isStagedResult(saved)) {
+        // The edit-approval gate is on and this SO is live: nothing was changed
+        // on the SO — the edit is now waiting for approval. Say so, then return
+        // to the SO (its fields now carry the pending-change chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
+        return;
+      }
       opened.saved(saved.updatedAt);
       exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
     } catch (err) {
@@ -222,6 +235,11 @@ function SalesOrderEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <SalesOrderForm
         mode="edit"
         detail={detail}
