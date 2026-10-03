@@ -101,7 +101,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
       e.logType === 'start'
         ? `on ${machineLabel} by ${operator}`
         : e.logType === 'qc'
-          ? [(e.rejectQty ?? 0) !== 0 ? `${e.rejectQty} rejected` : '', operator]
+          ? [(e.rejectQty ?? 0) !== 0 ? `${e.rejectQty} deviated` : '', operator]
               .filter(Boolean)
               .join(' — ')
           : operator;
@@ -126,7 +126,7 @@ function mapEvent(e: JobCardCompletionEvent): FeedRow {
   }
   if (e.kind === 'nc') {
     const detail =
-      `${e.rejectedQty ?? 0} pcs rejected — ${e.reason ?? ''}` +
+      `${e.rejectedQty ?? 0} pcs deviated — ${e.reason ?? ''}` +
       (e.disposition ? ` • Disposition: ${labelOf(NC_DISPOSITION_LABELS, e.disposition)}` : '') +
       (e.operatorText ? ` • Operator: ${e.operatorText}` : '');
     return {

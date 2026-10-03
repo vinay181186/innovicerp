@@ -198,7 +198,7 @@ function LineDetailBody({
               </span>
               {b.rejected > 0 ? (
                 <span style={{ color: 'var(--red2)' }}>
-                  Rejected: <b>{b.rejected}</b>
+                  Deviated: <b>{b.rejected}</b>
                 </span>
               ) : null}
               <span className="mono fw-700" style={{ color: 'var(--cyan)', marginLeft: 'auto' }}>

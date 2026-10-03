@@ -136,7 +136,7 @@ export function NcListHeader({
           },
           {
             key: 'totalQty',
-            label: 'Rejected Qty',
+            label: 'Deviated Qty',
             count: summary?.totalQty == null ? '—' : roundQty(summary.totalQty),
           },
           {

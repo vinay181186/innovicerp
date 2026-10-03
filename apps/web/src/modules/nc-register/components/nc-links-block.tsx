@@ -52,7 +52,7 @@ export function NcLinksBlock(props: {
             params={{ id: detail.parentNcId }}
             className="mono fw-700"
             style={{ ...linkStyle, color: 'var(--red2)' }}
-            title="Earlier NC whose vendor replacement was rejected again"
+            title="Earlier NC whose vendor replacement deviated again"
           >
             {detail.parentNcCode ?? '…'}
           </Link>

@@ -131,7 +131,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
     >
       {/* ADR-189 — Incoming QC is the only inspector. The store records what
           came back; accept / reject happens at Incoming QC, as for DC Receive. */}
-      <Banner tone="info">Received qty goes to Incoming QC — no accept/reject here.</Banner>
+      <Banner tone="info">Received qty goes to Incoming QC — no accept/deviate here.</Banner>
       <div className="form-grid" style={{ marginBottom: 14 }}>
         <div className="form-grp">
           <label className="form-label">Inward No.</label>

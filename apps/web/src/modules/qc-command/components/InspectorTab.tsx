@@ -53,7 +53,7 @@ const columns: DataTableColumn<QcInspectorPerfRow>[] = [
   },
   {
     id: 'rejected',
-    header: 'Rejected',
+    header: 'Deviated',
     align: 'right',
     nowrap: true,
     className: 'mono',
@@ -61,8 +61,8 @@ const columns: DataTableColumn<QcInspectorPerfRow>[] = [
   },
   {
     id: 'rejRate',
-    header: <span title="Green ≤ 5%, Amber 6–15%, Red > 15%">Rejection Rate</span>,
-    label: 'Rejection Rate',
+    header: <span title="Green ≤ 5%, Amber 6–15%, Red > 15%">Deviation Rate</span>,
+    label: 'Deviation Rate',
     align: 'right',
     nowrap: true,
     className: 'mono fw-700',

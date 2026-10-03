@@ -1207,7 +1207,7 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
     (isOS ? ` · Outsource: ${opCodeLabel(op.outsourceStatus ?? 'pending')}` : '') +
     `\nAvailable ${op.inputAvail} · Completed ${op.completed}` +
     (op.qcRequired || op.opType === 'qc'
-      ? ` · Accepted ${op.qcAccepted} · Rejected ${op.qcRejected} · QC Pending ${op.qcPending}`
+      ? ` · Accepted ${op.qcAccepted} · Deviated ${op.qcRejected} · QC Pending ${op.qcPending}`
       : '') +
     `\nStatus: ${opCodeLabel(op.status)}`;
   return (

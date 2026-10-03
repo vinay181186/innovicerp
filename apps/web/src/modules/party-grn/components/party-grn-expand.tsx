@@ -92,7 +92,7 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
     },
     {
       id: 'rejected_qty',
-      header: 'Rejected Qty',
+      header: 'Deviated Qty',
       kind: 'num',
       align: 'right',
       headColor: 'var(--red)',
@@ -107,7 +107,7 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
     {
       // ADR-203 (owner D3): rejected pieces already sent back to the customer.
       id: 'rejected_returned_qty',
-      header: 'Rejected Returned Qty',
+      header: 'Deviated Returned Qty',
       kind: 'num',
       align: 'right',
       className: 'mono',
@@ -116,7 +116,7 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
     },
     {
       id: 'reject_reason',
-      header: 'Reject Reason',
+      header: 'Deviation Reason',
       align: 'left',
       ellipsis: true,
       className: 'text3',

@@ -37,7 +37,7 @@ type Tab = 'queue' | 'fpy' | 'pareto' | 'inspector' | 'rework';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'queue', label: 'Assign Inspector' },
   { id: 'fpy', label: 'First-Pass Yield' },
-  { id: 'pareto', label: 'Top Rejection Reasons' },
+  { id: 'pareto', label: 'Top Deviation Reasons' },
   { id: 'inspector', label: 'Inspector Performance' },
   { id: 'rework', label: 'Rework Cycles' },
 ];

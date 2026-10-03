@@ -314,7 +314,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                   <th>Item Code · Name</th>
                   <th className="th-num">Sent</th>
                   <th className="th-num">Received</th>
-                  <th className="th-num">Rejected</th>
+                  <th className="th-num">Deviated</th>
                   <th className="th-num">Pending</th>
                   <th className="th-num">Receive Now</th>
                 </tr>

@@ -19,7 +19,7 @@ export const inspectionSummaryReport: RegisteredReport = {
     slug: 'inspection-summary',
     title: 'Inspection summary (3 stages)',
     description:
-      'Inspected, Accepted and Rejected per stage and item: Incoming QC on GRN lines (by QC Date), In-Process and Final Inspection on job cards (by log date; Final = the last op of the job card).',
+      'Inspected, Accepted and Deviated per stage and item: Incoming QC on GRN lines (by QC Date), In-Process and Final Inspection on job cards (by log date; Final = the last op of the job card).',
     group: 'Quality',
     dept: 'qc',
     filters: [
@@ -34,8 +34,8 @@ export const inspectionSummaryReport: RegisteredReport = {
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'inspected_qty', label: 'Inspected', type: 'number' },
       { key: 'accepted_qty', label: 'Accepted', type: 'number' },
-      { key: 'rejected_qty', label: 'Rejected', type: 'number' },
-      { key: 'reject_pct', label: 'Reject %', type: 'number' },
+      { key: 'rejected_qty', label: 'Deviated', type: 'number' },
+      { key: 'reject_pct', label: 'Deviated %', type: 'number' },
     ],
   },
   async run({ tx, companyId, filters }) {

@@ -19,7 +19,7 @@ function fpyColor(pct: number): string {
 }
 
 const FPY_HELP =
-  'Items accepted at QC on first attempt with no rejections. Green ≥ 95%, Amber 85–94%, Red < 85%.';
+  'Items accepted at QC on first attempt with no deviations. Green ≥ 95%, Amber 85–94%, Red < 85%.';
 
 // Legacy L18795/L18805 hand-rolls a compact sub-header here rather than using
 // .panel-hdr/.panel-title (which it defines but does not use on this page).

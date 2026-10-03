@@ -380,7 +380,7 @@ export async function submitIncomingQc(
     const thisTotal = roundQty(input.acceptedQty + input.rejectedQty);
     if (thisTotal > remaining) {
       throw new ValidationError(
-        `Accepted + Rejected (${thisTotal}) cannot be more than QC Pending (${remaining}).`,
+        `Accepted + Deviated (${thisTotal}) cannot be more than QC Pending (${remaining}).`,
       );
     }
     // A fraction is only right for a KGS / MTR item. Job Card pieces coming back
@@ -398,12 +398,12 @@ export async function submitIncomingQc(
       const k = kind[0];
       if (k?.is_osp) {
         throw new ValidationError(
-          `${k.code}: Accepted and Rejected must be whole pieces — this is Job Card work back from the vendor.`,
+          `${k.code}: Accepted and Deviated must be whole pieces — this is Job Card work back from the vendor.`,
         );
       }
       if (k) {
         if (input.acceptedQty > 0) assertQtyFitsUom(k.code, k.uom, input.acceptedQty, 'Accepted');
-        if (input.rejectedQty > 0) assertQtyFitsUom(k.code, k.uom, input.rejectedQty, 'Rejected');
+        if (input.rejectedQty > 0) assertQtyFitsUom(k.code, k.uom, input.rejectedQty, 'Deviated');
       }
     }
 
@@ -615,7 +615,7 @@ export async function submitIncomingQc(
         lineRef: `Line ${line.lineNo}`,
         qty: input.acceptedQty,
         operatorName: input.qcInspectedByName,
-        detail: `${line.grnCode} Line ${line.lineNo} — Incoming QC: ${input.acceptedQty} accepted, ${input.rejectedQty} rejected`,
+        detail: `${line.grnCode} Line ${line.lineNo} — Incoming QC: ${input.acceptedQty} accepted, ${input.rejectedQty} deviated`,
       },
       companyId,
       user,

@@ -59,7 +59,7 @@ export function incomingQcCompletedColumns(): DataTableColumn<IncomingQcComplete
     },
     {
       id: 'rejected',
-      header: 'Rejected',
+      header: 'Deviated',
       sortFilterField: 'rejectedQty',
       filterType: 'num',
       align: 'right',

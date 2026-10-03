@@ -232,7 +232,7 @@ function IncomingQcPage(): React.JSX.Element {
             </>
           }
         >
-          The rejected qty from the Incoming QC just saved is on this NC until it is disposed.
+          The deviated qty from the Incoming QC just saved is on this NC until it is disposed.
         </Banner>
       ) : null}
 

@@ -348,7 +348,7 @@ const ncRegisterSource: RegisteredSource = {
       { key: 'item_name', label: 'Item Name', type: 'text', filterable: true, groupable: true },
       {
         key: 'rejected_qty',
-        label: 'Rejected',
+        label: 'Deviated',
         type: 'number',
         filterable: true,
         groupable: false,

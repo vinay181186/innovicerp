@@ -42,7 +42,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>Vendor</th>
             <th className="th-num">Received</th>
             <th className="th-num">Accepted</th>
-            <th className="th-num">Rejected</th>
+            <th className="th-num">Deviated</th>
             <th className="th-num">QC Pending</th>
             <th>QC Status</th>
             <th>Report</th>
@@ -110,7 +110,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>Organisation</th>
             <th>Inspector Name</th>
             <th className="th-num">Accepted</th>
-            <th className="th-num">Rejected</th>
+            <th className="th-num">Deviated</th>
             <th>TPI Date</th>
             <th>TPI Status</th>
             <th>Report</th>

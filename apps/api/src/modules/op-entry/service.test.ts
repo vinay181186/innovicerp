@@ -602,7 +602,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
     expect(myRow?.entity).toBe('JobCard');
     expect(myRow?.detail).toContain('Op 20');
     expect(myRow?.detail).toContain('8 accepted');
-    expect(myRow?.detail).toContain('2 rejected');
+    expect(myRow?.detail).toContain('2 deviated');
     expect(myRow?.operatorName).toBe('QC-Insp');
 
     // T-040e: rejectQty=2 should have auto-created an NC. Verify shape.
@@ -623,7 +623,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
       .where(and(eq(activityLog.action, 'CREATE'), eq(activityLog.entity, 'NonConformance')));
     const myNcRow = ncAudit.find((r) => r.refId === ncs[0]?.code);
     expect(myNcRow).toBeDefined();
-    expect(myNcRow?.detail).toContain('Rejected at QC (auto NC)');
+    expect(myNcRow?.detail).toContain('Deviated at QC (auto NC)');
 
     // T-040f: op_seq=2 IS the last op on testJc → stock cascade fired.
     // qty=8 accepted → store_transactions IN row crediting testItem with 8.

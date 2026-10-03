@@ -38,7 +38,7 @@ export function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Eleme
   // those parts are dropped, never shown as a bare "—".
   const sourceAt = [jc.parentOpName, jc.parentMachineCode].filter(Boolean).join(' / ');
   const sourceLine = [
-    jc.parentRejectedQty != null ? `${jc.parentRejectedQty} rejected` : null,
+    jc.parentRejectedQty != null ? `${jc.parentRejectedQty} deviated` : null,
     sourceAt ? `at ${sourceAt}` : null,
   ]
     .filter(Boolean)

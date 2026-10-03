@@ -999,7 +999,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               width: 78,
                             }}
                           >
-                            Rejected
+                            Deviated
                           </th>
                           <th
                             style={{

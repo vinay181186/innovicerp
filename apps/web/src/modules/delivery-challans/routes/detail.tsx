@@ -386,7 +386,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                   <th>Item Name</th>
                   <th>Sent</th>
                   <th>Received</th>
-                  <th>Rejected</th>
+                  <th>Deviated</th>
                   <th>Pending</th>
                 </tr>
               </thead>
