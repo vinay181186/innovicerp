@@ -78,7 +78,13 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
       </div>
       <div
         className="text3"
-        style={{ display: 'flex', flexWrap: 'wrap', gap: 16, padding: '4px 14px 8px', fontSize: 11 }}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 16,
+          padding: '4px 14px 8px',
+          fontSize: 11,
+        }}
       >
         <span>JWSO line totals —</span>
         <span>

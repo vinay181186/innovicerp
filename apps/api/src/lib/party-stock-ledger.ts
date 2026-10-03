@@ -74,9 +74,10 @@ export async function postPartyStockMove(
   tx: DbTransaction,
   input: PartyStockMoveInput,
 ): Promise<PartyStockMoveResult> {
-  const qty = Math.trunc(input.qty);
+  const qty = input.qty;
   const label = input.qtyLabel ?? 'Qty';
-  if (!(qty > 0)) {
+  // ADR-203 (D1): whole pieces only — refuse a fraction rather than cut it.
+  if (!Number.isInteger(qty) || !(qty > 0)) {
     throw new ValidationError(`${label} must be a whole number greater than 0.`);
   }
 

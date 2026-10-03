@@ -83,6 +83,9 @@ export const jobWorkOrderLineSchema = z.object({
   partyMaterialCode: z.string().nullable().default(null),
   /** ADR-203: QC-accepted customer material on THIS line (Σ party GRN accepted). */
   rmAcceptedQty: z.number().int().nonnegative().default(0),
+  /** ADR-203: received on this line and still waiting for Incoming QC. The
+   *  Party GRN receive cap is Order Qty − Accepted − this. */
+  rmWaitingQcQty: z.number().int().nonnegative().default(0),
   /** ADR-203: true once any downstream document (Job Card, plan, Party GRN,
    *  issue, return, invoice) uses this line — item / UOM / BOM are then locked
    *  and the line cannot be removed. Drives the edit form's locks. */
@@ -177,49 +180,48 @@ export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
-export const jobWorkOrderLineInputSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    /** ADR-203: Item Master only — every JWSO line names a master item (its
-     *  `<code>-RM` customer material is derived from it). `itemCodeText` is a
-     *  server-written snapshot and is no longer accepted. Line numbers are
-     *  assigned by the server and never reused; `status` is server-owned. */
-    itemId: z.string().uuid(),
-    partName: z.string().min(1).max(255),
-    material: z.string().max(255).nullable().optional(),
-    drawingNo: z.string().max(64).nullable().optional(),
-    // Compulsory on the FORM (the only layer that can ask a human), optional
-    // here so the server paths that insert a JWSO line without asking anyone —
-    // the BOM cascade and the SO-to-JW conversions — still work. Same split the
-    // sales-order line makes.
-    /** ADR-178: upper-cased on the way in ("b" → "B"); letters, digits, . - /
-     *  only. Going backwards (B → A, 2 → 1) is refused on update by the server
-     *  and the form — see lib/revision.ts. */
-    revision: z
-      .string()
-      .trim()
-      .max(32)
-      .transform((s) => s.toUpperCase())
-      .refine((s) => s === '' || REVISION_PATTERN.test(s), 'Rev: letters, digits, . - / only')
-      .optional(),
-    drawingFilePath: z.string().max(512).nullable().optional(),
-    // No default: a partial update that leaves `uom` out must not reset it.
-    uom: uomSchema.optional(),
-    orderQty: z.number().int().positive(), // CHECK > 0 in DB too
-    rate: z.coerce.number().nonnegative().optional(),
-    /** Per line. `null` clears it. */
-    dueDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
-      .nullable()
-      .optional(),
-    // BOM-8 for job work (migration 0086): when set, this line is an ASSEMBLY
-    // — the cascade spawns a child Job Card per component and readiness
-    // becomes weakest-component instead of this line's own output. The BOM may
-    // not contain a `purchase` component (client supplies the material); the
-    // service rejects that with a friendly error. See bom-master/cascade.ts.
-    sourceBomMasterId: z.string().uuid().optional(),
-  });
+export const jobWorkOrderLineInputSchema = z.object({
+  id: z.string().uuid().optional(),
+  /** ADR-203: Item Master only — every JWSO line names a master item (its
+   *  `<code>-RM` customer material is derived from it). `itemCodeText` is a
+   *  server-written snapshot and is no longer accepted. Line numbers are
+   *  assigned by the server and never reused; `status` is server-owned. */
+  itemId: z.string().uuid(),
+  partName: z.string().min(1).max(255),
+  material: z.string().max(255).nullable().optional(),
+  drawingNo: z.string().max(64).nullable().optional(),
+  // Compulsory on the FORM (the only layer that can ask a human), optional
+  // here so the server paths that insert a JWSO line without asking anyone —
+  // the BOM cascade and the SO-to-JW conversions — still work. Same split the
+  // sales-order line makes.
+  /** ADR-178: upper-cased on the way in ("b" → "B"); letters, digits, . - /
+   *  only. Going backwards (B → A, 2 → 1) is refused on update by the server
+   *  and the form — see lib/revision.ts. */
+  revision: z
+    .string()
+    .trim()
+    .max(32)
+    .transform((s) => s.toUpperCase())
+    .refine((s) => s === '' || REVISION_PATTERN.test(s), 'Rev: letters, digits, . - / only')
+    .optional(),
+  drawingFilePath: z.string().max(512).nullable().optional(),
+  // No default: a partial update that leaves `uom` out must not reset it.
+  uom: uomSchema.optional(),
+  orderQty: z.number().int().positive(), // CHECK > 0 in DB too
+  rate: z.coerce.number().nonnegative().optional(),
+  /** Per line. `null` clears it. */
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
+    .nullable()
+    .optional(),
+  // BOM-8 for job work (migration 0086): when set, this line is an ASSEMBLY
+  // — the cascade spawns a child Job Card per component and readiness
+  // becomes weakest-component instead of this line's own output. The BOM may
+  // not contain a `purchase` component (client supplies the material); the
+  // service rejects that with a friendly error. See bom-master/cascade.ts.
+  sourceBomMasterId: z.string().uuid().optional(),
+});
 export type JobWorkOrderLineInput = z.infer<typeof jobWorkOrderLineInputSchema>;
 
 const _jwHeaderInputBase = z.object({

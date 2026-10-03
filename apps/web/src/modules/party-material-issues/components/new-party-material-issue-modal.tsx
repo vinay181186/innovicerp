@@ -17,7 +17,7 @@ import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrder, useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
 import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
-import { useCreatePartyMaterialIssue } from '../api';
+import { useCreatePartyMaterialIssue, usePartyMaterialIssuable } from '../api';
 import { Field } from './modal-field';
 
 export function NewPartyMaterialIssueModal({
@@ -88,7 +88,13 @@ export function NewPartyMaterialIssueModal({
     (needsLinePick ? (jwLines.find((l) => l.id === manualLineId) ?? null) : null);
   const partyMaterialId = line?.partyMaterialId ?? null;
 
-  // Available stock of that material (the customer's materials, one fetch).
+  // ADR-203: what may still go to this Job Card — the server's own figure
+  // (JWSO line balance, capped by what the JC still needs), not the register
+  // stock, which can belong to other lines of the same customer.
+  const issuableQ = usePartyMaterialIssuable(jobCardId);
+  const issuable = issuableQ.data && !issuableQ.isFetching ? issuableQ.data : null;
+
+  // The material's code/name (the customer's materials, one fetch).
   const { data: pmData } = usePartyMaterialsList(
     {
       search: undefined,
@@ -166,8 +172,28 @@ export function NewPartyMaterialIssueModal({
       return;
     }
     const q = Number(qty);
-    if (!Number.isInteger(q) || q <= 0) {
+    if (!qty.trim() || !Number.isInteger(q) || q <= 0) {
       setErr('Issue Qty must be a whole number, 1 or more.');
+      return;
+    }
+    if (!issuable) {
+      setErr('Still checking the To Issue qty — try again in a moment.');
+      return;
+    }
+    if (issuable.blockedReason) {
+      setErr(`Nothing can be issued: ${issuable.blockedReason}`);
+      return;
+    }
+    if (issuable.issuable <= 0) {
+      setErr(
+        `Nothing can be issued to this Job Card — accepted and not yet issued on its JWSO line ${issuable.lineBalance}, JC still needs ${issuable.jcRemaining}.`,
+      );
+      return;
+    }
+    if (q > issuable.issuable) {
+      setErr(
+        `Issue Qty ${q} is more than To Issue ${issuable.issuable} (line has ${issuable.lineBalance} · JC needs ${issuable.jcRemaining}).`,
+      );
       return;
     }
     const input: CreatePartyMaterialIssueInput = {
@@ -236,6 +262,7 @@ export function NewPartyMaterialIssueModal({
               type="number"
               min={1}
               step={1}
+              {...(issuable ? { max: Math.max(issuable.issuable, 0) } : {})}
               className="innovic-input"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
@@ -345,11 +372,33 @@ export function NewPartyMaterialIssueModal({
                 )}
               </div>
             </Field>
-            {material ? (
+            {jobCardId ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Available:{' '}
-                <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{material.stockQty}</span>{' '}
-                {material.uom}
+                {issuableQ.isError ? (
+                  <span style={{ color: 'var(--red2)' }}>Could not load the To Issue qty.</span>
+                ) : !issuable ? (
+                  <span>
+                    <Loader2 size={12} className="inline animate-spin" /> Checking To Issue qty…
+                  </span>
+                ) : (
+                  <>
+                    To Issue:{' '}
+                    <span
+                      style={{
+                        color: issuable.issuable > 0 ? 'var(--green2)' : 'var(--red2)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {issuable.issuable}
+                    </span>{' '}
+                    NOS{' '}
+                    <span style={{ fontSize: 10 }}>
+                      {issuable.blockedReason
+                        ? `— ${issuable.blockedReason}`
+                        : `(line has ${issuable.lineBalance} · JC needs ${issuable.jcRemaining})`}
+                    </span>
+                  </>
+                )}
               </div>
             ) : null}
           </div>

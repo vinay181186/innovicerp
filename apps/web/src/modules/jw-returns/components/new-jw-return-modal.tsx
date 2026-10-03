@@ -64,8 +64,8 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
       return;
     }
     const q = Number(qty);
-    if (!Number.isFinite(q) || q <= 0) {
-      setErr('Qty must be ≥ 1');
+    if (!qty.trim() || !Number.isInteger(q) || q <= 0) {
+      setErr('Return Qty: whole numbers only, 1 or more.');
       return;
     }
     if (pickedReturnable && q > pickedReturnable.returnableQty) {
@@ -240,6 +240,7 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
             <input
               type="number"
               min={1}
+              step={1}
               className="innovic-input"
               value={qty}
               onChange={(e) => setQty(e.target.value)}

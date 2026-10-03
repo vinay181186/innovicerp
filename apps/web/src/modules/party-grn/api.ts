@@ -28,6 +28,8 @@ export const partyGrnKeys = {
     ] as const,
   detail: (id: string) => [...partyGrnKeys.all, 'detail', id] as const,
   nextCode: () => [...partyGrnKeys.all, 'next-code'] as const,
+  waitingQc: (jobWorkOrderId: string) =>
+    [...partyGrnKeys.all, 'waiting-qc', jobWorkOrderId] as const,
 };
 
 function buildSearch(q: ListPartyGrnQuery): string {

@@ -188,12 +188,47 @@ export const qcRegisterQuerySchema = z.object({
 });
 export type QcRegisterQuery = z.input<typeof qcRegisterQuerySchema>;
 
+/** ADR-203: a Party GRN line (customer material received against a JWSO
+ *  line) in the QC Call Register. Pending = waiting for Incoming QC (qc_at
+ *  null, nothing accepted/rejected); completed = QC booked. Whole pieces only
+ *  (owner D1: 1 customer RM piece per finished part). Inspect books it through
+ *  POST /party-grn/:partyGrnId/qc (qc_incoming · entry). */
+export interface PartyGrnQcRow {
+  partyGrnLineId: string;
+  partyGrnId: string;
+  /** PGRN-##### */
+  partyGrnNo: string;
+  grnDate: string;
+  /** Customer (the JWSO's client). */
+  customerName: string | null;
+  jwCode: string | null;
+  jwLineNo: number | null;
+  /** The finished part the material is for (CODE + customer drawing Rev). */
+  partCode: string | null;
+  partRevision: string | null;
+  /** The customer RM received (`<item>-RM`) and its register row (PM-####). */
+  rmItemCode: string | null;
+  rmItemName: string | null;
+  partyMaterialCode: string | null;
+  receivedQty: number;
+  /** Pending rows: = receivedQty. Completed rows: 0. */
+  pendingQty: number;
+  acceptedQty: number;
+  rejectedQty: number;
+  rejectReason: string | null;
+  qcDate: string | null;
+  qcByName: string | null;
+  waitDays: number;
+}
+
 export type QcRegisterPendingItem =
   | { kind: 'op'; row: QcHistoryPendingRow }
-  | { kind: 'inc'; row: IncomingQcPendingRow };
+  | { kind: 'inc'; row: IncomingQcPendingRow }
+  | { kind: 'pgrn'; row: PartyGrnQcRow };
 export type QcRegisterCompletedItem =
   | { kind: 'op'; row: QcHistoryLogRow }
-  | { kind: 'inc'; row: IncomingQcCompletedRow };
+  | { kind: 'inc'; row: IncomingQcCompletedRow }
+  | { kind: 'pgrn'; row: PartyGrnQcRow };
 
 export interface QcRegisterStageSummary {
   /** Open calls in this stage. */

@@ -336,7 +336,8 @@ export async function createPartyMaterial(
         name: input.name,
         description: input.description ?? null,
         material: input.material ?? null,
-        uom: input.uom,
+        // ADR-203 (D1): customer material is counted in pieces — always NOS.
+        uom: 'NOS',
         clientId: cl.id,
         clientCodeText: cl.code,
         itemId: itm.id,
@@ -393,6 +394,9 @@ export async function updatePartyMaterial(
     // the register — every movement was booked against them.
     const clientChange = input.clientId !== undefined && input.clientId !== existing.clientId;
     const itemChange = input.itemId !== undefined && input.itemId !== existing.itemId;
+    if (input.uom !== undefined && input.uom !== 'NOS') {
+      throw new ValidationError('Customer material is counted in pieces — its UOM is always NOS.');
+    }
     const uomChange = input.uom !== undefined && input.uom !== existing.uom;
     if ((clientChange || itemChange || uomChange) && (await hasRegisterRows(tx, existing.id))) {
       const what = [clientChange && 'Customer', itemChange && 'Item', uomChange && 'UOM']

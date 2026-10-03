@@ -55,15 +55,12 @@ export type PartyMaterialListItem = z.infer<typeof partyMaterialListItemSchema>;
 export const createPartyMaterialInputSchema = z.object({
   /** ADR-203: server-assigned (PM-#### under the party_materials series lock).
    *  Accepted for old callers but ignored. */
-  code: z
-    .string()
-    .trim()
-    .max(32)
-    .optional(),
+  code: z.string().trim().max(32).optional(),
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(500).optional(),
   material: z.string().trim().max(100).optional(),
-  uom: partyMaterialUomSchema.default('NOS'),
+  /** ADR-203 (D1): customer material is counted in pieces — NOS only. */
+  uom: z.literal('NOS').default('NOS'),
   clientId: z.string().uuid(),
   /** ADR-203: REQUIRED and must be a Party Supplied Material (`-RM`) item. */
   itemId: z.string().uuid(),
@@ -76,12 +73,11 @@ export const updatePartyMaterialInputSchema = z.object({
   material: z.string().trim().max(100).optional(),
   /** ADR-203: Customer, item and UOM are fixed once the material has any
    *  register movement — the server refuses a change then. */
-  uom: partyMaterialUomSchema.optional(),
+  uom: z.literal('NOS').optional(),
   clientId: z.string().uuid().optional(),
   itemId: z.string().uuid().optional(),
 });
 export type UpdatePartyMaterialInput = z.infer<typeof updatePartyMaterialInputSchema>;
-
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

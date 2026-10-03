@@ -4,7 +4,8 @@
 // (TABLE_KEYS.qcCallCompleted). A row's ▸ opens its secondary facts; the Inspect
 // action (pending only) opens the accept/reject entry form as a popup over the
 // register (QcCallInspectModal for a job-card op, IncomingQcInspectModal for a
-// GRN line); row click opens the document the call sits on. TPI is folded in
+// GRN line, PartyGrnQcModal for a Party GRN line — ADR-203); row click opens
+// the document the call sits on. TPI is folded in
 // as a tab, which renders TpiView.
 //
 // ADR-201: 25 calls per page (`page` in the URL). Incoming and process calls are
@@ -14,6 +15,7 @@
 // fetches EVERY matching call. The tables' browser Sort & Filter is off: one
 // register mixes two kinds of row whose columns come from different documents.
 
+import type { PartyGrnQcRow } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -33,7 +35,7 @@ import { QcCallInspectModal } from '../components/qc-call-inspect-modal';
 import type { RaisedNc } from '../components/qc-call-inspect-form';
 import { QC_STAGES, type QcStage, type QcView } from '../components/qc-sheet';
 import { useQcCallData } from '../components/qc-call-data';
-import { RaisedNcBanner, exportRegister } from '../components/qc-call-extras';
+import { PgrnQcPopup, RaisedNcBanner, exportRegister } from '../components/qc-call-extras';
 import { useQcInspect } from '../components/use-qc-inspect';
 import { QcCallTabs } from '../components/qc-call-tabs';
 import { QcCallRegisterHeader } from '../components/qc-call-register-header';
@@ -122,7 +124,7 @@ function QcCallRegisterPage(): React.JSX.Element {
   //   job-card op QC (op-entry submitQcLog): role admin / manager / operator
   //     AND qc_submit entry;
   //   incoming GRN QC (incoming-qc inspect): role admin / manager AND
-  //     qc_incoming entry.
+  //     qc_incoming entry. A Party GRN line (ADR-203) follows the same rule.
   // A viewer who can inspect neither kind gets no ⋯ column.
   const { data: eff } = useMyAccess();
   const role = session?.role;
@@ -131,7 +133,10 @@ function QcCallRegisterPage(): React.JSX.Element {
     effectiveFormPerms(eff, 'qc_submit').entry;
   const canIncoming =
     (role === 'admin' || role === 'manager') && effectiveFormPerms(eff, 'qc_incoming').entry;
-  const showAction = canEntry || canIncoming;
+  // ADR-203: a Party GRN line is booked by POST /party-grn/:id/qc, which needs
+  // only qc_incoming · entry (no role) — the same gate as the Party GRN list.
+  const canPartyQc = effectiveFormPerms(eff, 'qc_incoming').entry;
+  const showAction = canEntry || canIncoming || canPartyQc;
 
   const gotoPage = useCallback(
     (p: number): void => {
@@ -179,6 +184,9 @@ function QcCallRegisterPage(): React.JSX.Element {
 
   // The page, in the server's order: pending = incoming (GRN) calls first, then
   // process-QC calls; completed = both kinds interleaved newest-first.
+  // A Party GRN line's QC popup (ADR-203) — kept apart from useQcInspect, which
+  // reads job-card op / GRN line calls only.
+  const [inspectPgrn, setInspectPgrn] = useState<PartyGrnQcRow | null>(null);
   const pendingRows: PendingVM[] = qc.pendingRows;
   const completedRows: CompletedVM[] = qc.completedRows;
 
@@ -186,23 +194,29 @@ function QcCallRegisterPage(): React.JSX.Element {
   // its own feed; the register reads /qc-history/register, so refresh it too.
   const closeInspect = (): void => {
     setInspect(null);
+    setInspectPgrn(null);
     void queryClient.invalidateQueries({ queryKey: qcHistoryKeys.all });
   };
 
   // Open the accept/reject popup for a pending call (the existing inspect flow).
-  const openInspect = (vm: PendingVM): void =>
-    setInspect(
-      vm.kind === 'op'
-        ? { kind: 'op', jcOpId: vm.row.jcOpId }
-        : { kind: 'inc', grnLineId: vm.row.grnLineId },
-    );
+  const openInspect = (vm: PendingVM): void => {
+    if (vm.kind === 'pgrn') setInspectPgrn(vm.row);
+    else if (vm.kind === 'op') setInspect({ kind: 'op', jcOpId: vm.row.jcOpId });
+    else setInspect({ kind: 'inc', grnLineId: vm.row.grnLineId });
+  };
+  // Party GRN has no detail page — open its list searched on the PGRN no.
+  const openPgrn = (row: PartyGrnQcRow): void =>
+    void nav({ to: '/party-grn', search: { search: row.partyGrnNo, page: 1 } });
 
   // Row click opens the document the call sits on (ADR-199 standard).
   const onPendingRowClick = (vm: PendingVM): void =>
-    void (vm.kind === 'op'
-      ? nav({ to: '/job-cards/$id', params: { id: vm.row.jobCardId } })
-      : nav({ to: '/goods-receipt-notes/$id', params: { id: vm.row.grnId } }));
+    void (vm.kind === 'pgrn'
+      ? openPgrn(vm.row)
+      : vm.kind === 'op'
+        ? nav({ to: '/job-cards/$id', params: { id: vm.row.jobCardId } })
+        : nav({ to: '/goods-receipt-notes/$id', params: { id: vm.row.grnId } }));
   const onCompletedRowClick = (vm: CompletedVM): void => {
+    if (vm.kind === 'pgrn') return openPgrn(vm.row);
     if (vm.kind === 'inc') {
       void nav({ to: '/goods-receipt-notes/$id', params: { id: vm.row.grnId } });
       return;
@@ -224,7 +238,7 @@ function QcCallRegisterPage(): React.JSX.Element {
           label: 'Inspect',
           icon: 'search',
           group: 'workflow',
-          hidden: !(vm.kind === 'op' ? canEntry : canIncoming),
+          hidden: !(vm.kind === 'op' ? canEntry : vm.kind === 'pgrn' ? canPartyQc : canIncoming),
           onSelect: () => openInspect(vm),
         },
       ]
@@ -379,6 +393,9 @@ function QcCallRegisterPage(): React.JSX.Element {
           onClose={closeInspect}
           onNcRaised={setRaisedNc}
         />
+      ) : null}
+      {inspectPgrn && canPartyQc ? (
+        <PgrnQcPopup key={inspectPgrn.partyGrnLineId} row={inspectPgrn} onClose={closeInspect} />
       ) : null}
     </>,
   );

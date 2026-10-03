@@ -81,7 +81,18 @@ export async function jcMaterial(
   tx: DbTransaction,
   companyId: string,
   jobCardId: string,
+  opts: { lockFirstOp?: boolean } = {},
 ): Promise<JcMaterial> {
+  // Return-to-store / cancel must not race an operator logging work on the
+  // first op (op-entry locks that jc_ops row) — take the same row lock first.
+  if (opts.lockFirstOp) {
+    await tx.execute(sql`
+      SELECT id FROM public.jc_ops
+       WHERE job_card_id = ${jobCardId}::uuid AND deleted_at IS NULL
+       ORDER BY op_seq LIMIT 1
+       FOR UPDATE
+    `);
+  }
   const rows = (await tx.execute(sql`
     WITH first_op AS (
       SELECT o.id FROM public.jc_ops o

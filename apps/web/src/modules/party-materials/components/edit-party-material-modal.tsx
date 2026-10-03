@@ -1,16 +1,12 @@
 // Edit Customer Material modal.
 //
 // ADR-203: only the fields the user actually changed are sent. Customer,
-// Customer RM item and UOM are fixed once the material has any register
-// movement (received / in stock / issued / returned) — the server refuses a
-// change then, so the screen locks those three and says why.
+// Customer RM item are fixed once the material has any register movement
+// (received / in stock / issued / returned) — the server refuses a change
+// then, so the screen locks those two and says why. UOM is always NOS
+// (ADR-203 D1) — shown read-only and never sent.
 
-import {
-  PARTY_MATERIAL_UOMS,
-  type PartyMaterialListItem,
-  type PartyMaterialUom,
-  type UpdatePartyMaterialInput,
-} from '@innovic/shared';
+import { type PartyMaterialListItem, type UpdatePartyMaterialInput } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useClientsList } from '../../clients/api';
@@ -25,20 +21,16 @@ export function EditPartyMaterialModal({
   row: PartyMaterialListItem;
   onClose: () => void;
 }): React.JSX.Element {
-  const initialUom = (
-    PARTY_MATERIAL_UOMS.includes(row.uom as PartyMaterialUom) ? row.uom : 'NOS'
-  ) as PartyMaterialUom;
   const [name, setName] = useState(row.name);
   const [description, setDescription] = useState(row.description ?? '');
   const [material, setMaterial] = useState(row.material ?? '');
-  const [uom, setUom] = useState<PartyMaterialUom>(initialUom);
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState<string | null>(row.clientId);
   const [itemSearch, setItemSearch] = useState('');
   const [itemId, setItemId] = useState<string | null>(row.itemId);
   const [err, setErr] = useState<string | null>(null);
 
-  // Any register movement fixes Customer / Customer RM / UOM (server rule).
+  // Any register movement fixes Customer / Customer RM (server rule).
   const hasMovement =
     row.stockQty > 0 || row.receivedQty > 0 || row.issuedQty > 0 || row.returnedQty > 0;
 
@@ -97,7 +89,6 @@ export function EditPartyMaterialModal({
     if (description.trim() !== (row.description ?? '')) input.description = description.trim();
     if (material.trim() !== (row.material ?? '')) input.material = material.trim();
     if (!hasMovement) {
-      if (uom !== initialUom) input.uom = uom;
       if (clientId !== row.clientId) input.clientId = clientId;
       if (itemId && itemId !== row.itemId) input.itemId = itemId;
     }
@@ -132,26 +123,20 @@ export function EditPartyMaterialModal({
           />
         </Field>
         <Field label="UOM">
-          <select
-            className="innovic-select"
-            value={uom}
-            disabled={hasMovement}
-            title={lockHint ?? undefined}
-            onChange={(e) => setUom(e.target.value as PartyMaterialUom)}
-            style={{ maxWidth: '12ch' }}
-          >
-            {PARTY_MATERIAL_UOMS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </select>
+          <input
+            type="text"
+            className="innovic-input"
+            value={row.uom}
+            readOnly
+            title="Customer material is counted in NOS — 1 per finished part (older records keep their stored unit)"
+            style={{ background: 'var(--bg4)', color: 'var(--text3)', maxWidth: '12ch' }}
+          />
         </Field>
 
         {lockHint ? (
           <div className="text3" style={{ gridColumn: 'span 2', fontSize: 11 }}>
-            Customer, Customer RM and UOM are fixed — this material already has stock movement
-            (received, issued or returned).
+            Customer and Customer RM are fixed — this material already has stock movement (received,
+            issued or returned).
           </div>
         ) : null}
 

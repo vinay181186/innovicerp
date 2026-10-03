@@ -16,7 +16,6 @@ import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -46,10 +45,7 @@ export function JwInvoiceView({
    *  New JW Invoice form with that JWSO already picked. */
   initialJwId?: string | undefined;
 }): React.JSX.Element {
-  const { data: me } = useSession();
   const { data: eff } = useMyAccess();
-  // Raising a JW invoice needs the write role AND Finance invoice entry — the
-  // same form key the SO invoice uses (the server checks both).
   // ADR-203: create and cancel use ONE key — invoice_create — on the server
   // (the write-role check was dropped there; form access is the rule).
   const invPerms = effectiveFormPerms(eff, 'invoice_create');

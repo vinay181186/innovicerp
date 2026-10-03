@@ -190,7 +190,10 @@ export function NewCmrModal({
       }}
     >
       {guard.dialog}
-      <div style={{ ...cardStyle, width: 'min(1000px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
+      <div
+        style={{ ...cardStyle, width: 'min(1000px, 96vw)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="section-hdr" style={{ marginBottom: 12 }}>
           New Customer Material Return
         </div>

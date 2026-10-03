@@ -15,7 +15,30 @@ export const partyMaterialIssuesKeys = {
   // The query is part of the key, so a new search term is a new cache entry
   // and a new fetch — the whole point of moving the match to the server.
   list: (q: ListPartyMaterialIssuesQuery) => [...partyMaterialIssuesKeys.lists(), q] as const,
+  issuable: (jobCardId: string) => [...partyMaterialIssuesKeys.all, 'issuable', jobCardId] as const,
 };
+
+/** ADR-203 — what may still be issued to one Job Card: the JWSO line's
+ *  accepted-but-not-yet-issued balance, capped by what the JC still needs. */
+export interface PartyMaterialIssuable {
+  jwLineId: string | null;
+  lineBalance: number;
+  jcRemaining: number;
+  issuable: number;
+  /** Set when the save would refuse outright (rework JC, closed line, no RM). */
+  blockedReason: string | null;
+}
+
+export function usePartyMaterialIssuable(jobCardId: string | null) {
+  return useQuery<PartyMaterialIssuable>({
+    queryKey: partyMaterialIssuesKeys.issuable(jobCardId ?? ''),
+    queryFn: () =>
+      apiFetch<PartyMaterialIssuable>(
+        `/party-material-issues/issuable?jobCardId=${encodeURIComponent(jobCardId ?? '')}`,
+      ),
+    enabled: Boolean(jobCardId),
+  });
+}
 
 /** The register's filters, as a query string. `search` is dropped when empty so
  *  an untouched box is not sent as `search=` — the server treats "absent" and

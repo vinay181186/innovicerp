@@ -93,8 +93,8 @@ export function NewJwInvoiceModal({
       setErr('Select a JW line');
       return;
     }
-    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
-      setErr('Invoice Qty must be at least 1.');
+    if (!qty.trim() || !Number.isInteger(qtyNum) || qtyNum <= 0) {
+      setErr('Invoice Qty: whole numbers only, 1 or more.');
       return;
     }
     if (pickedBillable && qtyNum > pickedBillable.toInvoiceQty) {
@@ -230,6 +230,7 @@ export function NewJwInvoiceModal({
             <input
               type="number"
               min={1}
+              step={1}
               max={pickedBillable?.toInvoiceQty}
               className="innovic-input"
               value={qty}
