@@ -14,7 +14,7 @@ import {
 } from '@innovic/shared';
 import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { AlertTriangle, Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -32,6 +32,15 @@ import {
   useSubmitOpLog,
   useSubmitQcLog,
 } from '../api';
+
+// One fixed field grid for both the production and the QC form: four equal
+// columns, so a box never jumps when a neighbour's content changes.
+const FIELD_GRID = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+  gap: 12,
+  alignItems: 'start',
+} as const;
 
 interface Props {
   op: JcOpEnriched;
@@ -142,20 +151,18 @@ export function OpEntryForm({
       }).format(new Date()),
     );
   }
+  // Sits inline beside the Time input (same cell), so the field grid keeps
+  // one box per column and nothing shifts when it is pressed.
   const nowChip = (
-    <div className="form-grp" style={{ width: 'auto' }}>
-      <label className="form-label" aria-hidden="true">
-        &nbsp;
-      </label>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={fillNow}
-        title="Fill Log Date and Time with today's date and the current time (IST)"
-      >
-        ⏱ Now
-      </button>
-    </div>
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm"
+      onClick={fillNow}
+      title="Fill Log Date and Time with today's date and the current time (IST)"
+      style={{ flex: 'none', whiteSpace: 'nowrap' }}
+    >
+      ⏱ Now
+    </button>
   );
   // '' is the un-answered state, which is why this is Shift | '' and the
   // dropdown opens on a "Select shift" placeholder rather than on 'day'.
@@ -280,49 +287,6 @@ export function OpEntryForm({
   // the list takes to arrive are seconds in which a busy machine looks free.
   const busyUnknown =
     !activeRunningId && isProcessOp && Boolean(actualMachineId) && runningOps.data === undefined;
-
-  // OPERATOR AUTO-FILL ON LOG / STOP (user decision 2026-09-21). The Start
-  // entry already recorded who is running the machine on the session row, so
-  // when this form opens in its Log / Stop half the person who STARTED is the
-  // likeliest answer to "Operator" — pre-filled, never locked: a night-shift
-  // session stopped next morning by somebody else is still typed over. Seeded
-  // ONCE per session id, and only while the box is untouched (blank, or still
-  // exactly the previous seed), so the 30-second re-poll of the sessions list
-  // can never overwrite a name the operator has typed. A session with no
-  // operator recorded leaves the box blank, as before. Production half only:
-  // the QC sub-form's Inspector box is a different question and stays blank.
-  const runningSession =
-    activeRunningId && !(op.opType === 'qc' || op.qcRequired)
-      ? (runningOps.data?.find((r) => r.id === activeRunningId) ?? null)
-      : null;
-  const seededForRunId = useRef<string | null>(null);
-  // What the seed put in the box, '' when nothing was seeded. The "auto-filled"
-  // note below the input shows only while the box still reads exactly this.
-  const [seedValue, setSeedValue] = useState<string>('');
-  useEffect(() => {
-    if (!activeRunningId) {
-      seededForRunId.current = null;
-      setSeedValue('');
-      return;
-    }
-    if (seededForRunId.current === activeRunningId) return;
-    if (!runningSession) return; // list not in yet (or the session is gone)
-    seededForRunId.current = activeRunningId;
-    const untouched = operatorName.trim() === '' || operatorName === seedValue;
-    if (!untouched) {
-      setSeedValue('');
-      return;
-    }
-    const name = runningSession.operatorName?.trim() ?? '';
-    setSeedValue(name);
-    setOperatorName(name);
-    // The master id rides only with a VISIBLE name. A session carrying an id
-    // but no name must not leave a hidden operator behind a blank box, or the
-    // mandatory check would pass on somebody the operator cannot see.
-    setOperatorId(name ? (runningSession.operatorId ?? undefined) : undefined);
-  }, [activeRunningId, runningSession, operatorName, seedValue]);
-  const operatorIsSeeded =
-    Boolean(activeRunningId) && seedValue !== '' && operatorName === seedValue;
 
   // Reset when the selected op changes. Quantities and notes belong to the op
   // that was on screen, never to the next one.
@@ -651,7 +615,7 @@ export function OpEntryForm({
   const blockedBanner = blockedReason ? (
     <div
       style={{
-        marginBottom: 12,
+        marginTop: 12,
         padding: '8px 10px',
         borderRadius: 6,
         background: 'var(--amber3)',
@@ -812,12 +776,11 @@ export function OpEntryForm({
             </span>
           </div>
           <div className="panel-body">
-            {blockedBanner}
-            {/* Compact single-row field strip (matches the production Log Entry
-                form): Date · Time · Shift · Accepted · Reject · Inspector on one
-                wrapping row, Remarks beside it. */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-              <div className="form-grp" style={{ width: 140 }}>
+            {/* Fixed 4-column grid, so every box keeps its place whatever is
+                typed or shown: Date · Time · Shift · Inspector, then
+                Accepted · Rejected, then Remarks full width. */}
+            <div style={FIELD_GRID}>
+              <div className="form-grp">
                 <label className="form-label" htmlFor="opf-date">
                   Log Date<span className="req">★</span>
                 </label>
@@ -831,21 +794,24 @@ export function OpEntryForm({
                   onChange={(e) => setLogDate(e.target.value)}
                 />
               </div>
-              <div className="form-grp" style={{ width: 110 }}>
+              <div className="form-grp">
                 <label className="form-label" htmlFor="opf-time">
                   Time<span className="req">★</span>
                 </label>
-                <input
-                  id="opf-time"
-                  className="innovic-input"
-                  type="time"
-                  required
-                  value={entryTime}
-                  onChange={(e) => setEntryTime(e.target.value)}
-                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    id="opf-time"
+                    className="innovic-input"
+                    type="time"
+                    required
+                    value={entryTime}
+                    onChange={(e) => setEntryTime(e.target.value)}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                  {nowChip}
+                </div>
               </div>
-              {nowChip}
-              <div className="form-grp" style={{ width: 120 }}>
+              <div className="form-grp">
                 <label className="form-label" htmlFor="opf-shift">
                   Shift<span className="req">★</span>
                 </label>
@@ -866,41 +832,7 @@ export function OpEntryForm({
                   ))}
                 </select>
               </div>
-              <div className="form-grp" style={{ width: 100 }}>
-                <label className="form-label" htmlFor="opf-qty">
-                  Accepted
-                </label>
-                <input
-                  id="opf-qty"
-                  className="innovic-input"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={op.qcPending}
-                  value={qty}
-                  onChange={(e) => setQty(e.target.value)}
-                  placeholder="0"
-                  disabled={blockedReason !== null}
-                />
-              </div>
-              <div className="form-grp" style={{ width: 100 }}>
-                <label className="form-label" htmlFor="opf-rej">
-                  Rejected
-                </label>
-                <input
-                  id="opf-rej"
-                  className="innovic-input"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={op.qcPending}
-                  value={rejectQty}
-                  onChange={(e) => setRejectQty(e.target.value)}
-                  placeholder="0"
-                  disabled={blockedReason !== null}
-                />
-              </div>
-              <div className="form-grp" style={{ flex: '1 1 180px', minWidth: 160 }}>
+              <div className="form-grp">
                 <label className="form-label" htmlFor="opf-op">
                   Inspected By<span className="req">★</span>
                 </label>
@@ -922,18 +854,52 @@ export function OpEntryForm({
                   ))}
                 </datalist>
               </div>
-              <div className="form-grp" style={{ flex: '1 1 180px', minWidth: 160 }}>
+              <div className="form-grp">
+                <label className="form-label" htmlFor="opf-qty">
+                  Accepted
+                </label>
+                <input
+                  id="opf-qty"
+                  className="innovic-input"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={op.qcPending}
+                  value={qty}
+                  onChange={(e) => setQty(e.target.value)}
+                  placeholder="0"
+                  disabled={blockedReason !== null}
+                />
+              </div>
+              <div className="form-grp">
+                <label className="form-label" htmlFor="opf-rej">
+                  Rejected
+                </label>
+                <input
+                  id="opf-rej"
+                  className="innovic-input"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={op.qcPending}
+                  value={rejectQty}
+                  onChange={(e) => setRejectQty(e.target.value)}
+                  placeholder="0"
+                  disabled={blockedReason !== null}
+                />
+              </div>
+              <div className="form-grp" style={{ gridColumn: '1 / -1' }}>
                 <label className="form-label" htmlFor="opf-rem">
                   Remarks
                 </label>
                 <textarea
                   id="opf-rem"
                   className="innovic-textarea"
-                  rows={1}
+                  rows={2}
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="Optional notes…"
-                  style={{ resize: 'vertical' }}
+                  style={{ resize: 'none' }}
                 />
               </div>
             </div>
@@ -951,6 +917,8 @@ export function OpEntryForm({
                 }}
               />
             </div>
+            {/* One notice slot, below the fields and above the buttons. */}
+            {blockedBanner}
             {errorBanner}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
               {canQcSubmit ? (
@@ -1007,14 +975,14 @@ export function OpEntryForm({
           </span>
         </div>
         <div className="panel-body">
-          {blockedBanner}
-          {/* Minimized single-row field strip (see reference UI): Date · Time ·
-              Shift · [Qty · Reject] · Operator all on ONE wrapping row, with
-              Remarks full-width below. Each field's form-grp carries an explicit
-              width because .innovic-input is width:100% and would otherwise
-              collapse in a flex row. */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-            <div className="form-grp" style={{ width: 140 }}>
+          {/* Fixed 4-column grid — every box has a fixed cell, so nothing
+              moves when a value, a dropdown or a notice appears.
+              Row 1: Log Date · Time (+ Now) · Shift · Operator.
+              Row 2: the machines. Row 3: Completed · Rejected (when shown).
+              Remarks full width. Notices sit below the grid, above the
+              buttons — never between field rows. */}
+          <div style={FIELD_GRID}>
+            <div className="form-grp">
               <label className="form-label" htmlFor="opf-date">
                 Log Date<span className="req">★</span>
               </label>
@@ -1028,21 +996,24 @@ export function OpEntryForm({
                 onChange={(e) => setLogDate(e.target.value)}
               />
             </div>
-            <div className="form-grp" style={{ width: 110 }}>
+            <div className="form-grp">
               <label className="form-label" htmlFor="opf-time">
                 Time<span className="req">★</span>
               </label>
-              <input
-                id="opf-time"
-                className="innovic-input"
-                type="time"
-                required
-                value={entryTime}
-                onChange={(e) => setEntryTime(e.target.value)}
-              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  id="opf-time"
+                  className="innovic-input"
+                  type="time"
+                  required
+                  value={entryTime}
+                  onChange={(e) => setEntryTime(e.target.value)}
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+                {nowChip}
+              </div>
             </div>
-            {nowChip}
-            <div className="form-grp" style={{ width: 120 }}>
+            <div className="form-grp">
               <label className="form-label" htmlFor="opf-shift">
                 Shift<span className="req">★</span>
               </label>
@@ -1063,12 +1034,37 @@ export function OpEntryForm({
                 ))}
               </select>
             </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="opf-op">
+                Operator<span className="req">★</span>
+              </label>
+              {/* Opens blank on Start AND on Log / Stop (owner decision
+                  2026-10-03) — whoever is logging types their own name. */}
+              <input
+                id="opf-op"
+                className="innovic-input"
+                list="opf-op-list"
+                required
+                value={operatorName}
+                onChange={(e) => handleOperatorNameChange(e.target.value)}
+                placeholder="Operator name"
+                autoComplete="off"
+              />
+              <datalist id="opf-op-list">
+                {operators.map((o) => (
+                  <option key={o.id} value={o.name}>
+                    {o.code}
+                    {o.department ? ` · ${o.department}` : ''}
+                  </option>
+                ))}
+              </datalist>
+            </div>
             {isStart && isProcessOp ? (
               <>
                 {/* PLANNED — from JC creation, read-only. Start never rewrites
                     it; the machine the session actually runs on is chosen in
                     the two boxes beside it. */}
-                <div className="form-grp" style={{ width: 110 }}>
+                <div className="form-grp">
                   <label className="form-label" htmlFor="opf-machine">
                     Planned Machine
                   </label>
@@ -1080,7 +1076,7 @@ export function OpEntryForm({
                     title="Set at Job Card creation. Not changed by starting."
                   />
                 </div>
-                <div className="form-grp" style={{ width: 160 }}>
+                <div className="form-grp">
                   <label className="form-label" htmlFor="opf-mgrp">
                     Machine Group
                   </label>
@@ -1093,7 +1089,7 @@ export function OpEntryForm({
                     onChange={handleGroupChange}
                   />
                 </div>
-                <div className="form-grp" style={{ width: 170 }}>
+                <div className="form-grp" style={{ gridColumn: 'span 2' }}>
                   <label className="form-label" htmlFor="opf-actual-machine">
                     Actual Machine<span className="req">★</span>
                   </label>
@@ -1112,17 +1108,17 @@ export function OpEntryForm({
             ) : (
               <>
                 {/* Log / Stop: both machines, always, as two plain read-only
-                    boxes the same height as their neighbours — no sub-line
-                    under either, so the row stays level. Actual is the open
-                    session's machine (the one the pieces get stamped with);
-                    when the operator never changed it the two read the same. */}
-                <div className="form-grp" style={{ width: 110 }}>
+                    boxes, two columns each so the row keeps its shape. Actual
+                    is the open session's machine (the one the pieces get
+                    stamped with); when the operator never changed it the two
+                    read the same. */}
+                <div className="form-grp" style={{ gridColumn: 'span 2' }}>
                   <label className="form-label" htmlFor="opf-machine">
                     Planned Machine
                   </label>
                   <input id="opf-machine" className="innovic-input" readOnly value={plannedLabel} />
                 </div>
-                <div className="form-grp" style={{ width: 110 }}>
+                <div className="form-grp" style={{ gridColumn: 'span 2' }}>
                   <label className="form-label" htmlFor="opf-actual-machine-ro">
                     Actual Machine
                   </label>
@@ -1137,7 +1133,7 @@ export function OpEntryForm({
             )}
             {showQtyFields ? (
               <>
-                <div className="form-grp" style={{ width: 100 }}>
+                <div className="form-grp">
                   <label className="form-label" htmlFor="opf-qty">
                     Completed<span className="req">★</span>
                   </label>
@@ -1162,7 +1158,7 @@ export function OpEntryForm({
                     disabled={blockedReason !== null}
                   />
                 </div>
-                <div className="form-grp" style={{ width: 100 }}>
+                <div className="form-grp">
                   <label className="form-label" htmlFor="opf-rej">
                     Rejected
                   </label>
@@ -1180,53 +1176,24 @@ export function OpEntryForm({
                 </div>
               </>
             ) : null}
-            <div className="form-grp" style={{ flex: '1 1 200px', minWidth: 180 }}>
-              <label className="form-label" htmlFor="opf-op">
-                Operator<span className="req">★</span>
-              </label>
-              <input
-                id="opf-op"
-                className="innovic-input"
-                list="opf-op-list"
-                required
-                value={operatorName}
-                onChange={(e) => handleOperatorNameChange(e.target.value)}
-                placeholder="Operator name"
-                autoComplete="off"
-              />
-              <datalist id="opf-op-list">
-                {operators.map((o) => (
-                  <option key={o.id} value={o.name}>
-                    {o.code}
-                    {o.department ? ` · ${o.department}` : ''}
-                  </option>
-                ))}
-              </datalist>
-              {/* Shown only while the box still holds the name the seed put
-                  there; the first keystroke hides it. */}
-              {operatorIsSeeded ? (
-                <div className="form-help">
-                  ✓ auto-filled from Start — change if another operator finished
-                </div>
-              ) : null}
-            </div>
-            {/* Remarks sits next to Operator; the box grows when dragged. */}
-            <div className="form-grp" style={{ flex: '1 1 200px', minWidth: 180 }}>
+            <div className="form-grp" style={{ gridColumn: '1 / -1' }}>
               <label className="form-label" htmlFor="opf-rem">
                 Remarks
               </label>
               <textarea
                 id="opf-rem"
                 className="innovic-textarea"
-                rows={1}
+                rows={2}
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Optional notes…"
-                style={{ resize: 'vertical' }}
+                style={{ resize: 'none' }}
               />
             </div>
           </div>
 
+          {/* ONE notice slot — below the fields, above the buttons. */}
+          {blockedBanner}
           {busy && busyDismissedFor !== actualMachineId ? (
             /* MACHINE BUSY (picked by hand) — the moment the operator chooses
                an Actual Machine that is running another job, this says so,

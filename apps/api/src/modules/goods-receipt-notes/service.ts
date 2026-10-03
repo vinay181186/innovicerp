@@ -630,6 +630,8 @@ export async function listGoodsReceiptNotes(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
+        first_line.item_code AS "firstItemCode",
+        first_line.item_name AS "firstItemName",
         COALESCE(line_agg.total_received_qty, 0)::float8 AS "totalReceivedQty",
         COALESCE(line_agg.qc_accepted_qty, 0)::float8 AS "totalQcAcceptedQty",
         COALESCE(line_agg.qc_rejected_qty, 0)::float8 AS "totalQcRejectedQty",
@@ -649,6 +651,19 @@ export async function listGoodsReceiptNotes(
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
       ${lineAggJoin}
+      -- Item Code / Item Name columns: the GRN's first live line (by line_no).
+      -- Page query only — one row per GRN, so no count changes.
+      LEFT JOIN LATERAL (
+        SELECT
+          COALESCE(fi.code, fl.item_code_text) AS item_code,
+          COALESCE(fl.item_name, fi.name) AS item_name
+        FROM public.goods_receipt_note_lines fl
+        LEFT JOIN public.items fi ON fi.id = fl.item_id AND fi.deleted_at IS NULL
+        WHERE fl.goods_receipt_note_id = grn.id
+          AND fl.deleted_at IS NULL
+        ORDER BY fl.line_no ASC
+        LIMIT 1
+      ) first_line ON TRUE
       WHERE grn.company_id = ${companyId}::uuid
         AND grn.deleted_at IS NULL
         ${searchFrag}
@@ -743,6 +758,8 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     vendorName: (r['vendorName'] as string | null) ?? null,
     poCode: (r['poCode'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
+    firstItemCode: (r['firstItemCode'] as string | null) ?? null,
+    firstItemName: (r['firstItemName'] as string | null) ?? null,
     totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),
     totalQcAcceptedQty: Number(r['totalQcAcceptedQty'] ?? 0),
     totalQcRejectedQty: Number(r['totalQcRejectedQty'] ?? 0),
