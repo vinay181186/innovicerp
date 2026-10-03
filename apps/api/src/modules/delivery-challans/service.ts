@@ -55,13 +55,13 @@ import {
   parseDocRevision,
   qtyUomProblem,
   roundQty,
+  RTV_CANDIDATE_STATE_LABELS,
   withDocRevision,
 } from '@innovic/shared';
 import type {
   DocumentEditStagedResult,
   DocumentTraceability,
   ReceiveDeliveryChallanResponse,
-  RtvCandidateState,
   RtvPendingConflictDetails,
 } from '@innovic/shared';
 import { queryRtvCandidates } from './rtv-candidates';
@@ -1058,25 +1058,30 @@ async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string>
   return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
 }
 
-const RTV_STATE_LABEL: Record<RtvCandidateState, string> = {
-  ready: 'Ready to Send',
-  awaiting_decision: 'Waiting for QC Decision',
-};
 const RTV_MESSAGE_MAX_NCS = 3;
 
 /** ADR-208 — 409 (details.kind = 'rtv_pending') when any of these PO lines has
- *  return-to-vendor pieces waiting. Same SQL as GET /delivery-challans/rtv-candidates. */
+ *  return-to-vendor pieces waiting that the store has NOT confirmed as
+ *  different pieces. Confirmation is per NC: an NC whose id is in
+ *  `confirmedNcIds` is let through; any other waiting NC refuses the save, and
+ *  only those unconfirmed NCs are listed. Same SQL as
+ *  GET /delivery-challans/rtv-candidates. */
 async function assertNoRtvPending(
   tx: DbTransaction,
   companyId: string,
   poLineIds: string[],
+  confirmedNcIds: readonly string[],
 ): Promise<void> {
-  const waiting = await queryRtvCandidates(tx, companyId, { purchaseOrderLineIds: poLineIds });
+  const confirmed = new Set(confirmedNcIds);
+  const waiting = (
+    await queryRtvCandidates(tx, companyId, { purchaseOrderLineIds: poLineIds })
+  ).filter((c) => !confirmed.has(c.ncId));
   if (waiting.length === 0) return;
   const shown = waiting
     .slice(0, RTV_MESSAGE_MAX_NCS)
     .map(
-      (c) => `${c.ncCode} (${roundQty(Number(c.rejectedQty))} pcs, ${RTV_STATE_LABEL[c.state]})`,
+      (c) =>
+        `${c.ncCode} (${roundQty(Number(c.rejectedQty))} pcs, ${RTV_CANDIDATE_STATE_LABELS[c.state]})`,
     );
   const more = waiting.length - shown.length;
   const list =
@@ -1098,7 +1103,9 @@ async function assertNoRtvPending(
   const details: RtvPendingConflictDetails = {
     kind: 'rtv_pending',
     ncs: waiting.map((c) => ({
+      ncId: c.ncId,
       ncCode: c.ncCode,
+      itemCode: c.itemCode ?? c.itemCodeText,
       rejectedQty: c.rejectedQty,
       state: c.state,
       // Filtered on purchaseOrderLineIds, so the resolved line is always set.
@@ -1185,14 +1192,19 @@ export async function createDeliveryChallan(
     // Lock the PO lines first, so a concurrent OSP DC / JW DC Outward on the
     // same line waits here and then reads this challan's qty (no over-send).
     await lockPoLinesForSend(tx, poLineIds, companyId);
-    // ADR-208 — Against PO guard. Checked here, inside the save's transaction
-    // and after the PO-line lock, before any write: a PO line on this challan
-    // that has return-to-vendor pieces waiting (NC ready, or vendor-sourced NC
-    // awaiting QC's decision) is refused unless the store confirmed these are
-    // new pieces. rtvPendingConfirmed is a confirmation only — never stored.
+    // ADR-208 — Against PO guard. Checked inside the save's transaction,
+    // before any write: a PO line on this challan that has return-to-vendor
+    // pieces waiting (NC ready, or vendor-sourced NC awaiting QC's decision)
+    // is refused unless the store confirmed THAT NC as different pieces
+    // (header.rtvConfirmedNcIds — a per-NC confirmation, never stored). A
+    // waiting NC not in the list still refuses, so an NC that appears after
+    // the store confirmed the others is not waved through.
+    // Not race-proof: the NC writers (dispose, IQC raise, createNcDc) do NOT
+    // take the PO-line lock above, so an NC committed in the same instant as
+    // this save can slip past this check. The next save on the line re-checks.
     // The return challan itself (createNcDc) never comes through here.
-    if (input.header.rtvPendingConfirmed !== true && poLineIds.length > 0) {
-      await assertNoRtvPending(tx, companyId, poLineIds);
+    if (poLineIds.length > 0) {
+      await assertNoRtvPending(tx, companyId, poLineIds, input.header.rtvConfirmedNcIds ?? []);
     }
     const alreadySent = await sumSentQtyByPoLine(tx, poLineIds, companyId);
 

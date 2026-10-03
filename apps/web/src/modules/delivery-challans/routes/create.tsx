@@ -45,7 +45,13 @@ import type {
   RtvPendingConflictDetails,
   Uom,
 } from '@innovic/shared';
-import { poSendsMaterialOut, qtyStepForUom, qtyUomProblem, UOMS } from '@innovic/shared';
+import {
+  poSendsMaterialOut,
+  qtyStepForUom,
+  qtyUomProblem,
+  RTV_CANDIDATE_STATE_LABELS,
+  UOMS,
+} from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
@@ -59,7 +65,7 @@ import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ApiError } from '@/lib/api';
 import { fmtDate, todayIst } from '@/lib/date';
-import { type ExitConfirm, useExitConfirm } from '@/lib/exit-guard';
+import { type ExitConfirm, ExitConfirmDialog, useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { useCreateNcDc, useNcRegister } from '@/modules/nc-register/api';
@@ -74,6 +80,7 @@ import {
   useEligibleRtvNcs,
   useRtvCandidates,
 } from '../api';
+import { JwpoDcPickerBody } from '../components/jwpo-dc-rtv-picker';
 
 // poId only. An existing ?poId= link keeps working untouched and preselects the
 // Against-PO source; ?ncId= is dropped because the source is now state, not URL,
@@ -112,11 +119,16 @@ const SOURCE_META: Record<DcSource, { label: string }> = {
   jwpo_dc: { label: 'Against JW PO / DC' },
 };
 
-/** ADR-208 Return Challan Status — the words the user reads for RtvCandidate.state. */
-const RETURN_STATUS_LABEL: Record<RtvCandidateState, string> = {
-  ready: 'Ready to Send',
-  awaiting_decision: 'Waiting for QC Decision',
-};
+/** One row of the Against PO warning — from GET rtv-candidates or from the
+ *  409's details.ncs (ADR-208). */
+interface RtvPanelRow {
+  ncId: string;
+  ncCode: string;
+  itemCodeLabel: string;
+  rejectedQty: string;
+  state: RtvCandidateState;
+  poLineId: string | null;
+}
 
 /** The 409 an Against PO save answers with when return-to-vendor pieces are
  *  waiting on one of its PO lines (ADR-208). */
@@ -517,13 +529,15 @@ function PoDcFormBody({
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
   // ADR-208 — pieces from this PO waiting to go back to the vendor (an RTV NC
-  // ready, or still awaiting QC's decision). While any exist, Save needs the
-  // store's tick that these are new pieces; otherwise the server refuses (409
-  // rtv_pending) — a return booked as an ordinary send double counts the PO.
+  // ready, or still awaiting QC's decision). The fetch below is only the early
+  // warning; the server is the guard (409 rtv_pending on Save).
   const rtv = useRtvCandidates(poId);
-  const rtvRows = rtv.data?.items ?? [];
-  const [rtvConfirmed, setRtvConfirmed] = useState(false);
-  const rtvBlocks = rtv.isLoading || (rtvRows.length > 0 && !rtvConfirmed);
+  // NCs the server named in a 409 — kept so the warning shows even when the
+  // fetch above failed or ran before QC disposed the NC.
+  const [rtvConflictRows, setRtvConflictRows] = useState<RtvPanelRow[]>([]);
+  // The id set the store ticked against ("a,b,c", sorted). A tick holds only
+  // for the exact set it was given on.
+  const [rtvConfirmedKey, setRtvConfirmedKey] = useState<string | null>(null);
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
@@ -568,6 +582,56 @@ function PoDcFormBody({
     for (const l of sendable?.lines ?? []) m.set(l.purchaseOrderLineId, l);
     return m;
   }, [sendable]);
+
+  // The PO lines this challan sends — the SAME set onSubmit builds the payload
+  // from. Only NCs on these lines can hold the save.
+  const sendingDrafts = useMemo(
+    () => lineDrafts.filter((l) => Number(l.shipQty) > 0),
+    [lineDrafts],
+  );
+
+  // ADR-208 warning rows: fetched candidates merged with any the server named in
+  // a 409 (by ncId, the 409 being fresher), narrowed to the lines being sent.
+  const rtvRows = useMemo<RtvPanelRow[]>(() => {
+    const byId = new Map<string, RtvPanelRow>();
+    for (const c of rtv.data?.items ?? []) {
+      byId.set(c.ncId, {
+        ncId: c.ncId,
+        ncCode: c.ncCode,
+        itemCodeLabel: itemCodeWithRev(c.itemCode ?? c.itemCodeText, c.itemRevision),
+        rejectedQty: c.rejectedQty,
+        state: c.state,
+        poLineId: c.purchaseOrderLineId,
+      });
+    }
+    for (const r of rtvConflictRows) {
+      const had = byId.get(r.ncId);
+      byId.set(r.ncId, had ? { ...had, state: r.state, poLineId: r.poLineId } : r);
+    }
+    const sendingLineIds = new Set(sendingDrafts.map((l) => l.purchaseOrderLineId));
+    return [...byId.values()].filter((r) => r.poLineId !== null && sendingLineIds.has(r.poLineId));
+  }, [rtv.data, rtvConflictRows, sendingDrafts]);
+  const rtvShownKey = useMemo(
+    () =>
+      rtvRows
+        .map((r) => r.ncId)
+        .sort()
+        .join(','),
+    [rtvRows],
+  );
+  const rtvConfirmed = rtvRows.length > 0 && rtvConfirmedKey === rtvShownKey;
+  // The shown set changed after the tick (a new NC appeared, a line was
+  // emptied or filled): the tick no longer covers what is on screen — clear it.
+  useEffect(() => {
+    if (rtvConfirmedKey !== null && rtvConfirmedKey !== rtvShownKey) setRtvConfirmedKey(null);
+  }, [rtvConfirmedKey, rtvShownKey]);
+  // Save waits while the check is genuinely in flight (isLoading is false once
+  // it errors, so this cannot hang); a failed check does NOT block — the server
+  // still refuses with 409 rtv_pending.
+  const rtvBlocks = rtv.isLoading || (rtvRows.length > 0 && !rtvConfirmed);
+  // "Switch to Against JW PO / DC" drops this form: ask first if anything was
+  // typed (the auto-filled DC No. alone does not count).
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
 
   const canSubmit = useMemo(
     () =>
@@ -646,18 +710,16 @@ function PoDcFormBody({
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const lines = lineDrafts
-        .filter((l) => Number(l.shipQty) > 0)
-        .map((l) => ({
-          itemId: l.itemId || null,
-          itemCodeText: l.itemCodeText.trim(),
-          itemNameText: l.itemNameText,
-          qty: Number(l.shipQty),
-          uom: l.uom,
-          purchaseOrderLineId: l.purchaseOrderLineId,
-          materialText: l.materialText.trim() || null,
-          dcRemarks: l.dcRemarks.trim() || null,
-        }));
+      const lines = sendingDrafts.map((l) => ({
+        itemId: l.itemId || null,
+        itemCodeText: l.itemCodeText.trim(),
+        itemNameText: l.itemNameText,
+        qty: Number(l.shipQty),
+        uom: l.uom,
+        purchaseOrderLineId: l.purchaseOrderLineId,
+        materialText: l.materialText.trim() || null,
+        dcRemarks: l.dcRemarks.trim() || null,
+      }));
       // Guard the one field that silently fails server validation: a PO line with
       // no item code would send an empty itemCodeText (rejected as min length 1).
       // Catch it here with a clear message instead of an opaque validation error.
@@ -680,18 +742,32 @@ function PoDcFormBody({
           ...(po.vendorCodeText ? { vendorCodeText: po.vendorCodeText } : {}),
           transport: transport.trim() || null,
           vehicleNo: vehicleNo.trim() || null,
-          // ADR-208 — sent only when the store ticked the confirmation.
-          ...(rtvConfirmed ? { rtvPendingConfirmed: true } : {}),
+          // ADR-208 — the NCs the store saw when it ticked; sent only when ticked.
+          ...(rtvConfirmed ? { rtvConfirmedNcIds: rtvRows.map((r) => r.ncId) } : {}),
         },
         lines,
       };
       const created = await create.mutateAsync(input);
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id: created.id } }));
     } catch (e) {
-      // QC disposed an NC on this PO between page load and Save: fetch the
-      // waiting pieces so the warning appears, and make the store tick again.
+      // QC disposed an NC on this PO between page load and Save (or the check
+      // failed): show the NCs the server named, and make the store tick again.
       if (isRtvPendingConflict(e)) {
-        setRtvConfirmed(false);
+        const named = e.details.ncs.map(
+          (n): RtvPanelRow => ({
+            ncId: n.ncId,
+            ncCode: n.ncCode,
+            itemCodeLabel: n.itemCode ?? '—',
+            rejectedQty: n.rejectedQty,
+            state: n.state,
+            poLineId: n.poLineId,
+          }),
+        );
+        setRtvConflictRows((prev) => [
+          ...prev.filter((p) => !named.some((n) => n.ncId === p.ncId)),
+          ...named,
+        ]);
+        setRtvConfirmedKey(null);
         void rtv.refetch();
       }
       setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
@@ -701,6 +777,17 @@ function PoDcFormBody({
   };
   // The page header's Save (and Ctrl+S) run this body's save.
   saveCtl.submitRef.current = () => void onSubmit();
+
+  const editedForSwitch =
+    (code !== '' && code !== suggestedCode) ||
+    transport !== '' ||
+    vehicleNo !== '' ||
+    lineDrafts.some((l) => l.shipQty !== '' || l.materialText !== '' || l.dcRemarks !== '');
+  const doSwitch = (): void => exit.leave(() => onSwitchToJwpoDc(po.code));
+  const onSwitchClick = (): void => {
+    if (editedForSwitch) setConfirmSwitch(true);
+    else doSwitch();
+  };
 
   return (
     <>
@@ -814,55 +901,58 @@ function PoDcFormBody({
         </FormField>
       </FormGrid>
 
-      {/* ADR-208 — pieces from this PO waiting to go back to the vendor. Shown
-          only when there are some; with none, Against PO is exactly as before. */}
-      {rtvRows.length > 0 ? (
-        <div
-          role="alert"
-          style={{
-            color: 'var(--amber2)',
-            background: 'var(--amber3)',
-            border: '1px solid var(--amber)',
-            borderRadius: 6,
-            padding: '8px 12px',
-            fontSize: 12,
-            lineHeight: 1.5,
-            margin: 'var(--sp-3) 0 0',
-          }}
-        >
-          <div className="fw-700">
-            These pieces from this PO are waiting to go back to the vendor:
-          </div>
-          <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
-            {rtvRows.map((r) => (
-              <li key={r.ncId}>
-                <b className="mono fw-700">{r.ncCode}</b> —{' '}
-                <b className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision)}
-                </b>{' '}
-                — {Number(r.rejectedQty)} pcs — {RETURN_STATUS_LABEL[r.state]}
-              </li>
-            ))}
-          </ul>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => onSwitchToJwpoDc(po.code)}
-            >
-              Switch to Against JW PO / DC
-            </button>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={rtvConfirmed}
-                onChange={(e) => setRtvConfirmed(e.target.checked)}
-              />
-              These are new pieces, not the ones waiting to go back
-              <span className="req">★</span>
-            </label>
-          </div>
+      {/* ADR-208 — pieces waiting to go back to the vendor on a PO line this
+          challan sends. Shown only when there are some; with none, Against PO
+          is exactly as before. */}
+      {rtv.isError ? (
+        <div className="text3" style={{ fontSize: 11, marginTop: 'var(--sp-2)' }}>
+          Could not check for pieces waiting to go back; the save will check.
         </div>
+      ) : null}
+      {rtvRows.length > 0 ? (
+        <div style={{ marginTop: 'var(--sp-3)' }}>
+          <Banner
+            tone="warn"
+            role="alert"
+            flush
+            title="These pieces from this PO are waiting to go back to the vendor:"
+          >
+            <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
+              {rtvRows.map((r) => (
+                <li key={r.ncId}>
+                  <b className="mono fw-700">{r.ncCode}</b> —{' '}
+                  <b className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {r.itemCodeLabel}
+                  </b>{' '}
+                  — {Number(r.rejectedQty)} pcs — {RTV_CANDIDATE_STATE_LABELS[r.state]}
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onSwitchClick}>
+                Switch to Against JW PO / DC
+              </button>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={rtvConfirmed}
+                  onChange={(e) => setRtvConfirmedKey(e.target.checked ? rtvShownKey : null)}
+                />
+                These are new pieces, not the ones waiting to go back
+                <span className="req">★</span>
+              </label>
+            </div>
+          </Banner>
+        </div>
+      ) : null}
+      {confirmSwitch ? (
+        <ExitConfirmDialog
+          onExit={() => {
+            setConfirmSwitch(false);
+            doSwitch();
+          }}
+          onStay={() => setConfirmSwitch(false)}
+        />
       ) : null}
 
       <div
@@ -1232,135 +1322,6 @@ function JwpoDcRtvSection({
       exit={exit}
       saveCtl={saveCtl}
     />
-  );
-}
-
-// The whole candidate set loads in one fetch (capped server-side) and scrolls;
-// the search filters it client-side with the shared matchesSearchTerm across PO
-// No., Sent on DC No., NC No. and the item code. Ready rows can be selected;
-// rows still waiting for QC's decision show greyed with no button.
-function JwpoDcPickerBody({
-  search,
-  onSearchChange,
-  onSelect,
-}: {
-  search: string;
-  onSearchChange: (s: string) => void;
-  onSelect: (ncId: string) => void;
-}): React.JSX.Element {
-  const { data, isLoading, isError } = useRtvCandidates();
-
-  const rows = useMemo(() => {
-    const items = data?.items ?? [];
-    if (search.trim() === '') return items;
-    return items.filter((c) =>
-      matchesSearchTerm(
-        [c.poCode, c.sourceDeliveryChallanCode, c.ncCode, c.itemCode, c.itemCodeText],
-        search,
-      ),
-    );
-  }, [data, search]);
-
-  return (
-    <>
-      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
-        <label className="form-label" htmlFor="dc-jwpo-search">
-          PO No. / Sent on DC No.
-        </label>
-        <input
-          id="dc-jwpo-search"
-          className="innovic-input"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Type the JW PO No. or DC No.…"
-        />
-      </div>
-
-      {isLoading ? (
-        <div className="empty-state">
-          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading NCs…
-        </div>
-      ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          Could not load NCs. Try again.
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-          Nothing is waiting to go back to a vendor for this search.
-        </div>
-      ) : (
-        <div className="tbl-wrap">
-          <table className="innovic-table" style={{ width: '100%' }}>
-            <thead>
-              <tr>
-                <th>PO No.</th>
-                <th>Sent on DC No.</th>
-                <th>NC No.</th>
-                {/* POL = the CUSTOMER's own PO line number. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item Code · Name</th>
-                <th className="th-num">Qty to Return</th>
-                <th>Return Challan Status</th>
-                <th style={{ width: 110 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((c) => {
-                const ready = c.state === 'ready';
-                // Greyed while QC has not decided — shown so the store knows the
-                // pieces exist, never selectable.
-                const codeColor = ready ? 'var(--blue)' : 'var(--text2)';
-                return (
-                  <tr key={c.ncId} style={ready ? undefined : { color: 'var(--text2)' }}>
-                    <td className="mono fw-700" style={{ color: codeColor }}>
-                      {c.poCode ?? '—'}
-                    </td>
-                    <td className="mono fw-700" style={{ color: codeColor }}>
-                      {c.sourceDeliveryChallanCode ?? '—'}
-                    </td>
-                    <td className="mono fw-700" style={{ color: codeColor }}>
-                      {c.ncCode}
-                    </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ color: ready ? 'var(--purple)' : 'var(--text2)' }}
-                    >
-                      {c.clientPoLineNo ?? '—'}
-                    </td>
-                    <td>
-                      <b className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {itemCodeWithRev(c.itemCode ?? c.itemCodeText, c.itemRevision)}
-                      </b>
-                      <div className="text2" style={{ fontSize: 11 }}>
-                        {c.itemName ?? c.itemNameText ?? '—'}
-                      </div>
-                    </td>
-                    <td
-                      className="mono td-num"
-                      style={{ color: ready ? 'var(--red2)' : 'var(--text2)' }}
-                    >
-                      {Number(c.rejectedQty)}
-                    </td>
-                    <td>{RETURN_STATUS_LABEL[c.state]}</td>
-                    <td>
-                      {ready ? (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={() => onSelect(c.ncId)}
-                        >
-                          Select
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
   );
 }
 

@@ -190,7 +190,9 @@ export async function queryRtvCandidates(
       )
       ${poFrag}
       ${poLineFrag}
-    ORDER BY nc.nc_date DESC, nc.code DESC
+    -- Ready first, so the cap never hides a Ready to Send NC behind
+    -- awaiting-decision ones.
+    ORDER BY (CASE WHEN ${ready} THEN 0 ELSE 1 END), nc.nc_date DESC, nc.code DESC
     LIMIT ${RTV_CANDIDATES_LIMIT}
   `);
   return (result as unknown as Array<Record<string, unknown>>).map(toCandidate);
