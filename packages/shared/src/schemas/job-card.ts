@@ -180,6 +180,15 @@ export const jobCardListItemSchema = z.object({
       returnedToStoreQty: z.number().nonnegative().default(0),
       usedQty: z.number().nonnegative().default(0),
       onJcQty: z.number().nonnegative().default(0),
+      // NOTE (ADR-208): a per-Job-Card "customer material at vendor" figure was
+      // built and then withdrawn before shipping. `v_jc_op_status.at_vendor_qty`
+      // is the wrong source for it — it adds NC return-to-vendor pieces (already
+      // processed, not raw customer material), it is per-op so a later
+      // outsourced op would make this panel read 0 while the op chip beside it
+      // read non-zero (one name, two facts — CLAUDE.md §18), and pieces back
+      // from the vendor but still in Incoming QC fall out of both figures. The
+      // fact needs defining first: does "customer material at vendor" mean raw
+      // material only, or customer-owned work in progress too?
     })
     .nullable()
     .default(null),
@@ -564,7 +573,11 @@ export const jobCardCompletionEventSchema = z.object({
 export type JobCardCompletionEvent = z.infer<typeof jobCardCompletionEventSchema>;
 
 /** ADR-103 — client material still available to work on this Job Card:
- *  issued to it MINUS what its first operation has already produced.
+ *  issued to it MINUS what its first operation has already TAKEN UP. Taken up
+ *  means made in-house (its `complete` op_log rows) OR sent out to the OSP
+ *  vendor (`jc_ops.outsource_sent_qty`) — an outsourced op can never carry a
+ *  `complete` row, so counting only production left pieces that are physically
+ *  at a vendor reported as still available to work.
  *  `null` on Job Cards the rule does not apply to (SO-sourced, or JWSO Job
  *  Cards created before the cutover), so the UI can hide the tile entirely
  *  rather than show a misleading zero. */

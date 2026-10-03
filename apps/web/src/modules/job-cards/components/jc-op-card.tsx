@@ -587,18 +587,36 @@ export function JcOpCard({
             <QtyChip
               label="Customer Material"
               value={rmAvailable.availableQty}
-              color={rmAvailable.availableQty > 0 ? 'var(--cyan)' : 'var(--red)'}
+              color={
+                rmAvailable.availableQty > 0
+                  ? 'var(--cyan)'
+                  : rmAvailable.issuedQty > 0
+                    ? 'var(--text3)'
+                    : 'var(--red)'
+              }
               title={
                 `Customer material issued to this job card: ${rmAvailable.issuedQty}. ` +
-                `Already produced on this operation: ${rmAvailable.consumedQty}. ` +
+                // "Taken up", not "produced": when this first operation is
+                // outsourced the pieces sent out to the vendor are gone from
+                // the job card too, and the API counts them here.
+                `Already taken up by this operation — made here, or sent out to the vendor: ${rmAvailable.consumedQty}. ` +
+                // Zero means one of two very different things now that pieces
+                // sent to the vendor count as taken up (ADR-208): either the
+                // material never came (issue more), or all of it is accounted
+                // for (nothing to issue — the server refuses a further issue
+                // once net issued reaches the card's order qty). Telling the
+                // storekeeper to "issue more" in the second case asks for
+                // something the API rejects.
                 (rmAvailable.availableQty > 0
                   ? `${rmAvailable.availableQty} can still be worked.`
-                  : 'Issue more customer material from Customer Material Issue to continue.')
+                  : rmAvailable.issuedQty > 0
+                    ? 'Nothing left to work on this operation — every issued piece is either made or out at the vendor.'
+                    : 'No customer material has been issued to this job card yet — issue it from Customer Material Issue.')
               }
               sub={
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>
                   {rmAvailable.issuedQty} issued
-                  {rmAvailable.availableQty === 0 ? (
+                  {rmAvailable.availableQty === 0 && rmAvailable.issuedQty === 0 ? (
                     <div style={{ color: 'var(--red2)' }}>issue material</div>
                   ) : null}
                 </div>
