@@ -61,7 +61,10 @@ import type {
   DocumentEditStagedResult,
   DocumentTraceability,
   ReceiveDeliveryChallanResponse,
+  RtvCandidateState,
+  RtvPendingConflictDetails,
 } from '@innovic/shared';
+import { queryRtvCandidates } from './rtv-candidates';
 import { diffFields } from '../../lib/audit-trail';
 import {
   DC_HEADER_EDIT_FIELDS,
@@ -1055,6 +1058,56 @@ async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string>
   return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
 }
 
+const RTV_STATE_LABEL: Record<RtvCandidateState, string> = {
+  ready: 'Ready to Send',
+  awaiting_decision: 'Waiting for QC Decision',
+};
+const RTV_MESSAGE_MAX_NCS = 3;
+
+/** ADR-208 — 409 (details.kind = 'rtv_pending') when any of these PO lines has
+ *  return-to-vendor pieces waiting. Same SQL as GET /delivery-challans/rtv-candidates. */
+async function assertNoRtvPending(
+  tx: DbTransaction,
+  companyId: string,
+  poLineIds: string[],
+): Promise<void> {
+  const waiting = await queryRtvCandidates(tx, companyId, { purchaseOrderLineIds: poLineIds });
+  if (waiting.length === 0) return;
+  const shown = waiting
+    .slice(0, RTV_MESSAGE_MAX_NCS)
+    .map(
+      (c) => `${c.ncCode} (${roundQty(Number(c.rejectedQty))} pcs, ${RTV_STATE_LABEL[c.state]})`,
+    );
+  const more = waiting.length - shown.length;
+  const list =
+    more > 0
+      ? `${shown.join(', ')} and ${more} more`
+      : shown.length > 1
+        ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
+        : shown[0]!;
+  const one = waiting.length === 1;
+  const anyReady = waiting.some((c) => c.state === 'ready');
+  const anyAwaiting = waiting.some((c) => c.state === 'awaiting_decision');
+  // A 'Waiting for QC Decision' NC cannot be sent yet (the picker greys it), so
+  // only point Ready to Send pieces at the return route.
+  const message =
+    `${list} ${one ? 'on this PO line is' : 'on these PO lines are'} waiting to go back to the vendor. ` +
+    (anyReady ? 'Send Ready to Send pieces with DC Against → Against JW PO / DC. ' : '') +
+    (anyAwaiting ? 'Pieces Waiting for QC Decision cannot be sent until QC decides. ' : '') +
+    'If these are different pieces, tick “These are new pieces, not the ones waiting to go back”.';
+  const details: RtvPendingConflictDetails = {
+    kind: 'rtv_pending',
+    ncs: waiting.map((c) => ({
+      ncCode: c.ncCode,
+      rejectedQty: c.rejectedQty,
+      state: c.state,
+      // Filtered on purchaseOrderLineIds, so the resolved line is always set.
+      poLineId: c.purchaseOrderLineId ?? '',
+    })),
+  };
+  throw new ConflictError(message, details);
+}
+
 export async function createDeliveryChallan(
   input: CreateDeliveryChallanInput,
   user: AuthContext,
@@ -1132,6 +1185,15 @@ export async function createDeliveryChallan(
     // Lock the PO lines first, so a concurrent OSP DC / JW DC Outward on the
     // same line waits here and then reads this challan's qty (no over-send).
     await lockPoLinesForSend(tx, poLineIds, companyId);
+    // ADR-208 — Against PO guard. Checked here, inside the save's transaction
+    // and after the PO-line lock, before any write: a PO line on this challan
+    // that has return-to-vendor pieces waiting (NC ready, or vendor-sourced NC
+    // awaiting QC's decision) is refused unless the store confirmed these are
+    // new pieces. rtvPendingConfirmed is a confirmation only — never stored.
+    // The return challan itself (createNcDc) never comes through here.
+    if (input.header.rtvPendingConfirmed !== true && poLineIds.length > 0) {
+      await assertNoRtvPending(tx, companyId, poLineIds);
+    }
     const alreadySent = await sumSentQtyByPoLine(tx, poLineIds, companyId);
 
     // Pre-write validation: each PO line's cumulative-sent + this DC's qty

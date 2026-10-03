@@ -8,6 +8,8 @@ import {
   listDeliveryChallansQuerySchema,
   updateDeliveryChallanInputSchema,
 } from './schema';
+import { listRtvCandidatesQuerySchema } from '@innovic/shared';
+import { listRtvCandidates } from './rtv-candidates';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -18,6 +20,15 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     if (!req.user) throw new AuthenticationError();
     const query = listDeliveryChallansQuerySchema.parse(req.query);
     return service.listDeliveryChallans(query, req.user);
+  });
+
+  // ADR-208 — return-to-vendor NCs by JW PO / DC No. (+New DC → Against JW PO
+  // / DC). Static path, registered before '/:id' (find-my-way prefers static
+  // segments anyway, so '/:id' never swallows it).
+  app.get('/delivery-challans/rtv-candidates', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listRtvCandidatesQuerySchema.parse(req.query);
+    return listRtvCandidates(query, req.user);
   });
 
   app.get('/delivery-challans/:id', async (req) => {
