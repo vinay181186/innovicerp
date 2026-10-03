@@ -1971,6 +1971,7 @@ input[type='radio'] {
   border-left: 2px solid var(--border2);
 }
 .innovic-table thead tr.dt-head-groups th {
+  position: static;
   font-size: 11px;
   text-align: center;
   border-bottom: 1px solid var(--border2);

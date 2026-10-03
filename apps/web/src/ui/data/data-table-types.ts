@@ -285,8 +285,9 @@ export interface DataTableProps<T> {
   /** @deprecated `list` renders the retired unruled look — un-migrated screens only. */
   variant?: 'sheet' | 'list' | undefined;
   /** Optional band of group labels above the column headers (ADR-209, Op Qty
-   *  Flow). Each entry spans `span` columns; spans should add up to the column
-   *  count. Tables that do not pass it render exactly as before. */
+   *  Flow). Each entry spans `span` columns; a short band is padded to cover
+   *  every column. Drawn by the classic table only (not the fit engine, i.e.
+   *  not with `tableKey`). Tables that do not pass it render exactly as before. */
   headGroups?: ReadonlyArray<DataTableHeadGroup> | undefined;
 }
 

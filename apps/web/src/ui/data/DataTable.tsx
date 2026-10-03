@@ -53,7 +53,7 @@ import { useTableDensity } from '@/lib/use-ui-settings';
 import { PageState } from '../layout/PageState';
 import { cellTitle, cellValue, cx, defaultRowKey, stopRowClick } from './data-table-cells';
 import { headContent, tdClass, thAriaSort, thClass, thStyle } from './data-table-head';
-import type { DataTableColumn, DataTableProps } from './data-table-types';
+import type { DataTableColumn, DataTableHeadGroup, DataTableProps } from './data-table-types';
 import { FitDataTable } from './FitDataTable';
 import {
   RowCheckbox,
@@ -243,7 +243,12 @@ function ClassicDataTable<T>({
             {headGroups && headGroups.length > 0 ? (
               <tr className="dt-head-groups">
                 {selectable ? <th className="dt-sel-col" aria-hidden="true" /> : null}
-                {headGroups.map((g, i) => (
+                {[
+                  ...headGroups,
+                  ...(headGroups.reduce((a, g) => a + g.span, 0) < cols.length
+                    ? [{ span: cols.length - headGroups.reduce((a, g) => a + g.span, 0) }]
+                    : []),
+                ].map((g: DataTableHeadGroup, i) => (
                   <th
                     key={i}
                     colSpan={g.span}

@@ -97,6 +97,18 @@ export interface OpFlowResponse {
   jobCardCode: string;
   orderQty: number;
   ops: OpFlowRow[];
+  /** ADR-209: ordered = finished + Σ (pending + in QC + at vendor + deviated
+   *  open + rejected) over the ops; unaccounted 0 = ✓. Computed on the server. */
+  jobCardCheck: {
+    ordered: number;
+    finished: number;
+    pending: number;
+    inQc: number;
+    atVendor: number;
+    deviatedOpen: number;
+    rejected: number;
+    unaccounted: number;
+  };
 }
 
 // ─── 2. Rework tree (Job Card page) ─────────────────────────────────────────

@@ -18,7 +18,7 @@ import { StatusBadge } from '@/ui/core';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { SectionBar } from '@/modules/job-cards/components/jc-view-summary';
 import { useOpFlow, useReworkTree } from '../api';
-import type { OpFlowRow, ReworkTreeNode } from '../types';
+import type { OpFlowResponse, OpFlowRow, ReworkTreeNode } from '../types';
 
 const LINK_STYLE: React.CSSProperties = { color: 'var(--cyan)', textDecoration: 'none' };
 
@@ -50,8 +50,6 @@ function NcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
     </Link>
   );
 }
-
-const isQcOp = (o: OpFlowRow): boolean => o.qcRequired || o.opType === 'qc';
 
 /** ADR-209 — the Op Qty Flow table. One reconciled row per op:
  *  Accepted + Rejected (final) + Deviated still open + At vendor + In QC +
@@ -222,7 +220,13 @@ const OP_FLOW_GROUPS = [
   { span: 2, className: SEP },
 ];
 
-function OpFlowNotes({ ops }: { ops: OpFlowRow[] }): React.JSX.Element | null {
+function OpFlowNotes({
+  ops,
+  check,
+}: {
+  ops: OpFlowRow[];
+  check?: OpFlowResponse['jobCardCheck'] | undefined;
+}): React.JSX.Element | null {
   const notes: React.ReactNode[] = [];
   for (const o of ops) {
     const op = `Op ${fmtOpSrNo(o.opSeq)}`;
@@ -236,7 +240,7 @@ function OpFlowNotes({ ops }: { ops: OpFlowRow[] }): React.JSX.Element | null {
               {c}
             </span>
           ))}{' '}
-          (entry LOG-NC-…) — counted in Completed{isQcOp(o) ? ' / Accepted' : ''}.
+          (entry LOG-NC-…) — counted in Done and Accepted.
         </li>,
       );
     }
@@ -272,30 +276,18 @@ function OpFlowNotes({ ops }: { ops: OpFlowRow[] }): React.JSX.Element | null {
       );
     }
   }
-  const first = ops[0];
-  const last = ops[ops.length - 1];
-  const sum = (
-    k: 'pendingQty' | 'atVendorQty' | 'rejectedFinalQty' | 'deviatedOpenQty' | 'inQcQty',
-  ): number => ops.reduce((a, o) => a + o[k], 0);
-  const rest =
-    sum('rejectedFinalQty') +
-    sum('deviatedOpenQty') +
-    sum('atVendorQty') +
-    sum('inQcQty') +
-    sum('pendingQty');
-  const jcOk = first && last ? first.inputQty === last.acceptedQty + rest : true;
   return (
     <div style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 12, color: 'var(--text2)' }}>
-      {first && last ? (
+      {check ? (
         <div style={{ marginBottom: 'var(--sp-1)' }}>
-          <b>Job Card check:</b> {first.inputQty} ordered ={' '}
-          <b style={{ color: 'var(--green2)' }}>{last.acceptedQty} finished</b> +{' '}
-          {sum('pendingQty')} pending + {sum('inQcQty')} in QC + {sum('atVendorQty')} at vendor +{' '}
-          {sum('deviatedOpenQty')} deviated (NC open) + {sum('rejectedFinalQty')} rejected{' '}
-          {jcOk ? (
+          <b>Job Card check:</b> {check.ordered} ordered ={' '}
+          <b style={{ color: 'var(--green2)' }}>{check.finished} finished</b> + {check.pending}{' '}
+          pending + {check.inQc} in QC + {check.atVendor} at vendor + {check.deviatedOpen} deviated
+          (NC open) + {check.rejected} rejected{' '}
+          {check.unaccounted === 0 ? (
             <b style={{ color: 'var(--green2)' }}>✓</b>
           ) : (
-            <b style={{ color: 'var(--red2)' }}>⚠ does not add up</b>
+            <b style={{ color: 'var(--red2)' }}>⚠ {check.unaccounted} not accounted for</b>
           )}
         </div>
       ) : null}
@@ -332,7 +324,9 @@ function OpFlowPanel({ jobCardId }: { jobCardId: string }): React.JSX.Element {
               loading={isLoading}
               emptyText="No operations yet."
             />
-            {data && data.ops.length > 0 ? <OpFlowNotes ops={data.ops} /> : null}
+            {data && data.ops.length > 0 ? (
+              <OpFlowNotes ops={data.ops} check={data.jobCardCheck} />
+            ) : null}
           </>
         )
       ) : null}
