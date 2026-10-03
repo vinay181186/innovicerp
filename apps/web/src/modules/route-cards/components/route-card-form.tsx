@@ -1,14 +1,22 @@
 // Shared Route Card form used by create + edit routes.
 //
-// Header: RC No (auto on create), Item picker (one active RC per item),
-// optional notes, revision indicator.
+// Redesigned to the owner-approved layout, 2026-10-03:
 //
-// Op editor: per-row Machine / Operation / Cycle (min per piece) / Program /
-// Tool fields + Add Op / Add Outsource Op / Add QC Op buttons. Mirrors legacy
-// rcOpsHtml (L10208), which is the single op renderer shared by BOTH
-// legacy entry points — addRouteCard() (L6939, via _rcCheckExisting
-// L6994) and editRouteCard() (L10169, direct call at L10198). That
-// shared renderer is why legacy's two modes are field-identical.
+// Header: three rows of 12 columns, the same four widths on both data rows so
+// the columns line up down the panel as well as across — RC No. / Item Code /
+// Item Name / Plan Type, then RM Grade / RM Size / RM Item / RM Qty per piece,
+// then Remarks. The "Rev N → N+1" indicator moved off the grid onto the page
+// header's subtitle, so create and edit draw the identical grid.
+//
+// Op editor: 7 data columns — Op / Group / Machine or Vendor / Operation /
+// Cycle Time (min) / Program No. / Lead Days — plus one action cell holding
+// "▸ More" and Remove. Tool No. and Tool Details are no longer rendered (they
+// are still stored and still saved; see RouteCardFormOpDraft), and the per-op
+// Remarks lives in the "▸ More" drawer, the shape Create PO uses for a
+// per-line remark. Mirrors legacy rcOpsHtml (L10208), the single op renderer
+// shared by BOTH legacy entry points — addRouteCard() (L6939, via
+// _rcCheckExisting L6994) and editRouteCard() (L10169, direct call at L10198).
+// That shared renderer is why legacy's two modes are field-identical.
 
 import type {
   CreateRouteCardOpInput,
@@ -18,12 +26,13 @@ import type {
   RouteCardPlanType,
   Vendor,
 } from '@innovic/shared';
+import { ITEM_TYPE_RULES, type ItemType } from '@innovic/shared';
 import { opSrNo, qcAfterOutsourceError } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Trash2 } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
-import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
+import { type RmItemValue, rmItemToInput } from '@/components/shared/rm-item-fields';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { usePlansList } from '@/modules/plans/api';
@@ -31,7 +40,6 @@ import { MachineGroupPicker } from '@/modules/machines/components/machine-group-
 import {
   MaterialGradePicker,
   MaterialSizePicker,
-  RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
@@ -41,6 +49,22 @@ import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
+
+/** Columns in the operations table: Op, Group, Machine / Vendor, Operation,
+ *  Cycle Time (min), Program No., Lead Days, actions. The "▸ More" drawer row
+ *  spans all but the first, so the two have to agree. */
+const RC_OP_COL_COUNT = 8;
+
+/** Plan Type as a plain Select, the same control Create SO uses for SO Type.
+ *  `assembly` is never offered here (it needs a BOM behind an order line and
+ *  is decided at planning). ADR-171: `direct_purchase` is no longer offered
+ *  either — it shows only on a card that already holds it, so such a card
+ *  still opens and still saves unchanged. Same filter the Plan form uses. */
+const RC_PLAN_TYPE_OPTIONS: Array<{ value: RouteCardPlanType; label: string }> = [
+  { value: 'manufacture', label: 'Manufacture' },
+  { value: 'full_outsource', label: 'Full Outsource' },
+  { value: 'direct_purchase', label: 'Buy' },
+];
 
 export interface RouteCardFormOpDraft {
   // DISPLAY-ONLY, never sent: the machine group narrows the machine list for
@@ -55,8 +79,15 @@ export interface RouteCardFormOpDraft {
   opType: RouteCardOpType;
   cycleTimeMin: string; // MINUTES per piece
   program: string;
+  // Tool No. / Tool Details are NO LONGER shown or editable on this form (the
+  // 2026-10-03 redesign took them off the grid), but they stay on the draft,
+  // on every factory and in the submit payload: old cards hold these values
+  // and editing a card must never wipe a tool number that is already saved.
   toolNo: string;
   toolDetails: string;
+  // Free text for ONE step — "leave 0.4 mm for grinding", "send the MTC with
+  // the DC". Lives in the row's "▸ More" drawer (migration 0195).
+  remarks: string;
   qcRequired: boolean;
   // OSP-only fields. Resolved on vendor-code change.
   ospVendorId: string;
@@ -125,6 +156,7 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
     program: op.program ?? '',
     toolNo: op.toolNo ?? '',
     toolDetails: op.toolDetails ?? '',
+    remarks: op.remarks ?? '',
     qcRequired: op.qcRequired,
     ospVendorId: op.ospVendorId ?? '',
     ospVendorCodeText: op.ospVendorCode ?? op.ospVendorCodeText ?? '',
@@ -135,7 +167,7 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
 
 /** A row counts as typed when ANY field the user fills is filled — not just
  *  the operation name — so a copy never silently drops a picked machine, a
- *  cycle time, a vendor, a program or a tool. */
+ *  cycle time, a vendor, a program, a tool or a remark. */
 function isOpRowTyped(o: RouteCardFormOpDraft): boolean {
   return [
     o.operation,
@@ -145,6 +177,7 @@ function isOpRowTyped(o: RouteCardFormOpDraft): boolean {
     o.program,
     o.toolNo,
     o.toolDetails,
+    o.remarks,
     o.ospVendorId,
     o.ospVendorCodeText,
     o.ospLeadDays,
@@ -164,6 +197,7 @@ export function emptyProcessOp(): RouteCardFormOpDraft {
     program: '',
     toolNo: '',
     toolDetails: '',
+    remarks: '',
     qcRequired: false,
     ospVendorId: '',
     ospVendorCodeText: '',
@@ -508,43 +542,41 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   // Ctrl+S runs the same Save as the header button (no-op while it is disabled).
   useSaveShortcut(() => void save(), !submitting);
 
-  // One Plan Type card. Lifted from SO Planning's typeBtn so the two screens
-  // draw the same control; a <label> so the whole tile is the click target.
-  const planTypeCard = (
-    val: RouteCardPlanType,
-    icon: string,
-    label: string,
-    help: string,
-    color: string,
-    activeBg: string,
-  ): React.JSX.Element => {
-    const active = header.planType === val;
-    return (
-      <label
-        key={val}
-        style={{
-          flex: 1,
-          cursor: 'pointer',
-          padding: '10px 14px',
-          borderRadius: 8,
-          border: `2px solid ${active ? color : 'var(--border)'}`,
-          background: active ? activeBg : 'var(--bg)',
-          textAlign: 'center',
-        }}
-        onClick={() => setHeader((prev) => ({ ...prev, planType: val }))}
-      >
-        <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{help}</div>
-      </label>
-    );
-  };
+  // Display-only totals under the operations table: how long the whole routing
+  // takes on the machines, and how many days it spends out at vendors. Summed
+  // only from the rows where the column is live — a dimmed cell is not shown,
+  // so a stale value behind one must not show up in a total either.
+  const totalCycleMin = useMemo(
+    () =>
+      Math.round(
+        ops.reduce((s, o) => (o.opType === 'process' ? s + (Number(o.cycleTimeMin) || 0) : s), 0) *
+          100,
+      ) / 100,
+    [ops],
+  );
+  const totalLeadDays = useMemo(
+    () =>
+      ops.reduce((s, o) => (o.opType === 'outsource' ? s + (Number(o.ospLeadDays) || 0) : s), 0),
+    [ops],
+  );
 
   return (
     <form onSubmit={(e) => void submit(e)}>
       <PageHeader
         sticky
         title={mode === 'create' ? 'New Route Card' : `Edit Route Card — ${routeCard?.code ?? ''}`}
+        // The "Rev N → N+1" indicator used to take a slot on the header grid,
+        // which made create and edit lay out differently. It is a fact ABOUT
+        // the document, not a field, so it now sits on the header band and the
+        // grid is identical in both modes.
+        subtitle={
+          mode === 'edit' && routeCard ? (
+            <span className="mono fw-700" style={{ color: 'var(--amber2)', fontSize: 14 }}>
+              Route Card Rev {routeCard.currentRevision} →{' '}
+              <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
+            </span>
+          ) : undefined
+        }
         backLabel="Back"
         onBack={onBack ?? onCancel}
         actions={
@@ -640,9 +672,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           </FormField>
           {/* Item Name — read-only, auto-filled from the picked item, sitting
               right beside Item Code (the format Create SO shows). It mirrors
-              the master; you pick the item by code, the name follows. On edit
-              it gives 2/12 to the Route Card Rev indicator. */}
-          <FormField label="Item Name" size={mode === 'edit' && routeCard ? 'md' : 'lg'}>
+              the master; you pick the item by code, the name follows. */}
+          <FormField label="Item Name" size="md">
             <input
               className="innovic-input"
               value={header.itemName}
@@ -651,120 +682,103 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
             />
           </FormField>
-          {mode === 'edit' && routeCard ? (
-            <FormField label="Route Card Rev" size="xs">
-              <div
-                className="mono fw-700"
-                style={{ color: 'var(--amber2)', paddingTop: 7, fontSize: 14 }}
-              >
-                {routeCard.currentRevision} →{' '}
-                <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
-              </div>
-            </FormField>
-          ) : null}
           {/* Plan Type — the same choice SO Planning asks for every plan,
-                recorded once here as the item's default. Same cards, same
-                colours, so the planner recognises it. `assembly` is not offered:
-                it needs a BOM behind an order line and is decided at planning.
-                ADR-171: `direct_purchase` is no longer offered — a bought-in
-                item is flagged Source = Buy on the Item Master and the Planning
-                line raises a PR. An existing card that already holds it still
-                renders (read-only chip below) and saves unchanged. */}
-          <div className="f-full">
-            <span
-              className="form-label"
-              style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}
+              recorded once here as the item's default. A plain Select, exactly
+              as Create SO asks for SO Type. */}
+          <FormField label="Plan Type" required size="xs" htmlFor="rc-plantype">
+            <select
+              id="rc-plantype"
+              className="innovic-select"
+              value={header.planType}
+              onChange={(e) =>
+                setHeader((prev) => ({ ...prev, planType: e.target.value as RouteCardPlanType }))
+              }
             >
-              Plan Type<span className="req">★</span>
-            </span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {planTypeCard(
-                'manufacture',
-                '🏭',
-                'Manufacture',
-                'Job Card + Operations',
-                'var(--cyan)',
-                'var(--cyan3)',
-              )}
-              {planTypeCard(
-                'full_outsource',
-                '📦',
-                'Full Outsource',
-                'Our material, vendor does all',
-                'var(--purple)',
-                'var(--purple3)',
-              )}
-            </div>
-            {header.planType === 'direct_purchase' ? (
-              <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
-                <span className="badge b-grey">🛒 Buy</span>{' '}
-                <span className="text3">
-                  Old setting — set the item&apos;s Source to Buy instead.
-                </span>
-              </div>
-            ) : null}
-          </div>
-          {/* Raw material — Grade + Size under one bracket, both optional
-                (no ★ on either). Same two pickers Planning and the Job Card
-                form use, so the route card names the same stock they do. */}
-          <div className="f-full">
-            <RawMaterialGroup>
-              <div className="form-grp">
-                <label className="form-label">RM Grade</label>
-                <MaterialGradePicker
-                  valueId={header.rawMaterialGradeId}
-                  valueText={header.rawMaterialGradeText}
-                  onChange={(id, text) =>
-                    setHeader((prev) => ({
-                      ...prev,
-                      rawMaterialGradeId: id,
-                      rawMaterialGradeText: text,
-                    }))
-                  }
-                />
-              </div>
-              <div className="form-grp">
-                <label className="form-label">RM Size</label>
-                <MaterialSizePicker
-                  valueId={header.rawMaterialSizeId}
-                  valueText={header.rawMaterialSizeText}
-                  onChange={(id, text) =>
-                    setHeader((prev) => ({
-                      ...prev,
-                      rawMaterialSizeId: id,
-                      rawMaterialSizeText: text,
-                    }))
-                  }
-                />
-              </div>
-              <RmItemFields
-                value={{
-                  rawMaterialItemId: header.rawMaterialItemId,
-                  rawMaterialItemCode: header.rawMaterialItemCode,
-                  rmQtyPerPiece: header.rmQtyPerPiece,
-                }}
-                onChange={(v) => setHeader((prev) => ({ ...prev, ...v }))}
-              />
-              {rmPrefillFrom ? (
-                <div className="text3" style={{ gridColumn: '1 / -1', fontSize: 11, marginTop: 2 }}>
-                  Prefilled from plan{' '}
-                  <b className="mono" style={{ color: 'var(--text)' }}>
-                    {rmPrefillFrom}
-                  </b>{' '}
-                  — change it if the routing calls for something else.
-                </div>
-              ) : null}
-            </RawMaterialGroup>
-          </div>
-          <FormField label="Notes" size="full">
-            <input
-              className="innovic-input"
+              {RC_PLAN_TYPE_OPTIONS.filter(
+                (o) => o.value !== 'direct_purchase' || header.planType === 'direct_purchase',
+              ).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          {/* Raw material — Grade, Size, RM Item and RM Qty per piece, all
+              optional (no ★ on any). The same four pickers Planning and the Job
+              Card form use, so the route card names the same stock they do;
+              they sit straight on the grid under Row 1 so the four columns line
+              up down the panel as well as across. */}
+          <FormField label="RM Grade" size="sm">
+            <MaterialGradePicker
+              valueId={header.rawMaterialGradeId}
+              valueText={header.rawMaterialGradeText}
+              onChange={(id, text) =>
+                setHeader((prev) => ({
+                  ...prev,
+                  rawMaterialGradeId: id,
+                  rawMaterialGradeText: text,
+                }))
+              }
+            />
+          </FormField>
+          <FormField label="RM Size" size="sm">
+            <MaterialSizePicker
+              valueId={header.rawMaterialSizeId}
+              valueText={header.rawMaterialSizeText}
+              onChange={(id, text) =>
+                setHeader((prev) => ({
+                  ...prev,
+                  rawMaterialSizeId: id,
+                  rawMaterialSizeText: text,
+                }))
+              }
+            />
+          </FormField>
+          <RouteCardRmItemFields
+            value={{
+              rawMaterialItemId: header.rawMaterialItemId,
+              rawMaterialItemCode: header.rawMaterialItemCode,
+              rmQtyPerPiece: header.rmQtyPerPiece,
+            }}
+            onChange={(v) => setHeader((prev) => ({ ...prev, ...v }))}
+          />
+          {/* "Route Card Remarks" not "Remarks": the per-operation field in the
+              "▸ More" drawer is already called Remarks, and one word cannot name
+              two facts on one screen (CLAUDE.md §18). Create PO draws exactly
+              this distinction — "PO Remarks" on the document, "Remarks" on the
+              line. Same column as before (route_cards.notes), new label. */}
+          <FormField label="Route Card Remarks" size="full" htmlFor="rc-remarks">
+            <textarea
+              id="rc-remarks"
+              className="innovic-textarea"
+              rows={2}
               value={header.notes}
               onChange={(e) => setHeader({ ...header, notes: e.target.value })}
               placeholder="Optional manufacturing notes…"
             />
           </FormField>
         </FormGrid>
+        {/* Quiet notes under the grid, so the three field rows stay three rows
+            and the columns keep lining up. */}
+        {rmPrefillFrom ? (
+          <div className="text3" style={{ fontSize: 11, marginTop: 'var(--sp-2)' }}>
+            Raw material prefilled from plan{' '}
+            <b className="mono" style={{ color: 'var(--text)' }}>
+              {rmPrefillFrom}
+            </b>{' '}
+            — change it if the routing calls for something else.
+          </div>
+        ) : null}
+        {/* ADR-171: `direct_purchase` is no longer offered — a bought-in item is
+            flagged Source = Buy on the Item Master and the Planning line raises
+            a PR. A card that already holds it keeps it (the Select still shows
+            it) and saves unchanged; this line says why it is there. */}
+        {header.planType === 'direct_purchase' ? (
+          <div style={{ marginTop: 'var(--sp-2)', fontSize: 11, color: 'var(--text2)' }}>
+            <span className="badge b-grey">🛒 Buy</span>{' '}
+            <span className="text3">Old setting — set the item&apos;s Source to Buy instead.</span>
+          </div>
+        ) : null}
       </Panel>
 
       {blockingCard ? null : (
@@ -806,41 +820,31 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                   Copied from <span className="mono fw-700">{copiedFrom.label}</span> — edit freely
                 </span>
               ) : null}
+              {/* Create PO's Line Items header order: the occasional actions as
+                  ghost buttons, then ONE blue primary last — the button the
+                  planner presses most. The old inline purple / green fills are
+                  gone; a row's kind is still told by its tint and badge. */}
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => addOp('process')}
-              >
-                <Plus size={13} /> Add Op
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{
-                  background: 'var(--purple3)',
-                  color: 'var(--purple)',
-                  border: '1px solid var(--purple)',
-                }}
                 onClick={() => addOp('outsource')}
               >
-                <Plus size={13} /> Add Outsource Op
+                + Outsourced op
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('qc')}>
+                + Inspection
               </button>
               <button
                 type="button"
-                className="btn btn-sm"
-                style={{
-                  background: 'var(--green3)',
-                  color: 'var(--green2)',
-                  border: '1px solid var(--green)',
-                }}
-                onClick={() => addOp('qc')}
+                className="btn btn-primary btn-sm"
+                onClick={() => addOp('process')}
               >
-                <Plus size={13} /> Add QC Op
+                + Add Operation
               </button>
             </>
           }
         >
-          <table className="innovic-table">
+          <table className="innovic-table tbl-ctr tbl-edit">
             <thead>
               <tr>
                 <th style={{ width: 36 }}>Op</th>
@@ -857,24 +861,20 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 <th>
                   Operation<span className="req">★</span>
                 </th>
-                <th className="th-num text3" style={{ width: 90 }}>
+                <th className="th-num" style={{ width: 90 }}>
                   Cycle Time (min)
                 </th>
                 <th style={{ width: 90 }}>Program No.</th>
                 <th className="th-num" style={{ width: 70 }}>
                   Lead Days
                 </th>
-                <th className="cyan" style={{ width: 90 }}>
-                  Tool No.
-                </th>
-                <th>Tool Details</th>
-                <th style={{ width: 44 }}></th>
+                <th style={{ width: 120 }}></th>
               </tr>
             </thead>
             <tbody>
               {ops.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={RC_OP_COL_COUNT} className="empty-state">
                     No operations yet.
                   </td>
                 </tr>
@@ -895,6 +895,20 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 ))
               )}
             </tbody>
+            {/* Display only — nothing is stored or sent from this row. */}
+            {ops.length > 0 ? (
+              <tfoot>
+                <tr className="fw-700">
+                  <td className="td-num" colSpan={4}>
+                    Total
+                  </td>
+                  <td className="td-num mono">{totalCycleMin || '—'}</td>
+                  <td />
+                  <td className="td-num mono">{totalLeadDays || '—'}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            ) : null}
           </table>
         </Panel>
       )}
@@ -979,169 +993,292 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
       : null;
   // Warning only — the vendor NAME is shown in the picker field itself (CODE — Name).
   const vendorLabel = !op.ospVendorId && op.ospVendorCodeText.trim() ? '⚠ Not in master' : null;
+  // The "▸ More" drawer holds the op's Remarks — long free text, which as a
+  // column either squeezes the grid or gets cut. Copied from Create PO's line
+  // row, including the rule that it opens by itself when the row already
+  // carries a remark, so nothing the card holds is hidden on arrival.
+  //
+  // DERIVED, not seeded. A lazy `useState(() => …)` initialiser runs only when
+  // the component for that INDEX first mounts, and these rows are keyed by
+  // index — so a card whose ops arrive later would never open its drawers.
+  // "Copy ops from Route Card…" is exactly that case: the form starts with one
+  // blank row, and the copied remarks would have stayed invisible. Null means
+  // "the user has not decided for this row", so until they click, the drawer
+  // follows the data.
+  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const moreOpen = userToggled ?? Boolean(op.remarks?.trim());
   return (
-    <tr style={{ background: rowBg }}>
-      <td className="mono fw-700" style={{ color: accent }}>
-        {opSrNo(idx + 1)}
-      </td>
-      <td>
-        {op.opType === 'qc' ? (
-          <span className="badge b-green" style={{ fontSize: 11 }}>
-            🔬 QC
-          </span>
-        ) : op.opType === 'outsource' ? (
-          <span
-            className="badge"
-            style={{
-              fontSize: 11,
-              color: 'var(--purple)',
-              background: 'var(--purple3)',
-              border: '1px solid var(--purple)',
-            }}
-          >
-            🏭 OSP
-          </span>
-        ) : (
-          <MachineGroupPicker
-            id={`rc-mgrp-${idx}`}
-            valueId={op.machineGroupId}
-            valueText={groupCode}
-            onChange={onGroupChange}
-          />
-        )}
-      </td>
-      <td>
-        {op.opType === 'outsource' ? (
-          <>
-            <RouteCardVendorCell id={`rc-vend-${idx}`} op={op} onChange={onVendorChange} />
-            {vendorLabel ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                {vendorLabel}
-              </div>
-            ) : null}
-          </>
-        ) : op.opType === 'qc' ? (
-          <span className="badge b-green" style={{ fontSize: 11 }}>
-            QC
-          </span>
-        ) : (
-          <>
-            {/* Master-only machine picker (2026-09-28 audit), like the Group and
+    <Fragment>
+      <tr style={{ background: rowBg }}>
+        <td className="mono fw-700" style={{ color: accent }}>
+          {opSrNo(idx + 1)}
+        </td>
+        <td>
+          {op.opType === 'qc' ? (
+            <span className="badge b-green" style={{ fontSize: 11 }}>
+              🔬 QC
+            </span>
+          ) : op.opType === 'outsource' ? (
+            <span
+              className="badge"
+              style={{
+                fontSize: 11,
+                color: 'var(--purple)',
+                background: 'var(--purple3)',
+                border: '1px solid var(--purple)',
+              }}
+            >
+              🏭 OSP
+            </span>
+          ) : (
+            <MachineGroupPicker
+              id={`rc-mgrp-${idx}`}
+              valueId={op.machineGroupId}
+              valueText={groupCode}
+              onChange={onGroupChange}
+            />
+          )}
+        </td>
+        <td>
+          {op.opType === 'outsource' ? (
+            <>
+              <RouteCardVendorCell id={`rc-vend-${idx}`} op={op} onChange={onVendorChange} />
+              {vendorLabel ? (
+                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                  {vendorLabel}
+                </div>
+              ) : null}
+            </>
+          ) : op.opType === 'qc' ? (
+            <span className="badge b-green" style={{ fontSize: 11 }}>
+              QC
+            </span>
+          ) : (
+            <>
+              {/* Master-only machine picker (2026-09-28 audit), like the Group and
                 Vendor boxes: a machine not in the Machine Master cannot be
                 picked, so loading and costing always see the op. */}
-            <SearchableSelect
-              id={`rc-mach-${idx}`}
-              value={op.machineId || null}
-              onChange={(id) =>
-                onMachineChange(id ? (machinesList.find((m) => m.id === id)?.code ?? '') : '')
-              }
-              options={rowMachines.map((m) => ({ id: m.id, code: m.code, name: m.name }))}
-              placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine'}
-              emptyText="No machine in the master"
-              valueLabel={
-                op.machineId
-                  ? (machinesList.find((m) => m.id === op.machineId)?.code ?? op.machineCodeText)
-                  : undefined
-              }
-              selectedLabel={(o) => o.code ?? o.name}
+              <SearchableSelect
+                id={`rc-mach-${idx}`}
+                value={op.machineId || null}
+                onChange={(id) =>
+                  onMachineChange(id ? (machinesList.find((m) => m.id === id)?.code ?? '') : '')
+                }
+                options={rowMachines.map((m) => ({ id: m.id, code: m.code, name: m.name }))}
+                placeholder={op.machineGroupId ? '🔍 Machine in group' : '🔍 Machine'}
+                emptyText="No machine in the master"
+                valueLabel={
+                  op.machineId
+                    ? (machinesList.find((m) => m.id === op.machineId)?.code ?? op.machineCodeText)
+                    : undefined
+                }
+                selectedLabel={(o) => o.code ?? o.name}
+              />
+              {machineLabel ? (
+                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                  {machineLabel}
+                </div>
+              ) : null}
+            </>
+          )}
+        </td>
+        <td>
+          {op.opType === 'qc' ? (
+            // QC operation must come from the QC Process Master (searchable, master-only),
+            // the same picker Job Card / SO Planning use. Stores the process name.
+            <QcProcessPicker
+              id={`rc-qcproc-${idx}`}
+              value={op.operation}
+              onChange={(code) => onChange({ operation: code })}
             />
-            {machineLabel ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                {machineLabel}
-              </div>
-            ) : null}
-          </>
-        )}
-      </td>
-      <td>
-        {op.opType === 'qc' ? (
-          // QC operation must come from the QC Process Master (searchable, master-only),
-          // the same picker Job Card / SO Planning use. Stores the process name.
-          <QcProcessPicker
-            id={`rc-qcproc-${idx}`}
-            value={op.operation}
-            onChange={(code) => onChange({ operation: code })}
-          />
-        ) : (
-          <input
-            className="innovic-input"
-            value={op.operation}
-            onChange={(e) => onChange({ operation: e.target.value })}
-            placeholder={
-              op.opType === 'outsource' ? 'Coating / Painting / HT…' : 'od turn, mill, drill…'
-            }
-          />
-        )}
-      </td>
-      <td className="td-num">
+          ) : (
+            <input
+              className="innovic-input"
+              value={op.operation}
+              onChange={(e) => onChange({ operation: e.target.value })}
+              placeholder={
+                op.opType === 'outsource' ? 'Coating / Painting / HT…' : 'od turn, mill, drill…'
+              }
+            />
+          )}
+        </td>
+        {/* A cell a row's KIND cannot use shows a dash that says why, instead of
+          an empty input nobody should fill — an empty box reads as a required
+          field somebody forgot. Whatever the cell held stays in state
+          untouched: dimming must never silently edit the card.
+          Dimmed for OUTSOURCED steps ONLY. An inspection keeps both boxes on
+          purpose: the QC Process Master carries a Default Cycle Time (min)
+          that SO Planning fills a QC op from, and this card is the master a
+          plan copies — so inspection time has to be typeable here. A CMM
+          program is a real program number on an inspection too. */}
+        <td className="td-num">
+          {op.opType !== 'outsource' ? (
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className="innovic-input"
+              value={op.cycleTimeMin}
+              onChange={(e) => onChange({ cycleTimeMin: e.target.value })}
+              placeholder="min"
+            />
+          ) : (
+            <span
+              className="text3"
+              title="An outsourced step has no machine cycle time — it carries Lead Days instead"
+            >
+              —
+            </span>
+          )}
+        </td>
+        <td>
+          {op.opType !== 'outsource' ? (
+            <input
+              className="innovic-input"
+              value={op.program}
+              onChange={(e) => onChange({ program: e.target.value })}
+              placeholder="PRG-001"
+              style={{ color: 'var(--blue)' }}
+            />
+          ) : (
+            <span className="text3" title="A program number belongs to an in-house step">
+              —
+            </span>
+          )}
+        </td>
+        <td className="td-num">
+          {op.opType === 'outsource' ? (
+            <input
+              type="number"
+              min="0"
+              step="1"
+              className="innovic-input"
+              value={op.ospLeadDays}
+              onChange={(e) => onChange({ ospLeadDays: e.target.value })}
+              placeholder="days"
+            />
+          ) : (
+            <span className="text3" title="Lead Days applies to an outsourced step only">
+              —
+            </span>
+          )}
+        </td>
+        <td style={{ whiteSpace: 'nowrap' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            aria-expanded={moreOpen}
+            aria-label={`${moreOpen ? 'Hide' : 'Show'} more fields, operation ${opSrNo(idx + 1)}`}
+            onClick={() => setUserToggled(!moreOpen)}
+          >
+            {moreOpen ? '▾' : '▸'} More
+          </button>{' '}
+          <button
+            type="button"
+            className="btn btn-danger btn-sm btn-icon"
+            onClick={onRemove}
+            title="Remove operation"
+            aria-label={`Remove operation ${opSrNo(idx + 1)}`}
+          >
+            <Trash2 size={12} />
+          </button>
+        </td>
+      </tr>
+
+      {/* The leading empty <td> is deliberate: it indents the drawer past the
+          Op column, the shape Create PO's line detail row uses. */}
+      {moreOpen ? (
+        <tr style={{ background: rowBg }}>
+          <td />
+          <td colSpan={RC_OP_COL_COUNT - 1} style={{ whiteSpace: 'normal' }}>
+            <FormGrid>
+              <FormField label="Remarks" size="full" htmlFor={`rc-op-rmk-${idx}`}>
+                <input
+                  id={`rc-op-rmk-${idx}`}
+                  className="innovic-input"
+                  autoComplete="off"
+                  aria-label={`Remarks, operation ${opSrNo(idx + 1)}`}
+                  value={op.remarks}
+                  onChange={(e) => onChange({ remarks: e.target.value })}
+                  placeholder="What the operator or the vendor must know about this step…"
+                />
+              </FormField>
+            </FormGrid>
+          </td>
+        </tr>
+      ) : null}
+    </Fragment>
+  );
+}
+
+/** The Route Card's RM ITEM + RM Qty per piece, as two ordinary cells on this
+ *  form's 12-column grid (md + xs, so they finish Row 2 under Item Name and
+ *  Plan Type). Behaviour, queries and state keys are the shared
+ *  `RmItemFields`': only Raw Material / Component items are offered, the
+ *  server checks the same rule, and the qty box stays disabled until an item is
+ *  picked. The shared component wraps its own `.form-grp` boxes and is used by
+ *  the BOM, Job Card and Plan forms unchanged — this twin only re-sizes the two
+ *  fields for this grid. */
+function RouteCardRmItemFields(props: {
+  value: RmItemValue;
+  onChange: (v: RmItemValue) => void;
+}): React.JSX.Element {
+  const { value, onChange } = props;
+  const [search, setSearch] = useState('');
+  // Two server-filtered queries (Raw Material, Component) — filtering 50 mixed
+  // rows in the browser could hide every raw material behind assemblies.
+  const term = search.trim() || undefined;
+  const rm = useItemsList({ search: term, itemType: 'raw_material', limit: 30, offset: 0 });
+  const comp = useItemsList({ search: term, itemType: 'component', limit: 30, offset: 0 });
+  const all = useMemo(
+    () => [...(rm.data?.items ?? []), ...(comp.data?.items ?? [])],
+    [rm.data, comp.data],
+  );
+  const options = useMemo(
+    () =>
+      all
+        .filter((it) => ITEM_TYPE_RULES[it.itemType as ItemType]?.jobMaterial)
+        .map((it) => ({ id: it.id, code: it.code, name: it.name })),
+    [all],
+  );
+  return (
+    <>
+      <FormField label="RM Item" size="md">
+        <SearchableSelect
+          id="rc-rm-item"
+          value={value.rawMaterialItemId}
+          valueLabel={value.rawMaterialItemCode ?? undefined}
+          onChange={(id) => {
+            const it = all.find((x) => x.id === id);
+            onChange({
+              ...value,
+              rawMaterialItemId: id,
+              rawMaterialItemCode: it?.code ?? null,
+              rmQtyPerPiece: id ? value.rmQtyPerPiece : '',
+            });
+          }}
+          options={options}
+          onSearch={setSearch}
+          loading={rm.isFetching || comp.isFetching}
+          placeholder="🔍 Raw Material / Component item…"
+          emptyText="No Raw Material / Component item"
+        />
+      </FormField>
+      <FormField label="RM Qty per piece" size="xs" htmlFor="rc-rm-qty">
         <input
+          id="rc-rm-qty"
+          className="innovic-input mono"
           type="number"
-          min="0"
-          step="0.01"
-          className="innovic-input"
-          value={op.cycleTimeMin}
-          onChange={(e) => onChange({ cycleTimeMin: e.target.value })}
-          placeholder="min"
+          step="any"
+          min={0}
+          disabled={!value.rawMaterialItemId}
+          value={value.rmQtyPerPiece}
+          placeholder={value.rawMaterialItemId ? 'e.g. 0.25' : 'pick the RM item first'}
+          onWheel={(e) => (e.target as HTMLInputElement).blur()}
+          onChange={(e) => onChange({ ...value, rmQtyPerPiece: e.target.value })}
         />
-      </td>
-      {/* Program No. is for in-house / QC rows; Lead Days for OSP rows only. */}
-      <td>
-        {op.opType === 'outsource' ? (
-          <span className="text3">—</span>
-        ) : (
-          <input
-            className="innovic-input"
-            value={op.program}
-            onChange={(e) => onChange({ program: e.target.value })}
-            placeholder="PRG-001"
-            style={{ color: 'var(--blue)' }}
-          />
-        )}
-      </td>
-      <td className="td-num">
-        {op.opType === 'outsource' ? (
-          <input
-            type="number"
-            min="0"
-            step="1"
-            className="innovic-input"
-            value={op.ospLeadDays}
-            onChange={(e) => onChange({ ospLeadDays: e.target.value })}
-            placeholder="days"
-          />
-        ) : (
-          <span className="text3">—</span>
-        )}
-      </td>
-      <td>
-        <input
-          className="innovic-input"
-          value={op.toolNo}
-          onChange={(e) => onChange({ toolNo: e.target.value })}
-          placeholder="T01"
-          style={{ color: 'var(--cyan)' }}
-        />
-      </td>
-      <td>
-        <input
-          className="innovic-input"
-          value={op.toolDetails}
-          onChange={(e) => onChange({ toolDetails: e.target.value })}
-          placeholder="Setup notes…"
-          style={{ color: 'var(--text2)' }}
-        />
-      </td>
-      <td>
-        <button
-          type="button"
-          className="btn btn-danger btn-sm btn-icon"
-          onClick={onRemove}
-          title="Remove operation"
-        >
-          <Trash2 size={12} />
-        </button>
-      </td>
-    </tr>
+      </FormField>
+    </>
   );
 }
 
@@ -1180,8 +1317,11 @@ export function opsToInput(ops: RouteCardFormOpDraft[]): CreateRouteCardOpInput[
     opType: o.opType,
     cycleTimeMin: Number(o.cycleTimeMin) || 0,
     program: o.program.trim() || null,
+    // Not rendered any more, but still sent: an old card's tool number must
+    // survive an edit made on the new form.
     toolNo: o.toolNo.trim() || null,
     toolDetails: o.toolDetails.trim() || null,
+    remarks: o.remarks.trim() || null,
     qcRequired: o.qcRequired,
     ospVendorId: o.opType === 'outsource' ? o.ospVendorId || null : null,
     ospVendorCodeText:

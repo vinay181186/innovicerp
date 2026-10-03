@@ -29,10 +29,11 @@ export function printRouteCard(args: {
       <td style="text-align:center;font-weight:700">${opSrNo(i + 1)}</td>
       <td>${esc(machineLabel(o))}</td>
       <td>${esc(o.operation)}</td>
-      <td style="text-align:center">${Number(o.cycleTimeMin) || '—'}</td>
+      <td style="text-align:center">${o.opType === 'outsource' ? '—' : Number(o.cycleTimeMin) || '—'}</td>
       <td style="font-family:monospace">${esc(o.program ?? '—')}</td>
       <td>${esc(o.toolNo ?? '—')}</td>
       <td>${esc(o.toolDetails ?? '—')}</td>
+      <td>${esc(o.remarks ?? '—')}</td>
     </tr>`,
     )
     .join('');
@@ -58,8 +59,8 @@ export function printRouteCard(args: {
       <div class="info-box"><div class="info-lbl">Route Card Rev</div><div class="info-val">${rc.currentRevision}</div></div>
     </div>
     <h2>Operation Sequence</h2>
-    <table><thead><tr><th>Op</th><th>Planned Machine</th><th>Operation</th><th>Cycle Time (min)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#aaa">No operations yet.</td></tr>'}</tbody></table>
+    <table><thead><tr><th>Op</th><th>Planned Machine</th><th>Operation</th><th>Cycle Time (min)</th><th>Program No.</th><th>Tool No.</th><th>Tool Details / Setup Notes</th><th>Remarks</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:#aaa">No operations yet.</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Process Engineer</div>
       <div class="sign-box">Reviewed By</div>

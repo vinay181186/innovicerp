@@ -87,6 +87,7 @@ export const routeCardOpSchema = z.object({
   program: z.string().nullable(),
   toolNo: z.string().nullable(),
   toolDetails: z.string().nullable(),
+  remarks: z.string().nullable(),
   qcRequired: z.boolean(),
   ospVendorId: z.string().uuid().nullable(),
   ospVendorCodeText: z.string().nullable(),
@@ -132,6 +133,10 @@ export const routeCardRevisionSchema = z.object({
       program: z.string().nullable().optional(),
       toolNo: z.string().nullable().optional(),
       toolDetails: z.string().nullable().optional(),
+      // Optional like qcRequired below, and for the same reason: snapshots
+      // written before migration 0195 carry no remarks key, and an old
+      // history row must keep loading rather than fail validation.
+      remarks: z.string().nullable().optional(),
       ospVendorCode: z.string().nullable().optional(),
       ospLeadDays: z.number().int().nullable().optional(),
       // Whether this step needed QC. Optional on purpose: revision rows
@@ -208,6 +213,7 @@ export const createRouteCardOpInputSchema = z
     program: z.string().max(255).nullable().optional(),
     toolNo: z.string().max(64).nullable().optional(),
     toolDetails: z.string().max(1000).nullable().optional(),
+    remarks: z.string().max(1000).nullable().optional(),
     qcRequired: z.boolean().default(false),
     ospVendorId: z.string().uuid().nullable().optional(),
     ospVendorCodeText: z.string().max(64).nullable().optional(),

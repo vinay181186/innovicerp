@@ -10833,3 +10833,121 @@ REQUEST/APPROVE/REJECT log to the document's History tab (ADR-197). Gate ships O
 - Migration 0191 (document_edit_requests + enum + approval_config.doc_edit_approval). Applied to TEST.
 - Full line-level PO editing under approval still to come (1b); other documents + masters are Phase 2;
   the four no-edit docs (Invoice, Delivery Challan, Production Order, Party GRN) are Phase 3.
+
+## ADR-204: Create Route Card — the form follows Create SO, the per-operation remark follows Create PO
+**Date:** 2026-10-03
+**Status:** Accepted (owner decisions 2026-10-02/03; mockup `Route-Card-Create-Mockup.html`)
+
+### Context
+The live New Route Card screen put four stacked bands above the operations table — three of them
+spanning all 12 columns to hold a quarter of that width (Plan Type as two 196px picture cards, the
+raw material inside a bordered box with its own `auto-fit` grid, and a one-line Notes input at full
+width). That is ~300px of header before the table, which is the actual work. The operations table
+predates the table standard: ten columns, a bare ✕ per row, no roll-up, and nowhere to record what
+the operator or the vendor must know about ONE step — which was being written into `tool_details` or
+passed on by word of mouth.
+
+Three layouts were proposed and rejected by the owner ("3 column format looks rookie", "program no
+and tool details in second row doesn't look good") before the answer was found where it already
+existed: the app's own create screens.
+
+### Decision
+1. **The form rows are Create SO's.** Header = three rows on `.form-grid-12`, each summing to 12:
+   `RC No.`(sm) · `Item Code`★(sm) · `Item Name`(md) · `Plan Type`★(xs), then `RM Grade`(sm) ·
+   `RM Size`(sm) · `RM Item`(md) · `RM Qty / pc`(xs), then `Remarks`(full). Both data rows carry the
+   same widths, so the four columns align DOWN the panel as well as across it.
+2. **Plan Type is a Select, not two picture cards** — the same control Create SO uses for SO Type. A
+   two-option choice is a dropdown. The legacy `direct_purchase` chip still renders and still saves.
+3. **`RawMaterialGroup`'s bordered box is dropped on this screen**; its four fields sit on the page's
+   own grid so their labels line up with the row above. The shared component is unchanged for
+   bom-form / job-card-form / plan-form.
+4. **Notes becomes `Remarks`** — same `route_cards.notes` column, relabelled, and a `textarea rows={2}`
+   at `size="full"` as the panel's closing field. That is where PO (`PO Remarks`) and SO (`Remarks`)
+   both keep the document-level remark; it is NOT a panel of its own after the lines.
+5. **A remark per operation, shown through the row's `▸ More`** — Create PO's per-line pattern
+   (`po-form-line.tsx`), copied: a `▸ More` ghost button in the row's action cell beside ✕; a detail
+   row under that operation (`<tr><td /><td colSpan={colCount - 1}>`) holding the remark as an
+   ordinary `FormField` on a `FormGrid`; and it **opens by itself when the operation already carries a
+   remark**, so nothing a previous user typed is hidden behind a closed button. NOT a column — a
+   remark is long free text and as a column it either squeezes the grid or gets cut. `⋯ RowMenu`
+   (ADR-199) stays the LIST standard; the create-form line editors use `▸ More` + ✕.
+6. **`Tool No.` and `Tool Details` leave the screen** (owner decision, reaffirmed). The columns and all
+   existing data stay; the form simply no longer renders or collects them, and the draft keeps both
+   fields so editing an old card never wipes a saved tool number.
+7. The operations grid is **7 data columns + the action cell**; `Cycle (min)` and `Lead (days)` are
+   `th-num`/`td-num` with a Σ totals row (the `showTotals` the standard already has); the add buttons
+   follow PO's hierarchy — `+ Outsourced op` / `+ Inspection` ghost, `+ Add Operation` blue primary;
+   a cell the row's kind cannot use renders a dimmed `—` with a tooltip rather than an empty box, so a
+   blank box always means "still owed".
+8. **`RM Item` + `RM Qty per piece` stay on the card** (owner asked to remove, then accepted the
+   recommendation to keep). Four-across absorbs them at no height cost, and `plans/service.ts` copies
+   them into every new plan when the planner types none, writing NULL when the card is empty — so
+   setting them once per part is what gives the store an issue quantity on every future order.
+   Read-only-from-Item-Master was rejected: which bar stock and how much per piece is a ROUTING
+   decision, which is what a Route Card is for.
+
+### Consequences
+- Migration **0195** adds `route_card_ops.remarks text` (nullable, no backfill) and the field is
+  carried in `route_card_revisions.ops_snapshot`; the contract reads it as optional there, so
+  snapshots written before 0195 still load. A field left out of that snapshot would vanish the moment
+  anyone raised a revision.
+- New cards no longer set `tool_no` / `tool_details`, so the Job Card op, Op Entry and global search
+  show blank tool information for cards created from now on. Accepted by the owner.
+- The operation remark does NOT travel to `jc_ops`, so the operator does not yet see it on the Job
+  Card. That needs its own column and migration — deliberately out of scope.
+- Header drops from ~300px to ~235px, about four more operation rows visible on a 900px screen.
+## ADR-205: Route Card Master lives under Planning, and the Planning tier governs it
+
+**Date:** 2026-10-03
+**Status:** Accepted
+**Owner decision:** "add route card in planning menu--master" / "acess tier must apply. no need to show at both place".
+
+### Context
+
+Route Card Master sat in the **Design** menu, next to BOM Master and the design
+trackers, and its access key `routecard_create` carried `dept: 'design'`. That
+was where the drawing office put it, but it is not what the card is used for: a
+route card is the operation list that turns a **plan** into a **Job Card**
+(ADR-170 — Production Order = Plan + Route Card + Target Date). The people who
+raise and read it are planners, and the screen that needs it is SO/JWSO
+Planning. A planner with no Design tier could not open it at all.
+
+### Decision
+
+1. Route Card Master moves to **Planning > Master** — a new `Master` group in
+   the Planning menu, the same shape Sales & CRM and Production already use.
+2. It is listed **there and nowhere else**. The Design menu no longer carries
+   it (the owner did not want the same page in two menus).
+3. `routecard_create` moves from `dept: 'design'` to `dept: 'planning'`, so the
+   **Planning** department tier is what grants view / create / edit / approve
+   on route cards. Nothing else about the key changes: the route guards, the
+   API's `requireFormAccess` calls and the global-search gate all keep working
+   off the same key.
+4. The dashboard quick link `/route-cards` is gated by `planning` for the same
+   reason.
+
+### Consequence, and who must be re-granted
+
+Rights are read from the department tier, so moving the key moves which tier is
+read. On the day this ships, three Design people whose Planning tier is only L1
+drop to view-only on route cards and must be re-granted in Access Control
+(either raise their Planning tier or tick Route Card Master as a per-form
+extra, which is additive on top of the tier):
+
+| Person | Design tier | Planning tier | Had | Gets |
+|---|---|---|---|---|
+| Dharmesh Patel | L5 | L1 | view + create + edit + approve | view only |
+| Haresh P. Prajapati | L4 | L1 | view + approve | view only |
+| Mayur J. Patel | L2 | L1 | view + create | view only |
+
+Everyone whose Planning tier is L2 or higher gains what that tier says, which
+is the point of the move — planners can now reach the page.
+
+### Alternatives rejected
+
+- **List it in both menus.** Rejected by the owner: one page, one place.
+- **Keep `dept: 'design'` and only move the menu entry.** The link would then
+  sit in Planning but stay invisible to anyone without a Design tier — the menu
+  would lie about who may use it.
+- **A new `routecard` department.** One page does not need its own department,
+  and every account would have to be re-configured.
