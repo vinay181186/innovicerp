@@ -79,6 +79,8 @@ export const TABLE_KEYS = {
   soCosting: 'so-costing',
   soCycleTime: 'so-cycle-time',
   stockValuation: 'stock-valuation',
+  /** Level 2 of SO/JWSO Planning: the lines of ONE order. */
+  planningLines: 'planning-lines',
 
   // ADR-199 conversions — Production (batch PR)
   productionOrders: 'production-orders',

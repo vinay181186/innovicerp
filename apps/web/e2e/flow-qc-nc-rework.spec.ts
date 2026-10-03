@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // QC → NC → Rework → Re-QC → Closure, exactly the worked example in §9 of
@@ -195,9 +195,7 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   // The modal closes when the save lands; Execute only exists after that.
   await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
-  const execBtn = page.getByRole('button', { name: /Create JC|Raise PR/ }).first();
-  await execBtn.waitFor({ state: 'visible', timeout: 60_000 });
-  await execBtn.click();
+  await executePlanFromMenu(page);
   // Execute raises the job card server-side; on the test API that is many
   // seconds. Wait for the code to appear, not for a clock.
   await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });

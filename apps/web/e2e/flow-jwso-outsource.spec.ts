@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 
 // JWSO + FULL OUTSOURCE, end to end.
 //
@@ -258,7 +258,7 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
     console.log(`>> plan save error: "${saveErr}"`);
   }
 
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(6000);
   const body = await page.locator('body').innerText();
   state.jcCode = (body.match(/IN-JC-\d{2}-\d+/) ?? [''])[0];

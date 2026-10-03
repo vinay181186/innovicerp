@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { findRowWithMenuItem, openRowMenu, planningLineRows } from './row-menu';
+import { findRowWithMenuItem, openRowMenu, planningLineRows, executePlanFromMenu } from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // BOM → EQUIPMENT (assembly) SO → INVOICE, end to end.
@@ -399,7 +399,7 @@ test('@bom 04 — add a routing and execute the child plan', async ({ page }) =>
 
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(4000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(6000);
 
   state.jcCode = await codeOnPage(page, /IN-JC-\d{2}-\d+/);
