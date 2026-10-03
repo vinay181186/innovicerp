@@ -160,22 +160,30 @@ export const planningLineSchema = z.object({
    *  has always answered "how much may I still use" — only the arithmetic
    *  behind it moved, now that a reservation no longer removes stock from the
    *  shelf. 0 for a free-text line. Also published as `availableQty` below. */
-  stockQty: z.number().int().nonnegative(),
+  stockQty: z.number().nonnegative(),
   /** Qty currently RESERVED (booked) to THIS SO line. */
   reservedQty: z.number().int().nonnegative(),
-  /** What is actually on the shelf for this item, reserved or not (ADR-180). */
-  physicalQty: z.number().int().nonnegative(),
-  /** Reserved to EVERY SO line, not just this one — the committed total. */
-  totalReservedQty: z.number().int().nonnegative(),
+  /** What is actually on the shelf for this item, reserved or not (ADR-180).
+   *  NOT an integer: `item_stock_balances.on_hand_qty` is numeric(14,3), so an
+   *  item sold by weight or length really does hold 12.500. Declaring it `int`
+   *  here was a lie the wire never checked. */
+  physicalQty: z.number().nonnegative(),
+  /** Reserved to EVERY SO line, not just this one — the committed total.
+   *  Fractional for the same reason as `physicalQty`. */
+  totalReservedQty: z.number().nonnegative(),
   /** Already shipped against this SO line (sales_order_lines.dispatched_qty). */
   dispatchedQty: z.number().int().nonnegative(),
-  /** physical − totalReserved. Same number as `stockQty`, named plainly. */
-  availableQty: z.number().int().nonnegative(),
+  /** physical − totalReserved. Same number as `stockQty`, named plainly.
+   *  Fractional for the same reason as `physicalQty`. */
+  availableQty: z.number().nonnegative(),
   /** What still has to be made or bought:
    *  max(0, orderQty − dispatchedQty − reservedQty). Stock reserved to this
    *  line already covers part of the order, so it is not planned again. */
   balanceToPlan: z.number().int().nonnegative(),
-  /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs. */
+  /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs.
+   *  Filled from `planningLineStatus()` in `lib/planning-line-status.ts`, which
+   *  is the ONE rule the screen reads too. A line covered only by DRAFT plans
+   *  reports 'partial', not 'fully_planned'. */
   lineStatus: z.enum(['fully_planned', 'partial', 'unplanned']),
   /** Equipment SO with a linked BOM master → show §8 Equipment BOM Planning button. */
   hasEquipmentBom: z.boolean(),
