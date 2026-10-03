@@ -11012,9 +11012,11 @@ booked as an ordinary receipt so the NC never closes.
   (createNcDc no longer needs NC Register edit or the op-entry role). Disposing the NC stays with QC.
 - **Against PO guard:** the save is refused (409, details.kind = 'rtv_pending') when a PO line on
   the challan has an RTV NC ready or awaiting decision, unless the store ticks "These are new pieces,
-  not the ones waiting to go back" (`rtvPendingConfirmed`, not stored). Checked inside the save's
-  transaction after the PO-line lock. A plain block was rejected: a JW PO with balance still due must
-  be able to send genuinely new pieces.
+  not the ones waiting to go back" (`rtvConfirmedNcIds` = the NCs shown when ticked, not stored; an NC
+  not in that list blocks again). Checked inside the save's transaction, before any write. The NC
+  writers do not take the PO-line lock, so an NC committed in the same instant as the save can slip
+  past; the next save re-checks. A plain block was rejected: a JW PO with balance still due must be
+  able to send genuinely new pieces.
 
 ### Consequences
 - No migration. Old routes (NC page, Against NC, GRN Against NC / JW PO / DC, cancel) unchanged.

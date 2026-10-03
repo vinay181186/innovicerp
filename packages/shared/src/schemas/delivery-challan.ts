@@ -230,12 +230,13 @@ export const createDeliveryChallanInputSchema = z.object({
     soRefText: z.string().nullable().optional(),
     transport: z.string().nullable().optional(),
     vehicleNo: z.string().nullable().optional(),
-    /** ADR-208 — the store ticked "These are new pieces, not the ones waiting
-     *  to go back". Required only when a PO line on this challan has pieces
-     *  waiting on a return-to-vendor NC (ready or awaiting the QC decision);
-     *  without it the save is refused with details.kind = 'rtv_pending'.
-     *  Not stored — it is a confirmation, not a fact about the challan. */
-    rtvPendingConfirmed: z.boolean().optional(),
+    /** ADR-208 — the NCs the store saw when it ticked "These are new pieces,
+     *  not the ones waiting to go back". The save is refused (409,
+     *  details.kind = 'rtv_pending') while any return-to-vendor NC (ready or
+     *  awaiting the QC decision) waits on a PO line of this challan and is NOT
+     *  in this list — so an NC disposed after the tick blocks again. Not
+     *  stored: a confirmation, not a fact about the challan. */
+    rtvConfirmedNcIds: z.array(z.string().uuid()).max(500).optional(),
   }),
   lines: z.array(createDeliveryChallanLineInputSchema).min(1),
 });
@@ -258,6 +259,12 @@ export const RTV_CANDIDATE_STATES = [
 ] as const;
 export const rtvCandidateStateSchema = z.enum(RTV_CANDIDATE_STATES);
 export type RtvCandidateState = z.infer<typeof rtvCandidateStateSchema>;
+/** Screen words for RtvCandidate.state ("Return Challan Status", NAMING.md) —
+ *  the ONE copy; the API's 409 message and the screen both read it. */
+export const RTV_CANDIDATE_STATE_LABELS: Record<RtvCandidateState, string> = {
+  ready: 'Ready to Send',
+  awaiting_decision: 'Waiting for QC Decision',
+};
 
 export const rtvCandidateSchema = z.object({
   ncId: z.string().uuid(),
@@ -304,10 +311,17 @@ export interface ListRtvCandidatesResponse {
 }
 
 /** details on the 409 the Against PO save answers with when RTV pieces are
- *  waiting on one of its PO lines and rtvPendingConfirmed was not sent. */
+ *  waiting on one of its PO lines and is not in rtvConfirmedNcIds. */
 export interface RtvPendingConflictDetails {
   kind: 'rtv_pending';
-  ncs: { ncCode: string; rejectedQty: string; state: RtvCandidateState; poLineId: string }[];
+  ncs: {
+    ncId: string;
+    ncCode: string;
+    itemCode: string | null;
+    rejectedQty: string;
+    state: RtvCandidateState;
+    poLineId: string;
+  }[];
 }
 
 // ─── Receipts (T-059b — outsource receive-back) ────────────────────────────
