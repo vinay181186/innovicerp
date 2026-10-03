@@ -34,6 +34,8 @@ export type PendingSoValueQuery = z.infer<typeof pendingSoValueQuerySchema>;
 export const pendingSoValueRowSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
+  soInternalNo: z.string().nullable().optional(),
   customerName: z.string().nullable(),
   soDate: z.string(),
   dueDate: z.string().nullable(),

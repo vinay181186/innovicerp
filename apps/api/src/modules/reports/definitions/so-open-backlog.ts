@@ -32,6 +32,7 @@ export const soOpenBacklogReport: RegisteredReport = {
     ],
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'so_date', label: 'SO Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'so_type', label: 'SO Type', type: 'text' },
@@ -67,6 +68,7 @@ export const soOpenBacklogReport: RegisteredReport = {
       SELECT
         so.id AS so_id,
         so.code                                  AS so_code,
+        so.internal_so_no                        AS so_internal_no,
         so.so_date                               AS so_date,
         COALESCE(cl.name, so.customer_name, '—') AS client_name,
         so.type::text                            AS so_type,
@@ -122,6 +124,7 @@ export const soOpenBacklogReport: RegisteredReport = {
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       so_id: String(r['so_id'] ?? ''),
       so_code: String(r['so_code'] ?? ''),
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       so_date:
         r['so_date'] instanceof Date
           ? r['so_date'].toISOString().slice(0, 10)

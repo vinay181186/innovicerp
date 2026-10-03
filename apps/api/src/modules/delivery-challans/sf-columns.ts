@@ -63,7 +63,10 @@ export const DC_SF_JOINS = sql`
       LEFT JOIN LATERAL (
         SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code,
           CASE WHEN COUNT(DISTINCT sol2.revision) = 1
-               THEN MIN(sol2.revision)::text END AS so_revision
+               THEN MIN(sol2.revision)::text END AS so_revision,
+          -- ADR-207: the Internal SO No. only when the PO serves ONE SO.
+          CASE WHEN COUNT(DISTINCT so2.id) = 1
+               THEN MIN(so2.internal_so_no) END AS so_internal_no
         FROM public.purchase_order_lines pol
         JOIN public.sales_order_lines sol2
           ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
@@ -72,6 +75,11 @@ export const DC_SF_JOINS = sql`
         WHERE pol.purchase_order_id = dc.purchase_order_id
           AND pol.deleted_at IS NULL
       ) po_so ON TRUE
+      -- ADR-207: a free-text so_ref_text has no FK; its SO (for the Internal
+      -- SO No.) is matched by code within the company — unique per company.
+      LEFT JOIN public.sales_orders so_ref
+        ON so_ref.company_id = dc.company_id AND so_ref.code = dc.so_ref_text
+       AND so_ref.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT
           COUNT(*) AS line_count,

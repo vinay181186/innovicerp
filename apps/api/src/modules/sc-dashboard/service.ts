@@ -10,7 +10,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { pendingFrom } from './pending';
-import { PENDING_ITEM_SQL, PENDING_VENDOR_SQL } from './sf-columns';
+import { PENDING_ITEM_SQL, PENDING_SO_SQL, PENDING_VENDOR_SQL } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -70,7 +70,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       SELECT
         ARRAY(SELECT DISTINCT x FROM unnest(array_agg(${PENDING_VENDOR_SQL})) x WHERE x IS NOT NULL AND x <> '' ORDER BY x) AS vendors,
         ARRAY(SELECT DISTINCT x FROM unnest(array_agg(${PENDING_ITEM_SQL})) x WHERE x IS NOT NULL AND x <> '' ORDER BY x) AS items,
-        ARRAY(SELECT DISTINCT x FROM unnest(array_agg(so.code)) x WHERE x IS NOT NULL AND x <> '' ORDER BY x) AS sos
+        ARRAY(SELECT DISTINCT x FROM unnest(array_agg(${PENDING_SO_SQL})) x WHERE x IS NOT NULL AND x <> '' ORDER BY x) AS sos
       ${pendingFrom(companyId)}
     `)) as unknown as Array<{
       vendors: string[] | null;

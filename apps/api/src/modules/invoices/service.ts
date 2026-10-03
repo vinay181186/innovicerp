@@ -16,7 +16,7 @@ import type {
   ListInvoicesResponse,
 } from '@innovic/shared';
 import { ActivityAction } from '@innovic/shared';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   clients,
   invoiceLines,
@@ -149,6 +149,11 @@ export async function listInvoices(
     pat
       ? sql`(${invoices.code} ILIKE ${pat} ESCAPE '\\'
           OR COALESCE(${invoices.soCodeText}, '') ILIKE ${pat} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1 FROM public.sales_orders iso
+            WHERE iso.id = ${invoices.salesOrderId}
+              AND iso.internal_so_no ILIKE ${pat} ESCAPE '\\'
+          )
           OR COALESCE(${invoices.clientNameText}, '') ILIKE ${pat} ESCAPE '\\')`
       : undefined,
     sql`TRUE ${sfWhere(INVOICE_SF_COLUMNS, sfq, sfOpts)}`,
@@ -169,7 +174,19 @@ export async function listInvoices(
       .orderBy(order)
       .offset(input.offset ?? 0);
     const rows = input.limit !== undefined ? await base.limit(input.limit) : await base;
-    const list = rows.map(rowToInvoice);
+    // ADR-207 — each listed invoice's SO Internal SO No., read live off the SO.
+    const soIds = [...new Set(rows.map((r) => r.salesOrderId))];
+    const internalRows = soIds.length
+      ? await tx
+          .select({ id: salesOrders.id, internal: salesOrders.internalSoNo })
+          .from(salesOrders)
+          .where(inArray(salesOrders.id, soIds))
+      : [];
+    const internalBySo = new Map(internalRows.map((r) => [r.id, r.internal]));
+    const list = rows.map((r) => ({
+      ...rowToInvoice(r),
+      soInternalNo: internalBySo.get(r.salesOrderId) ?? null,
+    }));
 
     // The strip and the total — one query over every matching invoice, with
     // the same rules as rowToInvoice (overdue = not paid and past due).
@@ -311,7 +328,7 @@ async function getInvoiceInternal(
 
   // The customer's PO number off the SO this invoice bills, for the print.
   const soRows = await tx
-    .select({ clientPoNo: salesOrders.clientPoNo })
+    .select({ clientPoNo: salesOrders.clientPoNo, internalSoNo: salesOrders.internalSoNo })
     .from(salesOrders)
     .where(eq(salesOrders.id, inv.salesOrderId))
     .limit(1);
@@ -345,6 +362,7 @@ async function getInvoiceInternal(
 
   return {
     ...rowToInvoice(inv),
+    soInternalNo: soRows[0]?.internalSoNo ?? null,
     clientCode: inv.clientCodeText,
     clientGst: inv.clientGstText,
     clientAddressLine1: addr?.addressLine1 ?? null,
@@ -407,7 +425,8 @@ export async function getInvoiceRelated(
       ? await tx
           .select({
             id: salesOrders.id,
-            code: salesOrders.code,
+            // ADR-207: "IN-SO-x · SO-y" (just the SO No. when no Internal SO No.).
+            code: sql<string>`${salesOrders.code} || COALESCE(' · ' || ${salesOrders.internalSoNo}, '')`,
             status: salesOrders.status,
             date: salesOrders.soDate,
           })
@@ -571,6 +590,7 @@ export async function getInvoiceableSo(
       .select({
         id: salesOrders.id,
         code: salesOrders.code,
+        internalSoNo: salesOrders.internalSoNo,
         customer: salesOrders.customerName,
         clientId: salesOrders.clientId,
         clientGst: clients.gstNumber,
@@ -601,6 +621,7 @@ export async function getInvoiceableSo(
     return {
       salesOrderId: so.id,
       soCode: so.code,
+      soInternalNo: so.internalSoNo,
       customer: so.customer,
       clientGst: so.clientGst ?? null,
       // ADR-188: the invoice form's defaults come from upstream — GST % from

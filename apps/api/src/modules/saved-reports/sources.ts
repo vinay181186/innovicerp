@@ -41,6 +41,14 @@ const salesOrdersSource: RegisteredSource = {
     group: 'Sales',
     fields: [
       { key: 'so_code', label: 'SO No.', type: 'text', filterable: true, groupable: true },
+      // ADR-207 — the office's own SO number, read live off sales_orders.
+      {
+        key: 'so_internal_no',
+        label: 'Internal SO No.',
+        type: 'text',
+        filterable: true,
+        groupable: true,
+      },
       { key: 'so_date', label: 'SO Date', type: 'date', filterable: true, groupable: true },
       {
         key: 'client_code',
@@ -79,6 +87,7 @@ const salesOrdersSource: RegisteredSource = {
   baseSelect: ({ companyId }) => sql`
     SELECT
       so.code                           AS so_code,
+      so.internal_so_no                 AS so_internal_no,
       so.so_date                        AS so_date,
       cl.code                           AS client_code,
       COALESCE(cl.name, so.customer_name) AS client_name,
@@ -239,6 +248,13 @@ const jobCardsSource: RegisteredSource = {
         filterable: true,
         groupable: true,
       },
+      {
+        key: 'source_so_internal_no',
+        label: 'Internal SO No.',
+        type: 'text',
+        filterable: true,
+        groupable: true,
+      },
     ],
   },
   baseSelect: ({ companyId }) => sql`
@@ -257,7 +273,8 @@ const jobCardsSource: RegisteredSource = {
       v.total_ops          AS total_ops,
       v.done_ops           AS done_ops,
       jc.due_date          AS due_date,
-      so.code              AS source_so_code
+      so.code              AS source_so_code,
+      so.internal_so_no    AS source_so_internal_no
     FROM public.job_cards jc
     JOIN public.items it ON it.id = jc.item_id
     LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id

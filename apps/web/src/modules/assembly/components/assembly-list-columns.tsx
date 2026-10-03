@@ -7,6 +7,7 @@
 import type { AssemblyListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 
 type StatusKey = AssemblyListItem['status'];
@@ -66,7 +67,7 @@ export function assemblyListColumns(today: string): DataTableColumn<AssemblyList
           style={{ color: 'var(--cyan)', fontWeight: 600 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {row.soCode}
+          {soNoWithInternal(row.soCode, row.soInternalNo)}
         </Link>
       ),
     },

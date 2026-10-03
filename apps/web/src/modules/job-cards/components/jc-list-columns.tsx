@@ -7,6 +7,7 @@ import { Link } from '@tanstack/react-router';
 import { ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { Badge, StatusBadge } from '@/ui/core';
 import { ProgressBar, type DataTableColumn } from '@/ui/data';
 import { JC_STATUS_LABEL } from './jc-status-badge';
@@ -181,7 +182,7 @@ export function jobCardListColumns(
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {s.code}
+            {s.type === 'so' ? soNoWithInternal(s.code, s.internalSoNo) : s.code}
             {s.lineNo !== 1 ? <span>/{s.lineNo}</span> : null}
           </Link>
         );

@@ -12,6 +12,7 @@ import { type IncomingQcPendingRow, opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { PendingSheetRow } from '@/modules/qc-call-register/components/qc-sheet';
 
 export function IncomingPendingRow(props: {
@@ -55,7 +56,7 @@ export function IncomingPendingRow(props: {
           {o.soCode ? (
             <>
               {' '}
-              · SO <span className="mono">{o.soCode}</span>
+              · SO <span className="mono">{soNoWithInternal(o.soCode, o.soInternalNo)}</span>
             </>
           ) : null}
         </>

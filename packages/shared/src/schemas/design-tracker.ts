@@ -35,6 +35,8 @@ export const designTrackerSchema = z.object({
   code: z.string(),
   salesOrderId: z.string().uuid().nullable(),
   soCodeText: z.string().nullable(),
+  /** ADR-207 — the order's Internal SO No., read live from sales_orders. */
+  soInternalNo: z.string().nullable().default(null),
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
   /** The customer's drawing revision off the SO / JWSO line behind this row, so

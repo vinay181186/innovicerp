@@ -1,5 +1,6 @@
 import type { JobCardSourceLink } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { soNoWithInternal } from '@/lib/so-number';
 
 /** Renders a JC's source SO or JW line as a clickable inline label:
  *  "SO-436 ▸ line 6 / JOINT" → links to /sales-orders/:id
@@ -20,7 +21,7 @@ export function JcSourceLink(props: { sourceLink: JobCardSourceLink | null }): R
         style={{ color: 'var(--cyan)', textDecoration: 'none', fontSize: 11 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {sourceLink.code} ▸ line {sourceLink.lineNo}
+        {soNoWithInternal(sourceLink.code, sourceLink.internalSoNo)} ▸ line {sourceLink.lineNo}
         {sourceLink.partName ? ` / ${sourceLink.partName}` : null}
       </Link>
     );

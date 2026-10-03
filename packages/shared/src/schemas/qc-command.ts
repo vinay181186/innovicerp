@@ -36,6 +36,8 @@ export interface QcCommandQueueRow {
    *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
   itemName: string | null;
   soCode: string | null;
+  /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
+  soInternalNo?: string | null;
   customer: string | null;
   pendingQty: number;
   ageDays: number;
@@ -88,6 +90,8 @@ export interface QcReworkRow {
    *  the card's item (job_cards.item_id -> items), which is NOT NULL. */
   itemName: string | null;
   soCode: string | null;
+  /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
+  soInternalNo?: string | null;
   attempts: number;
   totalRejected: number;
   firstEntry: string | null;

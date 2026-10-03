@@ -9,6 +9,7 @@
 
 import type { PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 import {
@@ -56,7 +57,7 @@ export function orderListColumns(src: SourceFilter): DataTableColumn<PlanningSoL
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           {so.source === 'jw' ? <JwChip /> : null}
           <span className="mono fw-700" style={{ color: 'var(--text)', fontSize: 13 }}>
-            {so.soCode}
+            {soNoWithInternal(so.soCode, so.soInternalNo)}
           </span>
         </span>
       ),

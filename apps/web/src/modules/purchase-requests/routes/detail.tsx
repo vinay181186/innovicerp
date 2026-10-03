@@ -37,6 +37,7 @@ import { ActionMenu } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useClosePurchaseRequestBalance,
@@ -172,7 +173,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // The SO this PR serves. Set by Planning (an OSP PR raised off a Job Card
   // carries its SO line); a hand-raised PR has no order behind it, so "—".
   const soNo = detail.soCode
-    ? `${detail.soCode}${detail.soLineNo ? ` · Ln ${detail.soLineNo}` : ''}`
+    ? `${soNoWithInternal(detail.soCode, detail.soInternalNo)}${detail.soLineNo ? ` · Ln ${detail.soLineNo}` : ''}`
     : '—';
   const jcNo = detail.sourceJcCode
     ? `${detail.sourceJcCode}${detail.sourceJcOpSeq ? ` · Op ${opSrNo(detail.sourceJcOpSeq)}` : ''}`

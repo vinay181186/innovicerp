@@ -4,6 +4,7 @@
 
 import { SO_STATUSES, type SoCycleTimeRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 
@@ -60,7 +61,7 @@ export function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTim
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {r.soNo}
+          {soNoWithInternal(r.soNo, r.internalSoNo)}
         </Link>
       ),
     },

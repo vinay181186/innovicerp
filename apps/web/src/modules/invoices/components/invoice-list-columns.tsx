@@ -4,6 +4,7 @@
 import type { ListInvoicesResponse } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { StatusBadge } from '@/ui/core';
 import type { DataTableColumn } from '@/ui/data';
 
@@ -104,7 +105,7 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
       width: priceHidden ? '12%' : '9%',
       className: 'td-code',
       nowrap: true,
-      key: 'soCode',
+      render: (inv) => (inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'),
     },
     {
       id: 'customer',

@@ -17,6 +17,7 @@
 import type { PlanningLine, ReservationActionResult } from '@innovic/shared';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useReleaseReservations, useReserveStock, useStockAvailability } from '@/modules/plans/api';
 import { Modal } from './modal';
 
@@ -24,6 +25,8 @@ import { Modal } from './modal';
 export interface StockLineFacts {
   soLineId: string;
   soCode: string;
+  /** ADR-207 — the SO's Internal SO No. (live), shown beside the SO No. */
+  soInternalNo?: string | null;
   lineNo: number;
   itemId: string | null;
   /** `CODE/REV` — the customer's drawing revision where there is one. */
@@ -40,10 +43,15 @@ export interface StockLineFacts {
 }
 
 /** Build the facts from a planning line — the one place the mapping lives. */
-export function lineFacts(soCode: string, line: PlanningLine): StockLineFacts {
+export function lineFacts(
+  soCode: string,
+  line: PlanningLine,
+  soInternalNo?: string | null,
+): StockLineFacts {
   return {
     soLineId: line.soLineId,
     soCode,
+    soInternalNo: soInternalNo ?? null,
     lineNo: line.lineNo,
     itemId: line.itemId,
     itemLabel: itemCodeWithRev(line.itemCode, line.itemRevision),
@@ -120,7 +128,7 @@ function LineIdentity({ f }: { f: StockLineFacts }): JSX.Element {
       <div>
         <div style={{ fontSize: 11, color: 'var(--text3)' }}>SO</div>
         <b className="mono" style={{ whiteSpace: 'nowrap' }}>
-          {f.soCode}
+          {soNoWithInternal(f.soCode, f.soInternalNo)}
         </b>
       </div>
       <div>

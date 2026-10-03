@@ -12,6 +12,9 @@ import type { SfColumnMap } from '../../lib/list-query';
 /** The list's FROM: the project plus its task and open-issue counts. */
 export const DESIGN_PROJECT_FROM = sql`
   FROM public.design_projects dp
+  -- ADR-207: the Internal SO No., live off the driving SO.
+  LEFT JOIN public.sales_orders so_i
+    ON so_i.id = dp.sales_order_id AND so_i.deleted_at IS NULL
   LEFT JOIN LATERAL (
     SELECT
       COUNT(*)::int AS task_total,

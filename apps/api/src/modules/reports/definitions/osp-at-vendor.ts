@@ -26,6 +26,7 @@ export const ospAtVendorReport: RegisteredReport = {
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'sent_qty', label: 'Sent', type: 'number' },
       { key: 'returned_qty', label: 'Returned', type: 'number' },
       { key: 'at_vendor_qty', label: 'At Vendor', type: 'number' },
@@ -50,7 +51,7 @@ export const ospAtVendorReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT
         x.vendor_name, x.dc_code, x.dc_date, x.jc_code, x.item_code, x.op_seq,
-        x.operation, x.so_code, x.sent_qty, x.returned_qty, x.at_vendor_qty,
+        x.operation, x.so_code, x.so_internal_no, x.sent_qty, x.returned_qty, x.at_vendor_qty,
         x.days_at_vendor,
         CASE WHEN x.days_at_vendor BETWEEN 0 AND 7   THEN x.at_vendor_qty ELSE 0 END AS bucket_0_7,
         CASE WHEN x.days_at_vendor BETWEEN 8 AND 15  THEN x.at_vendor_qty ELSE 0 END AS bucket_8_15,
@@ -66,6 +67,7 @@ export const ospAtVendorReport: RegisteredReport = {
           w.op_seq,
           w.operation,
           w.so_code,
+          so.internal_so_no                                      AS so_internal_no,
           w.sent_qty,
           w.returned_qty,
           w.at_vendor_qty,
@@ -73,6 +75,13 @@ export const ospAtVendorReport: RegisteredReport = {
                                                                  AS days_at_vendor
         FROM public.v_osp_wip w
         JOIN public.jc_ops jo ON jo.id = w.jc_op_id AND jo.deleted_at IS NULL
+        -- ADR-207 — the live Internal SO No., via the same JC → SO line → SO
+        -- path v_osp_wip uses for so_code (the view itself is unchanged).
+        LEFT JOIN public.job_cards jcs ON jcs.id = jo.job_card_id
+        LEFT JOIN public.sales_order_lines sol
+          ON sol.id = jcs.source_so_line_id AND sol.deleted_at IS NULL
+        LEFT JOIN public.sales_orders so
+          ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
         LEFT JOIN LATERAL (
           SELECT dc.code AS dc_code, dc.dc_date
           FROM public.delivery_challans dc
@@ -106,6 +115,7 @@ export const ospAtVendorReport: RegisteredReport = {
       op_seq: Number(r['op_seq'] ?? 0),
       operation: String(r['operation'] ?? ''),
       so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       sent_qty: Number(r['sent_qty'] ?? 0),
       returned_qty: Number(r['returned_qty'] ?? 0),
       at_vendor_qty: Number(r['at_vendor_qty'] ?? 0),

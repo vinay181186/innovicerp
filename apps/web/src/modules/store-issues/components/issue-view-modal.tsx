@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { Panel } from '@/ui/data';
 import { useReturnStoreIssue, useReverseStoreIssue, useStoreIssue } from '../api';
 
@@ -98,6 +99,8 @@ export function IssueViewModal({
       ? iss.jobCardCode
       : iss.issueAgainst === 'assembly_so'
         ? iss.salesOrderCode
+          ? soNoWithInternal(iss.salesOrderCode, iss.salesOrderInternalNo)
+          : null
         : (iss.department ?? iss.legacyReference)
     : null;
 

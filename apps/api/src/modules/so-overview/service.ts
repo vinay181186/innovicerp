@@ -88,7 +88,7 @@ export async function getSoOverview(
     if (search) {
       const term = `%${search}%`;
       conditions.push(
-        sql`(${salesOrders.code} ILIKE ${term} OR ${salesOrders.customerName} ILIKE ${term} OR ${salesOrders.clientPoNo} ILIKE ${term})`,
+        sql`(${salesOrders.code} ILIKE ${term} OR ${salesOrders.internalSoNo} ILIKE ${term} OR ${salesOrders.customerName} ILIKE ${term} OR ${salesOrders.clientPoNo} ILIKE ${term})`,
       );
     }
 
@@ -332,6 +332,7 @@ export async function getSoOverview(
       return {
         id: header.id,
         code: header.code,
+        internalSoNo: header.internalSoNo,
         soDate: header.soDate,
         customerName: header.customerName,
         clientPoNo: header.clientPoNo,

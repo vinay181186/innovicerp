@@ -23,6 +23,8 @@ const soLines = sql`FROM public.sales_order_lines l
 
 export const SO_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`so.code`, type: 'text' },
+  // ADR-207 — the user-typed Internal SO No. (NULL on pre-0197 orders).
+  internalSoNo: { sql: sql`so.internal_so_no`, type: 'text' },
   soDate: { sql: sql`so.so_date`, type: 'date' },
   type: { sql: sql`so.type`, type: 'list' },
   customerName: { sql: sql`so.customer_name`, type: 'text' },

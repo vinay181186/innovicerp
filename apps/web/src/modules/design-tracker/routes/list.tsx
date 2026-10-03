@@ -21,6 +21,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -285,7 +286,7 @@ function DesignTrackerListPage(): React.JSX.Element {
       <ConfirmDialog
         open={confirm?.kind === 'approve'}
         title={`Approve design ${confirm?.row.code ?? ''}?`}
-        message={`This unlocks BOM creation for ${confirm?.row.soCodeText ?? 'the SO'}.`}
+        message={`This unlocks BOM creation for ${confirm?.row.soCodeText ? soNoWithInternal(confirm.row.soCodeText, confirm.row.soInternalNo) : 'the SO'}.`}
         confirmLabel="Approve"
         tone="primary"
         onCancel={() => setConfirm(null)}

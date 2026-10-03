@@ -605,6 +605,7 @@ export async function listPurchaseRequests(
           OR pr.balance_closed_at::text ILIKE ${term} ESCAPE '\\'
           -- Source ref + the PO link on the card, both already joined below.
           OR so.code ILIKE ${term} ESCAPE '\\'
+          OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
           -- POL, the customer's own PO line number, now printed on the card.
           -- Off the same sol join the SO code above already uses, and sol is
           -- joined by BOTH the page query and the count query below.
@@ -714,6 +715,7 @@ export async function listPurchaseRequests(
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
         so.code AS "soCode",
+        so.internal_so_no AS "soInternalNo",
         sol.line_no AS "soLineNo",
         -- Ordered / balance quantity (ADR-152). Two scalar subqueries per row,
         -- both hitting the purchase_order_lines_source_pr_idx index; combined
@@ -867,6 +869,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     sourceJcOpSeq: r['sourceJcOpSeq'] != null ? Number(r['sourceJcOpSeq']) : null,
     poCode: (r['poCode'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     soLineNo: r['soLineNo'] != null ? Number(r['soLineNo']) : null,
   };
 }
@@ -933,6 +936,7 @@ export async function getPurchaseRequest(
         sourceJcCode: jobCards.code,
         sourceJcOpSeq: jcOps.opSeq,
         soCode: salesOrders.code,
+        soInternalNo: salesOrders.internalSoNo,
         soLineNo: salesOrderLines.lineNo,
         // Ordered / balance quantity (ADR-152) — same two subqueries the list
         // uses, combined by deriveOrderedQty below.
@@ -1000,6 +1004,7 @@ export async function getPurchaseRequest(
       sourceJcCode: found.sourceJcCode,
       sourceJcOpSeq: found.sourceJcOpSeq,
       soCode: found.soCode,
+      soInternalNo: found.soInternalNo,
       soLineNo: found.soLineNo,
     };
   });
@@ -1874,6 +1879,7 @@ export async function getPurchaseRequestRelated(
           .select({
             id: salesOrders.id,
             code: salesOrders.code,
+            internalSoNo: salesOrders.internalSoNo,
             status: salesOrders.status,
             date: salesOrders.soDate,
           })
@@ -2009,7 +2015,17 @@ export async function getPurchaseRequestRelated(
       'Source Sales Order',
       '📄',
       'sales-order',
-      so ? [row(so.id, so.code, so.status, so.date)] : [],
+      so
+        ? [
+            row(
+              so.id,
+              so.code,
+              so.status,
+              so.date,
+              so.internalSoNo ? { label: so.internalSoNo } : undefined,
+            ),
+          ]
+        : [],
     );
     const jcSection = section(
       'job-card',

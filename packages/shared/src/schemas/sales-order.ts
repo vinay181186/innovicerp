@@ -27,6 +27,7 @@
 import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
+import { internalSoNoError, normaliseInternalSoNo } from '../lib/internal-so-no';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { sfRawParamSchema } from './list-query';
 import { SO_STATUSES } from '../enums/so-status';
@@ -38,7 +39,15 @@ export const soStatusSchema = z.enum(SO_STATUSES);
 /** ADR-196 — read-time, ERPNext-style (enums/so-fulfilment-status.ts). */
 export const soFulfilmentStatusSchema = z.enum(SO_FULFILMENT_STATUSES);
 
-const codeRegex = /^[A-Za-z0-9._/-]+$/; // legacy soNo allows '/' (e.g. SO-436/A)
+/** ADR-207 — Internal SO No. on the way in: normalised (trimmed, "SO-" prefix
+ *  upper-cased) then checked against the shared rule (lib/internal-so-no.ts). */
+const internalSoNoInputSchema = z
+  .string()
+  .transform(normaliseInternalSoNo)
+  .superRefine((v, ctx) => {
+    const err = internalSoNoError(v);
+    if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+  });
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
 
@@ -125,6 +134,9 @@ export const salesOrderSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   code: z.string().min(1),
+  /** ADR-207 — the user-typed office number (e.g. SO-2401). Null on SOs made
+   *  before 0197. Show it with the SO No. via the web helper soNoWithInternal. */
+  internalSoNo: z.string().nullable().default(null),
   soDate: z.string(), // ISO date
   clientId: z.string().uuid().nullable(),
   customerName: z.string().nullable(),
@@ -300,15 +312,10 @@ export const salesOrderMilestoneInputSchema = z.object({
 });
 export type SalesOrderMilestoneInput = z.infer<typeof salesOrderMilestoneInputSchema>;
 
+// ADR-207 — the SO No. (`code`, IN-SO-#####) is SYSTEM ONLY: it is not part of
+// any write input; the server always generates it. Users type the Internal SO
+// No. instead (required on create, optional on update).
 const _soHeaderInputBase = z.object({
-  // Optional on create: the server auto-generates the next IN-SO-##### in the
-  // company series when omitted. A caller may still pass an explicit code.
-  code: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
-    .optional(),
   soDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'soDate must be YYYY-MM-DD'),
   clientId: z.string().uuid().optional(),
   customerName: z.string().max(255).optional(),
@@ -335,9 +342,11 @@ export const createSalesOrderInputSchema = z
     // Client master link is mandatory (supersedes ADR-012 #9 for SO): an SO
     // must reference a real client; the free-text customerName fallback is
     // removed. The server snapshots customerName from the client master.
-    header: _soHeaderInputBase.refine((h) => Boolean(h.clientId), {
-      message: 'A client (from the client master) is required for a Sales Order.',
-    }),
+    header: _soHeaderInputBase
+      .extend({ internalSoNo: internalSoNoInputSchema })
+      .refine((h) => Boolean(h.clientId), {
+        message: 'A client (from the client master) is required for a Sales Order.',
+      }),
     lines: z.array(salesOrderLineInputSchema).default([]),
     milestones: z.array(salesOrderMilestoneInputSchema).optional(),
   })
@@ -346,8 +355,9 @@ export const createSalesOrderInputSchema = z
   });
 export type CreateSalesOrderInput = z.infer<typeof createSalesOrderInputSchema>;
 
-/** UPDATE — same shape as create. `code` is omitted from header (immutable
- *  business key, matches the items / clients update pattern). Lines use the
+/** UPDATE — same shape as create. `code` is never accepted (system-only).
+ *  `internalSoNo` is optional: absent = unchanged (an old SO with none is not
+ *  forced to get one); when sent it must pass the same rule as create. Lines use the
  *  legacy `_editFullSO` merge semantics: id-matched lines are updated, new
  *  lines are inserted, existing lines absent from input are soft-deleted. */
 export const updateSalesOrderInputSchema = z.object({
@@ -357,7 +367,7 @@ export const updateSalesOrderInputSchema = z.object({
   // The server re-snapshots customerName from the chosen client.
   header: _soHeaderInputBase
     .partial()
-    .omit({ code: true })
+    .extend({ internalSoNo: internalSoNoInputSchema.optional() })
     .refine((h) => Boolean(h.clientId), {
       message: 'A client (from the client master) is required for a Sales Order.',
     }),
@@ -384,7 +394,7 @@ export type CloseSalesOrderInput = ShortCloseSalesOrderLineInput;
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listSalesOrdersQuerySchema = z.object({
-  search: z.string().min(1).max(100).optional(), // matches code / customer / clientPoNo
+  search: z.string().min(1).max(100).optional(), // matches code / internal SO no / customer / clientPoNo
   status: soStatusSchema.optional(),
   type: soTypeSchema.optional(),
   clientId: z.string().uuid().optional(),

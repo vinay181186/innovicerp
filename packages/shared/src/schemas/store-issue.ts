@@ -119,6 +119,8 @@ export interface StoreIssueListItem {
   jobCardCode: string | null;
   salesOrderId: string | null;
   salesOrderCode: string | null;
+  /** ADR-207 — that SO's Internal SO No., read live (null when none). */
+  salesOrderInternalNo?: string | null;
   operatorId: string | null;
   issuedTo: string;
   department: string | null;
@@ -176,6 +178,8 @@ export interface ListStoreIssuesResponse {
 
 export interface MaterialHolder {
   soCode: string;
+  /** ADR-207 — that SO's Internal SO No., read live (null when none). */
+  soInternalNo?: string | null;
   qty: number;
 }
 
@@ -235,6 +239,8 @@ export interface SoMaterialLine {
 export interface SoMaterial {
   salesOrderId: string;
   soCode: string;
+  /** ADR-207 — the SO's Internal SO No., read live (null when none). */
+  soInternalNo?: string | null;
   units: number;
   hasBom: boolean;
   lines: SoMaterialLine[];

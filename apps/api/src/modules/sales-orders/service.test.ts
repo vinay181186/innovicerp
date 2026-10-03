@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, items, salesOrderLines, salesOrders, users } from '../../db/schema';
@@ -11,7 +11,9 @@ import {
 } from '../../lib/errors';
 import * as service from './service';
 
-const TEST_PREFIX = 'T030-';
+// ADR-207 — every test Internal SO No. must start with "SO-"; the cleanup
+// LIKE patterns below match on this prefix.
+const TEST_PREFIX = 'SO-T030-';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
@@ -58,16 +60,17 @@ afterAll(async () => {
   const testHeaders = await db
     .select({ id: salesOrders.id })
     .from(salesOrders)
-    .where(like(salesOrders.code, `${TEST_PREFIX}%`));
+    .where(like(salesOrders.internalSoNo, `${TEST_PREFIX}%`));
   const ids = testHeaders.map((h) => h.id);
   if (ids.length > 0) {
     for (const id of ids) {
       await db.delete(salesOrderLines).where(eq(salesOrderLines.salesOrderId, id));
     }
-    await db.delete(salesOrders).where(like(salesOrders.code, `${TEST_PREFIX}%`));
+    // Audit-log entries the SO emitter wrote for these test rows (refId is the
+    // system SO No., so match on the row id).
+    await db.delete(activityLog).where(inArray(activityLog.entityId, ids));
+    await db.delete(salesOrders).where(like(salesOrders.internalSoNo, `${TEST_PREFIX}%`));
   }
-  // Wipe audit-log entries the SO emitter wrote for these test rows.
-  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 });
 
 describe('sales-orders service', () => {
@@ -76,7 +79,7 @@ describe('sales-orders service', () => {
     const detail = await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Acme Customer',
           type: 'component_manufacturing',
@@ -104,7 +107,8 @@ describe('sales-orders service', () => {
       },
       admin,
     );
-    expect(detail.code).toBe(code);
+    expect(detail.code).toMatch(/^IN-SO-\d{5}$/);
+    expect(detail.internalSoNo).toBe(code);
     expect(detail.companyId).toBe(admin.companyId);
     expect(detail.createdBy).toBe(admin.id);
     expect(detail.gstPercent).toBe('18.00');
@@ -123,7 +127,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          code: `${TEST_PREFIX}ITEMCODE`,
+          internalSoNo: `${TEST_PREFIX}ITEMCODE`,
           soDate: '2026-05-02',
           customerName: 'ItemCode Co',
           type: 'component_manufacturing',
@@ -152,10 +156,12 @@ describe('sales-orders service', () => {
   });
 
   it('createSalesOrder auto-generates distinct sequential IN-SO codes (bug 2)', async () => {
+    let autoSeq = 0;
     const mk = () =>
       service.createSalesOrder(
         {
           header: {
+            internalSoNo: `${TEST_PREFIX}AUTO-${(autoSeq += 1)}`,
             soDate: '2026-05-02',
             customerName: 'Auto SO Co',
             type: 'component_manufacturing',
@@ -191,12 +197,12 @@ describe('sales-orders service', () => {
     }
   });
 
-  it('createSalesOrder rejects duplicate code in same company', async () => {
+  it('createSalesOrder rejects a duplicate Internal SO No. in the same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Dup Co',
           type: 'component_manufacturing',
@@ -209,24 +215,24 @@ describe('sales-orders service', () => {
       },
       admin,
     );
-    await expect(
-      service.createSalesOrder(
-        {
-          header: {
-            code,
-            soDate: '2026-05-02',
-            customerName: 'Dup Co',
-            type: 'component_manufacturing',
-            status: 'open',
-            gstPercent: 18,
-          },
-          lines: [
-            { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
-          ],
+    const dup = service.createSalesOrder(
+      {
+        header: {
+          internalSoNo: code,
+          soDate: '2026-05-02',
+          customerName: 'Dup Co',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
         },
-        admin,
-      ),
-    ).rejects.toBeInstanceOf(ConflictError);
+        lines: [
+          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+        ],
+      },
+      admin,
+    );
+    await expect(dup).rejects.toBeInstanceOf(ConflictError);
+    await expect(dup).rejects.toThrow(/Internal SO No\. .* already exists/);
   });
 
   it('createSalesOrder rejects invalid clientId with ValidationError (not raw FK)', async () => {
@@ -234,7 +240,7 @@ describe('sales-orders service', () => {
       service.createSalesOrder(
         {
           header: {
-            code: `${TEST_PREFIX}BADCLI`,
+            internalSoNo: `${TEST_PREFIX}BADCLI`,
             soDate: '2026-05-02',
             clientId: '00000000-0000-0000-0000-000000000000',
             type: 'component_manufacturing',
@@ -255,7 +261,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Gettable',
           type: 'component_manufacturing',
@@ -300,7 +306,7 @@ describe('sales-orders service', () => {
     await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Listable',
           type: 'equipment',
@@ -333,7 +339,7 @@ describe('sales-orders service', () => {
       admin,
     );
     expect(result.items.length).toBeGreaterThanOrEqual(1);
-    const found = result.items.find((s) => s.code === code);
+    const found = result.items.find((s) => s.internalSoNo === code);
     expect(found?.lineCount).toBe(2);
     expect(found?.totalQty).toBe(10);
     expect(found?.jcQty).toBe(0);
@@ -345,7 +351,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Before',
           type: 'component_manufacturing',
@@ -382,7 +388,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Merge',
           type: 'component_manufacturing',
@@ -467,7 +473,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Goner',
           type: 'component_manufacturing',
@@ -495,7 +501,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Audit Customer',
           type: 'component_manufacturing',
@@ -518,14 +524,16 @@ describe('sales-orders service', () => {
     const auditRows = await db
       .select()
       .from(activityLog)
-      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, code)));
+      .where(
+        and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.entityId, created.id)),
+      );
     const actions = auditRows.map((r) => r.action).sort();
     expect(actions).toEqual(['CREATE', 'DELETE', 'EDIT']);
     for (const r of auditRows) {
       expect(r.entity).toBe('SalesOrder');
       expect(r.userId).toBe(admin.id);
       expect(r.userName).toBe(admin.email);
-      expect(r.detail).toContain(code);
+      expect(r.detail).toContain(created.code);
     }
   });
 
@@ -535,7 +543,7 @@ describe('sales-orders service', () => {
       service.createSalesOrder(
         {
           header: {
-            code: `${TEST_PREFIX}NOC`,
+            internalSoNo: `${TEST_PREFIX}NOC`,
             soDate: '2026-05-02',
             customerName: 'X',
             type: 'component_manufacturing',
@@ -556,7 +564,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           customerName: 'Traceability Customer',
           type: 'component_manufacturing',
@@ -573,7 +581,7 @@ describe('sales-orders service', () => {
     const related = await service.getSalesOrderRelated(created.id, admin);
 
     // Generic traceability shape: self + upstream/downstream section arrays.
-    expect(related.self).toEqual({ module: 'sales-orders', code });
+    expect(related.self).toEqual({ module: 'sales-orders', code: created.code });
 
     // A fresh SO has no downstream docs — every downstream section is empty.
     for (const s of related.downstream) {

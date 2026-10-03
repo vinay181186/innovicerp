@@ -67,13 +67,13 @@ afterAll(async () => {
   const testHeaders = await db
     .select({ id: salesOrders.id })
     .from(salesOrders)
-    .where(like(salesOrders.code, `${TEST_PREFIX}%`));
+    .where(like(salesOrders.internalSoNo, `SO-${TEST_PREFIX}%`));
   const ids = testHeaders.map((h) => h.id);
   if (ids.length > 0) {
     for (const id of ids) {
       await db.delete(salesOrderLines).where(eq(salesOrderLines.salesOrderId, id));
     }
-    await db.delete(salesOrders).where(like(salesOrders.code, `${TEST_PREFIX}%`));
+    await db.delete(salesOrders).where(like(salesOrders.internalSoNo, `SO-${TEST_PREFIX}%`));
   }
   await db.delete(clients).where(like(clients.code, `${TEST_PREFIX}%`));
 });
@@ -103,14 +103,14 @@ describe('sales-orders routes', () => {
 
   it('POST /sales-orders returns 201 on valid input', async () => {
     app = await buildApp(admin);
-    const code = `${TEST_PREFIX}A`;
+    const code = `SO-${TEST_PREFIX}A`;
     const res = await app.inject({
       method: 'POST',
       url: '/sales-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
         header: {
-          code,
+          internalSoNo: code,
           soDate: '2026-05-02',
           clientId: testClientId,
           type: 'component_manufacturing',
@@ -131,7 +131,7 @@ describe('sales-orders routes', () => {
     });
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.code).toBe(code);
+    expect(body.internalSoNo).toBe(code);
     expect(body.lines).toHaveLength(1);
   });
 
@@ -143,7 +143,7 @@ describe('sales-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: {
-          code: `${TEST_PREFIX}BAD`,
+          internalSoNo: `SO-${TEST_PREFIX}BAD`,
           soDate: '2026-05-02',
           type: 'component_manufacturing',
           status: 'open',
@@ -167,7 +167,7 @@ describe('sales-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: {
-          code: `${TEST_PREFIX}V`,
+          internalSoNo: `SO-${TEST_PREFIX}V`,
           soDate: '2026-05-02',
           clientId: testClientId,
           type: 'component_manufacturing',

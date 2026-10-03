@@ -249,7 +249,13 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   // POL (the CUSTOMER's own PO line number) leads the label,
                   // ahead of the item code, and is searchable with it.
                   name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, p.itemRevision)} · ${p.planCodeText} · Order Qty ${p.orderQty}`,
-                  searchText: [p.jcCodeText, p.soCodeText, p.itemNameText, p.clientPoLineNo]
+                  searchText: [
+                    p.jcCodeText,
+                    p.soCodeText,
+                    p.soInternalNo,
+                    p.itemNameText,
+                    p.clientPoLineNo,
+                  ]
                     .filter(Boolean)
                     .join(' '),
                 }))}
@@ -276,7 +282,13 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   id: row.jobCardId,
                   code: row.jcCodeText,
                   name: `${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.code}`,
-                  searchText: [row.code, row.planCodeText, row.soCodeText, row.itemNameText]
+                  searchText: [
+                    row.code,
+                    row.planCodeText,
+                    row.soCodeText,
+                    row.soInternalNo,
+                    row.itemNameText,
+                  ]
                     .filter(Boolean)
                     .join(' '),
                 }))}

@@ -38,6 +38,7 @@ type Row = {
   so_line_id: string;
   so_id: string;
   so_code: string;
+  so_internal_no: string | null;
   line_no: number;
   item_code: string | null;
   item_revision: string | null;
@@ -71,6 +72,7 @@ export async function getUnplannedOrders(
     term === ''
       ? sql``
       : sql`AND (u.so_code ILIKE ${pat} ESCAPE '\\'
+          OR u.so_internal_no ILIKE ${pat} ESCAPE '\\'
           OR u.client_po_line_no ILIKE ${pat} ESCAPE '\\'
           OR (u.item_code || COALESCE('/' || NULLIF(btrim(u.item_revision), ''), '')) ILIKE ${pat} ESCAPE '\\'
           OR u.part_name ILIKE ${pat} ESCAPE '\\'
@@ -83,6 +85,7 @@ export async function getUnplannedOrders(
           sol.id            AS so_line_id,
           so.id             AS so_id,
           so.code           AS so_code,
+          so.internal_so_no AS so_internal_no,
           sol.line_no       AS line_no,
           sol.item_code_text AS item_code,
           -- The customer's drawing revision typed on this very SO line — every
@@ -119,7 +122,7 @@ export async function getUnplannedOrders(
     const [rows, counted] = await Promise.all([
       tx.execute(sql`
         ${base}
-        SELECT u.so_line_id, u.so_id, u.so_code, u.line_no, u.item_code, u.item_revision,
+        SELECT u.so_line_id, u.so_id, u.so_code, u.so_internal_no, u.line_no, u.item_code, u.item_revision,
                u.client_po_line_no, u.part_name, u.customer_name, u.due_date::text AS due_date,
                u.order_qty, u.planned_qty, u.remaining_qty
         FROM u ${where}
@@ -138,6 +141,7 @@ export async function getUnplannedOrders(
         soLineId: r.so_line_id,
         soId: r.so_id,
         soCode: r.so_code,
+        soInternalNo: r.so_internal_no,
         lineNo: Number(r.line_no),
         itemCode: r.item_code,
         // Null passed through rather than blanked: a line with no revision

@@ -12,6 +12,7 @@ import type { PlanningDetailResponse, PlanningLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useRaisePlanningPr } from '../api';
 import { Modal } from './modal';
 
@@ -106,7 +107,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO</span>
             <br />
             <b className="mono">
-              {so.soCode} Ln {line.lineNo}
+              {soNoWithInternal(so.soCode, so.soInternalNo)} Ln {line.lineNo}
             </b>
           </div>
           <div>

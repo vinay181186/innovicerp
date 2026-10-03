@@ -33,6 +33,7 @@ export const receivableAgeingReport: RegisteredReport = {
       { key: 'invoice_date', label: 'Invoice Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'grand_total', label: 'Grand Total', type: 'number' },
       { key: 'paid', label: 'Paid', type: 'number' },
       { key: 'tds', label: 'TDS', type: 'number' },
@@ -61,6 +62,7 @@ export const receivableAgeingReport: RegisteredReport = {
           inv.invoice_date                                    AS invoice_date,
           COALESCE(cl.name, inv.client_name_text, '—')        AS client_name,
           COALESCE(so.code, inv.so_code_text)                 AS so_code,
+          so.internal_so_no                                   AS so_internal_no,
           inv.grand_total                                     AS grand_total,
           COALESCE((
             SELECT SUM(ip.amount)
@@ -95,6 +97,7 @@ export const receivableAgeingReport: RegisteredReport = {
         invoice_date::text                                   AS invoice_date,
         client_name,
         so_code,
+        so_internal_no,
         grand_total::float                                   AS grand_total,
         paid::float                                          AS paid,
         tds::float                                           AS tds,
@@ -117,6 +120,7 @@ export const receivableAgeingReport: RegisteredReport = {
       invoice_date: dateCell(r['invoice_date']),
       client_name: String(r['client_name'] ?? ''),
       so_code: textCell(r['so_code']),
+      so_internal_no: textCell(r['so_internal_no']),
       grand_total: numCell(r['grand_total']),
       paid: numCell(r['paid']),
       tds: numCell(r['tds']),

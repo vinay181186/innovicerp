@@ -46,6 +46,7 @@ export const unplannedSoLinesReport: RegisteredReport = {
     columns: [
       { key: 'source', label: 'Source', type: 'text' },
       { key: 'order_code', label: 'SO / JWSO', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'order_date', label: 'Order Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
@@ -69,13 +70,14 @@ export const unplannedSoLinesReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
-        u.source, u.order_code, u.order_date, u.client_name, u.client_po_line_no,
+        u.source, u.order_code, u.so_internal_no, u.order_date, u.client_name, u.client_po_line_no,
         u.item_code, u.item_revision, u.order_qty, u.covered_qty, u.to_plan_qty,
         u.due_date, u.days_since_order
       FROM (
         SELECT
           'SO'                                        AS source,
           so.code                                     AS order_code,
+          so.internal_so_no                           AS so_internal_no,
           so.so_date::text                                  AS order_date,
           COALESCE(cl.name, so.customer_name, '—')    AS client_name,
           sol.client_po_line_no                       AS client_po_line_no,
@@ -107,6 +109,7 @@ export const unplannedSoLinesReport: RegisteredReport = {
         SELECT
           'JWSO'                                      AS source,
           jwo.code                                    AS order_code,
+          NULL::text                                  AS so_internal_no,
           jwo.jw_date::text                                 AS order_date,
           COALESCE(cl.name, jwo.customer_name, '—')   AS client_name,
           NULL::text                                  AS client_po_line_no,
@@ -140,6 +143,7 @@ export const unplannedSoLinesReport: RegisteredReport = {
     const rows = (result as unknown as SqlRow[]).map((r) => ({
       source: String(r['source'] ?? ''),
       order_code: String(r['order_code'] ?? ''),
+      so_internal_no: textCell(r['so_internal_no']),
       order_date: dateCell(r['order_date']),
       client_name: String(r['client_name'] ?? ''),
       client_po_line_no: textCell(r['client_po_line_no']),

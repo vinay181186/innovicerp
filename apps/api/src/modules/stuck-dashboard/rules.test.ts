@@ -36,6 +36,7 @@ const so = (id: string, status: string, over: Partial<SoPhaseTimestamps>): SoPha
   return {
     soId: id,
     soNo: `SO-${id}`,
+    internalSoNo: null,
     customer: 'Acme',
     type: 'equipment',
     status,

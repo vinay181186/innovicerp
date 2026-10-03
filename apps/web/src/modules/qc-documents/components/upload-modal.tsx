@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { uploadQcFile, useCreateQcDocument } from '../api';
@@ -181,7 +182,7 @@ export function UploadModal({
                 selectedLabel={(o) => o.code ?? o.name}
                 options={soItems.map((so) => ({
                   id: so.id,
-                  code: so.code,
+                  code: soNoWithInternal(so.code, so.internalSoNo),
                   name: so.customerName ?? '',
                 }))}
               />

@@ -23,6 +23,7 @@ import {
   MaterialSizePicker,
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useDefaultRouteOps, useNextPlanCode } from '../api';
 
 export interface PlanFormValues {
@@ -236,6 +237,8 @@ interface PlanFormProps {
    *  Hides the Operations editor and shows the "operations come from the Route
    *  Card" notice instead. Old plans never set it. */
   hideOps?: boolean;
+  /** ADR-207 — the SO's Internal SO No. (live), shown beside the SO No. */
+  soInternalNo?: string | null;
 }
 
 export function PlanForm({
@@ -246,6 +249,7 @@ export function PlanForm({
   submitError,
   isEdit,
   hideOps,
+  soInternalNo,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
   // The saved plan's id, for the "Create Production Order" link. The form is
@@ -584,7 +588,7 @@ export function PlanForm({
               className="innovic-input"
               readOnly
               style={{ background: 'var(--bg4)' }}
-              value={values.soCodeText || '—'}
+              value={values.soCodeText ? soNoWithInternal(values.soCodeText, soInternalNo) : '—'}
             />
           </Field>
           <Field label="Ln">

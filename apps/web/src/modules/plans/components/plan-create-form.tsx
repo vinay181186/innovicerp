@@ -24,6 +24,7 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { usePlanningSoDetail, usePlanningSoList } from '@/modules/so-planning/api';
+import { soNoWithInternal } from '@/lib/so-number';
 import { Banner } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -89,7 +90,7 @@ export function PlanCreateForm({
         .filter((o) => o.planningStatus !== 'fully_planned')
         .map((o) => ({
           id: o.soId,
-          code: o.soCode,
+          code: soNoWithInternal(o.soCode, o.soInternalNo),
           name: `${o.source === 'jw' ? 'JWSO · ' : ''}${o.customerName ?? ''}`,
         })),
     [soList],
@@ -280,7 +281,7 @@ export function PlanCreateForm({
             >
               <Fact label={so.source === 'jw' ? 'JWSO' : 'SO'}>
                 <b className="mono">
-                  {so.soCode} Ln {line.lineNo}
+                  {soNoWithInternal(so.soCode, so.soInternalNo)} Ln {line.lineNo}
                 </b>
                 {line.clientPoLineNo ? (
                   <span className="text2" style={{ marginLeft: 6 }}>

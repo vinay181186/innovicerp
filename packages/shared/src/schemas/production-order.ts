@@ -37,6 +37,8 @@ export const productionOrderSchema = z.object({
   planCodeText: z.string(),
   /** Snapshot of the plan's SO / JWSO code + line at creation (plans.so_code_text / line_no). */
   soCodeText: z.string().nullable(),
+  /** ADR-207 — the SO's Internal SO No., read live (null for a JWSO / old SO). */
+  soInternalNo: z.string().nullable().optional(),
   lineNo: z.number().int().positive().nullable(),
 
   itemId: z.string().uuid(),

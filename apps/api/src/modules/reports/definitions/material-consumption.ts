@@ -51,6 +51,8 @@ export const materialConsumptionReport: RegisteredReport = {
       { key: 'uom', label: 'UOM', type: 'text' },
       { key: 'issue_against', label: 'Issue Against', type: 'text' },
       { key: 'reference', label: 'Reference', type: 'text' },
+      // ADR-207 — the Assembly SO's Internal SO No. (blank for JC / General).
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'department', label: 'Department', type: 'text' },
       { key: 'issued_to', label: 'Issued To', type: 'text' },
       { key: 'issued_qty', label: 'Issued Qty', type: 'number' },
@@ -93,6 +95,7 @@ export const materialConsumptionReport: RegisteredReport = {
         END                                              AS reference,
         si.department                                    AS department,
         si.issued_to                                     AS issued_to,
+        CASE WHEN si.issue_against = 'assembly_so' THEN so.internal_so_no END AS so_internal_no,
         SUM(sil.qty)::float8                             AS issued_qty,
         SUM(COALESCE(ret.qty, 0))::float8                AS returned_qty,
         (SUM(sil.qty) - SUM(COALESCE(ret.qty, 0)))::float8 AS net_consumed
@@ -112,7 +115,7 @@ export const materialConsumptionReport: RegisteredReport = {
         ${itemFrag}
         ${deptFrag}
         ${againstFrag}
-      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
       ORDER BY 1 DESC, 2, 5, 6, 8
       LIMIT ${ROW_CAP + 1}
     `);
@@ -129,6 +132,7 @@ export const materialConsumptionReport: RegisteredReport = {
         uom: textCell(r['uom']),
         issue_against: ISSUE_AGAINST_LABELS[ia as IssueAgainst] ?? ia,
         reference: textCell(r['reference']),
+        so_internal_no: textCell(r['so_internal_no']),
         department: textCell(r['department']),
         issued_to: textCell(r['issued_to']),
         issued_qty: numCell(r['issued_qty']),

@@ -4,6 +4,7 @@
 import { type DesignTrackerListItem } from '@innovic/shared';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useUpdateDesignTracker } from '../api';
 import { Actions, ErrorBox, Field, ModalShell } from './design-tracker-modal-shell';
 
@@ -50,7 +51,7 @@ export function EditDesignModal({
           <input
             type="text"
             className="innovic-input"
-            value={row.soCodeText ?? ''}
+            value={row.soCodeText ? soNoWithInternal(row.soCodeText, row.soInternalNo) : ''}
             readOnly
             style={{ color: 'var(--cyan)', fontWeight: 700 }}
           />

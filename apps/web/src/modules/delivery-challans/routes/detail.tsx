@@ -27,6 +27,7 @@ import {
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -533,7 +534,14 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
       />
       {/* Resolved through the PO's lines when the DC has no SO line of its own,
           which is the normal shape for an OSP/vendor challan. */}
-      <Pair label="SO No." value={dc.soCode ?? dc.soRefText ?? '—'} />
+      <Pair
+        label="SO No."
+        value={
+          dc.soCode || dc.soRefText
+            ? soNoWithInternal(dc.soCode ?? dc.soRefText ?? '', dc.soInternalNo)
+            : '—'
+        }
+      />
       {/* Its own labelled field, NOT "IN-SO-0012/B" — a slash after an SO
           number reads as a revision OF THE SALES ORDER, which is not a thing.
           This is the customer's DRAWING revision, so it is said in words. It is

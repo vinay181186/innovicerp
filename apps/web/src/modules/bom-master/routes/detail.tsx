@@ -16,6 +16,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { RowMenu } from '@/ui/data';
@@ -539,7 +540,7 @@ function LinkedSoLinesModal({
                         params={{ id: l.salesOrderId }}
                         className="td-code"
                       >
-                        {l.soCode}
+                        {soNoWithInternal(l.soCode, l.soInternalNo)}
                       </Link>
                     </td>
                     <td className="mono">{l.clientPoLineNo ?? '—'}</td>

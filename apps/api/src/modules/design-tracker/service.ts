@@ -51,9 +51,15 @@ function requireCompany(user: AuthContext): string {
 interface SoLineFacts {
   itemRevision: string | null;
   clientPoLineNo: string | null;
+  /** ADR-207 — the order's Internal SO No., read live off sales_orders. */
+  soInternalNo: string | null;
 }
 
-const NO_SO_LINE_FACTS: SoLineFacts = { itemRevision: null, clientPoLineNo: null };
+const NO_SO_LINE_FACTS: SoLineFacts = {
+  itemRevision: null,
+  clientPoLineNo: null,
+  soInternalNo: null,
+};
 
 /**
  * The SO line behind a design row.
@@ -84,7 +90,14 @@ async function soLineFactsFor(
   salesOrderId: string | null,
   itemId: string | null,
 ): Promise<SoLineFacts> {
-  if (!salesOrderId || !itemId) return NO_SO_LINE_FACTS;
+  if (!salesOrderId) return NO_SO_LINE_FACTS;
+  const soRows = (await tx.execute(sql`
+    SELECT so.internal_so_no AS "soInternalNo"
+    FROM public.sales_orders so
+    WHERE so.id = ${salesOrderId}::uuid AND so.deleted_at IS NULL
+  `)) as unknown as Array<Record<string, unknown>>;
+  const soInternalNo = (soRows[0]?.['soInternalNo'] as string | null | undefined) ?? null;
+  if (!itemId) return { ...NO_SO_LINE_FACTS, soInternalNo };
   const rows = (await tx.execute(sql`
     ${SO_LINE_FACTS_SQL}
       AND sol.sales_order_id = ${salesOrderId}::uuid
@@ -93,10 +106,11 @@ async function soLineFactsFor(
     LIMIT 1
   `)) as unknown as Array<Record<string, unknown>>;
   const r = rows[0];
-  if (!r) return NO_SO_LINE_FACTS;
+  if (!r) return { ...NO_SO_LINE_FACTS, soInternalNo };
   return {
     itemRevision: r['itemRevision'] == null ? null : String(r['itemRevision']),
     clientPoLineNo: r['clientPoLineNo'] == null ? null : String(r['clientPoLineNo']),
+    soInternalNo,
   };
 }
 
@@ -162,6 +176,7 @@ export async function listDesignTracker(
       ? sql`AND (
           dt.code ILIKE ${term} ESCAPE '\\'
           OR dt.so_code_text ILIKE ${term} ESCAPE '\\'
+          OR so_i.internal_so_no ILIKE ${term} ESCAPE '\\'
           OR dt.item_code_text ILIKE ${term} ESCAPE '\\'
           OR dt.designer ILIKE ${term} ESCAPE '\\'
           -- POL, the customer's own PO line number, now a column on this list.
@@ -182,6 +197,9 @@ export async function listDesignTracker(
     // One FROM + WHERE for the page, its count and the dropdown counts.
     const fromWhere = sql`
       FROM public.design_tracker dt
+      -- ADR-207: the Internal SO No., live off the order behind the design.
+      LEFT JOIN public.sales_orders so_i
+        ON so_i.id = dt.sales_order_id AND so_i.deleted_at IS NULL
       LEFT JOIN LATERAL (
         ${SO_LINE_FACTS_SQL}
           AND sol.sales_order_id = dt.sales_order_id
@@ -211,6 +229,7 @@ export async function listDesignTracker(
         dt.id, dt.company_id AS "companyId", dt.code,
         dt.sales_order_id AS "salesOrderId",
         dt.so_code_text AS "soCodeText",
+        so_i.internal_so_no AS "soInternalNo",
         dt.item_id AS "itemId",
         dt.item_code_text AS "itemCodeText",
         dt.item_name_text AS "itemNameText",
@@ -289,6 +308,7 @@ function toListItem(r: Record<string, unknown>): DesignTrackerListItem {
     code: r['code'] as string,
     salesOrderId: (r['salesOrderId'] as string | null) ?? null,
     soCodeText: (r['soCodeText'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     itemId: (r['itemId'] as string | null) ?? null,
     itemCodeText: (r['itemCodeText'] as string | null) ?? null,
     itemRevision: (r['itemRevision'] as string | null) ?? null,
@@ -388,6 +408,7 @@ function rowToTracker(
     code: row.code,
     salesOrderId: row.salesOrderId,
     soCodeText: row.soCodeText,
+    soInternalNo: facts.soInternalNo,
     itemId: row.itemId,
     itemCodeText: row.itemCodeText,
     itemRevision: facts.itemRevision,

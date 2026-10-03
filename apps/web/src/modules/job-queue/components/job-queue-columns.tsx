@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { ROW_TINT, RowMenu } from '@/ui/data';
@@ -255,7 +256,7 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       kind: 'code',
       className: 'mono',
       nowrap: true,
-      render: (r) => r.soCode ?? '—',
+      render: (r) => (r.soCode ? soNoWithInternal(r.soCode, r.soInternalNo) : '—'),
     },
     {
       id: 'customer',

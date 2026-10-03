@@ -13,6 +13,10 @@ export const PENDING_VENDOR_SQL = sql`COALESCE(v.name, vt.name, po.vendor_code_t
 /** CODE/REV as printed (itemCodeWithRev): the SO / JWSO line's drawing revision after a slash. */
 export const PENDING_ITEM_SQL = sql`(btrim(i.code) || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`;
 
+/** ADR-207 — SO No. as shown, "IN-SO-00786 · SO-2401" (Internal SO No. read
+ *  live); the SO picklist lists these and its filter matches the same text. */
+export const PENDING_SO_SQL = sql`(so.code || COALESCE(' · ' || NULLIF(btrim(so.internal_so_no), ''), ''))`;
+
 export const SC_PENDING_SF_COLUMNS: SfColumnMap = {
   poNo: { sql: sql`po.code`, type: 'text' },
   lineNo: { sql: sql`pol.line_no`, type: 'num' },

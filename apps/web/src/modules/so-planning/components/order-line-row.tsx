@@ -78,7 +78,7 @@ export function OrderLineRow({
   onViewJc: (jcId: string) => void;
 }): JSX.Element {
   const status = lineStatusOf(line);
-  const cap = line.itemId ? allocateCap(lineFacts(so.soCode, line)) : 0;
+  const cap = line.itemId ? allocateCap(lineFacts(so.soCode, line, so.soInternalNo)) : 0;
   // The line's ⋯ — every item opens its modal (each modal guards its own save).
   // Gates follow the server: Plan / BOM / Allocate / Raise PR need plan_create
   // entry; Release needs edit ("an L2 data-entry planner may book, not

@@ -34,6 +34,7 @@ export const ncBySoJcReport: RegisteredReport = {
     ],
     columns: [
       { key: 'so_jc', label: 'SO No. / JC No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'nc_count', label: 'NC Count', type: 'number' },
       { key: 'total_rejected_qty', label: 'Rejected', type: 'number' },
       { key: 'pending_count', label: 'Pending NCs', type: 'number' },
@@ -49,6 +50,8 @@ export const ncBySoJcReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT
         COALESCE(so.code, NULLIF(nc.so_code_text, ''), jc.code, 'Unknown') AS so_jc,
+        -- ADR-207 — live Internal SO No. of the group's SO (blank for a JC group).
+        MAX(so.internal_so_no) AS so_internal_no,
         COUNT(*)::int AS nc_count,
         COALESCE(SUM(nc.rejected_qty), 0)::float AS total_rejected_qty,
         SUM(CASE WHEN nc.status = 'pending' THEN 1 ELSE 0 END)::int AS pending_count,
@@ -67,6 +70,7 @@ export const ncBySoJcReport: RegisteredReport = {
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       so_jc: String(r['so_jc'] ?? ''),
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       nc_count: Number(r['nc_count'] ?? 0),
       total_rejected_qty: Number(r['total_rejected_qty'] ?? 0),
       pending_count: Number(r['pending_count'] ?? 0),

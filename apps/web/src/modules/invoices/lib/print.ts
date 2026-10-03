@@ -154,6 +154,10 @@ function invoiceSheetModel(
     { label: 'Invoice No.', value: inv.code, variant: 'mono', strong: true },
     { label: 'Invoice Date', value: challanDate(inv.invoiceDate), variant: 'mono' },
     { label: 'SO No.', value: inv.soCode ?? '', variant: 'mono' },
+    // ADR-207 — the SO's Internal SO No. on its own labelled line, when set.
+    ...(inv.soInternalNo
+      ? [{ label: 'Internal SO No.', value: inv.soInternalNo, variant: 'mono' as const }]
+      : []),
     ...(inv.clientPoNo
       ? [{ label: 'Client PO No.', value: inv.clientPoNo, variant: 'mono' as const }]
       : []),

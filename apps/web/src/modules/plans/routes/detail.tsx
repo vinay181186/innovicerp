@@ -15,6 +15,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { useExecutePlan, useFinalizePlan, usePlan } from '../api';
@@ -353,7 +354,10 @@ function PlanDetailPage(): React.JSX.Element {
                 </span>
               }
             />
-            <KV label="SO No." value={plan.soCodeText ?? '—'} />
+            <KV
+              label="SO No."
+              value={plan.soCodeText ? soNoWithInternal(plan.soCodeText, plan.soInternalNo) : '—'}
+            />
             <KV label="Ln" value={plan.lineNo ?? '—'} />
           </Grid>
 

@@ -6,6 +6,7 @@ import { opSrNo, type TpiCompletedRow } from '@innovic/shared';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 
 export const TPI_COMPLETED_DEFAULT_PINNED = ['item_code'];
@@ -29,7 +30,11 @@ export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
       id: 'so_no',
       kind: 'code',
       header: 'SO No.',
-      render: (l) => <span style={{ color: 'var(--cyan)' }}>{l.soCode ?? '—'}</span>,
+      render: (l) => (
+        <span style={{ color: 'var(--cyan)' }}>
+          {l.soCode ? soNoWithInternal(l.soCode, l.soInternalNo) : '—'}
+        </span>
+      ),
     },
     {
       // POL — the CUSTOMER's own purchase-order line number, before the item code.

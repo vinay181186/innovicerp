@@ -11,6 +11,8 @@ export type DispatchGroup = {
   code: string;
   date: string;
   soNo: string | null;
+  /** ADR-207 — the SO's Internal SO No. (live). */
+  soInternalNo: string | null;
   customer: string | null;
   dispatchedBy: string | null;
   remarks: string | null;
@@ -32,6 +34,7 @@ export function groupByDispatch(rows: CustomerDispatchRegisterRow[]): DispatchGr
         code: r.dispatchCode,
         date: r.date,
         soNo: r.soNo,
+        soInternalNo: r.soInternalNo ?? null,
         customer: r.customer,
         dispatchedBy: r.dispatchedBy,
         remarks: r.remarks,

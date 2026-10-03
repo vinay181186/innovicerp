@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayIst } from '@/lib/date';
 import { Banner } from '@/ui/feedback';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import { useCreateDesignProject, useDesignProjectsList, useNextDesignProjectCode } from '../api';
 
@@ -56,7 +57,7 @@ export function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX
     setErr(null);
     if (existingForSo) {
       setErr(
-        `${existingForSo.soCodeText ?? 'This SO'} already has Design Project ${existingForSo.code}. Open it instead.`,
+        `${existingForSo.soCodeText ? soNoWithInternal(existingForSo.soCodeText, existingForSo.soInternalNo) : 'This SO'} already has Design Project ${existingForSo.code}. Open it instead.`,
       );
       return;
     }
@@ -118,11 +119,13 @@ export function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX
           <SearchableSelect
             value={soId}
             valueLabel={
-              selectedSo ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}` : undefined
+              selectedSo
+                ? `${soNoWithInternal(selectedSo.code, selectedSo.internalSoNo)} — ${selectedSo.customerName ?? ''}`
+                : undefined
             }
             options={(soData?.items ?? []).map((so) => ({
               id: so.id,
-              code: so.code,
+              code: soNoWithInternal(so.code, so.internalSoNo),
               name: so.customerName ?? '',
             }))}
             onSearch={setSoSearch}
@@ -140,7 +143,7 @@ export function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX
             <Banner
               tone="warn"
               flush
-              title={`${existingForSo.soCodeText ?? 'This SO'} already has a Design Project`}
+              title={`${existingForSo.soCodeText ? soNoWithInternal(existingForSo.soCodeText, existingForSo.soInternalNo) : 'This SO'} already has a Design Project`}
             >
               <Link to="/design-projects/$id" params={{ id: existingForSo.id }} className="fw-700">
                 Open {existingForSo.code} — {existingForSo.projectName}

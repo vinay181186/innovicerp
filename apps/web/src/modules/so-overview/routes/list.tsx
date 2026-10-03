@@ -162,12 +162,12 @@ function SoOverviewPage(): React.JSX.Element {
             : undefined
         }
         searchSlot={
-          // Our server (so-overview/service.ts) ILIKEs code / customerName /
-          // clientPoNo only — the placeholder states what actually works.
+          // Our server (so-overview/service.ts) ILIKEs code / internal SO No. /
+          // customerName / clientPoNo only — the placeholder states what actually works.
           <SearchInput
             debounceMs={300}
             resetKey={clearKey}
-            placeholder="Search SO No., customer, Client PO No.…"
+            placeholder="Search SO No., Internal SO No., customer, Client PO No.…"
             value={searchInput}
             onChange={setSearchInput}
           />

@@ -192,6 +192,10 @@ export function printPurchaseOrder(args: {
     // The sales order behind it, resolved by the detail read from the first line
     // that carries one. Blank on a hand-raised PO, which genuinely has no SO.
     { label: 'SO No.', value: po.soCode ?? '', variant: 'mono' },
+    // ADR-207: the office's own Internal SO No., on its own labelled line.
+    ...(po.soInternalNo
+      ? [{ label: 'Internal SO No.', value: po.soInternalNo, variant: 'mono' } as const]
+      : []),
     { label: 'PO Date', value: challanDate(po.poDate), variant: 'mono' },
     { label: 'Due Date', value: po.dueDate ? challanDate(po.dueDate) : '', variant: 'mono' },
     { label: 'PR No.', value: po.prCodeText ?? '', variant: 'mono' },

@@ -22,6 +22,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlan, useDefaultRouteOps, useReserveStock } from '@/modules/plans/api';
@@ -220,7 +221,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             ? 'This line has no stock-tracked item'
             : reservable <= 0
               ? 'Nothing available to reserve'
-              : `Reserve ${qtyToReserve} pcs from stock to ${so.soCode}`
+              : `Reserve ${qtyToReserve} pcs from stock to ${soNoWithInternal(so.soCode, so.soInternalNo)}`
         }
       >
         {reserve.isPending ? 'Reserving…' : `Reserve ${qtyToReserve}`}
@@ -261,7 +262,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   if (releaseOpen) {
     return (
       <ReleaseStockModal
-        facts={lineFacts(so.soCode, line)}
+        facts={lineFacts(so.soCode, line, so.soInternalNo)}
         onClose={() => setReleaseOpen(false)}
         onDone={() => setReleaseOpen(false)}
       />
@@ -287,7 +288,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             </span>
             <br />
             <b className="mono">
-              {so.soCode} Ln {line.lineNo}
+              {soNoWithInternal(so.soCode, so.soInternalNo)} Ln {line.lineNo}
             </b>
           </div>
           <div>

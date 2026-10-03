@@ -27,6 +27,7 @@ import {
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -213,7 +214,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           <Fact label="SO / JWSO No." mono>
             {data.soCodeText ? (
               <>
-                {data.soCodeText}
+                {soNoWithInternal(data.soCodeText, data.soInternalNo)}
                 {data.lineNo ? <span className="text3"> · Ln {data.lineNo}</span> : null}
               </>
             ) : (

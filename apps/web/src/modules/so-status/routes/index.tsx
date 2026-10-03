@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { SearchInput } from '@/ui/forms';
 import { useSoOverview } from '../../so-overview/api';
@@ -60,7 +61,7 @@ function SoStatusIndexPage(): React.JSX.Element {
     if (!q) return sorted;
     return sorted.filter((r) =>
       matchesSearchTerm(
-        [r.code, r.customerName, r.clientPoNo, r.type, r.status, r.overallStatus],
+        [r.code, r.internalSoNo, r.customerName, r.clientPoNo, r.type, r.status, r.overallStatus],
         q,
       ),
     );
@@ -172,7 +173,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                       color: active ? 'var(--cyan)' : 'var(--text)',
                     }}
                   >
-                    {r.code}
+                    {soNoWithInternal(r.code, r.internalSoNo)}
                   </span>
                   <span
                     className="text3"

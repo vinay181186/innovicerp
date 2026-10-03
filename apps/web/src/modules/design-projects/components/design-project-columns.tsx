@@ -16,6 +16,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { ProgressBar, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
@@ -106,7 +107,7 @@ export function designProjectColumns(opts: {
       header: 'SO No.',
       className: 'mono text2',
       nowrap: true,
-      render: (p) => p.soCodeText ?? '—',
+      render: (p) => (p.soCodeText ? soNoWithInternal(p.soCodeText, p.soInternalNo) : '—'),
       sortFilterField: 'soCode',
     },
     {

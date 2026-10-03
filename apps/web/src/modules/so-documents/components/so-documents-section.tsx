@@ -16,6 +16,7 @@ import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSession } from '@/lib/session';
 import { ConfirmDialog } from '@/ui/feedback';
 import { uploadSoDocFile, useCreateSoDocument, useDeleteSoDocument, useSoDocDetail } from '../api';
@@ -150,6 +151,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
         <UploadDialog
           soId={soId}
           soCode={data.so.code}
+          soInternalNo={data.so.internalSoNo ?? null}
           lines={data.lines}
           companyId={me?.companyId ?? null}
           onClose={() => setUploadOpen(false)}
@@ -376,12 +378,14 @@ function FileRow({
 function UploadDialog({
   soId,
   soCode,
+  soInternalNo,
   lines,
   companyId,
   onClose,
 }: {
   soId: string;
   soCode: string;
+  soInternalNo: string | null;
   lines: SoDocumentLine[];
   companyId: string | null;
   onClose: () => void;
@@ -457,7 +461,9 @@ function UploadDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">📤 Upload Documents to {soCode}</span>
+          <span className="panel-title">
+            📤 Upload Documents to {soNoWithInternal(soCode, soInternalNo)}
+          </span>
           <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onClose}>
             ✕
           </button>

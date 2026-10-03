@@ -101,7 +101,7 @@ export function OrderDetailModals({
           if (!targetLine) return null;
           return (
             <AllocateStockModal
-              facts={lineFacts(so.soCode, targetLine)}
+              facts={lineFacts(so.soCode, targetLine, so.soInternalNo)}
               onClose={() => setModal({ kind: 'none' })}
               onDone={(result) => {
                 setModal({ kind: 'none' });
@@ -123,7 +123,7 @@ export function OrderDetailModals({
           if (!targetLine) return null;
           return (
             <ReleaseStockModal
-              facts={lineFacts(so.soCode, targetLine)}
+              facts={lineFacts(so.soCode, targetLine, so.soInternalNo)}
               onClose={() => setModal({ kind: 'none' })}
               onDone={(result) => {
                 setModal({ kind: 'none' });

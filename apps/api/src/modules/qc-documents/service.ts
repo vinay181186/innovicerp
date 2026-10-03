@@ -68,6 +68,8 @@ interface DocItem {
   itemRevision: string | null;
   clientPoLineNo: string | null;
   itemName: string | null;
+  /** ADR-207: the document's SO's Internal SO No., read live off sales_orders. */
+  soInternalNo?: string | null;
 }
 
 /** Used when there is no joined job card to read the item from — the register
@@ -105,6 +107,7 @@ function toItem(r: DocRow, item: DocItem = NO_DOC_ITEM): QcDocument {
     itemName: item.itemName ?? null,
     salesOrderId: r.salesOrderId ?? null,
     soCodeText: r.soCodeText ?? null,
+    soInternalNo: item.soInternalNo ?? null,
     category: r.category,
     docType: r.docType,
     fileName: r.fileName,
@@ -147,6 +150,12 @@ export async function listQcDocuments(
           OR ${qcDocuments.category} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.jcCodeText} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.soCodeText} ILIKE ${term} ESCAPE '\\'
+          -- ADR-207: the SO's Internal SO No. (live, via the SO FK).
+          OR EXISTS (
+            SELECT 1 FROM public.sales_orders sso
+            WHERE sso.id = ${qcDocuments.salesOrderId}
+              AND sso.internal_so_no ILIKE ${term} ESCAPE '\\'
+          )
           -- The item behind the job card, reached through the joins added
           -- below. A LEFT-joined column is NULL for a document with no card,
           -- and NULL ILIKE anything is NULL, so those documents simply do not
@@ -223,6 +232,11 @@ export async function listQcDocuments(
         // SAME sol join as the revision above. SO side only: a JWSO-sourced or
         // standalone card has no customer PO line and correctly stays null.
         clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // ADR-207: Internal SO No., live off the document's SO (FK).
+        soInternalNo: sql<string | null>`(
+          SELECT so.internal_so_no FROM public.sales_orders so
+          WHERE so.id = ${qcDocuments.salesOrderId}
+        )`,
       })
       .from(qcDocuments)
       .leftJoin(jobCards, and(eq(jobCards.id, qcDocuments.jobCardId), isNull(jobCards.deletedAt)))
@@ -269,6 +283,7 @@ export async function listQcDocuments(
           itemRevision: r.itemRevision,
           clientPoLineNo: r.clientPoLineNo,
           itemName: r.itemName,
+          soInternalNo: r.soInternalNo,
         }),
       ),
     };
@@ -424,7 +439,8 @@ export async function listQcMatrixSos(user: AuthContext): Promise<ListQcMatrixSo
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rs = await tx.execute(sql`
-      SELECT so.id, so.code, so.customer_name AS "customerName"
+      SELECT so.id, so.code, so.internal_so_no AS "internalSoNo",
+        so.customer_name AS "customerName"
       FROM public.sales_orders so
       WHERE so.company_id = ${companyId}::uuid
         AND so.deleted_at IS NULL
@@ -435,6 +451,7 @@ export async function listQcMatrixSos(user: AuthContext): Promise<ListQcMatrixSo
       sos: rows(rs).map((r) => ({
         id: r['id'] as string,
         code: r['code'] as string,
+        internalSoNo: (r['internalSoNo'] as string | null) ?? null,
         customerName: (r['customerName'] as string | null) ?? null,
       })),
     };
@@ -475,7 +492,8 @@ export async function getQcMatrix(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const soRows = await tx.execute(sql`
-      SELECT so.id, so.code, so.customer_name AS "customerName"
+      SELECT so.id, so.code, so.internal_so_no AS "internalSoNo",
+        so.customer_name AS "customerName"
       FROM public.sales_orders so
       WHERE so.id = ${salesOrderId}::uuid AND so.company_id = ${companyId}::uuid
         AND so.deleted_at IS NULL
@@ -722,6 +740,7 @@ export async function getQcMatrix(
       so: {
         id: soRow['id'] as string,
         code: soRow['code'] as string,
+        internalSoNo: (soRow['internalSoNo'] as string | null) ?? null,
         customerName: (soRow['customerName'] as string | null) ?? null,
       },
       qcColumns,

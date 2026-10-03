@@ -24,7 +24,7 @@ export const STUCK_SF_COLUMNS: SfColumnMap = {
   detail: { sql: sql`t.detail`, type: 'text' },
 };
 
-const REC = sql`t(so_id text, so_no text, customer text, stage text, days int,
+const REC = sql`t(so_id text, so_no text, so_internal_no text, customer text, stage text, days int,
   threshold int, detail text, since text, color text, ord int)`;
 
 /** `items` must already be in most-over-threshold order (that order is `ord`). */
@@ -38,6 +38,7 @@ export async function pageStuckItems(
     items.map((it, ord) => ({
       so_id: it.soId,
       so_no: it.soNo,
+      so_internal_no: it.soInternalNo ?? null,
       customer: it.customer,
       stage: it.stage,
       days: it.days,
@@ -52,8 +53,8 @@ export async function pageStuckItems(
   let search: SQL = sql``;
   if (term !== '') {
     const pat = `%${likeEscape(term)}%`;
-    search = sql`AND (t.so_no ILIKE ${pat} ESCAPE '\\' OR t.customer ILIKE ${pat} ESCAPE '\\'
-      OR t.stage ILIKE ${pat} ESCAPE '\\' OR t.detail ILIKE ${pat} ESCAPE '\\')`;
+    search = sql`AND (t.so_no ILIKE ${pat} ESCAPE '\\' OR t.so_internal_no ILIKE ${pat} ESCAPE '\\'
+      OR t.customer ILIKE ${pat} ESCAPE '\\' OR t.stage ILIKE ${pat} ESCAPE '\\' OR t.detail ILIKE ${pat} ESCAPE '\\')`;
   }
   const filtered = sql`SELECT t.* FROM jsonb_to_recordset(${json}::jsonb) AS ${REC}
     WHERE TRUE ${search} ${sfWhere(STUCK_SF_COLUMNS, sf)}`;

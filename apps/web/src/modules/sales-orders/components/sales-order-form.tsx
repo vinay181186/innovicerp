@@ -34,7 +34,11 @@
 
 import {
   type CreateSalesOrderInput,
+  INTERNAL_SO_NO_MAX,
+  INTERNAL_SO_NO_PREFIX,
+  internalSoNoError,
   type ListItemsResponse,
+  normaliseInternalSoNo,
   normalizeRevision,
   revisionBackwardsMessage,
   revisionGoesBackwards,
@@ -56,8 +60,6 @@ import {
   type UseFormRegisterReturn,
   type UseFormReturn,
 } from 'react-hook-form';
-import { DocNumberInput } from '@/components/shared/doc-number-input';
-import { docCodeToSend } from '@/lib/use-doc-number';
 import { todayLocal } from '@/lib/date';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { Panel } from '@/ui/data';
@@ -109,7 +111,10 @@ interface MilestoneFormValue {
 
 interface FormValues {
   header: {
+    /** Display only — the SO No. is system-generated (ADR-207), never sent. */
     code: string;
+    /** ADR-207 — the user-typed Internal SO No. (e.g. SO-2401). */
+    internalSoNo: string;
     soDate: string;
     type: SoType;
     status: SoStatus;
@@ -130,6 +135,7 @@ interface FormValues {
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
+  internalSoNo: INTERNAL_SO_NO_PREFIX,
   soDate: todayLocal(),
   type: 'component_manufacturing',
   status: 'open',
@@ -275,12 +281,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // A draft being edited: the primary button releases it, so it says so.
   const isDraft = watch('header.status') === 'draft';
 
-  // ── SO No.: reusable document-number field (prefill + live duplicate check) ──
+  // ── SO No. is system-only (ADR-207): shown read-only, never sent. The user's
+  // own number is the Internal SO No. — required on create; on an old SO that
+  // never had one, it may stay blank (only a typed value is checked + sent).
   const isCreate = !isEdit;
-  const [docNoValid, setDocNoValid] = useState(true);
-  // S2: the number the field auto-filled. It is only a preview — the form
-  // sends a number only when the user changed it (docCodeToSend).
-  const [suggestedCode, setSuggestedCode] = useState('');
+  const savedInternalSoNo = isEdit ? (props.detail.internalSoNo ?? null) : null;
+  const internalSoNoOptional = isEdit && !savedInternalSoNo;
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   // Keep a stable label for the selected client even when it scrolls out of the
@@ -576,8 +582,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         setPoEmailError('Enter a Client PO No. or attach an Email Ref — at least one is required.');
         return;
       }
-      // SO No. validity is enforced by DocNumberInput (save disabled while invalid);
-      // the server UNIQUE constraint is the final backstop.
+      // Internal SO No. format is checked by its field (shared rule); its
+      // uniqueness by the server (409, shown in the error strip + on the field).
       const equip = values.header.type === 'equipment';
       // SO-level due date applied to every line (the field lives at the top now).
       const soDue = values.header.dueDate?.trim() || undefined;
@@ -630,7 +636,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           : values.header.status === 'draft'
             ? ('open' as SoStatus)
             : values.header.status,
-        code: docCodeToSend(values.header.code, suggestedCode),
         customerName: undefined,
         clientId: values.header.clientId || undefined,
         clientPoNo: values.header.clientPoNo?.trim() || undefined,
@@ -692,13 +697,22 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               remarks: m.remarks?.trim() || undefined,
             }));
 
+      // The SO No. (`code`) is never sent — the server numbers the order.
+      const { code: _drop, internalSoNo: typedInternal, ...headerBase } = headerOut;
+      void _drop;
+      const internalSoNo = normaliseInternalSoNo(typedInternal);
       if (isEdit) {
-        const { code: _drop, ...headerNoCode } = headerOut;
-        void _drop;
-        await props.onSubmit({ header: headerNoCode, lines: linesOut, milestones: milestonesOut });
+        // Blank / bare "SO-" on an old SO that never had one = leave it unset.
+        const sendInternal =
+          internalSoNo !== '' && internalSoNo !== INTERNAL_SO_NO_PREFIX ? { internalSoNo } : {};
+        await props.onSubmit({
+          header: { ...headerBase, ...sendInternal },
+          lines: linesOut,
+          milestones: milestonesOut,
+        });
       } else {
         await props.onSubmit({
-          header: headerOut,
+          header: { ...headerBase, internalSoNo },
           lines: linesOut,
           milestones: milestonesOut,
         } as CreateSalesOrderInput);
@@ -708,11 +722,15 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // ── Page chrome: sticky PageHeader (Cancel · Save as Draft · Save), dirty
   // pill, Ctrl+S, and ONE error summary right under the header so the person
   // sees what blocked the save where the Save button is. ──
-  const saveDisabled = formState.isSubmitting || (isCreate && !docNoValid);
-  const draftDisabled = formState.isSubmitting || !docNoValid;
+  const saveDisabled = formState.isSubmitting;
+  const draftDisabled = formState.isSubmitting;
   const isDirty = formState.isDirty || poFileName !== null || emailFileName !== null;
   useSaveShortcut(() => void handleSubmit(onValid(false))(), !saveDisabled);
 
+  // The server's 409 for a taken Internal SO No. is also pinned on the field.
+  const internalSoNoServerError = props.submitError?.startsWith('Internal SO No.')
+    ? props.submitError
+    : undefined;
   const summaryErrors = [lineError, poEmailError, props.submitError ?? null].filter(
     (m): m is string => Boolean(m),
   );
@@ -881,8 +899,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       </PageHeader>
 
       {/* Header — customer first, then the document no. / dates / type, then
-          remarks. Row 1: Customer 6 + Client PO 4 + GST 2; row 2: SO No. 3 +
-          SO Date 3 + Due Date 3 + SO Type 3; Remarks full width. */}
+          remarks. Row 1: Customer 6 + Client PO 4 + GST 2; row 2: SO No. +
+          Internal SO No. + SO Date + Due Date + SO Type; Remarks full width. */}
       <Panel title="Order Details" actions={attachButtons}>
         <FormGrid>
           <FormField label="Customer" required size="lg" error={errors.header?.clientId?.message}>
@@ -951,18 +969,42 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             </select>
           </FormField>
 
-          <div className="f-sm">
-            <DocNumberInput
-              type="sales_order"
-              label="SO No."
-              required={isCreate}
-              readOnly={isEdit}
-              value={watch('header.code') ?? ''}
-              onChange={(v) => setValue('header.code', v)}
-              onValidityChange={setDocNoValid}
-              onSuggestedChange={setSuggestedCode}
+          {/* ADR-207 — SO No. is system-only: "Auto on save" on create, the
+              saved number on edit. Never editable, never sent. */}
+          <FormField label="SO No." size="sm" htmlFor="soCode">
+            <input
+              id="soCode"
+              className="innovic-input mono fw-700"
+              readOnly
+              tabIndex={-1}
+              placeholder="Auto on save"
+              value={isEdit ? watch('header.code') : ''}
             />
-          </div>
+          </FormField>
+          <FormField
+            label="Internal SO No."
+            required={!internalSoNoOptional}
+            size="sm"
+            htmlFor="internalSoNo"
+            error={errors.header?.internalSoNo?.message ?? internalSoNoServerError}
+          >
+            <input
+              id="internalSoNo"
+              className="innovic-input mono fw-700"
+              autoComplete="off"
+              maxLength={INTERNAL_SO_NO_MAX}
+              placeholder="SO-2401"
+              {...register('header.internalSoNo', {
+                validate: (v) => {
+                  const t = normaliseInternalSoNo(v ?? '');
+                  if (internalSoNoOptional && (t === '' || t === INTERNAL_SO_NO_PREFIX)) {
+                    return true;
+                  }
+                  return internalSoNoError(t) ?? true;
+                },
+              })}
+            />
+          </FormField>
           <FormField
             label="SO Date"
             required
@@ -1623,6 +1665,8 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
   return {
     header: {
       code: detail.code,
+      // An old SO without one shows blank (not "SO-") so nothing looks typed.
+      internalSoNo: detail.internalSoNo ?? '',
       soDate: detail.soDate,
       type: detail.type,
       status: detail.status,

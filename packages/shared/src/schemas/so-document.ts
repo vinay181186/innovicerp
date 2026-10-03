@@ -77,6 +77,8 @@ export interface SoDocumentFile {
 export interface SoDocumentOverviewRow {
   salesOrderId: string;
   soCode: string;
+  /** ADR-207 — the SO's Internal SO No. (read live from sales_orders). */
+  soInternalNo?: string | null;
   customerName: string | null;
   status: string;
   /** Active file_registry rows for this SO. */
@@ -108,7 +110,14 @@ export interface SoDocumentLine {
 }
 
 export interface SoDocumentDetailResponse {
-  so: { id: string; code: string; customerName: string | null; status: string };
+  so: {
+    id: string;
+    code: string;
+    /** ADR-207 — the SO's Internal SO No. (read live from sales_orders). */
+    internalSoNo?: string | null;
+    customerName: string | null;
+    status: string;
+  };
   lines: SoDocumentLine[];
   /** All files (registry + read-only QC) for the SO; client groups by line/category. */
   files: SoDocumentFile[];

@@ -616,6 +616,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       header: {
         id: header.id,
         code: header.code,
+        internalSoNo: header.internalSoNo,
         type: header.type,
         status: header.status,
         soDate: header.soDate,
@@ -649,6 +650,7 @@ function buildEmptyResponse(
     header: {
       id: header.id,
       code: header.code,
+      internalSoNo: header.internalSoNo,
       type: header.type,
       status: header.status,
       soDate: header.soDate,

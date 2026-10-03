@@ -12,6 +12,7 @@ import { useCallback, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useSoQcStatus } from '@/modules/so-qc-status/api';
@@ -67,7 +68,7 @@ export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX
             placeholder="Search SO No. or customer…"
             options={(soList.data?.items ?? []).map((s) => ({
               id: s.id,
-              code: s.code,
+              code: soNoWithInternal(s.code, s.internalSoNo),
               name: s.customerName ?? '',
             }))}
           />
@@ -110,7 +111,7 @@ export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX
           >
             <div>
               <span className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
-                {detail.data.so.code}
+                {soNoWithInternal(detail.data.so.code, detail.data.so.internalSoNo)}
               </span>
               <span style={{ marginLeft: 12, fontSize: 14, fontWeight: 600 }}>
                 {detail.data.so.customerName ?? '—'}

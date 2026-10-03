@@ -46,6 +46,10 @@ function dispatchSheetModel(
     { label: 'DC No.', value: d.code, variant: 'mono', strong: true },
     { label: 'DC Date', value: challanDate(d.dispatchDate), variant: 'mono' },
     { label: 'SO No.', value: d.soCode ?? '', variant: 'mono' },
+    // ADR-207 — the SO's Internal SO No. on its own labelled line, when set.
+    ...(d.soInternalNo
+      ? [{ label: 'Internal SO No.', value: d.soInternalNo, variant: 'mono' as const }]
+      : []),
     { label: 'Client PO No.', value: d.clientPoNo ?? '', variant: 'mono' },
   ];
   if (d.transport) documentFields.push({ label: 'Transporter', value: d.transport });

@@ -21,6 +21,8 @@ import { z } from 'zod';
 export const soQcSelectorSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
+  // ADR-207 — the SO's Internal SO No. (read live from sales_orders).
+  internalSoNo: z.string().nullable().optional(),
   customerName: z.string().nullable(),
   status: z.string(),
   soDate: z.string().nullable(),

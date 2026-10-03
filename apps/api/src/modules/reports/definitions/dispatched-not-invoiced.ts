@@ -27,6 +27,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
     columns: [
       { key: 'source', label: 'Source', type: 'text' },
       { key: 'order_code', label: 'SO / JWSO', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
@@ -51,7 +52,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
-        u.source, u.order_code, u.client_name, u.client_po_line_no, u.item_code,
+        u.source, u.order_code, u.so_internal_no, u.client_name, u.client_po_line_no, u.item_code,
         u.item_revision, u.dispatched_qty, u.invoiced_qty, u.to_invoice_qty, u.rate,
         u.to_invoice_value,
         u.last_dispatch_date::text               AS last_dispatch_text,
@@ -60,6 +61,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
         SELECT
           'SO'                                         AS source,
           so.code                                      AS order_code,
+          so.internal_so_no                            AS so_internal_no,
           COALESCE(cl.name, so.customer_name, '—')     AS client_name,
           sol.client_po_line_no                        AS client_po_line_no,
           COALESCE(it.code, sol.item_code_text)   AS item_code,
@@ -106,6 +108,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
         SELECT
           'JWSO'                                       AS source,
           jwo.code                                     AS order_code,
+          NULL::text                                   AS so_internal_no,
           COALESCE(cl.name, jwo.customer_name, '—')    AS client_name,
           NULL::text                                   AS client_po_line_no,
           COALESCE(it.code, jwl.item_code_text)   AS item_code,
@@ -143,6 +146,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
       return {
         source: String(r['source'] ?? ''),
         order_code: String(r['order_code'] ?? ''),
+        so_internal_no: textCell(r['so_internal_no']),
         client_name: String(r['client_name'] ?? ''),
         client_po_line_no: textCell(r['client_po_line_no']),
         item_code: String(r['item_code'] ?? '—'),

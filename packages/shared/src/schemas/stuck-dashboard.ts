@@ -35,6 +35,8 @@ export const DEFAULT_STUCK_THRESHOLDS: StuckThresholds = {
 export const stuckItemSchema = z.object({
   soId: z.string().uuid(),
   soNo: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live from sales_orders), null when none. */
+  soInternalNo: z.string().nullable().optional(),
   customer: z.string().nullable(),
   stage: z.string(),
   days: z.number().int(),

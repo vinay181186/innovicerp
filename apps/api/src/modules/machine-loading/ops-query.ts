@@ -49,6 +49,7 @@ const SELECT_LIST = sql.raw(`
         -- line has no customer PO, so JW-sourced cards are correctly null.
         sol.client_po_line_no AS "clientPoLineNo",
         so.code AS "soCode",
+        so.internal_so_no AS "soInternalNo",
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
         vos.completed_qty AS "completedQty", vos.available,
         vos.computed_status AS "computedStatus",
@@ -103,6 +104,7 @@ function toOp(r: Record<string, unknown>): MachineLoadOp {
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     priority: r['priority'] as MachineLoadOp['priority'],
     dueDate: r['dueDate'] != null ? String(r['dueDate']).slice(0, 10) : null,
     orderQty: Number(r['orderQty'] ?? 0),
@@ -131,6 +133,7 @@ function pagedWhere(input: MachineLoadingQuery): SQL {
       OR ${CODE_REV} ILIKE ${pat} ESCAPE '\\'
       OR i.name ILIKE ${pat} ESCAPE '\\'
       OR so.code ILIKE ${pat} ESCAPE '\\'
+      OR so.internal_so_no ILIKE ${pat} ESCAPE '\\'
       OR jo.operation ILIKE ${pat} ESCAPE '\\'
     )`);
   }

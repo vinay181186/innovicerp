@@ -22,6 +22,8 @@ import { sfRawParamSchema } from './list-query';
 export const planningSoListItemSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live); null for a JWSO or an old SO. */
+  soInternalNo: z.string().nullable().optional(),
   /** 'so' = sales_orders row, 'jw' = job_work_orders row. Drives which
    *  table the detail endpoint reads and which line link a new plan uses. */
   source: z.enum(['so', 'jw']),
@@ -189,6 +191,8 @@ export type PlanningLine = z.infer<typeof planningLineSchema>;
 export const planningDetailResponseSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live); null for a JWSO or an old SO. */
+  soInternalNo: z.string().nullable().optional(),
   /** 'so' | 'jw' — tells the UI whether a new plan links via soLineId or jwLineId. */
   source: z.enum(['so', 'jw']),
   customerName: z.string().nullable(),
@@ -222,6 +226,8 @@ export type PlanningBomChild = z.infer<typeof planningBomChildSchema>;
 export const planningBomResponseSchema = z.object({
   soLineId: z.string().uuid(),
   soCode: z.string(),
+  /** ADR-207 — the SO's Internal SO No. (live), null when it has none. */
+  soInternalNo: z.string().nullable().optional(),
   bomMasterId: z.string().uuid(),
   bomNo: z.string(),
   bomRev: z.number().int().nonnegative(),
@@ -317,6 +323,8 @@ export const reservationDetailSchema = z.object({
   /** Null for an assembly reservation (held for the whole SO, not a line). */
   soLineId: z.string().uuid().nullable(),
   soCodeText: z.string(),
+  /** ADR-207 — the Internal SO No. of that SO, read live (null when none). */
+  soInternalNo: z.string().nullable().optional(),
   lineNo: z.number().int().nullable(),
   customerName: z.string().nullable(),
   itemRevision: z.string().nullable(),

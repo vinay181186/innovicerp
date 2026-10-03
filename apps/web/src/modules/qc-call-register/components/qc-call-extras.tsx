@@ -34,6 +34,7 @@ function pgrnAsPending(r: PartyGrnQcRow): IncomingQcPendingRow {
     vendorName: r.customerName,
     // The JWSO line (a job-work sales order) fills the SO No. column.
     soCode: pgrnOrderOf(r),
+    soInternalNo: null,
     jcCode: null,
     opSeq: null,
     opName: null,

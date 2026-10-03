@@ -164,6 +164,16 @@ export async function listDeliveryChallans(
           -- SO cell renders soCode ?? soRefText. soCode itself has two sources,
           -- the same two the SELECT COALESCEs: the DC's own SO line...
           OR dc.so_ref_text ILIKE ${term} ESCAPE '\\'
+          -- ADR-207: the Internal SO No. of the SO a free-text so_ref_text names
+          -- (no FK there, so matched by code within the company).
+          OR EXISTS (
+            SELECT 1
+            FROM public.sales_orders srf
+            WHERE srf.company_id = dc.company_id
+              AND srf.code = dc.so_ref_text
+              AND srf.deleted_at IS NULL
+              AND srf.internal_so_no ILIKE ${term} ESCAPE '\\'
+          )
           OR EXISTS (
             SELECT 1
             FROM public.sales_order_lines ssol
@@ -171,7 +181,8 @@ export async function listDeliveryChallans(
               ON sso.id = ssol.sales_order_id AND sso.deleted_at IS NULL
             WHERE ssol.id = dc.sales_order_line_id
               AND ssol.deleted_at IS NULL
-              AND sso.code ILIKE ${term} ESCAPE '\\'
+              AND (sso.code ILIKE ${term} ESCAPE '\\'
+                OR sso.internal_so_no ILIKE ${term} ESCAPE '\\')
           )
           -- ...and, for an OSP DC that carries only a PO, the SO(s) behind that
           -- PO's lines.
@@ -184,7 +195,8 @@ export async function listDeliveryChallans(
               ON sso2.id = ssol2.sales_order_id AND sso2.deleted_at IS NULL
             WHERE spol.purchase_order_id = dc.purchase_order_id
               AND spol.deleted_at IS NULL
-              AND sso2.code ILIKE ${term} ESCAPE '\\'
+              AND (sso2.code ILIKE ${term} ESCAPE '\\'
+                OR sso2.internal_so_no ILIKE ${term} ESCAPE '\\')
           )
         )`
       : sql``;
@@ -231,6 +243,12 @@ export async function listDeliveryChallans(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(so.code, po_so.so_code) AS "soCode",
+        -- ADR-207 Internal SO No., read live from the SAME SO the cell shows:
+        -- the DC's own SO line, else the PO's single SO, else the SO a
+        -- free-text so_ref_text names.
+        CASE WHEN so.id IS NOT NULL THEN so.internal_so_no
+             WHEN po_so.so_code IS NOT NULL THEN po_so.so_internal_no
+             ELSE so_ref.internal_so_no END AS "soInternalNo",
         -- Header-level drawing revision, following soCode's two sources exactly,
         -- plus a third arm for a JWSO-sourced return-to-vendor challan: the
         -- job card the DC was raised for carries source_jw_line_id instead of
@@ -348,6 +366,7 @@ function toListItem(r: Record<string, unknown>): DeliveryChallanListItem {
     vendorName: (r['vendorName'] as string | null) ?? null,
     poCode: (r['poCode'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     soLineRevision: (r['soLineRevision'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: r['totalQty'] as string,
@@ -386,6 +405,12 @@ async function loadDeliveryChallanWithLines(
         v.name AS "vendorName",
         po.code AS "poCode",
         COALESCE(so.code, po_so.so_code) AS "soCode",
+        -- ADR-207 Internal SO No., read live from the SAME SO the cell shows:
+        -- the DC's own SO line, else the PO's single SO, else the SO a
+        -- free-text so_ref_text names.
+        CASE WHEN so.id IS NOT NULL THEN so.internal_so_no
+             WHEN po_so.so_code IS NOT NULL THEN po_so.so_internal_no
+             ELSE so_ref.internal_so_no END AS "soInternalNo",
         -- Header-level drawing revision, following soCode's two sources exactly,
         -- plus a third arm for a JWSO-sourced return-to-vendor challan: the
         -- job card the DC was raised for carries source_jw_line_id instead of
@@ -417,7 +442,11 @@ async function loadDeliveryChallanWithLines(
           -- one; otherwise NULL, which prints as no revision rather than as a
           -- guess. ::text for the same pre-0119 reason as everywhere else.
           CASE WHEN COUNT(DISTINCT sol2.revision) = 1
-               THEN MIN(sol2.revision)::text END AS so_revision
+               THEN MIN(sol2.revision)::text END AS so_revision,
+          -- ADR-207: the Internal SO No. only when the PO serves ONE SO, for
+          -- the same no-guessing reason as the revision.
+          CASE WHEN COUNT(DISTINCT so2.id) = 1
+               THEN MIN(so2.internal_so_no) END AS so_internal_no
         FROM public.purchase_order_lines pol
         JOIN public.sales_order_lines sol2
           ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
@@ -426,6 +455,9 @@ async function loadDeliveryChallanWithLines(
         WHERE pol.purchase_order_id = dc.purchase_order_id
           AND pol.deleted_at IS NULL
       ) po_so ON TRUE
+      LEFT JOIN public.sales_orders so_ref
+        ON so_ref.company_id = dc.company_id AND so_ref.code = dc.so_ref_text
+       AND so_ref.deleted_at IS NULL
       WHERE dc.id = ${id}::uuid
         AND dc.company_id = ${companyId}::uuid
         AND dc.deleted_at IS NULL
@@ -603,6 +635,7 @@ async function loadDeliveryChallanWithLines(
     vendorName: (headerRow['vendorName'] as string | null) ?? null,
     poCode: (headerRow['poCode'] as string | null) ?? null,
     soCode: (headerRow['soCode'] as string | null) ?? null,
+    soInternalNo: (headerRow['soInternalNo'] as string | null) ?? null,
     soLineRevision: (headerRow['soLineRevision'] as string | null) ?? null,
     lines: lineRows.map(({ line: l, itemCode, itemName, itemRevision, clientPoLineNo }) => ({
       id: l.id,
@@ -2330,6 +2363,7 @@ export async function getDeliveryChallanRelated(
           .select({
             id: salesOrders.id,
             code: salesOrders.code,
+            internalSoNo: salesOrders.internalSoNo,
             status: salesOrders.status,
             date: salesOrders.soDate,
           })
@@ -2397,7 +2431,7 @@ export async function getDeliveryChallanRelated(
         'Sales Order',
         '📄',
         'sales-order',
-        soRows.map((r) => row(r.id, r.code, r.status, r.date)),
+        soRows.map((r) => row(r.id, r.code, r.status, r.date, r.internalSoNo)),
       ),
       section(
         'item',

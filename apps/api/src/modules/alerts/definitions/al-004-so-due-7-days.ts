@@ -25,7 +25,9 @@ export const al004SoDue7Days: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT so.id AS nav_id, so.code AS so_code, sol.line_no,
+      SELECT so.id AS nav_id,
+             -- ADR-207: SO No. · Internal SO No. (live from sales_orders)
+             so.code || COALESCE(' · ' || NULLIF(btrim(so.internal_so_no), ''), '') AS so_code, sol.line_no,
              COALESCE(c.name, so.customer_name, '') AS customer,
              COALESCE(i.code, sol.item_code_text, '') AS item,
              sol.order_qty, sol.due_date

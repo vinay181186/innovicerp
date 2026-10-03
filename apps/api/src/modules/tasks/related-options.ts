@@ -8,7 +8,7 @@
 // so this file only has to READ; nothing here mutates.
 
 import type { RelatedOptionsQuery, TaskRelatedOption } from '@innovic/shared';
-import { and, desc, eq, ilike, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import {
   clients,
   designProjects,
@@ -35,6 +35,7 @@ async function salesOrderOptions(
     .select({
       id: salesOrders.id,
       code: salesOrders.code,
+      internalSoNo: salesOrders.internalSoNo,
       customer: salesOrders.customerName,
       client: clients.name,
     })
@@ -44,12 +45,23 @@ async function salesOrderOptions(
       and(
         eq(salesOrders.companyId, companyId),
         isNull(salesOrders.deletedAt),
-        ilike(salesOrders.code, pattern(search)),
+        // ADR-207: typing the Internal SO No. finds the SO too.
+        or(
+          ilike(salesOrders.code, pattern(search)),
+          ilike(salesOrders.internalSoNo, pattern(search)),
+        ),
       ),
     )
     .orderBy(desc(salesOrders.code))
     .limit(LIMIT);
-  return rows.map((r) => ({ id: r.id, code: r.code, hint: r.customer ?? r.client ?? null }));
+  // The stored link text stays the system SO No. (`code`); the Internal SO No.
+  // rides in the hint so the picker shows "IN-SO-00786  SO-2401 · Customer"
+  // without copying it onto the task.
+  return rows.map((r) => {
+    const party = r.customer ?? r.client ?? null;
+    const hint = [r.internalSoNo, party].filter((v): v is string => !!v).join(' · ');
+    return { id: r.id, code: r.code, hint: hint || null };
+  });
 }
 
 async function jobCardOptions(
