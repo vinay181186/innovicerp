@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { clickFirstRowMenuItem, planningLineRows } from './row-menu';
+import { clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
 
 // Shared, PROVEN step helpers extracted from the green Case 1 run. Reused by the
 // case specs so each flow doesn't re-debug the same forms. All write to prod
@@ -94,7 +94,7 @@ export async function planExecuteInhouse(
   }
   await page.getByRole('button', { name: /Save Plan/i }).click();
   await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: /Create JC|Raise PR/ }).first().click();
+  await executePlanFromMenu(page);
   await page.waitForTimeout(4500);
   const jc = ((await page.locator('body').innerText()).match(/IN-JC-\d{2}-\d+/) || [''])[0];
   return { pln, jc };

@@ -149,7 +149,9 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   // RED FOR UNPAID IS A WARNING SIGNAL the business reads off the list; do not
   // soften it to the generic `doc` map's amber. `doc` also paints `partial`
   // blue, which is why invoices need their own kind rather than that fallback.
-  invoice: { unpaid: 'red', partial: 'amber', paid: 'green' },
+  // `cancelled` (ADR-202 Phase 3): a cancelled invoice is dead paper — red, the
+  // same stop signal as unpaid, so it cannot be mistaken for a live document.
+  invoice: { unpaid: 'red', partial: 'amber', paid: 'green', cancelled: 'red' },
   // BOM Master revision state. `draft` happens to match the generic `doc` map,
   // but `active` and `obsolete` are not in it at all, so the whole set is
   // stated here rather than half-inherited. Carried from
@@ -277,7 +279,7 @@ const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
   grnqc: { pending: 'QC Pending', in_progress: 'QC In Progress', completed: 'QC Cleared' },
   nc: { pending: 'NC Raised', received_qc_pending: 'Received – QC Pending' },
   ncdisp: { scrap: 'Scrap', use_as_is: 'Use As Is' },
-  invoice: { partial: 'Partly Paid' },
+  invoice: { partial: 'Partly Paid', cancelled: 'Cancelled' },
   plan: { jc_created: 'JC Created', pr_created: 'PR Created', complete: 'Completed' },
   task: { todo: 'To Do', to_do: 'To Do' },
   grn: {

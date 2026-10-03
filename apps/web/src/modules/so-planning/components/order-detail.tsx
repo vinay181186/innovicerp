@@ -1,22 +1,32 @@
 // Level 2 of SO/JWSO Planning (PL-4b): one order, a compact header and ONE
 // table with EVERY line. Split out of routes/workflow.tsx (ADR-199 table
-// standard) so the file stays under the 400-line rule. This surface is the
-// plan-create cascade, not a plain list, so its fixed-layout line table (the
-// "+ Plan" / Allocate / Release actions and the plan chips) is unchanged; the
-// row itself lives in order-line-row.tsx and the modals in order-detail-modals.
+// standard) so the file stays under the 400-line rule.
+//
+// ADR-199 level-2 conversion (2026-10-03): the hand-built fixed-layout sheet is
+// gone — the lines now render on the shared FIT <DataTable>
+// (TABLE_KEYS.planningLines), so every row is ONE line, the sheet always fits
+// its width, and the columns that will not fit fold into the ▸ panel. The
+// column set lives in planning-line-columns.tsx, the ▸ panel in
+// planning-line-expand.tsx, every action in the row's ONE ⋯ menu
+// (planning-line-menu.ts) and the modals in order-detail-modals.tsx.
 
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import type { PlanningLine, PlanningPlanSummary } from '@innovic/shared';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
+import { DataTable, renderRowMenuLink } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { useExecutePlan } from '@/modules/plans/api';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { usePlanningSoDetail } from '../api';
-import { LINE_COLS, OrderLineRow } from './order-line-row';
 import { OrderDetailModals, type SavedPlanNote, type StockNote } from './order-detail-modals';
+import { planningLineColumns } from './planning-line-columns';
+import { PlanningLineExpand } from './planning-line-expand';
+import { planningLineMenu } from './planning-line-menu';
 import { JwChip, type ModalState } from './planning-shared';
 
 function HeaderField({
@@ -54,10 +64,15 @@ export function OrderDetail({
 }): JSX.Element {
   const detail = usePlanningSoDetail(soId);
   const executePlan = useExecutePlan();
-  const navigate = useNavigate();
   // ADR-180 — the three numbers as they stood right after the last Allocate /
   // Release, read off that action's own response.
   const [stockNote, setStockNote] = useState<StockNote | null>(null);
+  // Which lines have their ▸ panel open (the fit table's one expand control).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // A failed "Create JC / Raise PR" from the row's ⋯. The menu itself only
+  // logs a rejection, so the failure is caught here and named on screen with
+  // the plan it belongs to.
+  const [execError, setExecError] = useState<{ code: string; message: string } | null>(null);
   // The plan just saved by "+ Plan" and its next step. A route-card plan's
   // only way on is a Production Order, so the page offers it right here
   // instead of the box just closing (the planner used to go to Production
@@ -99,6 +114,31 @@ export function OrderDetail({
   const refresh = (): void => {
     onChanged();
     void detail.refetch();
+  };
+  const toggleExpanded = (soLineId: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(soLineId)) next.delete(soLineId);
+      else next.add(soLineId);
+      return next;
+    });
+  };
+  // Let a plan's work out. The PROMISE is returned to the ⋯ (RowMenu goes busy
+  // and blocks a second click only while a promise is pending — a `void` return
+  // would allow a double execute). The rejection is caught here, so the menu
+  // never throws and the planner is told which plan failed; the mutation's own
+  // onSuccess invalidates the planning queries, which refreshes these lines.
+  const runExecutePlan = async (plan: PlanningPlanSummary): Promise<void> => {
+    setExecError(null);
+    try {
+      await executePlan.mutateAsync(plan.id);
+    } catch (err) {
+      setExecError({
+        code: plan.code,
+        message:
+          err instanceof Error ? err.message : 'Could not create the Job Card / PR. Try again.',
+      });
+    }
   };
 
   return (
@@ -261,55 +301,48 @@ export function OrderDetail({
         </Banner>
       ) : null}
 
-      {/* ── Every line, one table ── */}
+      {execError ? (
+        <Banner
+          tone="error"
+          role="alert"
+          title={
+            <>
+              Could not let out plan <span className="mono">{execError.code}</span>
+            </>
+          }
+          onDismiss={() => setExecError(null)}
+        >
+          {execError.message}
+        </Banner>
+      ) : null}
+
+      {/* ── Every line, one table (ADR-199 fit table) ── */}
       <div className="panel">
-        {so.lines.length === 0 ? (
-          <div className="empty-state">This order has no lines.</div>
-        ) : (
-          // `tbl-wrap` so the sheet scrolls sideways on a narrow screen instead
-          // of crushing every number into two lines. On a normal wide screen
-          // the sheet still fills the panel exactly as before.
-          <div className="tbl-wrap">
-            <table
-              className="innovic-table"
-              style={{ tableLayout: 'fixed', width: '100%', minWidth: 1200, margin: 0 }}
-            >
-              <colgroup>
-                {LINE_COLS.map((c) => (
-                  <col key={c.key} style={{ width: `${c.width}%` }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  {LINE_COLS.map((c) => (
-                    <th
-                      key={c.key}
-                      style={{ whiteSpace: 'normal', cursor: 'default' }}
-                      title={c.title}
-                    >
-                      {c.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {so.lines.map((line) => (
-                  <OrderLineRow
-                    key={line.soLineId}
-                    so={so}
-                    line={line}
-                    perms={perms}
-                    setModal={setModal}
-                    executePlan={executePlan}
-                    onViewJc={(jcId) =>
-                      void navigate({ to: '/job-cards/$id', params: { id: jcId } })
-                    }
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable<PlanningLine>
+          tableKey={TABLE_KEYS.planningLines}
+          columns={planningLineColumns(so.source)}
+          rows={so.lines}
+          rowKey={(l) => l.soLineId}
+          // The plan code must stay on screen however narrow the sheet is.
+          defaultPinned={['plans']}
+          renderExpanded={(l) =>
+            expanded.has(l.soLineId) ? <PlanningLineExpand line={l} /> : null
+          }
+          onToggleExpanded={(l) => toggleExpanded(l.soLineId)}
+          renderLink={renderRowMenuLink}
+          rowMenuLabel={(l) => `Actions for line ${l.lineNo}`}
+          rowMenu={(line) =>
+            planningLineMenu({
+              so,
+              line,
+              perms,
+              canProductionOrder,
+              setModal,
+              onExecutePlan: runExecutePlan,
+            })
+          }
+          empty="This order has no lines."
+        />
       </div>
 
       {/* ── Modals ── */}

@@ -104,7 +104,7 @@ function DataTableBody<T>(input: DataTableProps<T>): ReactElement {
   // `rowMenu` is drawn through the existing rowActions column, so the classic
   // and the fit paths (and the fit engine's measuring) need no change of
   // their own.
-  const { rowMenu, renderLink } = input;
+  const { rowMenu, rowMenuLabel, renderLink } = input;
   // No ⋯ column when not one row has a visible item (the user lacks every
   // right): an empty column of nothing is noise. An empty list keeps it.
   const anyMenu =
@@ -116,7 +116,11 @@ function DataTableBody<T>(input: DataTableProps<T>): ReactElement {
       ? {
           ...input,
           rowActions: (row: T, index: number) => (
-            <RowMenu items={rowMenu(row, index)} renderLink={renderLink} />
+            <RowMenu
+              items={rowMenu(row, index)}
+              renderLink={renderLink}
+              {...(rowMenuLabel ? { label: rowMenuLabel(row, index) } : {})}
+            />
           ),
           rowActionsHeader: input.rowActionsHeader ?? ROW_MENU_HEADER,
         }
