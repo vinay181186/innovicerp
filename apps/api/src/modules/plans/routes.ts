@@ -63,7 +63,7 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamsSchema.parse(req.params);
     const input = updatePlanInputSchema.parse(req.body);
-    return service.updatePlan(id, input, req.user);
+    return service.updatePlanOrStage(id, input, req.user);
   });
 
   app.post('/plans/:id/finalize', async (req) => {

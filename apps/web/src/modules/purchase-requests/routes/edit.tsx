@@ -10,6 +10,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useItem } from '@/modules/items/api';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest } from '../api';
@@ -175,6 +176,9 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   // R5 — the PR's version as it was when this edit form opened.
   const opened = useOpenedVersion(detail?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE PR is staged for approval instead of
+  // applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // Tier-driven, per department (Purchase). This screen had no gate at all —
   // typing the URL handed the form to anyone, including an L1 Viewer and an
   // L4 Approver, who deliberately cannot change a saved record.
@@ -194,7 +198,17 @@ function PurchaseRequestEditPage(): React.JSX.Element {
         ...values,
         expectedUpdatedAt: opened.expected(),
       });
-      opened.saved(saved?.updatedAt);
+      if (isStagedResult(saved)) {
+        // The edit-approval gate is on and this PR is live: nothing was changed
+        // on the PR — the edit is now waiting for approval. Say so, then return
+        // to the PR (its fields now carry the pending-change chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        exit.leave(
+          () => void navigate({ to: '/purchase-requests/$id', params: { id }, replace: true }),
+        );
+        return;
+      }
+      opened.saved(saved.updatedAt);
       exit.leave(
         () => void navigate({ to: '/purchase-requests/$id', params: { id }, replace: true }),
       );
@@ -279,6 +293,11 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <PurchaseRequestForm
         mode="edit"
         title="Edit Purchase Request"

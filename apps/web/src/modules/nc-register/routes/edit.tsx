@@ -4,9 +4,11 @@ import { NC_STATUS_LABELS, type UpdateNcRegisterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { useNcRegister, useUpdateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
 
@@ -22,6 +24,9 @@ function NcRegisterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
   const update = useUpdateNcRegister(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE NC is staged for approval instead of
+  // applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const goBack = useCallback(
     () => void navigate({ to: '/nc-register/$id', params: { id } }),
     [navigate, id],
@@ -102,6 +107,11 @@ function NcRegisterEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <NcRegisterForm
         mode="edit"
         title={`Edit NC — ${detail.code}`}
@@ -115,7 +125,19 @@ function NcRegisterEditPage(): React.JSX.Element {
         onSubmit={async (values: UpdateNcRegisterInput) => {
           setSubmitError(null);
           try {
-            await update.mutateAsync(values);
+            const saved = await update.mutateAsync(values);
+            if (isStagedResult(saved)) {
+              // Edit-approval gate is on and this NC is live: nothing changed on
+              // the NC — the edit is waiting for approval. Say so, then return to
+              // the NC (its fields now carry the pending-change chip).
+              setStagedNotice(
+                'Sent for approval — your changes will apply once an approver signs off.',
+              );
+              exit.leave(
+                () => void navigate({ to: '/nc-register/$id', params: { id }, replace: true }),
+              );
+              return;
+            }
             exit.leave(goBack);
           } catch (e) {
             setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');

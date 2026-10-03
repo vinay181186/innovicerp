@@ -37,6 +37,7 @@ import {
   useMachinesList,
 } from '@/modules/machines/api';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { useFinalizePlan, useUpdatePlan, useDefaultRouteOps } from '@/modules/plans/api';
 import { useQcProcessesList } from '@/modules/qc-processes/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -163,6 +164,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   );
 
   const [err, setErr] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE plan is staged for approval instead of
+  // applied; a neutral notice shows it and the modal stays open to be read.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
 
   const saveKey = useSaveKey();
   const update = useUpdatePlan(plan.id, saveKey);
@@ -438,11 +442,21 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       return;
     }
     setErr(null);
+    setStagedNotice(null);
     try {
       const saved = await update.mutateAsync({
         ...buildPayload(),
         expectedUpdatedAt: opened.expected(),
       });
+      if (isStagedResult(saved)) {
+        // Edit-approval gate is on and this plan is live: nothing changed on the
+        // plan — the edit is now waiting for approval. Say so and keep the modal
+        // open so the planner reads it (there is no detail page to land on here).
+        setStagedNotice(
+          'Sent for approval — your changes will apply once an approver signs off.',
+        );
+        return;
+      }
       // A failed Finalize leaves the modal open; the next Save must carry the
       // version our own save just wrote, not the one the modal opened with.
       opened.saved(saved.updatedAt);
@@ -1584,6 +1598,21 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           }}
         >
           {err}
+        </div>
+      ) : null}
+      {stagedNotice ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 8,
+            borderRadius: 4,
+            background: 'var(--bg3)',
+            border: '1px solid var(--border2)',
+            color: 'var(--text2)',
+            fontSize: 12,
+          }}
+        >
+          {stagedNotice}
         </div>
       ) : null}
     </Modal>

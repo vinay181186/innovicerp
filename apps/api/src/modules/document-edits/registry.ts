@@ -3,12 +3,16 @@
 // (./service.ts) is entity-agnostic: it drives everything through this table, so
 // Phase 2 adds a document by adding one entry here — no engine change.
 //
-// Phase 1 enrols only PurchaseOrder.
+// Phase 1 enrolled PurchaseOrder; Phase 2a adds PurchaseRequest, NonConformance
+// and Plan at RECORD/HEADER level.
 
 import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
+import { ncEditRegistryEntry } from '../nc-register/nc-edit-registry';
+import { planEditRegistryEntry } from '../plans/plan-edit-registry';
 import { poEditRegistryEntry } from '../purchase-orders/po-edit-registry';
+import { prEditRegistryEntry } from '../purchase-requests/pr-edit-registry';
 
 /** The locked (or read) target document, projected to just what the engine
  *  needs: the row for diffing, its optimistic-lock token, its code, and whether
@@ -69,4 +73,7 @@ export interface DocEditRegistryEntry {
 
 export const DOC_EDIT_REGISTRY: Record<DocumentEditEntity, DocEditRegistryEntry> = {
   PurchaseOrder: poEditRegistryEntry,
+  PurchaseRequest: prEditRegistryEntry,
+  NonConformance: ncEditRegistryEntry,
+  Plan: planEditRegistryEntry,
 };

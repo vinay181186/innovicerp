@@ -5,6 +5,7 @@ import type {
   CreateNcRegisterInput,
   DisposeNcInput,
   DisposeNcResult,
+  DocumentEditStagedResult,
   ListNcRegisterQuery,
   ListNcRegisterResponse,
   NcRegister,
@@ -95,13 +96,26 @@ export function useCreateNcRegister(saveKey?: SaveKey) {
 
 export function useUpdateNcRegister(id: string) {
   const qc = useQueryClient();
-  return useMutation<NcRegister, Error, UpdateNcRegisterInput>({
+  // ADR-202 — when the edit-approval gate is on and the NC is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated NC. The edit page reads the union to tell them apart.
+  return useMutation<NcRegister | DocumentEditStagedResult, Error, UpdateNcRegisterInput>({
     mutationFn: (input) =>
-      apiFetch<NcRegister>(`/nc-register/${id}`, { method: 'PATCH', json: input }),
+      apiFetch<NcRegister | DocumentEditStagedResult>(`/nc-register/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the NC itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: ncRegisterKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(ncRegisterKeys.detail(id), updated);
     },
   });
