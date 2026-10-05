@@ -1333,6 +1333,31 @@ function buildItemsSnapshot(lines: CreateBomMasterLineInput[], itemsLookup: Item
 const BOM_TEMPLATE_SAMPLE_ITEMS = ['EXAMPLE-001', 'EXAMPLE-002'];
 const BOM_TEMPLATE_SAMPLE_QTYS = [2, 3];
 
+/** The page cap listItems enforces (listItemsQuerySchema: limit max 1000). */
+const ITEM_PAGE = 1000;
+/** Above this an Excel dropdown stops being a help, so the column goes back to
+ *  free text — the import checks every code against Item Master either way. */
+const ITEM_DROPDOWN_MAX = 3000;
+
+/** Every item code, paged — a single 1000-row read would silently drop the
+ *  dropdown the day the master passes 1000 (today: 408). Returns [] when the
+ *  master is larger than a dropdown can usefully hold. */
+async function listAllItemCodes(user: AuthContext): Promise<string[]> {
+  const codes: string[] = [];
+  for (let offset = 0; offset < ITEM_DROPDOWN_MAX; offset += ITEM_PAGE) {
+    // sortBy code: paging without an explicit order can repeat or skip a row
+    // when the master changes between pages.
+    const page = await listItems(
+      { limit: ITEM_PAGE, offset, sortBy: 'code', sortDir: 'asc', sf: undefined },
+      user,
+    );
+    if (page.total > ITEM_DROPDOWN_MAX) return [];
+    codes.push(...page.items.map((i) => i.code));
+    if (codes.length >= page.total || page.items.length === 0) break;
+  }
+  return codes;
+}
+
 export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer> {
   await requireFormAccess(user, 'bom_create', 'view');
 
@@ -1340,7 +1365,7 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
   // planner without it still gets a usable template — just without those two
   // dropdowns; the import matches whatever they type either way.
   const listQuery = { isActive: true, limit: 1000, offset: 0 } as const;
-  const [grades, sizes, itemPage] = await Promise.all([
+  const [grades, sizes, itemCodes] = await Promise.all([
     listMaterialGrades(listQuery, user).catch((e: unknown) => {
       if (e instanceof AuthorizationError) return null;
       throw e;
@@ -1349,11 +1374,13 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
       if (e instanceof AuthorizationError) return null;
       throw e;
     }),
-    // Item codes for the dropdown. `excludePartyOwned` matches the child-item
-    // picker on the form itself (ADR-195) — the sheet must never offer a part
-    // the screen would refuse. listItems carries no extra permission gate, so
-    // no catch is needed here.
-    listItems({ excludePartyOwned: true, limit: 1000, offset: 0, sf: undefined }, user),
+    // Item codes for the dropdown. NO `excludePartyOwned`: the BOM child
+    // picker (bom-form.tsx), the import's own code lookup and createBomMaster
+    // all accept any item, party-supplied material included — a job-work BOM
+    // legitimately lists the customer's own material. Filtering here would make
+    // the sheet refuse a part the screen accepts. listItems carries no extra
+    // permission gate, so no catch is needed.
+    listAllItemCodes(user),
   ]);
   // A page-capped list would offer a dropdown that silently omits real values —
   // the planner would then believe a grade is not set up and create a duplicate.
@@ -1365,10 +1392,6 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
   const sizeNames = whole(sizes, sizes?.sizes.map((sz) => sz.name) ?? []);
   // BARE codes, never "CODE — Name": the importer matches on the code alone,
   // so a combined label would fail every row it was picked on.
-  const itemCodes = whole(
-    itemPage,
-    itemPage.items.map((i) => i.code),
-  );
 
   return buildImportTemplateBuffer({
     sheetName: 'BOM',
