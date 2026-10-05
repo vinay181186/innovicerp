@@ -61,7 +61,7 @@ import {
   qtyUomProblem,
   statusMoveRefusal,
 } from '@innovic/shared';
-import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import type { DocumentEditStagedResult, DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import { type BomAuditLine, bomHeaderChanges, bomLineAuditRows } from './audit';
 import type {
   BomMaster,
@@ -779,16 +779,123 @@ export async function createBomMaster(
   });
 }
 
+/**
+ * True when the submitted BOM lines ADD or REMOVE a component versus what is
+ * stored. The shared line input carries no row id, and a BOM lists each child
+ * part exactly once (assertNoDuplicateChildItems), so a line's identity is its
+ * child item id: a submitted child not currently on the BOM is an add (or a
+ * component swap), and a stored child the submission omits is a remove. A
+ * qty / type / raw-material change on an EXISTING child is NOT add/remove and
+ * returns false — the edit-approval engine stages those for per-change approval.
+ * Mirrors poLinesAddedOrRemoved; used by the divert in updateBomMasterOrStage.
+ */
+function bomLinesAddedOrRemoved(
+  current: { childItemId: string }[],
+  proposed: UpdateBomMasterInput['lines'],
+): boolean {
+  if (!proposed) return false;
+  const currentIds = new Set(current.map((c) => c.childItemId));
+  const proposedIds = new Set<string>();
+  for (const p of proposed) {
+    if (!currentIds.has(p.childItemId)) return true; // new child (add or swap)
+    proposedIds.add(p.childItemId);
+  }
+  for (const id of currentIds) {
+    if (!proposedIds.has(id)) return true; // a stored child was dropped
+  }
+  return false;
+}
+
 export async function updateBomMaster(
   id: string,
   input: UpdateBomMasterInput,
   user: AuthContext,
 ): Promise<BomMasterDetail> {
+  // The `edit` access check lives HERE, not in updateBomMasterTx, so the
+  // edit-approval engine's applyEdit can replay an approved edit for an approver
+  // who holds `approve` but not `edit` (mirrors updatePurchaseOrder).
+  requireWriteRole(user);
+  await requireFormAccess(user, 'bom_create', 'edit');
+  return withUserContext(user, (tx) => updateBomMasterTx(tx, id, input, user));
+}
+
+/**
+ * The BOM edit entry point the HTTP route calls. Edit-approval (ADR-202): when
+ * the company's gate is on, an edit to a live (not-Trash) BOM is STAGED for
+ * per-change approval and a {staged:true, request} result is returned; otherwise
+ * it falls through to updateBomMaster (today's behaviour). BOM has child lines,
+ * so this mirrors updatePurchaseOrderOrStage: HEADER changes and qty / type /
+ * raw-material changes on EXISTING lines are staged, but adding or removing a
+ * line (a change to the SET of components) still cannot be staged and is refused.
+ */
+export async function updateBomMasterOrStage(
+  id: string,
+  input: UpdateBomMasterInput,
+  user: AuthContext,
+): Promise<BomMasterDetail | DocumentEditStagedResult> {
   requireWriteRole(user);
   await requireFormAccess(user, 'bom_create', 'edit');
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
+  // Engine imported dynamically to avoid a static import cycle with
+  // bom-edit-registry (which imports updateBomMasterTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Live" mirrors bomEditRegistryEntry.isLive: any existing (not-Trash) BOM.
+    const rows = await tx
+      .select({ id: bomMasters.id })
+      .from(bomMasters)
+      .where(
+        and(
+          eq(bomMasters.id, id),
+          eq(bomMasters.companyId, companyId),
+          isNull(bomMasters.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (rows.length === 0) return false;
+    // Adding or removing a line cannot be staged this pass — refuse it clearly
+    // rather than let it ride along unapproved. A field change on an existing
+    // line falls through and is staged for per-change approval.
+    const current = await tx
+      .select({ childItemId: bomMasterLines.childItemId })
+      .from(bomMasterLines)
+      .where(and(eq(bomMasterLines.bomMasterId, id), isNull(bomMasterLines.deletedAt)));
+    if (bomLinesAddedOrRemoved(current, input.lines)) {
+      throw new ConflictError(
+        "Adding or removing BOM lines isn't available while Document Edit Approval is on — " +
+          "change an existing line's component/qty (it will go for approval), or turn the gate " +
+          'off to restructure the BOM.',
+      );
+    }
+    return true;
+  });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('BOM', id, input, input.expectedUpdatedAt, user);
+    return { staged: true, request };
+  }
+
+  return updateBomMaster(id, input, user);
+}
+
+/**
+ * The body of a BOM edit, inside a caller-supplied transaction. Called by
+ * updateBomMaster (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one — nesting withUserContext would deadlock on the BOM row
+ * locked FOR UPDATE below). Every guard lives here: assertUnchangedSinceOpened,
+ * the status-move check, the item/parent validation, the wholesale line reconcile,
+ * the revision bump and the audit. The caller performs the `edit` / `approve`
+ * access check before calling.
+ */
+export async function updateBomMasterTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateBomMasterInput,
+  user: AuthContext,
+): Promise<BomMasterDetail> {
+  const companyId = requireCompany(user);
+  {
     const headers = await tx
       .select()
       .from(bomMasters)
@@ -987,7 +1094,7 @@ export async function updateBomMaster(
     }
 
     return loadBomMasterDetail(tx, id, companyId);
-  });
+  }
 }
 
 export async function softDeleteBomMaster(

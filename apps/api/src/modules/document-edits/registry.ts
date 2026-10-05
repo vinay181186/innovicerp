@@ -10,6 +10,7 @@
 import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
+import { bomEditRegistryEntry } from '../bom-master/bom-edit-registry';
 import { clientEditRegistryEntry } from '../clients/client-edit-registry';
 import { customerDispatchEditRegistryEntry } from '../customer-dispatches/customer-dispatch-edit-registry';
 import { dcEditRegistryEntry } from '../delivery-challans/dc-edit-registry';
@@ -21,6 +22,15 @@ import { ncEditRegistryEntry } from '../nc-register/nc-edit-registry';
 import { partyGrnEditRegistryEntry } from '../party-grn/party-grn-edit-registry';
 import { productionOrderEditRegistryEntry } from '../production-orders/production-order-edit-registry';
 import { vendorEditRegistryEntry } from '../vendors/vendor-edit-registry';
+import { machineEditRegistryEntry } from '../machines/machine-edit-registry';
+import { machineGroupEditRegistryEntry } from '../machine-groups/machine-group-edit-registry';
+import { operatorEditRegistryEntry } from '../operators/operator-edit-registry';
+import { costCenterEditRegistryEntry } from '../cost-centers/cost-center-edit-registry';
+import { tpiMasterEditRegistryEntry } from '../tpi-masters/tpi-master-edit-registry';
+import { qcProcessEditRegistryEntry } from '../qc-processes/qc-process-edit-registry';
+import { materialGradeEditRegistryEntry } from '../material-grades/material-grade-edit-registry';
+import { materialSizeEditRegistryEntry } from '../material-sizes/material-size-edit-registry';
+import { instrumentEditRegistryEntry } from '../instruments/instrument-edit-registry';
 import { planEditRegistryEntry } from '../plans/plan-edit-registry';
 import { poEditRegistryEntry } from '../purchase-orders/po-edit-registry';
 import { prEditRegistryEntry } from '../purchase-requests/pr-edit-registry';
@@ -104,4 +114,14 @@ export const DOC_EDIT_REGISTRY: Partial<Record<DocumentEditEntity, DocEditRegist
   Item: itemEditRegistryEntry,
   Vendor: vendorEditRegistryEntry,
   Client: clientEditRegistryEntry,
+  Machine: machineEditRegistryEntry,
+  MachineGroup: machineGroupEditRegistryEntry,
+  Operator: operatorEditRegistryEntry,
+  CostCenter: costCenterEditRegistryEntry,
+  TpiInspector: tpiMasterEditRegistryEntry,
+  QcProcess: qcProcessEditRegistryEntry,
+  MaterialGrade: materialGradeEditRegistryEntry,
+  MaterialSize: materialSizeEditRegistryEntry,
+  Instrument: instrumentEditRegistryEntry,
+  BOM: bomEditRegistryEntry,
 };

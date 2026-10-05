@@ -33,14 +33,16 @@ export function headerPendingChange(
 }
 
 /** The pending change for a LINE field. Line changes carry a composite field
- *  key `line:<lineId>:<attr>` (attr = item | qty | rate | material | remarks) so
- *  each line's change is matched exactly by the line's id — no reliance on label
- *  wording. `material` / `remarks` are the per-line fields a Delivery Challan edit
- *  can change (ADR-202 Phase 3) alongside its qty. */
+ *  key `line:<lineId>:<attr>` (attr = item | qty | rate | material | remarks |
+ *  bomType | rmGrade | rmSize) so each line's change is matched exactly by the
+ *  line's id — no reliance on label wording. `material` / `remarks` are the
+ *  per-line fields a Delivery Challan edit can change (ADR-202 Phase 3) alongside
+ *  its qty; `bomType` / `rmGrade` / `rmSize` are the per-line BOM Master fields
+ *  (keyed by the line's child item id). */
 export function linePendingChange(
   changes: readonly DocumentEditChange[],
   lineId: string,
-  attr: 'item' | 'qty' | 'rate' | 'material' | 'remarks',
+  attr: 'item' | 'qty' | 'rate' | 'material' | 'remarks' | 'bomType' | 'rmGrade' | 'rmSize',
 ): DocumentEditChange | undefined {
   const key = `line:${lineId}:${attr}`;
   return changes.find((c) => c.field === key);

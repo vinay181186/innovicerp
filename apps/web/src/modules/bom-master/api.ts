@@ -5,6 +5,7 @@ import type {
   BomMaster,
   BomMasterDetail,
   CreateBomMasterInput,
+  DocumentEditStagedResult,
   ListBomMastersQuery,
   ListBomMastersResponse,
   UpdateBomMasterInput,
@@ -92,10 +93,13 @@ export function useCreateBomMaster(saveKey?: SaveKey) {
 
 export function useUpdateBomMaster(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<BomMasterDetail, Error, UpdateBomMasterInput>({
+  // ADR-202 — when the edit-approval gate is on and the BOM is live, the PUT
+  // returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated BOM. The edit page reads the union to tell them apart.
+  return useMutation<BomMasterDetail | DocumentEditStagedResult, Error, UpdateBomMasterInput>({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<BomMasterDetail>(`/bom-masters/${id}`, {
+        apiFetch<BomMasterDetail | DocumentEditStagedResult>(`/bom-masters/${id}`, {
           method: 'PUT',
           json: input,
           ...(headers ? { headers } : {}),
@@ -104,6 +108,13 @@ export function useUpdateBomMaster(id: string, saveKey?: SaveKey) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the BOM itself — just refresh so the detail page
+        // shows the new pending-change chips, and the inbox picks up the request.
+        void qc.invalidateQueries({ queryKey: bomMastersKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(bomMastersKeys.detail(updated.id), updated);
     },
   });

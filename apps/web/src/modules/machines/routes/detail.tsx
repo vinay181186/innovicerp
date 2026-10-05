@@ -31,11 +31,16 @@
 // in the header there is no third field to close that row, and every row of
 // the grid must sum to 12.
 
-import type { Machine } from '@innovic/shared';
+import type { DocumentEditChange, Machine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobQueue } from '@/modules/job-queue/api';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -77,6 +82,11 @@ function MachineDetailPage(): React.JSX.Element {
   // "Queue (n) →" — this machine's pending ops, from the same one-fetch view
   // the Job Queue screen reads (cached, so opening the queue after is free).
   const queue = useJobQueue({});
+  // ADR-202 — the edit(s) staged against this machine and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('Machine', machine?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading machine…" />;
@@ -137,8 +147,13 @@ function MachineDetailPage(): React.JSX.Element {
         backLabel={BACK_LABEL}
         renderLink={(p) => <Link {...p} />}
         code={machine.code}
-        name={machine.name}
-        badges={<StatusBadge kind="machine" status={machine.status} />}
+        name={readWithChip(machine.name, pendingChanges, 'name')}
+        badges={
+          <>
+            <StatusBadge kind="machine" status={machine.status} />
+            <Chip changes={pendingChanges} field="status" />
+          </>
+        }
         actions={
           <>
             {/* Where this machine's work lives — the one queue screen, its
@@ -189,7 +204,7 @@ function MachineDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <MachineFacts machine={machine} />
+        <MachineFacts machine={machine} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {confirmDelete ? (
@@ -207,8 +222,11 @@ function MachineDetailPage(): React.JSX.Element {
   );
 }
 
-function MachineFacts(props: { machine: Machine }): React.JSX.Element {
-  const { machine } = props;
+function MachineFacts(props: {
+  machine: Machine;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { machine, pendingChanges: pc } = props;
   // The whole group master in one cached fetch (shared with the list and the
   // machine form) — the machine itself only stores the group's id.
   const groupLookup = useMachineGroupLookup();
@@ -219,18 +237,74 @@ function MachineFacts(props: { machine: Machine }): React.JSX.Element {
     <ReadGrid>
       {/* Group first: it is the master-backed field. Type stays exactly as it
           was — free text, alongside the group, not replaced by it. A machine
-          with no group (every row created before this change) reads an em dash. */}
-      <ReadField label="Machine Group" size="md" mono value={groupCode} />
-      <ReadField label="Machine Type" size="md" value={machine.machineType} />
-      <ReadField label="Product Code" size="md" mono value={machine.productCode} />
+          with no group (every row created before this change) reads an em dash.
+          The staged change (ADR-202) carries the group's raw id — acceptable. */}
+      <ReadField
+        label="Machine Group"
+        size="md"
+        mono
+        value={readWithChip(groupCode, pc, 'machineGroupId')}
+      />
+      <ReadField
+        label="Machine Type"
+        size="md"
+        value={readWithChip(machine.machineType, pc, 'machineType')}
+      />
+      <ReadField
+        label="Product Code"
+        size="md"
+        mono
+        value={readWithChip(machine.productCode, pc, 'productCode')}
+      />
 
       <ReadField
         label="Hours per Shift"
         size="lg"
         mono
-        value={machine.capacityPerShift !== null ? String(machine.capacityPerShift) : null}
+        value={readWithChip(
+          machine.capacityPerShift !== null ? String(machine.capacityPerShift) : null,
+          pc,
+          'capacityPerShift',
+        )}
       />
-      <ReadField label="Shifts / Day" size="lg" mono value={String(machine.shiftsPerDay)} />
+      <ReadField
+        label="Shifts / Day"
+        size="lg"
+        mono
+        value={readWithChip(String(machine.shiftsPerDay), pc, 'shiftsPerDay')}
+      />
     </ReadGrid>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the Machine edit diff's field key
+ *  (MACHINE_EDIT_FIELDS). Renders nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
+/** Compose a ReadField value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched so ReadField's own empty
+ *  handling (em dash in --text3) still applies. When one is, the current value
+ *  (or an em dash) is shown with the amber "→ after" chip after it. */
+function readWithChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  field: string,
+): React.ReactNode {
+  const c = headerPendingChange(changes, field);
+  if (!c) return value;
+  const base =
+    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
+  return (
+    <>
+      {base}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

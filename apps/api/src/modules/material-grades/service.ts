@@ -1,4 +1,5 @@
 import { ActivityAction } from '@innovic/shared';
+import type { DocumentEditStagedResult } from '@innovic/shared';
 // Raw-material GRADE master (migration 0105). One half of the "Raw Material
 // Master" menu entry; the other is ../material-sizes. The two are deliberately
 // INDEPENDENT — a size is not scoped to a grade, so picking EN24 does not
@@ -26,8 +27,21 @@ import type {
   MaterialGrade,
   UpdateMaterialGradeInput,
 } from './schema';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
+
+const activeLabel = (v: unknown): string | null =>
+  v === true ? 'Active' : v === false ? 'Inactive' : null;
+
+/** Every user-editable Grade field, with its screen label, for the Edit row's
+ *  Before → After (ADR-197) and the edit-approval engine's diff
+ *  (material-grade-edit-registry.ts). `code` (auto GRD-###) is permanent and is
+ *  NOT here — it is never written on edit. */
+export const MATERIAL_GRADE_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Grade' },
+  { key: 'description', label: 'Description' },
+  { key: 'isActive', label: 'Active', format: activeLabel },
+];
 import { MATERIAL_GRADE_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
@@ -310,10 +324,75 @@ export async function updateMaterialGrade(
   user: AuthContext,
 ): Promise<MaterialGrade> {
   // Changing a saved grade is `edit`, so L2 (create-only) is correctly refused.
+  // Checked in the public wrapper, not the tx body, so the edit-approval engine's
+  // applyEdit can replay an approved edit for an approver who holds `approve` but
+  // not `edit`.
+  await requireFormAccess(user, 'rawmat_create', 'edit');
+  return withUserContext(user, (tx) => updateMaterialGradeTx(tx, id, input, user));
+}
+
+/**
+ * The body of a Grade edit, inside a caller-supplied transaction. Called by
+ * updateMaterialGrade (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds the target row lock). The caller performs the
+ * edit / approve access check.
+ */
+export async function updateMaterialGradeTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateMaterialGradeInput,
+  user: AuthContext,
+): Promise<MaterialGrade> {
+  const companyId = requireCompany(user);
+  const existing = await tx
+    .select({ id: materialGrades.id })
+    .from(materialGrades)
+    .where(
+      and(
+        eq(materialGrades.id, id),
+        eq(materialGrades.companyId, companyId),
+        isNull(materialGrades.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (existing.length === 0) throw new NotFoundError('Grade not found. Refresh the page.');
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.name !== undefined) updates.name = input.name.trim();
+  if (input.description !== undefined) updates.description = emptyToNull(input.description);
+  if (input.isActive !== undefined) updates.isActive = input.isActive;
+
+  const updated = await tx
+    .update(materialGrades)
+    .set(updates)
+    .where(eq(materialGrades.id, id))
+    .returning();
+  return updated[0] as unknown as MaterialGrade;
+}
+
+/**
+ * The Grade edit entry point the HTTP route calls. Edit-approval (ADR-202): when
+ * the company gate is on and the grade is still editable (a master is editable
+ * while it is not in Trash), the edit is STAGED for approval and a
+ * {staged:true, request} result is returned; otherwise it falls through to
+ * updateMaterialGrade (today's behaviour). A record-level master has no child
+ * lines — there is no line guard.
+ */
+export async function updateMaterialGradeOrStage(
+  id: string,
+  input: UpdateMaterialGradeInput,
+  user: AuthContext,
+): Promise<MaterialGrade | DocumentEditStagedResult> {
   await requireFormAccess(user, 'rawmat_create', 'edit');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
+
+  // Imported dynamically to avoid a static import cycle with the registry entry
+  // (which imports updateMaterialGradeTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors the registry's isLive: any live (not-Trash) grade.
+    const rows = await tx
       .select({ id: materialGrades.id })
       .from(materialGrades)
       .where(
@@ -324,20 +403,16 @@ export async function updateMaterialGrade(
         ),
       )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError('Grade not found. Refresh the page.');
-
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.name !== undefined) updates.name = input.name.trim();
-    if (input.description !== undefined) updates.description = emptyToNull(input.description);
-    if (input.isActive !== undefined) updates.isActive = input.isActive;
-
-    const updated = await tx
-      .update(materialGrades)
-      .set(updates)
-      .where(eq(materialGrades.id, id))
-      .returning();
-    return updated[0] as unknown as MaterialGrade;
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    // No expectedUpdatedAt token — concurrency is the engine's (loadForDiff
+    // locks FOR UPDATE and rechecks field freshness).
+    const request = await requestDocumentEdit('MaterialGrade', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateMaterialGrade(id, input, user);
 }
 
 export async function softDeleteMaterialGrade(

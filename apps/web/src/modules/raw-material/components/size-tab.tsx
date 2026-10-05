@@ -2,6 +2,7 @@
 // free-text box by decision (never split into shape / dia / length) and it is
 // NOT scoped to a grade — the two masters are independent.
 
+import { isStagedResult } from '@/modules/document-edits/api';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import {
   useBulkCreateMaterialSizes,
@@ -49,6 +50,7 @@ export function SizeTab({
   return (
     <MaterialMasterPanel
       noun="Size"
+      entity="MaterialSize"
       tableKey={TABLE_KEYS.rawMaterialSize}
       rows={list.data?.sizes ?? []}
       total={list.data?.total}
@@ -71,7 +73,7 @@ export function SizeTab({
       onSave={async (input, id) => {
         if (id) {
           // '' (not undefined) so clearing the box actually clears the column.
-          await update.mutateAsync({
+          const res = await update.mutateAsync({
             id,
             input: {
               name: input.name,
@@ -79,13 +81,15 @@ export function SizeTab({
               isActive: input.isActive,
             },
           });
-        } else {
-          await create.mutateAsync({
-            name: input.name,
-            isActive: input.isActive,
-            ...(input.description ? { description: input.description } : {}),
-          });
+          // ADR-202 — a live row's edit may have been staged for approval.
+          return { staged: isStagedResult(res) };
         }
+        await create.mutateAsync({
+          name: input.name,
+          isActive: input.isActive,
+          ...(input.description ? { description: input.description } : {}),
+        });
+        return { staged: false };
       }}
       deleting={softDelete.isPending}
       onDelete={(row) => softDelete.mutate(row.id)}

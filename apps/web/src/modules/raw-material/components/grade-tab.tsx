@@ -2,6 +2,7 @@
 // modal and the Excel template/import UI all live in the shared
 // <MaterialMasterPanel> (the Size tab is the same panel with the other hooks).
 
+import { isStagedResult } from '@/modules/document-edits/api';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import {
   useBulkCreateMaterialGrades,
@@ -49,6 +50,7 @@ export function GradeTab({
   return (
     <MaterialMasterPanel
       noun="Grade"
+      entity="MaterialGrade"
       tableKey={TABLE_KEYS.rawMaterialGrade}
       rows={list.data?.grades ?? []}
       total={list.data?.total}
@@ -71,7 +73,7 @@ export function GradeTab({
       onSave={async (input, id) => {
         if (id) {
           // '' (not undefined) so clearing the box actually clears the column.
-          await update.mutateAsync({
+          const res = await update.mutateAsync({
             id,
             input: {
               name: input.name,
@@ -79,13 +81,15 @@ export function GradeTab({
               isActive: input.isActive,
             },
           });
-        } else {
-          await create.mutateAsync({
-            name: input.name,
-            isActive: input.isActive,
-            ...(input.description ? { description: input.description } : {}),
-          });
+          // ADR-202 — a live row's edit may have been staged for approval.
+          return { staged: isStagedResult(res) };
         }
+        await create.mutateAsync({
+          name: input.name,
+          isActive: input.isActive,
+          ...(input.description ? { description: input.description } : {}),
+        });
+        return { staged: false };
       }}
       deleting={softDelete.isPending}
       onDelete={(row) => softDelete.mutate(row.id)}

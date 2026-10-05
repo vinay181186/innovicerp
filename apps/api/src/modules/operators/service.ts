@@ -1,4 +1,8 @@
-import { ActivityAction, type MasterImportRowResult } from '@innovic/shared';
+import {
+  ActivityAction,
+  type DocumentEditStagedResult,
+  type MasterImportRowResult,
+} from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -33,8 +37,10 @@ const activeLabel = (v: unknown): string | null =>
   v === true ? 'Active' : v === false ? 'Inactive' : null;
 
 /** Every user-editable Operator Master field, with the label the screen uses,
- *  for the Edit row's Before → After (ADR-197). Mirrors VENDOR_FIELDS. */
-const OPERATOR_FIELDS: readonly DiffField[] = [
+ *  for the Edit row's Before → After (ADR-197). Mirrors VENDOR_FIELDS. Exported
+ *  so operator-edit-registry.ts (ADR-202) diffs the same set as the bulk-import
+ *  update path already does. */
+export const OPERATOR_FIELDS: readonly DiffField[] = [
   { key: 'name', label: 'Name' },
   { key: 'department', label: 'Department' },
   { key: 'skills', label: 'Skills / Machines' },
@@ -495,28 +501,83 @@ export async function updateOperator(
   user: AuthContext,
 ): Promise<Operator> {
   // Changing a saved operator is `edit`, so L2 (create-only) is correctly refused.
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
+  // replay an approved edit for an approver who holds `approve` but not `edit`.
   await requireFormAccess(user, 'operator_create', 'edit');
+  return withUserContext(user, (tx) => updateOperatorTx(tx, id, input, user));
+}
+
+/**
+ * The body of an Operator edit, inside a caller-supplied transaction. Called by
+ * updateOperator (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one, with the row locked FOR UPDATE). Concurrency is the
+ * engine's — this master carries no `expectedUpdatedAt` token. The caller
+ * performs the edit / approve access check.
+ */
+export async function updateOperatorTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateOperatorInput,
+  user: AuthContext,
+): Promise<Operator> {
   requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
+  const existing = await tx
+    .select({ id: operators.id })
+    .from(operators)
+    .where(and(eq(operators.id, id), isNull(operators.deletedAt)))
+    .limit(1);
+  if (existing.length === 0) throw new NotFoundError('Operator not found. Refresh the page.');
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.name !== undefined) updates.name = input.name;
+  if (input.department !== undefined) updates.department = emptyToNull(input.department);
+  if (input.skills !== undefined) updates.skills = emptyToNull(input.skills);
+  if (input.isActive !== undefined) updates.isActive = input.isActive;
+  if (input.userId !== undefined) {
+    updates.userId = input.userId && input.userId.length > 0 ? input.userId : null;
+  }
+
+  const updated = await tx.update(operators).set(updates).where(eq(operators.id, id)).returning();
+  return updated[0] as unknown as Operator;
+}
+
+/**
+ * The Operator edit entry point the HTTP route calls. Edit-approval (ADR-202):
+ * when the company gate is on and the operator is still editable (a master is
+ * editable while it is not in Trash), the edit is STAGED for approval; otherwise
+ * it falls through to updateOperator. An operator is a single record with no
+ * child lines — there is no line guard, and no updatedAt token (the engine's row
+ * lock guards concurrency).
+ */
+export async function updateOperatorOrStage(
+  id: string,
+  input: UpdateOperatorInput,
+  user: AuthContext,
+): Promise<Operator | DocumentEditStagedResult> {
+  await requireFormAccess(user, 'operator_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Imported dynamically to avoid a static import cycle with operator-edit-registry
+  // (which imports updateOperatorTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors operatorEditRegistryEntry.isLive: any live row.
+    const rows = await tx
       .select({ id: operators.id })
       .from(operators)
-      .where(and(eq(operators.id, id), isNull(operators.deletedAt)))
+      .where(
+        and(eq(operators.id, id), eq(operators.companyId, companyId), isNull(operators.deletedAt)),
+      )
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError('Operator not found. Refresh the page.');
-
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.name !== undefined) updates.name = input.name;
-    if (input.department !== undefined) updates.department = emptyToNull(input.department);
-    if (input.skills !== undefined) updates.skills = emptyToNull(input.skills);
-    if (input.isActive !== undefined) updates.isActive = input.isActive;
-    if (input.userId !== undefined) {
-      updates.userId = input.userId && input.userId.length > 0 ? input.userId : null;
-    }
-
-    const updated = await tx.update(operators).set(updates).where(eq(operators.id, id)).returning();
-    return updated[0] as unknown as Operator;
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('Operator', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateOperator(id, input, user);
 }
 
 export async function softDeleteOperator(id: string, user: AuthContext): Promise<{ ok: true }> {

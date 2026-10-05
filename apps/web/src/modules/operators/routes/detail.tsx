@@ -27,11 +27,16 @@
 // admin-only), and the NAME from the Task Board's active-user list for anyone
 // else; only a link to a user neither knows falls back to the id.
 
-import type { Operator } from '@innovic/shared';
+import type { DocumentEditChange, Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { useTaskUserOptions } from '@/modules/tasks/api';
@@ -67,6 +72,11 @@ function OperatorDetailPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteOperator();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-202 — the edit(s) staged against this operator and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('Operator', operator?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading operator…" />;
@@ -120,8 +130,13 @@ function OperatorDetailPage(): React.JSX.Element {
         backLabel={BACK_LABEL}
         renderLink={(p) => <Link {...p} />}
         code={operator.code}
-        name={operator.name}
-        badges={<StatusBadge kind="active" status={String(operator.isActive)} />}
+        name={readWithChip(operator.name, pendingChanges, 'name')}
+        badges={
+          <>
+            <StatusBadge kind="active" status={String(operator.isActive)} />
+            <Chip changes={pendingChanges} field="isActive" />
+          </>
+        }
         actions={
           <>
             {canEdit ? (
@@ -146,7 +161,7 @@ function OperatorDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <OperatorFacts operator={operator} />
+        <OperatorFacts operator={operator} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {confirmDelete ? (
@@ -164,8 +179,11 @@ function OperatorDetailPage(): React.JSX.Element {
   );
 }
 
-function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
-  const { operator } = props;
+function OperatorFacts(props: {
+  operator: Operator;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { operator, pendingChanges: pc } = props;
   const { data: users } = useTaskUserOptions(Boolean(operator.userId));
   // Name AND email of the linked login. GET /users/:id is admin-only on the
   // server, so it is asked only for an admin (anyone else would get a 403
@@ -183,10 +201,52 @@ function OperatorFacts(props: { operator: Operator }): React.JSX.Element {
     : null;
   return (
     <ReadGrid>
-      <ReadField label="Department" size="lg" value={operator.department} />
-      <ReadField label="Linked User" size="lg" value={linkedName} />
+      <ReadField
+        label="Department"
+        size="lg"
+        value={readWithChip(operator.department, pc, 'department')}
+      />
+      {/* The staged change (ADR-202) carries the linked user's raw id — acceptable. */}
+      <ReadField label="Linked User" size="lg" value={readWithChip(linkedName, pc, 'userId')} />
 
-      <ReadField label="Skills / Machines" size="full" pre value={operator.skills} />
+      <ReadField
+        label="Skills / Machines"
+        size="full"
+        pre
+        value={readWithChip(operator.skills, pc, 'skills')}
+      />
     </ReadGrid>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the Operator edit diff's field key
+ *  (OPERATOR_FIELDS). Renders nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
+/** Compose a ReadField value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched so ReadField's own empty
+ *  handling (em dash in --text3) still applies. When one is, the current value
+ *  (or an em dash) is shown with the amber "→ after" chip after it. */
+function readWithChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  field: string,
+): React.ReactNode {
+  const c = headerPendingChange(changes, field);
+  if (!c) return value;
+  const base =
+    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
+  return (
+    <>
+      {base}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

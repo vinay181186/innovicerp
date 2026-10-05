@@ -1,6 +1,7 @@
 // Instrument register (ADR-193 phase 4a) — TanStack Query hooks.
 import type {
   CreateInstrumentInput,
+  DocumentEditStagedResult,
   InstrumentDetail,
   InstrumentListItem,
   ListInstrumentsQuery,
@@ -94,10 +95,26 @@ export function useCreateInstrument(saveKey?: SaveKey) {
 
 export function useUpdateInstrument() {
   const qc = useQueryClient();
-  return useMutation<InstrumentListItem, Error, { id: string } & UpdateInstrumentInput>({
+  // ADR-202 — when the edit-approval gate is on and the instrument is live, the
+  // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated row. The edit form reads the union to tell them apart.
+  return useMutation<
+    InstrumentListItem | DocumentEditStagedResult,
+    Error,
+    { id: string } & UpdateInstrumentInput
+  >({
     mutationFn: ({ id, ...body }) =>
-      apiFetch<InstrumentListItem>(`/instruments/${id}`, { method: 'PATCH', json: body }),
-    onSuccess: () => invalidate(qc),
+      apiFetch<InstrumentListItem | DocumentEditStagedResult>(`/instruments/${id}`, {
+        method: 'PATCH',
+        json: body,
+      }),
+    onSuccess: (updated) => {
+      invalidate(qc);
+      // Refresh the inbox + the detail-modal pending chip when an edit is staged.
+      if ('staged' in updated) {
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+      }
+    },
   });
 }
 

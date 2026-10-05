@@ -54,7 +54,7 @@ export async function operatorsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateOperatorInputSchema.parse(req.body);
-    return service.updateOperator(id, body, req.user);
+    return service.updateOperatorOrStage(id, body, req.user);
   });
 
   app.delete('/operators/:id', async (req, reply) => {

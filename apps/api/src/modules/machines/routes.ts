@@ -35,7 +35,7 @@ export async function machinesRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateMachineInputSchema.parse(req.body);
-    return service.updateMachine(id, body, req.user);
+    return service.updateMachineOrStage(id, body, req.user);
   });
 
   app.delete('/machines/:id', async (req, reply) => {

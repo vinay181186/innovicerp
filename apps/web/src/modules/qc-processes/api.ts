@@ -1,5 +1,6 @@
 import type {
   CreateQcProcessInput,
+  DocumentEditStagedResult,
   ListQcProcessesQuery,
   ListQcProcessesResponse,
   QcProcess,
@@ -59,11 +60,24 @@ export function useCreateQcProcess() {
 
 export function useUpdateQcProcess(id: string) {
   const qc = useQueryClient();
-  return useMutation<QcProcess, Error, UpdateQcProcessInput>({
+  // ADR-202 — when the edit-approval gate is on and the QC process is live, the
+  // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated row. The edit page reads the union to tell them apart.
+  return useMutation<QcProcess | DocumentEditStagedResult, Error, UpdateQcProcessInput>({
     mutationFn: (input) =>
-      apiFetch<QcProcess>(`/qc-processes/${id}`, { method: 'PATCH', json: input }),
+      apiFetch<QcProcess | DocumentEditStagedResult>(`/qc-processes/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: qcProcessesKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the QC process itself — refresh so the detail page
+        // shows the new pending-change chips and the inbox picks up the request.
+        void qc.invalidateQueries({ queryKey: qcProcessesKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(qcProcessesKeys.detail(id), updated);
     },
   });
