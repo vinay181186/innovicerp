@@ -408,6 +408,11 @@ export async function backfillPlansFromRouteCard(
   const filled: Array<{
     id: string;
     code: string;
+    /** Was that half written at all? The History row keys on this, not on the
+     *  text — a half can be written as an id with a NULL text snapshot. */
+    wroteGrade: boolean;
+    wroteSize: boolean;
+    /** The printable value for the History row: the text, else the id. */
     gradeText: string | null;
     sizeText: string | null;
     rmItemFilled: boolean;
@@ -523,8 +528,18 @@ export async function backfillPlansFromRouteCard(
     filled.push({
       id: row.id,
       code: row.code,
-      gradeText: writeGrade ? gradeRm.rawMaterialGradeText : null,
-      sizeText: writeSize ? sizeRm.rawMaterialSizeText : null,
+      // The flag says a half WAS written; the value is its printable form.
+      // Keyed on the flag and not on the text, because a half can be written as
+      // an id with a NULL text snapshot (both columns are independently
+      // nullable on a BOM line, and bomLineHasGrade / bomLineHasSize accept an
+      // id alone). Reading the text alone left changes[] empty, the `continue`
+      // below skipped emitActivityLog, and the plan was updated with ADR-197
+      // recording nothing at all for a value nobody typed. Falls back to the id,
+      // the same way the RM Item row below falls back to its id.
+      wroteGrade: writeGrade,
+      wroteSize: writeSize,
+      gradeText: writeGrade ? (gradeRm.rawMaterialGradeText ?? gradeRm.rawMaterialGradeId) : null,
+      sizeText: writeSize ? (sizeRm.rawMaterialSizeText ?? sizeRm.rawMaterialSizeId) : null,
       rmItemFilled: writeRmItem,
       sources,
     });
@@ -536,7 +551,7 @@ export async function backfillPlansFromRouteCard(
   // (planEditFields) so the History tab reads the same either way.
   for (const p of filled) {
     const changes: ActivityChange[] = [];
-    if (p.gradeText !== null) {
+    if (p.wroteGrade) {
       changes.push({
         field: 'rawMaterialGradeText',
         label: 'RM Grade',
@@ -544,7 +559,7 @@ export async function backfillPlansFromRouteCard(
         after: p.gradeText,
       });
     }
-    if (p.sizeText !== null) {
+    if (p.wroteSize) {
       changes.push({
         field: 'rawMaterialSizeText',
         label: 'RM Size',
