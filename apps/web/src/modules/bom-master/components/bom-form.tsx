@@ -27,7 +27,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { apiFetch } from '@/lib/api';
+import { apiDownload, apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { itemsKeys, useItemsList } from '@/modules/items/api';
 import { useMaterialGradesList, useMaterialSizesList } from '@/modules/raw-material/api';
@@ -467,34 +467,24 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
 
+  // The Excel Template is built by the API (GET /bom-masters/import-template.xlsx)
+  // so its BOM Type / RM Grade / RM Size columns can carry real Excel
+  // dropdowns — SheetJS, used here for READING the file, silently drops data
+  // validation and cannot write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
   const downloadTemplate = async (): Promise<void> => {
-    const { utils: xlsxUtils, write: xlsxWrite } = await loadXlsx();
-    // Sample the user's OWN first grade/size, so the example row shows a value
-    // that will actually match on import. Blank when the masters are empty.
-    const gradeSample = gradeList.data?.grades[0]?.name ?? '';
-    const sizeSample = sizeList.data?.sizes[0]?.name ?? '';
-    // 5 columns + two sample rows so users know the shape. RM Grade / RM Size
-    // are optional and must match Raw Material Master; the samples show a
-    // filled row and a blank one.
-    const aoa = [
-      // Title Case headers; the importer's aliases still read item_code / qty_per_set / bom_type.
-      ['Item Code', 'Qty / Set', 'BOM Type', 'RM Grade', 'RM Size'],
-      ['EXAMPLE-001', 2, 'manufacture', gradeSample, sizeSample],
-      ['EXAMPLE-002', 3, 'purchase', '', ''],
-    ];
-    const sheet = xlsxUtils.aoa_to_sheet(aoa);
-    const wb = xlsxUtils.book_new();
-    xlsxUtils.book_append_sheet(wb, sheet, 'BOM');
-    const buf = xlsxWrite(wb, { type: 'array', bookType: 'xlsx' });
-    const blob = new Blob([buf], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'BOM Import Template.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await apiDownload('/bom-masters/import-template.xlsx', {}, 'BOM Import Template.xlsx');
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
   };
 
   const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
@@ -1059,6 +1049,17 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             </div>
           ) : null}
 
+          {templateError ? (
+            <div style={{ marginTop: 'var(--sp-2)' }}>
+              <Banner
+                tone="error"
+                flush
+                onDismiss={() => setTemplateError(null)}
+                title={templateError}
+              />
+            </div>
+          ) : null}
+
           {importSummary ? (
             <div style={{ marginTop: 'var(--sp-2)' }}>
               <Banner
@@ -1349,11 +1350,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           <button
             type="button"
             className="btn btn-ghost"
-            disabled={rmMastersLoading}
-            title={rmMastersLoading ? 'Loading Raw Material Master…' : undefined}
+            disabled={templateBusy}
             onClick={() => void downloadTemplate()}
           >
-            <Download size={14} /> Template
+            <Download size={14} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
           </button>
           <button
             type="button"

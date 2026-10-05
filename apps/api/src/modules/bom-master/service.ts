@@ -41,6 +41,9 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { BOM_SF_COLUMNS } from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
+import { buildImportTemplateBuffer } from '../../lib/excel-template';
+import { listMaterialGrades } from '../material-grades/service';
+import { listMaterialSizes } from '../material-sizes/service';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -56,6 +59,7 @@ import { emitActivityLog } from '../activity-log/service';
 import {
   ActivityAction,
   BOM_CREATE_STATUSES,
+  BOM_LINE_TYPES,
   BOM_STATUS_MOVES,
   canMoveStatus,
   qtyUomProblem,
@@ -1314,4 +1318,64 @@ function buildItemsSnapshot(lines: CreateBomMasterLineInput[], itemsLookup: Item
     qtyPerSet: l.qtyPerSet.toFixed(3),
     bomType: l.bomType,
   }));
+}
+
+// ─── Excel Template (NAMING.md: the button is `Excel Template`) ────────────
+//
+// Built here rather than in the browser because the dropdowns need Excel data
+// validation, which SheetJS (the browser library) cannot write — see
+// lib/excel-template.ts. The dropdown values are the LIVE masters, read through
+// each module's own list service.
+
+/** Rows the planner sees as examples under the header. */
+const BOM_TEMPLATE_SAMPLE_ITEMS = ['EXAMPLE-001', 'EXAMPLE-002'];
+const BOM_TEMPLATE_SAMPLE_QTYS = [2, 3];
+
+export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer> {
+  await requireFormAccess(user, 'bom_create', 'view');
+
+  // Raw Material Master sits behind its own permission (`rawmat_create`). A
+  // planner without it still gets a usable template — just without those two
+  // dropdowns; the import matches whatever they type either way.
+  const listQuery = { isActive: true, limit: 1000, offset: 0 } as const;
+  const [grades, sizes] = await Promise.all([
+    listMaterialGrades(listQuery, user).catch((e: unknown) => {
+      if (e instanceof AuthorizationError) return null;
+      throw e;
+    }),
+    listMaterialSizes(listQuery, user).catch((e: unknown) => {
+      if (e instanceof AuthorizationError) return null;
+      throw e;
+    }),
+  ]);
+  const gradeNames = grades?.grades.map((g) => g.name) ?? [];
+  const sizeNames = sizes?.sizes.map((sz) => sz.name) ?? [];
+
+  return buildImportTemplateBuffer({
+    sheetName: 'BOM',
+    columns: [
+      {
+        label: 'Item Code*',
+        samples: BOM_TEMPLATE_SAMPLE_ITEMS,
+        width: 20,
+        // No dropdown on purpose: Item Master runs to hundreds of codes, which
+        // makes an Excel list unusable on a build without the searchable
+        // dropdown and bloats the file. The import reports unknown codes and
+        // offers them as an Item Master import sheet.
+      },
+      { label: 'Qty / Set*', samples: BOM_TEMPLATE_SAMPLE_QTYS, width: 12 },
+      {
+        label: 'BOM Type*',
+        samples: ['manufacture', 'purchase'],
+        options: [...BOM_LINE_TYPES],
+        width: 16,
+      },
+      ...(gradeNames.length > 0
+        ? [{ label: 'RM Grade', samples: [gradeNames[0] ?? ''], options: gradeNames, width: 22 }]
+        : [{ label: 'RM Grade', width: 22 }]),
+      ...(sizeNames.length > 0
+        ? [{ label: 'RM Size', samples: [sizeNames[0] ?? ''], options: sizeNames, width: 22 }]
+        : [{ label: 'RM Size', width: 22 }]),
+    ],
+  });
 }
