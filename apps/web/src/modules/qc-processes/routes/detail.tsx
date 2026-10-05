@@ -34,10 +34,15 @@
 // time is the only other fact on the page and a row must sum to 12 — and
 // because the edit form puts exactly these two side by side in one row.
 
-import type { QcProcess } from '@innovic/shared';
+import type { DocumentEditChange, QcProcess } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -74,6 +79,11 @@ function QcProcessDetailPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQcProcess(id);
   const softDelete = useSoftDeleteQcProcess();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-202 — the edit(s) staged against this QC process and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('QcProcess', data?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   // Tier-driven, matching the list and the new/edit routes. Delete is not one
   // of the four tier actions, so "L5 Department Admin and above" is expressed
@@ -132,7 +142,12 @@ function QcProcessDetailPage(): React.JSX.Element {
         renderLink={(p) => <Link {...p} />}
         code={data.code}
         name="⚙ QC Process"
-        badges={<StatusBadge kind="masteractive" status={String(data.isActive)} />}
+        badges={
+          <>
+            <StatusBadge kind="masteractive" status={String(data.isActive)} />
+            <Chip changes={pendingChanges} field="isActive" />
+          </>
+        }
         actions={
           <>
             {canEdit ? (
@@ -157,7 +172,7 @@ function QcProcessDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <QcProcessFacts qcProcess={data} />
+        <QcProcessFacts qcProcess={data} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {confirmDelete ? (
@@ -175,23 +190,66 @@ function QcProcessDetailPage(): React.JSX.Element {
   );
 }
 
-function QcProcessFacts(props: { qcProcess: QcProcess }): React.JSX.Element {
-  const { qcProcess } = props;
+function QcProcessFacts(props: {
+  qcProcess: QcProcess;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { qcProcess, pendingChanges: pc } = props;
   // numeric(8,2) arrives as a string. Zero means "not set" on this master, and
   // an unset value is the em dash ReadField draws for a null — not a "0.00"
   // that reads as a measured cycle time.
   const cycleMin = Number(qcProcess.defaultCycleTimeMin);
   return (
     <ReadGrid>
-      <ReadField label="Description" size="full" pre value={qcProcess.description} />
+      <ReadField
+        label="Description"
+        size="full"
+        pre
+        value={readWithChip(qcProcess.description, pc, 'description')}
+      />
 
       <ReadField
         label="Default Cycle Time (min)"
         size="lg"
         mono
-        value={cycleMin > 0 ? cycleMin.toFixed(2) : null}
+        value={readWithChip(cycleMin > 0 ? cycleMin.toFixed(2) : null, pc, 'defaultCycleTimeMin')}
       />
-      <ReadField label="Active" size="lg" value={qcProcess.isActive ? 'Active' : 'Inactive'} />
+      <ReadField
+        label="Active"
+        size="lg"
+        value={readWithChip(qcProcess.isActive ? 'Active' : 'Inactive', pc, 'isActive')}
+      />
     </ReadGrid>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the QC Process edit diff's field key.
+ *  Renders nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
+/** Compose a ReadField value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched so ReadField's own empty
+ *  handling (em dash in --text3) still applies. */
+function readWithChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  field: string,
+): React.ReactNode {
+  const c = headerPendingChange(changes, field);
+  if (!c) return value;
+  const base =
+    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
+  return (
+    <>
+      {base}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

@@ -55,7 +55,9 @@ export async function bomMasterRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const input = updateBomMasterInputSchema.parse(req.body);
-    return service.updateBomMaster(id, input, req.user);
+    // Edit-approval (ADR-202): stages the edit when the company gate is on,
+    // otherwise edits in place — see updateBomMasterOrStage.
+    return service.updateBomMasterOrStage(id, input, req.user);
   });
 
   app.delete('/bom-masters/:id', async (req) => {

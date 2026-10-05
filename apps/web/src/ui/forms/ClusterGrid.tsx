@@ -44,15 +44,30 @@ export function ClusterGrid({ children }: { children?: ReactNode }): React.JSX.E
 }
 
 export interface ClusterProps {
-  /** The cluster's name, shown in the left gutter (Quantity, Schedule, …). */
-  name: ReactNode;
+  /** The cluster's name, shown in the left gutter (Quantity, Schedule, …).
+   *
+   *  `null` continues the cluster above: the gutter COLUMN is kept, so this
+   *  row's cells stay in the same four tracks, but it carries no second word.
+   *  A cluster with more facts than fit one row needs this — dropping the
+   *  gutter instead shifts every cell 104px left of the row above it.
+   *
+   *  `undefined` drops the gutter entirely and the four cells take the full
+   *  width. That is for a screen whose grid is ONE row, with nothing to tell
+   *  it apart from (the Create / Edit modals); inventing a name per row of a
+   *  single continuous form just adds words. */
+  name?: ReactNode | null;
   children?: ReactNode;
 }
 
 export function Cluster({ name, children }: ClusterProps): React.JSX.Element {
+  if (name === undefined) {
+    return <div className="cl-row cl-nogut">{children}</div>;
+  }
   return (
     <div className="cl-row" role="group" aria-label={typeof name === 'string' ? name : undefined}>
-      <span className="cl-gut">{name}</span>
+      <span className="cl-gut" aria-hidden={name === null ? true : undefined}>
+        {name}
+      </span>
       {children}
     </div>
   );
@@ -73,7 +88,9 @@ export interface ClusterFactProps {
   empty?: boolean;
   /** Full value on hover — a one-line cell may ellipsis a long name. */
   title?: string | undefined;
-  /** Shown after the value (ADR-202 pending-change chip). */
+  /** Shown after the value (ADR-202 pending-change chip). Rendered as its own
+   *  cell child, NOT inside the value: the value is one clipped line, so a chip
+   *  in there is the first thing an ellipsis eats. */
   after?: ReactNode;
   className?: string;
 }
@@ -104,8 +121,8 @@ export function ClusterFact({
       <span className="cl-fact-k">{label}</span>
       <span className={cx('cl-fact-v', num ? 'is-num' : undefined, empty ? 'is-empty' : undefined)}>
         {value}
-        {after}
       </span>
+      {after ? <span className="cl-fact-after">{after}</span> : null}
     </div>
   );
 }

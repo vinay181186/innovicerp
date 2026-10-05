@@ -21,10 +21,15 @@
 // chip the panel header already draws. One fact, drawn once: the chip in the
 // header is it, and dropping the cell is what closes the row at 6 + 6.
 
-import type { CostCenter } from '@innovic/shared';
+import type { CostCenter, DocumentEditChange } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -62,6 +67,11 @@ function CostCenterDetailPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteCostCenter();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-202 — the edit(s) staged against this cost centre and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('CostCenter', data?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   // Tier-driven (cc_create, Finance). Edit -> edit; Delete -> edit AND approve.
   const perms = effectiveFormPerms(eff, 'cc_create');
@@ -117,8 +127,13 @@ function CostCenterDetailPage(): React.JSX.Element {
         backLabel={BACK_LABEL}
         renderLink={(p) => <Link {...p} />}
         code={data.code}
-        name={data.name}
-        badges={<StatusBadge kind="active" status={String(data.isActive)} />}
+        name={readWithChip(data.name, pendingChanges, 'name')}
+        badges={
+          <>
+            <StatusBadge kind="active" status={String(data.isActive)} />
+            <Chip changes={pendingChanges} field="isActive" />
+          </>
+        }
         actions={
           <>
             {canEdit ? (
@@ -143,7 +158,7 @@ function CostCenterDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <CostCenterFacts costCenter={data} />
+        <CostCenterFacts costCenter={data} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {confirmDelete ? (
@@ -161,14 +176,62 @@ function CostCenterDetailPage(): React.JSX.Element {
   );
 }
 
-function CostCenterFacts(props: { costCenter: CostCenter }): React.JSX.Element {
-  const { costCenter } = props;
+function CostCenterFacts(props: {
+  costCenter: CostCenter;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { costCenter, pendingChanges: pc } = props;
   return (
     <ReadGrid>
-      <ReadField label="Department" size="lg" value={costCenter.department} />
-      <ReadField label="Cost Centre Type" size="lg" value={costCenter.type} />
+      <ReadField
+        label="Department"
+        size="lg"
+        value={readWithChip(costCenter.department, pc, 'department')}
+      />
+      <ReadField
+        label="Cost Centre Type"
+        size="lg"
+        value={readWithChip(costCenter.type, pc, 'type')}
+      />
 
-      <ReadField label="Description" size="full" pre value={costCenter.description} />
+      <ReadField
+        label="Description"
+        size="full"
+        pre
+        value={readWithChip(costCenter.description, pc, 'description')}
+      />
     </ReadGrid>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the Cost Centre edit diff's field key
+ *  (COST_CENTER_EDIT_FIELDS). Renders nothing when no edit is pending. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
+/** Compose a ReadField value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched so ReadField's own empty
+ *  handling (em dash in --text3) still applies. When one is, the current value
+ *  (or an em dash) is shown with the amber "→ after" chip after it. */
+function readWithChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  field: string,
+): React.ReactNode {
+  const c = headerPendingChange(changes, field);
+  if (!c) return value;
+  const base =
+    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
+  return (
+    <>
+      {base}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

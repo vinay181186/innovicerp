@@ -1,6 +1,12 @@
-// Edit Plan modal (PL-4b §5). Large modal with 3-tab type picker, ops table
-// (process/QC/OSP), Full Outsource section, Direct Purchase section, and
-// Required QC Documents section. Mirrors legacy editPlan (HTML L9500).
+// Edit Plan modal (PL-4b §5). Large modal: identity line, the quantity account
+// (ClusterGrid), one 12-column header grid with Plan Type as a dropdown, then
+// the ops table (process/QC/OSP), Full Outsource section, Direct Purchase
+// section and Required QC Documents section. Mirrors legacy editPlan (L9500).
+//
+// Layout follows the ClusterGrid method agreed on the Plan screens (2026-10-03)
+// so Edit Plan reads as the SAME form as Create Plan. The old --bg3 summary
+// strip and the three Plan Type picture cards are gone; nothing they did was
+// lost — the same state, the same onChange, the same validation.
 //
 // Save Draft vs. ✓ Save Plan:
 //   Save Draft  → updatePlan() only, status stays in_planning. NOT in legacy —
@@ -23,6 +29,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { soNoWithInternal } from '@/lib/so-number';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
@@ -41,6 +48,15 @@ import { isStagedResult } from '@/modules/document-edits/api';
 import { useFinalizePlan, useUpdatePlan, useDefaultRouteOps } from '@/modules/plans/api';
 import { useQcProcessesList } from '@/modules/qc-processes/api';
 import { useVendorsList } from '@/modules/vendors/api';
+import {
+  Cluster,
+  ClusterFact,
+  ClusterGrid,
+  DocIdent,
+  FormField,
+  IdentCode,
+  IdentSep,
+} from '@/ui/forms';
 import { Modal } from './modal';
 
 interface Props {
@@ -67,6 +83,17 @@ const DOC_PRESETS_FALLBACK = [
   'Surface Finish Report',
   'Visual Inspection Report',
 ];
+
+// What each Plan Type MEANS for the rest of this modal — the one line the three
+// picture cards used to carry under their icons, now the hint under the Plan
+// Type dropdown. `assembly` reads the same as `manufacture` because it drives
+// the same sections (a Job Card over the operations below).
+const PLAN_TYPE_HELP: Record<PlanType, string> = {
+  manufacture: 'Job Card + the operations below',
+  assembly: 'Job Card + the operations below',
+  full_outsource: 'Our material, vendor does all',
+  direct_purchase: 'Buy finished item (with material)',
+};
 
 function uid(): string {
   return Math.random().toString(36).slice(2);
@@ -452,9 +479,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         // Edit-approval gate is on and this plan is live: nothing changed on the
         // plan — the edit is now waiting for approval. Say so and keep the modal
         // open so the planner reads it (there is no detail page to land on here).
-        setStagedNotice(
-          'Sent for approval — your changes will apply once an approver signs off.',
-        );
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
         return;
       }
       // A failed Finalize leaves the modal open; the next Save must carry the
@@ -562,39 +587,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     </>
   );
 
-  // `active` is passed in rather than derived from `planType === val`: legacy's
-  // Manufacture tab lights up for anything that is NOT direct_purchase/full_outsource
-  // (L9609), which is what keeps an `assembly` plan showing a selected tab.
-  // `activeBg` is legacy's literal rgba; the border/label use the CSS token like
-  // legacy does (var(--cyan)/var(--purple)/var(--green)) — the previous hard-coded
-  // #22d3ee/#22c55e were the DARK theme's values (ISSUE-067).
-  const typeBtn = (
-    val: PlanType,
-    icon: string,
-    label: string,
-    help: string,
-    color: string,
-    activeBg: string,
-    active: boolean,
-  ) => (
-    <label
-      style={{
-        flex: 1,
-        cursor: 'pointer',
-        padding: '10px 14px',
-        borderRadius: 8,
-        border: `2px solid ${active ? color : 'var(--border)'}`,
-        background: active ? activeBg : 'var(--bg)',
-        textAlign: 'center',
-      }}
-      onClick={() => setPlanType(val)}
-    >
-      <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
-      <div style={{ fontSize: 12, fontWeight: 700, color }}>{label}</div>
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{help}</div>
-    </label>
-  );
-
   // The two step pills — 🏭 OSP and 🔬 QC — now sit in the SAME Group column,
   // one under the other, so they are drawn from one helper. When they lived in
   // separate places a difference in padding or radius went unnoticed; stacked in
@@ -630,272 +622,210 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // there the field genuinely does not apply.
   const naDash = <span style={{ color: 'var(--text3)', fontSize: 11 }}>—</span>;
 
-  // `CODE/REV` — the customer's drawing revision from the SO line this plan was
-  // raised against. A JW-sourced or ad-hoc plan has none and keeps the bare code,
-  // with no trailing slash.
-  const planItemLabel = plan.itemCode
-    ? itemCodeWithRev(plan.itemCode, plan.itemRevision)
-    : (plan.itemNameText ?? '');
+  // The two item parts of the identity line below. Empty string, not a dash:
+  // DocIdent leaves a part out entirely when the plan does not carry it.
+  const identItemCode = itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision, '');
+  const identItemName = plan.itemName ?? plan.itemNameText ?? '';
 
   return (
-    <Modal
-      title={`✏ Plan: ${plan.code} — ${planItemLabel}`}
-      size="lg"
-      onClose={onClose}
-      footer={footer}
-    >
-      {/* Header summary */}
-      <div
-        style={{
-          background: 'var(--bg3)',
-          padding: 12,
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Plan</span>
-            <br />
-            <b className="mono" style={{ color: 'var(--cyan)' }}>
-              {plan.code}
-            </b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO / JWSO</span>
-            <br />
-            <b className="mono">
-              {plan.soCodeText ?? '—'} Ln {plan.lineNo ?? '—'}
-            </b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item</span>
-            <br />
-            {/* `CODE/REV` — see planItemLabel. nowrap so a short code never
-                breaks across two lines in this summary strip. */}
-            <b style={{ color: 'var(--purple)', whiteSpace: 'nowrap' }}>
-              {itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision, '')}
-            </b>{' '}
-            {plan.itemName ?? plan.itemNameText ?? ''}
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
-            <br />
-            <b style={{ fontSize: 16 }}>{plan.orderQty}</b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>Plan Qty ★</span>
-            <br />
+    <Modal title={`Edit Plan ${plan.code}`} size="lg" onClose={onClose} footer={footer}>
+      {/* WHICH plan this is — identity only, the same line Create Plan shows,
+          so the two screens read as one form. A part the plan does not have is
+          left out of the line; it is never printed as a dash. */}
+      <DocIdent>
+        <IdentCode>{plan.code}</IdentCode>
+        {plan.soCodeText ? (
+          <>
+            <IdentSep />
+            <span>
+              <IdentCode>{soNoWithInternal(plan.soCodeText, plan.soInternalNo)}</IdentCode>
+              {plan.lineNo != null ? ` Ln ${plan.lineNo}` : ''}
+            </span>
+          </>
+        ) : null}
+        {identItemCode ? (
+          <>
+            <IdentSep />
+            <span>
+              <IdentCode>{identItemCode}</IdentCode>
+              {identItemName ? ` ${identItemName}` : ''}
+            </span>
+          </>
+        ) : null}
+      </DocIdent>
+
+      {/* The quantity account, ending on the result it adds up to. Plan Qty is
+          a FIELD sitting inside the arithmetic it changes, not a box off to one
+          side of it.
+
+          Covered / Pending are the ADR-185 figures (lib/plan-order-coverage.ts),
+          the same two the Plans list states. On an old `ops_source='plan'` plan
+          they arrive as 0 and Plan Qty, which is literally true there — nothing
+          is covered by a Production Order yet, because that flow never raises
+          one. */}
+      <ClusterGrid>
+        <Cluster>
+          <ClusterFact num label="Order Qty" value={String(plan.orderQty)} />
+          <FormField label="Plan Qty" required htmlFor="edit-plan-qty">
             <input
+              id="edit-plan-qty"
               type="number"
               min={1}
               max={plan.orderQty}
+              className="innovic-input cl-num"
               value={planQty}
               onChange={(e) => setPlanQty(Number(e.target.value))}
-              style={{
-                width: 80,
-                fontSize: 16,
-                fontWeight: 800,
-                textAlign: 'center',
-                border: '2px solid var(--cyan)',
-                color: 'var(--cyan)',
-                padding: 4,
-                borderRadius: 4,
-              }}
             />
-          </div>
-        </div>
-      </div>
+          </FormField>
+          <ClusterFact num label="Covered" value={String(plan.coveredQty)} />
+          {/* Recomputed from the TYPED Plan Qty, not read off the plan.
+              `plan.pendingQty` is the server's figure for the SAVED plan qty,
+              so a saved 20 with 10 Covered still read "Pending 10" after you
+              typed 50 — the row stopped adding up at the one moment it is
+              being used. Same arithmetic as the server
+              (PLAN_PENDING_QTY_SQL / lib/plan-order-coverage.ts): plan qty
+              less what live Production Orders already cover, floored at 0. */}
+          <ClusterFact
+            num
+            lead
+            label="Pending"
+            value={String(Math.max(0, (Number(planQty) || 0) - plan.coveredQty))}
+          />
+        </Cluster>
+      </ClusterGrid>
+      <div className="divider" />
 
-      {/* 3-tab type picker */}
-      <div
-        style={{
-          marginBottom: 14,
-          padding: '10px 14px',
-          background: 'var(--bg3)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-        }}
-      >
-        <label
-          className="form-label"
-          style={{ marginBottom: 8, fontWeight: 700, display: 'block' }}
+      {/* The rest of the header in ONE grid: four cells to a row, both rows
+          coming out full — 3/12 four times, then 3/12 + 3/12 + 6/12. */}
+      <div className="form-grid-12" style={{ marginBottom: 'var(--sp-3)' }}>
+        <FormField
+          label="Plan Type"
+          required
+          size="sm"
+          htmlFor="edit-plan-type"
+          help={PLAN_TYPE_HELP[planType]}
         >
-          Plan Type ★
-        </label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {typeBtn(
-            'manufacture',
-            '🏭',
-            'Manufacture',
-            'Job Card + Operations',
-            'var(--cyan)',
-            'rgba(34,211,238,0.08)',
-            planType !== 'direct_purchase' && planType !== 'full_outsource',
-          )}
-          {typeBtn(
-            'full_outsource',
-            '📦',
-            'Full Outsource',
-            'Our material, vendor does all',
-            'var(--purple)',
-            'rgba(124,58,237,0.08)',
-            planType === 'full_outsource',
-          )}
-          {!isJw &&
-            typeBtn(
-              'direct_purchase',
-              '🛒',
-              'Direct Purchase',
-              'Buy finished item (with material)',
-              'var(--green)',
-              'rgba(34,197,94,0.08)',
-              planType === 'direct_purchase',
+          <select
+            id="edit-plan-type"
+            className="innovic-select"
+            value={planType}
+            onChange={(e) => setPlanType(e.target.value as PlanType)}
+          >
+            <option value="manufacture">Manufacture</option>
+            <option value="full_outsource">Full Outsource</option>
+            {/* Direct Purchase buys the finished item outright, which is
+                meaningless on a job-work order (the client owns the job and
+                supplies the material). Hidden for a JWSO-sourced plan exactly
+                as the old picture-card picker hid it; the server refuses it
+                as well, so a direct API call cannot set it either. */}
+            {isJw && planType !== 'direct_purchase' ? null : (
+              <option value="direct_purchase" disabled={isJw}>
+                Direct Purchase
+              </option>
             )}
-        </div>
-      </div>
+            {/* Assembly is never OFFERED: the old picker had no Assembly card
+                and lit its Manufacture card for an assembly plan. The option
+                appears only when the plan already IS one, so the box states
+                what it is instead of rendering blank.
 
-      {/* Dates · raw material · remark — ONE row. Two small captions sit above
-          the field labels: SCHEDULE over the two dates, RAW MATERIAL over grade
-          / size / remark. The raw-material grouping is shown by the pale blue
-          wash on those three fields plus blue labels — deliberately NO border,
-          card or nested container. Grade and Size are optional, so neither
-          carries a ★. Remark sits here rather than in its old standalone block
-          at the bottom of the modal so the whole header reads in one line.
-          Both groups are flex-wrap, so a narrow window stacks them instead of
-          growing a horizontal scrollbar. */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 14,
-          alignItems: 'flex-end',
-          marginBottom: 14,
-        }}
-      >
-        <div style={{ flex: '1 1 300px', minWidth: 0 }}>
-          <div
-            className="mono fw-700 text3"
-            style={{
-              fontSize: 11,
-              marginBottom: 6,
+                Same reason the hidden Direct Purchase option comes back above
+                when a JW plan somehow carries it (a legacy row, a direct API
+                write): a controlled <select> whose value matches no option
+                paints the FIRST option instead, so the box would have said
+                "Manufacture" while the Direct Purchase block rendered below it
+                and the save kept `direct_purchase`. Shown disabled — it states
+                the plan's type without offering it as a choice. */}
+            {planType === 'assembly' ? <option value="assembly">Assembly</option> : null}
+          </select>
+        </FormField>
+
+        <FormField label="Planned Start Date" size="sm" htmlFor="edit-plan-start">
+          <input
+            id="edit-plan-start"
+            type="date"
+            className="innovic-input"
+            value={plannedStartDate}
+            onChange={(e) => setPlannedStartDate(e.target.value)}
+          />
+        </FormField>
+
+        <FormField label="Planned End Date" size="sm" htmlFor="edit-plan-end">
+          <input
+            id="edit-plan-end"
+            type="date"
+            className="innovic-input"
+            value={plannedEndDate}
+            onChange={(e) => setPlannedEndDate(e.target.value)}
+          />
+        </FormField>
+
+        <FormField label="Customer Dispatch Date" size="sm" htmlFor="edit-plan-dispatch">
+          <input
+            id="edit-plan-dispatch"
+            type="date"
+            className="innovic-input"
+            value={customerDispatchDate}
+            onChange={(e) => setCustomerDispatchDate(e.target.value)}
+          />
+        </FormField>
+
+        {/* RM Grade / RM Size (docs/NAMING.md) — two INDEPENDENT master
+            pickers, both optional everywhere, so neither carries a ★. */}
+        <FormField label="RM Grade" size="sm" htmlFor="edit-plan-rm-grade">
+          <MaterialGradePicker
+            id="edit-plan-rm-grade"
+            valueId={rmGradeId}
+            valueText={rmGradeText}
+            onChange={(id, text) => {
+              setRmGradeId(id);
+              setRmGradeText(text);
             }}
-          >
-            Schedule
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
-              <label className="form-label">Planned Start / Required Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={plannedStartDate}
-                onChange={(e) => setPlannedStartDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
-              <label className="form-label">Planned End Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={plannedEndDate}
-                onChange={(e) => setPlannedEndDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
-              <label className="form-label">Customer Dispatch Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={customerDispatchDate}
-                onChange={(e) => setCustomerDispatchDate(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-        {/* The tint IS the grouping: .field-tint paints every control inside
-            this block with the pale blue token wash (--blue3), including the
-            Grade / Size pickers' own <input>. */}
-        <div className="field-tint" style={{ flex: '1.6 1 420px', minWidth: 0 }}>
-          <div
-            className="mono fw-700"
-            style={{
-              fontSize: 11,
-              marginBottom: 6,
-              color: 'var(--blue)',
+          />
+        </FormField>
+
+        <FormField label="RM Size" size="sm" htmlFor="edit-plan-rm-size">
+          <MaterialSizePicker
+            id="edit-plan-rm-size"
+            valueId={rmSizeId}
+            valueText={rmSizeText}
+            onChange={(id, text) => {
+              setRmSizeId(id);
+              setRmSizeText(text);
             }}
-          >
-            Raw Material
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <div className="form-grp" style={{ flex: '1 1 130px', minWidth: 0 }}>
-              <label className="form-label" style={{ color: 'var(--blue)' }}>
-                Grade
-              </label>
-              <MaterialGradePicker
-                valueId={rmGradeId}
-                valueText={rmGradeText}
-                onChange={(id, text) => {
-                  setRmGradeId(id);
-                  setRmGradeText(text);
-                }}
-              />
-            </div>
-            <div className="form-grp" style={{ flex: '1 1 140px', minWidth: 0 }}>
-              <label className="form-label" style={{ color: 'var(--blue)' }}>
-                Size
-              </label>
-              <MaterialSizePicker
-                valueId={rmSizeId}
-                valueText={rmSizeText}
-                onChange={(id, text) => {
-                  setRmSizeId(id);
-                  setRmSizeText(text);
-                }}
-              />
-            </div>
-            <div className="form-grp" style={{ flex: '2.4 1 200px', minWidth: 0 }}>
-              <label className="form-label" style={{ color: 'var(--blue)' }}>
-                Remarks
-              </label>
-              <input
-                className="innovic-input"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
+          />
+        </FormField>
+
+        <FormField label="Remarks" size="lg" htmlFor="edit-plan-remarks">
+          <textarea
+            id="edit-plan-remarks"
+            className="innovic-textarea"
+            rows={2}
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+          />
+        </FormField>
       </div>
 
       {/* Manufacture section */}
       {(planType === 'manufacture' || planType === 'assembly') && (
-        <div
-          style={{
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            // Not 'hidden': the Machine / Vendor SearchableSelect dropdowns are
-            // absolutely positioned and must overflow the table without clipping.
-            overflow: 'visible',
-            marginBottom: 14,
-          }}
-        >
+        <div style={{ marginBottom: 14 }}>
+          {/* A quiet section heading row — `.section-hdr`, the heading the rest
+              of the app's modals use — in place of the old bordered panel with
+              its tinted header strip. Nothing inside the section changed. */}
           <div
             style={{
-              padding: '8px 12px',
-              background: 'var(--bg4)',
-              borderTopLeftRadius: 8,
-              borderTopRightRadius: 8,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              gap: 'var(--sp-2)',
+              flexWrap: 'wrap',
+              marginBottom: 'var(--sp-2)',
             }}
           >
             <div style={{ minWidth: 0 }}>
-              <span className="form-label" style={{ marginBottom: 0 }}>
+              <div className="section-hdr" style={{ marginBottom: 0 }}>
                 Operations Routing
-              </span>
+              </div>
               {/* Where these ops came from. Planning has always auto-filled them
                   from the item's active route card, but silently — a card that
                   loaded and a card that does not exist looked identical here.
@@ -1305,25 +1235,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
       {/* Full Outsource section */}
       {planType === 'full_outsource' && (
-        <div
-          style={{
-            border: '1px solid rgba(124,58,237,0.3)',
-            borderRadius: 8,
-            padding: 14,
-            marginBottom: 14,
-            background: 'rgba(124,58,237,0.04)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: 'var(--purple)',
-              marginBottom: 10,
-            }}
-          >
-            📦 Full Outsource Details
-          </div>
+        <div style={{ marginBottom: 14 }}>
+          {/* Quiet `.section-hdr` heading instead of the old purple-tinted box.
+              Every field inside is unchanged. */}
+          <div className="section-hdr">📦 Full Outsource Details</div>
           <datalist id="dlFOCC">
             {(costCenters.data?.items ?? []).map((c) => (
               <option key={c.id} value={c.code}>
@@ -1402,25 +1317,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
       {/* Direct Purchase section */}
       {planType === 'direct_purchase' && (
-        <div
-          style={{
-            border: '1px solid rgba(34,197,94,0.3)',
-            borderRadius: 8,
-            padding: 14,
-            marginBottom: 14,
-            background: 'rgba(34,197,94,0.04)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: 'var(--green2)',
-              marginBottom: 10,
-            }}
-          >
-            🛒 Direct Purchase Details
-          </div>
+        <div style={{ marginBottom: 14 }}>
+          {/* Quiet `.section-hdr` heading instead of the old green-tinted box.
+              Every field inside is unchanged. */}
+          <div className="section-hdr">🛒 Direct Purchase Details</div>
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" style={{ color: 'var(--green2)' }}>
@@ -1462,34 +1362,23 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       )}
 
       {/* Required QC Documents */}
-      <div
-        style={{
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          overflow: 'hidden',
-          marginTop: 14,
-        }}
-      >
+      <div style={{ marginTop: 14 }}>
+        {/* Quiet `.section-hdr` heading row instead of the old bordered box
+            with its tinted header strip. The table and the ★ footnote below
+            are unchanged. */}
         <div
           style={{
-            padding: '8px 12px',
-            background: 'var(--bg4)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
+            gap: 'var(--sp-2)',
+            flexWrap: 'wrap',
+            marginBottom: 'var(--sp-2)',
           }}
         >
-          <span
-            style={{
-              fontSize: 11,
-              color: 'var(--red2)',
-              fontFamily: 'var(--mono)',
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-            }}
-          >
-            📋 REQUIRED QC DOCUMENTS
-          </span>
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            📋 Required QC Documents
+          </div>
           <button
             type="button"
             className="btn btn-ghost btn-sm"

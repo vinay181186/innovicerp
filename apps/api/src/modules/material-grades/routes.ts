@@ -47,7 +47,7 @@ export async function materialGradesRoutes(app: FastifyInstance): Promise<void> 
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateMaterialGradeInputSchema.parse(req.body);
-    return service.updateMaterialGrade(id, body, req.user);
+    return service.updateMaterialGradeOrStage(id, body, req.user);
   });
 
   app.delete('/material-grades/:id', async (req, reply) => {

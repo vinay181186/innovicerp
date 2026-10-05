@@ -10,6 +10,7 @@ import type {
   BulkCreateMaterialSizesResponse,
   CreateMaterialGradeInput,
   CreateMaterialSizeInput,
+  DocumentEditStagedResult,
   ListMaterialGradesQuery,
   ListMaterialGradesResponse,
   ListMaterialSizesQuery,
@@ -89,11 +90,25 @@ export function useBulkCreateMaterialGrades() {
 
 export function useUpdateMaterialGrade() {
   const qc = useQueryClient();
-  return useMutation<MaterialGrade, Error, { id: string; input: UpdateMaterialGradeInput }>({
+  // ADR-202 — when the edit-approval gate is on and the grade is live, the PATCH
+  // returns a DocumentEditStagedResult (the edit was staged for approval) instead
+  // of the updated row. The modal reads the union to tell them apart.
+  return useMutation<
+    MaterialGrade | DocumentEditStagedResult,
+    Error,
+    { id: string; input: UpdateMaterialGradeInput }
+  >({
     mutationFn: ({ id, input }) =>
-      apiFetch<MaterialGrade>(`/material-grades/${id}`, { method: 'PATCH', json: input }),
-    onSuccess: () => {
+      apiFetch<MaterialGrade | DocumentEditStagedResult>(`/material-grades/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
+    onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: materialGradesKeys.lists() });
+      // Refresh the inbox + the per-row pending indicator when an edit is staged.
+      if ('staged' in updated) {
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+      }
     },
   });
 }
@@ -152,11 +167,23 @@ export function useBulkCreateMaterialSizes() {
 
 export function useUpdateMaterialSize() {
   const qc = useQueryClient();
-  return useMutation<MaterialSize, Error, { id: string; input: UpdateMaterialSizeInput }>({
+  // ADR-202 — see useUpdateMaterialGrade: a live row's edit may be staged for
+  // approval, returning a DocumentEditStagedResult instead of the updated row.
+  return useMutation<
+    MaterialSize | DocumentEditStagedResult,
+    Error,
+    { id: string; input: UpdateMaterialSizeInput }
+  >({
     mutationFn: ({ id, input }) =>
-      apiFetch<MaterialSize>(`/material-sizes/${id}`, { method: 'PATCH', json: input }),
-    onSuccess: () => {
+      apiFetch<MaterialSize | DocumentEditStagedResult>(`/material-sizes/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
+    onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: materialSizesKeys.lists() });
+      if ('staged' in updated) {
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+      }
     },
   });
 }

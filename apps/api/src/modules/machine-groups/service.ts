@@ -1,4 +1,4 @@
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
 // Machine GROUP master (migration 0116). The second tab of the Machine Master
 // screen; the first is ../machines. The two are one screen in the user's head,
 // so everything here is gated on the SAME form key the machines module uses —
@@ -15,7 +15,7 @@ import { ActivityAction } from '@innovic/shared';
 
 import { and, asc, count, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
@@ -27,7 +27,7 @@ import type {
   MachineGroup,
   UpdateMachineGroupInput,
 } from './schema';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { MACHINE_GROUP_SF_COLUMNS } from './sf-columns';
 
@@ -35,6 +35,19 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+const activeLabel = (v: unknown): string | null =>
+  v === true ? 'Active' : v === false ? 'Inactive' : null;
+
+/** Every user-editable Machine Group field, with its screen label (the Machine
+ *  Groups tab / NAMING.md), for the edit-approval engine's Before → After
+ *  (ADR-202). Exported so machine-group-edit-registry.ts diffs the same set.
+ *  `code` is deliberately absent — it is not updatable (omitted from the shared
+ *  input schema), so it is never a staged change. */
+export const MACHINE_GROUP_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'description', label: 'Description' },
+  { key: 'isActive', label: 'Active', format: activeLabel },
+];
 
 function emptyToNull(s: string | undefined): string | null {
   if (s === undefined) return null;
@@ -168,10 +181,77 @@ export async function updateMachineGroup(
   user: AuthContext,
 ): Promise<MachineGroup> {
   // Changing a saved group is `edit`, so L2 (create-only) is correctly refused.
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
+  // replay an approved edit for an approver who holds `approve` but not `edit`.
+  await requireFormAccess(user, 'machine_create', 'edit');
+  return withUserContext(user, (tx) => updateMachineGroupTx(tx, id, input, user));
+}
+
+/**
+ * The body of a Machine Group edit, inside a caller-supplied transaction. Called
+ * by updateMachineGroup (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds one, with the row locked FOR UPDATE).
+ * Concurrency is the engine's — this master carries no `expectedUpdatedAt` token.
+ * The caller performs the edit / approve access check.
+ */
+export async function updateMachineGroupTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateMachineGroupInput,
+  user: AuthContext,
+): Promise<MachineGroup> {
+  const companyId = requireCompany(user);
+  const existing = await tx
+    .select({ id: machineGroups.id })
+    .from(machineGroups)
+    .where(
+      and(
+        eq(machineGroups.id, id),
+        eq(machineGroups.companyId, companyId),
+        isNull(machineGroups.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (existing.length === 0) throw new NotFoundError('Machine Group not found. Refresh the page.');
+
+  // `code` is not updatable (omitted from the shared input schema): it is the
+  // word the shop floor reads and screens quote, so a rename would make the
+  // master disagree with what is already on paper. Retire with isActive.
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.description !== undefined) updates.description = emptyToNull(input.description);
+  if (input.isActive !== undefined) updates.isActive = input.isActive;
+
+  const updated = await tx
+    .update(machineGroups)
+    .set(updates)
+    .where(eq(machineGroups.id, id))
+    .returning();
+  return updated[0] as unknown as MachineGroup;
+}
+
+/**
+ * The Machine Group edit entry point the HTTP route calls. Edit-approval
+ * (ADR-202): when the company gate is on and the group is still editable (a
+ * master is editable while it is not in Trash), the edit is STAGED for approval;
+ * otherwise it falls through to updateMachineGroup. A group is a single record
+ * with no child lines — there is no line guard, and no updatedAt token (the
+ * engine's row lock guards concurrency).
+ */
+export async function updateMachineGroupOrStage(
+  id: string,
+  input: UpdateMachineGroupInput,
+  user: AuthContext,
+): Promise<MachineGroup | DocumentEditStagedResult> {
   await requireFormAccess(user, 'machine_create', 'edit');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
+
+  // Imported dynamically to avoid a static import cycle with
+  // machine-group-edit-registry (which imports updateMachineGroupTx from here).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors machineGroupEditRegistryEntry.isLive: any live row.
+    const rows = await tx
       .select({ id: machineGroups.id })
       .from(machineGroups)
       .where(
@@ -182,23 +262,14 @@ export async function updateMachineGroup(
         ),
       )
       .limit(1);
-    if (existing.length === 0)
-      throw new NotFoundError('Machine Group not found. Refresh the page.');
-
-    // `code` is not updatable (omitted from the shared input schema): it is the
-    // word the shop floor reads and screens quote, so a rename would make the
-    // master disagree with what is already on paper. Retire with isActive.
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.description !== undefined) updates.description = emptyToNull(input.description);
-    if (input.isActive !== undefined) updates.isActive = input.isActive;
-
-    const updated = await tx
-      .update(machineGroups)
-      .set(updates)
-      .where(eq(machineGroups.id, id))
-      .returning();
-    return updated[0] as unknown as MachineGroup;
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('MachineGroup', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateMachineGroup(id, input, user);
 }
 
 export async function softDeleteMachineGroup(id: string, user: AuthContext): Promise<{ ok: true }> {

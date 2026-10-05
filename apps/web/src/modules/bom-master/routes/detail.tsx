@@ -17,6 +17,12 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+  linePendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { RowMenu } from '@/ui/data';
@@ -51,6 +57,11 @@ function BomMasterDetailPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
   const del = useDeleteBomMaster();
+  // ADR-202 — staged edits to this live BOM awaiting approval. Their per-field
+  // changes drive the inline amber chips on the header and the line rows.
+  // Flattened across requests (usually one, but an older request can still be
+  // open alongside a new one).
+  const pendingEdit = usePendingEditForDoc('BOM', detail?.id);
   const [delError, setDelError] = useState<string | null>(null);
   const [showLinked, setShowLinked] = useState(false);
   // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
@@ -118,6 +129,14 @@ function BomMasterDetailPage(): React.JSX.Element {
     );
   }
 
+  // ADR-202 — the BOM edit diff emits these header field keys; line changes are
+  // keyed by the line's CHILD ITEM id (`line:<childItemId>:qty|bomType|rmGrade|rmSize`).
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const bomNoPending = headerPendingChange(pendingChanges, 'bomNo');
+  const bomNamePending = headerPendingChange(pendingChanges, 'bomName');
+  const parentItemPending = headerPendingChange(pendingChanges, 'parentItemId');
+  const statusPending = headerPendingChange(pendingChanges, 'status');
+
   const openSnapshot = detail.revisions.find((r) => r.revision === snapshotRev) ?? null;
   // Legacy resolves the snapshot's item names against the live items master
   // (L8820). We only hold the names the detail payload already joined, so an
@@ -135,15 +154,18 @@ function BomMasterDetailPage(): React.JSX.Element {
           <div>
             <div className="td-code cyan" style={{ fontSize: 16, fontWeight: 800 }}>
               {detail.bomNo}
+              {bomNoPending ? <PendingChangeChip after={bomNoPending.after} /> : null}
             </div>
             <div
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
               {detail.bomName}
+              {bomNamePending ? <PendingChangeChip after={bomNamePending.after} /> : null}
               {/* One kind, one colour map, shared with the BOM Master list —
                   see ui/core/StatusBadge.tsx `bom`. */}
               <StatusBadge kind="bom" status={detail.status} />
+              {statusPending ? <PendingChangeChip after={statusPending.after} /> : null}
               <span
                 className="mono"
                 style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}
@@ -199,6 +221,9 @@ function BomMasterDetailPage(): React.JSX.Element {
                     Not set — use Edit / Revise to pick it
                   </span>
                 )}
+                {/* The proposed parent may show a raw item id (the diff carries
+                    the id, not the resolved code) — acceptable, as PO/Machine do. */}
+                {parentItemPending ? <PendingChangeChip after={parentItemPending.after} /> : null}
               </div>
             </div>
             <div className="form-grp">
@@ -280,6 +305,24 @@ function BomMasterDetailPage(): React.JSX.Element {
                     label: line.bomType,
                     color: 'var(--text3)',
                   };
+                  // ADR-202 — staged per-line edits, matched by this line's CHILD
+                  // ITEM id (the key the backend diff uses).
+                  const qtyPending = linePendingChange(pendingChanges, line.childItemId, 'qty');
+                  const bomTypePending = linePendingChange(
+                    pendingChanges,
+                    line.childItemId,
+                    'bomType',
+                  );
+                  const rmGradePending = linePendingChange(
+                    pendingChanges,
+                    line.childItemId,
+                    'rmGrade',
+                  );
+                  const rmSizePending = linePendingChange(
+                    pendingChanges,
+                    line.childItemId,
+                    'rmSize',
+                  );
                   return (
                     <tr key={line.id}>
                       <td className="td-num mono fw-700">{idx + 1}</td>
@@ -289,17 +332,21 @@ function BomMasterDetailPage(): React.JSX.Element {
                       <td>{line.childItemName ?? '—'}</td>
                       <td className="td-num mono fw-700" style={{ fontSize: 14 }}>
                         {Number(line.qtyPerSet)}
+                        {qtyPending ? <PendingChangeChip after={qtyPending.after} /> : null}
                       </td>
                       <td>
                         <span style={{ color: cfg.color, fontSize: 11, fontWeight: 700 }}>
                           {cfg.label}
                         </span>
+                        {bomTypePending ? <PendingChangeChip after={bomTypePending.after} /> : null}
                       </td>
                       <td className="mono" style={{ fontSize: 11 }}>
                         {line.rawMaterialGradeText ?? <span className="text3">—</span>}
+                        {rmGradePending ? <PendingChangeChip after={rmGradePending.after} /> : null}
                       </td>
                       <td className="mono" style={{ fontSize: 11 }}>
                         {line.rawMaterialSizeText ?? <span className="text3">—</span>}
+                        {rmSizePending ? <PendingChangeChip after={rmSizePending.after} /> : null}
                       </td>
                     </tr>
                   );

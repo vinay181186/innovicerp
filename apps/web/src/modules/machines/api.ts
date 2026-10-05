@@ -1,6 +1,7 @@
 import type {
   CreateMachineGroupInput,
   CreateMachineInput,
+  DocumentEditStagedResult,
   ListMachineGroupsQuery,
   ListMachineGroupsResponse,
   ListMachinesQuery,
@@ -73,10 +74,25 @@ export function useCreateMachine(saveKey?: SaveKey) {
 
 export function useUpdateMachine(id: string) {
   const qc = useQueryClient();
-  return useMutation<Machine, Error, UpdateMachineInput>({
-    mutationFn: (input) => apiFetch<Machine>(`/machines/${id}`, { method: 'PATCH', json: input }),
+  // ADR-202 — when the edit-approval gate is on and the machine is live, the
+  // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated machine. The edit page reads the union to tell them
+  // apart.
+  return useMutation<Machine | DocumentEditStagedResult, Error, UpdateMachineInput>({
+    mutationFn: (input) =>
+      apiFetch<Machine | DocumentEditStagedResult>(`/machines/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: machinesKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the machine itself — just refresh so the detail
+        // page shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: machinesKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(machinesKeys.detail(id), updated);
     },
   });
@@ -160,12 +176,28 @@ export function useCreateMachineGroup(saveKey?: SaveKey) {
 
 export function useUpdateMachineGroup() {
   const qc = useQueryClient();
-  return useMutation<MachineGroup, Error, { id: string; input: UpdateMachineGroupInput }>({
+  // ADR-202 — the group has no detail page; when the edit-approval gate is on and
+  // the group is live, the PATCH returns a DocumentEditStagedResult (staged for
+  // approval) instead of the updated group. The tab reads the union to show the
+  // neutral "Sent for approval" notice and the row's "edit pending" chip.
+  return useMutation<
+    MachineGroup | DocumentEditStagedResult,
+    Error,
+    { id: string; input: UpdateMachineGroupInput }
+  >({
     mutationFn: ({ id, input }) =>
-      apiFetch<MachineGroup>(`/machine-groups/${id}`, { method: 'PATCH', json: input }),
-    onSuccess: () => {
+      apiFetch<MachineGroup | DocumentEditStagedResult>(`/machine-groups/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
+    onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: machineGroupsKeys.lists() });
       void qc.invalidateQueries({ queryKey: machinesKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the group — refresh the pending set so the row chip
+        // shows.
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+      }
     },
   });
 }

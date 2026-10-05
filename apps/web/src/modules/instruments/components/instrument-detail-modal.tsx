@@ -6,6 +6,7 @@ import { INSTRUMENT_STATUS_LABELS } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { useInstrument } from '../api';
 import { DUE_COLOUR, INSTRUMENT_STATUS_BADGE, dueTone } from '../lib/instrument-ui';
 import { type InstrumentAction, InstrumentActionForm } from './instrument-action-forms';
@@ -30,6 +31,10 @@ export function InstrumentDetailModal({
   const { data: ins, isLoading, isError, error } = useInstrument(instrumentId);
   const [mode, setMode] = useState<InstrumentAction | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // ADR-202 — does this instrument have an edit waiting for approval? Shown as an
+  // amber chip in the header (there is no detail page to carry per-field chips).
+  const pendingEdit = usePendingEditForDoc('Instrument', instrumentId);
+  const hasPendingEdit = (pendingEdit.data?.rows.length ?? 0) > 0;
 
   const start = (m: InstrumentAction): void => {
     setMode(m);
@@ -56,6 +61,15 @@ export function InstrumentDetailModal({
                 </span>{' '}
                 · <span className="mono fw-700">{ins.serialNo}</span>
               </>
+            ) : null}
+            {hasPendingEdit ? (
+              <span
+                className="tag b-amber"
+                style={{ marginLeft: 8 }}
+                title="An edit to this instrument is waiting for approval"
+              >
+                edit pending
+              </span>
             ) : null}
           </span>
           <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>

@@ -2,6 +2,7 @@ import type {
   BulkCreateOperatorsInput,
   BulkCreateOperatorsResponse,
   CreateOperatorInput,
+  DocumentEditStagedResult,
   ListOperatorsQuery,
   ListOperatorsResponse,
   Operator,
@@ -110,10 +111,25 @@ export function useBulkCreateOperators() {
 
 export function useUpdateOperator(id: string) {
   const qc = useQueryClient();
-  return useMutation<Operator, Error, UpdateOperatorInput>({
-    mutationFn: (input) => apiFetch<Operator>(`/operators/${id}`, { method: 'PATCH', json: input }),
+  // ADR-202 — when the edit-approval gate is on and the operator is live, the
+  // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated operator. The edit page reads the union to tell them
+  // apart.
+  return useMutation<Operator | DocumentEditStagedResult, Error, UpdateOperatorInput>({
+    mutationFn: (input) =>
+      apiFetch<Operator | DocumentEditStagedResult>(`/operators/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: operatorsKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the operator itself — just refresh so the detail
+        // page shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: operatorsKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(operatorsKeys.detail(id), updated);
     },
   });

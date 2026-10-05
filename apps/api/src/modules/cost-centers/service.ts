@@ -1,7 +1,7 @@
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { costCenters } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
@@ -13,7 +13,7 @@ import type {
   ListCostCentersResponse,
   UpdateCostCenterInput,
 } from './schema';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, softDeleteStamp } from '../../lib/audit-trail';
 import { COST_CENTER_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -21,6 +21,21 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+const activeLabel = (v: unknown): string | null =>
+  v === true ? 'Active' : v === false ? 'Inactive' : null;
+
+/** Every user-editable Cost Centre field, with its screen label (the Cost Centre
+ *  form / NAMING.md), for the edit-approval engine's Before → After (ADR-202).
+ *  Exported so cost-center-edit-registry.ts diffs the same set. `code` is not
+ *  updatable (omitted from the shared input schema), so it is not diffed. */
+export const COST_CENTER_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Cost Centre Name' },
+  { key: 'department', label: 'Department' },
+  { key: 'type', label: 'Cost Centre Type' },
+  { key: 'description', label: 'Description' },
+  { key: 'isActive', label: 'Active', format: activeLabel },
+];
 
 function emptyToNull(s: string | undefined): string | null {
   if (s === undefined) return null;
@@ -164,31 +179,91 @@ export async function updateCostCenter(
 ): Promise<CostCenter> {
   requireWriteRole(user);
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
+  // replay an approved edit for an approver who holds `approve` but not `edit`.
   await requireFormAccess(user, 'cc_create', 'edit');
+  return withUserContext(user, (tx) => updateCostCenterTx(tx, id, input, user));
+}
+
+/**
+ * The body of a Cost Centre edit, inside a caller-supplied transaction. Called by
+ * updateCostCenter (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds one, with the row locked FOR UPDATE).
+ * Concurrency is the engine's — this master carries no `expectedUpdatedAt` token.
+ * The caller performs the write-role / edit / approve access check.
+ */
+export async function updateCostCenterTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateCostCenterInput,
+  user: AuthContext,
+): Promise<CostCenter> {
   requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
+  const existing = await tx
+    .select({ id: costCenters.id })
+    .from(costCenters)
+    .where(and(eq(costCenters.id, id), isNull(costCenters.deletedAt)))
+    .limit(1);
+  if (existing.length === 0)
+    throw new NotFoundError('Cost Centre not found. It may have been moved to Trash.');
+
+  const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
+  if (input.name !== undefined) updates.name = input.name.trim();
+  if (input.department !== undefined) updates.department = emptyToNull(input.department);
+  if (input.type !== undefined) updates.type = emptyToNull(input.type);
+  if (input.description !== undefined) updates.description = emptyToNull(input.description);
+  if (input.isActive !== undefined) updates.isActive = input.isActive;
+
+  const updated = await tx
+    .update(costCenters)
+    .set(updates)
+    .where(eq(costCenters.id, id))
+    .returning();
+  return updated[0] as unknown as CostCenter;
+}
+
+/**
+ * The Cost Centre edit entry point the HTTP route calls. Edit-approval (ADR-202):
+ * when the company gate is on and the cost centre is still editable (a master is
+ * editable while it is not in Trash), the edit is STAGED for approval; otherwise
+ * it falls through to updateCostCenter. A cost centre is a single record with no
+ * child lines — there is no line guard, and no updatedAt token (the engine's row
+ * lock guards concurrency).
+ */
+export async function updateCostCenterOrStage(
+  id: string,
+  input: UpdateCostCenterInput,
+  user: AuthContext,
+): Promise<CostCenter | DocumentEditStagedResult> {
+  requireWriteRole(user);
+  await requireFormAccess(user, 'cc_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Imported dynamically to avoid a static import cycle with
+  // cost-center-edit-registry (which imports updateCostCenterTx from here).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors costCenterEditRegistryEntry.isLive: any live row.
+    const rows = await tx
       .select({ id: costCenters.id })
       .from(costCenters)
-      .where(and(eq(costCenters.id, id), isNull(costCenters.deletedAt)))
+      .where(
+        and(
+          eq(costCenters.id, id),
+          eq(costCenters.companyId, companyId),
+          isNull(costCenters.deletedAt),
+        ),
+      )
       .limit(1);
-    if (existing.length === 0)
-      throw new NotFoundError('Cost Centre not found. It may have been moved to Trash.');
-
-    const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
-    if (input.name !== undefined) updates.name = input.name.trim();
-    if (input.department !== undefined) updates.department = emptyToNull(input.department);
-    if (input.type !== undefined) updates.type = emptyToNull(input.type);
-    if (input.description !== undefined) updates.description = emptyToNull(input.description);
-    if (input.isActive !== undefined) updates.isActive = input.isActive;
-
-    const updated = await tx
-      .update(costCenters)
-      .set(updates)
-      .where(eq(costCenters.id, id))
-      .returning();
-    return updated[0] as unknown as CostCenter;
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('CostCenter', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateCostCenter(id, input, user);
 }
 
 export async function softDeleteCostCenter(id: string, user: AuthContext): Promise<{ ok: true }> {

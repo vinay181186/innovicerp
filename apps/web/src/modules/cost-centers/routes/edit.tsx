@@ -4,6 +4,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { isStagedResult } from '@/modules/document-edits/api';
+import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCenter, useUpdateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
@@ -20,6 +22,9 @@ function CostCenterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useCostCenter(id);
   const update = useUpdateCostCenter(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE cost centre is staged for approval
+  // instead of applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const goBack = useCallback(
     () => void navigate({ to: '/cost-centers/$id', params: { id } }),
     [navigate, id],
@@ -74,6 +79,11 @@ function CostCenterEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back to {detail.code}
       </Link>
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <div className="panel">
         <div className="panel-hdr">
           <div>
@@ -95,7 +105,15 @@ function CostCenterEditPage(): React.JSX.Element {
             onSubmit={async (values: UpdateCostCenterInput) => {
               setSubmitError(null);
               try {
-                await update.mutateAsync(values);
+                const result = await update.mutateAsync(values);
+                if (isStagedResult(result)) {
+                  // Gate on and this cost centre is live: nothing was changed —
+                  // the edit is now waiting for approval. Say so, then return to
+                  // the record (its fields now carry the pending chip).
+                  setStagedNotice(
+                    'Sent for approval — your changes will apply once an approver signs off.',
+                  );
+                }
                 exit.leave(goBack);
               } catch (e) {
                 setSubmitError(

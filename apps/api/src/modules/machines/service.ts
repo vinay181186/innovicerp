@@ -1,4 +1,4 @@
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -12,7 +12,7 @@ import type {
   Machine,
   UpdateMachineInput,
 } from './schema';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { MACHINE_SF_COLUMNS } from './sf-columns';
 
@@ -66,6 +66,23 @@ function toMachine(row: unknown): Machine {
 function hideMachineMoney(m: Machine): Machine {
   return { ...m, hourRate: null };
 }
+
+/** Every user-editable Machine Master field, with its screen label (the machine
+ *  form / NAMING.md), for the edit-approval engine's Before → After (ADR-202).
+ *  Exported so machine-edit-registry.ts diffs the same set. `hourRate` is money:
+ *  the registry's afterSnapshot only proposes it when the actor may see prices,
+ *  and numeric values compare numerically (diffFields), so "100.00" → 100 is not
+ *  a change. */
+export const MACHINE_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'name', label: 'Machine Name' },
+  { key: 'machineType', label: 'Machine Type' },
+  { key: 'machineGroupId', label: 'Machine Group' },
+  { key: 'productCode', label: 'Product Code' },
+  { key: 'capacityPerShift', label: 'Hours per Shift' },
+  { key: 'shiftsPerDay', label: 'Shifts / Day' },
+  { key: 'status', label: 'Machine Status' },
+  { key: 'hourRate', label: 'Hour Rate (₹/hr)' },
+];
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a
  *  user typing "a_b" — or a bare "%", which listed every machine — gets a
@@ -228,45 +245,98 @@ export async function updateMachine(
   user: AuthContext,
 ): Promise<Machine> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
+  // replay an approved edit for an approver who holds `approve` but not `edit`.
+  await requireFormAccess(user, 'machine_create', 'edit');
+  return withUserContext(user, (tx) => updateMachineTx(tx, id, input, user));
+}
+
+/**
+ * The body of a Machine edit, inside a caller-supplied transaction. Called by
+ * updateMachine (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one, with the row locked FOR UPDATE). Concurrency is the
+ * engine's — this master carries no `expectedUpdatedAt` token. The caller
+ * performs the edit / approve access check.
+ */
+export async function updateMachineTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateMachineInput,
+  user: AuthContext,
+): Promise<Machine> {
+  const companyId = requireCompany(user);
+  const existing = await tx
+    .select({ id: machines.id })
+    .from(machines)
+    .where(and(eq(machines.id, id), isNull(machines.deletedAt)))
+    .limit(1);
+  if (existing.length === 0) throw new NotFoundError('Machine not found. Refresh the page.');
+
+  const updates: Record<string, unknown> = { updatedBy: user.id };
+  if (input.name !== undefined) updates.name = input.name;
+  if (input.machineType !== undefined) updates.machineType = emptyToNull(input.machineType);
+  // The group is validated but kept independent of the free-text Type above.
+  if (input.machineGroupId !== undefined) {
+    // null is a deliberate 'clear the group', not a lookup miss.
+    if (input.machineGroupId !== null) {
+      await assertMachineGroupExists(tx, companyId, input.machineGroupId);
+    }
+    updates.machineGroupId = input.machineGroupId;
+  }
+  if (input.productCode !== undefined) updates.productCode = emptyToNull(input.productCode);
+  if (input.capacityPerShift !== undefined) updates.capacityPerShift = input.capacityPerShift ?? null;
+  if (input.shiftsPerDay !== undefined) updates.shiftsPerDay = input.shiftsPerDay;
+  if (input.status !== undefined) updates.status = input.status;
+  // Money in, same rule as money out: a caller who cannot SEE the hour rate
+  // cannot SET it either — their payload's hourRate is ignored and the stored
+  // value stands. `priceOff` exists precisely to make "can do the job but must
+  // not see the number" a supported setup, so an L3 editor with prices hidden
+  // is a real user. Without this their save wrote whatever their blinded form
+  // posted back over a rate they were never shown.
+  if (input.hourRate !== undefined && (await canSeeFormPrice(user, 'machine_create'))) {
+    updates.hourRate = String(input.hourRate);
+  }
+
+  const updated = await tx.update(machines).set(updates).where(eq(machines.id, id)).returning();
+  return toMachine(updated[0]);
+}
+
+/**
+ * The Machine edit entry point the HTTP route calls. Edit-approval (ADR-202):
+ * when the company gate is on and the machine is still editable (a master is
+ * editable while it is not in Trash), the edit is STAGED for approval and a
+ * {staged:true, request} result is returned; otherwise it falls through to
+ * updateMachine (today's behaviour). A machine is a single record with no child
+ * lines — there is no line guard, and no updatedAt token (the engine's row lock
+ * guards concurrency).
+ */
+export async function updateMachineOrStage(
+  id: string,
+  input: UpdateMachineInput,
+  user: AuthContext,
+): Promise<Machine | DocumentEditStagedResult> {
   await requireFormAccess(user, 'machine_create', 'edit');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
+
+  // Imported dynamically to avoid a static import cycle with machine-edit-registry
+  // (which imports updateMachineTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors machineEditRegistryEntry.isLive: any live (not-Trash) row.
+    const rows = await tx
       .select({ id: machines.id })
       .from(machines)
-      .where(and(eq(machines.id, id), isNull(machines.deletedAt)))
+      .where(and(eq(machines.id, id), eq(machines.companyId, companyId), isNull(machines.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError('Machine not found. Refresh the page.');
-
-    const updates: Record<string, unknown> = { updatedBy: user.id };
-    if (input.name !== undefined) updates.name = input.name;
-    if (input.machineType !== undefined) updates.machineType = emptyToNull(input.machineType);
-    // The group is validated but kept independent of the free-text Type above.
-    if (input.machineGroupId !== undefined) {
-      // null is a deliberate 'clear the group', not a lookup miss.
-      if (input.machineGroupId !== null) {
-        await assertMachineGroupExists(tx, companyId, input.machineGroupId);
-      }
-      updates.machineGroupId = input.machineGroupId;
-    }
-    if (input.productCode !== undefined) updates.productCode = emptyToNull(input.productCode);
-    if (input.capacityPerShift !== undefined)
-      updates.capacityPerShift = input.capacityPerShift ?? null;
-    if (input.shiftsPerDay !== undefined) updates.shiftsPerDay = input.shiftsPerDay;
-    if (input.status !== undefined) updates.status = input.status;
-    // Money in, same rule as money out: a caller who cannot SEE the hour rate
-    // cannot SET it either — their payload's hourRate is ignored and the stored
-    // value stands. `priceOff` exists precisely to make "can do the job but must
-    // not see the number" a supported setup, so an L3 editor with prices hidden
-    // is a real user. Without this their save wrote whatever their blinded form
-    // posted back over a rate they were never shown.
-    if (input.hourRate !== undefined && (await canSeeFormPrice(user, 'machine_create'))) {
-      updates.hourRate = String(input.hourRate);
-    }
-
-    const updated = await tx.update(machines).set(updates).where(eq(machines.id, id)).returning();
-    return toMachine(updated[0]);
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    const request = await requestDocumentEdit('Machine', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateMachine(id, input, user);
 }
 
 export async function softDeleteMachine(id: string, user: AuthContext): Promise<{ ok: true }> {

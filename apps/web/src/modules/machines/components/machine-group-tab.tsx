@@ -29,6 +29,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSaveKey } from '@/lib/use-save-key';
+import { isStagedResult, useDocumentEdits } from '@/modules/document-edits/api';
 import { StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -113,10 +114,27 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
   const [trashRow, setTrashRow] = useState<MachineGroup | null>(null);
+  // ADR-202 — the neutral "Sent for approval" notice after a staged edit save.
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   const rows = useMemo(() => list.data?.groups ?? [], [list.data]);
   const total = list.data?.total ?? 0;
   const fmtCount = (n: number | undefined): string => (n === undefined ? '…' : String(n));
+
+  // ADR-202 — the ids of groups that have an edit waiting for approval, so each
+  // such row shows an amber "edit pending" chip. A machine group has no detail
+  // page to carry per-field chips, so the row itself flags it. One query for the
+  // whole master (hooks can't run per row); empty until the backend gate lands.
+  const pendingEdits = useDocumentEdits({
+    entity: 'MachineGroup',
+    status: 'pending',
+    limit: 200,
+    offset: 0,
+  });
+  const pendingIds = useMemo(
+    () => new Set((pendingEdits.data?.rows ?? []).map((r) => r.entityId)),
+    [pendingEdits.data],
+  );
 
   // The sheet's columns (first = Group Code, always pinned). No Name column:
   // the master has no `name` — the code IS the group. Description shares the
@@ -138,7 +156,23 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         kind: 'text',
         align: 'left',
         className: 'text2',
-        render: (row) => row.description || '—',
+        // ADR-202 — the description, with an amber "edit pending" chip when this
+        // group has an edit waiting for approval (no detail page for per-field
+        // chips, so the row flags it).
+        render: (row) => (
+          <>
+            {row.description || '—'}
+            {pendingIds.has(row.id) ? (
+              <span
+                className="tag b-amber"
+                style={{ marginLeft: 6 }}
+                title="An edit to this group is waiting for approval"
+              >
+                edit pending
+              </span>
+            ) : null}
+          </>
+        ),
         title: (row) => row.description ?? '',
         sortFilterField: 'description',
       },
@@ -155,7 +189,7 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         filterOptions: ACTIVE_OPTIONS,
       },
     ],
-    [],
+    [pendingIds],
   );
 
   return (
@@ -219,6 +253,26 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
             {softDelete.error instanceof Error
               ? softDelete.error.message
               : 'Could not delete Machine Group. Try again.'}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ADR-202 — neutral confirmation after a live-group edit was staged. */}
+      {savedNotice ? (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div
+            className="panel-body"
+            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--amber2)' }}
+          >
+            {savedNotice}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 8, fontSize: 11 }}
+              onClick={() => setSavedNotice(null)}
+            >
+              ✕
+            </button>
           </div>
         </div>
       ) : null}
@@ -307,14 +361,23 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
           {...(modal.kind === 'edit' ? { row: modal.row } : {})}
           saving={create.isPending || update.isPending}
           onSave={async (input, id) => {
+            setSavedNotice(null);
             if (id) {
               // '' (not undefined) so clearing the box actually clears the
               // column. The group text itself is permanent — machines snapshot
               // it — so it is not part of the update.
-              await update.mutateAsync({
+              const result = await update.mutateAsync({
                 id,
                 input: { description: input.description ?? '', isActive: input.isActive },
               });
+              // ADR-202 — gate on and this group is live: nothing changed, the
+              // edit is now waiting for approval. The modal closes itself; show
+              // the neutral notice after, and the row's "edit pending" chip.
+              if (isStagedResult(result)) {
+                setSavedNotice(
+                  'Machine Group edit sent for approval — your change will apply once an approver signs off.',
+                );
+              }
             } else {
               await create.mutateAsync({
                 code: input.code,

@@ -33,10 +33,15 @@
 // The old grid also printed an "Active" cell in plain text next to the chip
 // the panel header already draws. One fact, drawn once: the chip is it.
 
-import type { TpiMaster } from '@innovic/shared';
+import type { DocumentEditChange, TpiMaster } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  PendingChangeChip,
+  headerPendingChange,
+} from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -73,6 +78,11 @@ function TpiMasterDetailPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useTpiMaster(id);
   const softDelete = useSoftDeleteTpiMaster();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // ADR-202 — the edit(s) staged against this inspector and still waiting for a
+  // decision. Their per-field changes drive the inline amber chips next to the
+  // record fields below. Flattened across requests (usually one).
+  const pendingEdit = usePendingEditForDoc('TpiInspector', data?.id);
+  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
   // Tier-driven, matching the list and the new/edit routes. Delete is not one
   // of the four tier actions, so "L5 Department Admin and above" is expressed
@@ -130,7 +140,12 @@ function TpiMasterDetailPage(): React.JSX.Element {
         renderLink={(p) => <Link {...p} />}
         code={data.code}
         name="🔍 TPI Inspector"
-        badges={<StatusBadge kind="masteractive" status={String(data.isActive)} />}
+        badges={
+          <>
+            <StatusBadge kind="masteractive" status={String(data.isActive)} />
+            <Chip changes={pendingChanges} field="isActive" />
+          </>
+        }
         actions={
           <>
             {canEdit ? (
@@ -155,7 +170,7 @@ function TpiMasterDetailPage(): React.JSX.Element {
           </>
         }
       >
-        <TpiMasterFacts inspector={data} />
+        <TpiMasterFacts inspector={data} pendingChanges={pendingChanges} />
       </DetailHeader>
 
       {confirmDelete ? (
@@ -173,15 +188,63 @@ function TpiMasterDetailPage(): React.JSX.Element {
   );
 }
 
-function TpiMasterFacts(props: { inspector: TpiMaster }): React.JSX.Element {
-  const { inspector } = props;
+function TpiMasterFacts(props: {
+  inspector: TpiMaster;
+  pendingChanges: readonly DocumentEditChange[];
+}): React.JSX.Element {
+  const { inspector, pendingChanges: pc } = props;
   return (
     <ReadGrid>
-      <ReadField label="Organisation" size="md" value={inspector.organization} />
-      <ReadField label="Contact No." size="md" mono value={inspector.contactNo} />
-      <ReadField label="Email" size="md" value={inspector.email} />
+      <ReadField
+        label="Organisation"
+        size="md"
+        value={readWithChip(inspector.organization, pc, 'organization')}
+      />
+      <ReadField
+        label="Contact No."
+        size="md"
+        mono
+        value={readWithChip(inspector.contactNo, pc, 'contactNo')}
+      />
+      <ReadField label="Email" size="md" value={readWithChip(inspector.email, pc, 'email')} />
 
-      <ReadField label="Remarks" size="full" pre value={inspector.remarks} />
+      <ReadField
+        label="Remarks"
+        size="full"
+        pre
+        value={readWithChip(inspector.remarks, pc, 'remarks')}
+      />
     </ReadGrid>
+  );
+}
+
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit
+ *  waiting for approval. Matched on the TPI edit diff's field key. Renders
+ *  nothing when no edit is pending for that field. */
+function Chip(props: {
+  changes: readonly DocumentEditChange[];
+  field: string;
+}): React.JSX.Element | null {
+  const c = headerPendingChange(props.changes, props.field);
+  return c ? <PendingChangeChip after={c.after} /> : null;
+}
+
+/** Compose a ReadField value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched so ReadField's own empty
+ *  handling (em dash in --text3) still applies. */
+function readWithChip(
+  value: React.ReactNode,
+  changes: readonly DocumentEditChange[],
+  field: string,
+): React.ReactNode {
+  const c = headerPendingChange(changes, field);
+  if (!c) return value;
+  const base =
+    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
+  return (
+    <>
+      {base}
+      <PendingChangeChip after={c.after} />
+    </>
   );
 }

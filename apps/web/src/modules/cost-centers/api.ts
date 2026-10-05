@@ -1,6 +1,7 @@
 import type {
   CostCenter,
   CreateCostCenterInput,
+  DocumentEditStagedResult,
   ListCostCentersQuery,
   ListCostCentersResponse,
   UpdateCostCenterInput,
@@ -69,11 +70,25 @@ export function useCreateCostCenter(saveKey?: SaveKey) {
 
 export function useUpdateCostCenter(id: string) {
   const qc = useQueryClient();
-  return useMutation<CostCenter, Error, UpdateCostCenterInput>({
+  // ADR-202 — when the edit-approval gate is on and the cost centre is live, the
+  // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated cost centre. The edit page reads the union to tell
+  // them apart.
+  return useMutation<CostCenter | DocumentEditStagedResult, Error, UpdateCostCenterInput>({
     mutationFn: (input) =>
-      apiFetch<CostCenter>(`/cost-centers/${id}`, { method: 'PATCH', json: input }),
+      apiFetch<CostCenter | DocumentEditStagedResult>(`/cost-centers/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: costCentersKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the cost centre itself — just refresh so the detail
+        // page shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: costCentersKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(costCentersKeys.detail(id), updated);
     },
   });

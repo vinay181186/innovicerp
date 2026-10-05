@@ -35,7 +35,7 @@ export async function costCentersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateCostCenterInputSchema.parse(req.body);
-    return service.updateCostCenter(id, body, req.user);
+    return service.updateCostCenterOrStage(id, body, req.user);
   });
 
   app.delete('/cost-centers/:id', async (req, reply) => {

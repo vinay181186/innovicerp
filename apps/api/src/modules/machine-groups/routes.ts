@@ -35,7 +35,7 @@ export async function machineGroupsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateMachineGroupInputSchema.parse(req.body);
-    return service.updateMachineGroup(id, body, req.user);
+    return service.updateMachineGroupOrStage(id, body, req.user);
   });
 
   app.delete('/machine-groups/:id', async (req, reply) => {

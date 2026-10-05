@@ -1,7 +1,8 @@
 import { ActivityAction } from '@innovic/shared';
+import type { DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { tpiMasters } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -13,7 +14,7 @@ import type {
   TpiMaster,
   UpdateTpiMasterInput,
 } from './schema';
-import { softDeleteStamp } from '../../lib/audit-trail';
+import { type DiffField, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
@@ -58,6 +59,21 @@ const tpiMasterColumns = {
   updatedBy: tpiMasters.updatedBy,
   deletedAt: tpiMasters.deletedAt,
 };
+
+const activeLabel = (v: unknown): string | null =>
+  v === true ? 'Active' : v === false ? 'Inactive' : null;
+
+/** Every user-editable TPI Inspector field, with its screen label (NAMING.md),
+ *  for the Edit row's Before → After (ADR-197) and the edit-approval engine's
+ *  diff (tpi-master-edit-registry.ts). `code` (Inspector Name) is permanent and
+ *  is NOT here — it is never written on edit. */
+export const TPI_MASTER_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'organization', label: 'Organisation' },
+  { key: 'contactNo', label: 'Contact No.' },
+  { key: 'email', label: 'Email' },
+  { key: 'remarks', label: 'Remarks' },
+  { key: 'isActive', label: 'Active', format: activeLabel },
+];
 
 export async function listTpiMasters(
   input: ListTpiMastersQuery,
@@ -186,35 +202,94 @@ export async function updateTpiMaster(
   user: AuthContext,
 ): Promise<TpiMaster> {
   // Changing a saved record is `edit`, which L2 Data Entry deliberately does
-  // not have — it may create, not alter.
+  // not have — it may create, not alter. Checked in the public wrapper, not the
+  // tx body, so the edit-approval engine's applyEdit can replay an approved edit
+  // for an approver who holds `approve` but not `edit`.
   await requireFormAccess(user, 'tpimaster_create', 'edit');
+  return withUserContext(user, (tx) => updateTpiMasterTx(tx, id, input, user));
+}
+
+/**
+ * The body of a TPI Inspector edit, inside a caller-supplied transaction. Called
+ * by updateTpiMaster (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds the target row lock). The caller performs the
+ * edit / approve access check.
+ */
+export async function updateTpiMasterTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateTpiMasterInput,
+  user: AuthContext,
+): Promise<TpiMaster> {
   requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
+  const existing = await tx
+    .select({ id: tpiMasters.id })
+    .from(tpiMasters)
+    .where(and(eq(tpiMasters.id, id), isNull(tpiMasters.deletedAt)))
+    .limit(1);
+  if (existing.length === 0) throw new NotFoundError('TPI Inspector not found. Refresh the page.');
+
+  // `code` is absent from UpdateTpiMasterInput and is never written here: the
+  // TPI logs already signed off under that name have to keep agreeing with
+  // the master. An inspector is retired with isActive, not renamed.
+  const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
+  if (input.organization !== undefined) updates.organization = emptyToNull(input.organization);
+  if (input.contactNo !== undefined) updates.contactNo = emptyToNull(input.contactNo);
+  if (input.email !== undefined) updates.email = emptyToNull(input.email);
+  if (input.remarks !== undefined) updates.remarks = emptyToNull(input.remarks);
+  if (input.isActive !== undefined) updates.isActive = input.isActive;
+
+  const updated = await tx
+    .update(tpiMasters)
+    .set(updates)
+    .where(eq(tpiMasters.id, id))
+    .returning(tpiMasterColumns);
+  return updated[0] as unknown as TpiMaster;
+}
+
+/**
+ * The TPI Inspector edit entry point the HTTP route calls. Edit-approval
+ * (ADR-202): when the company gate is on and the inspector is still editable (a
+ * master is editable while it is not in Trash), the edit is STAGED for approval
+ * and a {staged:true, request} result is returned; otherwise it falls through to
+ * updateTpiMaster (today's behaviour). A record-level master has no child lines
+ * — there is no line guard.
+ */
+export async function updateTpiMasterOrStage(
+  id: string,
+  input: UpdateTpiMasterInput,
+  user: AuthContext,
+): Promise<TpiMaster | DocumentEditStagedResult> {
+  await requireFormAccess(user, 'tpimaster_create', 'edit');
+  const companyId = requireCompany(user);
+
+  // Imported dynamically to avoid a static import cycle with the registry entry
+  // (which imports updateTpiMasterTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors the registry's isLive: any live (not-Trash) inspector.
+    const rows = await tx
       .select({ id: tpiMasters.id })
       .from(tpiMasters)
-      .where(and(eq(tpiMasters.id, id), isNull(tpiMasters.deletedAt)))
+      .where(
+        and(
+          eq(tpiMasters.id, id),
+          eq(tpiMasters.companyId, companyId),
+          isNull(tpiMasters.deletedAt),
+        ),
+      )
       .limit(1);
-    if (existing.length === 0)
-      throw new NotFoundError('TPI Inspector not found. Refresh the page.');
-
-    // `code` is absent from UpdateTpiMasterInput and is never written here: the
-    // TPI logs already signed off under that name have to keep agreeing with
-    // the master. An inspector is retired with isActive, not renamed.
-    const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
-    if (input.organization !== undefined) updates.organization = emptyToNull(input.organization);
-    if (input.contactNo !== undefined) updates.contactNo = emptyToNull(input.contactNo);
-    if (input.email !== undefined) updates.email = emptyToNull(input.email);
-    if (input.remarks !== undefined) updates.remarks = emptyToNull(input.remarks);
-    if (input.isActive !== undefined) updates.isActive = input.isActive;
-
-    const updated = await tx
-      .update(tpiMasters)
-      .set(updates)
-      .where(eq(tpiMasters.id, id))
-      .returning(tpiMasterColumns);
-    return updated[0] as unknown as TpiMaster;
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    // These masters carry no expectedUpdatedAt token — concurrency is the
+    // engine's (loadForDiff locks FOR UPDATE and rechecks field freshness).
+    const request = await requestDocumentEdit('TpiInspector', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateTpiMaster(id, input, user);
 }
 
 export async function softDeleteTpiMaster(id: string, user: AuthContext): Promise<{ ok: true }> {

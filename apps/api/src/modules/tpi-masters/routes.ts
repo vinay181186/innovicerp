@@ -35,7 +35,7 @@ export async function tpiMastersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateTpiMasterInputSchema.parse(req.body);
-    return service.updateTpiMaster(id, body, req.user);
+    return service.updateTpiMasterOrStage(id, body, req.user);
   });
 
   app.delete('/tpi-masters/:id', async (req, reply) => {

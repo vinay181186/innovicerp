@@ -17,6 +17,7 @@
 
 import type {
   CreateInstrumentInput,
+  DocumentEditStagedResult,
   InstrumentListItem,
   MarkMissingInstrumentInput,
   RecordCalibrationInput,
@@ -25,10 +26,11 @@ import type {
   UpdateInstrumentInput,
 } from '@innovic/shared';
 import { INSTRUMENT_STATUS_LABELS } from '@innovic/shared';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { instrumentCalibrations, instruments, toolWriteoffs } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import type { DiffField } from '../../lib/audit-trail';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { countInstrumentsInStore, lockItemForStock, roundQty } from '../../lib/stock-ledger';
 import { readStockPosition } from '../../lib/stock-reservation';
@@ -40,6 +42,18 @@ export { getInstrument, listInstruments, listUnregistered } from './read';
 
 const FORM = 'toolissue_create' as const;
 const ENTITY = 'Instrument';
+
+/** The user-editable Instrument fields updateInstrument may set, with their
+ *  screen labels (NAMING.md), for the edit-approval engine's diff
+ *  (instrument-edit-registry.ts). The free-text EDIT log the module already
+ *  writes is unchanged — this is the STRUCTURED Before → After the engine needs.
+ *  Status / calibration dates move through their own guarded actions, not here. */
+export const INSTRUMENT_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'serialNo', label: 'Instrument Serial No.' },
+  { key: 'calibrationIntervalDays', label: 'Calibration Interval (days)' },
+  { key: 'location', label: 'Location' },
+  { key: 'remarks', label: 'Remarks' },
+];
 
 async function log(
   tx: DbTransaction,
@@ -167,38 +181,98 @@ export async function updateInstrument(
   input: UpdateInstrumentInput,
   user: AuthContext,
 ): Promise<InstrumentListItem> {
+  // Access check in the public wrapper, not the tx body, so the edit-approval
+  // engine's applyEdit can replay an approved edit without re-checking it.
+  await requireFormAccess(user, FORM, 'entry');
+  return withUserContext(user, (tx) => updateInstrumentTx(tx, id, input, user));
+}
+
+/**
+ * The body of an Instrument edit, inside a caller-supplied transaction. Called by
+ * updateInstrument (which opens the tx) and by the edit-approval engine's
+ * applyEdit (which already holds the row lock — lockInstrument re-locks the same
+ * row in the same tx, which is a no-op). Every guard is preserved verbatim: the
+ * FOR UPDATE lock, the Serial-No. edit rule and the free-text EDIT log.
+ */
+export async function updateInstrumentTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateInstrumentInput,
+  user: AuthContext,
+): Promise<InstrumentListItem> {
+  const companyId = requireCompany(user);
+  const cur = await lockInstrument(tx, companyId, id);
+  const set: Partial<typeof instruments.$inferInsert> = {
+    updatedAt: new Date(),
+    updatedBy: user.id,
+  };
+  const code = await itemCodeOf(tx, cur.itemId);
+  const newSerial = input.serialNo?.trim();
+  const renamed = newSerial !== undefined && newSerial !== cur.serialNo;
+  if (renamed) {
+    await assertSerialEditable(tx, companyId, cur, code, newSerial);
+    set.serialNo = newSerial;
+  }
+  if (input.calibrationIntervalDays !== undefined) {
+    set.calibrationIntervalDays = input.calibrationIntervalDays;
+  }
+  if (input.location !== undefined) set.location = input.location?.trim() || null;
+  if (input.remarks !== undefined) set.remarks = input.remarks?.trim() || null;
+  await tx.update(instruments).set(set).where(eq(instruments.id, id));
+  const serialNow = renamed ? newSerial : cur.serialNo;
+  await log(
+    tx,
+    companyId,
+    user,
+    'EDIT',
+    `${code} · Instrument Serial No. ${renamed ? `${cur.serialNo} → ${newSerial}` : cur.serialNo}`,
+    `${code}/${serialNow}`,
+  );
+  return readInstrument(tx, companyId, id);
+}
+
+/**
+ * The Instrument edit entry point the HTTP route calls. Edit-approval (ADR-202):
+ * when the company gate is on and the instrument is still live (not in Trash),
+ * the edit is STAGED for approval and a {staged:true, request} result is
+ * returned; otherwise it falls through to updateInstrument (today's behaviour).
+ * An instrument is a single record with no child lines — there is no line guard.
+ */
+export async function updateInstrumentOrStage(
+  id: string,
+  input: UpdateInstrumentInput,
+  user: AuthContext,
+): Promise<InstrumentListItem | DocumentEditStagedResult> {
   await requireFormAccess(user, FORM, 'entry');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const cur = await lockInstrument(tx, companyId, id);
-    const set: Partial<typeof instruments.$inferInsert> = {
-      updatedAt: new Date(),
-      updatedBy: user.id,
-    };
-    const code = await itemCodeOf(tx, cur.itemId);
-    const newSerial = input.serialNo?.trim();
-    const renamed = newSerial !== undefined && newSerial !== cur.serialNo;
-    if (renamed) {
-      await assertSerialEditable(tx, companyId, cur, code, newSerial);
-      set.serialNo = newSerial;
-    }
-    if (input.calibrationIntervalDays !== undefined) {
-      set.calibrationIntervalDays = input.calibrationIntervalDays;
-    }
-    if (input.location !== undefined) set.location = input.location?.trim() || null;
-    if (input.remarks !== undefined) set.remarks = input.remarks?.trim() || null;
-    await tx.update(instruments).set(set).where(eq(instruments.id, id));
-    const serialNow = renamed ? newSerial : cur.serialNo;
-    await log(
-      tx,
-      companyId,
-      user,
-      'EDIT',
-      `${code} · Instrument Serial No. ${renamed ? `${cur.serialNo} → ${newSerial}` : cur.serialNo}`,
-      `${code}/${serialNow}`,
-    );
-    return readInstrument(tx, companyId, id);
+
+  // Imported dynamically to avoid a static import cycle with the registry entry
+  // (which imports updateInstrumentTx from this file).
+  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  const shouldStage = await withUserContext(user, async (tx) => {
+    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
+    // "Editable" mirrors the registry's isLive: any live (not-Trash) instrument.
+    const rows = await tx
+      .select({ id: instruments.id })
+      .from(instruments)
+      .where(
+        and(
+          eq(instruments.id, id),
+          eq(instruments.companyId, companyId),
+          isNull(instruments.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   });
+  if (shouldStage) {
+    // No expectedUpdatedAt token — concurrency is the engine's (loadForDiff
+    // locks FOR UPDATE and rechecks field freshness).
+    const request = await requestDocumentEdit('Instrument', id, input, undefined, user);
+    return { staged: true, request };
+  }
+
+  return updateInstrument(id, input, user);
 }
 
 export async function sendForCalibration(
