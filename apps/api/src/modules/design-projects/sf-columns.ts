@@ -41,6 +41,9 @@ export const DESIGN_PROJECT_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`dp.code`, type: 'text' },
   projectName: { sql: sql`dp.project_name`, type: 'text' },
   soCode: { sql: sql`dp.so_code_text`, type: 'text' },
+  // ADR-207 — the Internal SO No., off the so_i join DESIGN_PROJECT_FROM makes
+  // (so the list, its count and its summary all read the same expression).
+  soInternalNo: { sql: sql`so_i.internal_so_no`, type: 'text' },
   customer: { sql: sql`dp.client_text`, type: 'text' },
   lead: { sql: sql`dp.lead_text`, type: 'text' },
   dueDate: { sql: sql`dp.target_date`, type: 'date' },

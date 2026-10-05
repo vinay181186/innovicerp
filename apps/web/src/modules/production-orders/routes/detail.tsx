@@ -27,7 +27,6 @@ import {
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -60,6 +59,89 @@ function Fact({
         {children}
       </div>
     </div>
+  );
+}
+
+// ── The header fact sheet (owner decision 2026-10-05) ───────────────────────
+// Every header fact in ONE table, read top to bottom in the order the work
+// happens, with the group names as divider BANDS inside that same table —
+// explicitly NOT a panel per group. Four columns: label · value · label ·
+// value, two facts to a row, so a fact always sits beside its own name.
+//
+// `table-layout: fixed` (`tbl-fixed`) + the colgroup below keep the four
+// columns on the same vertical edges from the first row to the last, whatever
+// is in them. Labels wrap rather than clip; long values ellipsis with a title.
+
+/** A divider band — the group's name, across all four columns. Same look as a
+ *  table head band (`.innovic-table th`) without the sticky / sortable
+ *  behaviour, which a row header must not have. */
+function Band({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <tr>
+      <td
+        colSpan={4}
+        className="td-left"
+        style={{
+          background: 'var(--blue3)',
+          color: 'var(--blue2)',
+          fontFamily: 'var(--hfont)',
+          fontSize: 'var(--fs-xs)',
+          fontWeight: 800,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+        }}
+      >
+        {children}
+      </td>
+    </tr>
+  );
+}
+
+/** The label half of a fact — the 13px `.form-label` standard, left, and
+ *  allowed to wrap so a long name is never cut off mid-word. */
+function K({ children }: { children: string }): React.JSX.Element {
+  return (
+    <td className="form-label td-left" style={{ whiteSpace: 'normal' }}>
+      {children}
+    </td>
+  );
+}
+
+/** The value half. Document numbers / codes and quantities are mono fw-700 in
+ *  --text — they are what a reader hunts for, never the faint --text3.
+ *  Quantities also right-align with tabular digits (number-alignment
+ *  standard, 2026-09-26). Only a value that is not there goes quiet. */
+function V({
+  children,
+  num = false,
+  code = false,
+  empty = false,
+  span,
+  title,
+}: {
+  children: React.ReactNode;
+  /** A quantity — right, mono, tabular digits. */
+  num?: boolean;
+  /** A document number / code / date — left, mono, strong. */
+  code?: boolean;
+  /** The value is absent (the em dash) — the one case that reads quiet. */
+  empty?: boolean;
+  span?: 2 | 3 | undefined;
+  title?: string | undefined;
+}): React.JSX.Element {
+  return (
+    <td
+      className={num ? 'td-num mono fw-700' : code ? 'td-left mono fw-700' : 'td-left'}
+      colSpan={span}
+      title={title}
+      style={{
+        color: empty ? 'var(--text3)' : 'var(--text)',
+        fontWeight: empty ? 400 : num || code ? 700 : 600,
+        ...(span ? {} : { overflow: 'hidden', textOverflow: 'ellipsis' }),
+      }}
+    >
+      {children}
+    </td>
   );
 }
 
@@ -200,113 +282,268 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           </div>
         ) : null}
 
-        <div className="form-grid form-grid-4">
-          <Fact label="Plan No.">
-            <Link
-              to="/plans/$id"
-              params={{ id: data.planId }}
-              className="mono fw-700"
-              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-            >
-              {data.planCodeText}
-            </Link>
-          </Fact>
-          <Fact label="SO / JWSO No." mono>
-            {data.soCodeText ? (
-              <>
-                {soNoWithInternal(data.soCodeText, data.soInternalNo)}
-                {data.lineNo ? <span className="text3"> · Ln {data.lineNo}</span> : null}
-              </>
-            ) : (
-              '—'
-            )}
-          </Fact>
-          <Fact label="Customer">{data.partyName ?? '—'}</Fact>
-          <Fact label="PRO Target Date" mono>
-            {fmtDate(data.targetDate)}
-            <Chip changes={pendingChanges} field="targetDate" />
-          </Fact>
+        {/* ── The fact sheet ──────────────────────────────────────────────
+            One table, top to bottom in the order the work happens: who it is →
+            where it came from → what to make → how much → when → what it is
+            made of → notes. The group names are BAND rows inside this same
+            table (owner decision 2026-10-05), not a panel each. */}
+        <table className="innovic-table tbl-fixed">
+          <colgroup>
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '30%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '30%' }} />
+          </colgroup>
+          <tbody>
+            <Band>Identity</Band>
+            <tr>
+              <K>Production Order No.</K>
+              <V code>{data.code}</V>
+              <K>Production Order Status</K>
+              <V>
+                <PoStatusBadge status={data.status} />
+              </V>
+            </tr>
+            <tr>
+              <K>Production Order Date</K>
+              <V code empty={!data.createdAt}>
+                {fmtDate(data.createdAt)}
+              </V>
+              <K>Created By</K>
+              <V empty={!data.createdByName} title={data.createdByName ?? undefined}>
+                {data.createdByName ?? '—'}
+              </V>
+            </tr>
 
-          {/* POL — the line number printed on the CUSTOMER's own purchase
-                order. NOT our SO line number ("Ln n" above); on live data
-                our line 11 is the customer's line 20. Sits before the item
-                code, as on every other document. */}
-          <Fact label="POL" mono>
-            <span className="fw-700" style={{ color: 'var(--purple)' }}>
-              {data.clientPoLineNo ?? '—'}
-            </span>
-          </Fact>
-          <Fact label="Item Code" mono>
-            {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-            {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
-          </Fact>
-          <div className="form-grp form-span-2">
-            <span className="form-label">Item Name</span>
-            <div className="fw-700" style={{ color: 'var(--text)' }}>
-              {data.itemNameText ?? '—'}
-            </div>
-          </div>
-          {/* The Production Order's own qty (the list calls it Order Qty).
-                Was mislabelled "Plan Qty" — the plan's qty can be larger when
-                several orders cover one plan (ADR-182). */}
-          <Fact label="Order Qty" mono>
-            {data.orderQty}
-          </Fact>
-          {/* Raw material the order is cut from — read off its plan (same
-                labels as Plan detail). */}
-          <Fact label="RM Grade">{data.rawMaterialGradeText ?? '—'}</Fact>
-          <Fact label="RM Size">{data.rawMaterialSizeText ?? '—'}</Fact>
-          {/* ADR-182 — the shop floor's confirmation at Create, and the size
-                the store really cut (RM size above is the planned one). */}
-          <Fact label="Raw Material Available">
-            {data.rawMaterialAvailable ? (
-              <span style={{ color: 'var(--green2)' }}>✓ Yes</span>
-            ) : (
-              <span style={{ color: 'var(--red2)' }}>✗ No</span>
-            )}
-            <Chip changes={pendingChanges} field="rawMaterialAvailable" />
-          </Fact>
-          <Fact label="Actual Size" mono>
-            {data.actualSize ?? '—'}
-            <Chip changes={pendingChanges} field="actualSize" />
-          </Fact>
+            <Band>Where it came from</Band>
+            <tr>
+              <K>SO / JWSO No.</K>
+              <V code empty={!data.soCodeText}>
+                {data.soCodeText ?? '—'}
+              </V>
+              <K>Customer</K>
+              <V empty={!data.partyName} title={data.partyName ?? undefined}>
+                {data.partyName ?? '—'}
+              </V>
+            </tr>
+            <tr>
+              {/* Ln is OUR sales-order line number. POL is the line number
+                  printed on the CUSTOMER's own purchase order — on live data
+                  our line 11 is the customer's line 20. Never the same fact. */}
+              <K>Ln</K>
+              <V code empty={!data.lineNo}>
+                {data.lineNo ?? '—'}
+              </V>
+              <K>POL</K>
+              <V code empty={!data.clientPoLineNo}>
+                {data.clientPoLineNo ? (
+                  <span style={{ color: 'var(--purple)' }}>{data.clientPoLineNo}</span>
+                ) : (
+                  '—'
+                )}
+              </V>
+            </tr>
+            <tr>
+              {/* ADR-207 — the SO's own office number, read live. A JWSO and an
+                  older SO have none. */}
+              <K>Internal SO No.</K>
+              <V code empty={!data.soInternalNo}>
+                {data.soInternalNo ?? '—'}
+              </V>
+              {/* The approved sheet leaves this half of the row open. */}
+              <td colSpan={2} />
+            </tr>
+            <tr>
+              <K>Plan No.</K>
+              <V>
+                <Link
+                  to="/plans/$id"
+                  params={{ id: data.planId }}
+                  className="mono fw-700"
+                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                >
+                  {data.planCodeText}
+                </Link>
+              </V>
+              <K>Route Card</K>
+              <V title={`${data.routeCardCodeText} · Route Card Rev ${data.routeCardRevision}`}>
+                <Link
+                  to="/route-cards/$id"
+                  params={{ id: data.routeCardId }}
+                  className="mono fw-700"
+                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                >
+                  {data.routeCardCodeText}
+                </Link>
+                <span className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
+                  {' '}
+                  · Route Card Rev {data.routeCardRevision}
+                </span>
+              </V>
+            </tr>
 
-          <Fact label="Route Card">
-            <Link
-              to="/route-cards/$id"
-              params={{ id: data.routeCardId }}
-              className="mono fw-700"
-              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-            >
-              {data.routeCardCodeText}
-            </Link>
-            <span className="text3" style={{ fontSize: 11 }}>
-              {' '}
-              · Route Card Rev {data.routeCardRevision}
-            </span>
-          </Fact>
-          <Fact label="JC No.">
-            <Link
-              to="/job-cards/$id"
-              params={{ id: data.jobCardId }}
-              className="mono fw-700"
-              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-            >
-              {data.jcCodeText}
-            </Link>
-          </Fact>
-          <Fact label="Created By">
-            {data.createdByName ?? '—'}
-            <span className="text3 mono" style={{ fontSize: 11 }}>
-              {' '}
-              · {fmtDate(data.createdAt)}
-            </span>
-          </Fact>
-          <Fact label="Remarks">
-            {data.remarks ?? '—'}
-            <Chip changes={pendingChanges} field="remarks" />
-          </Fact>
-        </div>
+            <Band>What to make</Band>
+            <tr>
+              <K>Item Code</K>
+              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+              <V code title={itemCodeWithRev(data.itemCodeText, data.itemRevision)}>
+                {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
+              </V>
+              <K>Item Name</K>
+              <V empty={!data.itemNameText} title={data.itemNameText ?? undefined}>
+                {data.itemNameText ?? '—'}
+              </V>
+            </tr>
+
+            {/* ── How much ──
+                The three-rung ladder first (what the customer ordered, what the
+                plan covers, what THIS order is for), then the close account:
+                credited + pending, what can be closed right now, what was
+                lost. `PRO Qty` not a bare `Order Qty` — three quantities sit
+                together here (docs/NAMING.md). */}
+            <Band>How much</Band>
+            <tr>
+              <K>SO Qty</K>
+              <V num empty={data.soQty == null} title="The SO / JWSO line's ordered qty">
+                {data.soQty ?? '—'}
+              </V>
+              <K>Plan Qty</K>
+              <V num empty={data.planQty == null} title="What the plan covers">
+                {data.planQty ?? '—'}
+              </V>
+            </tr>
+            <tr>
+              <K>PRO Qty</K>
+              <V num title="Pieces THIS Production Order is for">
+                {data.orderQty}
+              </V>
+              <K>Credited Qty</K>
+              <V num title="Pieces already closed into stock">
+                {data.creditedQty ?? 0}
+              </V>
+            </tr>
+            <tr>
+              <K>Pending</K>
+              <V num title="Pieces still to be closed">
+                {data.remainingQty}
+              </V>
+              <K>Available to Close</K>
+              <V num title="Finished on the Job Card and not yet credited">
+                {data.availableToClose}
+              </V>
+            </tr>
+            <tr>
+              <K>Lost Qty</K>
+              <V num empty={data.lostQty == null} title="Pieces written off on a short close">
+                {data.lostQty ?? '—'}
+              </V>
+              <K>JC No.</K>
+              <V title={data.jcCodeText ?? undefined}>
+                <Link
+                  to="/job-cards/$id"
+                  params={{ id: data.jobCardId }}
+                  className="mono fw-700"
+                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                >
+                  {data.jcCodeText}
+                </Link>{' '}
+                {/* JC Status — the live computed status the row carries
+                    (`jcStatus` on the wire is this same value). */}
+                {data.jcComputedStatus ? (
+                  <JcStatusBadge status={data.jcComputedStatus} />
+                ) : (
+                  <span className="text3" style={{ fontWeight: 400 }}>
+                    —
+                  </span>
+                )}
+              </V>
+            </tr>
+
+            {/* ── When ──
+                The dates in the order they happen: the plan's window, our own
+                target, then the date the CUSTOMER expects it (the SO / JWSO
+                line's due date — that is what `Customer Dispatch Date` means on
+                a Production Order, owner decision 2026-09-30). */}
+            <Band>When</Band>
+            <tr>
+              <K>Plan Start Date</K>
+              <V code empty={!data.plannedStartDate}>
+                {fmtDate(data.plannedStartDate)}
+              </V>
+              <K>Plan End Date</K>
+              <V code empty={!data.plannedEndDate}>
+                {fmtDate(data.plannedEndDate)}
+              </V>
+            </tr>
+            <tr>
+              <K>PRO Target Date</K>
+              <V code empty={!data.targetDate}>
+                {fmtDate(data.targetDate)}
+                <Chip changes={pendingChanges} field="targetDate" />
+              </V>
+              <K>Customer Dispatch Date</K>
+              <V code empty={!data.lineDueDate}>
+                {fmtDate(data.lineDueDate)}
+              </V>
+            </tr>
+
+            {/* ── Material ──
+                Grade and size are read live off the plan (same labels as Plan
+                detail); the RM item is WHAT the store issues. Actual Size and
+                Raw Material Available are the shop floor's own answers typed on
+                Create (ADR-182) — the size really cut, not the planned one. */}
+            <Band>Material</Band>
+            <tr>
+              <K>RM Grade</K>
+              <V empty={!data.rawMaterialGradeText} title={data.rawMaterialGradeText ?? undefined}>
+                {data.rawMaterialGradeText ?? '—'}
+              </V>
+              <K>RM Size</K>
+              <V empty={!data.rawMaterialSizeText} title={data.rawMaterialSizeText ?? undefined}>
+                {data.rawMaterialSizeText ?? '—'}
+              </V>
+            </tr>
+            <tr>
+              <K>RM Item</K>
+              <V
+                code
+                empty={!data.rawMaterialItemCode}
+                title={data.rawMaterialItemCode ?? undefined}
+              >
+                {data.rawMaterialItemCode ?? '—'}
+              </V>
+              <K>RM Qty / piece</K>
+              <V num empty={data.rmQtyPerPiece == null}>
+                {data.rmQtyPerPiece ?? '—'}
+              </V>
+            </tr>
+            <tr>
+              <K>Actual Size</K>
+              <V code empty={!data.actualSize}>
+                {data.actualSize ?? '—'}
+                <Chip changes={pendingChanges} field="actualSize" />
+              </V>
+              <K>Raw Material Available</K>
+              <V>
+                {data.rawMaterialAvailable ? (
+                  <span style={{ color: 'var(--green2)' }}>✓ Yes</span>
+                ) : (
+                  <span style={{ color: 'var(--red2)' }}>✗ No</span>
+                )}
+                <Chip changes={pendingChanges} field="rawMaterialAvailable" />
+              </V>
+            </tr>
+
+            <Band>Notes</Band>
+            <tr>
+              <K>Remarks</K>
+              <V span={3} empty={!data.remarks}>
+                {data.remarks ?? '—'}
+                <Chip changes={pendingChanges} field="remarks" />
+              </V>
+            </tr>
+          </tbody>
+        </table>
       </DetailHeader>
 
       {/* ADR-182 — the order was stopped. High on the page, because it changes

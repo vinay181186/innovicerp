@@ -4,7 +4,6 @@
 
 import { SO_STATUSES, type SoCycleTimeRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 
@@ -61,9 +60,27 @@ export function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTim
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {soNoWithInternal(r.soNo, r.internalSoNo)}
+          {/* The SYSTEM number only (ADR-207); the office's own number is the
+              next column, so each heading names one of the two. */}
+          {r.soNo}
         </Link>
       ),
+    },
+    {
+      // ADR-207 — the office's own typed number, beside the system SO No.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      sortFilterField: 'internalSoNo',
+      nowrap: true,
+      render: (r) =>
+        r.internalSoNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {r.internalSoNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

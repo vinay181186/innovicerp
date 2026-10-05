@@ -7,7 +7,6 @@
 
 import { opSrNo, type OspWipRow } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 
 export const OSP_AT_VENDOR_DEFAULT_PINNED = ['item_code'];
@@ -83,7 +82,24 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
       kind: 'code',
       header: 'SO No.',
       className: 'mono text2',
-      render: (r) => (r.soCode ? soNoWithInternal(r.soCode, r.soInternalNo) : '—'),
+      render: (r) => r.soCode ?? '—',
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO No. (owner decision 2026-10-05). Many older orders have none.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono',
+      render: (r) =>
+        r.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {r.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'vendor',

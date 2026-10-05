@@ -13,6 +13,11 @@ const itemCodeWithRev = sql`(COALESCE(i.code, l.item_code_text) || COALESCE('/' 
 
 export const IQC_PENDING_SF_COLUMNS: SfColumnMap = {
   grnNo: { sql: sql`h.code`, type: 'text' },
+  // ADR-207 — the Internal SO No. of the SO this receipt traces back to, off
+  // the `so` join the shared JOINS already makes (null on a raw-material GRN,
+  // exactly as the pending row's soCode is). Only the PENDING table carries
+  // the SO trace; the completed table's contract has no SO field.
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   itemCode: { sql: itemCodeWithRev, type: 'text' },
   vendorName: { sql: sql`COALESCE(v.name, h.vendor_code_text)`, type: 'text' },
   pendingQty: { sql: sql`(l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty)`, type: 'num' },

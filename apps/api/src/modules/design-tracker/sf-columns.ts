@@ -14,6 +14,9 @@ export const TRACKER_HOURS_SQL = sql`COALESCE(tl.total_hours, 0)::float`;
 export const DESIGN_TRACKER_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`dt.code`, type: 'text' },
   soCode: { sql: sql`dt.so_code_text`, type: 'text' },
+  // ADR-207 — the Internal SO No., off the so_i join the list's one shared
+  // FROM makes (page, count and the status counts alike).
+  soInternalNo: { sql: sql`so_i.internal_so_no`, type: 'text' },
   clientPoLineNo: { sql: sql`soline."clientPoLineNo"`, type: 'text' },
   itemCode: {
     sql: sql`(dt.item_code_text || COALESCE('/' || NULLIF(btrim(soline."itemRevision"), ''), ''))`,

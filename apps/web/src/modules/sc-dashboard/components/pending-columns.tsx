@@ -7,7 +7,6 @@ import type { ScPendingLine } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
@@ -64,7 +63,17 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
       kind: 'code',
       header: 'SO / JWSO No.',
       className: 'text2',
-      render: (p) => (p.soCode ? soNoWithInternal(p.soCode, p.soInternalNo) : '—'),
+      render: (p) => p.soCode || '—',
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO / JWSO No. so the two can be told apart.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      render: (p) => <span style={{ color: 'var(--text)' }}>{p.soInternalNo?.trim() || '—'}</span>,
     },
     {
       id: 'item_code',

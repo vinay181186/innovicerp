@@ -20,7 +20,6 @@ import { Link } from '@tanstack/react-router';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import { dayDiff } from './qc-sheet';
@@ -101,10 +100,15 @@ function respDaysOf(vm: CompletedVM): number | null {
 }
 function soVendorOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
-  if (vm.kind === 'op') {
-    return vm.row.soCode ? soNoWithInternal(vm.row.soCode, vm.row.soInternalNo) : '—';
-  }
+  if (vm.kind === 'op') return vm.row.soCode || '—';
   return vm.row.vendorName ?? '—';
+}
+/** ADR-207 — the office's own Internal SO No. Only a job-card QC log stands
+ *  against a sales order; an inspected GRN line stands against a vendor (the
+ *  completed incoming feed carries no SO at all) and a Party GRN line against
+ *  a customer, so neither has one. */
+function soInternalNoOf(vm: CompletedVM): string {
+  return vm.kind === 'op' ? vm.row.soInternalNo?.trim() || '—' : '—';
 }
 function operationOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return `Party GRN · ${pgrnOrderOf(vm.row)}`;
@@ -160,6 +164,7 @@ export const COMPLETED_HIDDEN = [
   'item_name',
   'pol',
   'so_vendor',
+  'so_internal_no',
   'operation',
   'called_date',
   'response_days',
@@ -296,6 +301,17 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       ellipsis: true,
       render: (vm) => soVendorOf(vm),
       title: (vm) => soVendorOf(vm),
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., its own column beside the
+      // SO / Vendor one so the two SO numbers can be told apart. No
+      // `sortFilterField`: this register has no server-side sort / filter map.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (vm) => <span style={{ color: 'var(--text)' }}>{soInternalNoOf(vm)}</span>,
     },
     {
       id: 'operation',

@@ -16,7 +16,6 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import { ProgressBar, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
@@ -107,8 +106,19 @@ export function designProjectColumns(opts: {
       header: 'SO No.',
       className: 'mono text2',
       nowrap: true,
-      render: (p) => (p.soCodeText ? soNoWithInternal(p.soCodeText, p.soInternalNo) : '—'),
+      render: (p) => p.soCodeText || '—',
       sortFilterField: 'soCode',
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO No. so the two can be told apart. Older orders have none.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (p) => <span style={{ color: 'var(--text)' }}>{p.soInternalNo?.trim() || '—'}</span>,
+      sortFilterField: 'soInternalNo',
     },
     {
       id: 'customer',

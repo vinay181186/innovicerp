@@ -7,7 +7,6 @@ import { Link } from '@tanstack/react-router';
 import { ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { Badge, StatusBadge } from '@/ui/core';
 import { ProgressBar, type DataTableColumn } from '@/ui/data';
 import { JC_STATUS_LABEL } from './jc-status-badge';
@@ -182,9 +181,29 @@ export function jobCardListColumns(
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {s.type === 'so' ? soNoWithInternal(s.code, s.internalSoNo) : s.code}
+            {s.code}
             {s.lineNo !== 1 ? <span>/{s.lineNo}</span> : null}
           </Link>
+        );
+      },
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO / JWSO No. (owner decision 2026-10-05). Empty for a JWSO-sourced
+      // card and for the older orders that never had one.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      header: 'Internal SO No.',
+      nowrap: true,
+      render: (jc) => {
+        const s = jc.sourceLink;
+        const internal = s?.type === 'so' ? s.internalSoNo?.trim() : null;
+        return internal ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {internal}
+          </span>
+        ) : (
+          <span className="text3">—</span>
         );
       },
     },

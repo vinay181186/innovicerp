@@ -36,6 +36,21 @@ export function productionOrderSfColumns(frags: {
       sql: sql`(${productionOrders.soCodeText} || COALESCE('/' || NULLIF(${productionOrders.lineNo}, 0)::text, ''))`,
       type: 'text',
     },
+    // ADR-207 — the Internal SO No., the SAME scalar the list SELECTs
+    // (service.ts SO_INTERNAL_NO_SQL): read live through the order's plan → SO
+    // line → SO. Keyed on production_orders.plan_id only, so it is valid in the
+    // count query, which selects from production_orders alone. Null on a
+    // JWSO-sourced order, which has no SO line behind it.
+    soInternalNo: {
+      sql: sql`(
+        SELECT so.internal_so_no
+          FROM public.plans p
+          JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+          JOIN public.sales_orders so ON so.id = sol.sales_order_id
+         WHERE p.id = ${productionOrders.planId} LIMIT 1
+      )`,
+      type: 'text',
+    },
     clientPoLineNo: {
       sql: sql`(
         SELECT sol.client_po_line_no

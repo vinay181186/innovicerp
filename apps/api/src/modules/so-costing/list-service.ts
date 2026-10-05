@@ -29,6 +29,7 @@ export type ListSoCostingQueryParsed = z.output<typeof listSoCostingQuerySchema>
  *  Cost Centre filters on what the cell prints: code, then " — name". */
 const SO_COSTING_SF_COLUMNS: SfColumnMap = {
   soNo: { sql: sql`b.so_no`, type: 'text' },
+  soInternalNo: { sql: sql`b.so_internal_no`, type: 'text' },
   customer: { sql: sql`b.customer`, type: 'text' },
   lines: { sql: sql`b.line_count`, type: 'num' },
   totalQty: { sql: sql`b.total_qty`, type: 'num' },

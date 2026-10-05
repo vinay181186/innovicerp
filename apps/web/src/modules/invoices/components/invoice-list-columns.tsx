@@ -4,7 +4,6 @@
 import type { ListInvoicesResponse } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import { StatusBadge } from '@/ui/core';
 import type { DataTableColumn } from '@/ui/data';
 
@@ -107,13 +106,27 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
       width: priceHidden ? '12%' : '9%',
       className: 'td-code',
       nowrap: true,
-      render: (inv) => (inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'),
+      render: (inv) => inv.soCode || '—',
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO No. so the two can be told apart. Older orders have none.
+      // No `sortFilterField`: the Internal SO No. reaches this row from a
+      // second query stitched on in JS, so the list query cannot sort by it.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      width: priceHidden ? '9%' : '7%',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (inv) => (
+        <span style={{ color: 'var(--text)' }}>{inv.soInternalNo?.trim() || '—'}</span>
+      ),
     },
     {
       id: 'customer',
       header: 'Customer',
       sortFilterField: 'clientName',
-      width: priceHidden ? '31%' : '17%',
+      width: priceHidden ? '22%' : '10%',
       align: 'left',
       className: 'fw-700',
       ellipsis: true,

@@ -25,6 +25,10 @@ export function prSfColumns(orderedQty: SQL): SfColumnMap {
       type: 'text',
     },
     itemName: { sql: sql`pr.item_name`, type: 'text' },
+    // ADR-207 — the Internal SO No. of the order behind the PR, off the `so`
+    // join BOTH the list and the count query make (through pr.source_so_line_id).
+    // Null on a PR raised for stock, which has no sales order behind it.
+    soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
     // The cell renders vendorName ?? vendorCodeText; vendorName = COALESCE(v.name, vt.name).
     vendorName: { sql: sql`COALESCE(v.name, vt.name, pr.vendor_code_text)`, type: 'text' },
     qty: { sql: sql`pr.qty`, type: 'num' },

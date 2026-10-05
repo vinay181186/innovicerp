@@ -8,7 +8,6 @@
 import type { QcDocument } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 
@@ -19,7 +18,14 @@ const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABEL).map(([value, label]) => 
 }));
 
 /** Ids hidden into the ▸ detail by default. */
-export const REGISTER_DETAIL_IDS = ['category', 'pol', 'item_name', 'so_code', 'uploaded_by'];
+export const REGISTER_DETAIL_IDS = [
+  'category',
+  'pol',
+  'item_name',
+  'so_code',
+  'so_internal_no',
+  'uploaded_by',
+];
 
 export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
   return [
@@ -100,9 +106,20 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
       nowrap: true,
       render: (d) => (
         <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-          {d.soCodeText ? soNoWithInternal(d.soCodeText, d.soInternalNo) : '—'}
+          {d.soCodeText || '—'}
         </span>
       ),
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO No. so the two can be told apart. Older orders have none.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (d) => <span style={{ color: 'var(--text)' }}>{d.soInternalNo?.trim() || '—'}</span>,
     },
     {
       id: 'uploaded_by',

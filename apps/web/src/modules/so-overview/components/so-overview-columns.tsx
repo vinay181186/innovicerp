@@ -12,7 +12,6 @@
 import type { SoOverallStatus, SoOverviewRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import { ProgressBar, ROW_TINT, type DataTableColumn } from '@/ui/data';
 
 /** Column ids shown inside the ▸ detail row by default (fit engine
@@ -173,9 +172,27 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
           style={{ color: 'var(--cyan)', fontSize: 13, fontWeight: 800 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {soNoWithInternal(row.code, row.internalSoNo)}
+          {/* The SYSTEM number only (ADR-207); the office's own number is the
+              next column, so each heading names one of the two. */}
+          {row.code}
         </Link>
       ),
+    },
+    {
+      // ADR-207 — the office's own typed number, beside the system SO No.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      kind: 'code',
+      sortFilterField: 'internalSoNo',
+      nowrap: true,
+      render: (row) =>
+        row.internalSoNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {row.internalSoNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

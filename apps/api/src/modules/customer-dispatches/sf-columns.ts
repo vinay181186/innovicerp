@@ -12,6 +12,9 @@ export const DISPATCH_SF_COLUMNS: SfColumnMap = {
   dispatchDate: { sql: sql`h.dispatch_date`, type: 'date' },
   customer: { sql: sql`COALESCE(cli.name, h.customer_text)`, type: 'text' },
   soCode: { sql: sql`h.so_code_text`, type: 'text' },
+  // ADR-207 — the Internal SO No., live off the dispatch's SO (the `cso` join
+  // HEADER_JOINS already makes, so the dispatch page and its count agree).
+  soInternalNo: { sql: sql`cso.internal_so_no`, type: 'text' },
   // Every live line of the dispatch.
   totalQty: {
     sql: sql`(SELECT COALESCE(SUM(sfl.qty), 0) FROM public.customer_dispatch_lines sfl

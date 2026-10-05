@@ -13,7 +13,6 @@ import {
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 
 export const QC_HISTORY_DEFAULT_PINNED = ['item_code'];
@@ -35,7 +34,7 @@ interface QcRowBase {
   operation: string;
 }
 
-/** The seven leading columns both tables share: JC No. … Operation. */
+/** The eight leading columns both tables share: JC No. … Operation. */
 function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
   return [
     {
@@ -59,11 +58,18 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
       kind: 'code',
       header: 'SO No.',
       className: 'mono',
-      render: (o) => (
-        <span style={{ color: 'var(--blue)' }}>
-          {o.soCode ? soNoWithInternal(o.soCode, o.soInternalNo) : '—'}
-        </span>
-      ),
+      render: (o) => <span style={{ color: 'var(--blue)' }}>{o.soCode || '—'}</span>,
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO No. so the two can be told apart. Older orders have none.
+      // Both tables read the same `so` join, so either can sort / filter on it.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      render: (o) => <span style={{ color: 'var(--text)' }}>{o.soInternalNo?.trim() || '—'}</span>,
     },
     {
       // POL — the CUSTOMER's own purchase-order line number, before the item code.

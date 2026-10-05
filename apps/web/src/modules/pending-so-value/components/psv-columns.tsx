@@ -17,7 +17,6 @@
 import type { PendingSoValueResponse, PendingSoValueRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
@@ -97,9 +96,27 @@ export function psvColumns(
           title="Open the Sales Order"
           onClick={(e) => e.stopPropagation()}
         >
-          {soNoWithInternal(r.soCode, r.soInternalNo)}
+          {/* The SYSTEM number only (ADR-207); the office's own number is the
+              next column, so each heading names one of the two. */}
+          {r.soCode}
         </Link>
       ),
+    },
+    {
+      // ADR-207 — the office's own typed number, beside the system SO No.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      filterType: 'text',
+      header: 'Internal SO No.',
+      nowrap: true,
+      render: (r) =>
+        r.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {r.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

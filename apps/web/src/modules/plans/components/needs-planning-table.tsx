@@ -20,7 +20,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -59,8 +58,9 @@ export function NeedsPlanningTable(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
 
-  // Widths are `%` (10+4+5+12+16+6+6+6+8+12 = 85); the fit engine sizes the
-  // ⋯ column itself.
+  // Widths are `%` (10+7+4+5+12+12+6+6+6+8+9 = 85); the fit engine sizes the
+  // ⋯ column itself. The 7% for Internal SO No. came out of the two widest
+  // text columns (Item Name 16→12, Customer 12→9), never off a code/date/qty.
   const columns = useMemo<DataTableColumn<UnplannedOrderRow>[]>(
     () => [
       {
@@ -72,9 +72,26 @@ export function NeedsPlanningTable(): React.JSX.Element {
         nowrap: true,
         render: (r) => (
           <Link to="/sales-orders/$id" params={{ id: r.soId }} className="td-code">
-            {soNoWithInternal(r.soCode, r.soInternalNo)}
+            {r.soCode}
           </Link>
         ),
+      },
+      {
+        // ADR-207 — the office's own number, its OWN column beside the system
+        // SO No. (owner decision 2026-10-05). Many older orders have none.
+        id: 'so_internal_no',
+        header: 'Internal SO No.',
+        sortFilterField: 'soInternalNo',
+        width: '7%',
+        nowrap: true,
+        render: (r) =>
+          r.soInternalNo?.trim() ? (
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {r.soInternalNo}
+            </span>
+          ) : (
+            <span className="text3">—</span>
+          ),
       },
       {
         header: 'Ln',
@@ -115,7 +132,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         sortFilterField: 'partName',
         filterType: 'text',
         header: 'Item Name',
-        width: '16%',
+        width: '12%',
         align: 'left',
         ellipsis: true,
         render: (r) => r.partName ?? '—',
@@ -171,7 +188,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         sortFilterField: 'customerName',
         filterType: 'text',
         header: 'Customer',
-        width: '12%',
+        width: '9%',
         align: 'left',
         ellipsis: true,
         render: (r) => r.customerName ?? '—',

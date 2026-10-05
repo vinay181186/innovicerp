@@ -12,7 +12,6 @@
 import { type QcCommandQueueRow, type QcQueueSort, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type QcPager, TablePager } from './TablePager';
@@ -38,8 +37,15 @@ function ageColor(n: number): string {
   return 'var(--green)';
 }
 
-/** Item Name, SO No., Customer and Due Date ride in the ▸ detail row. */
-const QUEUE_HIDDEN_COLUMNS = ['item_name', 'so_code', 'customer', 'due_date'] as const;
+/** Item Name, SO No., Internal SO No., Customer and Due Date ride in the ▸
+ *  detail row. */
+const QUEUE_HIDDEN_COLUMNS = [
+  'item_name',
+  'so_code',
+  'so_internal_no',
+  'customer',
+  'due_date',
+] as const;
 
 export function QueueTab({
   rows,
@@ -177,10 +183,19 @@ export function QueueTab({
       id: 'so_code',
       header: 'SO No.',
       nowrap: true,
+      render: (it) => <span style={{ color: 'var(--cyan)' }}>{it.soCode || '—'}</span>,
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO No. so the two can be told apart. No `sortFilterField`:
+      // this module has no server-side sort / filter map.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
       render: (it) => (
-        <span style={{ color: 'var(--cyan)' }}>
-          {it.soCode ? soNoWithInternal(it.soCode, it.soInternalNo) : '—'}
-        </span>
+        <span style={{ color: 'var(--text)' }}>{it.soInternalNo?.trim() || '—'}</span>
       ),
     },
     {

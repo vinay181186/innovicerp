@@ -1,6 +1,6 @@
 // Columns for the Planning cross-order line-search results (ADR-199 shared FIT
-// table). One row per matching SO LINE: SO/JWSO No. (pinned) · Ln · POL · Item
-// Code · Item Name · Order Qty · Due · Plan Status. Split out of
+// table). One row per matching SO LINE: SO/JWSO No. (pinned) · Internal SO No. ·
+// Ln · POL · Item Code · Item Name · Order Qty · Due · Plan Status. Split out of
 // routes/workflow.tsx so that file stays under the 400-line rule. The old
 // fixed-layout table wrapped long cells over several lines; the fit engine keeps
 // every row to one line and folds the rightmost columns into the ▸ detail row
@@ -9,7 +9,6 @@
 import type { PlanningLine, PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { JwChip, lineStatusOf } from './planning-shared';
 
@@ -39,12 +38,32 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
       render: ({ so }) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           {so.source === 'jw' ? <JwChip /> : null}
+          {/* The SYSTEM number only (ADR-207); the office's own number is the
+              next column, so each heading names one of the two. */}
           <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {soNoWithInternal(so.soCode, so.soInternalNo)}
+            {so.soCode}
           </span>
         </span>
       ),
-      filterValue: ({ so }) => soNoWithInternal(so.soCode, so.soInternalNo),
+      filterValue: ({ so }) => so.soCode,
+    },
+    {
+      // ADR-207 — the office's own typed number, beside the system number. This
+      // sheet's ▾ runs in the browser over the rows already loaded, so the
+      // column filters through `filterValue`, not a server field.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      kind: 'code',
+      nowrap: true,
+      render: ({ so }) =>
+        so.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {so.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
+      filterValue: ({ so }) => so.soInternalNo,
     },
     {
       id: 'ln',

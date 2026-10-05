@@ -24,6 +24,10 @@ export const JC_SF_COLUMNS: SfColumnMap = {
     sql: sql`(COALESCE(so.code, jw.code) || CASE WHEN COALESCE(sol.line_no, jwl.line_no) <> 1 THEN '/' || COALESCE(sol.line_no, jwl.line_no)::text ELSE '' END)`,
     type: 'text',
   },
+  // ADR-207 — the Internal SO No. of that same SO, off the `so` join
+  // JC_LIST_JOINS makes for both the list and its count. Null on a
+  // JWSO-sourced or standalone card, which has no sales order behind it.
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   orderQty: { sql: sql`jc.order_qty`, type: 'num' },
   status: { sql: sql`COALESCE(s.computed_status, 'no_ops')`, type: 'list' },
   jcDate: { sql: sql`jc.jc_date`, type: 'date' },
