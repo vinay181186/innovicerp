@@ -334,7 +334,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             help={
               <>
                 {reservable > 0
-                  ? `${stock} free · ${line.physicalQty} on shelf`
+                  ? `Max ${reservable} · ${stock} available · ${line.physicalQty} on shelf`
                   : stock <= 0
                     ? `No free stock to reserve — Available is 0 · ${line.physicalQty} on shelf`
                     : `This line is already fully covered — nothing left to reserve · ${line.physicalQty} on shelf`}

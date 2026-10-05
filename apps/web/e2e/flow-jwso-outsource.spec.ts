@@ -232,13 +232,19 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
 
   // ELEMENT: Direct Purchase must NOT be offered on a JWSO line (ADR-101);
   // Full Outsource must be.
-  const dpCount = await page.getByText(/Direct Purchase/i).count();
-  const foBtn = page.getByText(/Full Outsource/i).first();
+  // ADR-214: Plan Type is a <select id="edit-plan-type">, so the offered types
+  // are its option VALUES — asserted directly instead of by visible text, which
+  // no longer reaches an option inside a closed select.
+  const planTypeSel = page.locator('#edit-plan-type');
+  await expect(planTypeSel, 'plan type select rendered').toBeVisible({ timeout: 15_000 });
+  const offered = await planTypeSel.locator('option:not([disabled])').evaluateAll((os) =>
+    os.map((o) => (o as HTMLOptionElement).value),
+  );
   // eslint-disable-next-line no-console
-  console.log(`>> plan types in the editor — Direct Purchase shown: ${dpCount > 0}`);
-  expect(dpCount, 'Direct Purchase is hidden for JWSO lines').toBe(0);
-  await expect(foBtn, 'Full Outsource is offered').toBeVisible({ timeout: 15_000 });
-  await foBtn.click();
+  console.log(`>> plan types offered in the editor: ${offered.join(', ')}`);
+  expect(offered, 'Direct Purchase is hidden for JWSO lines').not.toContain('direct_purchase');
+  expect(offered, 'Full Outsource is offered').toContain('full_outsource');
+  await planTypeSel.selectOption('full_outsource');
   await page.waitForTimeout(1500);
 
   // Vendor + process are both required before execute.

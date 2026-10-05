@@ -678,7 +678,19 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             />
           </FormField>
           <ClusterFact num label="Covered" value={String(plan.coveredQty)} />
-          <ClusterFact num lead label="Pending" value={String(plan.pendingQty)} />
+          {/* Recomputed from the TYPED Plan Qty, not read off the plan.
+              `plan.pendingQty` is the server's figure for the SAVED plan qty,
+              so a saved 20 with 10 Covered still read "Pending 10" after you
+              typed 50 — the row stopped adding up at the one moment it is
+              being used. Same arithmetic as the server
+              (PLAN_PENDING_QTY_SQL / lib/plan-order-coverage.ts): plan qty
+              less what live Production Orders already cover, floored at 0. */}
+          <ClusterFact
+            num
+            lead
+            label="Pending"
+            value={String(Math.max(0, (Number(planQty) || 0) - plan.coveredQty))}
+          />
         </Cluster>
       </ClusterGrid>
       <div className="divider" />
@@ -706,11 +718,23 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 supplies the material). Hidden for a JWSO-sourced plan exactly
                 as the old picture-card picker hid it; the server refuses it
                 as well, so a direct API call cannot set it either. */}
-            {isJw ? null : <option value="direct_purchase">Direct Purchase</option>}
+            {isJw && planType !== 'direct_purchase' ? null : (
+              <option value="direct_purchase" disabled={isJw}>
+                Direct Purchase
+              </option>
+            )}
             {/* Assembly is never OFFERED: the old picker had no Assembly card
                 and lit its Manufacture card for an assembly plan. The option
                 appears only when the plan already IS one, so the box states
-                what it is instead of rendering blank. */}
+                what it is instead of rendering blank.
+
+                Same reason the hidden Direct Purchase option comes back above
+                when a JW plan somehow carries it (a legacy row, a direct API
+                write): a controlled <select> whose value matches no option
+                paints the FIRST option instead, so the box would have said
+                "Manufacture" while the Direct Purchase block rendered below it
+                and the save kept `direct_purchase`. Shown disabled — it states
+                the plan's type without offering it as a choice. */}
             {planType === 'assembly' ? <option value="assembly">Assembly</option> : null}
           </select>
         </FormField>

@@ -324,7 +324,12 @@ function PlanDetailPage(): React.JSX.Element {
                 result. */}
             {plan.derivedStatus ? (
               <Cluster name="Quantity">
-                <ClusterFact num label="Order Qty" value={String(plan.orderQty)} />
+                <ClusterFact
+                  num
+                  label="Order Qty"
+                  value={String(plan.orderQty)}
+                  after={<Chip changes={pendingChanges} field="orderQty" />}
+                />
                 <ClusterFact
                   num
                   label="Plan Qty"
@@ -485,7 +490,7 @@ function PlanDetailPage(): React.JSX.Element {
                     after={<Chip changes={pendingChanges} field="foMaterialSrc" />}
                   />
                 </Cluster>
-                <Cluster>
+                <Cluster name={null}>
                   <ClusterFact
                     num
                     label="Delivery Date"
@@ -511,7 +516,7 @@ function PlanDetailPage(): React.JSX.Element {
                   />
                 </Cluster>
                 {plan.foRemarks || headerPendingChange(pendingChanges, 'foRemarks') ? (
-                  <Cluster>
+                  <Cluster name={null}>
                     <ClusterFact
                       span={4}
                       wrap

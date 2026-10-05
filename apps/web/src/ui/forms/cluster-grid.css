@@ -47,6 +47,11 @@
 .cl-row.cl-nogut {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+/* An empty gutter on a continuation row still holds its 104px track, so the
+   row below lines up with the row above. */
+.cl-gut:empty::before {
+  content: '';
+}
 .cl-gut {
   font-family: var(--hfont);
   font-size: var(--fs-xs);
@@ -130,6 +135,14 @@
   color: var(--text3);
   font-weight: 400;
 }
+/* The staged-edit chip (ADR-202). Its own child of the cell, so the value's
+   `overflow: hidden` cannot eat it, and `flex: none` so it is never the thing
+   that gives way when the cell is tight. */
+.cl-fact-after {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+}
 /* Free text (remarks): may run to several lines, reads left to right. */
 .cl-fact.is-wrap {
   justify-content: flex-start;
@@ -160,7 +173,7 @@
 }
 
 /* Numbers typed into a cluster read like the numbers shown in one. */
-.cl-row .innovic-input.cl-num {
+.innovic-input.cl-num {
   text-align: right;
   font-family: var(--mono);
   font-weight: 700;

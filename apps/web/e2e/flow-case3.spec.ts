@@ -33,10 +33,11 @@ test('CASE 3 — full outsource SO→…→invoice', async ({ page }) => {
   await page.waitForTimeout(1500);
   await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
-  const pln = ((await page.locator('text=/Plan:\\s*PLN-/i').first().innerText().catch(() => '')) || '').match(/PLN-\d+/)?.[0] ?? '';
+  // ADR-214 retitled the box to 'Edit Plan PLN-nnnn', so match the code alone.
+  const pln = ((await page.locator('text=/PLN-\\d+/').first().innerText().catch(() => '')) || '').match(/PLN-\d+/)?.[0] ?? '';
   if (pln) log('PLN', pln);
-  // select Full Outsource plan type
-  await page.getByText(/Full Outsource/i).first().click();
+  // Select Full Outsource. ADR-214: Plan Type is a <select>, not three cards.
+  await page.locator('#edit-plan-type').selectOption('full_outsource');
   await page.waitForTimeout(1200);
   await snap(page, 'c3', '01-fo-panel');
   const v = page.getByPlaceholder(/Search vendor/i).first();
