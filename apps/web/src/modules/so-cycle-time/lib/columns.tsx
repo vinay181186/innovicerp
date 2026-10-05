@@ -73,11 +73,14 @@ export function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTim
       header: 'Internal SO No.',
       sortFilterField: 'internalSoNo',
       nowrap: true,
-      render: (r) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {r.internalSoNo ?? '—'}
-        </span>
-      ),
+      render: (r) =>
+        r.internalSoNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {r.internalSoNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

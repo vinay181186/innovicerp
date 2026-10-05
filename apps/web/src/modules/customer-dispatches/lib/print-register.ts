@@ -25,8 +25,8 @@ export function printCustomerDispatchRegister(args: {
     .map(
       (r) => `<tr>
       <td>${esc(fmtDate(r.date))}</td>
-      <td style="font-family:monospace;font-size:10px">${esc(r.soNo ?? '—')}</td>
-      <td style="font-family:monospace;font-size:10px">${esc(r.soInternalNo ?? '—')}</td>
+      <td style="font-family:monospace;font-size:10px">${esc(r.soNo || '—')}</td>
+      <td style="font-family:monospace;font-size:10px">${esc(r.soInternalNo || '—')}</td>
       <td style="color:#7c3aed;font-weight:700">${esc(r.clientPoLineNo ?? '—')}</td>
       <td style="color:#7c3aed;font-family:monospace">${esc(itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision))}</td>
       <td>${esc(r.itemName)}</td>

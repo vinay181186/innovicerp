@@ -55,11 +55,14 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
       header: 'Internal SO No.',
       kind: 'code',
       nowrap: true,
-      render: ({ so }) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {so.soInternalNo ?? '—'}
-        </span>
-      ),
+      render: ({ so }) =>
+        so.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {so.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
       filterValue: ({ so }) => so.soInternalNo,
     },
     {

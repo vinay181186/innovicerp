@@ -109,11 +109,14 @@ export function psvColumns(
       filterType: 'text',
       header: 'Internal SO No.',
       nowrap: true,
-      render: (r) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {r.soInternalNo ?? '—'}
-        </span>
-      ),
+      render: (r) =>
+        r.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {r.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',
