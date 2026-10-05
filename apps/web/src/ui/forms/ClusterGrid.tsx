@@ -44,12 +44,19 @@ export function ClusterGrid({ children }: { children?: ReactNode }): React.JSX.E
 }
 
 export interface ClusterProps {
-  /** The cluster's name, shown in the left gutter (Quantity, Schedule, …). */
-  name: ReactNode;
+  /** The cluster's name, shown in the left gutter (Quantity, Schedule, …).
+   *  Omit it for a row that needs no name — the four cells then use the full
+   *  width. A name is worth the gutter when a screen has SEVERAL fact rows to
+   *  tell apart (the view pages); inventing one per row of a single continuous
+   *  form just adds words. */
+  name?: ReactNode;
   children?: ReactNode;
 }
 
 export function Cluster({ name, children }: ClusterProps): React.JSX.Element {
+  if (name === undefined) {
+    return <div className="cl-row cl-nogut">{children}</div>;
+  }
   return (
     <div className="cl-row" role="group" aria-label={typeof name === 'string' ? name : undefined}>
       <span className="cl-gut">{name}</span>

@@ -41,6 +41,12 @@
 .cl-grid > .cl-row:first-child {
   border-top: none;
 }
+/* A row with no name spends the gutter on its cells. Used where a screen has
+   one fact row only (the Create / Edit modals) — there is nothing to tell it
+   apart from, so a gutter word would be invented structure. */
+.cl-row.cl-nogut {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .cl-gut {
   font-family: var(--hfont);
   font-size: var(--fs-xs);
@@ -75,15 +81,24 @@
    with a hairline between neighbours so each is visibly its own column. */
 .cl-fact {
   display: flex;
+  /* Wraps rather than truncates. The label never shrinks (it is the only thing
+     naming the value), so a long label in a narrow cell would otherwise eat the
+     value's room and ellipsis it — a date read as `22-Sep-20…` is worse than a
+     date on its own line. On wrap the value takes the full cell width and the
+     ONE row that needed it grows; nothing else moves. Measured against
+     `Customer Dispatch Date` (NAMING.md), the longest label on the Plan
+     screens, which clipped its date at 1024px before this. */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: var(--sp-3);
+  gap: 0 var(--sp-3);
   min-height: 22px;
   padding-left: var(--sp-3);
   border-left: 1px solid var(--border);
   font-size: var(--fs-sm);
 }
-.cl-grid > .cl-row > .cl-gut + .cl-fact {
+.cl-grid > .cl-row > .cl-gut + .cl-fact,
+.cl-grid > .cl-nogut > .cl-fact:first-child {
   border-left: none;
   padding-left: 0;
 }
@@ -93,7 +108,12 @@
   flex: none;
 }
 .cl-fact-v {
+  /* `auto` basis, so the value asks for its own width and wraps to the next
+     line when the cell cannot give it — rather than being squeezed to nothing
+     and ellipsised in place. */
+  flex: 0 1 auto;
   min-width: 0;
+  margin-left: auto;
   font-weight: 600;
   color: var(--text);
   text-align: right;
@@ -115,6 +135,7 @@
   justify-content: flex-start;
 }
 .cl-fact.is-wrap .cl-fact-v {
+  margin-left: 0;
   text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -124,7 +145,8 @@
 /* The RESULT of a row: what the cells before it add up to. It sits last and
    carries the 3px green rule, wherever it lands. */
 .cl-grid > .cl-row > .cl-lead,
-.cl-grid > .cl-row > .cl-gut + .cl-lead {
+.cl-grid > .cl-row > .cl-gut + .cl-lead,
+.cl-grid > .cl-nogut > .cl-lead:first-child {
   border-left: 3px solid var(--green);
   padding-left: var(--sp-3);
 }
@@ -145,7 +167,8 @@
 }
 
 @container (max-width: 760px) {
-  .cl-row {
+  .cl-row,
+  .cl-row.cl-nogut {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .cl-grid > .cl-row > .cl-gut {
@@ -162,7 +185,8 @@
   }
 }
 @container (max-width: 440px) {
-  .cl-row {
+  .cl-row,
+  .cl-row.cl-nogut {
     grid-template-columns: minmax(0, 1fr);
   }
   .cl-grid > .cl-row > .cl-span-2 {

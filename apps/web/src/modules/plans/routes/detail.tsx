@@ -1,4 +1,15 @@
 // Plan detail (PL-4). Shows full plan + ops + linked entities + actions.
+//
+// 2026-10-05 layout (the Plan screens method, ADR-214 — same primitive as the
+// Purchase Request screens, ADR-213): the identity line says WHICH SO line and
+// item this plan is for, then named one-line clusters in the order the work
+// happens — Quantity (ending on Pending, the number that decides whether a
+// Production Order is still needed), Schedule, Material, and the route-specific
+// Buy / Outsource facts. Create Plan and Edit Plan fill the same clusters, so a
+// planner who learns one screen has learned all three.
+//
+// Operations now has a panel of its own. Before this pass a plan's operations
+// were shown nowhere on the view page.
 
 import type { DocumentEditChange, PlanStatus, PlanType } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
@@ -18,6 +29,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
+import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { useExecutePlan, useFinalizePlan, usePlan } from '../api';
 import { PlanDeleteModal } from '../components/plan-delete-modal';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
@@ -229,6 +241,19 @@ function PlanDetailPage(): React.JSX.Element {
                 <Trash2 size={13} /> Delete
               </button>
             ) : null}
+            {/* The one thing a Planned route-card plan exists for. Same
+                condition and same destination as the link it replaces — it was
+                a text link in a box at the foot of the body, where the page's
+                primary action read as a footnote. */}
+            {fromRouteCard && perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
+              <Link
+                to="/production-orders/new"
+                search={{ planId: plan.id, planCode: plan.code }}
+                className="btn btn-primary btn-sm"
+              >
+                Create Production Order →
+              </Link>
+            ) : null}
           </div>
         </div>
         <div className="panel-body">
@@ -248,273 +273,279 @@ function PlanDetailPage(): React.JSX.Element {
             </div>
           ) : null}
 
-          <Grid>
-            <KV
-              label="Plan Date"
-              value={
-                <>
-                  {fmtDate(plan.planDate)}
-                  <Chip changes={pendingChanges} field="planDate" />
-                </>
-              }
-            />
-            <KV
-              label="Order Qty"
-              value={
-                <>
-                  {plan.orderQty}
-                  <Chip changes={pendingChanges} field="orderQty" />
-                </>
-              }
-            />
-            <KV
-              label="Plan Qty"
-              value={
-                <>
-                  {plan.planQty}
-                  <Chip changes={pendingChanges} field="planQty" />
-                </>
-              }
-            />
-            {/* ADR-185 — the same Covered / Pending the Plans list shows for
-                this plan (one SQL definition serves both). Route-card plans only. */}
-            {plan.derivedStatus ? (
+          {/* WHICH order line and item this plan is for. Identity, not facts
+              about the plan, so it heads the body instead of taking grid cells
+              — and a part with nothing behind it (an ad-hoc plan has no SO line
+              and no POL) is left out rather than printed as a dash. */}
+          <DocIdent>
+            {plan.soCodeText ? (
               <>
-                <KV label="Covered" value={plan.coveredQty} />
-                <KV label="Pending" value={plan.pendingQty} />
+                <IdentCode>{soNoWithInternal(plan.soCodeText, plan.soInternalNo)}</IdentCode>
+                {plan.lineNo ? <span>Ln {plan.lineNo}</span> : null}
+                <IdentSep />
               </>
             ) : null}
-            <KV
-              label="Planned Start Date"
-              value={
-                <>
-                  {fmtDate(plan.plannedStartDate)}
-                  <Chip changes={pendingChanges} field="plannedStartDate" />
-                </>
-              }
-            />
-            <KV
-              label="Planned End Date"
-              value={
-                <>
-                  {fmtDate(plan.plannedEndDate)}
-                  <Chip changes={pendingChanges} field="plannedEndDate" />
-                </>
-              }
-            />
-            <KV
-              label="Customer Dispatch Date"
-              value={
-                <>
-                  {fmtDate(plan.customerDispatchDate)}
-                  <Chip changes={pendingChanges} field="customerDispatchDate" />
-                </>
-              }
-            />
-            {/* Raw material — read-only here; both are optional, so a plan with
-                neither still shows the pair as dashes rather than hiding them
-                (a missing grade is a planning gap worth seeing). */}
-            <KV
-              label="RM Grade"
-              value={
-                <>
-                  {plan.rawMaterialGradeText ?? '—'}
-                  <Chip changes={pendingChanges} field="rawMaterialGradeText" />
-                </>
-              }
-            />
-            <KV
-              label="RM Size"
-              value={
-                <>
-                  {plan.rawMaterialSizeText ?? '—'}
-                  <Chip changes={pendingChanges} field="rawMaterialSizeText" />
-                </>
-              }
-            />
-            {/* `CODE/REV` — the customer's drawing revision from the SO line this
-                plan was raised against; a JW-sourced or ad-hoc plan has none and
-                keeps the bare code, with no trailing slash. */}
-            <KV
-              label="Item Code"
-              value={
-                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+            {/* `CODE/REV` — the customer's drawing revision off the SO line this
+                plan was raised against. The helper drops the slash when there is
+                no revision behind it. Item code is the main thing on the line. */}
+            <IdentCode>
+              {itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+            </IdentCode>
+            {(plan.itemName ?? plan.itemNameText) ? (
+              <span>{plan.itemName ?? plan.itemNameText}</span>
+            ) : null}
+            {/* POL = the line number printed on the CUSTOMER's own purchase
+                order. It is NOT our SO line number ("Ln" above); on live data
+                our line 11 is the customer's line 20. */}
+            {plan.clientPoLineNo ? (
+              <>
+                <IdentSep />
+                <span>
+                  POL{' '}
+                  <b className="mono" style={{ color: 'var(--purple)' }}>
+                    {plan.clientPoLineNo}
+                  </b>
                 </span>
-              }
-            />
-            {/* POL — the line number printed on the CUSTOMER's own purchase
-                order. It is NOT our SO line number ("Line #" below); on live
-                data our line 11 is the customer's line 20. Both are shown. */}
-            <KV
-              label="POL"
-              value={
-                <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                  {plan.clientPoLineNo ?? '—'}
-                </span>
-              }
-            />
-            <KV
-              label="SO No."
-              value={plan.soCodeText ? soNoWithInternal(plan.soCodeText, plan.soInternalNo) : '—'}
-            />
-            <KV label="Ln" value={plan.lineNo ?? '—'} />
-          </Grid>
+              </>
+            ) : null}
+          </DocIdent>
 
-          {plan.planType === 'direct_purchase' ? (
-            <>
-              <div className="section-hdr" style={{ marginTop: 14 }}>
-                Buy
-              </div>
-              <Grid>
-                <KV
+          <ClusterGrid>
+            {/* An account that reads left to right and ends on its result:
+                Plan Qty − Covered by Production Orders = Pending, the number
+                that decides whether this plan still needs one (ADR-185, the
+                same definition the Plans list uses).
+
+                Covered / Pending are computed for route-card plans only. An old
+                `ops_source='plan'` plan is executed as a Job Card, not a
+                Production Order, so the pair says nothing there — rather than
+                print two zeroes that read as "nothing left to do", that case
+                shows the two quantities it does have and lets Plan Qty be the
+                result. */}
+            {plan.derivedStatus ? (
+              <Cluster name="Quantity">
+                <ClusterFact num label="Order Qty" value={String(plan.orderQty)} />
+                <ClusterFact
+                  num
+                  label="Plan Qty"
+                  value={String(plan.planQty)}
+                  after={<Chip changes={pendingChanges} field="planQty" />}
+                />
+                <ClusterFact
+                  num
+                  label="Covered"
+                  title="On live Production Orders for this plan"
+                  value={String(plan.coveredQty)}
+                />
+                <ClusterFact
+                  num
+                  lead
+                  label="Pending"
+                  title={`${plan.pendingQty} of ${plan.planQty} still to raise a Production Order for`}
+                  value={String(plan.pendingQty)}
+                />
+              </Cluster>
+            ) : (
+              <Cluster name="Quantity">
+                <ClusterFact
+                  num
+                  span={2}
+                  label="Order Qty"
+                  value={String(plan.orderQty)}
+                  after={<Chip changes={pendingChanges} field="orderQty" />}
+                />
+                <ClusterFact
+                  num
+                  lead
+                  span={2}
+                  label="Plan Qty"
+                  value={String(plan.planQty)}
+                  after={<Chip changes={pendingChanges} field="planQty" />}
+                />
+              </Cluster>
+            )}
+
+            {/* The dates in the order they happen, ending on the one the
+                customer actually cares about. */}
+            <Cluster name="Schedule">
+              <ClusterFact
+                num
+                label="Plan Date"
+                empty={!plan.planDate}
+                value={fmtDate(plan.planDate)}
+                after={<Chip changes={pendingChanges} field="planDate" />}
+              />
+              <ClusterFact
+                num
+                label="Planned Start Date"
+                empty={!plan.plannedStartDate}
+                value={fmtDate(plan.plannedStartDate)}
+                after={<Chip changes={pendingChanges} field="plannedStartDate" />}
+              />
+              <ClusterFact
+                num
+                label="Planned End Date"
+                empty={!plan.plannedEndDate}
+                value={fmtDate(plan.plannedEndDate)}
+                after={<Chip changes={pendingChanges} field="plannedEndDate" />}
+              />
+              <ClusterFact
+                num
+                label="Customer Dispatch Date"
+                empty={!plan.customerDispatchDate}
+                value={fmtDate(plan.customerDispatchDate)}
+                after={<Chip changes={pendingChanges} field="customerDispatchDate" />}
+              />
+            </Cluster>
+
+            {/* Both are optional, so a plan with neither still shows the pair as
+                dashes rather than hiding them — a missing grade is a planning
+                gap worth seeing, not an empty field worth removing. */}
+            <Cluster name="Material">
+              <ClusterFact
+                label="RM Grade"
+                empty={!plan.rawMaterialGradeText}
+                title={plan.rawMaterialGradeText ?? undefined}
+                value={plan.rawMaterialGradeText ?? '—'}
+                after={<Chip changes={pendingChanges} field="rawMaterialGradeText" />}
+              />
+              <ClusterFact
+                label="RM Size"
+                empty={!plan.rawMaterialSizeText}
+                title={plan.rawMaterialSizeText ?? undefined}
+                value={plan.rawMaterialSizeText ?? '—'}
+                after={<Chip changes={pendingChanges} field="rawMaterialSizeText" />}
+              />
+              <ClusterFact
+                span={2}
+                wrap
+                label="Remarks"
+                empty={!plan.remarks}
+                value={plan.remarks ?? '—'}
+                after={<Chip changes={pendingChanges} field="remarks" />}
+              />
+            </Cluster>
+
+            {/* Buy — what we are buying finished, from whom, and whether the PR
+                for it exists yet. */}
+            {plan.planType === 'direct_purchase' ? (
+              <Cluster name="Buy">
+                <ClusterFact
+                  span={priceHidden ? 2 : 1}
                   label="Vendor"
-                  value={
-                    <>
-                      {plan.dpVendorCodeText ?? '—'}
-                      <Chip changes={pendingChanges} field="dpVendorCodeText" />
-                    </>
-                  }
+                  empty={!plan.dpVendorCodeText}
+                  value={plan.dpVendorCodeText ?? '—'}
+                  after={<Chip changes={pendingChanges} field="dpVendorCodeText" />}
                 />
-                {priceHidden ? null : <KV label="Cost" value={plan.dpCost ?? '—'} />}
-                <KV label="PR" value={plan.dpPrId ? '✓ Created' : '—'} />
-                {plan.dpRemarks || headerPendingChange(pendingChanges, 'dpRemarks') ? (
-                  <KV
-                    label="Remarks"
-                    value={
-                      <>
-                        {plan.dpRemarks ?? '—'}
-                        <Chip changes={pendingChanges} field="dpRemarks" />
-                      </>
-                    }
-                  />
-                ) : null}
-              </Grid>
-            </>
-          ) : null}
+                {priceHidden ? null : (
+                  <ClusterFact num label="Cost" empty={!plan.dpCost} value={plan.dpCost ?? '—'} />
+                )}
+                <ClusterFact
+                  label="PR"
+                  empty={!plan.dpPrId}
+                  value={plan.dpPrId ? '✓ Created' : '—'}
+                />
+                <ClusterFact
+                  wrap
+                  label="Remarks"
+                  empty={!plan.dpRemarks}
+                  value={plan.dpRemarks ?? '—'}
+                  after={<Chip changes={pendingChanges} field="dpRemarks" />}
+                />
+              </Cluster>
+            ) : null}
 
-          {plan.planType === 'full_outsource' ? (
-            <>
-              <div className="section-hdr" style={{ marginTop: 14 }}>
-                Full Outsource
-              </div>
-              <Grid>
-                <KV
-                  label="JW Vendor"
-                  value={
-                    <>
-                      {plan.foVendorCodeText ?? '—'}
-                      <Chip changes={pendingChanges} field="foVendorCodeText" />
-                    </>
-                  }
-                />
-                <KV
-                  label="Process"
-                  value={
-                    <>
-                      {plan.foProcess ?? '—'}
-                      <Chip changes={pendingChanges} field="foProcess" />
-                    </>
-                  }
-                />
-                {priceHidden ? null : <KV label="Rate" value={plan.foRate ?? '—'} />}
-                <KV
-                  label="Material Source"
-                  value={
-                    <>
-                      {plan.foMaterialSrc ?? '—'}
-                      <Chip changes={pendingChanges} field="foMaterialSrc" />
-                    </>
-                  }
-                />
-                <KV
-                  label="Delivery Date"
-                  value={
-                    <>
-                      {fmtDate(plan.foDeliveryDate)}
-                      <Chip changes={pendingChanges} field="foDeliveryDate" />
-                    </>
-                  }
-                />
-                <KV
-                  label="Cost Centre"
-                  value={
-                    <>
-                      {plan.foCostCenter ?? '—'}
-                      <Chip changes={pendingChanges} field="foCostCenter" />
-                    </>
-                  }
-                />
-                <KV label="JW PR" value={plan.foPrId ? '✓ Created' : '—'} />
-                <KV label="Material PR" value={plan.foMatPrId ? '✓ Created' : '—'} />
+            {/* Full Outsource — who does the whole job, on what terms, out of
+                whose material, and which of the two PRs are raised. Nine facts,
+                so the second row continues without a name of its own. */}
+            {plan.planType === 'full_outsource' ? (
+              <>
+                <Cluster name="Outsource">
+                  <ClusterFact
+                    label="JW Vendor"
+                    empty={!plan.foVendorCodeText}
+                    value={plan.foVendorCodeText ?? '—'}
+                    after={<Chip changes={pendingChanges} field="foVendorCodeText" />}
+                  />
+                  <ClusterFact
+                    span={priceHidden ? 2 : 1}
+                    label="Process"
+                    empty={!plan.foProcess}
+                    title={plan.foProcess ?? undefined}
+                    value={plan.foProcess ?? '—'}
+                    after={<Chip changes={pendingChanges} field="foProcess" />}
+                  />
+                  {priceHidden ? null : (
+                    <ClusterFact num label="Rate" empty={!plan.foRate} value={plan.foRate ?? '—'} />
+                  )}
+                  <ClusterFact
+                    label="Material Source"
+                    empty={!plan.foMaterialSrc}
+                    value={plan.foMaterialSrc ?? '—'}
+                    after={<Chip changes={pendingChanges} field="foMaterialSrc" />}
+                  />
+                </Cluster>
+                <Cluster>
+                  <ClusterFact
+                    num
+                    label="Delivery Date"
+                    empty={!plan.foDeliveryDate}
+                    value={fmtDate(plan.foDeliveryDate)}
+                    after={<Chip changes={pendingChanges} field="foDeliveryDate" />}
+                  />
+                  <ClusterFact
+                    label="Cost Centre"
+                    empty={!plan.foCostCenter}
+                    value={plan.foCostCenter ?? '—'}
+                    after={<Chip changes={pendingChanges} field="foCostCenter" />}
+                  />
+                  <ClusterFact
+                    label="JW PR"
+                    empty={!plan.foPrId}
+                    value={plan.foPrId ? '✓ Created' : '—'}
+                  />
+                  <ClusterFact
+                    label="Material PR"
+                    empty={!plan.foMatPrId}
+                    value={plan.foMatPrId ? '✓ Created' : '—'}
+                  />
+                </Cluster>
                 {plan.foRemarks || headerPendingChange(pendingChanges, 'foRemarks') ? (
-                  <KV
-                    label="Remarks"
-                    value={
-                      <>
-                        {plan.foRemarks ?? '—'}
-                        <Chip changes={pendingChanges} field="foRemarks" />
-                      </>
-                    }
-                  />
+                  <Cluster>
+                    <ClusterFact
+                      span={4}
+                      wrap
+                      label="Remarks"
+                      empty={!plan.foRemarks}
+                      value={plan.foRemarks ?? '—'}
+                      after={<Chip changes={pendingChanges} field="foRemarks" />}
+                    />
+                  </Cluster>
                 ) : null}
-              </Grid>
-            </>
-          ) : null}
+              </>
+            ) : null}
 
-          {(plan.planType === 'manufacture' || plan.planType === 'assembly') && plan.jcId ? (
-            <Grid>
-              <KV label="Job Card" value="✓ Created" />
-            </Grid>
-          ) : null}
-
-          {fromRouteCard && perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
-            <div
-              className="text3"
-              style={{
-                marginTop: 12,
-                padding: '8px 10px',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                background: 'var(--bg2)',
-                fontSize: 12,
-              }}
-            >
-              <Link
-                to="/production-orders/new"
-                // Open the form on THIS plan (same search the Plans list sends).
-                search={{ planId: plan.id, planCode: plan.code }}
-                style={{ color: 'var(--cyan)', fontWeight: 600 }}
-              >
-                Create Production Order →
-              </Link>
-            </div>
-          ) : null}
-
-          {plan.remarks || headerPendingChange(pendingChanges, 'remarks') ? (
-            <div style={{ marginTop: 12 }}>
-              <div
-                className="text3"
-                style={{
-                  fontSize: 11,
-                  marginBottom: 4,
-                }}
-              >
-                Remarks
-              </div>
-              <div style={{ fontSize: 13 }}>
-                {plan.remarks ?? '—'}
-                <Chip changes={pendingChanges} field="remarks" />
-              </div>
-            </div>
-          ) : null}
+            {/* The Job Card an executed manufacture / assembly plan produced. */}
+            {(plan.planType === 'manufacture' || plan.planType === 'assembly') && plan.jcId ? (
+              <Cluster name="Execution">
+                <ClusterFact span={4} label="Job Card" value="✓ Created" />
+              </Cluster>
+            ) : null}
+          </ClusterGrid>
         </div>
       </div>
 
-      {!fromRouteCard && plan.ops.length > 0 ? (
+      {/* The plan's own operations. Old `ops_source='plan'` plans carry them; a
+          route-card plan does not — its Route Card owns the route, and an empty
+          panel here would read as "this plan has no route". Before this pass the
+          operations were shown nowhere on the page. */}
+      {fromRouteCard ? null : (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">Operations ({plan.ops.length})</div>
+            <div className="panel-title">Operations</div>
+            <span className="text3" style={{ fontSize: 12 }}>
+              {plan.ops.length} {plan.ops.length === 1 ? 'op' : 'ops'}
+            </span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -531,24 +562,32 @@ function PlanDetailPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {plan.ops.map((op) => (
-                  <tr key={op.id}>
-                    {/* 10, 20, 30 on screen — display rule, see opSrNo */}
-                    <td>{opSrNo(op.opSeq)}</td>
-                    <td>{op.operation}</td>
-                    <td>{OP_TYPE_LABEL[op.opType] ?? op.opType}</td>
-                    <td>{op.machineCodeText ?? '—'}</td>
-                    <td>{op.cycleTimeMin}</td>
-                    <td>{op.qcRequired ? '✓' : ''}</td>
-                    <td>{op.outsourceVendorText ?? '—'}</td>
-                    {priceHidden ? null : <td>{op.outsourceCost}</td>}
+                {plan.ops.length === 0 ? (
+                  <tr>
+                    <td colSpan={priceHidden ? 7 : 8} className="empty-state">
+                      No operations on this plan.
+                    </td>
                   </tr>
-                ))}
+                ) : (
+                  plan.ops.map((op) => (
+                    <tr key={op.id}>
+                      {/* 10, 20, 30 on screen — display rule, see opSrNo */}
+                      <td>{opSrNo(op.opSeq)}</td>
+                      <td>{op.operation}</td>
+                      <td>{OP_TYPE_LABEL[op.opType] ?? op.opType}</td>
+                      <td>{op.machineCodeText ?? '—'}</td>
+                      <td>{op.cycleTimeMin}</td>
+                      <td>{op.qcRequired ? '✓' : ''}</td>
+                      <td>{op.outsourceVendorText ?? '—'}</td>
+                      {priceHidden ? null : <td>{op.outsourceCost}</td>}
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
-      ) : null}
+      )}
 
       <RelatedDocsPanel module="plans" id={plan.id} />
 
@@ -565,37 +604,6 @@ function PlanDetailPage(): React.JSX.Element {
           onDeleted={() => void navigate({ to: '/plans', replace: true })}
         />
       ) : null}
-    </div>
-  );
-}
-
-function Grid({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-        gap: 10,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function KV({ label, value }: { label: string; value: React.ReactNode }): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 11,
-          marginBottom: 2,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>{value}</div>
     </div>
   );
 }
