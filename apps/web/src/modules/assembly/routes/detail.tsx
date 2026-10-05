@@ -31,7 +31,7 @@ import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RowMenu } from '@/ui/data';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 import { VarianceConfirm } from '../components/variance-confirm';
 
@@ -83,6 +83,30 @@ function AssemblyDetailPage(): React.JSX.Element {
   // (completed + in-progress). A start reserves no stock, so it is NOT
   // stock-limited — stock is checked per unit at STOP instead.
   const startMax = Math.max(0, data.rollup.balanceQty - data.rollup.inProgressQty);
+  // Components that cannot make even ONE set out of what is on the bench, so
+  // Complete would refuse any batch at all. `enoughForUnits` is floor(Still Out
+  // ÷ Qty per Set) and fitting.ts refuses when Still Out is short of the batch's
+  // need, so < 1 is exactly the blocking case. Deliberately NOT "Still Out <
+  // Required": issuing one set at a time is normal, and warning on that would
+  // teach the floor to ignore the banner. Read off the rows this page already
+  // has; no extra API call.
+  const shortComponents = data.components.filter((c) => c.enoughForUnits < 1);
+  // The second way it would cry wolf: the LAST Complete fits ALL the remaining
+  // Still Out (the `isLast` branch in apps/api/src/modules/assembly/fitting.ts),
+  // so a fully assembled order ends with every component at Still Out 0 →
+  // enoughForUnits 0 → "N of N components short" on an order where there is
+  // nothing left to start and Start is already disabled. So it is only worth
+  // saying while there is still a batch to start OR one on the bench.
+  //
+  // `startMax > 0` ALONE is not enough: start all 5 of a 5-unit order with
+  // nothing issued and startMax is 0 while every Complete is about to be
+  // refused — the banner would hide exactly when it is most needed. A finished
+  // order has inProgressQty 0 AND balanceQty 0, so the cry-wolf case stays shut.
+  const showShortBanner =
+    (startMax > 0 || data.rollup.inProgressQty > 0) && shortComponents.length > 0;
+  const SHORT_CODES_SHOWN = 6;
+  const shortCodesShown = shortComponents.slice(0, SHORT_CODES_SHOWN).map((c) => c.childItemCode);
+  const shortCodesHidden = shortComponents.length - shortCodesShown.length;
   const onStart = (): void => {
     setActionError(null);
     const n = Math.max(1, Math.floor(Number(qty) || 1));
@@ -170,6 +194,38 @@ function AssemblyDetailPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div className="panel-title">Start Assembly</div>
         </div>
+        {/* Start is deliberately NOT blocked by readiness (ADR-115 / ADR-129) —
+            a batch goes on the bench and the parts can be issued while it is
+            there. But Complete refuses a short part, so say so here instead of
+            letting the planner find out at Complete. */}
+        {showShortBanner ? (
+          <div className="panel-body" style={{ paddingBottom: 0 }}>
+            <Banner
+              tone="warn"
+              flush
+              title={`${shortComponents.length} of ${data.components.length} component${
+                data.components.length === 1 ? '' : 's'
+              } short of even one set`}
+            >
+              You can still start a batch — a batch goes on the bench and parts can be issued while
+              it is there. But Complete will refuse it until these parts are issued from the store
+              against this order:{' '}
+              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                {shortCodesShown.join(', ')}
+              </span>
+              {shortCodesHidden > 0 ? ` and ${shortCodesHidden} more` : ''}. Issue them on the Item
+              Issue Register —{' '}
+              <Link
+                to="/issue-register"
+                search={{ tab: 'items', new: 'assembly_so', salesOrderId: soId }}
+                className="fw-700"
+                style={{ color: 'var(--blue)' }}
+              >
+                Issue from Store →
+              </Link>
+            </Banner>
+          </div>
+        ) : null}
         <div className="panel-body" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <div>
             <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
@@ -530,6 +586,16 @@ function ComponentsPanel({
               <th>Qty / Set</th>
               <th>Required</th>
               <th>Stock</th>
+              {/* Still Out (docs/NAMING.md §A — Issued − Returned − Fitted) is
+                  the number Complete reads; `Stock` beside it is shelf stock
+                  and gates nothing. Marked th-num/td-num so it right-aligns
+                  like any number column (innovic-theme.css). */}
+              <th
+                className="th-num"
+                title="Parts issued from the store against THIS order and not yet fitted. This is the number Complete checks — not shelf stock."
+              >
+                Still Out
+              </th>
               <th>In Assembly</th>
               <th>Assembled</th>
               <th style={{ color: 'var(--red2)' }}>Pending</th>
@@ -564,6 +630,18 @@ function ComponentsPanel({
                 <td>{c.qtyPerSet}</td>
                 <td className="fw-700">{c.totalNeed}</td>
                 <td style={{ color: 'var(--green2)' }}>{c.stockQty}</td>
+                {/* Still Out — what is actually out of the store for this order
+                    and not yet fitted, the raw registered fact. NOT
+                    `finalReadyQty`: that is capped at Required and floored by
+                    `ready_qty_override`, and fitting.ts reads neither, so the
+                    screen would promise what Complete then refuses. Green once
+                    one whole set can be built from it. */}
+                <td
+                  className="td-num fw-700"
+                  style={{ color: c.enoughForUnits >= 1 ? 'var(--green)' : 'var(--red)' }}
+                >
+                  {c.stillOutQty}
+                </td>
                 {/* In Assembly = components tied up in STARTED-but-not-completed
                     batches (qtyPerSet × in-progress units, ADR-129). Assembled =
                     components already consumed into completed units (qtyPerSet ×

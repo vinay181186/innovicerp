@@ -119,6 +119,38 @@ function routeCardPlanFields(r: {
   };
 }
 
+// ADR-216 — WHICH item a plan is for. A plan raised from the BOM modal sits on
+// the parent's SO line but is for a CHILD part (ADR-030 grain: one plan per SO
+// line x BOM child), so the line's own item is the wrong answer and the plan
+// chip used to show nothing at all. Live code/name come from a plan-item join
+// aliased `plan_item` — the bare `items` name is already taken in this file by
+// the SO LINE's item, and reusing it would make every chip read the parent
+// ("WASHER DRG") instead of the child ("WHEEL"). Snapshot columns are the
+// fallback, read as `itemCode ?? itemCodeText` (the Plans list's own pattern).
+function planItemFields(r: {
+  plan: typeof plans.$inferSelect;
+  planItemCode: string | null;
+  planItemName: string | null;
+}): Pick<
+  PlanningPlanSummary,
+  'itemId' | 'itemCode' | 'itemCodeText' | 'itemName' | 'itemNameText' | 'bomChildCode'
+> {
+  return {
+    itemId: r.plan.itemId ?? null,
+    itemCode: r.planItemCode ?? null,
+    itemCodeText: r.plan.itemCodeText ?? null,
+    itemName: r.planItemName ?? null,
+    itemNameText: r.plan.itemNameText ?? null,
+    bomChildCode: r.plan.bomChildCode ?? null,
+  };
+}
+
+/** The `plan_item` join behind {@link planItemFields}. LEFT, never inner: an
+ *  ad-hoc plan has no item_id and a plan whose item was deleted must still
+ *  appear on the line. `deleted_at is null` so a soft-deleted item cannot
+ *  resurrect its name here. */
+const PLAN_ITEM_JOIN_ON = sql`plan_item.id = ${plans.itemId} and plan_item.deleted_at is null`;
+
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 function requireCompany(user: AuthContext): string {
@@ -567,6 +599,11 @@ export async function getPlanningSoDetail(
               dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
               foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
               foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
+              // ADR-216 — the PLAN's own item (a BOM child on a BOM line), via
+              // the aliased `plan_item` join. Never the bare `items` table:
+              // that is the SO LINE's item above and would show the parent.
+              planItemCode: sql<string | null>`plan_item.code`.as('plan_item_code'),
+              planItemName: sql<string | null>`plan_item.name`.as('plan_item_name'),
               poId: PLAN_LATEST_ORDER_ID_SQL,
               poCode: PLAN_LATEST_ORDER_CODE_SQL,
               poStatus: PLAN_LATEST_ORDER_STATUS_SQL,
@@ -589,6 +626,7 @@ export async function getPlanningSoDetail(
               sql`${purchaseRequests} as fo_mat_pr`,
               sql`fo_mat_pr.id = ${plans.foMatPrId} and fo_mat_pr.deleted_at is null`,
             )
+            .leftJoin(sql`${items} as plan_item`, PLAN_ITEM_JOIN_ON)
             .where(
               and(
                 inArray(plans.soLineId, lineIds),
@@ -639,6 +677,7 @@ export async function getPlanningSoDetail(
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
         ...routeCardPlanFields(r),
+        ...planItemFields(r),
         planQty: r.plan.planQty,
         opsCount: ops.count,
         hasOutsourceOp: ops.hasOutsource,
@@ -656,6 +695,111 @@ export async function getPlanningSoDetail(
       const bucket = plansByLine.get(r.plan.soLineId);
       if (bucket) bucket.push(summary);
       else plansByLine.set(r.plan.soLineId, [summary]);
+    }
+
+    // 5b. ADR-216 — the per-part account for a line planned through its BOM.
+    //
+    // A plan carrying `bom_child_code` is for a CHILD PART and is counted in
+    // parts; the line's Plan Qty column is counted in ASSEMBLIES. Adding them
+    // gave "Order Qty 1, Plan Qty 20" (10 wheels + 10 gear wheels against one
+    // washer) and floored `remaining` to 0, so the line read fully planned
+    // while a part could have nothing against it. Instead report what each
+    // part needs and what is planned for it, and count COMPLETE SETS — the
+    // weakest child governs, the same principle ADR-109 applies to dispatch.
+    //
+    // A plan is treated as a child plan only when it carries BOTH
+    // `bom_master_id` and `bom_child_code`, exactly as ADR-107's create-time
+    // cap decides it, so the screen and the cap can never disagree.
+    // Keyed by LINE + child code only. NOT by bom_master_id: a line's BOM can be
+    // swapped after its plans were raised, and keying on the plan's own BOM made
+    // the oldest plan pick the BOM for the whole line, so plans against the
+    // line's CURRENT BOM counted zero and the panel listed parts the line no
+    // longer uses. The parts come from the line's current BOM below; the plans
+    // are matched to them by child code.
+    const childPlannedByKey = new Map<string, number>();
+    const planBomByLine = new Map<string, string>();
+    for (const r of planRows) {
+      const lineId = r.plan.soLineId;
+      const childCode = r.plan.bomChildCode;
+      if (!lineId || !childCode) continue;
+      // `planRows` is ordered by plan code, so the LAST write wins: the newest
+      // plan's BOM, not the oldest. A line whose BOM was swapped is then
+      // measured against the BOM its current plans were actually raised on.
+      if (r.plan.bomMasterId) planBomByLine.set(lineId, r.plan.bomMasterId);
+      const key = `${lineId}|${childCode}`;
+      childPlannedByKey.set(key, (childPlannedByKey.get(key) ?? 0) + r.plan.planQty);
+    }
+
+    // Which BOM's parts to list. The line's own `source_bom_master_id` is the
+    // right answer when it is set — it is what the row's BOM column shows — but
+    // it is NULL on every line that actually has child plans today (checked on
+    // both databases), because the BOM planning modal does not write it back.
+    // So fall back to the BOM those plans were raised on, or the panel would
+    // never appear at all.
+    const childPlanBomByLine = new Map<string, string>();
+    for (const lr of lineRows) {
+      const fromPlans = planBomByLine.get(lr.line.id);
+      if (!fromPlans) continue;
+      const onLine = lr.line.sourceBomMasterId;
+      childPlanBomByLine.set(lr.line.id, onLine && UUID_RE.test(onLine) ? onLine : fromPlans);
+    }
+    const childPlanBomIds = [...new Set(childPlanBomByLine.values())];
+    // Joined to `items` the same way ADR-107's cap and the BOM modal do, so
+    // `childItemCode` is the same string the plan's `bom_child_code` holds.
+    const childBomLineRows =
+      childPlanBomIds.length === 0
+        ? []
+        : await tx
+            .select({
+              bomMasterId: bomMasterLines.bomMasterId,
+              childCode: items.code,
+              childName: items.name,
+              qtyPerSet: bomMasterLines.qtyPerSet,
+            })
+            .from(bomMasterLines)
+            .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
+            .where(
+              and(
+                inArray(bomMasterLines.bomMasterId, childPlanBomIds),
+                isNull(bomMasterLines.deletedAt),
+              ),
+            )
+            .orderBy(asc(bomMasterLines.lineNo));
+    const childBomLinesByBom = new Map<
+      string,
+      Array<{ code: string; name: string | null; qtyPerSet: number }>
+    >();
+    for (const b of childBomLineRows) {
+      const bucket = childBomLinesByBom.get(b.bomMasterId) ?? [];
+      bucket.push({ code: b.childCode, name: b.childName ?? null, qtyPerSet: Number(b.qtyPerSet) });
+      childBomLinesByBom.set(b.bomMasterId, bucket);
+    }
+
+    const bomChildrenByLine = new Map<string, PlanningLine['bomChildren']>();
+    for (const lr of lineRows) {
+      const bomId = childPlanBomByLine.get(lr.line.id);
+      if (!bomId) continue;
+      const bomLines = childBomLinesByBom.get(bomId);
+      // The BOM's parts are gone (edited or deleted after the plans were
+      // raised): report nothing rather than invent a requirement — the same
+      // fall-through ADR-107's cap takes.
+      if (!bomLines || bomLines.length === 0) continue;
+      // A line closed short will never be made, so its parts are not owed and
+      // must not be painted as outstanding (ADR-196).
+      if (lr.line.shortClosedAt !== null) continue;
+      const lineOrderQty = lr.line.orderQty;
+      bomChildrenByLine.set(
+        lr.line.id,
+        bomLines.map((b) => ({
+          childItemCode: b.code,
+          childItemName: b.name,
+          qtyPerSet: b.qtyPerSet,
+          // ADR-107's own requirement formula, to the letter, so this panel and
+          // the server's create-time cap state the same requirement.
+          requiredQty: Math.ceil(b.qtyPerSet * lineOrderQty),
+          plannedQty: childPlannedByKey.get(`${lr.line.id}|${b.code}`) ?? 0,
+        })),
+      );
     }
 
     // 6. Equipment-SO BOM lookup (single BOM at the SO header).
@@ -765,6 +909,8 @@ export async function getPlanningSoDetail(
       const linePlans = plansByLine.get(r.line.id) ?? [];
       const itemProcurementType = toProcurementType(r.itemProcurementType);
       const linePrs = prsByLine.get(r.line.id) ?? { prs: [], prQty: 0 };
+      // ADR-216 — undefined for an ordinary line, which has no parts and so
+      // keeps today's arithmetic bit for bit.
       // ADR-171: on a BUY line the PRs are the plan — their live qty counts as
       // planned. On a make line they are reported but change no number.
       const totalPlanned =
@@ -823,6 +969,9 @@ export async function getPlanningSoDetail(
         totalPlanned,
         directJcQty,
         directJcCodes,
+        // ADR-216 — what each part of this line's BOM needs and what is
+        // planned for it. Empty on an ordinary line, which has no parts.
+        bomChildren: bomChildrenByLine.get(r.line.id) ?? [],
         remaining,
         // `stockQty` keeps its name and its meaning — "how much may I still
         // use" — which is now AVAILABLE, not on-hand (ADR-180).
@@ -936,6 +1085,9 @@ async function getJwPlanningDetail(
             dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
             foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
             foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
+            // ADR-216 — the PLAN's own item, same aliased join as the SO path.
+            planItemCode: sql<string | null>`plan_item.code`.as('plan_item_code'),
+            planItemName: sql<string | null>`plan_item.name`.as('plan_item_name'),
             poId: PLAN_LATEST_ORDER_ID_SQL,
             poCode: PLAN_LATEST_ORDER_CODE_SQL,
             poStatus: PLAN_LATEST_ORDER_STATUS_SQL,
@@ -958,6 +1110,7 @@ async function getJwPlanningDetail(
             sql`${purchaseRequests} as fo_mat_pr`,
             sql`fo_mat_pr.id = ${plans.foMatPrId} and fo_mat_pr.deleted_at is null`,
           )
+          .leftJoin(sql`${items} as plan_item`, PLAN_ITEM_JOIN_ON)
           .where(
             and(
               inArray(plans.jwLineId, lineIds),
@@ -1008,6 +1161,7 @@ async function getJwPlanningDetail(
       planType: r.plan.planType,
       planStatus: r.plan.planStatus,
       ...routeCardPlanFields(r),
+      ...planItemFields(r),
       planQty: r.plan.planQty,
       opsCount: ops.count,
       hasOutsourceOp: ops.hasOutsource,
@@ -1118,6 +1272,12 @@ async function getJwPlanningDetail(
       totalPlanned,
       directJcQty,
       directJcCodes,
+      // ADR-216 — a job-work line is never planned through a BOM: the BOM
+      // planning modal reads sales_order_lines only (getPlanningBom), and this
+      // branch reports `bomMasterId: null` so the screen never offers the
+      // button. ADR-107's child cap is likewise SO-line only, so the server
+      // would not even recognise a job-work child plan. Always empty here.
+      bomChildren: [],
       remaining,
       stockQty: availableQty,
       reservedQty,
@@ -1290,6 +1450,10 @@ export async function getPlanningBom(
       .select({
         plan: plans,
         jcCode: jobCards.code,
+        // ADR-216 — the child part this plan is for (same aliased join as the
+        // detail pane; `items` is the BOM child join in step 3 above).
+        planItemCode: sql<string | null>`plan_item.code`.as('plan_item_code'),
+        planItemName: sql<string | null>`plan_item.name`.as('plan_item_name'),
         poId: PLAN_LATEST_ORDER_ID_SQL,
         poCode: PLAN_LATEST_ORDER_CODE_SQL,
         poStatus: PLAN_LATEST_ORDER_STATUS_SQL,
@@ -1300,6 +1464,7 @@ export async function getPlanningBom(
       })
       .from(plans)
       .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
+      .leftJoin(sql`${items} as plan_item`, PLAN_ITEM_JOIN_ON)
       .where(
         and(
           eq(plans.soLineId, soLineId),
@@ -1322,6 +1487,7 @@ export async function getPlanningBom(
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
         ...routeCardPlanFields(r),
+        ...planItemFields(r),
         planQty: r.plan.planQty,
         opsCount: 0,
         hasOutsourceOp: false,

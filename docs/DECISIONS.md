@@ -11342,3 +11342,224 @@ ADR-213 had already settled the method on the Purchase Request screens and built
 - e2e selectors (`#create-plan-qty`, `#reserve-qty`, `#create-plan-start` …) are unchanged.
 - The page-local `Grid` / `KV` helpers in `modules/plans/routes/detail.tsx` are deleted — the primitive
   replaces them.
+
+## ADR-215: A BOM child plan takes its raw material from the BOM line
+
+**Date:** 2026-10-05
+**Status:** Accepted
+
+### Context
+
+RM Grade and RM Size have had two homes since migrations 0107 and 0108: `route_cards` (per item,
+named the source of truth by CLAUDE.md Section 17) and `bom_master_lines` (per BOM child, whose own
+schema comment says "the BOM line is the only place that knows what the child is made from").
+
+A plan only ever read the Route Card. `modules/bom-master/cascade.ts` copies the BOM line's grade
+and size, but only onto a child **Job Card** raised by the BOM cascade — a path that skips Plan and
+Production Order entirely. `0107_bom_line_raw_material.sql` lists the four places a Job Card can be
+born and the plan is not among them; BOM-driven planning arrived later and the leg was never wired.
+
+So the BOM Planning modal creates one plan per child sending no RM at all, the server looks up the
+child item's Route Card, and when that card carries no material the plan is saved blank. Create
+Production Order reads the plan and refuses: *"This plan has no raw material — set the Grade and Size
+on the plan first."* On production BOM-0001's two children both hit it; one was patched by hand to a
+grade that **disagrees with the BOM** (EN24/DIA 36 against the line's MS/DIA 20) and that disagreement
+then reached IN-JC-26-00004.
+
+### Decision
+
+- **For a plan that carries `bom_master_id` + `bom_child_code`, the BOM line wins; the item's Route
+  Card is the fallback.** The BOM line is the more specific statement — one child may sit in two BOMs
+  and be cut from different stock.
+- `readBomLineRawMaterial(tx, companyId, bomMasterId, bomChildCode)` joins the line to `items` by code
+  **and to `bom_masters`, requiring the header to be live.** `softDeleteBomMaster` deliberately does not
+  stamp the lines (Trash → Restore must bring the header back with its lines), so the header is the only
+  place a BOM's liveness can be read — without that join a trashed BOM kept answering AND, because the
+  fallback keys off the lookup returning null, kept the live Route Card from answering. `readLiveBomPerSet`
+  in `assembly/fitting.ts` already checked this; the new lookup now matches it. It returns null when the
+  line names no material at all, which is what hands over to the card.
+  Both the create default and the edit default consult it; every existing guard is unchanged (per
+  field: not sent → default, sent as null → stays null, sent with a value → untouched; on edit also
+  stored-column-NULL and nothing built from the plan).
+- **Precedence is per field.** Grade takes the line's grade if the line has one, else the card's;
+  size decides the same way independently. Each still moves as an id + text PAIR — never a line's id
+  with a card's text. Row-level precedence was written first and the `/code-review high` pass killed
+  it: a line naming a size and no grade left the grade blank for ever, and the Production Order guard
+  below only refuses when BOTH are empty, so that half-material plan sailed through and produced a Job
+  Card with a size and no grade — the exact thing the guard exists to stop, in half. The objection to
+  per-field ("a plan whose halves come from two documents cannot be explained") is answered by the
+  History row, which names every source it actually used.
+- **The RM item + qty-per-piece pair stays Route-Card-only** — `bom_master_lines` has no such columns.
+- `createProductionOrder` now carries the plan-has-no-material refusal itself, in the browser's exact
+  words, read off the already `FOR UPDATE`-locked plan row. It was a browser-only rule, against
+  Section 6 rule 1.
+- **That guard still refuses only when grade AND size are both empty**, which its own message ("set the
+  Grade and Size") reads as stricter than it is. Deliberately left as it was: the browser has carried the
+  same `&&` for as long as the rule has existed, and tightening it to OR would newly block any live plan
+  that has only one half — a gate change dressed up as a bug fix. The half-material case is instead
+  closed from the other end, by the backfill filling each half independently.
+- `backfillPlansFromRouteCard` now fires on a Route Card **edit** as well as its creation. A card that
+  already existed and later gets its material filled in used to leave every waiting plan blank for
+  ever. It is fill-blanks-only, so it cannot overwrite.
+- **That backfill obeys the same per-field precedence**, which it did not when first written — it wrote
+  the card's grade and size onto BOM-child plans too, contradicting the rule the create and edit paths
+  enforce, and firing on every card edit made that far more likely to bite. It now reads each candidate
+  plan's own BOM line (cached per `bomMasterId|bomChildCode`) and takes the line's value per field.
+  **Its trigger is still the card:** a BOM line alone never starts a backfill, or saving a Route Card
+  would push material the card never mentioned. The two bulk UPDATEs became a per-candidate loop, since
+  the value now differs per plan — an N+1 against Section 6, accepted because the guard first narrows to
+  one item's blank-RM plans with no Job Card, and the BOM lines are cached.
+- **It is fill-blanks-only PER HALF, and a plan qualifies when EITHER half is blank.** Its guard used to
+  demand both, which per-field precedence turned into a trap: a line naming a size and no grade, on a
+  part with no card yet, produced a plan with a size and a blank grade that the backfill could then never
+  match — the grade blank for ever, worse than the row-level behaviour it replaced. One `backfillCandidateGuard`
+  function is now the single predicate used by the locked read, by every UPDATE's WHERE, and by the
+  pre-lock below, so the three cannot drift apart. A half that already carries a value is not named in
+  the SET clause at all.
+- **Lock order: plans before `route_cards`.** The new edit-side backfill gave `updateRouteCard` the order
+  route_cards → plans, while `executePlan` locks the plan row first and only later writes that item's card
+  through `saveRouteCardForItem` — an ABBA pair that deadlocks (40P01) when one person saves a card while
+  another runs Execute on the same item, with the loser getting a raw database error. `updateRouteCard`
+  now calls `lockBackfillCandidates` as the very first statement of its transaction, ahead of its own
+  `route_cards … FOR UPDATE` header read (which is earlier than the UPDATE, and was the real contention
+  point). The predicate keys only on `plans` columns, so writing the card row in between cannot change
+  the candidate set. `createRouteCard` needs none of this: there is no pre-existing card row to contend
+  for. Section 20.3.
+- Two plan forms stopped sending `null` for a grade/size the planner never opened. An explicit null
+  means "the caller owns this pair" to the server, so those two paths were defeating their own
+  fallback; a `touched` flag per pair now separates "nothing to say" from "deliberately cleared".
+
+### Alternatives Considered
+
+- **Route Card wins, BOM line as fallback** — rejected: the less specific document would overrule the
+  more specific one, and the owner typed the material on the BOM.
+- **Copy the BOM line's material onto the child item's Route Card** — rejected: it writes into another
+  document's source of truth (Section 17) and a per-item card cannot hold two BOMs' answers.
+- **Row-level precedence** (a line that names anything owns both halves) — written first, then rejected;
+  see the Decision above.
+- **Refusing on an unreadable BOM in `assembly/fitting.ts`** — built, then pulled back out of this
+  change; see Consequences.
+
+### Consequences
+
+- No schema change, no migration. No new writer of `plans.raw_material_*` — the two existing writer
+  functions gained a second source, so Section 20.1 still holds.
+- A BOM-child plan created from now on arrives with the BOM's material. Plans already saved blank are
+  **not** backfilled by this change; PLN-0007 on production is one, and filling the Route Card or
+  re-saving the plan now picks it up.
+- `startAssembly` was summing committed qty and inserting with no row lock while both its siblings took
+  `lockSoRow` first — fixed here (Section 20.3). The two-concurrent-request test that rule asks for is
+  outstanding: the api suite deletes from the production database and cannot be run.
+- **Still open, deliberately not fixed here:** `assembly/fitting.ts:95` still treats an unreadable BOM as
+  `return []` — "no BOM → nothing to fit" — which disables the only parts gate when an Equipment SO names
+  no BOM, names one that is not a live BOM of the company, or has no line with `qty_per_set > 0`. A
+  refusal was built and then pulled back out: `sales_orders.bom_master_id` is optional with no
+  equipment-type requirement, the Tracker still offers Start for such an SO, and `getAssemblyTracker`
+  builds no component rows for it — so refusing at Complete would have left an already-started batch
+  permanently un-completable, undoable but never stoppable, with the 409 as the operator's first signal.
+  That is the failure ADR-115 warned about. Closing it properly means refusing at Start and saying so on
+  the screen, which is its own change.
+- The Assembly Tracker now shows `Still Out` (the registered fact — Issued − Returned − Fitted,
+  uncapped) beside `Stock`, and warns on Start when a component cannot make even one set. The banner
+  shows while a batch can still be started **or** one is on the bench: gating on "can still start"
+  alone hid it exactly when every unit had been started with nothing issued, which is the state the
+  warning exists for. It knowingly over-warns in one case — a LAST batch that `fitting.ts` would accept
+  with a variance reason — and that is the right way round: under-warning is what put two batches on the
+  bench against an order with nothing issued. It had been
+  showing only `stockQty`, which the service calls "information only". `finalReadyQty` was deliberately
+  **not** used for that column: it is capped at Required and floored by `ready_qty_override`, and
+  `fitting.ts` reads neither, so the screen would have promised what Complete then refused.
+- Still open: `ready_qty_override` is settable through the API, has no screen, and is ignored by
+  `fitting.ts` — so it changes nothing. Either wire it or delete it.
+
+
+## ADR-216: A BOM child plan names its part, and the row shows the per-part account
+
+**Date:** 2026-10-05
+**Status:** Accepted (owner, from a screenshot of SO/JWSO Planning: "item code, name details
+missing of child part")
+
+### Context
+`IN-SO-00521` line 1 is **1 × `554117193000` WASHER DRG**. `BOM-0001 "lock elevation"` says one
+washer needs **10 × `01037541` WHEEL** and **10 × `01037543-RM` GEAR WHEEL**, so the line carries
+two plans — PLN-0008 (WHEEL, 10) and PLN-0009 (GEAR WHEEL, 10). Both rendered as
+`PLN-0008 Make · 10 pcs` and `PLN-0009 Make · 10 pcs`: identical. A planner could not tell which
+part was in production and which was still waiting on a route card.
+
+The data was never missing. `plans` records the child five ways — `item_id`, `item_code_text`,
+`item_name_text`, `bom_child_code`, `bom_parent_code` — and the query already selected the whole
+row. `planningPlanSummarySchema` had 26 fields and not one naming an item, so the mapper dropped
+them and the screen had nothing to draw.
+
+Tracing that exposed a second fault. `totalPlanned` sums a line's plan quantities, and for these
+lines it sums **child parts into a column counted in assemblies**: Order Qty 1 against Plan Qty 20,
+and on `IN-SO-00520` Order 5 against Plan 100. `remaining` then floors to zero, so a line can read
+**fully planned** while a child part has nothing planned against it.
+
+### Decision
+**1. A plan names its part.** `planningPlanSummarySchema` gains `itemId`, `itemCode`,
+`itemCodeText`, `itemName`, `itemNameText` and `bomChildCode`, filled from an **aliased**
+`plan_item` left-join and mapped in all three places that build a plan summary. Read as
+`itemCode ?? itemCodeText` — live wins, snapshot is the fallback, the pattern the Plans list
+already uses. The chip, the collapsed Plans cell and the Sort & Filter text all name the part, so
+a planner can search for one.
+
+**No revision on a child.** `CODE/REV` carries the CUSTOMER's drawing revision off the parent SO
+line and says nothing about a child part. A child shows its bare code.
+
+**`bomChildCode` is THE discriminator** — an ordinary SO-line plan leaves every BOM column null.
+
+**2. The row states the per-part account.** `planningLineSchema` gains `bomChildren`
+(`childItemCode`, `childItemName`, `qtyPerSet`, `requiredQty`, `plannedQty`), shown as a table in
+the row's ▸ panel, with a part short of its requirement marked and a part planned in full left
+unpainted. `requiredQty` is ADR-107's own formula to the letter, so the panel and the server's
+create-time cap state the same requirement. Read against the line's **current**
+`source_bom_master_id`, so a line whose BOM was swapped lists the parts it uses today. Empty for an
+ordinary line, and for a short-closed one whose parts will never be made (ADR-196).
+
+**3. The quantity columns are NOT changed. This is the deliberate half.** `totalPlanned` and
+`remaining` keep today's arithmetic, including the fault described above. Correcting the number
+means changing `soLinePlannedRaw` (`apps/api/src/lib/so-line-coverage.ts`), which has **five**
+readers — the create-plan cap `assertPlanQtyWithinRemaining`, Needs Planning, the Unplanned SO
+Lines report, the Planning list's Plan %, and this screen. Changing only this screen was built,
+reviewed and **withdrawn**, because it was worse than the fault:
+
+- The ⋯ menu would offer **"Plan 1"** on a line the server then refuses —
+  `"Plan Qty (1) cannot be more than Pending to Plan (0)"` — since the cap still sums child plans
+  raw. Before the change `remaining` was 0 there, so the action was hidden and screen and server
+  agreed by accident.
+- Needs Planning and the Unplanned SO Lines report would omit a line this screen said had work
+  left, and the Planning list would show 100 % beside a line reading 0 %.
+- Replacing the plan sum with covered sets discarded a sibling **assembly** plan's quantity
+  (it carries `bom_master_id` but no `bom_child_code`), so adding a child plan made a line go
+  *backwards* from Fully Planned to Partly Planned.
+
+So the per-part account carries the truth instead: the planner sees `GEAR WHEEL 0 of 10` in the ▸
+panel even while the line's own figures still read the old way. **The number needs its own
+decision, taken across all five readers at once, including the write-path cap.**
+
+### Alternatives considered
+- **Show the child code and nothing else** — rejected: it answers the complaint and leaves the
+  "fully planned while a part is unplanned" state completely invisible.
+- **Correct `totalPlanned` on this screen only** — built and withdrawn; see above. Half a
+  correction across a shared rule is a contradiction, not a fix.
+- **Correct `soLinePlannedRaw` here too** — rejected for this change: it alters a guard on the
+  write path and four read screens at once, which deserves its own plan and its own approval.
+- **A second field for "sets planned"** — rejected under §20.1 (one number, one writer).
+
+### Consequences
+- No migration, no new table, no new endpoint. Read path only — nothing is written, so §20.1–20.4
+  have no surface. §20.5 (*a screen only offers an action whose data that screen already loads*) is
+  the rule satisfied: the fields go onto that screen's own response in the same change.
+- The plan-item join is **aliased** `plan_item`. The bare `items` name is already taken in that
+  file by the parent LINE's item; an unaliased join would show "WASHER DRG" on every chip — the bug
+  would look fixed and be worse. `leftJoin` with a `deleted_at` guard: an ad-hoc plan has no item,
+  and a deleted item must not make a plan vanish.
+- An ordinary line is bit-for-bit unchanged — `bomChildren` empty, `totalPlanned` the original
+  expression, and the extra query does not run at all.
+- Job-work keeps `bomChildren: []`: a JW line cannot carry a BOM child plan (the BOM modal reads
+  `sales_order_lines` only, the JWSO branch reports no BOM, and ADR-107's cap recognises a child
+  plan only when `soLineId` is set). Confirmed on both databases — 0 rows.
+- Four child-part plans exist today, all on parent `554117193000`, across `IN-SO-00520` and
+  `IN-SO-00521`.
+- **Open, specified, not built:** the quantity roll-up, as set out in point 3.

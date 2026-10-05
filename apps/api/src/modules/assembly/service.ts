@@ -279,6 +279,12 @@ export async function getAssemblyTracker(
           qtyPerSet,
           totalNeed,
           stockQty,
+          // `Still Out` itself, UNCAPPED (docs/NAMING.md §A). The Tracker has to
+          // show this one and not `autoReadyQty`: fitting.ts compares raw Still
+          // Out to the batch's need and knows nothing of `overrideQty`, so a
+          // screen showing `finalReadyQty` would read healthy on an overridden
+          // component while Complete still refused it.
+          stillOutQty: stillOut,
           autoReadyQty,
           overrideQty,
           finalReadyQty,
@@ -692,6 +698,12 @@ export async function startAssembly(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // §20.3 / M15 — lock the SO before the committed total is summed below.
+    // Both siblings (markUnitAssembled, stopAssembly) already took it; Start
+    // did not, so two Starts in the same second each read the same Pending
+    // balance, each passed the cap, and both inserted — committed ended up
+    // past the order qty. The second now waits and re-reads the sum.
+    await lockSoRow(tx, companyId, soId);
     const soRows = await tx
       .select({
         id: salesOrders.id,

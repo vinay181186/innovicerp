@@ -1,7 +1,7 @@
 import type { PlanDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -35,6 +35,19 @@ function PlanEditPage(): React.JSX.Element {
   // ADR-202 — set when an edit to a LIVE plan is staged for approval instead of
   // applied; the neutral "Sent for approval" banner shows it.
   const [stagedNotice, setStagedNotice] = useState<string | null>(null);
+  // ONE stable object per loaded version of the plan. PlanForm resets its
+  // values AND its RM "touched" flags whenever this prop's identity changes, so
+  // building it inline (`toFormValues(plan)` in the JSX) meant ANY parent
+  // re-render — the staged-approval notice, useMyAccess settling, isPending
+  // toggling — silently cleared them. A planner who had deliberately cleared RM
+  // Grade would then be reported as never having touched it, the pair would be
+  // left out of the PATCH, and the server would refill it from the BOM line or
+  // Route Card: the exact opposite of what they asked for. Keyed on the
+  // version, not on object identity.
+  const initialValues = useMemo(
+    () => (plan ? toFormValues(plan) : null),
+    [plan?.id, plan?.updatedAt],
+  );
 
   if (eff && !perms.edit) {
     return (
@@ -51,7 +64,7 @@ function PlanEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !plan) {
+  if (isError || !plan || !initialValues) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -105,7 +118,7 @@ function PlanEditPage(): React.JSX.Element {
       ) : null}
 
       <PlanForm
-        initialValues={toFormValues(plan)}
+        initialValues={initialValues}
         isEdit
         // ADR-170 — route-card-driven plans carry no operations; the ops
         // editor is hidden and `ops` is left out of the PATCH so the server's
@@ -115,8 +128,8 @@ function PlanEditPage(): React.JSX.Element {
         isSubmitting={update.isPending}
         submitLabel="Save Changes"
         submitError={update.error instanceof Error ? update.error.message : null}
-        onSubmit={(v) => {
-          const ci = toCreateInput(v);
+        onSubmit={(v, rm) => {
+          const ci = toCreateInput(v, rm);
           update.mutate(
             {
               planDate: ci.planDate,
@@ -125,10 +138,27 @@ function PlanEditPage(): React.JSX.Element {
               planQty: ci.planQty,
               plannedStartDate: ci.plannedStartDate,
               plannedEndDate: ci.plannedEndDate,
-              rawMaterialGradeId: ci.rawMaterialGradeId,
-              rawMaterialGradeText: ci.rawMaterialGradeText,
-              rawMaterialSizeId: ci.rawMaterialSizeId,
-              rawMaterialSizeText: ci.rawMaterialSizeText,
+              // RM Grade / RM Size are sent only when the form owns the pair.
+              // Server contract (apps/api/src/modules/plans/service.ts,
+              // updatePlanTx): a pair present in the PATCH — a value OR an
+              // explicit null — means "the caller owns this, do not default it",
+              // and ONLY an omitted pair is backfilled from the plan's BOM line,
+              // else from the item's Route Card. A pair the planner left blank
+              // and never touched must therefore be absent from this body, not
+              // null. Grade and size are independent: one may be omitted while
+              // the other is sent.
+              ...(rm.sendGrade
+                ? {
+                    rawMaterialGradeId: ci.rawMaterialGradeId ?? null,
+                    rawMaterialGradeText: ci.rawMaterialGradeText ?? null,
+                  }
+                : {}),
+              ...(rm.sendSize
+                ? {
+                    rawMaterialSizeId: ci.rawMaterialSizeId ?? null,
+                    rawMaterialSizeText: ci.rawMaterialSizeText ?? null,
+                  }
+                : {}),
               rawMaterialItemId: ci.rawMaterialItemId,
               rmQtyPerPiece: ci.rmQtyPerPiece,
               dpVendorId: ci.dpVendorId,

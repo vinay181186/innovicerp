@@ -1136,6 +1136,23 @@ export async function createProductionOrder(
         );
       }
 
+      // §6 rule 1 — the SERVER half of a rule the browser already enforces.
+      // The PLAN is the only source of raw material for this order: the order
+      // and its Job Card copy the Grade and Size off the plan, never off the
+      // route card (0106), so a plan naming neither makes a material-less Job
+      // Card and the "Raw Material Available" tick above confirms nothing. The
+      // screen refuses it (web production-orders/routes/new.tsx) but the
+      // browser is never the rule — an API caller walked straight past it.
+      // Read off the row already locked above, not a second query. Same
+      // sentence both sides so the two can never disagree.
+      const planHasRmGrade = Boolean(plan.rawMaterialGradeText?.trim() || plan.rawMaterialGradeId);
+      const planHasRmSize = Boolean(plan.rawMaterialSizeText?.trim() || plan.rawMaterialSizeId);
+      if (!planHasRmGrade && !planHasRmSize) {
+        throw new ValidationError(
+          'This plan has no raw material — set the Grade and Size on the plan first.',
+        );
+      }
+
       if (!plan.itemId) {
         throw new ValidationError(
           `Plan ${plan.code} has no master item — pick the item from Item Master on the plan first`,

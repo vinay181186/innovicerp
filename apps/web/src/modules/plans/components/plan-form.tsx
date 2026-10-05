@@ -160,7 +160,18 @@ export function emptyValues(): PlanFormValues {
   };
 }
 
-export function toCreateInput(v: PlanFormValues): CreatePlanInput {
+/** Which raw-material pair this form has something to say about on this save.
+ *  Both true is the old behaviour (send everything); a false leaves that pair
+ *  OUT of the payload — see the comment at the RM block in `toCreateInput`. */
+export interface PlanRmIntent {
+  sendGrade: boolean;
+  sendSize: boolean;
+}
+
+export function toCreateInput(
+  v: PlanFormValues,
+  rm: PlanRmIntent = { sendGrade: true, sendSize: true },
+): CreatePlanInput {
   return {
     // Blank → server auto-numbers the next PLN-NNNN.
     code: v.code.trim() || undefined,
@@ -176,10 +187,28 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     planQty: v.planQty,
     plannedStartDate: v.plannedStartDate || null,
     plannedEndDate: v.plannedEndDate || null,
-    rawMaterialGradeId: v.rawMaterialGradeId ?? null,
-    rawMaterialGradeText: v.rawMaterialGradeText || null,
-    rawMaterialSizeId: v.rawMaterialSizeId ?? null,
-    rawMaterialSizeText: v.rawMaterialSizeText || null,
+    // RM Grade / RM Size go out ONLY when this form has something to say about
+    // them. Server contract (apps/api/src/modules/plans/service.ts, createPlan /
+    // updatePlanTx): a pair that IS sent — a value OR an explicit null — means
+    // "the caller owns this pair, do not default it", and only an OMITTED pair is
+    // backfilled from the plan's BOM line, else from the item's Route Card. So a
+    // pair still blank that the planner never touched must be LEFT OUT, or this
+    // form's `null` silently switches the server's own backfill off for every
+    // plan whose route card / BOM line is filled in after the plan was made.
+    // Touched-and-cleared still goes as null — that is the planner saying "leave
+    // it blank". Grade and size move independently.
+    ...(rm.sendGrade
+      ? {
+          rawMaterialGradeId: v.rawMaterialGradeId ?? null,
+          rawMaterialGradeText: v.rawMaterialGradeText || null,
+        }
+      : {}),
+    ...(rm.sendSize
+      ? {
+          rawMaterialSizeId: v.rawMaterialSizeId ?? null,
+          rawMaterialSizeText: v.rawMaterialSizeText || null,
+        }
+      : {}),
     ...rmItemToInput(v),
     bomMasterId: v.bomMasterId ?? null,
     bomParentCode: v.bomParentCode || null,
@@ -227,7 +256,9 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
 
 interface PlanFormProps {
   initialValues: PlanFormValues;
-  onSubmit: (values: PlanFormValues) => void;
+  /** `rm` says which RM pair this save owns; a pair the planner left blank and
+   *  never touched is reported false so the caller can omit it. */
+  onSubmit: (values: PlanFormValues, rm: PlanRmIntent) => void;
   isSubmitting: boolean;
   submitLabel: string;
   submitError?: string | null;
@@ -252,6 +283,13 @@ export function PlanForm({
   soInternalNo,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
+  // Did the planner work this RM pair themselves? A pair still blank that was
+  // never touched is "the planner said nothing about it" — it is left out of the
+  // payload so the server can fill it from the BOM line / Route Card. A blank
+  // they deliberately cleared IS an answer and still goes as null. Same flags as
+  // plan-create-form.tsx.
+  const [rmGradeTouched, setRmGradeTouched] = useState(false);
+  const [rmSizeTouched, setRmSizeTouched] = useState(false);
   // The saved plan's id, for the "Create Production Order" link. The form is
   // only ever mounted with a saved plan on the edit route (plans/$id/edit),
   // so the id is read off that route rather than threaded through a new prop.
@@ -270,6 +308,10 @@ export function PlanForm({
 
   useEffect(() => {
     setValues(initialValues);
+    // The fields went back to what the plan holds, so the planner has not
+    // answered for either RM pair against THESE values yet.
+    setRmGradeTouched(false);
+    setRmSizeTouched(false);
   }, [initialValues]);
 
   const update = <K extends keyof PlanFormValues>(key: K, val: PlanFormValues[K]): void => {
@@ -435,7 +477,15 @@ export function PlanForm({
         e.preventDefault();
         // Block the submit on a bad routing, exactly as the other forms do.
         if (opsSeqError) return;
-        onSubmit(values);
+        // "Blank and never touched" = the planner said nothing about this pair,
+        // so the caller leaves it out and the server backfills it. Anything else
+        // is this form's answer and is sent as it stands, null included.
+        const gradeBlank = !values.rawMaterialGradeId && !values.rawMaterialGradeText;
+        const sizeBlank = !values.rawMaterialSizeId && !values.rawMaterialSizeText;
+        onSubmit(values, {
+          sendGrade: rmGradeTouched || !gradeBlank,
+          sendSize: rmSizeTouched || !sizeBlank,
+        });
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
     >
@@ -629,6 +679,7 @@ export function PlanForm({
                       rawMaterialGradeId: id,
                       rawMaterialGradeText: text,
                     }));
+                    setRmGradeTouched(true);
                   }}
                 />
               </Field>
@@ -642,6 +693,7 @@ export function PlanForm({
                       rawMaterialSizeId: id,
                       rawMaterialSizeText: text,
                     }));
+                    setRmSizeTouched(true);
                   }}
                 />
               </Field>

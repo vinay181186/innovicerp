@@ -12,6 +12,8 @@
 
 import {
   BOM_CREATE_STATUSES,
+  BOM_LINE_TYPE_LABEL,
+  BOM_LINE_TYPES,
   BOM_STATUS_MOVES,
   type BomLineType,
   type BomMaster,
@@ -27,7 +29,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { apiFetch } from '@/lib/api';
+import { apiDownload, apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { itemsKeys, useItemsList } from '@/modules/items/api';
 import { useMaterialGradesList, useMaterialSizesList } from '@/modules/raw-material/api';
@@ -140,13 +142,21 @@ interface BomFormProps {
 
 // Plain labels — the two factory emoji were identical, so "🏭 Manufacture" and
 // "🏭 Outsource" read as the same option at a glance.
-const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = [
-  { value: 'manufacture', label: 'Manufacture' },
-  { value: 'purchase', label: 'Buy' },
-  { value: 'outsource', label: 'Outsource' },
-];
+const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = BOM_LINE_TYPES.map(
+  (value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }),
+);
 
 const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsource']);
+/** The tab the Excel Template keeps its dropdown values on (built by
+ *  apps/api/src/lib/excel-template.ts; the browser-built master templates use
+ *  the same name). Never a sheet of rows to import. */
+const LISTS_SHEET = 'Lists';
+/** The screen calls `purchase` "Buy", and the template's dropdown shows the
+ *  screen's words — so the importer accepts either the label or the stored
+ *  code. Lower-cased keys; the reader lower-cases before the lookup. */
+const BOM_TYPE_BY_LABEL = new Map<string, BomLineType>(
+  BOM_TYPES.map((t) => [t.label.toLowerCase(), t.value]),
+);
 
 // The three REQUIRED columns, with every header spelling accepted for each.
 // ONE list, used for both the up-front template check and the per-row reads —
@@ -448,11 +458,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     return m;
   }, [sizeList.data]);
 
-  // Both buttons below read these masters — Template for its sample values,
-  // Import to match RM Grade / RM Size. Clicking before they arrive would
-  // silently blank every raw material in the file, so hold the buttons for the
-  // moment it takes. A FAILED fetch does not hold them: the import still runs
-  // and names the unmatched values, which is visible rather than stuck.
+  // IMPORT reads these masters to match the sheet's RM Grade / RM Size.
+  // Clicking before they arrive would silently blank every raw material in the
+  // file, so the Import button waits the moment it takes. A FAILED fetch does
+  // not hold it: the import still runs and says the master could not be
+  // checked, which is visible rather than stuck. The Template button does NOT
+  // need them — the server reads the masters itself when it builds the file.
   const rmMastersLoading = gradeList.isPending || sizeList.isPending;
   /** The masters could not be read, or came back cut short at the page cap. In
    *  either case an absent value proves nothing, so the import must say "could
@@ -467,34 +478,24 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
 
+  // The Excel Template is built by the API (GET /bom-masters/import-template.xlsx)
+  // so its BOM Type / RM Grade / RM Size columns can carry real Excel
+  // dropdowns — SheetJS, used here for READING the file, silently drops data
+  // validation and cannot write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
   const downloadTemplate = async (): Promise<void> => {
-    const { utils: xlsxUtils, write: xlsxWrite } = await loadXlsx();
-    // Sample the user's OWN first grade/size, so the example row shows a value
-    // that will actually match on import. Blank when the masters are empty.
-    const gradeSample = gradeList.data?.grades[0]?.name ?? '';
-    const sizeSample = sizeList.data?.sizes[0]?.name ?? '';
-    // 5 columns + two sample rows so users know the shape. RM Grade / RM Size
-    // are optional and must match Raw Material Master; the samples show a
-    // filled row and a blank one.
-    const aoa = [
-      // Title Case headers; the importer's aliases still read item_code / qty_per_set / bom_type.
-      ['Item Code', 'Qty / Set', 'BOM Type', 'RM Grade', 'RM Size'],
-      ['EXAMPLE-001', 2, 'manufacture', gradeSample, sizeSample],
-      ['EXAMPLE-002', 3, 'purchase', '', ''],
-    ];
-    const sheet = xlsxUtils.aoa_to_sheet(aoa);
-    const wb = xlsxUtils.book_new();
-    xlsxUtils.book_append_sheet(wb, sheet, 'BOM');
-    const buf = xlsxWrite(wb, { type: 'array', bookType: 'xlsx' });
-    const blob = new Blob([buf], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'BOM Import Template.xlsx';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await apiDownload('/bom-masters/import-template.xlsx', {}, 'BOM Import Template.xlsx');
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
   };
 
   const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
@@ -542,11 +543,17 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         throw new Error(
           `Sheet "${sheetName}" has only the sample rows (EXAMPLE-001 / EXAMPLE-002). ` +
             `Replace them with your own rows` +
-            ((sheetNames?.length ?? 0) > 1 ? ` — only the first sheet is read.` : '.'),
+            ((sheetNames ?? []).filter((n) => n !== sheetName && n !== LISTS_SHEET).length > 0
+              ? ` — only the first sheet is read.`
+              : '.'),
         );
       }
+      // "Lists" is the template's own dropdown-values tab, so it does not count
+      // as "your rows might be on another sheet" — otherwise every import from
+      // the official template would carry that warning.
+      const otherSheets = (sheetNames ?? []).filter((n) => n !== sheetName && n !== LISTS_SHEET);
       const sheetNote =
-        (sheetNames?.length ?? 0) > 1
+        otherSheets.length > 0
           ? ` (read sheet "${sheetName}" of ${sheetNames!.length}: ${sheetNames!.join(', ')})`
           : '';
 
@@ -598,7 +605,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       rows.forEach((row, idx) => {
         const itemCode = getCol(row, CODE_ALIASES).trim();
         const qtyRaw = getCol(row, QTY_ALIASES);
-        const bomType = getCol(row, TYPE_ALIASES).trim().toLowerCase() as BomLineType;
+        const bomTypeRaw = getCol(row, TYPE_ALIASES).trim().toLowerCase();
+        const bomType = (BOM_TYPE_BY_LABEL.get(bomTypeRaw) ?? bomTypeRaw) as BomLineType;
         if (!itemCode) {
           errors.push({
             rowIndex: idx,
@@ -679,7 +687,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'bad_type',
-            reason: 'BOM Type must be manufacture, purchase or outsource.',
+            reason: 'BOM Type must be Manufacture, Buy or Outsource.',
           });
           return;
         }
@@ -1059,6 +1067,17 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             </div>
           ) : null}
 
+          {templateError ? (
+            <div style={{ marginTop: 'var(--sp-2)' }}>
+              <Banner
+                tone="error"
+                flush
+                onDismiss={() => setTemplateError(null)}
+                title={templateError}
+              />
+            </div>
+          ) : null}
+
           {importSummary ? (
             <div style={{ marginTop: 'var(--sp-2)' }}>
               <Banner
@@ -1349,11 +1368,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           <button
             type="button"
             className="btn btn-ghost"
-            disabled={rmMastersLoading}
-            title={rmMastersLoading ? 'Loading Raw Material Master…' : undefined}
+            disabled={templateBusy}
             onClick={() => void downloadTemplate()}
           >
-            <Download size={14} /> Template
+            <Download size={14} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
           </button>
           <button
             type="button"

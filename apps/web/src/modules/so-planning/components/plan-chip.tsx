@@ -19,8 +19,6 @@ import {
   type PrStatus,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Activity } from 'lucide-react';
-import { fmtDate } from '@/lib/date';
 
 // Legacy renders the raw stored status text (`esc(plan.status)`), which in the
 // legacy store is Title Case ("In Planning", "JC Created", …). Our enum is
@@ -81,6 +79,34 @@ export function planStatusOf(plan: PlanningPlanSummary): { label: string; color:
     : { label: PLAN_STATUS_LABEL[plan.planStatus], color: PLAN_STATUS_COLOR[plan.planStatus] };
 }
 
+/** ADR-216 — WHICH item this plan is for, when that is not the SO line's own
+ *  item. A plan on a BOM parent's line is for a CHILD part (ADR-030 grain: one
+ *  plan per SO line × BOM child), so the line's item code is the wrong answer
+ *  and the chip used to name no part at all. `bomChildCode` is THE
+ *  discriminator: null means an ordinary plan, and this returns null so the
+ *  chip and the Plans cell render exactly as they did before.
+ *
+ *  Live value from `items` wins, the plan's own snapshot is the fallback
+ *  (`xxx ?? xxxText`, the house pattern the Plans list already uses), and
+ *  `bomChildCode` itself — which IS the child's code — is the last resort.
+ *
+ *  The code is BARE, never `CODE/REV`: the revision in `CODE/REV` is the
+ *  CUSTOMER's drawing revision off the PARENT SO line and says nothing about a
+ *  child part, so printing one here would be a plausible-looking lie (see
+ *  lib/item-code.ts). The contract carries no revision for this reason.
+ *
+ *  ONE helper, so the Plans COLUMN and the plan chip in the ▸ panel can never
+ *  name a plan's part differently — same reason `planStatusOf` exists. */
+export function planChildItemOf(
+  plan: PlanningPlanSummary,
+): { code: string; name: string | null } | null {
+  if (plan.bomChildCode === null) return null;
+  return {
+    code: plan.itemCode ?? plan.itemCodeText ?? plan.bomChildCode,
+    name: plan.itemName ?? plan.itemNameText,
+  };
+}
+
 /** One purchase request's status as it reads on screen — the PO number once one
  *  has been raised from it, which is what the PR chip shows in its place. */
 export function prStatusOf(pr: PlanningLine['prs'][number]): { label: string; color: string } {
@@ -137,160 +163,3 @@ export function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element
 }
 
 // ─── Plan chip ───────────────────────────────────────────────────────────
-
-/** A generated PR number, clickable to its detail page when the id is known
- *  (mirrors how a JC number links to /job-cards/$id). Falls back to plain text. */
-function PrLink({
-  id,
-  code,
-  color,
-}: {
-  id: string | null;
-  code: string;
-  color: string;
-}): React.JSX.Element {
-  if (!id) return <>{code}</>;
-  return (
-    <Link
-      to="/purchase-requests/$id"
-      params={{ id }}
-      className="td-code"
-      style={{ color }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {code}
-    </Link>
-  );
-}
-
-/** One plan inside a line's ▸ panel: code · type · qty · ops · vendor · status,
- *  then links to whatever it has produced — the Production Order (route-card
- *  plans, ADR-170), the purchase requests, the Job Card. Read-only: the plan's
- *  ACTIONS are in the row's ⋯ menu. */
-export function PlanChip({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
-  const isDP = plan.planType === 'direct_purchase';
-  const isFO = plan.planType === 'full_outsource';
-  const typeIcon = isDP ? '🛒' : isFO ? '📦' : '🏭';
-  const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Make';
-  const isRouteCard = plan.opsSource === 'route_card';
-  const { label: statusLabel, color: stColor } = planStatusOf(plan);
-  // Schedule / raw material / remark ride along as a tooltip so the chip stays
-  // one line; the Plans page shows them in full.
-  const tip = [
-    plan.plannedStartDate ? `Start: ${fmtDate(plan.plannedStartDate)}` : null,
-    plan.plannedEndDate ? `End: ${fmtDate(plan.plannedEndDate)}` : null,
-    plan.rawMaterialGradeText ? `Grade: ${plan.rawMaterialGradeText}` : null,
-    plan.rawMaterialSizeText ? `Size: ${plan.rawMaterialSizeText}` : null,
-    plan.remarks ? `Remarks: ${plan.remarks}` : null,
-  ]
-    .filter((s): s is string => s !== null)
-    .join('\n');
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 6,
-        padding: '3px 8px',
-        margin: '2px 0',
-        background: 'var(--bg)',
-        border: '1px solid var(--border)',
-        borderRadius: 6,
-        fontSize: 11,
-      }}
-      title={tip || undefined}
-    >
-      <span>{typeIcon}</span>
-      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-        {plan.code}
-      </span>
-      <span className="text2">
-        {typeLabel} · <b>{plan.planQty} pcs</b>
-      </span>
-      {!isRouteCard && !isDP && !isFO && plan.opsCount > 0 ? (
-        <span className="text3" style={{ fontSize: 11 }}>
-          ({plan.opsCount} ops{plan.hasOutsourceOp ? ', 🏭 outsrc' : ''})
-        </span>
-      ) : null}
-      {isFO && plan.foVendorCodeText ? (
-        <span style={{ fontSize: 11, color: 'var(--purple)' }}>→ {plan.foVendorCodeText}</span>
-      ) : null}
-      <span style={{ fontWeight: 700, color: stColor, fontSize: 11 }}>{statusLabel}</span>
-
-      {/* Route-card plan: the Production Order (once raised) is the way on. */}
-      {isRouteCard && plan.productionOrderId && plan.productionOrderCode ? (
-        <Link
-          to="/production-orders/$id"
-          params={{ id: plan.productionOrderId }}
-          className="mono fw-700"
-          style={{ fontSize: 11, color: 'var(--blue)' }}
-          title="Open the Production Order"
-        >
-          {plan.productionOrderCode}
-        </Link>
-      ) : null}
-
-      {/* The code, not the id, decides whether a PR is shown: a soft-deleted PR
-          comes back with a null code while the id survives, and PrLink would
-          then render an empty link after the literal "PR:" (ADR-209). */}
-      {plan.planStatus === 'pr_created' && (plan.foPrCode ?? plan.dpPrCode) ? (
-        <span className="mono" style={{ color: 'var(--purple)', fontSize: 11, fontWeight: 700 }}>
-          PR:
-          <PrLink
-            id={plan.foPrId ?? plan.dpPrId}
-            code={plan.foPrCode ?? plan.dpPrCode ?? ''}
-            color="var(--purple)"
-          />
-          {plan.foMatPrCode ? (
-            <span style={{ color: 'var(--amber2)', marginLeft: 4 }}>
-              Material:
-              <PrLink id={plan.foMatPrId} code={plan.foMatPrCode} color="var(--amber)" />
-            </span>
-          ) : null}
-        </span>
-      ) : null}
-      {plan.ospPrs.length > 0 ? (
-        <span
-          className="mono"
-          style={{
-            color: 'var(--purple)',
-            fontSize: 11,
-            fontWeight: 700,
-            display: 'inline-flex',
-            gap: 3,
-            alignItems: 'center',
-          }}
-          title="OSP purchase request(s) auto-raised for this plan's outsource op(s)"
-        >
-          PR:
-          {plan.ospPrs.map((pr, i) => (
-            <span key={pr.id}>
-              <PrLink id={pr.id} code={pr.code} color="var(--purple)" />
-              {i < plan.ospPrs.length - 1 ? ',' : ''}
-            </span>
-          ))}
-        </span>
-      ) : null}
-      {/* The Job Card this plan produced — a real link now (ctrl-click / new
-          tab), same condition as the button it replaces. The ⋯ menu carries
-          the same jump for the planner working down the rows. */}
-      {plan.jcId &&
-      (plan.planStatus === 'jc_created' ||
-        plan.planStatus === 'in_production' ||
-        plan.planStatus === 'complete' ||
-        isRouteCard) ? (
-        <Link
-          to="/job-cards/$id"
-          params={{ id: plan.jcId }}
-          className="mono fw-700"
-          style={{ fontSize: 11, color: 'var(--cyan)' }}
-          title="Open the Job Card"
-        >
-          <Activity size={11} /> {plan.jcCode ?? 'View JC'}
-        </Link>
-      ) : null}
-    </div>
-  );
-}

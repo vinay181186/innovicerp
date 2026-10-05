@@ -80,6 +80,11 @@ export function PlanCreateForm({
   const [rmGradeText, setRmGradeText] = useState<string | null>(null);
   const [rmSizeId, setRmSizeId] = useState<string | null>(null);
   const [rmSizeText, setRmSizeText] = useState<string | null>(null);
+  // Did the planner work this pair themselves? A blank the planner never
+  // opened is "nothing to say" (omit it, let the server default from the
+  // Route Card); a blank they deliberately cleared is an answer (send null).
+  const [rmGradeTouched, setRmGradeTouched] = useState(false);
+  const [rmSizeTouched, setRmSizeTouched] = useState(false);
   const [remarks, setRemarks] = useState('');
 
   // Orders that still have something to plan. A fully planned order has no
@@ -119,18 +124,35 @@ export function PlanCreateForm({
     setRmGradeText(null);
     setRmSizeId(null);
     setRmSizeText(null);
+    // A different line is a different item: the planner has not answered for
+    // it yet, so both pairs go back to untouched.
+    setRmGradeTouched(false);
+    setRmSizeTouched(false);
   }, [line?.soLineId]);
 
   // Raw material defaults from the item's Route Card while blank — same rule
-  // as "+ Plan" (Route Card is the source of truth, CLAUDE.md §17).
+  // as "+ Plan" (Route Card is the source of truth, CLAUDE.md §17). A pair the
+  // planner has touched is never refilled, and a lookup that comes back blank
+  // (no Route Card yet) does NOT count as the planner answering — the pair
+  // stays untouched so the payload below can leave it out.
   const { data: defaultOps } = useDefaultRouteOps(line?.itemId ?? null);
   useEffect(() => {
     if (!defaultOps) return;
-    if (!rmGradeId && !rmGradeText) {
+    if (
+      !rmGradeTouched &&
+      !rmGradeId &&
+      !rmGradeText &&
+      (defaultOps.rawMaterialGradeId || defaultOps.rawMaterialGradeText)
+    ) {
       setRmGradeId(defaultOps.rawMaterialGradeId);
       setRmGradeText(defaultOps.rawMaterialGradeText);
     }
-    if (!rmSizeId && !rmSizeText) {
+    if (
+      !rmSizeTouched &&
+      !rmSizeId &&
+      !rmSizeText &&
+      (defaultOps.rawMaterialSizeId || defaultOps.rawMaterialSizeText)
+    ) {
       setRmSizeId(defaultOps.rawMaterialSizeId);
       setRmSizeText(defaultOps.rawMaterialSizeText);
     }
@@ -152,6 +174,17 @@ export function PlanCreateForm({
     if (plannedEndDate < plannedStartDate) {
       return { error: 'Planned End Date cannot be before Planned Start Date.' };
     }
+    // RM Grade / RM Size are each sent ONLY when this form has something to
+    // say about them. Server contract (apps/api/src/modules/plans/service.ts,
+    // createPlan): a field that IS sent — a value OR an explicit null — means
+    // "the caller owns this pair, do not default it", and only an OMITTED pair
+    // is backfilled from the item's Route Card. So an untouched blank pair
+    // must be left out, otherwise this form's `null` silently switches the
+    // server's own Route-Card fallback off for every item whose Route Card is
+    // made after the plan. Touched-and-cleared still goes as null — that is
+    // the planner saying "leave it blank". Grade and size move independently.
+    const sendGrade = rmGradeTouched || rmGradeId !== null || rmGradeText !== null;
+    const sendSize = rmSizeTouched || rmSizeId !== null || rmSizeText !== null;
     const input: CreatePlanInput = {
       // code omitted → server assigns the next sequential PLN-NNNN.
       planDate: todayLocal(),
@@ -170,10 +203,8 @@ export function PlanCreateForm({
       plannedStartDate,
       plannedEndDate,
       customerDispatchDate: customerDispatchDate || null,
-      rawMaterialGradeId: rmGradeId,
-      rawMaterialGradeText: rmGradeText,
-      rawMaterialSizeId: rmSizeId,
-      rawMaterialSizeText: rmSizeText,
+      ...(sendGrade ? { rawMaterialGradeId: rmGradeId, rawMaterialGradeText: rmGradeText } : {}),
+      ...(sendSize ? { rawMaterialSizeId: rmSizeId, rawMaterialSizeText: rmSizeText } : {}),
       remarks: remarks.trim() === '' ? null : remarks.trim(),
     };
     return { input };
@@ -395,6 +426,7 @@ export function PlanCreateForm({
                       onChange={(id, text) => {
                         setRmGradeId(id);
                         setRmGradeText(text);
+                        setRmGradeTouched(true);
                         onDirty();
                       }}
                     />
@@ -406,6 +438,7 @@ export function PlanCreateForm({
                       onChange={(id, text) => {
                         setRmSizeId(id);
                         setRmSizeText(text);
+                        setRmSizeTouched(true);
                         onDirty();
                       }}
                     />

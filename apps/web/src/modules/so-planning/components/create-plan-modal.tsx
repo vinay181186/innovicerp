@@ -78,6 +78,11 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [rmGradeText, setRmGradeText] = useState<string | null>(null);
   const [rmSizeId, setRmSizeId] = useState<string | null>(null);
   const [rmSizeText, setRmSizeText] = useState<string | null>(null);
+  // Did the planner work this pair themselves? A blank the planner never
+  // opened is "nothing to say" (omit it, let the server default from the
+  // Route Card); a blank they deliberately cleared is an answer (send null).
+  const [rmGradeTouched, setRmGradeTouched] = useState(false);
+  const [rmSizeTouched, setRmSizeTouched] = useState(false);
   // Auto-fetch the raw material chosen on the item's route card (grade + size)
   // — the same rule the standalone Plan form applies (plan-form.tsx): only
   // while a field is still blank, so the planner's own pick is never
@@ -87,6 +92,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   useEffect(() => {
     if (!defaultOps) return;
     if (
+      !rmGradeTouched &&
       !rmGradeId &&
       !rmGradeText &&
       (defaultOps.rawMaterialGradeId || defaultOps.rawMaterialGradeText)
@@ -95,6 +101,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       setRmGradeText(defaultOps.rawMaterialGradeText);
     }
     if (
+      !rmSizeTouched &&
       !rmSizeId &&
       !rmSizeText &&
       (defaultOps.rawMaterialSizeId || defaultOps.rawMaterialSizeText)
@@ -165,6 +172,17 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       return;
     }
     setErr(null);
+    // RM Grade / RM Size are each sent ONLY when this box has something to say
+    // about them. Server contract (apps/api/src/modules/plans/service.ts,
+    // createPlan): a field that IS sent — a value OR an explicit null — means
+    // "the caller owns this pair, do not default it", and only an OMITTED pair
+    // is backfilled from the item's Route Card. So an untouched blank pair
+    // must be left out, otherwise this box's `null` silently switches the
+    // server's own Route-Card fallback off for every item whose Route Card is
+    // made after the plan. Touched-and-cleared still goes as null — that is
+    // the planner saying "leave it blank". Grade and size move independently.
+    const sendGrade = rmGradeTouched || rmGradeId !== null || rmGradeText !== null;
+    const sendSize = rmSizeTouched || rmSizeId !== null || rmSizeText !== null;
     const input: CreatePlanInput = {
       // code omitted → server assigns the next sequential PLN-NNNN.
       planDate: todayLocal(),
@@ -185,10 +203,8 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       plannedStartDate,
       plannedEndDate,
       customerDispatchDate: customerDispatchDate || null,
-      rawMaterialGradeId: rmGradeId,
-      rawMaterialGradeText: rmGradeText,
-      rawMaterialSizeId: rmSizeId,
-      rawMaterialSizeText: rmSizeText,
+      ...(sendGrade ? { rawMaterialGradeId: rmGradeId, rawMaterialGradeText: rmGradeText } : {}),
+      ...(sendSize ? { rawMaterialSizeId: rmSizeId, rawMaterialSizeText: rmSizeText } : {}),
       remarks: remarks.trim() === '' ? null : remarks.trim(),
     };
     try {
@@ -421,6 +437,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             onChange={(id, text) => {
               setRmGradeId(id);
               setRmGradeText(text);
+              setRmGradeTouched(true);
             }}
           />
         </FormField>
@@ -432,6 +449,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             onChange={(id, text) => {
               setRmSizeId(id);
               setRmSizeText(text);
+              setRmSizeTouched(true);
             }}
           />
         </FormField>
