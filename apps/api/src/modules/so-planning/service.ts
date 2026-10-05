@@ -717,23 +717,31 @@ export async function getPlanningSoDetail(
     // longer uses. The parts come from the line's current BOM below; the plans
     // are matched to them by child code.
     const childPlannedByKey = new Map<string, number>();
-    const linesWithChildPlans = new Set<string>();
+    const planBomByLine = new Map<string, string>();
     for (const r of planRows) {
       const lineId = r.plan.soLineId;
       const childCode = r.plan.bomChildCode;
       if (!lineId || !childCode) continue;
-      linesWithChildPlans.add(lineId);
+      // `planRows` is ordered by plan code, so the LAST write wins: the newest
+      // plan's BOM, not the oldest. A line whose BOM was swapped is then
+      // measured against the BOM its current plans were actually raised on.
+      if (r.plan.bomMasterId) planBomByLine.set(lineId, r.plan.bomMasterId);
       const key = `${lineId}|${childCode}`;
       childPlannedByKey.set(key, (childPlannedByKey.get(key) ?? 0) + r.plan.planQty);
     }
 
-    // The BOM each affected line is on TODAY (`sales_order_lines`), which is what
-    // the row's own BOM column shows.
+    // Which BOM's parts to list. The line's own `source_bom_master_id` is the
+    // right answer when it is set — it is what the row's BOM column shows — but
+    // it is NULL on every line that actually has child plans today (checked on
+    // both databases), because the BOM planning modal does not write it back.
+    // So fall back to the BOM those plans were raised on, or the panel would
+    // never appear at all.
     const childPlanBomByLine = new Map<string, string>();
     for (const lr of lineRows) {
-      if (!linesWithChildPlans.has(lr.line.id)) continue;
-      const bomId = lr.line.sourceBomMasterId;
-      if (bomId && UUID_RE.test(bomId)) childPlanBomByLine.set(lr.line.id, bomId);
+      const fromPlans = planBomByLine.get(lr.line.id);
+      if (!fromPlans) continue;
+      const onLine = lr.line.sourceBomMasterId;
+      childPlanBomByLine.set(lr.line.id, onLine && UUID_RE.test(onLine) ? onLine : fromPlans);
     }
     const childPlanBomIds = [...new Set(childPlanBomByLine.values())];
     // Joined to `items` the same way ADR-107's cap and the BOM modal do, so
