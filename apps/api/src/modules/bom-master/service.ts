@@ -59,6 +59,7 @@ import { emitActivityLog } from '../activity-log/service';
 import {
   ActivityAction,
   BOM_CREATE_STATUSES,
+  BOM_LINE_TYPE_LABEL,
   BOM_LINE_TYPES,
   BOM_STATUS_MOVES,
   canMoveStatus,
@@ -1348,8 +1349,14 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
       throw e;
     }),
   ]);
-  const gradeNames = grades?.grades.map((g) => g.name) ?? [];
-  const sizeNames = sizes?.sizes.map((sz) => sz.name) ?? [];
+  // A page-capped list would offer a dropdown that silently omits real values —
+  // the planner would then believe a grade is not set up and create a duplicate.
+  // Short list, no dropdown: the column stays free text and the import still
+  // matches it against the full master.
+  const whole = <T>(page: { total: number } | null, rows: T[]): T[] =>
+    page && page.total <= rows.length ? rows : [];
+  const gradeNames = whole(grades, grades?.grades.map((g) => g.name) ?? []);
+  const sizeNames = whole(sizes, sizes?.sizes.map((sz) => sz.name) ?? []);
 
   return buildImportTemplateBuffer({
     sheetName: 'BOM',
@@ -1365,9 +1372,13 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
       },
       { label: 'Qty / Set*', samples: BOM_TEMPLATE_SAMPLE_QTYS, width: 12 },
       {
+        // The words the screen shows (Manufacture / Buy / Outsource), not the
+        // stored codes — the importer accepts either (BOM_TYPE_BY_LABEL in
+        // bom-form.tsx), and a planner should never have to learn a second
+        // vocabulary to fill the sheet.
         label: 'BOM Type*',
-        samples: ['manufacture', 'purchase'],
-        options: [...BOM_LINE_TYPES],
+        samples: [BOM_LINE_TYPE_LABEL.manufacture, BOM_LINE_TYPE_LABEL.purchase],
+        options: BOM_LINE_TYPES.map((t) => BOM_LINE_TYPE_LABEL[t]),
         width: 16,
       },
       ...(gradeNames.length > 0

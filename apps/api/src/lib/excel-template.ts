@@ -20,6 +20,21 @@
 
 import ExcelJS from 'exceljs';
 
+/** ExcelJS carries a worksheet-level validation collection at runtime but does
+ *  not declare it — its .d.ts types only the per-CELL `.dataValidation`
+ *  (index.d.ts:455, and the worksheet's own `dataValidations` line is commented
+ *  out at :987). Per cell is exactly what must not be used here: ExcelJS merges
+ *  those keys with a string sort, so "C10" lands before "C2" and each column
+ *  comes out as two overlapping sqrefs, which Excel treats as corrupt content
+ *  and repairs by deleting every dropdown. Hence this narrow view of the real
+ *  object rather than `any`. */
+interface RangedDataValidations {
+  add(range: string, validation: ExcelJS.DataValidation): void;
+}
+function rangedValidations(sheet: ExcelJS.Worksheet): RangedDataValidations {
+  return (sheet as unknown as { dataValidations: RangedDataValidations }).dataValidations;
+}
+
 /** Rows below the header that carry the dropdown. Beyond this a pasted row
  *  still imports — the importer, not Excel, is what validates it. */
 const VALIDATED_ROWS = 1000;
@@ -112,22 +127,30 @@ export async function buildImportTemplateBuffer(input: BuildImportTemplateInput)
         ...values.map((v) => v.length + 2),
       );
 
-      // An empty master would make `=Lists!$A$2:$A$1` — an invalid range Excel
+      // An empty master would make `Lists!$A$2:$A$1` — an invalid range Excel
       // refuses to open the file over. No values, no dropdown.
       if (values.length === 0) return;
-      const range = `=Lists!$${letter}$2:$${letter}$${values.length + 1}`;
+      // NO leading "=" : OOXML's formula1 holds the formula TEXT, and Excel
+      // writes `Lists!$A$2:$A$4`. An "=" here makes Excel repair the file and
+      // throw the validation away.
+      const range = `Lists!$${letter}$2:$${letter}$${values.length + 1}`;
       const targetLetter = columnLetter(x.index);
-      for (let row = 2; row <= VALIDATED_ROWS + 1; row++) {
-        sheet.getCell(`${targetLetter}${row}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [range],
-          showErrorMessage: true,
-          errorStyle: 'warning',
-          errorTitle: `${header} not in the list`,
-          error: `Pick a ${header} from the dropdown, or add it in the master first.`,
-        };
-      }
+      // ONE ranged validation, not one per cell. Setting `.dataValidation` on
+      // each cell puts 1000 keys in the model, and ExcelJS sorts those keys as
+      // STRINGS when it merges them — "C10" before "C2" — so each column came
+      // out as two OVERLAPPING sqrefs (C10:C1001 and C2:C1001). A cell may
+      // carry only one validation, so Excel calls the file corrupt and drops
+      // every dropdown. This also keeps the sheet dimension at the real data
+      // instead of stretching it to row 1001.
+      rangedValidations(sheet).add(`${targetLetter}2:${targetLetter}${VALIDATED_ROWS + 1}`, {
+        type: 'list',
+        allowBlank: true,
+        formulae: [range],
+        showErrorMessage: true,
+        errorStyle: 'warning',
+        errorTitle: `${header} not in the list`,
+        error: `Pick a ${header} from the dropdown, or add it in the master first.`,
+      });
     });
   }
 

@@ -12,6 +12,8 @@
 
 import {
   BOM_CREATE_STATUSES,
+  BOM_LINE_TYPE_LABEL,
+  BOM_LINE_TYPES,
   BOM_STATUS_MOVES,
   type BomLineType,
   type BomMaster,
@@ -140,13 +142,21 @@ interface BomFormProps {
 
 // Plain labels — the two factory emoji were identical, so "🏭 Manufacture" and
 // "🏭 Outsource" read as the same option at a glance.
-const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = [
-  { value: 'manufacture', label: 'Manufacture' },
-  { value: 'purchase', label: 'Buy' },
-  { value: 'outsource', label: 'Outsource' },
-];
+const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = BOM_LINE_TYPES.map(
+  (value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }),
+);
 
 const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsource']);
+/** The tab the Excel Template keeps its dropdown values on (built by
+ *  apps/api/src/lib/excel-template.ts; the browser-built master templates use
+ *  the same name). Never a sheet of rows to import. */
+const LISTS_SHEET = 'Lists';
+/** The screen calls `purchase` "Buy", and the template's dropdown shows the
+ *  screen's words — so the importer accepts either the label or the stored
+ *  code. Lower-cased keys; the reader lower-cases before the lookup. */
+const BOM_TYPE_BY_LABEL = new Map<string, BomLineType>(
+  BOM_TYPES.map((t) => [t.label.toLowerCase(), t.value]),
+);
 
 // The three REQUIRED columns, with every header spelling accepted for each.
 // ONE list, used for both the up-front template check and the per-row reads —
@@ -448,11 +458,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     return m;
   }, [sizeList.data]);
 
-  // Both buttons below read these masters — Template for its sample values,
-  // Import to match RM Grade / RM Size. Clicking before they arrive would
-  // silently blank every raw material in the file, so hold the buttons for the
-  // moment it takes. A FAILED fetch does not hold them: the import still runs
-  // and names the unmatched values, which is visible rather than stuck.
+  // IMPORT reads these masters to match the sheet's RM Grade / RM Size.
+  // Clicking before they arrive would silently blank every raw material in the
+  // file, so the Import button waits the moment it takes. A FAILED fetch does
+  // not hold it: the import still runs and says the master could not be
+  // checked, which is visible rather than stuck. The Template button does NOT
+  // need them — the server reads the masters itself when it builds the file.
   const rmMastersLoading = gradeList.isPending || sizeList.isPending;
   /** The masters could not be read, or came back cut short at the page cap. In
    *  either case an absent value proves nothing, so the import must say "could
@@ -532,11 +543,17 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         throw new Error(
           `Sheet "${sheetName}" has only the sample rows (EXAMPLE-001 / EXAMPLE-002). ` +
             `Replace them with your own rows` +
-            ((sheetNames?.length ?? 0) > 1 ? ` — only the first sheet is read.` : '.'),
+            ((sheetNames ?? []).filter((n) => n !== sheetName && n !== LISTS_SHEET).length > 0
+              ? ` — only the first sheet is read.`
+              : '.'),
         );
       }
+      // "Lists" is the template's own dropdown-values tab, so it does not count
+      // as "your rows might be on another sheet" — otherwise every import from
+      // the official template would carry that warning.
+      const otherSheets = (sheetNames ?? []).filter((n) => n !== sheetName && n !== LISTS_SHEET);
       const sheetNote =
-        (sheetNames?.length ?? 0) > 1
+        otherSheets.length > 0
           ? ` (read sheet "${sheetName}" of ${sheetNames!.length}: ${sheetNames!.join(', ')})`
           : '';
 
@@ -588,7 +605,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       rows.forEach((row, idx) => {
         const itemCode = getCol(row, CODE_ALIASES).trim();
         const qtyRaw = getCol(row, QTY_ALIASES);
-        const bomType = getCol(row, TYPE_ALIASES).trim().toLowerCase() as BomLineType;
+        const bomTypeRaw = getCol(row, TYPE_ALIASES).trim().toLowerCase();
+        const bomType = (BOM_TYPE_BY_LABEL.get(bomTypeRaw) ?? bomTypeRaw) as BomLineType;
         if (!itemCode) {
           errors.push({
             rowIndex: idx,
@@ -669,7 +687,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'bad_type',
-            reason: 'BOM Type must be manufacture, purchase or outsource.',
+            reason: 'BOM Type must be Manufacture, Buy or Outsource.',
           });
           return;
         }
