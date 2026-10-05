@@ -66,14 +66,14 @@ import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import { apiFetch } from '@/lib/api';
+import { apiDownload, apiFetch } from '@/lib/api';
 import { cascadeField, useFieldCascade } from '@/lib/use-field-cascade';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList } from '@/modules/clients/api';
 import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
-import { downloadSoLineTemplate, parseSoLineFile } from '../lib/import-export';
+import { parseSoLineFile } from '../lib/import-export';
 import { SO_TYPE_LABEL } from '../lib/so-status-label';
 import { SoLineDrawingCell } from './so-line-drawing-cell';
 
@@ -452,6 +452,26 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // In-form line import.
   const lineFileRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+
+  // The Excel Template is built by the API (GET /import-templates/so-lines.xlsx)
+  // so its columns can carry real Excel dropdowns — SheetJS, still used here
+  // for READING a filled sheet, silently drops data validation and cannot
+  // write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const downloadTemplate = async (): Promise<void> => {
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await apiDownload('/import-templates/so-lines.xlsx', {}, 'SO Lines Import Template.xlsx');
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
   async function onImportLines(file: File): Promise<void> {
     try {
       const { rows, errors: errs } = await parseSoLineFile(file);
@@ -1214,9 +1234,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => downloadSoLineTemplate()}
+                  disabled={templateBusy}
+                  onClick={() => void downloadTemplate()}
                 >
-                  Template
+                  {templateBusy ? 'Preparing…' : 'Excel Template'}
                 </button>
                 <button
                   type="button"
@@ -1245,6 +1266,19 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               </>
             }
           >
+            {/* The template comes from the server now, so it can fail. Same
+                place, same Banner the import message uses. */}
+            {templateError ? (
+              <div style={{ padding: 'var(--sp-2) var(--sp-3) 0' }}>
+                <Banner
+                  tone="error"
+                  role="alert"
+                  onDismiss={() => setTemplateError(null)}
+                  title={templateError}
+                />
+              </div>
+            ) : null}
+
             {importMsg ? (
               <div style={{ padding: 'var(--sp-2) var(--sp-3) 0' }}>
                 <Banner

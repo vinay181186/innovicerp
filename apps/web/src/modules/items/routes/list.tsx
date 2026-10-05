@@ -55,6 +55,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { apiDownload } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -64,10 +65,11 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { itemListColumns } from '../components/item-list-columns';
 import { Select } from '@/ui/forms';
+import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
-import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
+import { parseItemImportFile } from '../lib/import-export';
 
 // One count query per stat. Module-level constants keep the query keys stable so
 // these are fetched once and served from cache, and the counts stay whole-master
@@ -193,6 +195,31 @@ function ItemsListPage(): React.JSX.Element {
   const bulkCreate = useBulkCreateItems();
   const [importOpen, setImportOpen] = useState(false);
 
+  // The Excel Template is built by the API (GET /import-templates/items.xlsx)
+  // so its Item Type / UOM / Source columns can carry real Excel dropdowns —
+  // SheetJS, still used here for READING a filled sheet, silently drops data
+  // validation and cannot write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  /** The download itself — THROWS. The dialog awaits this one so a
+   *  failure fired from inside the modal is answered inside the modal;
+   *  the header button uses the wrapper below, which catches. */
+  const fetchTemplate = (): Promise<void> =>
+    apiDownload('/import-templates/items.xlsx', {}, 'Item Master Import Template.xlsx');
+  const downloadTemplate = async (): Promise<void> => {
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await fetchTemplate();
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
 
@@ -234,10 +261,11 @@ function ItemsListPage(): React.JSX.Element {
                 size="sm"
                 variant="ghost"
                 icon={<Icon name="download" size={12} />}
-                onClick={() => downloadItemTemplate()}
+                disabled={templateBusy}
+                onClick={() => void downloadTemplate()}
                 title="Download a blank Excel template for Item Master"
               >
-                Excel Template
+                {templateBusy ? 'Preparing…' : 'Excel Template'}
               </Button>
               <Button
                 size="sm"
@@ -319,6 +347,15 @@ function ItemsListPage(): React.JSX.Element {
         }
       />
 
+      {/* The template is fetched from the server, so it can fail (offline, a
+          session that has expired). Say so where the button is, in the list's
+          own error style. */}
+      {templateError ? (
+        <Banner tone="error" role="alert" onDismiss={() => setTemplateError(null)}>
+          ⚠ {templateError}
+        </Banner>
+      ) : null}
+
       {isError ? (
         <PageState
           state="error"
@@ -387,7 +424,7 @@ function ItemsListPage(): React.JSX.Element {
           submit={(rows, mode, dryRun, saveKey) =>
             bulkCreate.mutateAsync({ items: rows, mode, dryRun, saveKey })
           }
-          onDownloadTemplate={downloadItemTemplate}
+          onDownloadTemplate={fetchTemplate}
           errorsFileName="Item Import Errors.xlsx"
           onClose={() => setImportOpen(false)}
         />

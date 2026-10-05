@@ -45,6 +45,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { apiDownload } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -53,10 +54,11 @@ import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { vendorListColumns } from '../components/vendor-list-columns';
+import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
-import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
+import { parseVendorImportFile } from '../lib/import-export';
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -172,6 +174,31 @@ function VendorsListPage(): React.JSX.Element {
   const bulkCreate = useBulkCreateVendors();
   const [importOpen, setImportOpen] = useState(false);
 
+  // The Excel Template is built by the API (GET /import-templates/vendors.xlsx)
+  // so its GST Category / State / Rating / Status columns can carry real Excel
+  // dropdowns — SheetJS, still used here for READING a filled sheet, silently
+  // drops data validation and cannot write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  /** The download itself — THROWS. The dialog awaits this one so a
+   *  failure fired from inside the modal is answered inside the modal;
+   *  the header button uses the wrapper below, which catches. */
+  const fetchTemplate = (): Promise<void> =>
+    apiDownload('/import-templates/vendors.xlsx', {}, 'Vendor Import Template.xlsx');
+  const downloadTemplate = async (): Promise<void> => {
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await fetchTemplate();
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
   const visibleRows = useMemo(() => data?.vendors ?? [], [data?.vendors]);
 
   const total = data?.total ?? 0;
@@ -214,10 +241,11 @@ function VendorsListPage(): React.JSX.Element {
                 size="sm"
                 variant="ghost"
                 icon={<Icon name="download" size={12} />}
-                onClick={() => downloadVendorTemplate()}
+                disabled={templateBusy}
+                onClick={() => void downloadTemplate()}
                 title="Download a blank Excel template for Vendor Master"
               >
-                Excel Template
+                {templateBusy ? 'Preparing…' : 'Excel Template'}
               </Button>
               <Button
                 size="sm"
@@ -267,6 +295,15 @@ function VendorsListPage(): React.JSX.Element {
           ) : null
         }
       />
+
+      {/* The template is fetched from the server, so it can fail (offline, a
+          session that has expired). Say so where the button is, in the list's
+          own error style. */}
+      {templateError ? (
+        <Banner tone="error" role="alert" onDismiss={() => setTemplateError(null)}>
+          ⚠ {templateError}
+        </Banner>
+      ) : null}
 
       {isError ? (
         <PageState
@@ -336,7 +373,7 @@ function VendorsListPage(): React.JSX.Element {
           submit={(rows, mode, dryRun, saveKey) =>
             bulkCreate.mutateAsync({ vendors: rows, mode, dryRun, saveKey })
           }
-          onDownloadTemplate={downloadVendorTemplate}
+          onDownloadTemplate={fetchTemplate}
           errorsFileName="Vendor Import Errors.xlsx"
           onClose={() => setImportOpen(false)}
         />

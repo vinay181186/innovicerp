@@ -1,11 +1,14 @@
-// Customer Master — Excel template + import parsing (ERPNext Data Import
-// behaviour, see packages/shared/src/schemas/master-import.ts). Uses SheetJS.
+// Customer Master — Excel import parsing (ERPNext Data Import behaviour, see
+// packages/shared/src/schemas/master-import.ts). Uses SheetJS to READ a filled
+// sheet.
 //
-// The template carries EVERY customer master field, plus a "Lists" tab with
-// the allowed GST Category and State values. The parser only does the
-// structural checks (blank name, Code repeated in the file, a GST Category or
-// Payment Days that cannot be read); every field rule is the server's, answered
-// per row by the preview (dryRun), so there is ONE rule set.
+// The blank template itself is built by the API (GET
+// /import-templates/clients.xlsx, apps/api/src/modules/import-templates) so its
+// GST Category / State / Status columns can carry real Excel dropdowns —
+// SheetJS silently drops data validation and cannot write one. The parser here
+// only does the structural checks (blank name, Code repeated in the file, a GST
+// Category or Payment Days that cannot be read); every field rule is the
+// server's, answered per row by the preview (dryRun), so there is ONE rule set.
 //
 // Insert new: Code is optional (the server gives the next CLI-### when blank).
 // Update existing: Code is required and is how the row finds its customer; a
@@ -14,14 +17,11 @@
 import {
   GST_CATEGORIES,
   GST_CATEGORY_LABEL,
-  INDIAN_STATES,
   resolveGstCategory,
   type MasterImportMode,
 } from '@innovic/shared';
-import * as XLSX from 'xlsx';
 
 import {
-  appendListsSheet,
   parseWholeDays,
   putIfFilled,
   type MasterImportParse,
@@ -29,51 +29,6 @@ import {
   type ParsedImportSkip,
 } from '@/lib/master-import';
 import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
-
-const COLUMNS = [
-  'Code',
-  'Customer Name*',
-  'GST Category',
-  'GSTIN',
-  'Address',
-  'City',
-  'State',
-  'Pincode',
-  'Contact Person',
-  'Phone',
-  'Email',
-  'Payment Days',
-  'Status (Active/Inactive)',
-] as const;
-
-export function downloadClientTemplate(): void {
-  const sample = [
-    '',
-    'ABC Industries',
-    'Registered Regular',
-    '24AABCU9603R1ZN',
-    '12 MG Road',
-    'Ahmedabad',
-    'Gujarat',
-    '380001',
-    'Mr. Shah',
-    '9876543210',
-    'abc@email.com',
-    '30',
-    'Active',
-  ];
-  const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [12, 22, 22, 18, 30, 14, 16, 8, 18, 14, 22, 12, 18].map((wch) => ({ wch }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Customers');
-  appendListsSheet(wb, [
-    { header: 'GST Category', values: GST_CATEGORIES.map((c) => GST_CATEGORY_LABEL[c]) },
-    { header: 'State', values: INDIAN_STATES.map((s) => s.name) },
-    { header: 'State Code', values: INDIAN_STATES.map((s) => s.code) },
-    { header: 'Status (Active/Inactive)', values: ['Active', 'Inactive'] },
-  ]);
-  XLSX.writeFile(wb, 'Customer Import Template.xlsx');
-}
 
 export async function parseClientImportFile(
   file: File,

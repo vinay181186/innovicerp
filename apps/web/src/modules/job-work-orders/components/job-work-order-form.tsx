@@ -33,7 +33,7 @@ import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { docCodeToSend } from '@/lib/use-doc-number';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useBomMastersList } from '@/modules/bom-master/api';
-import { apiFetch } from '@/lib/api';
+import { apiDownload, apiFetch } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useClientsList } from '@/modules/clients/api';
@@ -43,7 +43,7 @@ import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useEnsureJwRmItem } from '../api';
-import { downloadJwLineTemplate, parseJwLineFile } from '../lib/import-export';
+import { parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
 
 interface LineFormValue {
@@ -489,6 +489,26 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // so the user is told which row is wrong instead of meeting the API's raw
   // schema rejection. Mirrors the SO form.
   const [lineError, setLineError] = useState<string | null>(null);
+
+  // The Excel Template is built by the API (GET /import-templates/jw-lines.xlsx)
+  // so its columns can carry real Excel dropdowns — SheetJS, still used here
+  // for READING a filled sheet, silently drops data validation and cannot
+  // write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const downloadTemplate = async (): Promise<void> => {
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await apiDownload('/import-templates/jw-lines.xlsx', {}, 'JW Lines Import Template.xlsx');
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
   function onPickEmailFile(e: React.ChangeEvent<HTMLInputElement>): void {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -1108,9 +1128,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => downloadJwLineTemplate()}
+              disabled={templateBusy}
+              onClick={() => void downloadTemplate()}
             >
-              ⬇ Template
+              {templateBusy ? 'Preparing…' : '⬇ Excel Template'}
             </button>
             <button
               type="button"
@@ -1143,6 +1164,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           </>
         }
       >
+        {/* The template comes from the server now, so it can fail. Said right
+            above the line table, where the button is. */}
+        {templateError ? (
+          <div style={{ margin: 'var(--sp-2)' }}>
+            <Banner
+              tone="error"
+              role="alert"
+              flush
+              onDismiss={() => setTemplateError(null)}
+              title={templateError}
+            />
+          </div>
+        ) : null}
+
         {importMsg
           ? (() => {
               // Warn styling (amber) when the sheet carried codes missing from Item

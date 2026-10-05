@@ -312,7 +312,11 @@ function StockCountPage(): React.JSX.Element {
           editable={editable}
         />
         {editable && perms.entry ? (
-          <StockCountAddBar onAdd={addLine} onFile={(f) => void importFile(f)} />
+          <StockCountAddBar
+            onAdd={addLine}
+            onFile={(f) => void importFile(f)}
+            onError={(text) => setMsg({ ok: false, text })}
+          />
         ) : null}
       </div>
 

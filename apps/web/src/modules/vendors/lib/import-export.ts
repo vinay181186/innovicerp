@@ -1,12 +1,16 @@
-// Vendor Master — Excel template + import parsing (ERPNext Data Import
-// behaviour, see packages/shared/src/schemas/master-import.ts). Uses SheetJS.
+// Vendor Master — Excel import parsing (ERPNext Data Import behaviour, see
+// packages/shared/src/schemas/master-import.ts). Uses SheetJS to READ a filled
+// sheet.
 //
-// The template carries EVERY vendor master field, plus a "Lists" tab with the
-// allowed GST Category, State and Rating values. The parser only does the
-// structural checks (blank name, Code repeated in the file, a GST Category or
-// Payment Terms (days) that cannot be read); every field rule — the email
-// included — is the server's, answered per row by the preview (dryRun). One
-// bad email no longer rejects the whole sheet (audit finding 35).
+// The blank template itself is built by the API (GET
+// /import-templates/vendors.xlsx, apps/api/src/modules/import-templates) so its
+// GST Category / State / Rating / Status columns can carry real Excel
+// dropdowns — SheetJS silently drops data validation and cannot write one.
+// The parser here only does the structural checks (blank name, Code repeated in
+// the file, a GST Category or Payment Terms (days) that cannot be read); every
+// field rule — the email included — is the server's, answered per row by the
+// preview (dryRun). One bad email no longer rejects the whole sheet (audit
+// finding 35).
 //
 // Insert new: Code is optional (the server gives the next VND-### when blank).
 // Update existing: Code is required and is how the row finds its vendor; a
@@ -18,14 +22,11 @@
 import {
   GST_CATEGORIES,
   GST_CATEGORY_LABEL,
-  INDIAN_STATES,
   resolveGstCategory,
   type MasterImportMode,
 } from '@innovic/shared';
-import * as XLSX from 'xlsx';
 
 import {
-  appendListsSheet,
   parseWholeDays,
   putIfFilled,
   type MasterImportParse,
@@ -33,58 +34,6 @@ import {
   type ParsedImportSkip,
 } from '@/lib/master-import';
 import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
-
-const COLUMNS = [
-  'Code',
-  'Vendor Name*',
-  'GST Category',
-  'GSTIN',
-  'Address',
-  'City',
-  'State',
-  'Pincode',
-  'Contact Person',
-  'Phone',
-  'Email',
-  'Payment Terms (days)',
-  'Materials/Services',
-  'Rating (A/B/C)',
-  'Status (Active/Inactive)',
-] as const;
-
-export function downloadVendorTemplate(): void {
-  const sample = [
-    '',
-    'ABC Engineering',
-    'Registered Regular',
-    '24AABCU9603R1ZN',
-    '123 Industrial Area',
-    'Ahmedabad',
-    'Gujarat',
-    '380015',
-    'Mr. Patel',
-    '9876543210',
-    'abc@email.com',
-    '45',
-    'CNC Machining, Turning',
-    'A',
-    'Active',
-  ];
-  const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [12, 20, 22, 18, 30, 14, 16, 8, 18, 14, 22, 20, 25, 14, 18].map((wch) => ({
-    wch,
-  }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Vendors');
-  appendListsSheet(wb, [
-    { header: 'GST Category', values: GST_CATEGORIES.map((c) => GST_CATEGORY_LABEL[c]) },
-    { header: 'State', values: INDIAN_STATES.map((s) => s.name) },
-    { header: 'State Code', values: INDIAN_STATES.map((s) => s.code) },
-    { header: 'Rating (A/B/C)', values: ['A', 'B', 'C'] },
-    { header: 'Status (Active/Inactive)', values: ['Active', 'Inactive'] },
-  ]);
-  XLSX.writeFile(wb, 'Vendor Import Template.xlsx');
-}
 
 export async function parseVendorImportFile(
   file: File,

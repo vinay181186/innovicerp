@@ -1,9 +1,12 @@
-// Item Master — Excel template + import parsing (ERPNext Data Import
-// behaviour, see packages/shared/src/schemas/master-import.ts). Uses SheetJS.
+// Item Master — Excel import parsing (ERPNext Data Import behaviour, see
+// packages/shared/src/schemas/master-import.ts). Uses SheetJS to READ a filled
+// sheet.
 //
-// The template carries every item master field the import may set, plus a
-// "Lists" tab with the allowed Item Type, UOM and Source values. The parser
-// only does the structural checks (blank Item Code / Item Name, an Item Code
+// The blank template itself is built by the API (GET
+// /import-templates/items.xlsx, apps/api/src/modules/import-templates) so its
+// Item Type / UOM / Source columns can carry real Excel dropdowns — SheetJS
+// silently drops data validation and cannot write one. The parser here only
+// does the structural checks (blank Item Code / Item Name, an Item Code
 // repeated in the file, an Item Type / UOM / Source that cannot be read); every
 // field rule is the server's, answered per row by the preview (dryRun).
 //
@@ -19,7 +22,6 @@
 // columns import fine — they are simply ignored.
 
 import {
-  ITEM_PROCUREMENT_TYPE_LABEL,
   ITEM_PROCUREMENT_TYPES,
   ITEM_TYPES,
   itemTypeLabel,
@@ -27,51 +29,14 @@ import {
   type MasterImportMode,
   UOMS,
 } from '@innovic/shared';
-import * as XLSX from 'xlsx';
 
 import {
-  appendListsSheet,
   putIfFilled,
   type MasterImportParse,
   type ParsedImportRow,
   type ParsedImportSkip,
 } from '@/lib/master-import';
 import { coerceEnum, getCol, readSheetRows } from '@/lib/xlsx-import';
-
-// Template header row (the "*" marks required columns, legacy convention).
-const COLUMNS = [
-  'Item Code*',
-  'Item Name*',
-  'Description',
-  'Material',
-  'UOM',
-  'Item Type*',
-  'Source',
-  'HSN Code',
-] as const;
-
-export function downloadItemTemplate(): void {
-  const sample = [
-    'ITM-001',
-    'Shaft 50mm',
-    'Main drive shaft',
-    'EN8 Steel',
-    'NOS',
-    'Component',
-    'Make',
-    '84834000',
-  ];
-  const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [14, 22, 28, 18, 8, 22, 8, 12].map((wch) => ({ wch }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Items');
-  appendListsSheet(wb, [
-    { header: 'Item Type', values: ITEM_TYPES.map((t) => itemTypeLabel(t)) },
-    { header: 'UOM', values: UOMS },
-    { header: 'Source', values: ITEM_PROCUREMENT_TYPES.map((p) => ITEM_PROCUREMENT_TYPE_LABEL[p]) },
-  ]);
-  XLSX.writeFile(wb, 'Item Master Import Template.xlsx');
-}
 
 /** "Component", "component", "Tool / Instrument", "Raw Material",
  *  "raw_material" → the Item Type code; null when it matches none. */

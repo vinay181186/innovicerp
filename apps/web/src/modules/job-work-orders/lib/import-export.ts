@@ -1,6 +1,11 @@
-// JW line-items Excel template + import (in-form). Mirror of the SO form's
-// in-form line import, with JW columns (Rate instead of SO's POL). Adds
-// parsed rows as line items to the JW being created/edited. Uses SheetJS.
+// JW line-items Excel import (in-form). Mirror of the SO form's in-form line
+// import, with JW columns (Rate instead of SO's POL). Adds parsed rows as line
+// items to the JW being created/edited. Uses SheetJS to READ a filled sheet.
+//
+// The blank template itself is built by the API (GET
+// /import-templates/jw-lines.xlsx, apps/api/src/modules/import-templates) so
+// its columns can carry real Excel dropdowns — SheetJS silently drops data
+// validation and cannot write one.
 //
 // No Part Name column — same as the SO template. Item Code is the key: the
 // importer resolves it against Item Master and fills the name from there, so a
@@ -10,21 +15,6 @@
 
 import { normalizeRevision } from '@innovic/shared';
 import * as XLSX from 'xlsx';
-
-// 'Drawing Rev' = the revision printed on the customer's drawing (migration 0120).
-// It is compulsory on the form, so it is offered in the sheet too; a sheet without
-// the column still imports and leaves the Rev box empty for the person to fill in.
-// Headers renamed 2026-09-26 (Drawing No → Drawing No., Rev → Drawing Rev,
-// Qty → Order Qty); the parser still reads the old names so an older sheet imports.
-const LINE_COLUMNS = [
-  'Item Code',
-  'Material',
-  'Drawing No.',
-  'Drawing Rev',
-  'Order Qty',
-  'Rate',
-  'Due Date',
-] as const;
 
 export interface JwLineImportRow {
   itemCodeText: string;
@@ -43,13 +33,11 @@ function toDate(v: unknown): string | undefined {
   return m ? m[0] : undefined;
 }
 
-export function downloadJwLineTemplate(): void {
-  const sample = ['ITM-001', 'EN8', 'DRG-001', 'A', '10', '35.50', '2026-07-01'];
-  const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'JW Lines');
-  XLSX.writeFile(wb, 'JW Lines Import Template.xlsx');
-}
+// 'Drawing Rev' = the revision printed on the customer's drawing (migration 0120).
+// It is compulsory on the form, so it is offered in the sheet too; a sheet without
+// the column still imports and leaves the Rev box empty for the person to fill in.
+// Headers renamed 2026-09-26 (Drawing No → Drawing No., Rev → Drawing Rev,
+// Qty → Order Qty); the parser still reads the old names so an older sheet imports.
 
 export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportRow[]; errors: string[] }> {
   const buf = await file.arrayBuffer();
