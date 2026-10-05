@@ -115,8 +115,8 @@ function PlanEditPage(): React.JSX.Element {
         isSubmitting={update.isPending}
         submitLabel="Save Changes"
         submitError={update.error instanceof Error ? update.error.message : null}
-        onSubmit={(v) => {
-          const ci = toCreateInput(v);
+        onSubmit={(v, rm) => {
+          const ci = toCreateInput(v, rm);
           update.mutate(
             {
               planDate: ci.planDate,
@@ -125,10 +125,27 @@ function PlanEditPage(): React.JSX.Element {
               planQty: ci.planQty,
               plannedStartDate: ci.plannedStartDate,
               plannedEndDate: ci.plannedEndDate,
-              rawMaterialGradeId: ci.rawMaterialGradeId,
-              rawMaterialGradeText: ci.rawMaterialGradeText,
-              rawMaterialSizeId: ci.rawMaterialSizeId,
-              rawMaterialSizeText: ci.rawMaterialSizeText,
+              // RM Grade / RM Size are sent only when the form owns the pair.
+              // Server contract (apps/api/src/modules/plans/service.ts,
+              // updatePlanTx): a pair present in the PATCH — a value OR an
+              // explicit null — means "the caller owns this, do not default it",
+              // and ONLY an omitted pair is backfilled from the plan's BOM line,
+              // else from the item's Route Card. A pair the planner left blank
+              // and never touched must therefore be absent from this body, not
+              // null. Grade and size are independent: one may be omitted while
+              // the other is sent.
+              ...(rm.sendGrade
+                ? {
+                    rawMaterialGradeId: ci.rawMaterialGradeId ?? null,
+                    rawMaterialGradeText: ci.rawMaterialGradeText ?? null,
+                  }
+                : {}),
+              ...(rm.sendSize
+                ? {
+                    rawMaterialSizeId: ci.rawMaterialSizeId ?? null,
+                    rawMaterialSizeText: ci.rawMaterialSizeText ?? null,
+                  }
+                : {}),
               rawMaterialItemId: ci.rawMaterialItemId,
               rmQtyPerPiece: ci.rmQtyPerPiece,
               dpVendorId: ci.dpVendorId,
