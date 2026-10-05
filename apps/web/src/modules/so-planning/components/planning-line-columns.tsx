@@ -28,7 +28,7 @@ import {
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
-import { planStatusOf, prStatusOf } from './plan-chip';
+import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
 import { lineStatusOf } from './planning-shared';
 
 /** The Plan Status ▾ tick list. A `badge` column filters on DISTINCT values, so
@@ -50,7 +50,17 @@ export function plansCellText(line: PlanningLine): string {
     // PRs first, then plans — the same order the ▸ panel uses, so the cell and
     // the panel never read differently.
     ...line.prs.map((pr) => `${pr.code} ${prStatusOf(pr).label}`),
-    ...line.plans.map((p) => `${p.code} ${planStatusOf(p).label}`),
+    // ADR-216: the BOM CHILD part a plan is for goes in the text too, or the
+    // row reads "PLN-0008 · PLN-0009" with no way to tell the two apart and
+    // Sort & Filter cannot find a part by its code at all. The part's NAME
+    // rides along as well: it is the one place the collapsed row can carry it
+    // (the cell itself stays compact), so a planner can search "WHEEL".
+    ...line.plans.map((p) => {
+      const child = planChildItemOf(p);
+      return [p.code, child?.code, child?.name, planStatusOf(p).label]
+        .filter((s): s is string => !!s)
+        .join(' ');
+    }),
     ...(line.directJcQty > 0
       ? [`${line.directJcCodes.join(', ') || 'Job Card'} In Production (no plan)`]
       : []),
@@ -293,11 +303,22 @@ export function planningLineColumns(
             })}
             {l.plans.map((p) => {
               const st = planStatusOf(p);
+              // ADR-216: a plan on a BOM parent's line is for a CHILD part, so
+              // the code of that part goes beside the plan number — bare, never
+              // CODE/REV (that revision belongs to the customer's drawing on
+              // the PARENT line). Code only: the cell is fitted, and the part
+              // name is in the ▸ panel and the cell's tooltip.
+              const child = planChildItemOf(p);
               return (
                 <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
                     {p.code}
                   </span>
+                  {child ? (
+                    <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                      {child.code}
+                    </span>
+                  ) : null}
                   <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
                 </span>
               );

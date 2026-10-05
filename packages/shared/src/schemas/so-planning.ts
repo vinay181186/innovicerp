@@ -85,6 +85,25 @@ export const planningPlanSummarySchema = z.object({
   rawMaterialSizeText: z.string().nullable().default(null),
   remarks: z.string().nullable().default(null),
   planQty: z.number().int().positive(),
+  /** ADR-216 — WHICH item this plan is for. A plan on a BOM parent's SO line is
+   *  usually for a CHILD part (ADR-030 grain: one plan per SO line × BOM child),
+   *  so the line's own item is the wrong answer and the chip used to show
+   *  nothing at all. Live value from `items`, snapshot from the plan's own
+   *  columns; read as `itemCode ?? itemCodeText`, the house pattern the Plans
+   *  list already uses.
+   *
+   *  Deliberately NO revision field: `CODE/REV` carries the CUSTOMER's drawing
+   *  revision off the parent SO line, which says nothing about a child part.
+   *  A child shows its bare code. */
+  itemId: z.string().uuid().nullable().default(null),
+  itemCode: z.string().nullable().default(null),
+  itemCodeText: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
+  itemNameText: z.string().nullable().default(null),
+  /** Set only when this plan is for a BOM CHILD. It is THE discriminator: an
+   *  ordinary SO-line plan leaves every BOM column null, so a non-null value
+   *  here means "this plan is for a part, not for the line's own item". */
+  bomChildCode: z.string().nullable().default(null),
   opsCount: z.number().int().nonnegative(),
   hasOutsourceOp: z.boolean(),
   /** Plan-type-specific labels for the per-card status footer. */
@@ -142,7 +161,19 @@ export const planningLineSchema = z.object({
     )
     .default([]),
   plans: z.array(planningPlanSummarySchema),
-  /** Sum of all non-cancelled plan_qty for this SO line. */
+  /** Sum of all non-cancelled plan_qty for this SO line, IN THE UNIT THE LINE IS
+   *  ORDERED IN.
+   *
+   *  ADR-216. For an ordinary line that is simply the sum of its plans. For a
+   *  line whose plans are BOM CHILD plans it is NOT: those are counted in child
+   *  parts while this column is counted in assemblies, so adding them gave
+   *  "Order Qty 1, Plan Qty 20" (10 wheels + 10 gear wheels against one washer)
+   *  and, worse, made `remaining` floor to 0 so a line read fully planned while
+   *  a child part had nothing against it. For such a line this is the number of
+   *  COMPLETE SETS the child plans cover — the weakest child governs, the same
+   *  principle ADR-109 already applies to dispatch:
+   *     sets = min over children of floor(planned_child / qty_per_set)
+   *  See `bomChildren` for the per-part account behind it. */
   totalPlanned: z.number().nonnegative(),
   /**
    * Qty covered by Job Cards created directly against this SO line WITHOUT a
@@ -153,7 +184,29 @@ export const planningLineSchema = z.object({
   directJcQty: z.number().int().nonnegative(),
   /** Codes of those plan-less Job Cards, for the "In Production (no plan)" indicator. */
   directJcCodes: z.array(z.string()),
-  /** max(0, orderQty - totalPlanned - directJcQty). */
+  /** ADR-216 — the per-part account behind `totalPlanned` on a BOM line: what
+   *  each child part needs for this order and what is planned against it.
+   *  Empty for an ordinary line, which has no parts. `requiredQty` is ADR-107's
+   *  own formula, so the screen and the server's create-time cap agree. */
+  bomChildren: z
+    .array(
+      z.object({
+        childItemCode: z.string(),
+        childItemName: z.string().nullable().default(null),
+        /** `bom_master_lines.qty_per_set` — parts in one assembled unit. */
+        qtyPerSet: z.number().nonnegative(),
+        /** ceil(qtyPerSet × orderQty) — ADR-107. */
+        requiredQty: z.number().nonnegative(),
+        /** Sum of non-cancelled plan_qty for this child on this line. */
+        plannedQty: z.number().nonnegative(),
+      }),
+    )
+    .default([]),
+  /** max(0, orderQty - totalPlanned - directJcQty) — always in the line's own
+   *  unit, because ADR-216 made `totalPlanned` state complete sets on a BOM
+   *  line. This drives the To Plan column, the ⋯ menu's "Plan n" and the
+   *  Create Plan cap, so all three now agree on a BOM line instead of all three
+   *  reading 0 while a part was unplanned. */
   remaining: z.number().nonnegative(),
   /** AVAILABLE stock for this line's item = physical − total active reserved
    *  (ADR-180). Kept under its old name because its MEANING is unchanged — it

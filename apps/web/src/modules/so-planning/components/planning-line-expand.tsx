@@ -68,6 +68,67 @@ export function PlanningLineExpand({ line }: { line: PlanningLine }): JSX.Elemen
         </div>
       ) : null}
 
+      {/* ADR-216 — the per-part account behind this line's Plan Qty. A line
+          whose item has a BOM is planned per CHILD part, and until now nothing
+          on this screen said which parts were covered and which were not: the
+          line could read "Fully Planned" while a part had no plan at all.
+          One row per part, the house table (ADR-199) in its nested `tbl-compact`
+          density, numbers right-aligned, the part code mono + strong.
+          Rendered only when the line HAS parts — an ordinary line's panel is
+          exactly as before. */}
+      {line.bomChildren.length > 0 ? (
+        <div
+          className="tbl-wrap"
+          style={{
+            marginBottom: 'var(--sp-2)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+          }}
+        >
+          <table className="innovic-table tbl-grid tbl-compact">
+            <thead>
+              <tr>
+                <th>Item Code</th>
+                <th>Item Name</th>
+                <th className="th-num">Qty per Set</th>
+                <th className="th-num">Required</th>
+                <th className="th-num">Already Planned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {line.bomChildren.map((c) => {
+                // The condition this table exists to make visible: a part with
+                // less planned than the order needs. Only THAT is painted — a
+                // part planned in full is the normal state and gets no wash, no
+                // colour and no tick. Marking both states put three signals on
+                // one fact and turned an all-covered line solid green.
+                const short = c.plannedQty < c.requiredQty;
+                return (
+                  <tr key={c.childItemCode} className={short ? 'row-pending' : undefined}>
+                    <td className="td-code">{c.childItemCode}</td>
+                    <td>{c.childItemName ?? '—'}</td>
+                    <td className="td-num">{c.qtyPerSet}</td>
+                    <td className="td-num fw-700">{c.requiredQty}</td>
+                    <td
+                      className="td-num fw-700"
+                      style={short ? { color: 'var(--amber2)' } : undefined}
+                      title={
+                        short
+                          ? `${c.requiredQty - c.plannedQty} of ${c.requiredQty} still to plan for this part`
+                          : undefined
+                      }
+                    >
+                      {c.plannedQty}
+                      {short ? ' ⚠' : ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
       {line.prs.map((pr) => (
         <PrChip key={pr.id} pr={pr} />
       ))}

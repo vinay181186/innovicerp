@@ -81,6 +81,34 @@ export function planStatusOf(plan: PlanningPlanSummary): { label: string; color:
     : { label: PLAN_STATUS_LABEL[plan.planStatus], color: PLAN_STATUS_COLOR[plan.planStatus] };
 }
 
+/** ADR-216 — WHICH item this plan is for, when that is not the SO line's own
+ *  item. A plan on a BOM parent's line is for a CHILD part (ADR-030 grain: one
+ *  plan per SO line × BOM child), so the line's item code is the wrong answer
+ *  and the chip used to name no part at all. `bomChildCode` is THE
+ *  discriminator: null means an ordinary plan, and this returns null so the
+ *  chip and the Plans cell render exactly as they did before.
+ *
+ *  Live value from `items` wins, the plan's own snapshot is the fallback
+ *  (`xxx ?? xxxText`, the house pattern the Plans list already uses), and
+ *  `bomChildCode` itself — which IS the child's code — is the last resort.
+ *
+ *  The code is BARE, never `CODE/REV`: the revision in `CODE/REV` is the
+ *  CUSTOMER's drawing revision off the PARENT SO line and says nothing about a
+ *  child part, so printing one here would be a plausible-looking lie (see
+ *  lib/item-code.ts). The contract carries no revision for this reason.
+ *
+ *  ONE helper, so the Plans COLUMN and the plan chip in the ▸ panel can never
+ *  name a plan's part differently — same reason `planStatusOf` exists. */
+export function planChildItemOf(
+  plan: PlanningPlanSummary,
+): { code: string; name: string | null } | null {
+  if (plan.bomChildCode === null) return null;
+  return {
+    code: plan.itemCode ?? plan.itemCodeText ?? plan.bomChildCode,
+    name: plan.itemName ?? plan.itemNameText,
+  };
+}
+
 /** One purchase request's status as it reads on screen — the PO number once one
  *  has been raised from it, which is what the PR chip shows in its place. */
 export function prStatusOf(pr: PlanningLine['prs'][number]): { label: string; color: string } {
@@ -174,6 +202,8 @@ export function PlanChip({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
   const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Make';
   const isRouteCard = plan.opsSource === 'route_card';
   const { label: statusLabel, color: stColor } = planStatusOf(plan);
+  // ADR-216: null for an ordinary plan — nothing extra is rendered then.
+  const child = planChildItemOf(plan);
   // Schedule / raw material / remark ride along as a tooltip so the chip stays
   // one line; the Plans page shows them in full.
   const tip = [
@@ -206,6 +236,38 @@ export function PlanChip({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
       <span className="mono fw-700" style={{ color: 'var(--text)' }}>
         {plan.code}
       </span>
+      {/* ADR-216: the BOM CHILD part this plan is for. Without it two plans on
+          the same line read "PLN-0008 Make · 10 pcs" and "PLN-0009 Make ·
+          10 pcs" — identical, so the planner cannot tell which part is in
+          production. The code is the main thing on the line (house rule):
+          strong mono in the darkest text, never the faint --text3. The name is
+          the quiet part and truncates, so a long one cannot push the fit
+          table sideways. Nothing at all for an ordinary plan. */}
+      {child ? (
+        <>
+          <span
+            className="mono fw-700"
+            style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+            title={`Item Code ${child.code}`}
+          >
+            {child.code}
+          </span>
+          {child.name ? (
+            <span
+              className="text2"
+              style={{
+                maxWidth: 180,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={`Item Name ${child.name}`}
+            >
+              {child.name}
+            </span>
+          ) : null}
+        </>
+      ) : null}
       <span className="text2">
         {typeLabel} · <b>{plan.planQty} pcs</b>
       </span>
