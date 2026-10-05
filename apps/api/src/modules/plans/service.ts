@@ -104,7 +104,13 @@ import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 // T1 — the one "raw material on this item's Route Card" lookup, shared with
 // the Route Card side's T2 backfill (modules/plans/rm-backfill.ts).
-import { readRouteCardRawMaterial, routeCardHasRmItem } from './rm-backfill';
+import {
+  bomLineHasGrade,
+  bomLineHasSize,
+  readBomLineRawMaterial,
+  readRouteCardRawMaterial,
+  routeCardHasRmItem,
+} from './rm-backfill';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 
 // Today's calendar date in IST (same as assembly / production-schedule). The
@@ -975,31 +981,68 @@ async function createPlanInTx(
   // blank grade/size for ever, because Create Production Order reads the
   // PLAN's stored snapshot and not the card. One lookup serves all of it
   // (modules/plans/rm-backfill.ts), ordered newest-card-first.
+  //
+  // A BOM-CHILD PLAN TAKES GRADE + SIZE FROM ITS BOM LINE FIRST, PER FIELD:
+  //   grade:  BOM line's grade → Route Card's grade → blank
+  //   size:   BOM line's size  → Route Card's size  → blank
+  // decided SEPARATELY. The card is per ITEM; the BOM line is per CHILD OF
+  // THIS BOM, and that is the more specific statement — the same child can sit
+  // in two BOMs and be cut from different stock, which is why
+  // `bom_master_lines` carries its own grade / size (§17 already says a BOM
+  // child Job Card takes its material from the BOM line). Per FIELD and not
+  // per ROW, because a BOM line that names a size and no grade used to own
+  // BOTH pairs and so gave the plan a permanently blank grade — and Create
+  // Production Order refuses a plan only when grade AND size are both empty,
+  // so that half-material plan went through and made a Job Card with a size
+  // and no grade. Grade and size each still move as an id + text PAIR, so a
+  // line's id is never paired with a card's text. The RM ITEM + qty-per-piece
+  // pair is unaffected and still comes from the card alone: the BOM line has
+  // no such columns.
   const wantsGradeDefault =
     input.rawMaterialGradeId === undefined && input.rawMaterialGradeText === undefined;
   const wantsSizeDefault =
     input.rawMaterialSizeId === undefined && input.rawMaterialSizeText === undefined;
   const wantsRmItemDefault = input.rawMaterialItemId === undefined;
+  const bomLineRm =
+    input.bomMasterId && input.bomChildCode && (wantsGradeDefault || wantsSizeDefault)
+      ? await readBomLineRawMaterial(tx, companyId, input.bomMasterId, input.bomChildCode)
+      : null;
+  // Per field: the line wins the grade pair only if it HAS a grade, and the
+  // size pair only if it HAS a size.
+  const gradeFromLine = bomLineRm !== null && bomLineHasGrade(bomLineRm);
+  const sizeFromLine = bomLineRm !== null && bomLineHasSize(bomLineRm);
+  // The card is still read for the RM item pair, and for either half the BOM
+  // line left unanswered (no line, or a line blank on that half). Not read at
+  // all when the line answered BOTH halves and the RM item pair is the
+  // caller's.
+  const needsCardForGradeSize =
+    (wantsGradeDefault && !gradeFromLine) || (wantsSizeDefault && !sizeFromLine);
   const rcRm =
-    input.itemId && (wantsGradeDefault || wantsSizeDefault || wantsRmItemDefault)
+    input.itemId && (needsCardForGradeSize || wantsRmItemDefault)
       ? await readRouteCardRawMaterial(tx, companyId, input.itemId)
       : null;
+  /** The grade pair comes from the BOM line when the line states a grade, else
+   *  from the card; the size pair is decided on its own the same way. Each
+   *  field is written from ONE document, so a line's id never pairs with a
+   *  card's text. */
+  const gradeRm = gradeFromLine ? bomLineRm : rcRm;
+  const sizeRm = sizeFromLine ? bomLineRm : rcRm;
   // Grade and size each move as an id + text PAIR: the id links to the
   // master, the text is the snapshot that prints. Either field being sent
   // (value or explicit null) means the caller owns the pair and nothing is
   // defaulted into it.
   const gradeSizeValues = {
     rawMaterialGradeId: wantsGradeDefault
-      ? (rcRm?.rawMaterialGradeId ?? null)
+      ? (gradeRm?.rawMaterialGradeId ?? null)
       : (input.rawMaterialGradeId ?? null),
     rawMaterialGradeText: wantsGradeDefault
-      ? (rcRm?.rawMaterialGradeText ?? null)
+      ? (gradeRm?.rawMaterialGradeText ?? null)
       : (input.rawMaterialGradeText ?? null),
     rawMaterialSizeId: wantsSizeDefault
-      ? (rcRm?.rawMaterialSizeId ?? null)
+      ? (sizeRm?.rawMaterialSizeId ?? null)
       : (input.rawMaterialSizeId ?? null),
     rawMaterialSizeText: wantsSizeDefault
-      ? (rcRm?.rawMaterialSizeText ?? null)
+      ? (sizeRm?.rawMaterialSizeText ?? null)
       : (input.rawMaterialSizeText ?? null),
   };
 
@@ -1319,6 +1362,12 @@ export async function updatePlanTx(
   // value is untouched. Only a plan nothing has been made from yet is
   // touched — a Job Card (jc_id) or any covered qty means the plan's blank
   // was already copied downstream, and plan-vs-card must not drift.
+  //
+  // Same precedence as create for a BOM-child plan, PER FIELD: the grade pair
+  // is BOM line → Route Card → blank, and the size pair is decided separately
+  // the same way. The BOM line is per child of THIS BOM and so the more
+  // specific statement; the RM item + qty-per-piece pair still comes from the
+  // card alone, because `bom_master_lines` has no such columns.
   const canDefaultRm = row.jcId === null && coveredQty === 0;
   const defaultGrade =
     canDefaultRm &&
@@ -1338,25 +1387,65 @@ export async function updatePlanTx(
     input.rmQtyPerPiece === undefined &&
     row.rawMaterialItemId === null &&
     row.rmQtyPerPiece === null;
-  /** The card a value nobody typed came from — named in the History row. */
-  let rmSourceCardCode: string | null = null;
-  if (row.itemId && (defaultGrade || defaultSize || defaultRmItem)) {
+  /** Where the values nobody typed came from — named in the History row. One
+   *  save can draw on BOTH: grade / size off the BOM line and the RM item pair
+   *  off the card (the line has no RM item columns), so every source that
+   *  actually supplied something is collected and all of them are named. */
+  const rmSources: string[] = [];
+  const noteRmSource = (label: string): void => {
+    if (!rmSources.includes(label)) rmSources.push(label);
+  };
+  // Same precedence as create — BOM line → Route Card → blank — read off the
+  // STORED row's BOM link, not the payload: the plan's BOM child is not
+  // editable, so the link it was born with is the one that decides.
+  const bomLineRm =
+    row.bomMasterId && row.bomChildCode && (defaultGrade || defaultSize)
+      ? await readBomLineRawMaterial(tx, companyId, row.bomMasterId, row.bomChildCode)
+      : null;
+  // Per field: the line wins the grade pair only if it HAS a grade, and the
+  // size pair only if it HAS a size.
+  const gradeFromLine = bomLineRm !== null && bomLineHasGrade(bomLineRm);
+  const sizeFromLine = bomLineRm !== null && bomLineHasSize(bomLineRm);
+  if (bomLineRm) {
+    // id AND text together, same rule as the card below.
+    if (defaultGrade && gradeFromLine) {
+      updates['rawMaterialGradeId'] = bomLineRm.rawMaterialGradeId;
+      updates['rawMaterialGradeText'] = bomLineRm.rawMaterialGradeText;
+      noteRmSource(`BOM line ${row.bomChildCode}`);
+    }
+    if (defaultSize && sizeFromLine) {
+      updates['rawMaterialSizeId'] = bomLineRm.rawMaterialSizeId;
+      updates['rawMaterialSizeText'] = bomLineRm.rawMaterialSizeText;
+      noteRmSource(`BOM line ${row.bomChildCode}`);
+    }
+  }
+  // Whichever half the BOM line did NOT answer falls to the card — a line that
+  // states a size and no grade no longer blanks the grade for ever. The halves
+  // never mix WITHIN a pair, so the plan still shows one document's grade and
+  // one document's size; one save can legitimately draw on both, and the
+  // History row below names each source it used.
+  const cardDefaultGrade = defaultGrade && !gradeFromLine;
+  const cardDefaultSize = defaultSize && !sizeFromLine;
+  if (row.itemId && (cardDefaultGrade || cardDefaultSize || defaultRmItem)) {
     const rcRm = await readRouteCardRawMaterial(tx, companyId, row.itemId);
     if (rcRm) {
       // id AND text together — text without the id displays a grade that is
       // not linked to the master.
       if (
-        defaultGrade &&
+        cardDefaultGrade &&
         (rcRm.rawMaterialGradeId !== null || rcRm.rawMaterialGradeText !== null)
       ) {
         updates['rawMaterialGradeId'] = rcRm.rawMaterialGradeId;
         updates['rawMaterialGradeText'] = rcRm.rawMaterialGradeText;
-        rmSourceCardCode = rcRm.routeCardCode;
+        noteRmSource(`Route Card ${rcRm.routeCardCode}`);
       }
-      if (defaultSize && (rcRm.rawMaterialSizeId !== null || rcRm.rawMaterialSizeText !== null)) {
+      if (
+        cardDefaultSize &&
+        (rcRm.rawMaterialSizeId !== null || rcRm.rawMaterialSizeText !== null)
+      ) {
         updates['rawMaterialSizeId'] = rcRm.rawMaterialSizeId;
         updates['rawMaterialSizeText'] = rcRm.rawMaterialSizeText;
-        rmSourceCardCode = rcRm.routeCardCode;
+        noteRmSource(`Route Card ${rcRm.routeCardCode}`);
       }
       if (defaultRmItem && routeCardHasRmItem(rcRm)) {
         // Review M3 (create path): a Route Card default the user never typed
@@ -1369,7 +1458,7 @@ export async function updatePlanTx(
         if (rcRmItem) {
           updates['rawMaterialItemId'] = rcRmItem.rawMaterialItemId;
           updates['rmQtyPerPiece'] = rcRmItem.rmQtyPerPiece;
-          rmSourceCardCode = rcRm.routeCardCode;
+          noteRmSource(`Route Card ${rcRm.routeCardCode}`);
         }
       }
     }
@@ -1463,10 +1552,12 @@ export async function updatePlanTx(
         entityId: row.id,
         refId: row.code,
         changes,
-        // ADR-197 — say where a value nobody typed came from.
-        detail: rmSourceCardCode
-          ? `Edited ${row.code} — raw material filled from Route Card ${rmSourceCardCode}`
-          : `Edited ${row.code}`,
+        // ADR-197 — say where a value nobody typed came from: the BOM line or
+        // the Route Card, whichever actually supplied it.
+        detail:
+          rmSources.length > 0
+            ? `Edited ${row.code} — raw material filled from ${rmSources.join(' and ')}`
+            : `Edited ${row.code}`,
       },
       companyId,
       user,
