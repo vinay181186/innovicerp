@@ -19,6 +19,13 @@ export const assemblyComponentRowSchema = z.object({
   qtyPerSet: z.number(),
   totalNeed: z.number().int().nonnegative(),
   stockQty: z.number().int().nonnegative(),
+  /** `Still Out` (ADR-193 3c) — Issued − Returned − Fitted against this SO,
+   *  uncapped. This is the ONE figure Complete checks (modules/assembly/
+   *  fitting.ts compares it to the batch's need and knows nothing of the
+   *  override), so it is the figure the Tracker has to show. `autoReadyQty`
+   *  below is the same number capped at `totalNeed`, which is a different
+   *  fact and must not be labelled `Still Out` — CLAUDE.md Section 18. */
+  stillOutQty: z.number().int().nonnegative(),
   autoReadyQty: z.number().int().nonnegative(),
   overrideQty: z.number().int().nonnegative(),
   finalReadyQty: z.number().int().nonnegative(),
