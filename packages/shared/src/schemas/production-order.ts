@@ -161,6 +161,34 @@ export const productionOrderDetailSchema = productionOrderListItemSchema.extend(
   remainingQty: z.number().int().nonnegative(),
   /** The close ledger, newest first — every partial close + reversal. */
   closes: z.array(productionOrderCloseSchema),
+
+  // ── The plan's own facts, joined in for the detail page (2026-10-05) ──
+  // All read-only here: the plan is where they are authored. They complete the
+  // three-rung quantity ladder (SO Qty → Plan Qty → PRO Qty) and the date line
+  // (Plan Start → Plan End → PRO Target → Customer Dispatch Date) the owner
+  // asked for, so the page stops making a reader open the plan to answer
+  // "how much of the order is this, and is it on time".
+  /** `SO Qty` — the SO / JWSO line's ordered qty, through the plan's line. */
+  soQty: z.number().int().nonnegative().nullable().default(null),
+  /** `Plan Qty` — what the plan covers (plans.plan_qty). `orderQty` on this
+   *  row is the PRO's own qty and is labelled `PRO Qty` beside these two. */
+  planQty: z.number().int().nonnegative().nullable().default(null),
+  /** `Plan Start Date` / `Plan End Date` — the window the plan is scheduled in. */
+  plannedStartDate: isoDate.nullable().default(null),
+  plannedEndDate: isoDate.nullable().default(null),
+  /** `Customer Dispatch Date` — the SO / JWSO LINE's due date, which is what
+   *  that label means on a Production Order screen (docs/NAMING.md, owner
+   *  decision 2026-09-30). NOT plans.customer_dispatch_date, which the Plan
+   *  screens show under the same words — see the note in NAMING.md. */
+  lineDueDate: isoDate.nullable().default(null),
+  /** `RM Item` — the stock item the store issues, and `RM Qty / piece`. The
+   *  grade and size are already on this row; without the item a reader cannot
+   *  tell WHAT to issue, only what it is made of. */
+  rawMaterialItemCode: z.string().nullable().default(null),
+  rmQtyPerPiece: z.number().nullable().default(null),
+  /** `JC Status` — the job card's live computed status. The JC number alone
+   *  does not say whether the floor has started. */
+  jcStatus: z.string().nullable().default(null),
 });
 export type ProductionOrderDetail = z.infer<typeof productionOrderDetailSchema>;
 

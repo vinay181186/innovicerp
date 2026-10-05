@@ -90,7 +90,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         }}
       >
         <span>
-          Available{' '}
+          Available to Close{' '}
           <b className="mono" style={{ color: 'var(--text)' }}>
             {po.availableToClose}
           </b>

@@ -370,6 +370,52 @@ const SO_INTERNAL_NO_SQL = sql<string | null>`(
    WHERE p.id = ${productionOrders.planId} LIMIT 1
 )`;
 
+// ─── The plan's own facts (DETAIL page only, 2026-10-05) ──────────────────
+// The owner's ask: the Production Order detail page must answer "how much of
+// the order is this, and is it on time" without anyone opening the plan. All
+// of it is read live off the plan this order was raised from — read-only here,
+// the plan is where these are authored.
+//
+// These are deliberately NOT columns in `poColumns`: the list does not show
+// them, and running them for every list row would be wasted work — the same
+// reasoning the settled-with-losses flag is kept out for. They are read as one
+// extra primary-key row by readPlanFactsInTx below, which selects FROM plans,
+// so the fragments reference the `plans` columns directly.
+
+/** `SO Qty` — the ordered qty of the SO / JWSO LINE the plan was raised from.
+ *  A plan carries at most one of so_line_id / jw_line_id, so at most one
+ *  branch of the COALESCE yields a row (same one-branch-only shape as
+ *  PARTY_NAME_SQL). Null for an ad-hoc plan with no line behind it. */
+const PLAN_LINE_ORDER_QTY_SQL = sql<number | null>`COALESCE(
+  (SELECT sol.order_qty FROM public.sales_order_lines sol
+    WHERE sol.id = ${plans.soLineId} LIMIT 1),
+  (SELECT jl.order_qty FROM public.job_work_order_lines jl
+    WHERE jl.id = ${plans.jwLineId} LIMIT 1)
+)`;
+
+/** `Customer Dispatch Date` on a Production Order screen = the SO / JWSO
+ *  LINE's due date (docs/NAMING.md, owner decision 2026-09-30), the same line
+ *  PLAN_LINE_ORDER_QTY_SQL reads. NOT plans.customer_dispatch_date, which the
+ *  Plan screens show under those words. */
+const PLAN_LINE_DUE_DATE_SQL = sql<string | null>`COALESCE(
+  (SELECT sol.due_date FROM public.sales_order_lines sol
+    WHERE sol.id = ${plans.soLineId} LIMIT 1),
+  (SELECT jl.due_date FROM public.job_work_order_lines jl
+    WHERE jl.id = ${plans.jwLineId} LIMIT 1)
+)`;
+
+/** `RM Item` — the stock item the store issues for this plan. Same scalar read
+ *  as the Plans list's PLAN_RM_ITEM_CODE_SQL (live item, same company), plus
+ *  the soft-delete filter every other item read in this module carries. Null
+ *  when the plan recorded no raw-material item (e.g. PLN-0001). */
+const PLAN_RM_ITEM_CODE_SQL = sql<string | null>`(
+  SELECT rmi.code FROM public.items rmi
+   WHERE rmi.id = ${plans.rawMaterialItemId}
+     AND rmi.company_id = ${plans.companyId}
+     AND rmi.deleted_at IS NULL
+   LIMIT 1
+)`;
+
 const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
 const shortClosedByUser = alias(users, 'po_short_closed_by');
@@ -495,10 +541,37 @@ function toListItem(r: PoRow): ProductionOrderListItem {
  *  throws exactly the same words, so what the screen says and what the server
  *  refuses can never differ. `jcSettledWithLosses` is read separately
  *  (readJcSettledWithLosses) and folded in — it never travels to the browser. */
+/** The plan-side facts the detail page shows, read by readPlanFactsInTx. Every
+ *  one is nullable: a plan with no SO / JWSO line behind it, a plan with no raw
+ *  material item (PLN-0001) and a plan with no dates each answer null. */
+type PlanFacts = Pick<
+  ProductionOrderDetail,
+  | 'soQty'
+  | 'planQty'
+  | 'plannedStartDate'
+  | 'plannedEndDate'
+  | 'lineDueDate'
+  | 'rawMaterialItemCode'
+  | 'rmQtyPerPiece'
+>;
+
+/** What the detail returns when the plan row cannot be read at all (the order's
+ *  plan was hard-deleted). Null everywhere, never 0 and never a throw. */
+const NO_PLAN_FACTS: PlanFacts = {
+  soQty: null,
+  planQty: null,
+  plannedStartDate: null,
+  plannedEndDate: null,
+  lineDueDate: null,
+  rawMaterialItemCode: null,
+  rmQtyPerPiece: null,
+};
+
 function toDetail(
   item: ProductionOrderListItem,
   jcSettledWithLosses: boolean,
   closes: ProductionOrderClose[],
+  planFacts: PlanFacts,
 ): ProductionOrderDetail {
   const credited = item.creditedQty ?? 0;
   const reason = closeBlockedReason({ ...item, jcSettledWithLosses, creditedQty: credited });
@@ -516,6 +589,12 @@ function toDetail(
     availableToClose,
     remainingQty,
     closes,
+    ...planFacts,
+    // JC Status — the SAME live status the row already carries (v_jc_status
+    // .computed_status, JC_COMPUTED_STATUS_SQL above; the Plans list reads that
+    // very column for its own jcStatus). Named separately in the contract
+    // because the detail page labels it `JC Status`; there is only one rule.
+    jcStatus: item.jcComputedStatus,
   };
 }
 
@@ -607,6 +686,42 @@ async function readCloseSnapshot(
   };
 }
 
+/** The plan's own facts for ONE order's detail page — one primary-key row off
+ *  `plans`, with the SO / JWSO line values as one-row scalar sub-selects. Kept
+ *  out of baseQuery / poColumns on purpose so the LIST query is untouched
+ *  (same reasoning as readJcSettledWithLosses). A missing plan row yields all
+ *  nulls rather than an error. */
+async function readPlanFactsInTx(
+  tx: DbTransaction,
+  planId: string,
+  companyId: string,
+): Promise<PlanFacts> {
+  const rows = await tx
+    .select({
+      planQty: plans.planQty,
+      plannedStartDate: plans.plannedStartDate,
+      plannedEndDate: plans.plannedEndDate,
+      rmQtyPerPiece: plans.rmQtyPerPiece,
+      rawMaterialItemCode: PLAN_RM_ITEM_CODE_SQL,
+      soQty: PLAN_LINE_ORDER_QTY_SQL,
+      lineDueDate: PLAN_LINE_DUE_DATE_SQL,
+    })
+    .from(plans)
+    .where(and(eq(plans.id, planId), eq(plans.companyId, companyId)))
+    .limit(1);
+  const r = rows[0];
+  if (!r) return NO_PLAN_FACTS;
+  return {
+    soQty: r.soQty == null ? null : Number(r.soQty),
+    planQty: r.planQty == null ? null : Number(r.planQty),
+    plannedStartDate: r.plannedStartDate == null ? null : dateOnly(r.plannedStartDate),
+    plannedEndDate: r.plannedEndDate == null ? null : dateOnly(r.plannedEndDate),
+    lineDueDate: r.lineDueDate == null ? null : dateOnly(r.lineDueDate),
+    rawMaterialItemCode: r.rawMaterialItemCode ?? null,
+    rmQtyPerPiece: r.rmQtyPerPiece == null ? null : Number(r.rmQtyPerPiece),
+  };
+}
+
 function baseQuery(tx: DbTransaction) {
   return tx
     .select(poColumns)
@@ -635,11 +750,12 @@ async function readDetailInTx(
   const row = rows[0];
   if (!row) throw new NotFoundError('Production Order not found. Refresh the page.');
   const item = toListItem(row as PoRow);
-  const [settled, closes] = await Promise.all([
+  const [settled, closes, planFacts] = await Promise.all([
     readJcSettledWithLosses(tx, item),
     readClosesInTx(tx, id, companyId),
+    readPlanFactsInTx(tx, item.planId, companyId),
   ]);
-  return toDetail(item, settled, closes);
+  return toDetail(item, settled, closes, planFacts);
 }
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
