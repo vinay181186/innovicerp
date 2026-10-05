@@ -88,7 +88,11 @@ import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { emitActivityLog } from '../activity-log/service';
 // T2 — push a new card's raw material onto that item's blank, waiting plans.
 // The lookup is shared with the plan side's T1 default (ONE route-card query).
-import { backfillPlansFromRouteCard, readRouteCardRawMaterial } from '../plans/rm-backfill';
+import {
+  backfillPlansFromRouteCard,
+  lockBackfillCandidates,
+  readRouteCardRawMaterial,
+} from '../plans/rm-backfill';
 import type {
   CreateRouteCardInput,
   CreateRouteCardOpInput,
@@ -986,6 +990,27 @@ export async function updateRouteCard(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // LOCK ORDER — plans BEFORE route_cards (CLAUDE.md Section 20.3). This is
+    // the FIRST statement of the transaction, ahead of the route_cards row lock
+    // below, because this path ends in a T2 backfill that locks plan rows
+    // (backfillPlansFromRouteCard, bottom of this function). `executePlan`
+    // (modules/plans/service.ts) goes the other way round — it locks the plan
+    // row FOR UPDATE and only later writes this item's route_cards row through
+    // `saveRouteCardForItem` — so route_cards → plans here would let one user
+    // saving the Route Card for item X and another pressing Execute on a plan
+    // for item X deadlock (Postgres 40P01), with the loser getting a raw
+    // database error. Taking the plan locks first makes both paths
+    // plans → route_cards, so one simply waits for the other.
+    //
+    // It locks exactly the rows the backfill will touch, using the SAME
+    // predicate (backfillCandidateGuard), which keys on the PLAN's blank
+    // columns, its item and its Job Card — never on the card's values — so
+    // writing the route_cards row in between cannot change the set. The
+    // backfill's own FOR UPDATE then re-locks rows this transaction already
+    // holds, which is free. createRouteCard needs none of this: there is no
+    // pre-existing card row for Execute to contend for.
+    await lockBackfillCandidates(tx, companyId, input.itemId);
+
     const headers = await tx
       .select()
       .from(routeCards)
@@ -1211,6 +1236,27 @@ export async function updateRouteCard(
       routeCardOpLogRows(replaced.oldOps, replaced.newOps),
       `Edited ${rcDetailString(input.code, item.code)}${revisionNote ? ` — ${revisionNote}` : ''}`,
     );
+
+    // T2 (plan-rm-backfill) on the EDIT side — the create-only version of this
+    // left a hole as wide as the one it closed: a card saved with blank raw
+    // material, or one whose grade / size was typed in a week later, never
+    // reached the plans already waiting on it, so they kept their blanks for
+    // ever and Create Production Order stayed empty.
+    //
+    // Same shape and the same lookup as createRouteCard, inside THIS
+    // transaction so a failed backfill rolls the edit back with it. Still
+    // fill-BLANKS-only and now per HALF (a blank grade OR a blank size, jc_id
+    // NULL — the guards live in backfillPlansFromRouteCard), so an edit can
+    // never overwrite a grade or a size a planner typed.
+    //
+    // LOCK ORDER — the plan rows this locks were ALREADY locked at the top of
+    // this transaction (lockBackfillCandidates), with the same predicate and
+    // for this reason: `executePlan` locks plans before route_cards, and this
+    // path must not go the other way or the two deadlock. Re-locking rows we
+    // already hold is free. Do not move this call above the pre-lock, and do
+    // not drop the pre-lock.
+    const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId);
+    if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
 
     return loadRouteCardDetail(tx, id, companyId);
   });
