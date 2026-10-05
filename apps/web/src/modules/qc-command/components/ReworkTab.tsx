@@ -9,7 +9,6 @@
 import { type QcReworkRow, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type QcPager, TablePager } from './TablePager';
@@ -75,11 +74,18 @@ const columns: DataTableColumn<QcReworkRow>[] = [
     id: 'so_code',
     header: 'SO No.',
     nowrap: true,
-    render: (g) => (
-      <span style={{ color: 'var(--cyan)' }}>
-        {g.soCode ? soNoWithInternal(g.soCode, g.soInternalNo) : '—'}
-      </span>
-    ),
+    render: (g) => <span style={{ color: 'var(--cyan)' }}>{g.soCode || '—'}</span>,
+  },
+  {
+    // ADR-207 — the office's own Internal SO No., in its own column beside the
+    // system SO No. so the two can be told apart. No `sortFilterField`: this
+    // module has no server-side sort / filter map.
+    id: 'so_internal_no',
+    kind: 'code',
+    header: 'Internal SO No.',
+    className: 'mono fw-700',
+    nowrap: true,
+    render: (g) => <span style={{ color: 'var(--text)' }}>{g.soInternalNo?.trim() || '—'}</span>,
   },
   {
     id: 'attempts',

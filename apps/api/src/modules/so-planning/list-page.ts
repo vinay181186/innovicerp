@@ -21,6 +21,7 @@ const STATUS_LABEL: Record<PlanningSoListItem['planningStatus'], string> = {
 
 export const PLANNING_LIST_SF_FIELDS: MemFieldMap<PlanningSoListItem> = {
   soCode: { type: 'text', get: (r) => r.soCode },
+  soInternalNo: { type: 'text', get: (r) => r.soInternalNo },
   customerName: { type: 'text', get: (r) => r.customerName },
   soType: { type: 'list', get: (r) => r.soType },
   dueDate: { type: 'date', get: (r) => r.dueDate },

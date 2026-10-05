@@ -9,7 +9,6 @@
 
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import type { CustomerDispatchRow } from '@innovic/shared';
 import type { DispatchGroup } from './dispatch-group';
@@ -72,9 +71,20 @@ export function dispatchListColumns(
       nowrap: true,
       render: (g) => (
         <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-          {g.soNo ? soNoWithInternal(g.soNo, g.soInternalNo) : '—'}
+          {g.soNo || '—'}
         </span>
       ),
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO No. so the two can be told apart. Older orders have none.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (g) => <span style={{ color: 'var(--text)' }}>{g.soInternalNo?.trim() || '—'}</span>,
     },
     {
       id: 'total_qty',

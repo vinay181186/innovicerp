@@ -38,6 +38,10 @@ export const STORE_ISSUE_SF_COLUMNS: SfColumnMap = {
     )`,
     type: 'text',
   },
+  // ADR-207 — the Internal SO No. of the slip's SO, off the `so` join BOTH the
+  // page and the count query make. The row carries it as
+  // `salesOrderInternalNo`; this is the Sort & Filter field name.
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   issuedTo: { sql: sql`si.issued_to`, type: 'text' },
   purpose: { sql: sql`si.purpose`, type: 'text' },
   issuedBy: { sql: sql`u.full_name`, type: 'text' },

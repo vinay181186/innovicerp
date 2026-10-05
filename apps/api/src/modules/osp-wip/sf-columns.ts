@@ -16,6 +16,9 @@ export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   },
   itemName: { sql: sql`w.item_name`, type: 'text' },
   soCode: { sql: sql`w.so_code`, type: 'text' },
+  // ADR-207 — the Internal SO No. of that same SO, off the `so` join the
+  // register's shared FROM makes (page and summary alike).
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   vendorName: { sql: sql`w.vendor_name`, type: 'text' },
   operation: { sql: sql`w.operation`, type: 'text' },
   orderQty: { sql: sql`w.order_qty`, type: 'num' },

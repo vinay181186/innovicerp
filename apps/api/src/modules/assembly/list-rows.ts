@@ -12,6 +12,8 @@ import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../
 /** The list's sortable / filterable fields — each the SAME expression the row shows. */
 export const ASSEMBLY_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`so.code`, type: 'text' },
+  // ADR-207 — already SELECTed below as "soInternalNo"; the same join.
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   customerName: { sql: sql`so.customer_name`, type: 'text' },
   bomCode: { sql: sql`bm.bom_no`, type: 'text' },
   dueDate: { sql: sql`agg.due_date`, type: 'date' },

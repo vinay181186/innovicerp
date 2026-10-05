@@ -16,6 +16,19 @@ export function planSfColumns(effectiveStatus: SQL): SfColumnMap {
     code: { sql: sql`${plans.code}`, type: 'text' },
     planDate: { sql: sql`${plans.planDate}`, type: 'date' },
     planType: { sql: sql`${plans.planType}`, type: 'list' },
+    // ADR-207 — the Internal SO No. of the plan's order, the SAME scalar
+    // listPlans SELECTs (service.ts PLAN_SO_INTERNAL_NO_SQL): read live through
+    // the plan's SO line, never copied onto the plan. Keyed on plans.so_line_id
+    // alone, so it is valid in the count query too (which joins the same
+    // one-row-per-plan tables), and a scalar, so it cannot multiply the row.
+    soInternalNo: {
+      sql: sql`(
+        SELECT pso.internal_so_no FROM public.sales_order_lines psol
+        JOIN public.sales_orders pso ON pso.id = psol.sales_order_id
+        WHERE psol.id = ${plans.soLineId}
+      )`,
+      type: 'text',
+    },
     // CODE/REV as the cell prints it: the live item code (else the text the
     // plan stored), then the SO / JWSO line's drawing revision after a slash.
     itemCode: {

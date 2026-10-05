@@ -19,7 +19,6 @@ import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { useStockReservations } from '@/modules/plans/api';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -72,11 +71,20 @@ function reservationColumns(itemCode: string): DataTableColumn<ReservationDetail
             className="mono fw-700"
             style={linkStyle}
           >
-            {soNoWithInternal(row.soCodeText, row.soInternalNo)}
+            {row.soCodeText}
           </Link>
         ) : (
-          <PlainRef code={soNoWithInternal(row.soCodeText, row.soInternalNo)} />
+          <PlainRef code={row.soCodeText} />
         ),
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO No. (owner decision 2026-10-05). Many older orders have none.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      kind: 'code',
+      nowrap: true,
+      render: (row) => <PlainRef code={row.soInternalNo?.trim() || null} />,
     },
     {
       id: 'line_no',

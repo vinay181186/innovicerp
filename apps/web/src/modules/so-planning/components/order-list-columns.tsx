@@ -1,6 +1,7 @@
 // Columns for the Planning SO/JWSO list (ADR-199 shared FIT table). One row per
-// open order: SO/JWSO No. (pinned) · Customer · Type · Due · Lines · Order Qty ·
-// Plan Qty · % Planned · Plan Status. Split out of routes/workflow.tsx so that
+// open order: SO/JWSO No. (pinned) · Internal SO No. · Customer · Type · Due ·
+// Lines · Order Qty · Plan Qty · % Planned · Plan Status.
+// Split out of routes/workflow.tsx so that
 // file stays under the 400-line rule and matches the reference list shape
 // (so-overview-columns). The fit engine sizes the columns to the screen and cuts
 // the long Customer name with "…"; the number columns are right-aligned.
@@ -9,7 +10,6 @@
 
 import type { PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 import {
@@ -56,9 +56,26 @@ export function orderListColumns(src: SourceFilter): DataTableColumn<PlanningSoL
       render: (so) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           {so.source === 'jw' ? <JwChip /> : null}
+          {/* The SYSTEM number only (ADR-207); the office's own number is the
+              next column, so each heading names one of the two. */}
           <span className="mono fw-700" style={{ color: 'var(--text)', fontSize: 13 }}>
-            {soNoWithInternal(so.soCode, so.soInternalNo)}
+            {so.soCode}
           </span>
+        </span>
+      ),
+    },
+    {
+      // ADR-207 — the office's own typed number, beside the system number. The
+      // heading is the same on all three source filters: only the first column
+      // switches between SO / JWSO.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      kind: 'code',
+      sortFilterField: 'soInternalNo',
+      nowrap: true,
+      render: (so) => (
+        <span className="mono fw-700" style={{ color: 'var(--text)', fontSize: 13 }}>
+          {so.soInternalNo ?? '—'}
         </span>
       ),
     },

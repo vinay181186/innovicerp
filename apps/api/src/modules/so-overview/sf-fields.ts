@@ -7,12 +7,9 @@ import type { SoOverviewRow } from '@innovic/shared';
 import type { MemFieldMap } from './sf-memory';
 
 export const SO_OVERVIEW_SF_FIELDS: MemFieldMap<SoOverviewRow> = {
-  // The SO No. cell shows "IN-SO-00786 · SO-2401" (ADR-207), so the filter
-  // reads the same text; sort order is unchanged (the SO No. leads).
-  code: {
-    type: 'text',
-    get: (r) => (r.internalSoNo ? `${r.code} · ${r.internalSoNo}` : r.code),
-  },
+  // Each number has its OWN column now, so each field reads one number only.
+  code: { type: 'text', get: (r) => r.code },
+  internalSoNo: { type: 'text', get: (r) => r.internalSoNo },
   customerName: { type: 'text', get: (r) => r.customerName },
   type: { type: 'list', get: (r) => r.type },
   overallStatus: { type: 'list', get: (r) => r.overallStatus },

@@ -11,7 +11,6 @@
 import { DESIGN_TRACKER_STATUSES, type DesignTrackerListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
 
@@ -67,10 +66,21 @@ export function designTrackerColumns(opts: {
       nowrap: true,
       render: (d) => (
         <span className="td-code" style={{ color: 'var(--cyan)' }}>
-          {d.soCodeText ? soNoWithInternal(d.soCodeText, d.soInternalNo) : '—'}
+          {d.soCodeText || '—'}
         </span>
       ),
       sortFilterField: 'soCode',
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., in its own column beside
+      // the system SO No. so the two can be told apart. Older orders have none.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (d) => <span style={{ color: 'var(--text)' }}>{d.soInternalNo?.trim() || '—'}</span>,
+      sortFilterField: 'soInternalNo',
     },
     {
       // POL — the CUSTOMER's own purchase-order line number off the SO line

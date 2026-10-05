@@ -11,8 +11,8 @@
 // JC No.) carry the facts the shop floor reads at a glance; the rest ride in
 // the row's ▸ detail via JOB_QUEUE_HIDDEN_IDS. Labels per docs/NAMING.md
 // (JC No., Sr No, Op, Operation, Item Code, Available, Op Status, Due Date,
-// POL, Item Name, SO No., Customer, Priority, Order Qty, Completed, Actual
-// Machine).
+// POL, Item Name, SO No., Internal SO No., Customer, Priority, Order Qty,
+// Completed, Actual Machine).
 
 import type { JobQueueMachine, JobQueueRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
@@ -20,7 +20,6 @@ import { Link } from '@tanstack/react-router';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { ROW_TINT, RowMenu } from '@/ui/data';
@@ -116,6 +115,7 @@ export const JOB_QUEUE_HIDDEN_IDS: string[] = [
   'pol',
   'item_name',
   'so_no',
+  'so_internal_no',
   'customer',
   'priority',
   'order_qty',
@@ -256,7 +256,24 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       kind: 'code',
       className: 'mono',
       nowrap: true,
-      render: (r) => (r.soCode ? soNoWithInternal(r.soCode, r.soInternalNo) : '—'),
+      render: (r) => r.soCode ?? '—',
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO No. (owner decision 2026-10-05). Many older orders have none.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      kind: 'code',
+      className: 'mono',
+      nowrap: true,
+      render: (r) =>
+        r.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {r.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

@@ -4,13 +4,14 @@
 // SO Master does it (so-list-columns.tsx is the reference).
 //
 // One row per order. The first column (Production Order No.) is always pinned
-// and carries the fit table's ▸ — the row's one expand control. The four
-// secondary facts (Plan No., SO / JWSO No., POL, JC No.) ship hidden by default
-// (defaultHidden in list.tsx), so they ride in the ▸ detail row rather than the
-// main line. Labels per docs/NAMING.md: Production Order No., Production Order
-// Date, Item Code, Item Name, Order Qty, Completed, Production Order Status,
-// PRO Target Date (the order's own target date, owner label 2026-09-30), plus
-// Plan No., SO / JWSO No., POL, JC No. in the ▸.
+// and carries the fit table's ▸ — the row's one expand control. The five
+// secondary facts (Plan No., SO / JWSO No., Internal SO No., POL, JC No.) ship
+// hidden by default (defaultHidden in list.tsx), so they ride in the ▸ detail
+// row rather than the main line. Labels per docs/NAMING.md: Production Order
+// No., Production Order Date, Item Code, Item Name, Order Qty, Completed,
+// Production Order Status, PRO Target Date (the order's own target date, owner
+// label 2026-09-30), plus Plan No., SO / JWSO No., Internal SO No., POL and
+// JC No. in the ▸.
 
 import {
   PRODUCTION_ORDER_STATUS_LABEL,
@@ -187,10 +188,28 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
           <span>
             {po.soCodeText}
             {po.lineNo ? <span className="text3">/{po.lineNo}</span> : null}
-            {po.soInternalNo ? ` · ${po.soInternalNo}` : null}
           </span>
         ) : (
           '—'
+        ),
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO / JWSO No. (owner decision 2026-10-05). Many older orders have none,
+      // and a JWSO-sourced order never has one.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      kind: 'code',
+      sortFilterField: 'soInternalNo',
+      className: 'mono',
+      nowrap: true,
+      render: (po) =>
+        po.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {po.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
         ),
     },
     {
@@ -228,6 +247,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
   ];
 }
 
-/** Column ids shipped in the ▸ detail by default (Plan No., SO / JWSO, POL,
- *  JC No.), so the eight primary facts stay on the main line. */
-export const PO_LIST_DETAIL_IDS = ['plan_no', 'so_jwso', 'pol', 'jc_no'];
+/** Column ids shipped in the ▸ detail by default (Plan No., SO / JWSO,
+ *  Internal SO No., POL, JC No.), so the eight primary facts stay on the main
+ *  line. */
+export const PO_LIST_DETAIL_IDS = ['plan_no', 'so_jwso', 'so_internal_no', 'pol', 'jc_no'];

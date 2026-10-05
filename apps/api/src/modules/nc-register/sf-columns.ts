@@ -22,6 +22,14 @@ export const NC_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   itemName: { sql: sql`COALESCE(i.name, nc.item_name_text)`, type: 'text' },
+  // ADR-207 — the Internal SO No., the SAME scalar the list SELECTs: read live
+  // off the NC's own SO (nc.so_id). A scalar, so it cannot multiply the row and
+  // is valid in the count query, which selects from nc_register too.
+  soInternalNo: {
+    sql: sql`(SELECT nso.internal_so_no FROM public.sales_orders nso
+      WHERE nso.id = nc.so_id)`,
+    type: 'text',
+  },
   rejectedQty: { sql: sql`nc.rejected_qty`, type: 'num' },
   reasonCategory: { sql: sql`nc.reason_category`, type: 'list' },
   ncDate: { sql: sql`nc.nc_date`, type: 'date' },

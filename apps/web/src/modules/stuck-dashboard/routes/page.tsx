@@ -21,7 +21,6 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { soNoWithInternal } from '@/lib/so-number';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -74,9 +73,26 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {soNoWithInternal(it.soNo, it.soInternalNo)}
+          {it.soNo}
         </Link>
       ),
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO No. (owner decision 2026-10-05). Many older orders have none.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      sortFilterField: 'soInternalNo',
+      className: 'mono',
+      render: (it) =>
+        it.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {it.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'stage',

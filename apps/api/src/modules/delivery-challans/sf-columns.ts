@@ -21,6 +21,16 @@ export const DC_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   soCode: { sql: sql`COALESCE(so.code, po_so.so_code, dc.so_ref_text)`, type: 'text' },
+  // ADR-207 — the Internal SO No. exactly as the cell shows it: read off the
+  // SAME SO as soCode above (the DC's own SO line, else the PO's single SO,
+  // else the SO a free-text so_ref_text names). All three aliases come from
+  // DC_SF_JOINS, which the count / KPI queries add while a filter is on.
+  soInternalNo: {
+    sql: sql`(CASE WHEN so.id IS NOT NULL THEN so.internal_so_no
+                   WHEN po_so.so_code IS NOT NULL THEN po_so.so_internal_no
+                   ELSE so_ref.internal_so_no END)`,
+    type: 'text',
+  },
   totalQty: { sql: sql`COALESCE(line_agg.total_qty, 0)`, type: 'num' },
   lineCount: { sql: sql`COALESCE(line_agg.line_count, 0)::int`, type: 'num' },
   status: { sql: sql`dc.status`, type: 'list' },

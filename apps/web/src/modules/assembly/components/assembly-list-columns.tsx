@@ -7,7 +7,6 @@
 import type { AssemblyListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 
 type StatusKey = AssemblyListItem['status'];
@@ -67,9 +66,26 @@ export function assemblyListColumns(today: string): DataTableColumn<AssemblyList
           style={{ color: 'var(--cyan)', fontWeight: 600 }}
           onClick={(e) => e.stopPropagation()}
         >
-          {soNoWithInternal(row.soCode, row.soInternalNo)}
+          {row.soCode}
         </Link>
       ),
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO No. (owner decision 2026-10-05). Many older orders have none.
+      id: 'so_internal_no',
+      header: 'Internal SO No.',
+      kind: 'code',
+      sortFilterField: 'soInternalNo',
+      nowrap: true,
+      render: (row) =>
+        row.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {row.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

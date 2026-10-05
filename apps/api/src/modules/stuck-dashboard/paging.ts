@@ -15,6 +15,8 @@ import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../
 
 export const STUCK_SF_COLUMNS: SfColumnMap = {
   soNo: { sql: sql`t.so_no`, type: 'text' },
+  // ADR-207 — a column of the same record set the search box already reads.
+  soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
   stage: { sql: sql`t.stage`, type: 'text' },
   customer: { sql: sql`t.customer`, type: 'text' },
   days: { sql: sql`t.days`, type: 'num' },

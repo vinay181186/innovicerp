@@ -7,7 +7,6 @@
 
 import { ISSUE_AGAINST_LABELS, type StoreIssueListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 
 const ISSUE_AGAINST_OPTIONS = Object.entries(ISSUE_AGAINST_LABELS).map(([value, label]) => ({
@@ -20,11 +19,9 @@ export const ISSUE_REGISTER_HIDDEN_COLUMNS = ['created_on'] as const;
 
 function reference(iss: StoreIssueListItem): string {
   if (iss.issueAgainst === 'job_card') return iss.jobCardCode ?? '—';
-  if (iss.issueAgainst === 'assembly_so') {
-    return iss.salesOrderCode
-      ? soNoWithInternal(iss.salesOrderCode, iss.salesOrderInternalNo)
-      : '—';
-  }
+  // ADR-207 — the system SO No. alone; the Internal SO No. has its own column
+  // (owner decision 2026-10-05).
+  if (iss.issueAgainst === 'assembly_so') return iss.salesOrderCode ?? '—';
   return iss.department ?? iss.legacyReference ?? '—';
 }
 
@@ -78,6 +75,26 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
       className: 'mono',
       nowrap: true,
       render: (iss) => <span style={{ color: 'var(--purple)' }}>{reference(iss)}</span>,
+    },
+    {
+      // ADR-207 — the office's own SO number, its OWN column beside the
+      // Reference (owner decision 2026-10-05). Only a slip issued against an
+      // assembly SO has one, and many older orders have none.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      filterType: 'text',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono',
+      nowrap: true,
+      render: (iss) =>
+        iss.issueAgainst === 'assembly_so' && iss.salesOrderInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {iss.salesOrderInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       // Filters match an item on ANY line of the slip.

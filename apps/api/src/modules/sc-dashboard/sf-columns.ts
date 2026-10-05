@@ -23,6 +23,9 @@ export const SC_PENDING_SF_COLUMNS: SfColumnMap = {
   poDate: { sql: sql`po.po_date`, type: 'date' },
   vendor: { sql: PENDING_VENDOR_SQL, type: 'text' },
   soCode: { sql: sql`so.code`, type: 'text' },
+  // ADR-207 — the Internal SO No., off the `so` join pendingFrom makes (shared
+  // by the page, the count and the picklists).
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   itemCode: { sql: PENDING_ITEM_SQL, type: 'text' },
   itemName: { sql: sql`COALESCE(i.name, pol.item_name)`, type: 'text' },
   qty: { sql: sql`pol.qty`, type: 'num' },
@@ -51,6 +54,9 @@ export const SC_VENDOR_SF_COLUMNS: SfColumnMap = {
 
 export const SC_SO_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`t.so_code`, type: 'text' },
+  // ADR-207 — the Internal SO No., a grouped column of the same subquery
+  // (listScSos GROUPs BY it, so one value per row).
+  soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
   lines: { sql: sql`t.lines`, type: 'num' },
   uniqueVendors: { sql: sql`t.unique_vendors`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
@@ -65,6 +71,8 @@ export const SC_PO_SUMMARY_SF_COLUMNS: SfColumnMap = {
   poDate: { sql: sql`t.po_date`, type: 'date' },
   vendor: { sql: sql`COALESCE(t.vendor_name, t.vendor_code)`, type: 'text' },
   soCode: { sql: sql`t.so_code`, type: 'text' },
+  // ADR-207 — the Internal SO No., the same subquery column the row shows.
+  soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
   lines: { sql: sql`t.lines`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
   receivedQty: { sql: sql`t.received_qty`, type: 'num' },

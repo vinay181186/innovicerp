@@ -25,7 +25,6 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import type { DataTableColumn } from '@/ui/data';
 import { QC_STAGES, dayDiff, processStage, type QcStage } from './qc-sheet';
 
@@ -97,10 +96,14 @@ export function pendingOverdue(vm: PendingVM): boolean {
 }
 function soVendorOf(vm: PendingVM): string {
   if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
-  if (vm.kind === 'op') {
-    return vm.row.soCode ? soNoWithInternal(vm.row.soCode, vm.row.soInternalNo) : '—';
-  }
+  if (vm.kind === 'op') return vm.row.soCode || '—';
   return vm.row.vendorName ?? '—';
+}
+/** ADR-207 — the office's own Internal SO No. Only a job-card QC row stands
+ *  against a sales order; a GRN line stands against a vendor and a Party GRN
+ *  line against a customer, so neither has one. */
+function soInternalNoOf(vm: PendingVM): string {
+  return vm.kind === 'op' ? vm.row.soInternalNo?.trim() || '—' : '—';
 }
 function operationOf(vm: PendingVM): string {
   if (vm.kind === 'op') return `Op ${opSrNo(vm.row.opSeq)} ${vm.row.operation}`;
@@ -126,7 +129,14 @@ function waitDisplay(vm: PendingVM): React.JSX.Element {
 }
 
 /** Columns that start hidden — the fit engine shows them in the ▸ detail row. */
-export const PENDING_HIDDEN = ['pol', 'so_vendor', 'operation', 'assigned_to', 'received_qty'];
+export const PENDING_HIDDEN = [
+  'pol',
+  'so_vendor',
+  'so_internal_no',
+  'operation',
+  'assigned_to',
+  'received_qty',
+];
 
 export function pendingColumns(): DataTableColumn<PendingVM>[] {
   return [
@@ -242,6 +252,17 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       ellipsis: true,
       render: (vm) => soVendorOf(vm),
       title: (vm) => soVendorOf(vm),
+    },
+    {
+      // ADR-207 — the office's own Internal SO No., its own column beside the
+      // SO / Vendor one so the two SO numbers can be told apart. No
+      // `sortFilterField`: this register has no server-side sort / filter map.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (vm) => <span style={{ color: 'var(--text)' }}>{soInternalNoOf(vm)}</span>,
     },
     {
       id: 'operation',

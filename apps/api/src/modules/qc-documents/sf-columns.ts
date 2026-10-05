@@ -20,6 +20,16 @@ export const QC_DOC_SF_COLUMNS: SfColumnMap = {
   },
   itemName: { sql: sql`${items.name}`, type: 'text' },
   soCode: { sql: sql`${qcDocuments.soCodeText}`, type: 'text' },
+  // ADR-207 — the Internal SO No., the SAME scalar the page query SELECTs: read
+  // live off the document's own SO (FK). A scalar on qc_documents, so it is
+  // valid in the count query too.
+  soInternalNo: {
+    sql: sql`(
+      SELECT so.internal_so_no FROM public.sales_orders so
+      WHERE so.id = ${qcDocuments.salesOrderId}
+    )`,
+    type: 'text',
+  },
   uploadedBy: { sql: sql`${qcDocuments.uploadedByText}`, type: 'text' },
   uploadDate: {
     sql: sql`(${qcDocuments.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,

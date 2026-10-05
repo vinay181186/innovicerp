@@ -47,11 +47,9 @@ function average(rows: SoCycleTimeRow[], key: AvgKey): number {
 /** Sort & Filter fields — each the value the screen's column shows. The SO
  *  Status column shows "Completed" once dispatched, so it filters on that. */
 const SCT_SF_COLUMNS: MemSfColumnMap<SoCycleTimeRow> = {
-  // The SO No. cell shows "IN-SO-00786 · SO-2401" (ADR-207); filter on that.
-  soNo: {
-    type: 'text',
-    get: (r) => (r.internalSoNo ? `${r.soNo} · ${r.internalSoNo}` : r.soNo),
-  },
+  // Each number has its OWN column now, so each field reads one number only.
+  soNo: { type: 'text', get: (r) => r.soNo },
+  internalSoNo: { type: 'text', get: (r) => r.internalSoNo ?? null },
   customer: { type: 'text', get: (r) => r.customer },
   soType: { type: 'list', get: (r) => r.type },
   soStatus: { type: 'list', get: (r) => (r.phases.dispatched ? 'completed' : r.status) },

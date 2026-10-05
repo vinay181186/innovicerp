@@ -19,6 +19,10 @@ import { soLineCoveredRaw } from '../../lib/so-line-coverage';
 /** Sort & Filter fields — each reads the `u` CTE column the row shows. */
 export const UNPLANNED_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`u.so_code`, type: 'text' },
+  // ADR-207 — the office's own SO number is its own column on the Needs
+  // Planning sheet, so it sorts and filters on its own. Same CTE, already
+  // selected for the search box above.
+  soInternalNo: { sql: sql`u.so_internal_no`, type: 'text' },
   lineNo: { sql: sql`u.line_no`, type: 'num' },
   clientPoLineNo: { sql: sql`u.client_po_line_no`, type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).

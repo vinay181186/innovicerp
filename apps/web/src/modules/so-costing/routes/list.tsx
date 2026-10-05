@@ -28,7 +28,6 @@ import { z } from 'zod';
 import { apiFetch } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { inrFormat } from '@/lib/print/doc-print';
-import { soNoWithInternal } from '@/lib/so-number';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -66,8 +65,23 @@ function soCostingColumns(priceHidden: boolean): DataTableColumn<SoCostingRow>[]
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {soNoWithInternal(r.soNo, r.soInternalNo)}
+          {/* The SYSTEM number only (ADR-207); the office's own number is the
+              next column, so each heading names one of the two. */}
+          {r.soNo}
         </Link>
+      ),
+    },
+    {
+      // ADR-207 — the office's own typed number, beside the system SO No.
+      id: 'so_internal_no',
+      kind: 'code',
+      header: 'Internal SO No.',
+      sortFilterField: 'soInternalNo',
+      nowrap: true,
+      render: (r) => (
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {r.soInternalNo ?? '—'}
+        </span>
       ),
     },
     {
@@ -235,7 +249,7 @@ function SoCostingListPage(): React.JSX.Element {
       noun="SO"
       search={search}
       onSearch={setSearch}
-      searchPlaceholder="Search SO no., customer, cost centre…"
+      searchPlaceholder="Search SO No., Internal SO No., customer, cost centre…"
       updating={isFetching && !isLoading}
     />
   );
