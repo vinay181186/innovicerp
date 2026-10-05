@@ -185,11 +185,14 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
       kind: 'code',
       sortFilterField: 'internalSoNo',
       nowrap: true,
-      render: (row) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {row.internalSoNo ?? '—'}
-        </span>
-      ),
+      render: (row) =>
+        row.internalSoNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {row.internalSoNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

@@ -82,7 +82,7 @@ function Band({ children }: { children: React.ReactNode }): React.JSX.Element {
         colSpan={4}
         className="td-left"
         style={{
-          background: 'var(--bg4)',
+          background: 'var(--blue3)',
           color: 'var(--blue2)',
           fontFamily: 'var(--hfont)',
           fontSize: 'var(--fs-xs)',
@@ -137,6 +137,7 @@ function V({
       style={{
         color: empty ? 'var(--text3)' : 'var(--text)',
         fontWeight: empty ? 400 : num || code ? 700 : 600,
+        ...(span ? {} : { overflow: 'hidden', textOverflow: 'ellipsis' }),
       }}
     >
       {children}
@@ -365,7 +366,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 </Link>
               </V>
               <K>Route Card</K>
-              <V>
+              <V title={`${data.routeCardCodeText} · Route Card Rev ${data.routeCardRevision}`}>
                 <Link
                   to="/route-cards/$id"
                   params={{ id: data.routeCardId }}
@@ -385,7 +386,9 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             <tr>
               <K>Item Code</K>
               {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-              <V code>{itemCodeWithRev(data.itemCodeText, data.itemRevision)}</V>
+              <V code title={itemCodeWithRev(data.itemCodeText, data.itemRevision)}>
+                {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
+              </V>
               <K>Item Name</K>
               <V empty={!data.itemNameText} title={data.itemNameText ?? undefined}>
                 {data.itemNameText ?? '—'}
@@ -435,7 +438,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 {data.lostQty ?? '—'}
               </V>
               <K>JC No.</K>
-              <V>
+              <V title={data.jcCodeText ?? undefined}>
                 <Link
                   to="/job-cards/$id"
                   params={{ id: data.jobCardId }}
@@ -502,7 +505,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
             </tr>
             <tr>
               <K>RM Item</K>
-              <V code empty={!data.rawMaterialItemCode}>
+              <V
+                code
+                empty={!data.rawMaterialItemCode}
+                title={data.rawMaterialItemCode ?? undefined}
+              >
                 {data.rawMaterialItemCode ?? '—'}
               </V>
               <K>RM Qty / piece</K>

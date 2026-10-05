@@ -186,9 +186,8 @@ export const productionOrderDetailSchema = productionOrderListItemSchema.extend(
    *  tell WHAT to issue, only what it is made of. */
   rawMaterialItemCode: z.string().nullable().default(null),
   rmQtyPerPiece: z.number().nullable().default(null),
-  /** `JC Status` — the job card's live computed status. The JC number alone
-   *  does not say whether the floor has started. */
-  jcStatus: z.string().nullable().default(null),
+  // `JC Status` is NOT declared here: it is `jcComputedStatus`, inherited from
+  // the list item above and typed by its enum. One fact, one name.
 });
 export type ProductionOrderDetail = z.infer<typeof productionOrderDetailSchema>;
 

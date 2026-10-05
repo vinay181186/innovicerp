@@ -78,11 +78,14 @@ function soCostingColumns(priceHidden: boolean): DataTableColumn<SoCostingRow>[]
       header: 'Internal SO No.',
       sortFilterField: 'soInternalNo',
       nowrap: true,
-      render: (r) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {r.soInternalNo ?? '—'}
-        </span>
-      ),
+      render: (r) =>
+        r.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {r.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'customer',

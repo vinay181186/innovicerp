@@ -94,12 +94,24 @@ export function soListColumns(opts: {
     {
       // ADR-207 — the office's own typed number, its own column beside the
       // system SO No. so each heading names exactly one of the two numbers.
-      id: 'internal_so_no',
+      // The id is deliberately NOT the old `internal_so_no`: this column used to
+      // be defaultHidden, and `normalize()` in lib/use-table-layout.ts keeps a
+      // saved hidden flag for any id the code still has. Re-using the old id
+      // would leave the column hidden forever for every user who ever opened
+      // the Columns menu. A new id is treated as added, and is not in
+      // SO_LIST_HIDDEN_COLUMNS, so it shows. Same id as the other 32 screens.
+      id: 'so_internal_no',
       sortFilterField: 'internalSoNo',
       header: 'Internal SO No.',
-      className: 'mono fw-700',
       nowrap: true,
-      render: (so) => so.internalSoNo ?? '—',
+      render: (so) =>
+        so.internalSoNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {so.internalSoNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'so_date',

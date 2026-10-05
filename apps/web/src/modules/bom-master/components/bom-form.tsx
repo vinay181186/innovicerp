@@ -30,6 +30,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { itemsKeys, useItemsList } from '@/modules/items/api';
+import { useMaterialGradesList, useMaterialSizesList } from '@/modules/raw-material/api';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -147,14 +148,20 @@ const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = [
 
 const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsource']);
 
-// The three columns the importer reads, with every header spelling accepted for
-// each. ONE list, used for both the up-front template check and the per-row
-// reads — so a column can never be validated under one name and then read under
-// another.
+// The three REQUIRED columns, with every header spelling accepted for each.
+// ONE list, used for both the up-front template check and the per-row reads —
+// so a column can never be validated under one name and then read under
+// another. RM Grade / RM Size are read per row too but are deliberately NOT
+// listed here: adding them would reject every sheet built from the older
+// three-column template.
 const CODE_ALIASES = ['item_code', 'Item Code', 'code'];
 // 'Qty / Set' is the template header; the older spellings still import.
 const QTY_ALIASES = ['qty_per_set', 'Qty / Set', 'Qty Per Set', 'qty', 'qty/set'];
 const TYPE_ALIASES = ['bom_type', 'BOM Type', 'Type'];
+// Raw material, both optional. Kept OUT of REQUIRED_COLUMNS on purpose: a file
+// built from the older three-column template must still import.
+const GRADE_ALIASES = ['rm_grade', 'RM Grade', 'Grade'];
+const SIZE_ALIASES = ['rm_size', 'RM Size', 'Size'];
 const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
   { label: 'Item Code', aliases: CODE_ALIASES },
   { label: 'Qty / Set', aliases: QTY_ALIASES },
@@ -203,6 +210,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
    *  red (it used to come up GREEN, the colour of success) and offers the
    *  template download, which is what the user needs next. */
   const [importFatal, setImportFatal] = useState(false);
+  /** Set when the import dropped raw material it could not match or check. The
+   *  rows still came in, so it is not an error — but the banner must not be
+   *  green, or the one sentence saying data was left out reads as "all fine". */
+  const [importRmWarning, setImportRmWarning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearImportReport = (): void => {
@@ -210,6 +221,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     setImportErrors([]);
     setMissingCodes([]);
     setImportFatal(false);
+    setImportRmWarning(false);
   };
 
   // Legacy editBOMMaster L8610: newRev = current revision + 1. Drives the
@@ -408,17 +420,67 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const filledChildCount = resolvedLines.filter((l) => l.childItemId).length;
   const blankChildCount = resolvedLines.length - filledChildCount;
 
+  // Both raw-material masters, read ONCE for the importer (the per-line pickers
+  // do their own searching). They are short controlled lists — 14 grades / 27
+  // sizes live — so the whole list is matched in memory instead of one lookup
+  // per value. 1000 is the schema's cap; a company past that would need the
+  // targeted search the item codes use.
+  const gradeList = useMaterialGradesList({ isActive: true, limit: 1000, offset: 0 });
+  const sizeList = useMaterialSizesList({ isActive: true, limit: 1000, offset: 0 });
+  /** Grade/size looked up by NAME first then CODE, both case-insensitive — the
+   *  sheet carries whatever the planner typed ("EN24", or "GRD-004"). */
+  const gradesByText = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const g of gradeList.data?.grades ?? []) {
+      m.set(g.name.trim().toUpperCase(), { id: g.id, name: g.name });
+      if (!m.has(g.code.trim().toUpperCase()))
+        m.set(g.code.trim().toUpperCase(), { id: g.id, name: g.name });
+    }
+    return m;
+  }, [gradeList.data]);
+  const sizesByText = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const sz of sizeList.data?.sizes ?? []) {
+      m.set(sz.name.trim().toUpperCase(), { id: sz.id, name: sz.name });
+      if (!m.has(sz.code.trim().toUpperCase()))
+        m.set(sz.code.trim().toUpperCase(), { id: sz.id, name: sz.name });
+    }
+    return m;
+  }, [sizeList.data]);
+
+  // Both buttons below read these masters — Template for its sample values,
+  // Import to match RM Grade / RM Size. Clicking before they arrive would
+  // silently blank every raw material in the file, so hold the buttons for the
+  // moment it takes. A FAILED fetch does not hold them: the import still runs
+  // and names the unmatched values, which is visible rather than stuck.
+  const rmMastersLoading = gradeList.isPending || sizeList.isPending;
+  /** The masters could not be read, or came back cut short at the page cap. In
+   *  either case an absent value proves nothing, so the import must say "could
+   *  not check" rather than "not in master" — the same distinction the item-code
+   *  path draws with its `lookup_failed` kind. */
+  const rmMastersUnreadable =
+    gradeList.isError ||
+    sizeList.isError ||
+    (gradeList.data ? gradeList.data.total > gradeList.data.grades.length : false) ||
+    (sizeList.data ? sizeList.data.total > sizeList.data.sizes.length : false);
+
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
 
   const downloadTemplate = async (): Promise<void> => {
     const { utils: xlsxUtils, write: xlsxWrite } = await loadXlsx();
-    // 3 columns + a sample row so users know the shape.
+    // Sample the user's OWN first grade/size, so the example row shows a value
+    // that will actually match on import. Blank when the masters are empty.
+    const gradeSample = gradeList.data?.grades[0]?.name ?? '';
+    const sizeSample = sizeList.data?.sizes[0]?.name ?? '';
+    // 5 columns + two sample rows so users know the shape. RM Grade / RM Size
+    // are optional and must match Raw Material Master; the samples show a
+    // filled row and a blank one.
     const aoa = [
       // Title Case headers; the importer's aliases still read item_code / qty_per_set / bom_type.
-      ['Item Code', 'Qty / Set', 'BOM Type'],
-      ['EXAMPLE-001', 2, 'manufacture'],
-      ['EXAMPLE-002', 3, 'purchase'],
+      ['Item Code', 'Qty / Set', 'BOM Type', 'RM Grade', 'RM Size'],
+      ['EXAMPLE-001', 2, 'manufacture', gradeSample, sizeSample],
+      ['EXAMPLE-002', 3, 'purchase', '', ''],
     ];
     const sheet = xlsxUtils.aoa_to_sheet(aoa);
     const wb = xlsxUtils.book_new();
@@ -517,6 +579,22 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // well exist, and offering to create them would make duplicates.
       const notInMaster: string[] = [];
       const notInMasterSeen = new Set<string>();
+      // Raw-material values in the file that are not in Raw Material Master.
+      // Named once each in the summary; the row still imports with that box
+      // blank, so one typo never costs the part.
+      const unmatchedRm: string[] = [];
+      const unmatchedRmSeen = new Set<string>();
+      // Did the file carry any raw material at all? An old three-column sheet
+      // must not be told the master could not be checked — there was nothing
+      // to check.
+      let sawRmValue = false;
+      const noteUnmatchedRm = (label: string, value: string): void => {
+        const key = `${label}:${value.toUpperCase()}`;
+        if (unmatchedRmSeen.has(key)) return;
+        unmatchedRmSeen.add(key);
+        unmatchedRm.push(`${label} "${value}"`);
+      };
+
       rows.forEach((row, idx) => {
         const itemCode = getCol(row, CODE_ALIASES).trim();
         const qtyRaw = getCol(row, QTY_ALIASES);
@@ -605,15 +683,28 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           });
           return;
         }
+        // Raw material (optional). Matched against Raw Material Master so an
+        // imported line carries the SAME id + name pair the on-screen picker
+        // stores — that pair is what the child Job Card inherits later.
+        const gradeRaw = getCol(row, GRADE_ALIASES).trim();
+        const sizeRaw = getCol(row, SIZE_ALIASES).trim();
+        const grade = gradeRaw ? gradesByText.get(gradeRaw.toUpperCase()) : undefined;
+        const size = sizeRaw ? sizesByText.get(sizeRaw.toUpperCase()) : undefined;
+        if (gradeRaw || sizeRaw) sawRmValue = true;
+        if (gradeRaw && !grade) noteUnmatchedRm('RM Grade', gradeRaw);
+        if (sizeRaw && !size) noteUnmatchedRm('RM Size', sizeRaw);
+
         seenInFile.set(item.id, idx);
         added.push({
-          // The import sheet carries no Grade/Size columns, so an imported row
-          // starts blank and is picked on the form afterwards.
           ...emptyLine(),
           childItemId: item.id,
           childItemCodeText: item.code,
           qtyPerSet: String(qty),
           bomType,
+          rawMaterialGradeId: grade?.id ?? null,
+          rawMaterialGradeText: grade?.name ?? null,
+          rawMaterialSizeId: size?.id ?? null,
+          rawMaterialSizeText: size?.name ?? null,
         });
       });
 
@@ -622,8 +713,16 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       );
       setImportErrors(errors);
       setMissingCodes(notInMaster);
+      // An unreadable master cannot prove a value absent, so say which it was.
+      const rmNote =
+        rmMastersUnreadable && sawRmValue
+          ? ' Raw material left blank — Raw Material Master could not be checked. Import again, or pick Grade / Size on the form.'
+          : unmatchedRm.length > 0
+            ? ` Not in Raw Material Master, left blank: ${unmatchedRm.join(', ')}.`
+            : '';
+      setImportRmWarning(rmNote !== '');
       setImportSummary(
-        `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}`,
+        `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}${rmNote}`,
       );
     } catch (err) {
       setImportFatal(true);
@@ -963,7 +1062,13 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           {importSummary ? (
             <div style={{ marginTop: 'var(--sp-2)' }}>
               <Banner
-                tone={importFatal ? 'error' : importErrors.length > 0 ? 'warn' : 'success'}
+                tone={
+                  importFatal
+                    ? 'error'
+                    : importErrors.length > 0 || importRmWarning
+                      ? 'warn'
+                      : 'success'
+                }
                 flush
                 onDismiss={clearImportReport}
                 title={importSummary}
@@ -1241,14 +1346,26 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           </button>
           {/* Template stays open even while locked — you may well want the empty
               sheet before you have decided the parent. */}
-          <button type="button" className="btn btn-ghost" onClick={() => void downloadTemplate()}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={rmMastersLoading}
+            title={rmMastersLoading ? 'Loading Raw Material Master…' : undefined}
+            onClick={() => void downloadTemplate()}
+          >
             <Download size={14} /> Template
           </button>
           <button
             type="button"
             className="btn btn-ghost"
-            disabled={parentLocked}
-            title={parentLocked ? 'Pick the parent item first' : undefined}
+            disabled={parentLocked || rmMastersLoading}
+            title={
+              parentLocked
+                ? 'Pick the parent item first'
+                : rmMastersLoading
+                  ? 'Loading Raw Material Master…'
+                  : undefined
+            }
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload size={14} /> Import Excel

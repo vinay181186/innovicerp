@@ -450,31 +450,38 @@ function BomBody({
         📦 BOM Explosion — {data.orderQty} {mode === 'equipment' ? `sets × ${data.bomNo}` : 'units'}
       </div>
 
+      {/* No inline `overflow` here: it would beat .tbl-wrap's own
+          overflow-x/y:auto, and the house table's cells do not wrap — eleven
+          columns would then be clipped with no way to scroll to the Select
+          checkbox and Plan Qty box. The radius still clips: any non-visible
+          overflow does. */}
       <div
         className="tbl-wrap"
         style={{
           marginBottom: 14,
           border: '1px solid var(--border)',
           borderRadius: 8,
-          overflow: 'hidden',
         }}
       >
-        <table style={{ width: '100%' }}>
+        {/* The house table (ADR-199): the class supplies the header band, the
+            gridlines and the cell type, so none of it is written inline here.
+            `tbl-edit` because the rows carry a checkbox and a qty input. */}
+        <table className="innovic-table tbl-grid tbl-edit">
           <thead>
-            <tr style={{ background: 'var(--bg4)' }}>
+            <tr>
               <th>Sr No</th>
               <th>Item Code</th>
               <th>Item Name</th>
-              <th>Qty per Set</th>
-              <th>Total Need</th>
-              <th style={{ color: 'var(--green2)' }}>Physical</th>
-              <th style={{ color: 'var(--red2)' }} title="Total Need − Current Stock">
+              <th className="th-num">Qty per Set</th>
+              <th className="th-num">Total Need</th>
+              <th className="th-num">Physical</th>
+              <th className="th-num" title="Total Need − Current Stock">
                 Short
               </th>
               <th>BOM Type</th>
               <th>Plan Status</th>
               <th>Select</th>
-              <th>Plan Qty</th>
+              <th className="th-num">Plan Qty</th>
             </tr>
           </thead>
           <tbody>
@@ -503,18 +510,20 @@ function BomBody({
               return (
                 <tr
                   key={c.childItemCode}
-                  style={{ background: hasSufficient ? 'rgba(34,197,94,0.04)' : 'var(--bg)' }}
+                  // Enough stock on the shelf — the theme's own "done" row wash
+                  // (ADR-199), not a colour written here.
+                  className={hasSufficient ? 'row-done' : undefined}
                 >
                   <td className="mono fw-700">{i + 1}</td>
-                  <td style={{ color: 'var(--purple)', fontWeight: 600 }}>{c.childItemCode}</td>
+                  <td className="td-code">{c.childItemCode}</td>
                   <td>{c.childItemName}</td>
-                  <td>{c.qtyPerSet}</td>
-                  <td className="fw-700">{c.totalNeed}</td>
-                  <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
+                  <td className="td-num">{c.qtyPerSet}</td>
+                  <td className="td-num fw-700">{c.totalNeed}</td>
+                  <td className="td-num mono fw-700" style={{ color: 'var(--green2)' }}>
                     {c.stockQty}
                   </td>
                   <td
-                    className="mono fw-700"
+                    className="td-num mono fw-700"
                     style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}
                   >
                     {c.shortfall}
@@ -568,7 +577,7 @@ function BomBody({
                       style={{ width: 16, height: 16, accentColor: 'var(--cyan)' }}
                     />
                   </td>
-                  <td>
+                  <td className="td-num">
                     <input
                       type="number"
                       min={0}

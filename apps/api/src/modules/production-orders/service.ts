@@ -590,11 +590,8 @@ function toDetail(
     remainingQty,
     closes,
     ...planFacts,
-    // JC Status — the SAME live status the row already carries (v_jc_status
-    // .computed_status, JC_COMPUTED_STATUS_SQL above; the Plans list reads that
-    // very column for its own jcStatus). Named separately in the contract
-    // because the detail page labels it `JC Status`; there is only one rule.
-    jcStatus: item.jcComputedStatus,
+    // The detail page's `JC Status` reads `jcComputedStatus`, which the list
+    // item above already carries (v_jc_status.computed_status). No second field.
   };
 }
 
