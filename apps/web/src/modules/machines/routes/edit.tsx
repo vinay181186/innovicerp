@@ -6,6 +6,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
+import { isStagedResult } from '@/modules/document-edits/api';
+import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
@@ -74,6 +76,9 @@ function MachineEditPage(): React.JSX.Element {
   const { data: machine, isLoading, isError, error } = useMachine(id);
   const update = useUpdateMachine(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE machine is staged for approval instead
+  // of applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
 
   const goBack = useCallback(
     () => void navigate({ to: '/machines/$id', params: { id } }),
@@ -84,7 +89,13 @@ function MachineEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdateMachineInput): Promise<void> => {
     setSubmitError(null);
     try {
-      await update.mutateAsync(values);
+      const result = await update.mutateAsync(values);
+      if (isStagedResult(result)) {
+        // The edit-approval gate is on and this machine is live: nothing was
+        // changed on the machine — the edit is now waiting for approval. Say so,
+        // then return to the machine (its fields now carry the pending chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+      }
       exit.leave(() => void navigate({ to: '/machines/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save Machine. Try again.');
@@ -127,6 +138,11 @@ function MachineEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back
       </Link>
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <div className="panel">
         <div className="panel-hdr">
           <div>

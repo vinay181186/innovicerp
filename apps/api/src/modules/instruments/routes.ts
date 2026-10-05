@@ -43,7 +43,7 @@ export async function instrumentsRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch('/instruments/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.updateInstrument(
+    return service.updateInstrumentOrStage(
       idParam.parse(req.params).id,
       updateInstrumentInputSchema.parse(req.body),
       req.user,

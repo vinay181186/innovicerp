@@ -35,7 +35,7 @@ export async function qcProcessesRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateQcProcessInputSchema.parse(req.body);
-    return service.updateQcProcess(id, body, req.user);
+    return service.updateQcProcessOrStage(id, body, req.user);
   });
 
   app.delete('/qc-processes/:id', async (req, reply) => {

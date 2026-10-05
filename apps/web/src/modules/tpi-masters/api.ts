@@ -7,6 +7,7 @@
 
 import type {
   CreateTpiMasterInput,
+  DocumentEditStagedResult,
   ListTpiMastersQuery,
   ListTpiMastersResponse,
   TpiMaster,
@@ -74,11 +75,24 @@ export function useCreateTpiMaster(saveKey?: SaveKey) {
 
 export function useUpdateTpiMaster(id: string) {
   const qc = useQueryClient();
-  return useMutation<TpiMaster, Error, UpdateTpiMasterInput>({
+  // ADR-202 — when the edit-approval gate is on and the inspector is live, the
+  // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
+  // instead of the updated row. The edit page reads the union to tell them apart.
+  return useMutation<TpiMaster | DocumentEditStagedResult, Error, UpdateTpiMasterInput>({
     mutationFn: (input) =>
-      apiFetch<TpiMaster>(`/tpi-masters/${id}`, { method: 'PATCH', json: input }),
+      apiFetch<TpiMaster | DocumentEditStagedResult>(`/tpi-masters/${id}`, {
+        method: 'PATCH',
+        json: input,
+      }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: tpiMastersKeys.lists() });
+      if ('staged' in updated) {
+        // Nothing changed on the inspector itself — refresh so the detail page
+        // shows the new pending-change chips and the inbox picks up the request.
+        void qc.invalidateQueries({ queryKey: tpiMastersKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(tpiMastersKeys.detail(id), updated);
     },
   });

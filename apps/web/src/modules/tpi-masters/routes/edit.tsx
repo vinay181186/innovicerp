@@ -4,6 +4,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { isStagedResult } from '@/modules/document-edits/api';
+import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useTpiMaster, useUpdateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
@@ -20,6 +22,9 @@ function TpiMasterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useTpiMaster(id);
   const update = useUpdateTpiMaster(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE inspector is staged for approval
+  // instead of applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const goBack = useCallback(
     () => void navigate({ to: '/tpi-masters/$id', params: { id } }),
     [navigate, id],
@@ -75,6 +80,11 @@ function TpiMasterEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <Link
         to="/tpi-masters/$id"
         params={{ id: detail.id }}
@@ -104,7 +114,18 @@ function TpiMasterEditPage(): React.JSX.Element {
             onSubmit={async (values: UpdateTpiMasterInput) => {
               setSubmitError(null);
               try {
-                await update.mutateAsync(values);
+                const saved = await update.mutateAsync(values);
+                if (isStagedResult(saved)) {
+                  // The edit-approval gate is on and this inspector is live:
+                  // nothing was changed — the edit is now waiting for approval.
+                  // Say so, then return to the detail page (its fields carry the
+                  // pending-change chip).
+                  setStagedNotice(
+                    'Sent for approval — your changes will apply once an approver signs off.',
+                  );
+                  exit.leave(goBack);
+                  return;
+                }
                 exit.leave(goBack);
               } catch (e) {
                 setSubmitError(

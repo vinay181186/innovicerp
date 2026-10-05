@@ -15,10 +15,12 @@
 // the column ▾ Sort & Filter run on the server, and the dropdown counts are
 // server totals — the tab wrappers fetch; this panel only draws.
 
+import type { DocumentEditEntity } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
+import { useDocumentEdits } from '@/modules/document-edits/api';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -48,9 +50,18 @@ export interface MaterialMasterSaveInput {
   isActive: boolean;
 }
 
+/** ADR-202 — what `onSave` tells the panel: `staged` is true when the edit went
+ *  to the approval queue instead of being applied (gate on, row live). */
+export interface MaterialMasterSaveResult {
+  staged: boolean;
+}
+
 export interface MaterialMasterPanelProps {
   /** 'Grade' or 'Size' — the noun used in the column head, buttons and messages. */
   noun: string;
+  /** ADR-202 — the edit-approval entity for this tab ('MaterialGrade' / 'MaterialSize');
+   *  drives the per-row "edit pending" chip and the staged-save notice. */
+  entity: DocumentEditEntity;
   /** The shared FIT table's saved-layout key (TABLE_KEYS.rawMaterialGrade / …Size). */
   tableKey: string;
   /** The 25 rows of this page (search / Active / ▾ applied on the server). */
@@ -73,8 +84,9 @@ export interface MaterialMasterPanelProps {
   onSearchInput: (v: string) => void;
   searchPlaceholder: string;
   namePlaceholder: string;
-  /** Create when `id` is null, update otherwise. Throws on failure. */
-  onSave: (input: MaterialMasterSaveInput, id: string | null) => Promise<void>;
+  /** Create when `id` is null, update otherwise. Throws on failure. Resolves to
+   *  whether an update was staged for approval (ADR-202). */
+  onSave: (input: MaterialMasterSaveInput, id: string | null) => Promise<MaterialMasterSaveResult>;
   saving: boolean;
   onDelete: (row: MaterialMasterRow) => void;
   deleting: boolean;
@@ -90,6 +102,7 @@ type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: Mate
 export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.Element {
   const {
     noun,
+    entity,
     tableKey,
     rows,
     total: totalOrUndef,
@@ -130,6 +143,17 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
   const [trashRow, setTrashRow] = useState<MaterialMasterRow | null>(null);
+  // ADR-202 — the neutral "Sent for approval" notice after a staged edit save.
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  // ADR-202 — the ids of rows that have an edit waiting for approval, so each
+  // such row shows an amber "edit pending" chip. One query for the whole master
+  // (hooks can't run per row); false/empty until the backend gate lands.
+  const pendingEdits = useDocumentEdits({ entity, status: 'pending', limit: 200, offset: 0 });
+  const pendingIds = useMemo(
+    () => new Set((pendingEdits.data?.rows ?? []).map((r) => r.entityId)),
+    [pendingEdits.data],
+  );
 
   // The four master columns (first pinned = Code). Headers stay noun-qualified
   // (Grade Code / Grade, Size Code / Size) so a joined label never reads as a
@@ -156,7 +180,23 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         align: 'left',
         className: 'fw-700',
         ellipsis: true,
-        key: 'name',
+        // ADR-202 — the name, with an amber "edit pending" chip when this row has
+        // an edit waiting for approval (this master has no detail page to carry
+        // per-field chips, so the row itself flags it).
+        render: (row) => (
+          <>
+            {row.name}
+            {pendingIds.has(row.id) ? (
+              <span
+                className="tag b-amber"
+                style={{ marginLeft: 6 }}
+                title="An edit to this row is waiting for approval"
+              >
+                edit pending
+              </span>
+            ) : null}
+          </>
+        ),
         title: (row) => row.name,
         sortFilterField: 'name',
       },
@@ -186,7 +226,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         filterOptions: ACTIVE_OPTIONS,
       },
     ],
-    [noun],
+    [noun, pendingIds],
   );
 
   // Excel import — the WHOLE sheet goes in one request, and the list reloads
@@ -266,6 +306,26 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               className="btn btn-ghost btn-sm"
               style={{ marginLeft: 8, fontSize: 11 }}
               onClick={() => setImportMsg(null)}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ADR-202 — neutral confirmation after a live-row edit was staged. */}
+      {savedNotice ? (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div
+            className="panel-body"
+            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--amber2)' }}
+          >
+            {savedNotice}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 8, fontSize: 11 }}
+              onClick={() => setSavedNotice(null)}
             >
               ✕
             </button>
@@ -382,7 +442,16 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           namePlaceholder={namePlaceholder}
           {...(modal.kind === 'edit' ? { row: modal.row } : {})}
           saving={saving}
-          onSave={onSave}
+          onSave={async (input, id) => {
+            setSavedNotice(null);
+            const res = await onSave(input, id);
+            // The modal closes itself on success; show the neutral notice after.
+            if (res.staged) {
+              setSavedNotice(
+                `${noun} edit sent for approval — your change will apply once an approver signs off.`,
+              );
+            }
+          }}
           onClose={() => setModal({ kind: 'none' })}
         />
       ) : null}

@@ -5,6 +5,7 @@ import { INSTRUMENT_REASON_MIN, type InstrumentDetail } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { todayIst } from '@/lib/date';
+import { isStagedResult } from '@/modules/document-edits/api';
 import {
   useRecordCalibration,
   useMarkMissingInstrument,
@@ -121,7 +122,17 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
           location: location.trim() || null,
           remarks: remarks.trim() || null,
         },
-        { onSuccess: () => onDone('Saved.'), onError: fail },
+        {
+          // ADR-202 — a live instrument's edit may be staged for approval instead
+          // of applied; say so neutrally rather than "Saved."
+          onSuccess: (res) =>
+            onDone(
+              isStagedResult(res)
+                ? 'Sent for approval — your changes will apply once an approver signs off.'
+                : 'Saved.',
+            ),
+          onError: fail,
+        },
       );
     }
   };

@@ -7,6 +7,8 @@ import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { isStagedResult } from '@/modules/document-edits/api';
+import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useOperator, useUpdateOperator } from '../api';
 import { OperatorForm } from '../components/operator-form';
@@ -108,6 +110,9 @@ function OperatorEditPage(): React.JSX.Element {
   const { data: operator, isLoading, isError, error } = useOperator(canEdit ? id : undefined);
   const update = useUpdateOperator(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // ADR-202 — set when an edit to a LIVE operator is staged for approval instead
+  // of applied; the neutral "Sent for approval" banner shows it.
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
 
   const goBack = useCallback(
     () => void navigate({ to: '/operators/$id', params: { id } }),
@@ -118,7 +123,13 @@ function OperatorEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdateOperatorInput): Promise<void> => {
     setSubmitError(null);
     try {
-      await update.mutateAsync(values);
+      const result = await update.mutateAsync(values);
+      if (isStagedResult(result)) {
+        // The edit-approval gate is on and this operator is live: nothing was
+        // changed on the operator — the edit is now waiting for approval. Say so,
+        // then return to the operator (its fields now carry the pending chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+      }
       exit.leave(() => void navigate({ to: '/operators/$id', params: { id }, replace: true }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save Operator. Try again.');
@@ -187,6 +198,11 @@ function OperatorEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back
       </Link>
+      {stagedNotice ? (
+        <Banner tone="success" role="status">
+          {stagedNotice}
+        </Banner>
+      ) : null}
       <div className="panel">
         <div className="panel-hdr">
           <div>

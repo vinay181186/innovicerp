@@ -47,7 +47,7 @@ export async function materialSizesRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateMaterialSizeInputSchema.parse(req.body);
-    return service.updateMaterialSize(id, body, req.user);
+    return service.updateMaterialSizeOrStage(id, body, req.user);
   });
 
   app.delete('/material-sizes/:id', async (req, reply) => {
