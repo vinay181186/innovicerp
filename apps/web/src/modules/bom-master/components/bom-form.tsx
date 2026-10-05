@@ -30,6 +30,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { itemsKeys, useItemsList } from '@/modules/items/api';
+import { useMaterialGradesList, useMaterialSizesList } from '@/modules/raw-material/api';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -155,6 +156,10 @@ const CODE_ALIASES = ['item_code', 'Item Code', 'code'];
 // 'Qty / Set' is the template header; the older spellings still import.
 const QTY_ALIASES = ['qty_per_set', 'Qty / Set', 'Qty Per Set', 'qty', 'qty/set'];
 const TYPE_ALIASES = ['bom_type', 'BOM Type', 'Type'];
+// Raw material, both optional. Kept OUT of REQUIRED_COLUMNS on purpose: a file
+// built from the older three-column template must still import.
+const GRADE_ALIASES = ['rm_grade', 'RM Grade', 'Grade'];
+const SIZE_ALIASES = ['rm_size', 'RM Size', 'Size'];
 const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
   { label: 'Item Code', aliases: CODE_ALIASES },
   { label: 'Qty / Set', aliases: QTY_ALIASES },
@@ -408,17 +413,51 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const filledChildCount = resolvedLines.filter((l) => l.childItemId).length;
   const blankChildCount = resolvedLines.length - filledChildCount;
 
+  // Both raw-material masters, read ONCE for the importer (the per-line pickers
+  // do their own searching). They are short controlled lists — 14 grades / 27
+  // sizes live — so the whole list is matched in memory instead of one lookup
+  // per value. 1000 is the schema's cap; a company past that would need the
+  // targeted search the item codes use.
+  const gradeList = useMaterialGradesList({ isActive: true, limit: 1000, offset: 0 });
+  const sizeList = useMaterialSizesList({ isActive: true, limit: 1000, offset: 0 });
+  /** Grade/size looked up by NAME first then CODE, both case-insensitive — the
+   *  sheet carries whatever the planner typed ("EN24", or "GRD-004"). */
+  const gradesByText = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const g of gradeList.data?.grades ?? []) {
+      m.set(g.name.trim().toUpperCase(), { id: g.id, name: g.name });
+      if (!m.has(g.code.trim().toUpperCase()))
+        m.set(g.code.trim().toUpperCase(), { id: g.id, name: g.name });
+    }
+    return m;
+  }, [gradeList.data]);
+  const sizesByText = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const sz of sizeList.data?.sizes ?? []) {
+      m.set(sz.name.trim().toUpperCase(), { id: sz.id, name: sz.name });
+      if (!m.has(sz.code.trim().toUpperCase()))
+        m.set(sz.code.trim().toUpperCase(), { id: sz.id, name: sz.name });
+    }
+    return m;
+  }, [sizeList.data]);
+
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
 
   const downloadTemplate = async (): Promise<void> => {
     const { utils: xlsxUtils, write: xlsxWrite } = await loadXlsx();
-    // 3 columns + a sample row so users know the shape.
+    // Sample the user's OWN first grade/size, so the example row shows a value
+    // that will actually match on import. Blank when the masters are empty.
+    const gradeSample = gradeList.data?.grades[0]?.name ?? '';
+    const sizeSample = sizeList.data?.sizes[0]?.name ?? '';
+    // 5 columns + two sample rows so users know the shape. RM Grade / RM Size
+    // are optional and must match Raw Material Master; the samples show a
+    // filled row and a blank one.
     const aoa = [
       // Title Case headers; the importer's aliases still read item_code / qty_per_set / bom_type.
-      ['Item Code', 'Qty / Set', 'BOM Type'],
-      ['EXAMPLE-001', 2, 'manufacture'],
-      ['EXAMPLE-002', 3, 'purchase'],
+      ['Item Code', 'Qty / Set', 'BOM Type', 'RM Grade', 'RM Size'],
+      ['EXAMPLE-001', 2, 'manufacture', gradeSample, sizeSample],
+      ['EXAMPLE-002', 3, 'purchase', '', ''],
     ];
     const sheet = xlsxUtils.aoa_to_sheet(aoa);
     const wb = xlsxUtils.book_new();
@@ -517,6 +556,18 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // well exist, and offering to create them would make duplicates.
       const notInMaster: string[] = [];
       const notInMasterSeen = new Set<string>();
+      // Raw-material values in the file that are not in Raw Material Master.
+      // Named once each in the summary; the row still imports with that box
+      // blank, so one typo never costs the part.
+      const unmatchedRm: string[] = [];
+      const unmatchedRmSeen = new Set<string>();
+      const noteUnmatchedRm = (label: string, value: string): void => {
+        const key = `${label}:${value.toUpperCase()}`;
+        if (unmatchedRmSeen.has(key)) return;
+        unmatchedRmSeen.add(key);
+        unmatchedRm.push(`${label} "${value}"`);
+      };
+
       rows.forEach((row, idx) => {
         const itemCode = getCol(row, CODE_ALIASES).trim();
         const qtyRaw = getCol(row, QTY_ALIASES);
@@ -605,15 +656,27 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           });
           return;
         }
+        // Raw material (optional). Matched against Raw Material Master so an
+        // imported line carries the SAME id + name pair the on-screen picker
+        // stores — that pair is what the child Job Card inherits later.
+        const gradeRaw = getCol(row, GRADE_ALIASES).trim();
+        const sizeRaw = getCol(row, SIZE_ALIASES).trim();
+        const grade = gradeRaw ? gradesByText.get(gradeRaw.toUpperCase()) : undefined;
+        const size = sizeRaw ? sizesByText.get(sizeRaw.toUpperCase()) : undefined;
+        if (gradeRaw && !grade) noteUnmatchedRm('RM Grade', gradeRaw);
+        if (sizeRaw && !size) noteUnmatchedRm('RM Size', sizeRaw);
+
         seenInFile.set(item.id, idx);
         added.push({
-          // The import sheet carries no Grade/Size columns, so an imported row
-          // starts blank and is picked on the form afterwards.
           ...emptyLine(),
           childItemId: item.id,
           childItemCodeText: item.code,
           qtyPerSet: String(qty),
           bomType,
+          rawMaterialGradeId: grade?.id ?? null,
+          rawMaterialGradeText: grade?.name ?? null,
+          rawMaterialSizeId: size?.id ?? null,
+          rawMaterialSizeText: size?.name ?? null,
         });
       });
 
@@ -622,8 +685,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       );
       setImportErrors(errors);
       setMissingCodes(notInMaster);
+      const rmNote =
+        unmatchedRm.length > 0
+          ? ` Not in Raw Material Master, left blank: ${unmatchedRm.join(', ')}.`
+          : '';
       setImportSummary(
-        `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}`,
+        `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}${rmNote}`,
       );
     } catch (err) {
       setImportFatal(true);
