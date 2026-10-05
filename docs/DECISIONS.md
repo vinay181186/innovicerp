@@ -11283,3 +11283,62 @@ screen is laid out.
   Est. Amount) → Notes (Operation · Remarks ×3). The separate "Request Detail" panel is gone.
 - Vendor address moves to the Vendor cell's hover text (it belongs on the PO). No API, schema or field-id
   change; e2e selectors (#itemCodeText, #qty, #estCost …) unchanged.
+
+## ADR-214: Plan Create / Edit / View on one cluster grid
+
+**Date:** 2026-10-05
+**Status:** Accepted (owner: "check create plan ui, it does not align with the new design system. huge
+wasted space, no structured layout. should be clustered logically"; then "build the plan screens")
+
+### Context
+The three Plan screens were laid out three different ways. Create Plan spent 1320px on eight fields: a tinted
+`--bg3` summary box, a strip of five tiles (Plan Qty · To Plan · Available · Physical · Reserved) that never
+added up to anything, a 197 × 60px box holding one digit for Plan Qty, and a −/+/Max stepper for Reserve Qty.
+Edit Plan opened with a different summary strip and gave Plan Type a 110px band of three picture cards for one
+choice of three, pushing the operations table — the actual content — below the fold. The view page was an
+unstructured `repeat(auto-fit, minmax(160px, 1fr))` run of fourteen two-line label/value pairs, and showed the
+plan's operations nowhere at all.
+
+ADR-213 had already settled the method on the Purchase Request screens and built the primitive for it
+(`ui/forms/ClusterGrid`). This applies the same method to the screens it was designed on.
+
+### Decision
+- **Reuse the ADR-213 primitive**, extended by one thing: `Cluster`'s `name` is now optional. A nameless row
+  (`.cl-nogut`) spends the 104px gutter on its four cells. A gutter name is worth its width when a screen has
+  several fact rows to tell apart (the view page); inventing one per row of a single continuous form is words
+  for their own sake. Purely additive — the PR screens are untouched.
+- **Create Plan**: identity line (SO No. · Ln · CODE/REV · item name) → one nameless account row that reads
+  left to right and ends on its result: Order qty · Already planned · On direct job cards · **Still to plan**
+  (green rule) → hairline → one 12-column grid, every field `f-sm` so four sit on a row, both rows full:
+  Plan Qty ★ · Reserve Qty · Planned Start ★ · Planned End ★ / Customer Dispatch · RM Grade · RM Size ·
+  Remarks. The five tiles, the 60px qty box and the −/+/Max stepper are gone; the Reserve Qty input alone sets
+  the quantity and its help line states the stock (`n free · n on shelf`), keeping the existing "release" link.
+- **Edit Plan**: the same shape, so a planner who learns one screen has learned both. Identity line (Plan No. ·
+  SO No. · Ln · CODE/REV · item name) → the account with the **field inside the arithmetic it changes**:
+  Order qty · Plan Qty ★ · Covered by orders · **Pending** → hairline → Plan Type · Planned Start ★ ·
+  Planned End ★ · Customer Dispatch / RM Grade · RM Size · Remarks (`f-lg`). **Plan Type becomes a plain
+  Select** with one line saying what it does; the three picture cards are gone. Everything below the grid
+  (operations editor, QC documents, the Full Outsource and Direct Purchase blocks, the footer) is unchanged.
+- **Plan view**: identity line (SO No. · Ln · CODE/REV · item name · POL — only the parts that exist), then
+  named one-line clusters in the order the work happens: Quantity (Order Qty · Plan Qty · Covered by orders ·
+  **Pending**) → Schedule (Plan Raised · Planned Start · Planned End · Customer Dispatch) → Material (RM Grade ·
+  RM Size · Remarks ×2) → the route-specific Buy / Outsource / Execution clusters. Plan Type leaves the grid:
+  it is already a chip in the header, and showing it twice said nothing twice. Item Code, POL, SO No. and Ln
+  leave the grid for the identity line — they say which line this is, they are not facts about the plan.
+- **Operations gets a panel of its own** on the view page, with an explicit "No operations on this plan." row.
+  Hidden for a route-card plan, whose Route Card owns the route — an empty panel there would read as "this
+  plan has no route".
+- **"Create Production Order →" becomes the primary button in the view header.** Same condition and same
+  destination as before; it was a text link in a bordered box at the foot of the body, where the one action a
+  Planned route-card plan exists for read as a footnote.
+- `Covered by orders` / `Pending` are the ADR-185 figures and are computed for route-card plans only. An old
+  `ops_source='plan'` plan is executed as a Job Card, not a Production Order, so the pair says nothing there:
+  that case shows Order Qty ×2 · **Plan Qty** ×2 instead, rather than printing two zeroes that read as
+  "nothing left to do".
+
+### Consequences
+- No API, schema, migration or field-id change. Every number the old screens showed is still shown; `physical`
+  and `reserved` moved from tiles into the Reserve Qty help line, and `available` is the `n free` in it.
+- e2e selectors (`#create-plan-qty`, `#reserve-qty`, `#create-plan-start` …) are unchanged.
+- The page-local `Grid` / `KV` helpers in `modules/plans/routes/detail.tsx` are deleted — the primitive
+  replaces them.

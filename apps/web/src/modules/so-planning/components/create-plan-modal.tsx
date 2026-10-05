@@ -30,23 +30,17 @@ import {
   MaterialGradePicker,
   MaterialSizePicker,
 } from '@/modules/raw-material/components/raw-material-pickers';
+import {
+  Cluster,
+  ClusterFact,
+  ClusterGrid,
+  DocIdent,
+  FormField,
+  IdentCode,
+  IdentSep,
+} from '@/ui/forms';
 import { Modal } from './modal';
 import { ReleaseStockModal, lineFacts } from './reservation-modals';
-
-// −/+ stepper buttons: same .btn .btn-ghost shape as the ▲▼ movers elsewhere,
-// just squared off so they sit flush against the qty box.
-const stepBtnStyle: React.CSSProperties = {
-  padding: '0 12px',
-  fontSize: 18,
-  lineHeight: 1,
-  minWidth: 38,
-  height: 38,
-};
-
-const groupTitle: React.CSSProperties = {
-  fontSize: 11,
-  marginBottom: 6,
-};
 
 interface Props {
   so: PlanningDetailResponse;
@@ -271,363 +265,188 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
 
   return (
     <Modal title={`Create Plan — ${lineLabel}`} size="lg" onClose={onClose} footer={footer}>
-      {/* ── What is being planned ── */}
-      <div
-        style={{
-          background: 'var(--bg3)',
-          padding: 12,
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-              {so.source === 'jw' ? 'JWSO' : 'SO'}
-            </span>
-            <br />
-            <b className="mono">
-              {soNoWithInternal(so.soCode, so.soInternalNo)} Ln {line.lineNo}
-            </b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>ITEM</span>
-            <br />
-            {/* Item code is the main thing: strong mono, darkest text. */}
-            <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-              {itemCodeWithRev(line.itemCode, line.itemRevision)}
-            </b>
-            {line.itemName ? (
-              <span className="text2" style={{ fontSize: 12, marginLeft: 6 }}>
-                {line.itemName}
-              </span>
-            ) : null}
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
-            <br />
-            <b style={{ fontSize: 18 }}>{line.orderQty}</b>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '8px 16px',
-              background: 'var(--bg)',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-            }}
-          >
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Plan Qty</div>
-            <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--cyan)' }}>
-              {line.totalPlanned}
-            </div>
-          </div>
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '8px 16px',
-              background: 'var(--bg)',
-              borderRadius: 6,
-              border: '1px solid var(--green)',
-            }}
-          >
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>To Plan</div>
-            <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green2)' }}>
-              {remaining}
-            </div>
-          </div>
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '8px 16px',
-              background: 'var(--bg)',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-            }}
-          >
-            {/* ADR-180 — this is AVAILABLE (physical − reserved), not what is
-                on the shelf. PHYSICAL sits in its own tile beside it. */}
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Available</div>
-            <div
-              className="mono fw-700"
-              style={{ fontSize: 20, color: stock > 0 ? 'var(--amber)' : 'var(--text3)' }}
-            >
-              {stock}
-            </div>
-          </div>
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '8px 16px',
-              background: 'var(--bg)',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-            }}
-            title="On the shelf for this item — reserving never changes it"
-          >
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Physical</div>
-            <div
-              className="mono fw-700"
-              style={{ fontSize: 20, color: line.physicalQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
-            >
-              {line.physicalQty}
-            </div>
-          </div>
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '8px 16px',
-              background: 'var(--bg)',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-            }}
-          >
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Reserved</div>
-            <div
-              className="mono fw-700"
-              style={{ fontSize: 20, color: reserved > 0 ? 'var(--purple)' : 'var(--text3)' }}
-            >
-              {reserved}
-            </div>
-            {reserved > 0 ? (
-              <button
-                type="button"
-                onClick={() => setReleaseOpen(true)}
-                title="Give this booking back to free stock — a reason is required"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  marginTop: 2,
-                  color: 'var(--cyan)',
-                  fontSize: 11,
-                  cursor: 'pointer',
-                }}
-              >
-                release
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </div>
+      {/* ── WHICH line is being planned. Identity only — no facts here. ── */}
+      <DocIdent>
+        <span>
+          {so.source === 'jw' ? 'JWSO' : 'SO'}{' '}
+          <IdentCode>{soNoWithInternal(so.soCode, so.soInternalNo)}</IdentCode>
+        </span>
+        <IdentSep />
+        <span>Ln {line.lineNo}</span>
+        <IdentSep />
+        {/* Item code is the main thing: strong mono, darkest text. */}
+        <IdentCode>{itemCodeWithRev(line.itemCode, line.itemRevision)}</IdentCode>
+        {line.itemName ? <span>{line.itemName}</span> : null}
+      </DocIdent>
 
-      {/* ── Plan qty + Remark on one row ── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
-        <div className="form-grp" style={{ flex: '0 1 200px', minWidth: 0 }}>
-          <label
-            className="form-label"
-            htmlFor="create-plan-qty"
-            style={{ color: 'var(--cyan)', fontWeight: 700, fontSize: 14 }}
-          >
-            Plan Qty ★
-          </label>
+      {/* ── The qty account, left to right, ending on its result: the order
+             qty, less what plans and plan-less Job Cards already cover, is
+             what is STILL TO PLAN (the green rule). ── */}
+      <ClusterGrid>
+        <Cluster>
+          <ClusterFact label="Order Qty" value={line.orderQty} num />
+          <ClusterFact label="Already Planned" value={line.totalPlanned} num />
+          <ClusterFact
+            label="JC Qty"
+            value={line.directJcQty}
+            num
+            title={
+              line.directJcCodes.length > 0
+                ? `On Job Cards raised straight off this line, with no plan behind them: ${line.directJcCodes.join(', ')}`
+                : 'Job Cards raised straight off this line, with no plan behind them'
+            }
+          />
+          <ClusterFact label="To Plan" value={remaining} num lead />
+        </Cluster>
+      </ClusterGrid>
+
+      <div className="divider" />
+
+      {/* ── The eight fields, four to a row on the 12-column grid. ── */}
+      <div className="form-grid-12">
+        <FormField
+          label="Plan Qty"
+          required
+          size="sm"
+          htmlFor="create-plan-qty"
+          help={`of ${remaining} to plan`}
+        >
           <input
             id="create-plan-qty"
             type="number"
+            className="innovic-input cl-num"
             min={1}
             max={remaining}
             value={planQty}
             onChange={(e) => setPlanQty(Number(e.target.value))}
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              textAlign: 'center',
-              border: '2px solid var(--cyan)',
-              color: 'var(--cyan)',
-              padding: 10,
-              width: '100%',
-            }}
           />
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Max {remaining}</div>
-        </div>
-        <div className="form-grp" style={{ flex: '1 1 260px', minWidth: 0 }}>
-          <label className="form-label" htmlFor="create-plan-remark">
-            Remarks
-          </label>
-          <textarea
-            id="create-plan-remark"
-            className="innovic-input"
-            rows={3}
-            maxLength={500}
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            style={{ width: '100%', resize: 'vertical' }}
-          />
-        </div>
-      </div>
+        </FormField>
 
-      {/* ── Schedule + Raw Material — same controls as Edit Plan ── */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 14,
-          alignItems: 'flex-end',
-          marginBottom: 14,
-        }}
-      >
-        <div style={{ flex: '1 1 300px', minWidth: 0 }}>
-          <div className="mono fw-700 text3" style={groupTitle}>
-            Schedule
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
-              <label className="form-label" htmlFor="create-plan-start">
-                Planned Start Date
-              </label>
-              <input
-                id="create-plan-start"
-                type="date"
-                className="innovic-input"
-                value={plannedStartDate}
-                onChange={(e) => setPlannedStartDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
-              <label className="form-label" htmlFor="create-plan-end">
-                Planned End Date
-              </label>
-              <input
-                id="create-plan-end"
-                type="date"
-                className="innovic-input"
-                value={plannedEndDate}
-                onChange={(e) => setPlannedEndDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
-              <label className="form-label" htmlFor="create-plan-dispatch">
-                Customer Dispatch Date
-              </label>
-              <input
-                id="create-plan-dispatch"
-                type="date"
-                className="innovic-input"
-                value={customerDispatchDate}
-                onChange={(e) => setCustomerDispatchDate(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-        {/* The tint IS the grouping: .field-tint paints every control inside
-            this block with the pale blue token wash (--blue3), including the
-            Grade / Size pickers' own <input>. */}
-        <div className="field-tint" style={{ flex: '1 1 300px', minWidth: 0 }}>
-          <div className="mono fw-700" style={{ ...groupTitle, color: 'var(--blue)' }}>
-            Raw Material
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <div className="form-grp" style={{ flex: '1 1 130px', minWidth: 0 }}>
-              <label className="form-label" style={{ color: 'var(--blue)' }}>
-                Grade
-              </label>
-              <MaterialGradePicker
-                valueId={rmGradeId}
-                valueText={rmGradeText}
-                onChange={(id, text) => {
-                  setRmGradeId(id);
-                  setRmGradeText(text);
-                }}
-              />
-            </div>
-            <div className="form-grp" style={{ flex: '1 1 140px', minWidth: 0 }}>
-              <label className="form-label" style={{ color: 'var(--blue)' }}>
-                Size
-              </label>
-              <MaterialSizePicker
-                valueId={rmSizeId}
-                valueText={rmSizeText}
-                onChange={(id, text) => {
-                  setRmSizeId(id);
-                  setRmSizeText(text);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Reserve from stock — the qty is adjustable, and the Reserve button in
-          the footer books exactly what's set here. Reserving again adds to the
-          line (the max recomputes); "release" on the RESERVED tile gives the
-          whole booking back. */}
-      {line.itemId ? (
-        <div className="form-grp" style={{ marginBottom: 4 }}>
-          <label
-            className="form-label"
+        {/* Reserve from stock — the typed qty IS the booking; the Reserve
+            button in the footer books exactly what is set here. Reserving
+            again adds to the line (the max recomputes); "release" gives a
+            booking back and needs a reason (ADR-180). */}
+        {line.itemId ? (
+          <FormField
+            label="Reserve Qty"
+            size="sm"
             htmlFor="reserve-qty"
-            style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 14 }}
+            help={
+              <>
+                {reservable > 0
+                  ? `Max ${reservable} · ${stock} available · ${line.physicalQty} on shelf`
+                  : stock <= 0
+                    ? `No free stock to reserve — Available is 0 · ${line.physicalQty} on shelf`
+                    : `This line is already fully covered — nothing left to reserve · ${line.physicalQty} on shelf`}
+                {reserved > 0 ? (
+                  <>
+                    {` · ${reserved} reserved `}
+                    <button
+                      type="button"
+                      onClick={() => setReleaseOpen(true)}
+                      title="Give this booking back to free stock — a reason is required"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        color: 'var(--cyan)',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      release
+                    </button>
+                  </>
+                ) : null}
+              </>
+            }
           >
-            Reserve Qty (from stock)
-          </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={stepBtnStyle}
-              onClick={() => setReserveQty(Math.max(0, qtyToReserve - 1))}
-              disabled={qtyToReserve <= 0}
-              aria-label="Decrease reserve qty"
-              title="Decrease by 1"
-            >
-              −
-            </button>
             <input
               id="reserve-qty"
               type="number"
+              className="innovic-input cl-num"
               min={0}
               max={reservable}
               step={1}
               value={qtyToReserve}
               onChange={(e) => setReserveQty(Number(e.target.value))}
               disabled={reservable <= 0}
-              style={{
-                fontSize: 18,
-                fontWeight: 800,
-                textAlign: 'center',
-                border: '2px solid var(--amber)',
-                color: 'var(--amber2)',
-                padding: 6,
-                width: 120,
-                height: 38,
-              }}
             />
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={stepBtnStyle}
-              onClick={() => setReserveQty(Math.min(reservable, qtyToReserve + 1))}
-              disabled={qtyToReserve >= reservable}
-              aria-label="Increase reserve qty"
-              title="Increase by 1"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setReserveQty(reservable)}
-              disabled={reservable <= 0 || qtyToReserve === reservable}
-              title={`Set to the full ${reservable} pcs free to reserve`}
-            >
-              Max
-            </button>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-            {reservable > 0
-              ? `Max ${reservable}`
-              : stock <= 0
-                ? 'No free stock to reserve — Available is 0.'
-                : 'This line is already fully covered — nothing left to reserve.'}
-            {reserved > 0
-              ? ` · Already reserved: ${reserved} — use “release” above to give it back.`
-              : ''}
-          </div>
-        </div>
-      ) : null}
+          </FormField>
+        ) : (
+          // No stock-tracked item on this line, so there is nothing to book —
+          // the cell still stands so the row keeps its four columns.
+          <FormField label="Reserve Qty" size="sm" help="This line has no stock-tracked item.">
+            <input className="innovic-input cl-num" value="" readOnly disabled tabIndex={-1} />
+          </FormField>
+        )}
+
+        <FormField label="Planned Start Date" required size="sm" htmlFor="create-plan-start">
+          <input
+            id="create-plan-start"
+            type="date"
+            className="innovic-input"
+            value={plannedStartDate}
+            onChange={(e) => setPlannedStartDate(e.target.value)}
+          />
+        </FormField>
+
+        <FormField label="Planned End Date" required size="sm" htmlFor="create-plan-end">
+          <input
+            id="create-plan-end"
+            type="date"
+            className="innovic-input"
+            value={plannedEndDate}
+            onChange={(e) => setPlannedEndDate(e.target.value)}
+          />
+        </FormField>
+
+        <FormField label="Customer Dispatch Date" size="sm" htmlFor="create-plan-dispatch">
+          <input
+            id="create-plan-dispatch"
+            type="date"
+            className="innovic-input"
+            value={customerDispatchDate}
+            onChange={(e) => setCustomerDispatchDate(e.target.value)}
+          />
+        </FormField>
+
+        {/* The tint IS the grouping: .field-tint paints the control inside with
+            the pale blue token wash (--blue3), including the picker's own
+            <input>. It sits ON the field, so the grid cell is unchanged. */}
+        <FormField label="RM Grade" size="sm" className="field-tint">
+          <MaterialGradePicker
+            valueId={rmGradeId}
+            valueText={rmGradeText}
+            onChange={(id, text) => {
+              setRmGradeId(id);
+              setRmGradeText(text);
+            }}
+          />
+        </FormField>
+
+        <FormField label="RM Size" size="sm" className="field-tint">
+          <MaterialSizePicker
+            valueId={rmSizeId}
+            valueText={rmSizeText}
+            onChange={(id, text) => {
+              setRmSizeId(id);
+              setRmSizeText(text);
+            }}
+          />
+        </FormField>
+
+        <FormField label="Remarks" size="sm" htmlFor="create-plan-remark">
+          <textarea
+            id="create-plan-remark"
+            className="innovic-input"
+            rows={2}
+            maxLength={500}
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+          />
+        </FormField>
+      </div>
 
       {err ? (
         <div
