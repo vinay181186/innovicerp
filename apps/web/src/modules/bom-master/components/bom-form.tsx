@@ -148,10 +148,12 @@ const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = [
 
 const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsource']);
 
-// The three columns the importer reads, with every header spelling accepted for
-// each. ONE list, used for both the up-front template check and the per-row
-// reads — so a column can never be validated under one name and then read under
-// another.
+// The three REQUIRED columns, with every header spelling accepted for each.
+// ONE list, used for both the up-front template check and the per-row reads —
+// so a column can never be validated under one name and then read under
+// another. RM Grade / RM Size are read per row too but are deliberately NOT
+// listed here: adding them would reject every sheet built from the older
+// three-column template.
 const CODE_ALIASES = ['item_code', 'Item Code', 'code'];
 // 'Qty / Set' is the template header; the older spellings still import.
 const QTY_ALIASES = ['qty_per_set', 'Qty / Set', 'Qty Per Set', 'qty', 'qty/set'];
@@ -208,6 +210,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
    *  red (it used to come up GREEN, the colour of success) and offers the
    *  template download, which is what the user needs next. */
   const [importFatal, setImportFatal] = useState(false);
+  /** Set when the import dropped raw material it could not match or check. The
+   *  rows still came in, so it is not an error — but the banner must not be
+   *  green, or the one sentence saying data was left out reads as "all fine". */
+  const [importRmWarning, setImportRmWarning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearImportReport = (): void => {
@@ -215,6 +221,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     setImportErrors([]);
     setMissingCodes([]);
     setImportFatal(false);
+    setImportRmWarning(false);
   };
 
   // Legacy editBOMMaster L8610: newRev = current revision + 1. Drives the
@@ -447,6 +454,15 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // moment it takes. A FAILED fetch does not hold them: the import still runs
   // and names the unmatched values, which is visible rather than stuck.
   const rmMastersLoading = gradeList.isPending || sizeList.isPending;
+  /** The masters could not be read, or came back cut short at the page cap. In
+   *  either case an absent value proves nothing, so the import must say "could
+   *  not check" rather than "not in master" — the same distinction the item-code
+   *  path draws with its `lookup_failed` kind. */
+  const rmMastersUnreadable =
+    gradeList.isError ||
+    sizeList.isError ||
+    (gradeList.data ? gradeList.data.total > gradeList.data.grades.length : false) ||
+    (sizeList.data ? sizeList.data.total > sizeList.data.sizes.length : false);
 
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
@@ -568,6 +584,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // blank, so one typo never costs the part.
       const unmatchedRm: string[] = [];
       const unmatchedRmSeen = new Set<string>();
+      // Did the file carry any raw material at all? An old three-column sheet
+      // must not be told the master could not be checked — there was nothing
+      // to check.
+      let sawRmValue = false;
       const noteUnmatchedRm = (label: string, value: string): void => {
         const key = `${label}:${value.toUpperCase()}`;
         if (unmatchedRmSeen.has(key)) return;
@@ -670,6 +690,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         const sizeRaw = getCol(row, SIZE_ALIASES).trim();
         const grade = gradeRaw ? gradesByText.get(gradeRaw.toUpperCase()) : undefined;
         const size = sizeRaw ? sizesByText.get(sizeRaw.toUpperCase()) : undefined;
+        if (gradeRaw || sizeRaw) sawRmValue = true;
         if (gradeRaw && !grade) noteUnmatchedRm('RM Grade', gradeRaw);
         if (sizeRaw && !size) noteUnmatchedRm('RM Size', sizeRaw);
 
@@ -692,10 +713,14 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       );
       setImportErrors(errors);
       setMissingCodes(notInMaster);
+      // An unreadable master cannot prove a value absent, so say which it was.
       const rmNote =
-        unmatchedRm.length > 0
-          ? ` Not in Raw Material Master, left blank: ${unmatchedRm.join(', ')}.`
-          : '';
+        rmMastersUnreadable && sawRmValue
+          ? ' Raw material left blank — Raw Material Master could not be checked. Import again, or pick Grade / Size on the form.'
+          : unmatchedRm.length > 0
+            ? ` Not in Raw Material Master, left blank: ${unmatchedRm.join(', ')}.`
+            : '';
+      setImportRmWarning(rmNote !== '');
       setImportSummary(
         `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}${rmNote}`,
       );
@@ -1037,7 +1062,13 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           {importSummary ? (
             <div style={{ marginTop: 'var(--sp-2)' }}>
               <Banner
-                tone={importFatal ? 'error' : importErrors.length > 0 ? 'warn' : 'success'}
+                tone={
+                  importFatal
+                    ? 'error'
+                    : importErrors.length > 0 || importRmWarning
+                      ? 'warn'
+                      : 'success'
+                }
                 flush
                 onDismiss={clearImportReport}
                 title={importSummary}

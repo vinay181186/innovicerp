@@ -450,13 +450,17 @@ function BomBody({
         📦 BOM Explosion — {data.orderQty} {mode === 'equipment' ? `sets × ${data.bomNo}` : 'units'}
       </div>
 
+      {/* No inline `overflow` here: it would beat .tbl-wrap's own
+          overflow-x/y:auto, and the house table's cells do not wrap — eleven
+          columns would then be clipped with no way to scroll to the Select
+          checkbox and Plan Qty box. The radius still clips: any non-visible
+          overflow does. */}
       <div
         className="tbl-wrap"
         style={{
           marginBottom: 14,
           border: '1px solid var(--border)',
           borderRadius: 8,
-          overflow: 'hidden',
         }}
       >
         {/* The house table (ADR-199): the class supplies the header band, the
