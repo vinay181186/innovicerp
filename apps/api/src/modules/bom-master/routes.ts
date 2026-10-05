@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { XLSX_CONTENT_TYPE } from '../../lib/excel';
 import {
   createBomMasterInputSchema,
   deleteBomMasterInputSchema,
@@ -17,6 +18,18 @@ export async function bomMasterRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listBomMastersQuerySchema.parse(req.query);
     return service.listBomMasters(query, req.user);
+  });
+
+  // Excel Template (NAMING.md). Built on the server so the BOM Type / RM Grade
+  // / RM Size columns can carry real Excel dropdowns — the browser's SheetJS
+  // cannot write data validation.
+  app.get('/bom-masters/import-template.xlsx', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const buf = await service.buildBomImportTemplate(req.user);
+    reply
+      .type(XLSX_CONTENT_TYPE)
+      .header('content-disposition', 'attachment; filename="BOM Import Template.xlsx"');
+    return reply.send(buf);
   });
 
   app.get('/bom-masters/next-code', async (req) => {
