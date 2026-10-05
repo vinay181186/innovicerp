@@ -441,6 +441,13 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     return m;
   }, [sizeList.data]);
 
+  // Both buttons below read these masters — Template for its sample values,
+  // Import to match RM Grade / RM Size. Clicking before they arrive would
+  // silently blank every raw material in the file, so hold the buttons for the
+  // moment it takes. A FAILED fetch does not hold them: the import still runs
+  // and names the unmatched values, which is visible rather than stuck.
+  const rmMastersLoading = gradeList.isPending || sizeList.isPending;
+
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
 
@@ -1308,14 +1315,26 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           </button>
           {/* Template stays open even while locked — you may well want the empty
               sheet before you have decided the parent. */}
-          <button type="button" className="btn btn-ghost" onClick={() => void downloadTemplate()}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={rmMastersLoading}
+            title={rmMastersLoading ? 'Loading Raw Material Master…' : undefined}
+            onClick={() => void downloadTemplate()}
+          >
             <Download size={14} /> Template
           </button>
           <button
             type="button"
             className="btn btn-ghost"
-            disabled={parentLocked}
-            title={parentLocked ? 'Pick the parent item first' : undefined}
+            disabled={parentLocked || rmMastersLoading}
+            title={
+              parentLocked
+                ? 'Pick the parent item first'
+                : rmMastersLoading
+                  ? 'Loading Raw Material Master…'
+                  : undefined
+            }
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload size={14} /> Import Excel
