@@ -11472,7 +11472,8 @@ then reached IN-JC-26-00004.
 - Still open: `ready_qty_override` is settable through the API, has no screen, and is ignored by
   `fitting.ts` — so it changes nothing. Either wire it or delete it.
 
-## ADR-216: A BOM child plan names its part, and a BOM line counts in complete sets
+
+## ADR-216: A BOM child plan names its part, and the row shows the per-part account
 
 **Date:** 2026-10-05
 **Status:** Accepted (owner, from a screenshot of SO/JWSO Planning: "item code, name details
@@ -11481,104 +11482,84 @@ missing of child part")
 ### Context
 `IN-SO-00521` line 1 is **1 × `554117193000` WASHER DRG**. `BOM-0001 "lock elevation"` says one
 washer needs **10 × `01037541` WHEEL** and **10 × `01037543-RM` GEAR WHEEL**, so the line carries
-two plans — PLN-0008 (WHEEL, 10) and PLN-0009 (GEAR WHEEL, 10). Both render as
-`PLN-0008 Make · 10 pcs` and `PLN-0009 Make · 10 pcs`: identical. A planner cannot tell which part
-is in production and which is still waiting on a route card, which is the one thing the row exists
-to say.
+two plans — PLN-0008 (WHEEL, 10) and PLN-0009 (GEAR WHEEL, 10). Both rendered as
+`PLN-0008 Make · 10 pcs` and `PLN-0009 Make · 10 pcs`: identical. A planner could not tell which
+part was in production and which was still waiting on a route card.
 
 The data was never missing. `plans` records the child five ways — `item_id`, `item_code_text`,
-`item_name_text`, `bom_child_code`, `bom_parent_code` — and the server query already selects the
-whole row. `planningPlanSummarySchema` simply had no field to carry any of it: 26 fields, not one
-identifying an item. The mapper dropped them on the floor, so the screen had nothing to draw.
+`item_name_text`, `bom_child_code`, `bom_parent_code` — and the query already selected the whole
+row. `planningPlanSummarySchema` had 26 fields and not one naming an item, so the mapper dropped
+them and the screen had nothing to draw.
 
-Tracing that turned up a second, worse fault the owner had not reported. `totalPlanned` is the sum
-of a line's plan quantities, and for these lines it sums **child parts into a column counted in
-assemblies**: the row reads **Order Qty 1, Plan Qty 20** (and on `IN-SO-00520`, Order 5 against
-Plan 100). `remaining = max(0, orderQty − totalPlanned − directJcQty)` then floors to zero, so
-
-> a line reads **fully planned** — To Plan 0, the ⋯ menu's "Plan n" hidden — while a child part
-> has nothing planned against it at all.
-
-Today both children happen to be fully planned, so nothing looks wrong. The arithmetic is wrong
-regardless, and what it hides is an unmade part.
-
-ADR-030 fixed the plan grain as one plan per (SO line × BOM child). ADR-107 already drew the
-conclusion for the server — *"a BOM child plan sits on the parent's line but is measured in child
-parts, while the cap is measured in assemblies"* — and caps each child at its own requirement. The
-Planning table never got the same treatment.
+Tracing that exposed a second fault. `totalPlanned` sums a line's plan quantities, and for these
+lines it sums **child parts into a column counted in assemblies**: Order Qty 1 against Plan Qty 20,
+and on `IN-SO-00520` Order 5 against Plan 100. `remaining` then floors to zero, so a line can read
+**fully planned** while a child part has nothing planned against it.
 
 ### Decision
-**1. A plan says which item it is for.** `planningPlanSummarySchema` gains `itemId`, `itemCode`,
-`itemCodeText`, `itemName`, `itemNameText` and `bomChildCode`. Read as `itemCode ?? itemCodeText`
-— live value wins, snapshot is the fallback — which is the pattern the Plans list already uses.
-The chip, the collapsed Plans cell and the Sort & Filter text all name the part, so a planner can
-search for one.
+**1. A plan names its part.** `planningPlanSummarySchema` gains `itemId`, `itemCode`,
+`itemCodeText`, `itemName`, `itemNameText` and `bomChildCode`, filled from an **aliased**
+`plan_item` left-join and mapped in all three places that build a plan summary. Read as
+`itemCode ?? itemCodeText` — live wins, snapshot is the fallback, the pattern the Plans list
+already uses. The chip, the collapsed Plans cell and the Sort & Filter text all name the part, so
+a planner can search for one.
 
 **No revision on a child.** `CODE/REV` carries the CUSTOMER's drawing revision off the parent SO
-line and says nothing about a child part; printing one would be a plausible-looking lie. A child
-shows its bare code.
+line and says nothing about a child part. A child shows its bare code.
 
-**`bomChildCode` is THE discriminator.** An ordinary SO-line plan leaves every BOM column null, so
-a non-null value means "this plan is for a part, not for the line's own item".
+**`bomChildCode` is THE discriminator** — an ordinary SO-line plan leaves every BOM column null.
 
-**2. A BOM line counts in complete sets.** For a line whose plans are child plans, `totalPlanned`
-is no longer the sum of child quantities but **the number of complete sets those plans cover, with
-the weakest child governing** — the same principle ADR-109 already applies to dispatch:
+**2. The row states the per-part account.** `planningLineSchema` gains `bomChildren`
+(`childItemCode`, `childItemName`, `qtyPerSet`, `requiredQty`, `plannedQty`), shown as a table in
+the row's ▸ panel, with a part short of its requirement marked and a part planned in full left
+unpainted. `requiredQty` is ADR-107's own formula to the letter, so the panel and the server's
+create-time cap state the same requirement. Read against the line's **current**
+`source_bom_master_id`, so a line whose BOM was swapped lists the parts it uses today. Empty for an
+ordinary line, and for a short-closed one whose parts will never be made (ADR-196).
 
-```
-sets = min over children of floor(plannedQty / qtyPerSet)
-requiredQty = ceil(qtyPerSet × orderQty)        -- ADR-107's own formula, so the
-                                                   screen and the create-time cap agree
-```
+**3. The quantity columns are NOT changed. This is the deliberate half.** `totalPlanned` and
+`remaining` keep today's arithmetic, including the fault described above. Correcting the number
+means changing `soLinePlannedRaw` (`apps/api/src/lib/so-line-coverage.ts`), which has **five**
+readers — the create-plan cap `assertPlanQtyWithinRemaining`, Needs Planning, the Unplanned SO
+Lines report, the Planning list's Plan %, and this screen. Changing only this screen was built,
+reviewed and **withdrawn**, because it was worse than the fault:
 
-`remaining` keeps its formula and becomes correct for free. On `IN-SO-00521` line 1 that gives
-Plan Qty **1** of Order Qty 1, not 20. With WHEEL planned and GEAR WHEEL not, it gives Plan Qty
-**0** and To Plan **1** — the line stops claiming to be finished, and the ⋯ menu offers "Plan 1"
-again.
+- The ⋯ menu would offer **"Plan 1"** on a line the server then refuses —
+  `"Plan Qty (1) cannot be more than Pending to Plan (0)"` — since the cap still sums child plans
+  raw. Before the change `remaining` was 0 there, so the action was hidden and screen and server
+  agreed by accident.
+- Needs Planning and the Unplanned SO Lines report would omit a line this screen said had work
+  left, and the Planning list would show 100 % beside a line reading 0 %.
+- Replacing the plan sum with covered sets discarded a sibling **assembly** plan's quantity
+  (it carries `bom_master_id` but no `bom_child_code`), so adding a child plan made a line go
+  *backwards* from Fully Planned to Partly Planned.
 
-**3. The per-part account is visible.** `planningLineSchema` gains `bomChildren`
-(`childItemCode`, `childItemName`, `qtyPerSet`, `requiredQty`, `plannedQty`), shown in the row's ▸
-panel, with any child short of its requirement marked. That is the fact the summed number hid.
+So the per-part account carries the truth instead: the planner sees `GEAR WHEEL 0 of 10` in the ▸
+panel even while the line's own figures still read the old way. **The number needs its own
+decision, taken across all five readers at once, including the write-path cap.**
 
 ### Alternatives considered
-- **Show the child code and leave the quantities alone** — rejected. It answers the complaint and
-  leaves the row reading "Order Qty 1, Plan Qty 20", with a line still able to report itself fully
-  planned while a part is unplanned.
-- **Blank Plan Qty / To Plan on a BOM line and show only the per-part account** — honest, but it
-  removes a figure from a column every other row fills, and gives the ⋯ menu nothing to gate on.
-- **A second field for "sets planned", leaving `totalPlanned` as the raw sum** — rejected under
-  §20.1 (one number, one writer): two fields both meaning "planned" is how the two drift apart.
-  The column is headed in assemblies, so the number in it is corrected rather than duplicated.
-- **Fix it in the UI by re-adding the quantities client-side** — rejected: the client would need
-  the BOM, and the server already holds it.
+- **Show the child code and nothing else** — rejected: it answers the complaint and leaves the
+  "fully planned while a part is unplanned" state completely invisible.
+- **Correct `totalPlanned` on this screen only** — built and withdrawn; see above. Half a
+  correction across a shared rule is a contradiction, not a fix.
+- **Correct `soLinePlannedRaw` here too** — rejected for this change: it alters a guard on the
+  write path and four read screens at once, which deserves its own plan and its own approval.
+- **A second field for "sets planned"** — rejected under §20.1 (one number, one writer).
 
 ### Consequences
-- No migration, no new table, no new endpoint. Read path only; nothing is written, so §20.1–20.4
-  (writers, conditional updates, row locks, `updatedAt`) have no surface here. §20.5 — *a screen
-  only offers an action whose data that screen already loads* — is the rule this satisfies: the
-  fields go onto that screen's own response in the same change.
-- The plan-item join must be **aliased**. `items` is already joined in the same service to the
-  parent line's item; an unaliased second join makes every chip show "WASHER DRG" instead of
-  "WHEEL" — the bug would look fixed and be worse. `leftJoin` with a `deleted_at is null` guard,
-  never inner: a plan whose item was deleted, or an ad-hoc plan with no `itemId`, must still appear.
-- Three mappers change together — the SO path, the JWSO path, and the BOM modal's `existingPlan`.
-  Fixing only the first leaves job-work orders blank.
-- An ordinary line is bit-for-bit unchanged: `bomChildren` empty, `totalPlanned` exactly as before.
+- No migration, no new table, no new endpoint. Read path only — nothing is written, so §20.1–20.4
+  have no surface. §20.5 (*a screen only offers an action whose data that screen already loads*) is
+  the rule satisfied: the fields go onto that screen's own response in the same change.
+- The plan-item join is **aliased** `plan_item`. The bare `items` name is already taken in that
+  file by the parent LINE's item; an unaliased join would show "WASHER DRG" on every chip — the bug
+  would look fixed and be worse. `leftJoin` with a `deleted_at` guard: an ad-hoc plan has no item,
+  and a deleted item must not make a plan vanish.
+- An ordinary line is bit-for-bit unchanged — `bomChildren` empty, `totalPlanned` the original
+  expression, and the extra query does not run at all.
+- Job-work keeps `bomChildren: []`: a JW line cannot carry a BOM child plan (the BOM modal reads
+  `sales_order_lines` only, the JWSO branch reports no BOM, and ADR-107's cap recognises a child
+  plan only when `soLineId` is set). Confirmed on both databases — 0 rows.
 - Four child-part plans exist today, all on parent `554117193000`, across `IN-SO-00520` and
-  `IN-SO-00521`. Small blast radius, and every one of them already carries the identity it needs.
-- `remaining` drives three things at once — the To Plan column, the ⋯ menu's "Plan n", and the
-  Create Plan cap. They now agree on a BOM line instead of all three reading 0.
-- **Sets are capped at the order qty.** `qty_per_set` is `numeric`, so half a part per set would
-  make one planned part read as two covered sets — "Plan Qty 2" against "Order Qty 1", the very
-  fault this ADR removes. No live BOM is fractional (checked on both databases: min 1, max 10,
-  none below 1); the cap keeps it true if one ever is.
-- **The job-work path keeps `bomChildren: []` and no roll-up**, because a JW line cannot carry a
-  BOM child plan: the BOM modal reads `sales_order_lines` only, the JWSO branch reports no BOM, and
-  ADR-107's cap recognises a child plan only when `soLineId` is set. Confirmed against both
-  databases — `plans WHERE jw_line_id IS NOT NULL AND bom_child_code IS NOT NULL` returns **0**.
-- A line carrying BOTH child plans and an assembly plan counts the sets only; the assembly plan's
-  qty is not added on top, because it covers the very units the parts are for.
-- **Known and deliberately out of scope:** the Planning LIST's own `Plan %` still adds child-plan
-  quantities into the SO-level total, so an order with BOM child plans can read an inflated
-  percentage in the list while the line detail is now right. Same root, different query; it needs
-  its own decision rather than being changed quietly here.
+  `IN-SO-00521`.
+- **Open, specified, not built:** the quantity roll-up, as set out in point 3.

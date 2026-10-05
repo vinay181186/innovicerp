@@ -161,19 +161,18 @@ export const planningLineSchema = z.object({
     )
     .default([]),
   plans: z.array(planningPlanSummarySchema),
-  /** Sum of all non-cancelled plan_qty for this SO line, IN THE UNIT THE LINE IS
-   *  ORDERED IN.
+  /** Sum of all non-cancelled plan_qty for this SO line.
    *
-   *  ADR-216. For an ordinary line that is simply the sum of its plans. For a
-   *  line whose plans are BOM CHILD plans it is NOT: those are counted in child
-   *  parts while this column is counted in assemblies, so adding them gave
-   *  "Order Qty 1, Plan Qty 20" (10 wheels + 10 gear wheels against one washer)
-   *  and, worse, made `remaining` floor to 0 so a line read fully planned while
-   *  a child part had nothing against it. For such a line this is the number of
-   *  COMPLETE SETS the child plans cover — the weakest child governs, the same
-   *  principle ADR-109 already applies to dispatch:
-   *     sets = min over children of floor(planned_child / qty_per_set)
-   *  See `bomChildren` for the per-part account behind it. */
+   *  ADR-216 KNOWN FAULT, specified but NOT fixed: on a line planned through its
+   *  BOM these are CHILD-PART quantities summed into a column counted in
+   *  assemblies, so one washer needing 10 wheels + 10 gear wheels reads
+   *  "Order Qty 1, Plan Qty 20", and `remaining` then floors to 0 so the line can
+   *  read fully planned while a part has nothing against it. Correcting it means
+   *  changing `soLinePlannedRaw` (apps/api/src/lib/so-line-coverage.ts), which the
+   *  create-plan cap, Needs Planning, the Unplanned SO Lines report and the
+   *  Planning list's Plan % all read — changing this number alone makes the screen
+   *  offer a "Plan n" the server then refuses. Until that is done together,
+   *  `bomChildren` below states the per-part truth instead. */
   totalPlanned: z.number().nonnegative(),
   /**
    * Qty covered by Job Cards created directly against this SO line WITHOUT a
@@ -184,10 +183,16 @@ export const planningLineSchema = z.object({
   directJcQty: z.number().int().nonnegative(),
   /** Codes of those plan-less Job Cards, for the "In Production (no plan)" indicator. */
   directJcCodes: z.array(z.string()),
-  /** ADR-216 — the per-part account behind `totalPlanned` on a BOM line: what
-   *  each child part needs for this order and what is planned against it.
-   *  Empty for an ordinary line, which has no parts. `requiredQty` is ADR-107's
-   *  own formula, so the screen and the server's create-time cap agree. */
+  /** ADR-216 — what each part of this line's BOM needs for this order and what
+   *  is planned against it. This is the per-part truth that the single
+   *  `totalPlanned` figure above cannot tell: a part with nothing planned is
+   *  visible here even while the line's own numbers say otherwise.
+   *
+   *  Read against the line's CURRENT `source_bom_master_id`, not the BOM its
+   *  oldest plan was raised on, so a line whose BOM was swapped lists the parts
+   *  it uses today. Empty for an ordinary line and for a short-closed one, whose
+   *  parts will never be made (ADR-196). `requiredQty` is ADR-107's own formula,
+   *  so this panel and the server's create-time cap state the same requirement. */
   bomChildren: z
     .array(
       z.object({
@@ -202,11 +207,9 @@ export const planningLineSchema = z.object({
       }),
     )
     .default([]),
-  /** max(0, orderQty - totalPlanned - directJcQty) — always in the line's own
-   *  unit, because ADR-216 made `totalPlanned` state complete sets on a BOM
-   *  line. This drives the To Plan column, the ⋯ menu's "Plan n" and the
-   *  Create Plan cap, so all three now agree on a BOM line instead of all three
-   *  reading 0 while a part was unplanned. */
+  /** max(0, orderQty - totalPlanned - directJcQty). Inherits the BOM fault
+   *  described on `totalPlanned` above: on a BOM line this floors to 0, which is
+   *  why the To Plan column and the ⋯ menu's "Plan n" can both read 0 there. */
   remaining: z.number().nonnegative(),
   /** AVAILABLE stock for this line's item = physical − total active reserved
    *  (ADR-180). Kept under its old name because its MEANING is unchanged — it

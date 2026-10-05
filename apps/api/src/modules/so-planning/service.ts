@@ -710,19 +710,31 @@ export async function getPlanningSoDetail(
     // A plan is treated as a child plan only when it carries BOTH
     // `bom_master_id` and `bom_child_code`, exactly as ADR-107's create-time
     // cap decides it, so the screen and the cap can never disagree.
-    const childPlanBomByLine = new Map<string, string>();
+    // Keyed by LINE + child code only. NOT by bom_master_id: a line's BOM can be
+    // swapped after its plans were raised, and keying on the plan's own BOM made
+    // the oldest plan pick the BOM for the whole line, so plans against the
+    // line's CURRENT BOM counted zero and the panel listed parts the line no
+    // longer uses. The parts come from the line's current BOM below; the plans
+    // are matched to them by child code.
     const childPlannedByKey = new Map<string, number>();
+    const linesWithChildPlans = new Set<string>();
     for (const r of planRows) {
       const lineId = r.plan.soLineId;
       const childCode = r.plan.bomChildCode;
-      const bomId = r.plan.bomMasterId;
-      if (!lineId || !childCode || !bomId) continue;
-      if (!childPlanBomByLine.has(lineId)) childPlanBomByLine.set(lineId, bomId);
-      // Keyed by LINE too: two lines of one SO may share the same BOM.
-      const key = `${lineId}|${bomId}|${childCode}`;
+      if (!lineId || !childCode) continue;
+      linesWithChildPlans.add(lineId);
+      const key = `${lineId}|${childCode}`;
       childPlannedByKey.set(key, (childPlannedByKey.get(key) ?? 0) + r.plan.planQty);
     }
 
+    // The BOM each affected line is on TODAY (`sales_order_lines`), which is what
+    // the row's own BOM column shows.
+    const childPlanBomByLine = new Map<string, string>();
+    for (const lr of lineRows) {
+      if (!linesWithChildPlans.has(lr.line.id)) continue;
+      const bomId = lr.line.sourceBomMasterId;
+      if (bomId && UUID_RE.test(bomId)) childPlanBomByLine.set(lr.line.id, bomId);
+    }
     const childPlanBomIds = [...new Set(childPlanBomByLine.values())];
     // Joined to `items` the same way ADR-107's cap and the BOM modal do, so
     // `childItemCode` is the same string the plan's `bom_child_code` holds.
@@ -755,43 +767,31 @@ export async function getPlanningSoDetail(
       childBomLinesByBom.set(b.bomMasterId, bucket);
     }
 
-    const bomRollupByLine = new Map<
-      string,
-      { sets: number; children: PlanningLine['bomChildren'] }
-    >();
+    const bomChildrenByLine = new Map<string, PlanningLine['bomChildren']>();
     for (const lr of lineRows) {
       const bomId = childPlanBomByLine.get(lr.line.id);
       if (!bomId) continue;
       const bomLines = childBomLinesByBom.get(bomId);
-      // The BOM's lines are gone (edited or deleted after the plans were
-      // raised): never invent an allowance. The line keeps today's numbers and
-      // reports no parts — the same fall-through ADR-107's cap takes.
+      // The BOM's parts are gone (edited or deleted after the plans were
+      // raised): report nothing rather than invent a requirement — the same
+      // fall-through ADR-107's cap takes.
       if (!bomLines || bomLines.length === 0) continue;
+      // A line closed short will never be made, so its parts are not owed and
+      // must not be painted as outstanding (ADR-196).
+      if (lr.line.shortClosedAt !== null) continue;
       const lineOrderQty = lr.line.orderQty;
-      const children = bomLines.map((b) => ({
-        childItemCode: b.code,
-        childItemName: b.name,
-        qtyPerSet: b.qtyPerSet,
-        // ADR-107's own requirement formula, to the letter.
-        requiredQty: Math.ceil(b.qtyPerSet * lineOrderQty),
-        plannedQty: childPlannedByKey.get(`${lr.line.id}|${bomId}|${b.code}`) ?? 0,
-      }));
-      // A 0-per-set BOM line demands nothing, so it can neither cap the sets
-      // nor be divided by. If every line is 0-per-set there is nothing to
-      // measure and the line keeps today's numbers.
-      const counted = children.filter((c) => c.qtyPerSet > 0);
-      if (counted.length === 0) continue;
-      // Capped at the order qty. `qty_per_set` is numeric, so a BOM saying half
-      // a part per set would make one planned part read as two covered sets and
-      // put "Plan Qty 2" against "Order Qty 1" — the very nonsense ADR-216
-      // exists to remove. No live BOM is fractional today (checked on both
-      // databases: min 1, max 10, none below 1); this keeps it true if one ever
-      // is. You can never cover more sets than were ordered.
-      const sets = Math.min(
-        lineOrderQty,
-        ...counted.map((c) => Math.floor(c.plannedQty / c.qtyPerSet)),
+      bomChildrenByLine.set(
+        lr.line.id,
+        bomLines.map((b) => ({
+          childItemCode: b.code,
+          childItemName: b.name,
+          qtyPerSet: b.qtyPerSet,
+          // ADR-107's own requirement formula, to the letter, so this panel and
+          // the server's create-time cap state the same requirement.
+          requiredQty: Math.ceil(b.qtyPerSet * lineOrderQty),
+          plannedQty: childPlannedByKey.get(`${lr.line.id}|${b.code}`) ?? 0,
+        })),
       );
-      bomRollupByLine.set(lr.line.id, { sets, children });
     }
 
     // 6. Equipment-SO BOM lookup (single BOM at the SO header).
@@ -903,17 +903,10 @@ export async function getPlanningSoDetail(
       const linePrs = prsByLine.get(r.line.id) ?? { prs: [], prQty: 0 };
       // ADR-216 — undefined for an ordinary line, which has no parts and so
       // keeps today's arithmetic bit for bit.
-      const bomRollup = bomRollupByLine.get(r.line.id);
       // ADR-171: on a BUY line the PRs are the plan — their live qty counts as
       // planned. On a make line they are reported but change no number.
-      //
-      // ADR-216 — on a line planned through its BOM the plans are counted in
-      // parts, so the number of COMPLETE SETS they cover replaces their sum.
-      // A sibling assembly plan on the same line is NOT added on top: it
-      // covers the very units the parts are for, and adding both would count
-      // one unit twice.
       const totalPlanned =
-        (bomRollup ? bomRollup.sets : linePlans.reduce((s, p) => s + p.planQty, 0)) +
+        linePlans.reduce((s, p) => s + p.planQty, 0) +
         (itemProcurementType === 'buy' ? linePrs.prQty : 0);
       const orderQty = r.line.orderQty;
       const direct = directJcByLine.get(r.line.id);
@@ -968,9 +961,9 @@ export async function getPlanningSoDetail(
         totalPlanned,
         directJcQty,
         directJcCodes,
-        // ADR-216 — the per-part account behind `totalPlanned`. Empty on an
-        // ordinary line, which has no parts.
-        bomChildren: bomRollup?.children ?? [],
+        // ADR-216 — what each part of this line's BOM needs and what is
+        // planned for it. Empty on an ordinary line, which has no parts.
+        bomChildren: bomChildrenByLine.get(r.line.id) ?? [],
         remaining,
         // `stockQty` keeps its name and its meaning — "how much may I still
         // use" — which is now AVAILABLE, not on-hand (ADR-180).
