@@ -42,6 +42,7 @@ import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { BOM_SF_COLUMNS } from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
 import { buildImportTemplateBuffer } from '../../lib/excel-template';
+import { listItems } from '../items/service';
 import { listMaterialGrades } from '../material-grades/service';
 import { listMaterialSizes } from '../material-sizes/service';
 import { requireWriteRole } from '../../lib/auth';
@@ -1332,6 +1333,31 @@ function buildItemsSnapshot(lines: CreateBomMasterLineInput[], itemsLookup: Item
 const BOM_TEMPLATE_SAMPLE_ITEMS = ['EXAMPLE-001', 'EXAMPLE-002'];
 const BOM_TEMPLATE_SAMPLE_QTYS = [2, 3];
 
+/** The page cap listItems enforces (listItemsQuerySchema: limit max 1000). */
+const ITEM_PAGE = 1000;
+/** Above this an Excel dropdown stops being a help, so the column goes back to
+ *  free text — the import checks every code against Item Master either way. */
+const ITEM_DROPDOWN_MAX = 3000;
+
+/** Every item code, paged — a single 1000-row read would silently drop the
+ *  dropdown the day the master passes 1000 (today: 408). Returns [] when the
+ *  master is larger than a dropdown can usefully hold. */
+async function listAllItemCodes(user: AuthContext): Promise<string[]> {
+  const codes: string[] = [];
+  for (let offset = 0; offset < ITEM_DROPDOWN_MAX; offset += ITEM_PAGE) {
+    // sortBy code: paging without an explicit order can repeat or skip a row
+    // when the master changes between pages.
+    const page = await listItems(
+      { limit: ITEM_PAGE, offset, sortBy: 'code', sortDir: 'asc', sf: undefined },
+      user,
+    );
+    if (page.total > ITEM_DROPDOWN_MAX) return [];
+    codes.push(...page.items.map((i) => i.code));
+    if (codes.length >= page.total || page.items.length === 0) break;
+  }
+  return codes;
+}
+
 export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer> {
   await requireFormAccess(user, 'bom_create', 'view');
 
@@ -1339,7 +1365,7 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
   // planner without it still gets a usable template — just without those two
   // dropdowns; the import matches whatever they type either way.
   const listQuery = { isActive: true, limit: 1000, offset: 0 } as const;
-  const [grades, sizes] = await Promise.all([
+  const [grades, sizes, itemCodes] = await Promise.all([
     listMaterialGrades(listQuery, user).catch((e: unknown) => {
       if (e instanceof AuthorizationError) return null;
       throw e;
@@ -1348,6 +1374,13 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
       if (e instanceof AuthorizationError) return null;
       throw e;
     }),
+    // Item codes for the dropdown. NO `excludePartyOwned`: the BOM child
+    // picker (bom-form.tsx), the import's own code lookup and createBomMaster
+    // all accept any item, party-supplied material included — a job-work BOM
+    // legitimately lists the customer's own material. Filtering here would make
+    // the sheet refuse a part the screen accepts. listItems carries no extra
+    // permission gate, so no catch is needed.
+    listAllItemCodes(user),
   ]);
   // A page-capped list would offer a dropdown that silently omits real values —
   // the planner would then believe a grade is not set up and create a duplicate.
@@ -1357,18 +1390,27 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
     page && page.total <= rows.length ? rows : [];
   const gradeNames = whole(grades, grades?.grades.map((g) => g.name) ?? []);
   const sizeNames = whole(sizes, sizes?.sizes.map((sz) => sz.name) ?? []);
+  // BARE codes, never "CODE — Name": the importer matches on the code alone,
+  // so a combined label would fail every row it was picked on.
 
   return buildImportTemplateBuffer({
     sheetName: 'BOM',
     columns: [
       {
+        // Owner's call 2026-10-05: the codes ARE offered as a dropdown, despite
+        // the list being long (408 live). On a Microsoft 365 build it filters
+        // as you type; on an older one it is a scroll, and the Lists tab is
+        // there to Ctrl+F. The import still checks every code against Item
+        // Master — a sheet filled from last week's template can name an item
+        // that has since gone.
         label: 'Item Code*',
+        // The samples stay EXAMPLE-001 / EXAMPLE-002 even though real codes are
+        // now in the dropdown: the importer refuses a sheet whose every row is
+        // still an EXAMPLE- row (bom-form.tsx `onlySampleRows`), and real codes
+        // here would silently import two parts nobody asked for.
         samples: BOM_TEMPLATE_SAMPLE_ITEMS,
-        width: 20,
-        // No dropdown on purpose: Item Master runs to hundreds of codes, which
-        // makes an Excel list unusable on a build without the searchable
-        // dropdown and bloats the file. The import reports unknown codes and
-        // offers them as an Item Master import sheet.
+        ...(itemCodes.length > 0 ? { options: itemCodes } : {}),
+        width: 24,
       },
       { label: 'Qty / Set*', samples: BOM_TEMPLATE_SAMPLE_QTYS, width: 12 },
       {
