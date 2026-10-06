@@ -1,73 +1,87 @@
-// JC Status — the VIEW body, laid out to the 2026-09-18 mockup:
+// JC Status — the VIEW body, laid out to the owner-approved mock-up
+// jobcard-detail-mockup.html (frame 1, 2026-10-06): one 1440×810 screen, no
+// page scroll.
 //
-//   A  header bar     Job Card : <code> + status badge · Back to List · Print
-//                     Job Card · Excel · ▶ Production Entry · ✎ Edit Job Card
-//   B  recovery       rework / repair child banner (only on such a card)
-//   C  header tile    part · references · Order / Completed / In Progress / Rejected
-//                     (NC) / Pending tiles · due date · priority · status
-//   D  route flow     the wrapping strip of fixed-size operation cards
-//   E  operations     one card per op — expanded for the current op and the
-//                     next one, collapsed rows for the rest; Expand All at
-//                     the section's right
-//   F  tabs           Documents & Quality | Related Records | History
+//   header     ← Back · JC No. · Job Card · JC status badge ·
+//              Print · Edit · ⋯ (Download Excel) · ▶ Production Entry
+//   banners    short-closed Production Order stop (ADR-182) · rework / repair
+//              child note — both null on an ordinary card, both unchanged
+//   facts      picture frame (Photo | Drawing) + identity line + ClusterGrid:
+//              ORDER · QUANTITY · MATERIAL · NOTES (jc-fact-block.tsx)
+//   tabs       ONE tab strip + ONE filling panel, "Current Op" at its right:
+//              Operations (JcOpsTable — the old op cards, Route / Operation
+//              Flow strip and Op Qty Flow panel in one table) · Documents &
+//              Quality (+ Rework Tree) · Material · Related Records · History
 //
-// Same data hooks as before (useJobCard, useJcOpsEnriched, useOpLog,
-// useJobCardStatusExtras, useJobCardEditModel for the live drawing, useMyCompany
-// for the print); every figure the old layout showed is still on the page.
-// EDIT mode is untouched — it lives in jc-status-content.tsx.
+// Same data hooks and permission gates as before (useJobCard, useJcOpsEnriched,
+// useOpLog, useJobCardStatusExtras, useJobCardEditModel for the live drawing,
+// useMyCompany for the print, useProductionOrderForJobCard for the stop rule,
+// jc_create.edit for Edit). The Quantity cluster reads the server's Job Card
+// check (useOpFlow — the same query the Operations table reads, so one
+// request). EDIT mode is untouched — it lives in jc-status-content.tsx.
 import type { OpLog } from '@innovic/shared';
 import { isProductionOrderStopped } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Download, Loader2, Pencil, Printer } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useOpFlow } from '@/modules/flow-views/api';
+import { ReworkTreePanel } from '@/modules/flow-views/components/jc-flow-panels';
+import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
+import { Panel } from '@/ui/data';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useJobCard, useJobCardEditModel, useJobCardStatusExtras } from '../api';
 import { useJcDrawing } from '../lib/jc-drawing';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
-import { JcCustomerMaterialPanel } from './jc-customer-material-panel';
-import { JcOpCard } from './jc-op-card';
+import { JcFactBlock } from './jc-fact-block';
+import { JcHistoryTable } from './jc-history-table';
+import { JcOpsTable } from './jc-ops-table';
 import { RecoveryBanner } from './jc-recovery-banner';
 import { JcStatusBadge } from './jc-status-badge';
 import { JcStoppedBanner } from './jc-stopped-banner';
-import { JcRouteFlowPanel, JcViewSummary, SectionBar, currentOp } from './jc-view-summary';
-import { JcViewTabs } from './jc-view-tabs';
-import { JcFlowPanels } from '@/modules/flow-views/components/jc-flow-panels';
+import { JcCurrentOpMeta } from './jc-view-summary';
+import { JcDocumentsTab } from './jc-view-tabs';
+import './jc-detail.css';
+
+type TabKey = 'ops' | 'docs' | 'material' | 'related' | 'history';
+const TAB_KEYS: readonly TabKey[] = ['ops', 'docs', 'material', 'related', 'history'];
 
 export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: jc, isLoading, isError, error } = useJobCard(id);
   // `opsLoading` gates the Print button: the ops come from their own query, so
   // a click landing between "job card loaded" and "ops loaded" printed a Job
-  // Card whose Operation Routing table said "No operations". It also holds the
-  // derived WIP / Rejected tiles at "—" until the rows are here. Loaded-ness
-  // for those tiles is read off the DATA (`opsData !== undefined`), not the
-  // flag: after a failed query `isLoading` is false with no rows, and a zero
-  // summed over no rows would print as a fact.
+  // Card whose Operation Routing table said "No operations".
   const { data: opsData, isLoading: opsLoading } = useJcOpsEnriched(
     { jobCardId: id },
     { enabled: Boolean(id) },
   );
   const ops = useMemo(() => opsData ?? [], [opsData]);
-  const opsLoaded = opsData !== undefined;
   const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
   // Server-computed extras: QC docs, per-op machine name + tool details, and the
   // merged completion feed (op_log ∪ NC ∪ OSP) with a real total (ISSUE-174).
   const { data: extras } = useJobCardStatusExtras(id);
   const { data: company } = useMyCompany();
+  // ADR-212 — the server's reconciled per-op figures and the Job Card check
+  // (ordered = finished + pending + in QC + at vendor + deviated open +
+  // rejected). The Quantity cluster reads ONLY this; the Operations table reads
+  // the same query (same key), so it is one request.
+  const opFlow = useOpFlow(id);
   // ADR-182 — the Production Order that built this card. Two things come off
   // it: whether it was SHORT CLOSED (which freezes the card, so every work
   // button here goes away — the server refuses them anyway) and the `Actual
-  // Size` the store really cut, which the Job Card wire shape does not carry.
-  // A rework / repair child carries no production_order_id of its own, so the
-  // hook walks up the parent chain the same way the server-side stop guard
-  // does — a child of a short-closed order is frozen too, and must say so.
-  // Null only on a hand-raised card or a pre-ADR-170 card.
+  // Size` the store really cut. A rework / repair child carries no
+  // production_order_id of its own, so the hook walks up the parent chain the
+  // same way the server-side stop guard does. Null only on a hand-raised card
+  // or a pre-ADR-170 card.
   const { order: productionOrder } = useProductionOrderForJobCard(id);
   const stopped = productionOrder ? isProductionOrderStopped(productionOrder.status) : false;
   // Edit button uses the SAME key as the page it opens (/job-cards/$id/edit →
@@ -76,42 +90,19 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
 
   // ADR-202 — the edit(s) staged against this Job Card and still waiting for a
-  // decision. Their per-field changes drive the inline amber chips next to the
-  // header fields in JcViewSummary. Flattened across requests (usually one).
+  // decision. Their per-field changes drive the amber chips on the facts.
   const pendingEdit = usePendingEditForDoc('JobCard', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
-  const [flowOpen, setFlowOpen] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(true);
+  const [tab, setTab] = useState<TabKey>('ops');
   const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
 
-  // WHICH DRAWING THIS SCREEN SHOWS — and the page says so, because up to FOUR
-  // different files can sit behind one job card and they are not
-  // interchangeable. The print the customer sent with the order is what the
-  // part must be made to; the item master's drawing is the generic one for that
-  // part number and can easily be a revision behind. Showing one without naming
-  // it is how a part gets made to the wrong print.
-  //
-  // Order, first one that exists wins:
-  //   1. the SALES ORDER line's drawing   (soLineDrawingFilePath)
-  //   2. the JWSO line's drawing          (jwLineDrawingFilePath)
-  //   3. this job card's own upload       (jc.drawingFilePath)
-  //
-  // The first and second come from the edit model, where the API resolves
-  // them LIVE off the source line on every read rather than copying them onto
-  // the card. That is the whole point: upload a corrected print against the
-  // order and the shop floor sees it on the next refresh, instead of building
-  // to a file frozen at the moment the card was raised. A card has at most one
-  // source, so 1 and 2 are never both set.
-  //
-  // There is NO item-master fallback any more (user decision 2026-09-21):
-  // items no longer carry drawings — they carry a product image, which is a
-  // picture, not a controlled document, and is shown by the ItemBadge instead.
-  //
-  // Resolution + the thumbnail fetch live in useJcDrawing so the EDIT screen
-  // shows exactly the same drawing (never `download`: opening a thumbnail is
-  // nobody deciding to keep a copy, and logging it as one would make the access
-  // log useless for the question it exists to answer).
+  // WHICH DRAWING THIS SCREEN SHOWS — SO line's drawing, else the JWSO line's,
+  // else this card's own upload (first that exists; no item-master fallback —
+  // items carry a product image, not a drawing). Resolved LIVE off the source
+  // line by the edit model, so a corrected print uploaded against the order is
+  // what the floor sees on the next refresh. Resolution + thumbnail live in
+  // useJcDrawing so the EDIT screen shows exactly the same drawing.
   const { data: model } = useJobCardEditModel(id);
   const { drawing, drawingRef } = useJcDrawing(jc, model);
 
@@ -133,39 +124,6 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
     }
     return m;
   }, [logs]);
-  // Per-op machine name (flow chips) + tool details (info block) — both
-  // server-resolved (opExtras); the op-entry enriched op omits them. Keyed by
-  // op id.
-  const opExtraById = useMemo(
-    () => new Map((extras?.opExtras ?? []).map((e) => [e.jcOpId, e])),
-    [extras?.opExtras],
-  );
-  /** ADR-103 — lowest-sequence op; the one client material feeds. */
-  const firstOpId = useMemo(() => sortedOps[0]?.id ?? null, [sortedOps]);
-
-  // ── Which op cards are open ──
-  // Default: the CURRENT op (lowest-seq op not complete) and the one after it;
-  // on a finished card, the last op. `Expand All` / `Collapse All` writes the
-  // per-op set.
-  const defaultOpen = useMemo(() => {
-    const cur = currentOp(sortedOps) ?? sortedOps[sortedOps.length - 1];
-    if (!cur) return new Set<string>();
-    const i = sortedOps.indexOf(cur);
-    const next = sortedOps[i + 1];
-    return new Set<string>([cur.id, ...(next ? [next.id] : [])]);
-  }, [sortedOps]);
-  // null = the default set (so the default follows the data until the user
-  // touches a card); a Set once the user has.
-  const [openIds, setOpenIds] = useState<Set<string> | null>(null);
-  const effectiveOpen = openIds ?? defaultOpen;
-  const isOpen = (opId: string): boolean => effectiveOpen.has(opId);
-  const toggleOp = (opId: string): void => {
-    const next = new Set(effectiveOpen);
-    if (next.has(opId)) next.delete(opId);
-    else next.add(opId);
-    setOpenIds(next);
-  };
-  const allOpen = sortedOps.length > 0 && sortedOps.every((o) => isOpen(o.id));
 
   if (isLoading) {
     return (
@@ -186,79 +144,86 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const openDrawing = (): void => setDrawingPreviewOpen(true);
 
   return (
-    <div>
-      {/* ── A. Header bar ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          flexWrap: 'wrap',
-          marginBottom: 12,
-        }}
+    <div className="page-fill jc-detail">
+      <DetailHeader
+        backLabel="Back"
+        backTo="/job-cards"
+        renderLink={(p) => <Link {...p} />}
+        code={jc.code}
+        // One header line: code · document name · status (as the Production
+        // Order page draws it — DetailHeader's `name` would take a 2nd line).
+        badges={
+          <>
+            <span className="panel-title">Job Card</span>
+            <JcStatusBadge status={jc.computedStatus} />
+          </>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={opsLoading}
+              title="Print Job Card"
+              onClick={() => {
+                if (
+                  !printJobCard({
+                    jc,
+                    ops,
+                    company,
+                    actualSize: productionOrder?.actualSize ?? null,
+                  })
+                )
+                  window.alert('Allow popups to print.');
+              }}
+            >
+              Print
+            </button>
+            {/* ADR-182 — a stopped order's card takes no more edits. The
+                server refuses them anyway. */}
+            {canWrite && !stopped ? (
+              <Link
+                to="/job-cards/$id/edit"
+                params={{ id }}
+                className="btn btn-ghost btn-sm"
+                title="Edit Job Card"
+              >
+                Edit
+              </Link>
+            ) : null}
+            <ActionMenu
+              label="⋯"
+              items={[
+                {
+                  label: 'Download Excel',
+                  title: 'Download Excel (with production log)',
+                  onClick: () => exportJobCardExcel({ jc, ops, logs }),
+                },
+              ]}
+            />
+            {/* ADR-182 — no more work on a stopped order's card. */}
+            {!stopped ? (
+              <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
+                ▶ Production Entry
+              </button>
+            ) : null}
+          </>
+        }
       >
-        <span className="section-hdr" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>
-          Job Card :{' '}
-          <span className="mono" style={{ color: 'var(--text)' }}>
-            {jc.code}
-          </span>
-        </span>
-        <JcStatusBadge status={jc.computedStatus} />
-        <span style={{ flex: 1 }} />
-        <Link to="/job-cards" className="btn btn-ghost btn-sm">
-          <ArrowLeft size={14} /> Back to List
-        </Link>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={opsLoading}
-          onClick={() => {
-            if (
-              !printJobCard({ jc, ops, company, actualSize: productionOrder?.actualSize ?? null })
-            )
-              window.alert('Allow popups to print.');
-          }}
-        >
-          <Printer size={13} /> Print Job Card
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => exportJobCardExcel({ jc, ops, logs })}
-          title="Download Excel (with production log)"
-        >
-          <Download size={13} /> Excel
-        </button>
-        {/* ADR-182 — a stopped order's card takes no more work and no more
-            edits, so neither button is offered. The server refuses both. */}
-        {!stopped ? (
-          <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
-            ▶ Production Entry
-          </button>
-        ) : null}
-        {canWrite && !stopped ? (
-          <Link to="/job-cards/$id/edit" params={{ id }} className="btn btn-ghost btn-sm">
-            <Pencil size={14} /> Edit Job Card
-          </Link>
-        ) : null}
-      </div>
-
-      {/* ── B. Banners — the short-closed Production Order stop (ADR-182) and
-             the rework / repair child note. Both null on an ordinary card. ── */}
-      <JcStoppedBanner order={productionOrder} />
-      <RecoveryBanner jc={jc} />
-
-      {/* ── C. Header tile ── */}
-      <JcViewSummary
-        jc={jc}
-        ops={ops}
-        opsLoaded={opsLoaded}
-        sortedOps={sortedOps}
-        actualSize={productionOrder?.actualSize ?? null}
-        drawing={drawingRef}
-        onOpenDrawing={openDrawing}
-        pendingChanges={pendingChanges}
-      />
+        {/* Banners — the short-closed Production Order stop (ADR-182) and the
+            rework / repair child note. Both null on an ordinary card. */}
+        <JcStoppedBanner order={productionOrder} />
+        <RecoveryBanner jc={jc} />
+        <JcFactBlock
+          jc={jc}
+          productionOrder={productionOrder}
+          drawing={drawingRef}
+          onOpenDrawing={openDrawing}
+          pendingChanges={pendingChanges}
+          check={opFlow.data?.jobCardCheck}
+          checkError={opFlow.isError}
+        />
+      </DetailHeader>
       {drawingPreviewOpen && drawing ? (
         <FilePreviewModal
           storagePath={drawing.path}
@@ -269,97 +234,61 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         />
       ) : null}
 
-      {/* ── C2. Customer Material roll-up — only on a JW-sourced card (R1,
-             ADR-194); renders null on an own-material JC. ── */}
-      <JcCustomerMaterialPanel jc={jc} />
-
-      {/* ── D. Route / Operation Flow ── */}
-      <JcRouteFlowPanel
-        jc={jc}
-        sortedOps={sortedOps}
-        opExtraById={opExtraById}
-        open={flowOpen}
-        onToggle={() => setFlowOpen((v) => !v)}
-      />
-
-      {/* ── E. Operations Details ── */}
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <SectionBar
-          title="Operations Details"
-          open={detailOpen}
-          onToggle={() => setDetailOpen((v) => !v)}
-          right={
-            sortedOps.length > 0 ? (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    if (allOpen) {
-                      setOpenIds(new Set());
-                    } else {
-                      setOpenIds(new Set(sortedOps.map((o) => o.id)));
-                    }
-                  }}
-                >
-                  {allOpen ? '⤡ Collapse All' : '⤢ Expand All'}
-                </button>
-              </>
-            ) : null
-          }
+      {/* The one panel that takes the height left on screen. */}
+      <div className="jc-tabs">
+        <TabStrip
+          label="Job Card lists"
+          activeKey={tab}
+          onChange={(k) => setTab(TAB_KEYS.find((t) => t === k) ?? 'ops')}
+          tabs={[
+            { key: 'ops', label: 'Operations', count: opsData ? sortedOps.length : null },
+            { key: 'docs', label: 'Documents & Quality' },
+            { key: 'material', label: 'Material' },
+            { key: 'related', label: 'Related Records' },
+            {
+              key: 'history',
+              label: 'History',
+              count: extras ? extras.completionLog.total : null,
+            },
+          ]}
         />
-        {detailOpen ? (
-          <div style={{ padding: '2px 0' }}>
-            {sortedOps.length === 0 ? (
-              <div className="empty-state">No operations yet.</div>
-            ) : (
-              sortedOps.map((o, i) => (
-                <JcOpCard
-                  key={o.id}
-                  jc={jc}
-                  op={o}
-                  index={i + 1}
-                  expanded={isOpen(o.id)}
-                  onToggle={() => toggleOp(o.id)}
-                  // ADR-182 — no next-action strip on a stopped order's ops.
-                  stopped={stopped}
-                  machineName={opExtraById.get(o.id)?.machineName ?? null}
-                  toolDetails={opExtraById.get(o.id)?.toolDetails ?? null}
-                  // ADR-103: the client-material tile belongs to the FIRST op —
-                  // the one the material feeds and the only one the gate caps.
-                  rmAvailable={o.id === firstOpId ? (extras?.rmAvailable ?? null) : null}
-                  logs={logsByOp.get(o.id) ?? []}
-                  onStart={(opId) =>
-                    void navigate({
-                      to: '/op-entry',
-                      search: { jc: jc.code, op: opId, mode: 'start' },
-                    })
-                  }
-                  onLog={(opId) =>
-                    void navigate({
-                      to: '/op-entry',
-                      search: { jc: jc.code, op: opId, mode: 'complete' },
-                    })
-                  }
-                  // The register has no per-op filter; its ?search= seeds the
-                  // box with this job card's code (matched against jcCode /
-                  // operation / item), so the inspector lands on this card's
-                  // calls rather than the whole queue.
-                  onQc={() =>
-                    void navigate({ to: '/qc-call-register', search: { search: jc.code } })
-                  }
-                />
-              ))
-            )}
-          </div>
-        ) : null}
+        <span className="jc-tabs-meta">
+          <span>
+            <JcCurrentOpMeta sortedOps={sortedOps} />
+          </span>
+        </span>
       </div>
-
-      {/* ── E2. Op Qty Flow + Rework Tree (req. 3.5, read-only) ── */}
-      <JcFlowPanels jobCardId={id} />
-
-      {/* ── F. Documents & Quality | Related Records | History ── */}
-      <JcViewTabs jc={jc} ops={ops} extras={extras} stopped={stopped} />
+      <Panel fill bodyPadding="none">
+        {tab === 'ops' ? (
+          <JcOpsTable
+            jobCardId={id}
+            jc={jc}
+            ops={sortedOps}
+            logsByOp={logsByOp}
+            stopped={stopped}
+            productionOrder={productionOrder}
+          />
+        ) : tab === 'docs' ? (
+          <div className="jc-tab-pad">
+            <JcDocumentsTab jc={jc} ops={ops} extras={extras} stopped={stopped} />
+            {/* Rework Tree — moved here from under the Op Qty Flow panel.
+                Renders nothing on a plain card with no NC and no child. */}
+            <div style={{ marginTop: 'var(--sp-3)' }}>
+              <ReworkTreePanel jobCardId={id} />
+            </div>
+          </div>
+        ) : tab === 'material' ? (
+          <div className="jc-tab-pad">
+            <JcMaterialPanel jobCardId={jc.id} stopped={stopped} />
+          </div>
+        ) : tab === 'related' ? (
+          <div className="jc-tab-pad">
+            <RelatedDocsPanel module="job-cards" id={jc.id} />
+          </div>
+        ) : (
+          <JcHistoryTable jobCardId={id} />
+        )}
+      </Panel>
     </div>
   );
 }
