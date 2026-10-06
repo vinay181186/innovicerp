@@ -1,21 +1,41 @@
 // Stock Count add-item bar (ADR-193 phase 2): type-to-search item picker,
-// Excel upload and template download.
+// Excel upload and template download. The template itself is built by the API
+// (GET /import-templates/stock-count.xlsx) so its columns can carry real Excel
+// dropdowns, which SheetJS cannot write; a failed download is reported through
+// the screen's own message line (`onError`).
 import { Download, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import { apiDownload } from '@/lib/api';
 import { useItemsList } from '@/modules/items/api';
 import { SearchableSelect } from '@/ui/forms';
 import { resolveStockCountItems } from '../api';
 import type { DraftLine } from '../lib/draft-line';
-import { downloadStockCountTemplate } from '../lib/excel';
 
 export function StockCountAddBar(props: {
   onAdd: (line: DraftLine) => void;
   onFile: (file: File) => void;
+  /** Shown in the Stock Count screen's own red message line. */
+  onError: (text: string) => void;
 }): React.JSX.Element {
-  const { onAdd, onFile } = props;
+  const { onAdd, onFile, onError } = props;
   const [itemSearch, setItemSearch] = useState('');
   const [pickerKey, setPickerKey] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const downloadTemplate = async (): Promise<void> => {
+    setTemplateBusy(true);
+    try {
+      await apiDownload(
+        '/import-templates/stock-count.xlsx',
+        {},
+        'Stock Count Import Template.xlsx',
+      );
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not download the template. Try again.');
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
   const { data: itemsData, isFetching } = useItemsList({
     search: itemSearch.trim() || undefined,
     limit: 50,
@@ -73,8 +93,13 @@ export function StockCountAddBar(props: {
       >
         <Upload size={13} /> Upload Excel
       </button>
-      <button type="button" className="btn btn-ghost btn-sm" onClick={downloadStockCountTemplate}>
-        <Download size={13} /> Template
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        disabled={templateBusy}
+        onClick={() => void downloadTemplate()}
+      >
+        <Download size={13} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
       </button>
       <input
         ref={fileRef}

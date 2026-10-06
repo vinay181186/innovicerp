@@ -37,6 +37,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { apiDownload } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
@@ -45,9 +46,10 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { operatorListColumns } from '../components/operator-list-columns';
 import { Select } from '@/ui/forms';
+import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateOperators, useOperatorsList, useSoftDeleteOperator } from '../api';
-import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import-export';
+import { parseOperatorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
 
@@ -137,6 +139,31 @@ function OperatorsListPage(): React.JSX.Element {
   const bulkCreate = useBulkCreateOperators();
   const [importOpen, setImportOpen] = useState(false);
 
+  // The Excel Template is built by the API (GET
+  // /import-templates/operators.xlsx) so its Status column can carry a real
+  // Excel dropdown — SheetJS, still used here for READING a filled sheet,
+  // silently drops data validation and cannot write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  /** The download itself — THROWS. The dialog awaits this one so a
+   *  failure fired from inside the modal is answered inside the modal;
+   *  the header button uses the wrapper below, which catches. */
+  const fetchTemplate = (): Promise<void> =>
+    apiDownload('/import-templates/operators.xlsx', {}, 'Operator Import Template.xlsx');
+  const downloadTemplate = async (): Promise<void> => {
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await fetchTemplate();
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
   const rows = data?.operators ?? [];
   const total = data?.total ?? 0;
   const currentPage = search.page;
@@ -219,9 +246,10 @@ function OperatorsListPage(): React.JSX.Element {
                 variant="ghost"
                 icon={<Icon name="download" size={12} />}
                 title="Download a blank Excel template for Operator Master"
-                onClick={() => downloadOperatorTemplate()}
+                disabled={templateBusy}
+                onClick={() => void downloadTemplate()}
               >
-                Excel Template
+                {templateBusy ? 'Preparing…' : 'Excel Template'}
               </Button>
               <Button
                 size="sm"
@@ -243,6 +271,15 @@ function OperatorsListPage(): React.JSX.Element {
           ) : null
         }
       />
+
+      {/* The template is fetched from the server, so it can fail (offline, a
+          session that has expired). Say so where the button is, in the list's
+          own error style. */}
+      {templateError ? (
+        <Banner tone="error" role="alert" onDismiss={() => setTemplateError(null)}>
+          ⚠ {templateError}
+        </Banner>
+      ) : null}
 
       {isError ? (
         <PageState
@@ -316,7 +353,7 @@ function OperatorsListPage(): React.JSX.Element {
           submit={(importRows, mode, dryRun, saveKey) =>
             bulkCreate.mutateAsync({ operators: importRows, mode, dryRun, saveKey })
           }
-          onDownloadTemplate={downloadOperatorTemplate}
+          onDownloadTemplate={fetchTemplate}
           errorsFileName="Operator Import Errors.xlsx"
           onClose={() => setImportOpen(false)}
         />

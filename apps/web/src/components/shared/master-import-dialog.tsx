@@ -59,7 +59,10 @@ export interface MasterImportDialogProps {
     dryRun: boolean,
     saveKey?: SaveKey,
   ) => Promise<MasterImportResult>;
-  onDownloadTemplate: () => void;
+  /** Fetches the Excel Template. Async because the API builds it (the
+   *  dropdowns need Excel data validation, which the browser library cannot
+   *  write) — the dialog awaits it so the button can say so. */
+  onDownloadTemplate: () => void | Promise<void>;
   /** File name for "Download errors", e.g. "Customer Import Errors.xlsx". */
   errorsFileName: string;
   onClose: () => void;
@@ -148,6 +151,10 @@ export function MasterImportDialog({
   const [step, setStep] = useState<Step>('choose');
   const [mode, setMode] = useState<MasterImportMode>(allowInsert ? 'insert' : 'update');
   const [file, setFile] = useState<File | null>(null);
+  // The template download is the one action in here that talks to the server
+  // before an import exists, so it carries its own progress and failure.
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const [parsed, setParsed] = useState<MasterImportParse | null>(null);
   const [preview, setPreview] = useState<MasterImportResult | null>(null);
   const [finalResult, setFinalResult] = useState<MasterImportResult | null>(null);
@@ -376,12 +383,33 @@ export function MasterImportDialog({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={onDownloadTemplate}
+                disabled={templateBusy}
+                onClick={() => {
+                  setTemplateError(null);
+                  setTemplateBusy(true);
+                  void Promise.resolve(onDownloadTemplate())
+                    .catch((err: unknown) =>
+                      setTemplateError(
+                        err instanceof Error
+                          ? err.message
+                          : 'Could not download the template. Try again.',
+                      ),
+                    )
+                    .finally(() => setTemplateBusy(false));
+                }}
                 style={{ marginLeft: 'var(--sp-1)' }}
               >
-                <Icon name="download" size={12} /> Download Excel Template
+                <Icon name="download" size={12} />{' '}
+                {templateBusy ? 'Preparing…' : 'Download Excel Template'}
               </button>
             </div>
+            {/* The page behind the modal cannot show this — a failure fired
+                from in here has to be answered in here. */}
+            {templateError ? (
+              <Banner tone="error" role="alert" flush onDismiss={() => setTemplateError(null)}>
+                {templateError}
+              </Banner>
+            ) : null}
           </div>
         </div>
       ) : (

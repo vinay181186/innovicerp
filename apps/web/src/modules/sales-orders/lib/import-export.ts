@@ -116,16 +116,10 @@ export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<voi
 // column is here.
 // Headers renamed 2026-09-26 (Drawing No → Drawing No., Rev → Drawing Rev,
 // Qty → Order Qty); the parser still reads the old names so an older sheet imports.
-const LINE_COLUMNS = [
-  'Item Code',
-  'Material',
-  'Drawing No.',
-  'Drawing Rev',
-  'POL',
-  'Order Qty',
-  'Rate',
-  'Due Date',
-] as const;
+// The blank template itself is built by the API (GET
+// /import-templates/so-lines.xlsx, apps/api/src/modules/import-templates) so
+// its columns can carry real Excel dropdowns — SheetJS silently drops data
+// validation and cannot write one.
 
 export interface SoLineImportRow {
   itemCodeText: string;
@@ -138,14 +132,6 @@ export interface SoLineImportRow {
   orderQty: number;
   rate: number;
   dueDate?: string | undefined;
-}
-
-export function downloadSoLineTemplate(): void {
-  const sample = ['ITM-001', 'EN8', 'DRG-001', 'A', '1', '100', '250', '2026-07-01'];
-  const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'SO Lines');
-  XLSX.writeFile(wb, 'SO Lines Import Template.xlsx');
 }
 
 export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportRow[]; errors: string[] }> {

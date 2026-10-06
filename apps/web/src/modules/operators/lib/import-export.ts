@@ -1,5 +1,9 @@
-// Operator Master — Excel template + import parsing (ERPNext Data Import
-// behaviour, see packages/shared/src/schemas/master-import.ts). Uses SheetJS.
+// Operator Master — Excel import parsing (ERPNext Data Import behaviour, see
+// packages/shared/src/schemas/master-import.ts). Uses SheetJS to READ a filled
+// sheet. The blank template itself is built by the API (GET
+// /import-templates/operators.xlsx, apps/api/src/modules/import-templates) so
+// its Status column can carry a real Excel dropdown — SheetJS silently drops
+// data validation and cannot write one.
 //
 // Mirror of the Vendor importer (apps/web/src/modules/vendors/lib/import-export.ts):
 // the parser only does the STRUCTURAL checks (no name, no Code in Update mode,
@@ -10,45 +14,22 @@
 // Insert new: Code is optional (the server gives the next OP-### when blank).
 // Update existing: Code is required and is how the row finds its operator; a
 // BLANK cell is left out of the payload, so it keeps the current value. That is
-// why the template now carries a Code column — a sheet without it cannot be
-// used for updates.
+// why the template carries a Code column — a sheet without it cannot be used
+// for updates.
 //
 // DELTA vs vendors: operators carry no userId column (userId is a UUID link to
 // a login, not user-fillable — left unset on import). createOperatorInputSchema
 // keeps `skills` as a single free-text string, so it maps 1:1 to a column.
 
 import type { MasterImportMode } from '@innovic/shared';
-import * as XLSX from 'xlsx';
 
 import {
-  appendListsSheet,
   putIfFilled,
   type MasterImportParse,
   type ParsedImportRow,
   type ParsedImportSkip,
 } from '@/lib/master-import';
 import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
-
-// No userId column — it links to a login and is not user-fillable.
-// The header names are the ones the server's refusal messages use
-// (OPERATOR_IMPORT_LABELS in apps/api/src/modules/operators/service.ts).
-const COLUMNS = [
-  'Code',
-  'Operator Name*',
-  'Department',
-  'Skills',
-  'Status (Active/Inactive)',
-] as const;
-
-export function downloadOperatorTemplate(): void {
-  const sample = ['', 'Ramesh Kumar', 'CNC', 'Turning, Milling', 'Active'];
-  const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [12, 22, 16, 26, 18].map((wch) => ({ wch }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Operators');
-  appendListsSheet(wb, [{ header: 'Status (Active/Inactive)', values: ['Active', 'Inactive'] }]);
-  XLSX.writeFile(wb, 'Operator Import Template.xlsx');
-}
 
 export async function parseOperatorImportFile(
   file: File,

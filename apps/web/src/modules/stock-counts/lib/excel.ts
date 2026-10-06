@@ -1,17 +1,14 @@
-// Stock Count Excel (ADR-193 phase 2): template download and sheet parsing.
-// Item codes are resolved by the server (/stock-counts/resolve-items) — never
-// guessed here; unknown codes are reported back to the user.
-import * as XLSX from 'xlsx';
+// Stock Count Excel (ADR-193 phase 2): sheet parsing. Item codes are resolved
+// by the server (/stock-counts/resolve-items) — never guessed here; unknown
+// codes are reported back to the user.
+//
+// The blank template is built by the API (GET
+// /import-templates/stock-count.xlsx, apps/api/src/modules/import-templates)
+// so its columns can carry real Excel dropdowns — SheetJS, used below to READ
+// a filled sheet, silently drops data validation and cannot write one.
 import { getCol, readSheetRows } from '@/lib/xlsx-import';
 import { resolveStockCountItems } from '../api';
 import type { DraftLine } from './draft-line';
-
-export function downloadStockCountTemplate(): void {
-  const ws = XLSX.utils.aoa_to_sheet([['Item Code*', 'Counted Qty*', 'Reason']]);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
-  XLSX.writeFile(wb, 'stock-count-template.xlsx');
-}
 
 /** Read a sheet and merge its rows into `current` (one line per item). */
 export async function mergeStockCountSheet(

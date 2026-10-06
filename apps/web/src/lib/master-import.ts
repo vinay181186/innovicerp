@@ -71,21 +71,6 @@ export function parseWholeDays(raw: string, label: string): { value?: number; er
   return { value: n };
 }
 
-/** The "Lists" tab of a template: one column per pick-list, header in row 1. */
-export function appendListsSheet(
-  wb: XLSX.WorkBook,
-  lists: ReadonlyArray<{ header: string; values: readonly string[] }>,
-): void {
-  const height = Math.max(0, ...lists.map((l) => l.values.length));
-  const aoa: string[][] = [lists.map((l) => l.header)];
-  for (let i = 0; i < height; i++) aoa.push(lists.map((l) => l.values[i] ?? ''));
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = lists.map((l) => ({
-    wch: Math.max(l.header.length, ...l.values.map((v) => v.length)) + 2,
-  }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Lists');
-}
-
 /** One row of the "Download errors" workbook. */
 export interface ImportErrorRow {
   rowNum: number;

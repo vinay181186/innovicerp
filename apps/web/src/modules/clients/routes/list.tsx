@@ -33,6 +33,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { apiDownload } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
@@ -41,11 +42,12 @@ import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { clientListColumns } from '../components/client-list-columns';
 import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
-import { downloadClientTemplate, parseClientImportFile } from '../lib/import-export';
+import { parseClientImportFile } from '../lib/import-export';
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -152,6 +154,31 @@ function ClientsListPage(): React.JSX.Element {
   const bulkCreate = useBulkCreateClients();
   const [importOpen, setImportOpen] = useState(false);
 
+  // The Excel Template is built by the API (GET /import-templates/clients.xlsx)
+  // so its GST Category / State / Status columns can carry real Excel
+  // dropdowns — SheetJS, still used here for READING a filled sheet, silently
+  // drops data validation and cannot write one.
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  /** The download itself — THROWS. The dialog awaits this one so a
+   *  failure fired from inside the modal is answered inside the modal;
+   *  the header button uses the wrapper below, which catches. */
+  const fetchTemplate = (): Promise<void> =>
+    apiDownload('/import-templates/clients.xlsx', {}, 'Customer Import Template.xlsx');
+  const downloadTemplate = async (): Promise<void> => {
+    setTemplateError(null);
+    setTemplateBusy(true);
+    try {
+      await fetchTemplate();
+    } catch (err) {
+      setTemplateError(
+        err instanceof Error ? err.message : 'Could not download the template. Try again.',
+      );
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
+
   const setStatus = useCallback(
     (status: 'active' | 'inactive' | undefined) => {
       void navigate({ search: (prev) => ({ ...prev, status, page: 1 }), replace: true });
@@ -215,7 +242,9 @@ function ClientsListPage(): React.JSX.Element {
             replace: true,
           });
         }}
-        filtersActive={sf.filtering || search.search != null || search.status != null || searchInput !== ''}
+        filtersActive={
+          sf.filtering || search.search != null || search.status != null || searchInput !== ''
+        }
         // Excel template + import are data tools, so they sit on the title row
         // (ZONE B) between the identity line and the primary action — visible
         // the moment the page opens. Import opens the shared import dialog;
@@ -228,9 +257,10 @@ function ClientsListPage(): React.JSX.Element {
                 variant="ghost"
                 icon={<Icon name="download" size={12} />}
                 title="Download a blank Excel template for Customer Master"
-                onClick={() => downloadClientTemplate()}
+                disabled={templateBusy}
+                onClick={() => void downloadTemplate()}
               >
-                Excel Template
+                {templateBusy ? 'Preparing…' : 'Excel Template'}
               </Button>
               <Button
                 size="sm"
@@ -252,6 +282,15 @@ function ClientsListPage(): React.JSX.Element {
           ) : null
         }
       />
+
+      {/* The template is fetched from the server, so it can fail (offline, a
+          session that has expired). Say so where the button is, in the list's
+          own error style. */}
+      {templateError ? (
+        <Banner tone="error" role="alert" onDismiss={() => setTemplateError(null)}>
+          ⚠ {templateError}
+        </Banner>
+      ) : null}
 
       {isError ? (
         <PageState
@@ -328,7 +367,7 @@ function ClientsListPage(): React.JSX.Element {
           submit={(rows, mode, dryRun, saveKey) =>
             bulkCreate.mutateAsync({ clients: rows, mode, dryRun, saveKey })
           }
-          onDownloadTemplate={downloadClientTemplate}
+          onDownloadTemplate={fetchTemplate}
           errorsFileName="Customer Import Errors.xlsx"
           onClose={() => setImportOpen(false)}
         />
