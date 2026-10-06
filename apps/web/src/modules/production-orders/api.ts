@@ -232,6 +232,12 @@ export function useUpdateProductionOrder(id: string, saveKey?: SaveKey) {
   });
 }
 
+/** The close mutation's key. The detail page reads `useIsMutating` on it so the
+ *  Close dialog cannot be dismissed (and Close Qty… cannot be pressed again)
+ *  while a close is still being saved — a dismissed dialog would lose the
+ *  POST's error and re-seed the qty from a stale ceiling. */
+export const CLOSE_PRODUCTION_ORDER_MUTATION_KEY = ['production-orders', 'close'] as const;
+
 export function useCloseProductionOrder() {
   const qc = useQueryClient();
   return useMutation<
@@ -239,6 +245,7 @@ export function useCloseProductionOrder() {
     Error,
     { id: string; input?: CloseProductionOrderInput }
   >({
+    mutationKey: CLOSE_PRODUCTION_ORDER_MUTATION_KEY,
     // ADR-179: partial/progressive close. `input` carries { qty?, finish?,
     // remarks? }; omitting qty closes everything currently available.
     mutationFn: ({ id, input }) =>

@@ -1,24 +1,35 @@
-// Production Order detail (ADR-170, ADR-182): the header facts, the live Job
-// Card progress, and — for an open order whose JC is complete — the Close
-// button.
+// Production Order detail (ADR-170, ADR-182): the order's facts, the live Job
+// Card progress, and — while the order is open — Close Qty.
 //
-// Close is BLOCKED until the JC is complete; the server says so through
+// Close is BLOCKED until the JC has finished pieces; the server says so through
 // `canClose` / `closeBlockedReason`, and the page only repeats that answer.
 // On close stock is credited ONCE with the JC's actually finished qty (48 of
-// 50 → 48), which is why the confirm names that number before asking.
+// 50 → 48), which is why the close form names that number before asking.
 //
 // ADR-182 adds SHORT CLOSE — stop the order at ANY stage. It is a different
 // thing from "close short": nothing is credited or written off, the order and
 // its Job Card are frozen, and the un-produced qty goes back to the plan. Once
-// an order is short closed the Close form and the ledger's Reverse buttons go
-// away, and a red panel says who stopped it, when and why.
+// an order is short closed Close Qty and the ledger's Reverse close go away,
+// and a one-line banner says who stopped it, when and why.
+//
+// Layout (owner-approved mock-up pro-routecard-detail-mockup.html, 2026-10-06):
+// the page fits one 1440×810 screen with no page scroll. Header with the next
+// step as its primary button → identity line → one ClusterGrid read in the
+// order the work happens (Order → Quantity → Schedule → Material) → ONE tabbed
+// panel (Close Ledger | History) that takes the height left and scrolls inside.
+// What moved: the Close form opens as a dialog from Close Qty…; Job Card
+// Progress became the JC Finished cell; the Short Closed / Closed panels became
+// a one-line banner where the Close button sits; "Cannot close yet" became the
+// button's disabled reason.
 
 import type { DocumentEditChange } from '@innovic/shared';
 import { isProductionOrderStopped } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { useIsMutating } from '@tanstack/react-query';
+import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
+import { useDocumentHistory } from '@/modules/activity-log/api';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -27,15 +38,20 @@ import {
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
+import { soNoWithInternal } from '@/lib/so-number';
+import { JC_STATUS_LABEL, JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Panel } from '@/ui/data';
+import { EmptyState, Panel, ProgressBar } from '@/ui/data';
+import { Modal } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu, DetailHeader } from '@/ui/layout';
-import { useProductionOrder } from '../api';
+import { TabStrip } from '@/ui/navigation';
+import { CLOSE_PRODUCTION_ORDER_MUTATION_KEY, useProductionOrder } from '../api';
 import { PoCloseForm } from '../components/po-close-form';
 import { PoCloseLedger } from '../components/po-close-ledger';
 import { PoShortCloseModal } from '../components/po-short-close-modal';
 import { PoStatusBadge } from '../components/po-status-badge';
+import '../components/po-detail.css';
 
 export const productionOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -43,125 +59,36 @@ export const productionOrderDetailRoute = createRoute({
   component: ProductionOrderDetailPage,
 });
 
-function Fact({
-  label,
-  children,
-  mono,
-}: {
-  label: string;
-  children: React.ReactNode;
-  mono?: boolean;
-}): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{label}</span>
-      <div className={mono ? 'mono fw-700' : undefined} style={{ color: 'var(--text)' }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// ── The header fact sheet (owner decision 2026-10-05) ───────────────────────
-// Every header fact in ONE table, read top to bottom in the order the work
-// happens, with the group names as divider BANDS inside that same table —
-// explicitly NOT a panel per group. Four columns: label · value · label ·
-// value, two facts to a row, so a fact always sits beside its own name.
-//
-// `table-layout: fixed` (`tbl-fixed`) + the colgroup below keep the four
-// columns on the same vertical edges from the first row to the last, whatever
-// is in them. Labels wrap rather than clip; long values ellipsis with a title.
-
-/** A divider band — the group's name, across all four columns. Same look as a
- *  table head band (`.innovic-table th`) without the sticky / sortable
- *  behaviour, which a row header must not have. */
-function Band({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <tr>
-      <td
-        colSpan={4}
-        className="td-left"
-        style={{
-          background: 'var(--blue3)',
-          color: 'var(--blue2)',
-          fontFamily: 'var(--hfont)',
-          fontSize: 'var(--fs-xs)',
-          fontWeight: 800,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-        }}
-      >
-        {children}
-      </td>
-    </tr>
-  );
-}
-
-/** The label half of a fact — the 13px `.form-label` standard, left, and
- *  allowed to wrap so a long name is never cut off mid-word. */
-function K({ children }: { children: string }): React.JSX.Element {
-  return (
-    <td className="form-label td-left" style={{ whiteSpace: 'normal' }}>
-      {children}
-    </td>
-  );
-}
-
-/** The value half. Document numbers / codes and quantities are mono fw-700 in
- *  --text — they are what a reader hunts for, never the faint --text3.
- *  Quantities also right-align with tabular digits (number-alignment
- *  standard, 2026-09-26). Only a value that is not there goes quiet. */
-function V({
-  children,
-  num = false,
-  code = false,
-  empty = false,
-  span,
-  title,
-}: {
-  children: React.ReactNode;
-  /** A quantity — right, mono, tabular digits. */
-  num?: boolean;
-  /** A document number / code / date — left, mono, strong. */
-  code?: boolean;
-  /** The value is absent (the em dash) — the one case that reads quiet. */
-  empty?: boolean;
-  span?: 2 | 3 | undefined;
-  title?: string | undefined;
-}): React.JSX.Element {
-  return (
-    <td
-      className={num ? 'td-num mono fw-700' : code ? 'td-left mono fw-700' : 'td-left'}
-      colSpan={span}
-      title={title}
-      style={{
-        color: empty ? 'var(--text3)' : 'var(--text)',
-        fontWeight: empty ? 400 : num || code ? 700 : 600,
-        ...(span ? {} : { overflow: 'hidden', textOverflow: 'ellipsis' }),
-      }}
-    >
-      {children}
-    </td>
-  );
-}
-
-/** The pending change for a header field, if any — the amber "→ after" chip. */
-function Chip({
-  changes,
-  field,
-}: {
-  changes: readonly DocumentEditChange[];
-  field: string;
-}): React.JSX.Element | null {
+/** A staged header edit (ADR-202 Phase 3) waiting for approval, for one field:
+ *  the amber "→ after" chip, and a hover text naming the proposed value in
+ *  full. The chip is never cut short; a cell too narrow for it wraps. */
+function pendingFor(
+  changes: readonly DocumentEditChange[],
+  field: string,
+): { chip: React.ReactNode; title: string } | null {
   const c = headerPendingChange(changes, field);
-  return c ? <PendingChangeChip after={c.after} /> : null;
+  if (!c) return null;
+  const after = c.after === null || c.after === '' ? '—' : String(c.after);
+  return {
+    chip: <PendingChangeChip after={c.after} />,
+    title: `Waiting for approval: → ${after}`,
+  };
 }
+
+/** Cell hover text: the value, then the pending change if there is one. */
+function withPending(value: string, p: { title: string } | null): string {
+  return p ? `${value} · ${p.title}` : value;
+}
+
+type TabKey = 'ledger' | 'history';
 
 function ProductionOrderDetailPage(): React.JSX.Element {
   const { id } = productionOrderDetailRoute.useParams();
-  const navigate = useNavigate();
   const { data, isLoading, isError, error } = useProductionOrder(id);
   const [shortCloseOpen, setShortCloseOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [tab, setTab] = useState<TabKey>('ledger');
+  const closeWhyId = useId();
 
   // Tier-driven (Production). Close is an EDIT on the order, not an entry.
   const { data: eff } = useMyAccess();
@@ -171,6 +98,38 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // changes drive the inline amber chips next to each editable fact below.
   const pendingEdit = usePendingEditForDoc('ProductionOrder', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+
+  // The History tab's count. Same arguments as <DocumentHistory> below, so it
+  // is the same query — one request, not two.
+  const history = useDocumentHistory({
+    entity: 'ProductionOrder',
+    entityId: data?.id,
+    refId: data?.code,
+  });
+
+  // A close POST in flight. While it is, the Close dialog cannot be dismissed
+  // and Close Qty… cannot be pressed: dismissing would unmount the form
+  // mid-save (its error lost) and reopening would re-seed the qty from the
+  // stale ceiling and allow a second POST — a double credit.
+  const closing = useIsMutating({ mutationKey: CLOSE_PRODUCTION_ORDER_MUTATION_KEY }) > 0;
+
+  // Whether Close is on offer at all — the same answer `showCloseForm` gives
+  // below, worked out here (before the early returns) so the dialog's open
+  // flag can follow it. ADR-182: never on a stopped order; ADR-179: not once
+  // fully closed, and only while the server allows it (`canClose`).
+  const closeOffered =
+    !!data &&
+    !isProductionOrderStopped(data.status) &&
+    data.status !== 'closed' &&
+    perms.edit &&
+    data.canClose;
+  // A refetch that takes Close away (someone else closed it, or credited the
+  // last pieces) also forgets the dialog was open, so it can never reopen by
+  // itself when Close comes back. Not while a save is in flight — that save
+  // owns the dialog until it answers.
+  useEffect(() => {
+    if (!closeOffered && !closing) setCloseOpen(false);
+  }, [closeOffered, closing]);
 
   if (isLoading) {
     return (
@@ -212,7 +171,15 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // ADR-179: close is progressive. It stays available while the order is not
   // fully closed and the server still allows it (`canClose`).
   const notClosed = data.status !== 'closed';
-  const showCloseForm = !stopped && notClosed && perms.edit && data.canClose;
+  // `closeOffered` (above) is that rule plus `perms.edit`, read before the
+  // early returns so the dialog's open flag can follow it.
+  const showCloseForm = closeOffered;
+  // The server's reason Close is off — shown to everyone, as before; the
+  // disabled button only to those who could otherwise press it.
+  const closeBlockedReason =
+    !stopped && notClosed && !data.canClose && data.closeBlockedReason
+      ? data.closeBlockedReason
+      : null;
   // Short Close is offered at ANY stage except an order already stopped — the
   // ask is "at any stage". Same `edit` right as Close.
   const showShortCloseButton = !stopped && perms.edit;
@@ -222,37 +189,112 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   const canEdit = perms.edit && (data.status === 'open' || data.status === 'partially_closed');
   const pct =
     data.orderQty > 0 ? Math.min(100, Math.round((data.jcFinishedQty / data.orderQty) * 100)) : 0;
+  const credited = data.creditedQty ?? 0;
+
+  const pTarget = pendingFor(pendingChanges, 'targetDate');
+  const pSize = pendingFor(pendingChanges, 'actualSize');
+  const pRmAvail = pendingFor(pendingChanges, 'rawMaterialAvailable');
+  const pRemarks = pendingFor(pendingChanges, 'remarks');
+
+  const routeCardRev = `Route Card Rev ${data.routeCardRevision}`;
+  // What the Job Card Progress panel said beside its bar, now the cell's hover
+  // text (the badge may be cut short in a narrow cell, so it names it too).
+  const jcFinishedTitle =
+    (data.jcComputedStatus ? `JC Status: ${JC_STATUS_LABEL[data.jcComputedStatus]}. ` : '') +
+    "Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close credits this qty to stock." +
+    (data.jcClosedAt ? ` JC closed on ${fmtDate(data.jcClosedAt)}.` : '');
+
+  // The texts the Short Closed / Closed panels carried, now one line each.
+  const shortClosedText = `Short Closed on ${fmtDate(data.shortClosedAt)} by ${
+    data.shortClosedByName ?? '—'
+  } — ${data.shortCloseReason ?? '—'} · ${credited} credited stay in stock; ${Math.max(
+    0,
+    data.orderQty - credited,
+  )} Pending went back to Plan ${data.planCodeText}.`;
+  const closedText = `✓ Closed — stock credited · Credited Qty ${
+    data.creditedQty ?? '—'
+  } · Lost Qty ${data.lostQty ?? '—'} · Close Date ${fmtDate(data.closedAt)}`;
+
+  // Where Close Qty… sits: the button, or — once the order is stopped or fully
+  // closed — the one-line banner that replaces it.
+  const closeSlot = stopped ? (
+    <span className="po-banner" title={shortClosedText}>
+      {shortClosedText}
+    </span>
+  ) : !notClosed ? (
+    <span className="po-banner is-closed" title={closedText}>
+      {closedText}
+    </span>
+  ) : (
+    <>
+      {closeBlockedReason ? (
+        <span
+          id={closeWhyId}
+          className="po-close-why"
+          title={`Cannot close yet — ${closeBlockedReason}`}
+        >
+          🔒 Cannot close yet — {closeBlockedReason}
+        </span>
+      ) : null}
+      {perms.edit ? (
+        // The wrapper carries the tooltip: a disabled button gets no hover.
+        <span title={closeBlockedReason ?? undefined}>
+          <button
+            type="button"
+            className="btn btn-success btn-sm"
+            disabled={!data.canClose || closing}
+            aria-describedby={closeBlockedReason ? closeWhyId : undefined}
+            onClick={() => setCloseOpen(true)}
+          >
+            Close Qty…
+          </button>
+        </span>
+      ) : null}
+    </>
+  );
 
   return (
-    <div>
-      {/* DetailHeader layout: Back link, code + status, one shortcut to the
-          order's Job Card, and Short Close in the Actions menu (red, last). */}
+    <div className="page-fill po-detail">
       <DetailHeader
         backLabel="Back"
         backTo="/production-orders"
         renderLink={(p) => <Link {...p} />}
         code={data.code}
-        name="Production Order"
-        badges={<PoStatusBadge status={data.status} />}
+        // One header line, as the mock-up draws it: code · document name ·
+        // status. Passed as `badges` because DetailHeader's `name` takes a
+        // second line, and that line is height this page does not have.
+        badges={
+          <>
+            <span className="panel-title">Production Order</span>
+            <PoStatusBadge status={data.status} />
+          </>
+        }
         actions={
           <>
-            <Link
-              to="/job-cards/$id"
-              params={{ id: data.jobCardId }}
-              className="btn btn-ghost btn-sm"
-              title={`Open Job Card ${data.jcCodeText}`}
-            >
-              Open Job Card
-            </Link>
+            {/* Hidden only when the Job Card row is gone (no live status). */}
+            {data.jcComputedStatus ? (
+              <Link
+                to="/job-cards/$id"
+                params={{ id: data.jobCardId }}
+                className="btn btn-ghost btn-sm"
+                title={`Open Job Card ${data.jcCodeText}`}
+              >
+                Open Job Card {data.jcCodeText}
+              </Link>
+            ) : null}
+            {canEdit ? (
+              <Link
+                to="/production-orders/$id/edit"
+                params={{ id: data.id }}
+                className="btn btn-ghost btn-sm"
+                title="Edit this Production Order (Remarks, PRO Target Date, Actual Size, Raw Material Available)"
+              >
+                Edit
+              </Link>
+            ) : null}
             <ActionMenu
+              label="⋯"
               items={[
-                {
-                  label: '✏️ Edit',
-                  hidden: !canEdit,
-                  title: 'Edit this Production Order (Remarks, PRO Target Date, Actual Size, Raw Material Available)',
-                  onClick: () =>
-                    void navigate({ to: '/production-orders/$id/edit', params: { id: data.id } }),
-                },
                 {
                   label: 'Short Close',
                   danger: true,
@@ -263,99 +305,65 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 },
               ]}
             />
+            {closeSlot}
           </>
         }
       >
-        {!stopped && notClosed && !data.canClose && data.closeBlockedReason ? (
-          <div
-            className="text3"
-            style={{
-              fontSize: 12,
-              padding: '6px 10px',
-              background: 'var(--bg3)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              marginBottom: 10,
-            }}
-          >
-            🔒 Cannot close yet — {data.closeBlockedReason}
-          </div>
-        ) : null}
-
-        {/* ── The fact sheet ──────────────────────────────────────────────
-            One table, top to bottom in the order the work happens: who it is →
-            where it came from → what to make → how much → when → what it is
-            made of → notes. The group names are BAND rows inside this same
-            table (owner decision 2026-10-05), not a panel each. */}
-        <table className="innovic-table tbl-fixed">
-          <colgroup>
-            <col style={{ width: '20%' }} />
-            <col style={{ width: '30%' }} />
-            <col style={{ width: '20%' }} />
-            <col style={{ width: '30%' }} />
-          </colgroup>
-          <tbody>
-            <Band>Identity</Band>
-            <tr>
-              <K>Production Order No.</K>
-              <V code>{data.code}</V>
-              <K>Production Order Status</K>
-              <V>
-                <PoStatusBadge status={data.status} />
-              </V>
-            </tr>
-            <tr>
-              <K>Production Order Date</K>
-              <V code empty={!data.createdAt}>
-                {fmtDate(data.createdAt)}
-              </V>
-              <K>Created By</K>
-              <V empty={!data.createdByName} title={data.createdByName ?? undefined}>
-                {data.createdByName ?? '—'}
-              </V>
-            </tr>
-
-            <Band>Where it came from</Band>
-            <tr>
-              <K>SO / JWSO No.</K>
-              <V code empty={!data.soCodeText}>
-                {data.soCodeText ?? '—'}
-              </V>
-              <K>Customer</K>
-              <V empty={!data.partyName} title={data.partyName ?? undefined}>
-                {data.partyName ?? '—'}
-              </V>
-            </tr>
-            <tr>
+        {/* WHICH order this is: the PRO, the item it makes, the SO / JWSO line
+            it serves and the customer. Identity, not facts, so it heads the
+            body instead of taking grid cells. */}
+        <DocIdent>
+          <IdentCode>{data.code}</IdentCode>
+          <IdentSep />
+          {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+          <IdentCode>{itemCodeWithRev(data.itemCodeText, data.itemRevision)}</IdentCode>
+          {data.itemNameText ? <span>{data.itemNameText}</span> : null}
+          {data.soCodeText ? (
+            <>
+              <IdentSep />
+              {/* ADR-207 — the system SO No. then the SO's own office number. */}
+              <IdentCode>{soNoWithInternal(data.soCodeText, data.soInternalNo)}</IdentCode>
               {/* Ln is OUR sales-order line number. POL is the line number
                   printed on the CUSTOMER's own purchase order — on live data
                   our line 11 is the customer's line 20. Never the same fact. */}
-              <K>Ln</K>
-              <V code empty={!data.lineNo}>
-                {data.lineNo ?? '—'}
-              </V>
-              <K>POL</K>
-              <V code empty={!data.clientPoLineNo}>
-                {data.clientPoLineNo ? (
-                  <span style={{ color: 'var(--purple)' }}>{data.clientPoLineNo}</span>
-                ) : (
-                  '—'
-                )}
-              </V>
-            </tr>
-            <tr>
-              {/* ADR-207 — the SO's own office number, read live. A JWSO and an
-                  older SO have none. */}
-              <K>Internal SO No.</K>
-              <V code empty={!data.soInternalNo}>
-                {data.soInternalNo ?? '—'}
-              </V>
-              {/* The approved sheet leaves this half of the row open. */}
-              <td colSpan={2} />
-            </tr>
-            <tr>
-              <K>Plan No.</K>
-              <V>
+              {data.lineNo ? <span>Ln {data.lineNo}</span> : null}
+              {data.clientPoLineNo ? (
+                <span>
+                  POL{' '}
+                  <b className="mono" style={{ color: 'var(--purple)' }}>
+                    {data.clientPoLineNo}
+                  </b>
+                </span>
+              ) : null}
+            </>
+          ) : null}
+          {data.partyName ? (
+            <>
+              <IdentSep />
+              <span>{data.partyName}</span>
+            </>
+          ) : null}
+        </DocIdent>
+
+        <ClusterGrid>
+          {/* When it was raised, by whom, from which Plan and Route Card. */}
+          <Cluster name="Order">
+            <ClusterFact
+              num
+              label="Production Order Date"
+              empty={!data.createdAt}
+              value={fmtDate(data.createdAt)}
+            />
+            <ClusterFact
+              className="po-one-line"
+              label="Created By"
+              empty={!data.createdByName}
+              title={data.createdByName ?? undefined}
+              value={data.createdByName ?? '—'}
+            />
+            <ClusterFact
+              label="Plan No."
+              value={
                 <Link
                   to="/plans/$id"
                   params={{ id: data.planId }}
@@ -364,307 +372,277 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 >
                   {data.planCodeText}
                 </Link>
-              </V>
-              <K>Route Card</K>
-              <V title={`${data.routeCardCodeText} · Route Card Rev ${data.routeCardRevision}`}>
-                <Link
-                  to="/route-cards/$id"
-                  params={{ id: data.routeCardId }}
-                  className="mono fw-700"
-                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-                >
-                  {data.routeCardCodeText}
-                </Link>
-                <span className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
-                  {' '}
-                  · Route Card Rev {data.routeCardRevision}
-                </span>
-              </V>
-            </tr>
+              }
+            />
+            <ClusterFact
+              className="po-one-line"
+              label="Route Card"
+              title={`${data.routeCardCodeText} · ${routeCardRev}`}
+              value={
+                <>
+                  <Link
+                    to="/route-cards/$id"
+                    params={{ id: data.routeCardId }}
+                    className="mono fw-700"
+                    style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                  >
+                    {data.routeCardCodeText}
+                  </Link>{' '}
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontWeight: 400 }}>
+                    {routeCardRev}
+                  </span>
+                </>
+              }
+            />
+          </Cluster>
 
-            <Band>What to make</Band>
-            <tr>
-              <K>Item Code</K>
-              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-              <V code title={itemCodeWithRev(data.itemCodeText, data.itemRevision)}>
-                {itemCodeWithRev(data.itemCodeText, data.itemRevision)}
-              </V>
-              <K>Item Name</K>
-              <V empty={!data.itemNameText} title={data.itemNameText ?? undefined}>
-                {data.itemNameText ?? '—'}
-              </V>
-            </tr>
-
-            {/* ── How much ──
-                The three-rung ladder first (what the customer ordered, what the
-                plan covers, what THIS order is for), then the close account:
-                credited + pending, what can be closed right now, what was
-                lost. `PRO Qty` not a bare `Order Qty` — three quantities sit
-                together here (docs/NAMING.md). */}
-            <Band>How much</Band>
-            <tr>
-              <K>SO Qty</K>
-              <V num empty={data.soQty == null} title="The SO / JWSO line's ordered qty">
-                {data.soQty ?? '—'}
-              </V>
-              <K>Plan Qty</K>
-              <V num empty={data.planQty == null} title="What the plan covers">
-                {data.planQty ?? '—'}
-              </V>
-            </tr>
-            <tr>
-              <K>PRO Qty</K>
-              <V num title="Pieces THIS Production Order is for">
-                {data.orderQty}
-              </V>
-              <K>Credited Qty</K>
-              <V num title="Pieces already closed into stock">
-                {data.creditedQty ?? 0}
-              </V>
-            </tr>
-            <tr>
-              <K>Pending</K>
-              <V num title="Pieces still to be closed">
-                {data.remainingQty}
-              </V>
-              <K>Available to Close</K>
-              <V num title="Finished on the Job Card and not yet credited">
-                {data.availableToClose}
-              </V>
-            </tr>
-            <tr>
-              <K>Lost Qty</K>
-              <V num empty={data.lostQty == null} title="Pieces written off on a short close">
-                {data.lostQty ?? '—'}
-              </V>
-              <K>JC No.</K>
-              <V title={data.jcCodeText ?? undefined}>
-                <Link
-                  to="/job-cards/$id"
-                  params={{ id: data.jobCardId }}
-                  className="mono fw-700"
-                  style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-                >
-                  {data.jcCodeText}
-                </Link>{' '}
-                {/* JC Status — the live computed status the row carries
-                    (`jcStatus` on the wire is this same value). */}
-                {data.jcComputedStatus ? (
+          {/* How much — the ladder (what the customer ordered, what the plan
+              covers, what THIS order is for, what its Job Card has finished),
+              then the close account that ends on Pending. `PRO Qty` not a bare
+              `Order Qty` — three quantities sit together here (NAMING.md). */}
+          <Cluster name="Quantity">
+            <ClusterFact
+              num
+              label="SO Qty"
+              empty={data.soQty == null}
+              title="The SO / JWSO line's ordered qty"
+              value={data.soQty ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="Plan Qty"
+              empty={data.planQty == null}
+              title="What the plan covers"
+              value={data.planQty ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="PRO Qty"
+              title="Pieces THIS Production Order is for"
+              value={data.orderQty}
+            />
+            {/* JC progress — read live off the Job Card on every load, never
+                stored. Was the Job Card Progress panel. */}
+            <ClusterFact
+              num
+              label="JC Finished"
+              title={jcFinishedTitle}
+              empty={!data.jcComputedStatus}
+              value={
+                data.jcComputedStatus ? (
+                  <>
+                    <ProgressBar
+                      className="po-bar"
+                      value={pct}
+                      color={pct >= 100 ? 'var(--green)' : 'var(--cyan)'}
+                      label="Job Card completed"
+                    />
+                    {data.jcFinishedQty}
+                  </>
+                ) : (
+                  '—'
+                )
+              }
+              after={
+                data.jcComputedStatus ? (
                   <JcStatusBadge status={data.jcComputedStatus} />
                 ) : (
-                  <span className="text3" style={{ fontWeight: 400 }}>
-                    —
-                  </span>
-                )}
-              </V>
-            </tr>
+                  <span className="badge b-grey">No Job Card</span>
+                )
+              }
+            />
+          </Cluster>
+          <Cluster name={null}>
+            <ClusterFact
+              num
+              label="Credited Qty"
+              title="Pieces already closed into stock"
+              value={credited}
+            />
+            <ClusterFact
+              num
+              label="Lost Qty"
+              empty={data.lostQty == null}
+              title="Pieces written off on a short close"
+              value={data.lostQty ?? '—'}
+            />
+            <ClusterFact
+              num
+              className="po-act"
+              label="Available to Close"
+              title="Finished on the Job Card and not yet credited — what Close Qty… acts on"
+              value={data.availableToClose}
+            />
+            <ClusterFact
+              num
+              lead
+              label="Pending"
+              title="Pieces still to be closed"
+              value={data.remainingQty}
+            />
+          </Cluster>
 
-            {/* ── When ──
-                The dates in the order they happen: the plan's window, our own
-                target, then the date the CUSTOMER expects it (the SO / JWSO
-                line's due date — that is what `Customer Dispatch Date` means on
-                a Production Order, owner decision 2026-09-30). */}
-            <Band>When</Band>
-            <tr>
-              <K>Plan Start Date</K>
-              <V code empty={!data.plannedStartDate}>
-                {fmtDate(data.plannedStartDate)}
-              </V>
-              <K>Plan End Date</K>
-              <V code empty={!data.plannedEndDate}>
-                {fmtDate(data.plannedEndDate)}
-              </V>
-            </tr>
-            <tr>
-              <K>PRO Target Date</K>
-              <V code empty={!data.targetDate}>
-                {fmtDate(data.targetDate)}
-                <Chip changes={pendingChanges} field="targetDate" />
-              </V>
-              <K>Customer Dispatch Date</K>
-              <V code empty={!data.lineDueDate}>
-                {fmtDate(data.lineDueDate)}
-              </V>
-            </tr>
+          {/* The dates in the order they happen: the plan's window, our own
+              target, then the date the CUSTOMER expects it (the SO / JWSO
+              line's due date — that is what `Customer Dispatch Date` means on
+              a Production Order, owner decision 2026-09-30). */}
+          <Cluster name="Schedule">
+            <ClusterFact
+              num
+              label="Plan Start Date"
+              empty={!data.plannedStartDate}
+              value={fmtDate(data.plannedStartDate)}
+            />
+            <ClusterFact
+              num
+              label="Plan End Date"
+              empty={!data.plannedEndDate}
+              value={fmtDate(data.plannedEndDate)}
+            />
+            <ClusterFact
+              num
+              className={pTarget ? 'po-chip' : ''}
+              label="PRO Target Date"
+              empty={!data.targetDate}
+              title={pTarget ? withPending(fmtDate(data.targetDate), pTarget) : undefined}
+              value={fmtDate(data.targetDate)}
+              after={pTarget?.chip}
+            />
+            <ClusterFact
+              num
+              label="Customer Dispatch Date"
+              empty={!data.lineDueDate}
+              value={fmtDate(data.lineDueDate)}
+            />
+          </Cluster>
 
-            {/* ── Material ──
-                Grade and size are read live off the plan (same labels as Plan
-                detail); the RM item is WHAT the store issues. Actual Size and
-                Raw Material Available are the shop floor's own answers typed on
-                Create (ADR-182) — the size really cut, not the planned one. */}
-            <Band>Material</Band>
-            <tr>
-              <K>RM Grade</K>
-              <V empty={!data.rawMaterialGradeText} title={data.rawMaterialGradeText ?? undefined}>
-                {data.rawMaterialGradeText ?? '—'}
-              </V>
-              <K>RM Size</K>
-              <V empty={!data.rawMaterialSizeText} title={data.rawMaterialSizeText ?? undefined}>
-                {data.rawMaterialSizeText ?? '—'}
-              </V>
-            </tr>
-            <tr>
-              <K>RM Item</K>
-              <V
-                code
-                empty={!data.rawMaterialItemCode}
-                title={data.rawMaterialItemCode ?? undefined}
-              >
-                {data.rawMaterialItemCode ?? '—'}
-              </V>
-              <K>RM Qty / piece</K>
-              <V num empty={data.rmQtyPerPiece == null}>
-                {data.rmQtyPerPiece ?? '—'}
-              </V>
-            </tr>
-            <tr>
-              <K>Actual Size</K>
-              <V code empty={!data.actualSize}>
-                {data.actualSize ?? '—'}
-                <Chip changes={pendingChanges} field="actualSize" />
-              </V>
-              <K>Raw Material Available</K>
-              <V>
-                {data.rawMaterialAvailable ? (
+          {/* Material — the RM item is WHAT the store issues; grade and size
+              are read live off the plan (same labels as Plan detail). Actual
+              Size and Raw Material Available are the shop floor's own answers
+              typed on Create (ADR-182) — the size really cut, not the planned
+              one. */}
+          <Cluster name="Material">
+            <ClusterFact
+              num
+              label="RM Item"
+              empty={!data.rawMaterialItemCode}
+              title={data.rawMaterialItemCode ?? undefined}
+              value={data.rawMaterialItemCode ?? '—'}
+            />
+            <ClusterFact
+              className="po-one-line"
+              label="RM Grade"
+              empty={!data.rawMaterialGradeText}
+              title={data.rawMaterialGradeText ?? undefined}
+              value={data.rawMaterialGradeText ?? '—'}
+            />
+            <ClusterFact
+              className="po-one-line"
+              label="RM Size"
+              empty={!data.rawMaterialSizeText}
+              title={data.rawMaterialSizeText ?? undefined}
+              value={data.rawMaterialSizeText ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="RM Qty / piece"
+              empty={data.rmQtyPerPiece == null}
+              value={data.rmQtyPerPiece ?? '—'}
+            />
+          </Cluster>
+          <Cluster name={null}>
+            <ClusterFact
+              className={pSize ? 'po-chip' : 'po-one-line'}
+              label="Actual Size"
+              empty={!data.actualSize}
+              title={
+                data.actualSize || pSize ? withPending(data.actualSize ?? '—', pSize) : undefined
+              }
+              value={data.actualSize ?? '—'}
+              after={pSize?.chip}
+            />
+            <ClusterFact
+              className={pRmAvail ? 'po-chip' : ''}
+              label="Raw Material Available"
+              title={
+                pRmAvail
+                  ? withPending(data.rawMaterialAvailable ? '✓ Yes' : '✗ No', pRmAvail)
+                  : undefined
+              }
+              value={
+                data.rawMaterialAvailable ? (
                   <span style={{ color: 'var(--green2)' }}>✓ Yes</span>
                 ) : (
                   <span style={{ color: 'var(--red2)' }}>✗ No</span>
-                )}
-                <Chip changes={pendingChanges} field="rawMaterialAvailable" />
-              </V>
-            </tr>
-
-            <Band>Notes</Band>
-            <tr>
-              <K>Remarks</K>
-              <V span={3} empty={!data.remarks}>
-                {data.remarks ?? '—'}
-                <Chip changes={pendingChanges} field="remarks" />
-              </V>
-            </tr>
-          </tbody>
-        </table>
+                )
+              }
+              after={pRmAvail?.chip}
+            />
+            <ClusterFact
+              span={2}
+              className={pRemarks ? 'po-wide po-chip' : 'po-wide po-one-line'}
+              label="Remarks"
+              empty={!data.remarks}
+              title={
+                data.remarks || pRemarks ? withPending(data.remarks ?? '—', pRemarks) : undefined
+              }
+              value={data.remarks ?? '—'}
+              after={pRemarks?.chip}
+            />
+          </Cluster>
+        </ClusterGrid>
       </DetailHeader>
 
-      {/* ADR-182 — the order was stopped. High on the page, because it changes
-          what every panel under it means. Grey, like its Short Closed badge. */}
-      {stopped ? (
-        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--text3)' }}>
-          <div className="panel-hdr">
-            <div className="panel-title">
-              Short Closed on {fmtDate(data.shortClosedAt)} by {data.shortClosedByName ?? '—'} —{' '}
-              {data.shortCloseReason ?? '—'}
-            </div>
-          </div>
-          <div className="panel-body">
-            <div className="text2" style={{ fontSize: 12, lineHeight: 1.6 }}>
-              {data.creditedQty ?? 0} credited stay in stock;{' '}
-              {Math.max(0, data.orderQty - (data.creditedQty ?? 0))} Pending went back to Plan{' '}
-              <span className="mono fw-700">{data.planCodeText}</span>.
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* JC progress — read live off the Job Card on every load, never stored. */}
-      <div className="panel" style={{ marginTop: 12 }}>
-        <div className="panel-hdr">
-          <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            Job Card Progress
-            {data.jcComputedStatus ? (
-              <JcStatusBadge status={data.jcComputedStatus} />
-            ) : (
-              <span className="badge b-grey">No Job Card</span>
-            )}
-          </div>
-          <div
-            className="mono fw-700"
-            style={{ fontSize: 14, color: 'var(--text)', cursor: 'help' }}
-            title="Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close credits this qty to stock."
-          >
-            {data.jcFinishedQty} <span className="text3">/ {data.orderQty}</span>
-          </div>
-        </div>
-        <div className="panel-body">
-          <div
-            style={{
-              height: 8,
-              background: 'var(--bg4)',
-              borderRadius: 4,
-              overflow: 'hidden',
-            }}
-            title={`${pct}% completed`}
-          >
-            <div
-              style={{
-                width: `${pct}%`,
-                height: '100%',
-                background: pct >= 100 ? 'var(--green)' : 'var(--cyan)',
-              }}
-            />
-          </div>
-          {data.jcClosedAt ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-              JC closed on <span className="mono">{fmtDate(data.jcClosedAt)}</span>.
-            </div>
-          ) : null}
-        </div>
+      {/* The one panel that takes the height left on screen. Its table is the
+          page's only scrollbar. */}
+      <div className="po-tabs">
+        <TabStrip
+          label="Production Order lists"
+          activeKey={tab}
+          onChange={(k) => setTab(k === 'history' ? 'history' : 'ledger')}
+          tabs={[
+            { key: 'ledger', label: 'Close Ledger', count: data.closes.length },
+            { key: 'history', label: 'History', count: history.data?.rows.length ?? null },
+          ]}
+        />
+        <span className="po-tabs-meta">
+          <b>
+            {credited} / {data.orderQty}
+          </b>{' '}
+          credited
+        </span>
       </div>
-
-      {/* Close (progressive) — credit finished pieces as they come off the JC. */}
-      {showCloseForm ? (
-        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--cyan)' }}>
-          <div className="panel-hdr">
-            <div className="panel-title">Close Production Order</div>
-          </div>
-          <div className="panel-body">
-            <PoCloseForm po={data} />
-          </div>
-        </div>
-      ) : null}
-
-      {/* Close ledger — every partial close + reversal, newest first. */}
-      {data.closes.length > 0 ? (
-        <div className="panel" style={{ marginTop: 12 }}>
-          <div className="panel-hdr">
-            <div className="panel-title">Close Ledger ({data.closes.length})</div>
-            <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--text)' }}>
-              {data.creditedQty ?? 0} <span className="text3">/ {data.orderQty} credited</span>
-            </div>
-          </div>
-          <div className="panel-body">
-            {/* ADR-182 — nothing may be reversed on a stopped order either. */}
-            <PoCloseLedger po={data} canReverse={perms.edit && !stopped} />
-          </div>
-        </div>
-      ) : null}
-
-      {data.status === 'closed' ? (
-        <div className="panel" style={{ marginTop: 12, borderLeft: '3px solid var(--green)' }}>
-          <div className="panel-hdr">
-            <div className="panel-title">✓ Closed — stock credited</div>
-          </div>
-          <div className="panel-body">
-            <div className="form-grid form-grid-3">
-              <Fact label="Credited Qty" mono>
-                {data.creditedQty ?? '—'}
-              </Fact>
-              <Fact label="Lost Qty" mono>
-                {data.lostQty ?? '—'}
-              </Fact>
-              <Fact label="Close Date" mono>
-                {fmtDate(data.closedAt)}
-              </Fact>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* ADR-197 — every action on this order: create, partial closes,
-          reversals, short close — who, when, qty, reason. */}
-      <Panel title="History" bodyPadding="none" style={{ marginTop: 12 }}>
-        <DocumentHistory entity="ProductionOrder" entityId={data.id} refId={data.code} />
+      <Panel fill bodyPadding="none">
+        {tab === 'ledger' ? (
+          data.closes.length === 0 ? (
+            <EmptyState>No closes yet.</EmptyState>
+          ) : (
+            // Close ledger — every partial close + reversal, newest first.
+            // ADR-182 — nothing may be reversed on a stopped order either.
+            <PoCloseLedger po={data} canReverse={perms.edit && !stopped} fill />
+          )
+        ) : (
+          // ADR-197 — every action on this order: create, partial closes,
+          // reversals, short close — who, when, qty, reason.
+          <DocumentHistory entity="ProductionOrder" entityId={data.id} refId={data.code} />
+        )}
       </Panel>
+
+      {/* Close (progressive, ADR-179) — today's form, unchanged, in a dialog.
+          Closes itself on success; the order refetches underneath. Kept open
+          while its save is in flight even if a refetch takes Close away, and
+          with no ×, no Escape and no click-outside until the save answers
+          (Modal: no `onClose` = no way to dismiss). */}
+      {closeOpen && (showCloseForm || closing) ? (
+        <Modal
+          title={`Close Production Order ${data.code}`}
+          size="md"
+          {...(closing ? {} : { onClose: () => setCloseOpen(false) })}
+          closeOnOverlayClick={false}
+        >
+          <PoCloseForm po={data} onClosed={() => setCloseOpen(false)} />
+        </Modal>
+      ) : null}
 
       {shortCloseOpen ? (
         <PoShortCloseModal
@@ -672,7 +650,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           code={data.code}
           jcCode={data.jcCodeText}
           orderQty={data.orderQty}
-          creditedQty={data.creditedQty ?? 0}
+          creditedQty={credited}
           onClose={() => setShortCloseOpen(false)}
         />
       ) : null}
