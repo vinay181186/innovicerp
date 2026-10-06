@@ -99,7 +99,7 @@ export async function createStoreIssue(
     // 3) Target + To Issue cap (409 needsConfirmation / approve-tier override).
     const { target, over } = await resolveTargetAndCap(tx, companyId, input, itemCodes);
     const confirmed = await enforceOverToIssue(user, over, input.confirmReason);
-    const { operatorId, issuedTo } = await resolveIssuedTo(tx, companyId, input);
+    const { userId: issuedToUserId, issuedTo } = await resolveIssuedTo(tx, companyId, input);
     // ADR-193 3c — an assembly-SO line may also take this SO's own reservation
     // (M12: over that, 409 names who holds the rest). Checked before posting.
     const soId = input.issueAgainst === 'assembly_so' ? target.salesOrderId : null;
@@ -125,7 +125,7 @@ export async function createStoreIssue(
         jobCardId: target.jobCardId,
         productionOrderId: target.productionOrderId,
         salesOrderId: target.salesOrderId,
-        issuedToOperatorId: operatorId,
+        issuedToUserId,
         issuedTo,
         department: target.department,
         purpose,

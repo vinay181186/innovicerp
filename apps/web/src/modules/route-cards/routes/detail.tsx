@@ -1,34 +1,46 @@
-// Route Card detail page — header + ops table + revision history.
-// Mirrors legacy viewRouteCard modal (L10143).
+// Route Card detail page. Mirrors legacy viewRouteCard modal (L10143).
+//
+// 2026-10-06 layout (owner-approved mock-up pro-routecard-detail-mockup.html,
+// "Route Card detail"): the whole page fits one 1440×810 screen with no page
+// scroll. Top to bottom:
+//   header      ← Back · code · Route Card · Rev chip … Print · ⋯ (Delete) · Edit / Revise
+//   identity    which item this route belongs to (DocIdent)
+//   facts       Route · Material · Notes, one line each (ClusterGrid — the Plan
+//               screens method, ADR-214)
+//   tab panel   Operation Sequence | Revision History | History — the one block
+//               that takes the height left (`page-fill rc-detail` + <Panel fill>); its
+//               table scrolls inside with the header row held.
+// Data, permissions, print and delete are unchanged from the stacked-panel page.
 
-import type { RouteCardRevision } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import type { RouteCardDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import {
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  Pencil,
-  Printer,
-  Trash2,
-} from 'lucide-react';
-import { Fragment, useState } from 'react';
+import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react';
+import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { useDocumentHistory } from '@/modules/activity-log/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
+import { ActionMenu } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
 import { useDeleteRouteCard, useRouteCard } from '../api';
+import { RouteCardOpsTable } from '../components/route-card-ops-table';
+import { RouteCardRevisionHistory } from '../components/route-card-revision-history';
 import { printRouteCard } from '../lib/print-route-card';
+import '../components/rc-detail.css';
 
 export const routeCardDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'route-cards/$id',
   component: RouteCardDetailPage,
 });
+
+type TabKey = 'ops' | 'revisions' | 'history';
 
 function RouteCardDetailPage(): React.JSX.Element {
   const { id } = routeCardDetailRoute.useParams();
@@ -38,11 +50,19 @@ function RouteCardDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'routecard_create');
   const { data: item } = useItem(detail?.itemId);
   const { data: company } = useMyCompany();
+  // The History tab's count. Same query key DocumentHistory reads, so the tab
+  // body and its count are ONE request.
+  const { data: history } = useDocumentHistory({
+    entity: 'RouteCard',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
   const del = useDeleteRouteCard();
   // Print failure (popup blocked) shows in place — never window.alert.
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
+  const [tab, setTab] = useState<TabKey>('ops');
 
   const onPrint = (): void => {
     if (!detail) return;
@@ -84,311 +104,177 @@ function RouteCardDetailPage(): React.JSX.Element {
     );
   }
 
+  // The Operations split, counted from the rows the Operation Sequence tab
+  // shows — process = in-house, outsource = OSP, qc = QC.
+  const inHouse = detail.ops.filter((o) => o.opType === 'process').length;
+  const osp = detail.ops.filter((o) => o.opType === 'outsource').length;
+  const qc = detail.ops.filter((o) => o.opType === 'qc').length;
+
   return (
-    <div>
-      <Link to="/route-cards" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back
-      </Link>
-
-      {/* SO-Planning left-accent identity card: the cyan stripe + banded header
-          (panel-hdr already paints a --bg3 band) is the same card composition SO
-          Planning gives each line — code in cyan mono, item code in purple, and a
-          small tinted revision pill in place of a plain label. */}
-      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code cyan" style={{ fontSize: 16, fontWeight: 800 }}>
-              {detail.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              <span style={{ color: 'var(--purple)' }}>{detail.itemCode ?? '—'}</span>
-              <span className="text2">{detail.itemName ?? '— unknown item —'}</span>
-              <span
-                className="mono fw-700"
-                style={{
-                  fontSize: 11,
-                  padding: '2px 8px',
-                  borderRadius: 3,
-                  background: 'var(--cyan3)',
-                  color: 'var(--cyan)',
-                }}
-              >
-                Route Card Rev {detail.currentRevision}
-              </span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
-              <Printer size={13} /> Print
-            </button>
-            {perms.edit && (
-              <Link
-                to="/route-cards/$id/edit"
-                params={{ id: detail.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                <Pencil size={13} /> Edit / Revise
-              </Link>
-            )}
-            {perms.edit && perms.approve && (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={() => {
-                  setDeleteReason('');
-                  setConfirmDelete(true);
-                }}
-                disabled={del.isPending}
-                title="Move this Route Card to Trash"
-              >
-                <Trash2 size={13} /> Delete
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="panel-body">
-          <div className="form-grid">
-            {/* Raw material sits FIRST, right under the item code / name in the
-                header: grade + size describe WHAT the part is cut from, so they
-                read with the item identity, not buried under Notes. Both are
-                optional — a card with neither still shows the pair as dashes,
-                because a missing grade is a gap worth seeing. */}
-            {/* Plan Type is how the item is normally made -- the same choice
-                SO Planning asks per plan, so it reads in Planning's colours. */}
-            <div className="form-grp">
-              <span className="form-label">Plan Type</span>
-              <div
-                className="fw-700"
-                style={{
-                  color:
-                    detail.planType === 'full_outsource'
-                      ? 'var(--purple)'
-                      : detail.planType === 'direct_purchase'
-                        ? 'var(--green)'
-                        : 'var(--cyan)',
-                }}
-              >
-                {detail.planType === 'full_outsource'
-                  ? '📦 Full Outsource'
-                  : detail.planType === 'direct_purchase'
-                    ? '🛒 Buy'
-                    : '🏭 Manufacture'}
-              </div>
-              {detail.planType === 'direct_purchase' ? (
-                // ADR-171: the tile is gone from the form; the value survives
-                // on old cards so the user knows where the flag now lives.
-                <div className="text3" style={{ fontSize: 11 }}>
-                  Old setting — set the item&apos;s Source to Buy instead.
-                </div>
-              ) : null}
-            </div>
-            <div className="form-grp">
-              <span className="form-label">RM Grade</span>
-              <div className="mono fw-700">{detail.rawMaterialGradeText ?? '—'}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">RM Size</span>
-              <div className="mono fw-700">{detail.rawMaterialSizeText ?? '—'}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Operations</span>
-              <div className="mono fw-700">{detail.ops.length}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Last Updated</span>
-              <div className="text2" style={{ fontSize: 12 }}>
-                {fmtDate(detail.updatedAt)}
-              </div>
-            </div>
-            <div className="form-grp form-full">
-              <span className="form-label">Route Card Remarks</span>
-              <div className="text2">{detail.notes ?? '—'}</div>
-            </div>
-          </div>
-          {notice ? (
-            <div
-              style={{
-                marginTop: 8,
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red2)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-              }}
-            >
-              {notice}
-            </div>
-          ) : null}
-        </div>
+    <div className="page-fill rc-detail">
+      {/* Header: the number, its revision, and the next step (Edit / Revise)
+          as the one primary button. Delete folds into the ⋯ menu. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 'var(--sp-2)',
+          marginBottom: 'var(--panel-gap)',
+        }}
+      >
+        <Link to="/route-cards" className="btn btn-ghost">
+          <ArrowLeft size={14} /> Back
+        </Link>
+        <span className="td-code" style={{ color: 'var(--blue)', fontSize: 'var(--fs-md)' }}>
+          {detail.code}
+        </span>
+        <span className="panel-title">Route Card</span>
+        <span className="badge b-blue">Route Card Rev {detail.currentRevision}</span>
+        <span style={{ flex: 1 }} />
+        <button type="button" className="btn btn-ghost" onClick={onPrint}>
+          <Printer size={13} /> Print
+        </button>
+        <ActionMenu
+          label="⋯"
+          items={[
+            {
+              label: 'Delete',
+              danger: true,
+              hidden: !(perms.edit && perms.approve),
+              disabled: del.isPending,
+              title: 'Move this Route Card to Trash',
+              onClick: () => {
+                setDeleteReason('');
+                setConfirmDelete(true);
+              },
+            },
+          ]}
+        />
+        {perms.edit && (
+          <Link to="/route-cards/$id/edit" params={{ id: detail.id }} className="btn btn-primary">
+            <Pencil size={13} /> Edit / Revise
+          </Link>
+        )}
       </div>
 
-      <div className="panel" style={{ borderLeft: '3px solid var(--cyan)' }}>
-        <div className="panel-hdr">
-          <div className="panel-title">Operation Sequence ({detail.ops.length})</div>
-        </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th style={{ width: 40 }}>Op</th>
-                {/* Group replaces Type, as on the form: the kind of row is told
-                    by its tint and by the QC / OSP badge in this column. */}
-                <th>Group</th>
-                <th>Machine / Vendor</th>
-                <th>Operation</th>
-                <th className="th-num">Cycle Time (min)</th>
-                <th>Program No.</th>
-                <th className="th-num">Lead Days</th>
-                <th>Tool No.</th>
-                <th>Tool Details</th>
-                {/* Migration 0195 — what the operator or the vendor must know
-                    about this ONE step. Long free text, so it ends in an
-                    ellipsis and the shared cell-overflow helper gives the whole
-                    sentence on hover. */}
-                <th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.ops.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="empty-state">
-                    No operations yet.
-                  </td>
-                </tr>
-              ) : (
-                detail.ops.map((op) => {
-                  // Op-type accents follow legacy's own convention: the sequence
-                  // number is text3 on process rows (L10147/L10237), green on QC
-                  // (L10213) and purple on OSP (L10226).
-                  const accent =
-                    op.opType === 'qc'
-                      ? 'var(--green)'
-                      : op.opType === 'outsource'
-                        ? 'var(--purple)'
-                        : 'var(--text3)';
-                  const bg =
-                    op.opType === 'qc'
-                      ? 'var(--green3)'
-                      : op.opType === 'outsource'
-                        ? 'var(--purple3)'
-                        : undefined;
-                  // machTag (L1980) renders the machine as a cyan `.tag` chip:
-                  // code on a bold line, machine name on a 9px text3 line under
-                  // it. OSP/QC rows reuse the chip with their own accent.
-                  const tagColor =
-                    op.opType === 'qc'
-                      ? 'var(--green)'
-                      : op.opType === 'outsource'
-                        ? 'var(--purple)'
-                        : 'var(--cyan)';
-                  const tagCode =
-                    op.opType === 'outsource'
-                      ? (op.ospVendorCode ?? op.ospVendorCodeText ?? '—')
-                      : (op.machineCode ?? op.machineCodeText ?? '—');
-                  const tagName = op.opType === 'outsource' ? op.ospVendorName : op.machineName;
-                  // The machine GROUP ('VMC', 'CNC') is the word the shop floor
-                  // uses for a family of machines. It hangs off the machine, so
-                  // only an in-house op has one; OSP and QC rows show a badge in
-                  // the Group column instead.
-                  const groupCode =
-                    op.opType === 'outsource' || op.opType === 'qc' ? null : op.machineGroupCode;
-                  return (
-                    <tr key={op.id} style={{ background: bg }}>
-                      {/* 10, 20, 30 on screen — display rule, see opSrNo */}
-                      <td className="mono fw-700" style={{ color: accent }}>
-                        {opSrNo(op.opSeq)}
-                      </td>
-                      <td>
-                        {op.opType === 'qc' ? (
-                          <span className="badge b-green" style={{ fontSize: 11 }}>
-                            🔬 QC
-                          </span>
-                        ) : op.opType === 'outsource' ? (
-                          <span
-                            className="badge"
-                            style={{
-                              fontSize: 11,
-                              color: 'var(--purple)',
-                              background: 'var(--purple3)',
-                              border: '1px solid var(--purple)',
-                            }}
-                          >
-                            🏭 OSP
-                          </span>
-                        ) : groupCode ? (
-                          <span className="mono fw-700" title={`Machine group: ${groupCode}`}>
-                            {groupCode}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td>
-                        <span
-                          className="tag"
-                          style={{
-                            background: 'var(--bg4)',
-                            color: tagColor,
-                            lineHeight: 1.25,
-                            verticalAlign: 'top',
-                          }}
-                        >
-                          <span style={{ fontWeight: 700, display: 'block' }}>{tagCode}</span>
-                          {tagName ? (
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: 'var(--text3)',
-                                fontWeight: 400,
-                                display: 'block',
-                              }}
-                            >
-                              {tagName}
-                            </span>
-                          ) : null}
-                        </span>
-                      </td>
-                      <td className="fw-700">{op.operation}</td>
-                      <td className="td-num mono">
-                        {op.opType === 'outsource' ? '—' : Number(op.cycleTimeMin) || '—'}
-                      </td>
-                      <td className="mono" style={{ fontSize: 12, color: 'var(--blue)' }}>
-                        {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
-                      </td>
-                      <td className="td-num mono" style={{ fontSize: 12 }}>
-                        {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
-                      </td>
-                      <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
-                        {op.toolNo ?? '—'}
-                      </td>
-                      <td className="text3" style={{ fontSize: 12 }}>
-                        {op.toolDetails ?? '—'}
-                      </td>
-                      <td className="text2" style={{ fontSize: 12 }}>
-                        {op.remarks ?? '—'}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Panel>
+        {/* WHICH item this route belongs to — identity, not a fact about the
+            route, so it heads the block instead of taking grid cells. */}
+        <DocIdent>
+          <IdentCode>{detail.code}</IdentCode>
+          <IdentSep />
+          <IdentCode>{detail.itemCode ?? '—'}</IdentCode>
+          <span>{detail.itemName ?? '— unknown item —'}</span>
+        </DocIdent>
 
-      {detail.revisions.length > 0 ? <RevisionHistory revisions={detail.revisions} /> : null}
+        <ClusterGrid>
+          {/* How the item is made, and how many steps of each kind. */}
+          <Cluster name="Route">
+            <PlanTypeFact planType={detail.planType} />
+            <ClusterFact
+              span={2}
+              label="Operations"
+              value={
+                <>
+                  <span className="mono fw-700">{detail.ops.length}</span>
+                  {detail.ops.length > 0 ? (
+                    <span
+                      className="mono text3"
+                      style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, marginLeft: 8 }}
+                    >
+                      {inHouse} in-house · {osp} OSP · {qc} QC
+                    </span>
+                  ) : null}
+                </>
+              }
+            />
+            <ClusterFact num label="Last Updated" value={fmtDate(detail.updatedAt)} />
+          </Cluster>
 
-      {/* ADR-197 — who did what to this card, with before → after and reasons. */}
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">History</div>
-        </div>
-        <DocumentHistory entity="RouteCard" entityId={detail.id} refId={detail.code} />
-      </div>
+          {/* WHAT the part is cut from — the same four cells, in the same
+              order, as the Production Order's Material row. Blank fields show
+              as dashes, because a missing grade is a gap worth seeing. */}
+          <Cluster name="Material">
+            <ClusterFact
+              num
+              label="RM Item"
+              empty={!detail.rawMaterialItemCode}
+              title={detail.rawMaterialItemCode ?? undefined}
+              value={detail.rawMaterialItemCode ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="RM Grade"
+              empty={!detail.rawMaterialGradeText}
+              title={detail.rawMaterialGradeText ?? undefined}
+              value={detail.rawMaterialGradeText ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="RM Size"
+              empty={!detail.rawMaterialSizeText}
+              title={detail.rawMaterialSizeText ?? undefined}
+              value={detail.rawMaterialSizeText ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="RM Qty per piece"
+              empty={detail.rmQtyPerPiece == null}
+              value={detail.rmQtyPerPiece == null ? '—' : String(detail.rmQtyPerPiece)}
+            />
+          </Cluster>
+
+          <Cluster name="Notes">
+            <ClusterFact
+              span={4}
+              wrap
+              label="Route Card Remarks"
+              empty={!detail.notes}
+              value={detail.notes ?? '—'}
+            />
+          </Cluster>
+        </ClusterGrid>
+
+        {notice ? (
+          <div
+            style={{
+              marginTop: 8,
+              color: 'var(--red2)',
+              background: 'var(--red3)',
+              border: '1px solid var(--red2)',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+            }}
+          >
+            {notice}
+          </div>
+        ) : null}
+      </Panel>
+
+      <TabStrip
+        label="Route Card lists"
+        activeKey={tab}
+        onChange={(k) => setTab(k as TabKey)}
+        tabs={[
+          { key: 'ops', label: 'Operation Sequence', count: detail.ops.length },
+          { key: 'revisions', label: 'Revision History', count: detail.revisions.length },
+          // null while loading — a count still in flight is not a 0.
+          { key: 'history', label: 'History', count: history ? history.rows.length : null },
+        ]}
+      />
+
+      {/* The one block that takes the height left on the page; the table in
+          it is what scrolls, with its header row held at the top. */}
+      <Panel fill bodyPadding="none">
+        {tab === 'ops' ? <RouteCardOpsTable ops={detail.ops} /> : null}
+        {tab === 'revisions' ? <RouteCardRevisionHistory revisions={detail.revisions} /> : null}
+        {/* ADR-197 — who did what to this card, with before → after and reasons. */}
+        {tab === 'history' ? (
+          <DocumentHistory entity="RouteCard" entityId={detail.id} refId={detail.code} />
+        ) : null}
+      </Panel>
 
       <ConfirmDialog
         open={confirmDelete}
@@ -422,203 +308,44 @@ function RouteCardDetailPage(): React.JSX.Element {
   );
 }
 
-// ─── Revision history ─────────────────────────────────────────────────────
-//
-// Every revision has always carried a FULL snapshot of the operations as they
-// stood at that revision — the server keeps it as JSON precisely so the trail
-// survives the live op rows being wiped and rewritten on each save. The panel
-// used to print the length of that array and nothing else, so the history could
-// say Rev 2 held eight operations without saying what they were.
-//
-// Each row opens now. The colours and chips deliberately match the live
-// operations table above, so an old routing reads exactly like the current one.
-
-// Group as the user reads it — never the raw code. The snapshot keeps no
-// machine group, so an in-house op reads "In-house" here.
-const OP_TYPE_LABEL: Record<string, string> = {
-  process: 'In-house',
-  outsource: 'OSP',
-  qc: 'QC',
-};
-
-function opAccent(opType: string): string {
-  return opType === 'qc'
-    ? 'var(--green)'
-    : opType === 'outsource'
+/** Plan Type is how the item is normally made — the same choice SO Planning
+ *  asks per plan, so it reads in Planning's colours.
+ *
+ *  Built from ClusterFact's own classes rather than ClusterFact itself for ONE
+ *  reason: an old Buy card carries a note under the value, and ClusterFact has
+ *  no slot that can wrap — its value is one clipped line and its `after` chip
+ *  never shrinks, so a 50-character note there would spill out of the cell.
+ *  The third child takes the full cell width (the cell is `flex-wrap`) and
+ *  wraps inside it. */
+function PlanTypeFact({ planType }: { planType: RouteCardDetail['planType'] }): React.JSX.Element {
+  const color =
+    planType === 'full_outsource'
       ? 'var(--purple)'
-      : 'var(--text3)';
-}
-
-function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): React.JSX.Element {
-  // One revision open at a time. Two snapshots expanded in a single column read
-  // as one long undifferentiated list, which is worse than showing neither.
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  // Amber stripe: the revision trail carries the amber accent its own "Rev N"
-  // cells use, the same way SO Planning colours a card by its status.
+      : planType === 'direct_purchase'
+        ? 'var(--green)'
+        : 'var(--cyan)';
+  const label =
+    planType === 'full_outsource'
+      ? '📦 Full Outsource'
+      : planType === 'direct_purchase'
+        ? '🛒 Buy'
+        : '🏭 Manufacture';
   return (
-    <div className="panel" style={{ borderLeft: '3px solid var(--amber)' }}>
-      <div className="panel-hdr">
-        <div className="panel-title">▸ Revision History ({revisions.length})</div>
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th style={{ width: 28 }} />
-              <th>Route Card Rev</th>
-              <th>Revision Date</th>
-              <th>Revised By</th>
-              <th>Revision Note</th>
-              <th className="th-num">Ops</th>
-            </tr>
-          </thead>
-          <tbody>
-            {revisions.map((rev) => {
-              const open = openId === rev.id;
-              return (
-                <Fragment key={rev.id}>
-                  <tr
-                    onClick={() => setOpenId(open ? null : rev.id)}
-                    style={{ cursor: 'pointer' }}
-                    title={open ? 'Hide the operations' : 'Show the operations at this revision'}
-                  >
-                    <td className="text3">
-                      {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    </td>
-                    <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
-                      Route Card Rev {rev.revisionNo}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {fmtDate(rev.createdAt)}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {rev.createdByName ?? '—'}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
-                      {rev.notes ?? '—'}
-                    </td>
-                    <td className="td-num mono">{rev.opsSnapshot.length}</td>
-                  </tr>
-                  {open ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        style={{ background: 'var(--bg3)', padding: '8px 12px 12px' }}
-                      >
-                        <div
-                          className="text3"
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            marginBottom: 6,
-                          }}
-                        >
-                          Routing at Route Card Rev {rev.revisionNo}
-                        </div>
-                        <div className="tbl-wrap">
-                          <table className="innovic-table">
-                            <thead>
-                              <tr>
-                                <th>Op</th>
-                                <th>Group</th>
-                                <th>Machine / Vendor</th>
-                                <th>Operation</th>
-                                <th className="th-num">Cycle Time (min)</th>
-                                <th>Program No.</th>
-                                <th className="th-num">Lead Days</th>
-                                <th>Tool No.</th>
-                                <th>Tool Details</th>
-                                <th>Remarks</th>
-                                <th>QC</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {rev.opsSnapshot.map((op) => {
-                                const accent = opAccent(op.opType);
-                                return (
-                                  <tr key={`${rev.id}-${op.opSeq}`}>
-                                    <td className="mono fw-700" style={{ color: accent }}>
-                                      {opSrNo(op.opSeq)}
-                                    </td>
-                                    <td>
-                                      <span
-                                        className="badge"
-                                        style={{ color: accent, fontWeight: 700 }}
-                                      >
-                                        {OP_TYPE_LABEL[op.opType] ?? op.opType}
-                                      </span>
-                                    </td>
-                                    <td className="mono" style={{ fontSize: 12 }}>
-                                      {op.opType === 'outsource'
-                                        ? (op.ospVendorCode ?? '—')
-                                        : (op.machineCode ?? '—')}
-                                    </td>
-                                    <td className="fw-700">{op.operation}</td>
-                                    <td className="td-num mono">
-                                      {op.opType === 'outsource'
-                                        ? '—'
-                                        : Number(op.cycleTimeMin) || '—'}
-                                    </td>
-                                    <td
-                                      className="mono"
-                                      style={{ fontSize: 12, color: 'var(--blue)' }}
-                                    >
-                                      {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
-                                    </td>
-                                    <td className="td-num mono" style={{ fontSize: 12 }}>
-                                      {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
-                                    </td>
-                                    <td
-                                      className="mono"
-                                      style={{ fontSize: 12, color: 'var(--cyan)' }}
-                                    >
-                                      {op.toolNo ?? '—'}
-                                    </td>
-                                    <td className="text3" style={{ fontSize: 12 }}>
-                                      {op.toolDetails ?? '—'}
-                                    </td>
-                                    {/* Optional like qcRequired below: a snapshot
-                                        written before migration 0195 carries no
-                                        remarks key at all. */}
-                                    <td className="text2" style={{ fontSize: 12 }}>
-                                      {op.remarks ?? '—'}
-                                    </td>
-                                    {/* undefined means this revision predates the
-                                        QC flag being snapshotted. Shown as "not
-                                        recorded" — never guessed as a No. */}
-                                    <td
-                                      style={{
-                                        color:
-                                          op.qcRequired === true ? 'var(--green)' : 'var(--text3)',
-                                      }}
-                                      title={
-                                        op.qcRequired === undefined
-                                          ? 'Not recorded — this revision predates QC being kept in the history'
-                                          : undefined
-                                      }
-                                    >
-                                      {op.qcRequired === undefined
-                                        ? '—'
-                                        : op.qcRequired
-                                          ? 'Yes'
-                                          : 'No'}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+    <div className="cl-fact">
+      <span className="cl-fact-k">Plan Type</span>
+      <span className="cl-fact-v" style={{ color, fontWeight: 700 }}>
+        {label}
+      </span>
+      {planType === 'direct_purchase' ? (
+        // ADR-171: the tile is gone from the form; the value survives on old
+        // cards so the user knows where the flag now lives.
+        <span
+          className="text3"
+          style={{ flexBasis: '100%', fontSize: 'var(--fs-xs)', textAlign: 'right' }}
+        >
+          Old setting — set the item&apos;s Source to Buy instead.
+        </span>
+      ) : null}
     </div>
   );
 }

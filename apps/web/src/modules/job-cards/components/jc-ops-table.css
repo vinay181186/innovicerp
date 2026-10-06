@@ -1,0 +1,253 @@
+/* Job Card detail — Operations tab table (jc-ops-table.tsx).
+   Scoped to `.jc-ops-table`; tokens only, no literal colours. The table itself
+   is `.innovic-table` (alignment, borders, zebra, td-num / th-num) — this file
+   adds only what that table has no rule for. */
+
+/* Two header rows, both fixed while the body scrolls: the whole <thead> is
+   the sticky box (each <th> pinned at top: 0 would stack both rows on one
+   line). */
+.jc-ops-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.jc-ops-table thead th {
+  position: static;
+}
+.jc-ops-table thead tr.dt-head-groups th.jc-ops-gv {
+  color: var(--purple2);
+}
+.jc-ops-table th.jc-ops-h-good {
+  color: var(--green);
+}
+.jc-ops-table th.jc-ops-h-warn {
+  color: var(--amber2);
+}
+.jc-ops-table th.jc-ops-h-bad {
+  color: var(--red);
+}
+
+/* Row kinds: QC light green, outsource light purple; the current op carries a
+   3px blue left edge. */
+.jc-ops-table tr.jc-ops-qc > td {
+  background: var(--green3);
+}
+.jc-ops-table tr.jc-ops-osp > td {
+  background: var(--purple3);
+}
+.jc-ops-table tr.jc-ops-cur > td:first-child {
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+.jc-ops-table tbody tr.jc-ops-row {
+  cursor: pointer;
+}
+
+/* ▸ expander */
+.jc-ops-table td.jc-ops-exp {
+  padding: 0;
+  width: 24px;
+}
+.jc-ops-exp button {
+  background: none;
+  border: none;
+  padding: 0 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  color: var(--text3);
+}
+.jc-ops-exp button:hover {
+  color: var(--blue);
+}
+
+/* Op number + Operation · Machine / Vendor */
+.jc-ops-opn {
+  color: var(--text3);
+}
+.jc-ops-opn.jc-ops-k-qc,
+.jc-ops-opc.jc-ops-k-qc i {
+  color: var(--green2);
+}
+.jc-ops-opn.jc-ops-k-osp,
+.jc-ops-opc.jc-ops-k-osp i {
+  color: var(--purple2);
+}
+.jc-ops-table td.jc-ops-opc {
+  max-width: 300px;
+}
+.jc-ops-opc b {
+  font-weight: 600;
+  color: var(--text);
+}
+.jc-ops-opc i {
+  font-style: normal;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  color: var(--blue2);
+  margin-left: 4px;
+}
+.jc-ops-opc .badge {
+  margin-left: 4px;
+}
+
+/* Quantity tones — the colours today's Op Qty Flow uses; zero is muted. */
+.jc-ops-q-good {
+  color: var(--green2);
+  font-weight: 700;
+}
+.jc-ops-q-warn {
+  color: var(--amber2);
+}
+.jc-ops-q-rw {
+  color: var(--cyan);
+}
+.jc-ops-q-bad {
+  color: var(--red2);
+}
+.jc-ops-table td.jc-ops-q0 {
+  color: var(--text3);
+  font-weight: 400;
+}
+.jc-ops-chk {
+  color: var(--green2);
+  font-weight: 700;
+}
+.jc-ops-chk.is-off {
+  color: var(--red2);
+}
+
+/* Next Step text when there is no action */
+.jc-ops-nb-done {
+  color: var(--green2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+.jc-ops-nb-muted {
+  color: var(--text3);
+  font-size: var(--fs-xs);
+}
+.jc-ops-nb-ref {
+  color: var(--purple);
+  font-size: var(--fs-xs);
+}
+.jc-ops-btn-qc {
+  color: var(--green2);
+}
+
+/* ▸ detail row */
+.jc-ops-table tr.jc-ops-det > td,
+.jc-ops-table tbody tr.jc-ops-det:hover > td {
+  background: var(--bg3);
+  padding: 6px 12px 8px 34px;
+  text-align: left;
+  cursor: default;
+}
+.jc-ops-detg {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px 14px;
+}
+.jc-ops-f {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+}
+.jc-ops-k {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  white-space: nowrap;
+}
+.jc-ops-v {
+  min-width: 0;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jc-ops-sub {
+  font-weight: 400;
+  color: var(--text3);
+  font-size: var(--fs-xs);
+}
+.jc-ops-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+}
+.jc-ops-logs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text2);
+}
+.jc-ops-lk {
+  font-weight: 700;
+  color: var(--text2);
+}
+
+/* Words with a meaning colour (notes, detail) */
+.jc-ops-good {
+  color: var(--green2);
+}
+.jc-ops-warn {
+  color: var(--amber2);
+}
+.jc-ops-info {
+  color: var(--blue);
+}
+.jc-ops-bad {
+  color: var(--red2);
+}
+.jc-ops-link {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+/* Notes line + Job Card check footer */
+.jc-ops-notes {
+  padding: 6px 12px 4px;
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+}
+.jc-ops-note + .jc-ops-note::before {
+  content: '\00a0\00a0·\00a0\00a0';
+  color: var(--text3);
+}
+.jc-ops-notes b,
+.jc-ops-check b {
+  font-weight: 600;
+  color: var(--text);
+}
+.jc-ops-notes b.jc-ops-good,
+.jc-ops-check b.jc-ops-good {
+  color: var(--green2);
+}
+.jc-ops-check b.jc-ops-bad {
+  color: var(--red2);
+}
+.jc-ops-check {
+  padding: 4px 12px 8px;
+  font-size: var(--fs-xs);
+  color: var(--text2);
+}
+
+@media (max-width: 900px) {
+  .jc-ops-detg {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

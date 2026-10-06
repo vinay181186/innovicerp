@@ -1149,7 +1149,9 @@ export async function createProductionOrder(
       const planHasRmSize = Boolean(plan.rawMaterialSizeText?.trim() || plan.rawMaterialSizeId);
       if (!planHasRmGrade && !planHasRmSize) {
         throw new ValidationError(
-          'This plan has no raw material — set the Grade and Size on the plan first.',
+          // ADR-218: the plan screens no longer set material, so name the two
+          // places that do and the re-save that pulls it through.
+          "This plan has no raw material — fill RM Grade and RM Size on the item's Route Card (or on its BOM line), then open the plan and save it again.",
         );
       }
 

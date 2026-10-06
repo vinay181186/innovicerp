@@ -2,11 +2,19 @@
 //
 // Replaces the old one-shot confirm. The person credits pieces AS THEY FINISH:
 // a qty field defaults to and is capped at `availableToClose` (= live finished −
-// already credited), and the running "Credited X of order, remaining Y" is shown
-// so it is clear how much is left. A "Close short (finish)" toggle finishes the
+// already credited). A "Close short (finish)" toggle finishes the
 // PO under target — it records the shortfall (order − credited) as lost and needs
 // a reason. Whether close is allowed at all is still the server's call
 // (`canClose` / `closeBlockedReason`); this form only renders once it is.
+//
+// Layout (pro-routecard-create-edit-mockup.html frame 3, approved 2026-10-06):
+// the old running line became a four-cell account on the ClusterGrid —
+// PRO Qty | JC Finished | Credited Qty | Available to Close (green result) —
+// then Qty to Close★ and Remarks, with Pending and Lost Qty in the help line.
+// Finish Short ticked: PRO Qty | Credited Qty | Available to Close | Lost Qty
+// (orange), and Reason★ takes the whole row. Rules, messages, the Finish Short
+// sentence and the button are unchanged. Used by the detail page's Close Qty…
+// dialog and by routes/close.tsx.
 //
 // The qty is a plain <input type="number">; the app-wide wheel guard
 // (lib/number-wheel-guard.ts) already stops the mouse wheel changing it, so no
@@ -15,7 +23,9 @@
 import type { ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
 import { useCloseProductionOrder } from '../api';
+import './po-edit.css';
 
 interface PoCloseFormProps {
   po: ProductionOrderDetail;
@@ -75,83 +85,103 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
     );
   };
 
-  return (
-    <div>
-      {/* Running counts — how much can be closed now, how much has been, how
-          much is left. */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 16,
-          flexWrap: 'wrap',
-          fontSize: 12,
-          marginBottom: 10,
-          color: 'var(--text2)',
-        }}
-      >
-        <span>
-          Available to Close{' '}
-          <b className="mono" style={{ color: 'var(--text)' }}>
-            {po.availableToClose}
-          </b>
-        </span>
-        <span>
-          Credited{' '}
-          <b className="mono" style={{ color: 'var(--text)' }}>
-            {po.creditedQty ?? 0}
-          </b>{' '}
-          of{' '}
-          <b className="mono" style={{ color: 'var(--text)' }}>
-            {po.orderQty}
-          </b>
-        </span>
-        <span>
-          Pending{' '}
-          <b className="mono" style={{ color: 'var(--text)' }}>
-            {po.remainingQty}
-          </b>
-        </span>
-      </div>
+  // The account's figures, worked out once so the cells, the help lines, the
+  // Finish Short sentence and the button title can never disagree.
+  const credited = po.creditedQty ?? 0;
+  // What Finish Short writes off: Pending less what is credited now — exactly
+  // the sum the Finish Short sentence below has always used.
+  const lostOnFinish = Math.max(0, po.remainingQty - po.availableToClose);
+  // Recomputed from the TYPED qty (cluster-grid pitfall 4): Pending is the
+  // server's figure for what is credited so far, so it must drop as you type.
+  const pendingAfter = Math.max(0, po.remainingQty - (qtyValid ? qtyNum : 0));
+  // "40 − 20 credited − 8 credited now = 12" — printed only when that sum is
+  // the Lost Qty the cell shows; otherwise just the figure.
+  const lostSum =
+    po.orderQty - credited - po.availableToClose === lostOnFinish
+      ? `${po.orderQty} − ${credited} credited − ${po.availableToClose} credited now = ${lostOnFinish} recorded as lost`
+      : `${lostOnFinish} recorded as lost`;
 
-      <div className="form-grid form-grid-3">
-        {/* Qty applies only to an ordinary partial close. On "Close short
-            (finish)" the backend ignores it (it credits everything available
-            and writes off the rest), so the field is hidden to avoid implying
-            it is editable. */}
-        {finish ? null : (
-          <div className="form-grp">
-            <label className="form-label" htmlFor={`close-qty-${po.id}`}>
-              Qty to Close<span className="req">★</span>
-            </label>
-            <input
-              id={`close-qty-${po.id}`}
-              type="number"
-              className="innovic-input mono"
-              min={1}
-              max={max}
-              step={1}
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              style={{ textAlign: 'right' }}
+  return (
+    <div className="po-close-form">
+      <ClusterGrid>
+        {/* The account, ending on the figure this close acts on. Ordinary
+            close: PRO Qty → JC Finished → Credited → Available to Close
+            (JC Finished − Credited). Finish Short: the account ends on the
+            Lost Qty that will be written off instead. */}
+        {finish ? (
+          <Cluster>
+            <ClusterFact num label="PRO Qty" value={po.orderQty} />
+            <ClusterFact num label="Credited Qty" value={credited} />
+            <ClusterFact num label="Available to Close" value={po.availableToClose} />
+            <ClusterFact
+              num
+              className="po-lost"
+              label="Lost Qty"
+              title="Recorded as lost when this order is finished short"
+              value={lostOnFinish}
             />
-            <div className="form-help">Credited to stock.</div>
-          </div>
+          </Cluster>
+        ) : (
+          <Cluster>
+            <ClusterFact num label="PRO Qty" value={po.orderQty} />
+            <ClusterFact num label="JC Finished" value={po.jcFinishedQty} />
+            <ClusterFact num label="Credited Qty" value={credited} />
+            <ClusterFact
+              num
+              lead
+              label="Available to Close"
+              title="Finished on the Job Card and not yet credited"
+              value={po.availableToClose}
+            />
+          </Cluster>
         )}
 
-        <div className={finish ? 'form-grp form-full' : 'form-grp form-span-2'}>
-          <label className="form-label" htmlFor={`close-remarks-${po.id}`}>
-            {finish ? 'Reason' : 'Remarks'}
-            {finish ? <span className="req">★</span> : null}
-          </label>
-          <input
-            id={`close-remarks-${po.id}`}
-            className="innovic-input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder={finish ? 'e.g. 3 pieces scrapped at final inspection' : 'Optional note…'}
-          />
-        </div>
-      </div>
+        <Cluster>
+          {/* Qty applies only to an ordinary partial close. On "Close short
+              (finish)" the backend ignores it (it credits everything available
+              and writes off the rest), so the field is hidden to avoid implying
+              it is editable. */}
+          {finish ? null : (
+            <FormField
+              label="Qty to Close"
+              required
+              htmlFor={`close-qty-${po.id}`}
+              help={`Credited to stock · 1 to ${max}`}
+            >
+              <input
+                id={`close-qty-${po.id}`}
+                type="number"
+                className="innovic-input cl-num cl-cap"
+                min={1}
+                max={max}
+                step={1}
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+              />
+            </FormField>
+          )}
+
+          <FormField
+            className={finish ? 'cl-span-4' : 'cl-span-3'}
+            label={finish ? 'Reason' : 'Remarks'}
+            required={finish}
+            htmlFor={`close-remarks-${po.id}`}
+            help={
+              finish
+                ? lostSum
+                : `Pending after this close: ${pendingAfter} · Lost Qty so far: ${po.lostQty ?? 0}`
+            }
+          >
+            <input
+              id={`close-remarks-${po.id}`}
+              className="innovic-input"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder={finish ? 'e.g. 3 pieces scrapped at final inspection' : 'Optional note…'}
+            />
+          </FormField>
+        </Cluster>
+      </ClusterGrid>
 
       {/* Close short: finish the PO under target. Records order − credited as
           lost stock, credits whatever is available now, and closes the order. */}

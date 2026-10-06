@@ -206,3 +206,25 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Width caps — OPT-IN, additive. A cell stays a full quarter of the row (the
+   grid must not break), but the control inside it does not have to fill it: a
+   Qty box as wide as a name box was the "too long field width" complaint on
+   the BOM screen. Put the cap on the CONTROL, never on the cell.
+     .cl-cap     a number or a short code  (Qty, Rev)
+     .cl-cap-md  a document no., a code, a short select  (BOM No., Status)
+   Nothing already on the grid changes — no existing screen picks these up
+   unless its markup asks for them.
+   The third selector in each pair is for the shared searchable picker, which
+   keeps its own wrapper div around the input — put the class on the wrapper
+   and the cap still reaches the control. */
+.innovic-input.cl-cap,
+.innovic-select.cl-cap,
+.cl-cap > .innovic-input {
+  max-width: 120px;
+}
+.innovic-input.cl-cap-md,
+.innovic-select.cl-cap-md,
+.cl-cap-md > .innovic-input {
+  max-width: 210px;
+}

@@ -1,6 +1,13 @@
 // Plan EDIT form (plans/$id/edit). /plans/new no longer uses it — a new plan
 // is made by plan-create-form.tsx, the same Route-Card plan as SO Planning
-// "+ Plan". Mirrors legacy renderSOPlanning panels
+// "+ Plan".
+//
+// ADR-218: raw material has ONE author — the part's Route Card, or the BOM line
+// for a BOM child. So RM Grade, RM Size, RM Item and RM Qty per piece are SHOWN
+// here and nothing more: no pickers, and all four left out of the write so the
+// server keeps filling them from their author.
+//
+// Mirrors legacy renderSOPlanning panels
 // (HTML L9299) — type picker + type-specific sub-form + ops table for
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
@@ -15,12 +22,11 @@ import { Link, useParams } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
-import { RmItemFields, rmItemToInput } from '@/components/shared/rm-item-fields';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { findItemByExactCode, useItemCodeSearch } from '@/modules/items/use-item-code-search';
 import {
-  MaterialGradePicker,
-  MaterialSizePicker,
+  MaterialValueDisplay,
+  RM_SOURCE_HELP,
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -40,15 +46,12 @@ export interface PlanFormValues {
   planQty: number;
   plannedStartDate: string;
   plannedEndDate: string;
-  // Raw material — two INDEPENDENT master pickers, both optional. The id links
-  // to the master; the *Text snapshot is what this plan still prints after the
-  // master row is renamed or deactivated, so both travel together.
-  rawMaterialGradeId: string | null;
+  // Raw material — ADR-218: DISPLAY ONLY. The plan's own stored values are
+  // carried here so the form can show them; the form never changes them and
+  // never sends them, so the master ids (the link half of each pair) are not
+  // kept at all — only what is read on screen.
   rawMaterialGradeText: string | null;
-  rawMaterialSizeId: string | null;
   rawMaterialSizeText: string | null;
-  // ADR-193 phase 3a: RM item + qty per piece (prefilled from the Route Card).
-  rawMaterialItemId: string | null;
   rawMaterialItemCode: string | null;
   rmQtyPerPiece: string;
   bomMasterId: string | null;
@@ -134,11 +137,8 @@ export function emptyValues(): PlanFormValues {
     // editable — this is a starting point, not a rule.
     plannedStartDate: todayLocal(),
     plannedEndDate: addDaysLocal(todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
-    rawMaterialGradeId: null,
     rawMaterialGradeText: null,
-    rawMaterialSizeId: null,
     rawMaterialSizeText: null,
-    rawMaterialItemId: null,
     rawMaterialItemCode: null,
     rmQtyPerPiece: '',
     bomMasterId: null,
@@ -160,18 +160,7 @@ export function emptyValues(): PlanFormValues {
   };
 }
 
-/** Which raw-material pair this form has something to say about on this save.
- *  Both true is the old behaviour (send everything); a false leaves that pair
- *  OUT of the payload — see the comment at the RM block in `toCreateInput`. */
-export interface PlanRmIntent {
-  sendGrade: boolean;
-  sendSize: boolean;
-}
-
-export function toCreateInput(
-  v: PlanFormValues,
-  rm: PlanRmIntent = { sendGrade: true, sendSize: true },
-): CreatePlanInput {
+export function toCreateInput(v: PlanFormValues): CreatePlanInput {
   return {
     // Blank → server auto-numbers the next PLN-NNNN.
     code: v.code.trim() || undefined,
@@ -187,29 +176,12 @@ export function toCreateInput(
     planQty: v.planQty,
     plannedStartDate: v.plannedStartDate || null,
     plannedEndDate: v.plannedEndDate || null,
-    // RM Grade / RM Size go out ONLY when this form has something to say about
-    // them. Server contract (apps/api/src/modules/plans/service.ts, createPlan /
-    // updatePlanTx): a pair that IS sent — a value OR an explicit null — means
-    // "the caller owns this pair, do not default it", and only an OMITTED pair is
-    // backfilled from the plan's BOM line, else from the item's Route Card. So a
-    // pair still blank that the planner never touched must be LEFT OUT, or this
-    // form's `null` silently switches the server's own backfill off for every
-    // plan whose route card / BOM line is filled in after the plan was made.
-    // Touched-and-cleared still goes as null — that is the planner saying "leave
-    // it blank". Grade and size move independently.
-    ...(rm.sendGrade
-      ? {
-          rawMaterialGradeId: v.rawMaterialGradeId ?? null,
-          rawMaterialGradeText: v.rawMaterialGradeText || null,
-        }
-      : {}),
-    ...(rm.sendSize
-      ? {
-          rawMaterialSizeId: v.rawMaterialSizeId ?? null,
-          rawMaterialSizeText: v.rawMaterialSizeText || null,
-        }
-      : {}),
-    ...rmItemToInput(v),
+    // ADR-218 — RM Grade, RM Size, RM Item and RM Qty per piece are deliberately
+    // ABSENT here. Server contract (apps/api/src/modules/plans/service.ts,
+    // createPlan / updatePlanTx): a field that IS sent — a value OR an explicit
+    // null — means "the caller owns this, do not default it", and only an
+    // OMITTED field is filled from the plan's BOM line, else from the item's
+    // Route Card. Omitting is what keeps those two the only authors.
     bomMasterId: v.bomMasterId ?? null,
     bomParentCode: v.bomParentCode || null,
     bomChildCode: v.bomChildCode || null,
@@ -256,9 +228,7 @@ export function toCreateInput(
 
 interface PlanFormProps {
   initialValues: PlanFormValues;
-  /** `rm` says which RM pair this save owns; a pair the planner left blank and
-   *  never touched is reported false so the caller can omit it. */
-  onSubmit: (values: PlanFormValues, rm: PlanRmIntent) => void;
+  onSubmit: (values: PlanFormValues) => void;
   isSubmitting: boolean;
   submitLabel: string;
   submitError?: string | null;
@@ -283,13 +253,6 @@ export function PlanForm({
   soInternalNo,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
-  // Did the planner work this RM pair themselves? A pair still blank that was
-  // never touched is "the planner said nothing about it" — it is left out of the
-  // payload so the server can fill it from the BOM line / Route Card. A blank
-  // they deliberately cleared IS an answer and still goes as null. Same flags as
-  // plan-create-form.tsx.
-  const [rmGradeTouched, setRmGradeTouched] = useState(false);
-  const [rmSizeTouched, setRmSizeTouched] = useState(false);
   // The saved plan's id, for the "Create Production Order" link. The form is
   // only ever mounted with a saved plan on the edit route (plans/$id/edit),
   // so the id is read off that route rather than threaded through a new prop.
@@ -308,10 +271,6 @@ export function PlanForm({
 
   useEffect(() => {
     setValues(initialValues);
-    // The fields went back to what the plan holds, so the planner has not
-    // answered for either RM pair against THESE values yet.
-    setRmGradeTouched(false);
-    setRmSizeTouched(false);
   }, [initialValues]);
 
   const update = <K extends keyof PlanFormValues>(key: K, val: PlanFormValues[K]): void => {
@@ -329,42 +288,10 @@ export function PlanForm({
     }
   }, [isEdit, nextCode?.code, values.code]);
 
-  // Auto-fetch the raw material chosen on the item's route card into the Plan
-  // (grade + size), the same way the operations load — but automatically. Only
-  // on create, and only while a field is still blank, so a user's own pick is
-  // never overwritten.
-  useEffect(() => {
-    if (isEdit || !defaultOps) return;
-    setValues((v) => {
-      const gradeBlank = !v.rawMaterialGradeId && !v.rawMaterialGradeText;
-      const sizeBlank = !v.rawMaterialSizeId && !v.rawMaterialSizeText;
-      const rmItemBlank = !v.rawMaterialItemId;
-      if (!gradeBlank && !sizeBlank && !rmItemBlank) return v;
-      return {
-        ...v,
-        ...(rmItemBlank && defaultOps.rawMaterialItemId
-          ? {
-              rawMaterialItemId: defaultOps.rawMaterialItemId,
-              rawMaterialItemCode: defaultOps.rawMaterialItemCode,
-              rmQtyPerPiece:
-                defaultOps.rmQtyPerPiece != null ? String(defaultOps.rmQtyPerPiece) : '',
-            }
-          : {}),
-        ...(gradeBlank
-          ? {
-              rawMaterialGradeId: defaultOps.rawMaterialGradeId,
-              rawMaterialGradeText: defaultOps.rawMaterialGradeText,
-            }
-          : {}),
-        ...(sizeBlank
-          ? {
-              rawMaterialSizeId: defaultOps.rawMaterialSizeId,
-              rawMaterialSizeText: defaultOps.rawMaterialSizeText,
-            }
-          : {}),
-      };
-    });
-  }, [isEdit, defaultOps]);
+  // ADR-218 — the Route-Card prefill that used to copy grade / size / RM item
+  // into these fields is gone with the pickers. The form does not own those
+  // values, so it has nothing to prefill: the server fills the plan itself from
+  // the BOM line / Route Card, and this screen shows what the plan holds.
 
   // Item master drives the code autosuggest + name/id auto-fill. Plans still
   // accept off-master free text, so a non-matching code is left as typed.
@@ -477,15 +404,7 @@ export function PlanForm({
         e.preventDefault();
         // Block the submit on a bad routing, exactly as the other forms do.
         if (opsSeqError) return;
-        // "Blank and never touched" = the planner said nothing about this pair,
-        // so the caller leaves it out and the server backfills it. Anything else
-        // is this form's answer and is sent as it stands, null included.
-        const gradeBlank = !values.rawMaterialGradeId && !values.rawMaterialGradeText;
-        const sizeBlank = !values.rawMaterialSizeId && !values.rawMaterialSizeText;
-        onSubmit(values, {
-          sendGrade: rmGradeTouched || !gradeBlank,
-          sendSize: rmSizeTouched || !sizeBlank,
-        });
+        onSubmit(values);
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
     >
@@ -665,47 +584,27 @@ export function PlanForm({
               onChange={(e) => update('plannedEndDate', e.target.value)}
             />
           </Field>
-          {/* Grade + Size grouped under one RAW MATERIAL bracket, right next to
-              the planned dates. Both optional — no ★ on either. */}
+          {/* Grade + Size + RM Item + RM Qty per piece under one RAW MATERIAL
+              bracket, right next to the planned dates. ADR-218: all four are
+              what the plan HOLDS — shown, never picked here. */}
           <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
             <RawMaterialGroup>
               <Field label="RM Grade">
-                <MaterialGradePicker
-                  valueId={values.rawMaterialGradeId}
-                  valueText={values.rawMaterialGradeText}
-                  onChange={(id, text) => {
-                    setValues((v) => ({
-                      ...v,
-                      rawMaterialGradeId: id,
-                      rawMaterialGradeText: text,
-                    }));
-                    setRmGradeTouched(true);
-                  }}
-                />
+                <MaterialValueDisplay value={values.rawMaterialGradeText} />
               </Field>
               <Field label="RM Size">
-                <MaterialSizePicker
-                  valueId={values.rawMaterialSizeId}
-                  valueText={values.rawMaterialSizeText}
-                  onChange={(id, text) => {
-                    setValues((v) => ({
-                      ...v,
-                      rawMaterialSizeId: id,
-                      rawMaterialSizeText: text,
-                    }));
-                    setRmSizeTouched(true);
-                  }}
-                />
+                <MaterialValueDisplay value={values.rawMaterialSizeText} />
               </Field>
-              <RmItemFields
-                value={{
-                  rawMaterialItemId: values.rawMaterialItemId,
-                  rawMaterialItemCode: values.rawMaterialItemCode,
-                  rmQtyPerPiece: values.rmQtyPerPiece,
-                }}
-                onChange={(rm) => setValues((v) => ({ ...v, ...rm }))}
-              />
+              <Field label="RM Item">
+                <MaterialValueDisplay value={values.rawMaterialItemCode} code />
+              </Field>
+              <Field label="RM Qty per piece">
+                <MaterialValueDisplay value={values.rmQtyPerPiece} />
+              </Field>
             </RawMaterialGroup>
+            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+              {RM_SOURCE_HELP}
+            </div>
           </div>
         </div>
       </div>

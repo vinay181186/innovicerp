@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { bomParentItemName } from './bom-form';
 
 // Verifies the BOM parent-item gate shipped in afc6244 (ADR-108), WITHOUT
 // saving anything — this spec never writes to prod.
@@ -37,7 +38,9 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
   const importExcel = page.getByRole('button', { name: /Import Excel/i });
 
   // --- 1. locked ------------------------------------------------------------
-  // The two captions are what make the page readable: parent block, then children.
+  // The two captions are what make the page readable: parent block, then
+  // children. "Parent Item" is now the cluster's gutter word rather than a
+  // panel heading — same words, same job, so the assertion stands as it is.
   await expect(page.getByText('Parent Item', { exact: true })).toBeVisible();
   await expect(page.getByText('Child Items', { exact: true })).toBeVisible();
   // The filled-vs-total counter sits on the list toolbar — zero on a fresh form.
@@ -50,12 +53,17 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
 
   // --- 2. picking the parent unlocks ---------------------------------------
   await pick(page, 'bom-parent-item', PARENT);
-  const parentName = page.locator('input[readonly][placeholder="auto-filled"]').first();
-  await expect(parentName).toHaveValue(PARENT_NAME, { timeout: 15_000 });
+  // The Item Name is resolved from the code and can never be typed, so it is a
+  // read-only FACT beside the picker, not a field. Still the same proof: the
+  // name appears by itself once the code is picked.
+  const parentName = bomParentItemName(page);
+  await expect(parentName).toHaveText(PARENT_NAME, { timeout: 15_000 });
   await expect(addItem).toBeEnabled();
   await expect(importExcel).toBeEnabled();
   // eslint-disable-next-line no-console
-  console.log(`>> parent ${PARENT} → "${await parentName.inputValue()}", list unlocked`);
+  console.log(
+    `>> parent ${PARENT} → "${((await parentName.textContent()) ?? '').trim()}", list unlocked`,
+  );
 
   // --- 3. the parent cannot be its own child -------------------------------
   await page

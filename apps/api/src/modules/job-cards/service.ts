@@ -1985,6 +1985,9 @@ export async function createJobCard(
       // here rolls the Job Card back too. Deliberately fed `input.ops` (what
       // the user entered), never the appended terminal QC op. What it wrote is
       // handed back so the screen says so (no silent write-back).
+      // ADR-218: the ROUTING is still remembered here, but the raw material is
+      // NOT — this path can only fill a blank half on the card, never replace
+      // what it already holds. The card is the author; this is not.
       routeCardWriteBack = await saveRouteCardForItem(
         tx,
         companyId,

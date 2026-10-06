@@ -224,9 +224,14 @@ async function loadRmItem(
   tx: DbTransaction,
   companyId: string,
   itemId: string,
-): Promise<{ id: string; code: string }> {
+): Promise<{ id: string; code: string; material: string | null }> {
   const rows = await tx
-    .select({ id: items.id, code: items.code, itemType: items.itemType })
+    .select({
+      id: items.id,
+      code: items.code,
+      itemType: items.itemType,
+      material: items.material,
+    })
     .from(items)
     .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
     .limit(1);
@@ -238,7 +243,7 @@ async function loadRmItem(
       `${itm.code} is not a Party Supplied Material. Pick the customer's raw material item (the -RM code).`,
     );
   }
-  return { id: itm.id, code: itm.code };
+  return { id: itm.id, code: itm.code, material: itm.material };
 }
 
 async function loadClient(
@@ -435,6 +440,12 @@ export async function updatePartyMaterial(
       patch.itemCodeText = itm.code;
       itemId = itm.id;
       itemCode = itm.code;
+      // ADR-218 — Grade belongs to the ITEM, so it follows the item. The Edit
+      // screen shows it read-only and sends nothing, so without this a swapped
+      // item kept the old item's grade for ever. An explicit `material` in the
+      // same request still wins (handled above) for an API caller that means
+      // to override it.
+      if (input.material === undefined) patch.material = itm.material ?? null;
     }
     if ((clientChange || itemChange) && itemId && clientId) {
       await assertOnePerItemClient(

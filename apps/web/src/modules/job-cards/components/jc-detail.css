@@ -1,0 +1,312 @@
+/* Job Card detail — the fit-to-one-screen page
+   (jobcard-detail-mockup.html, frame 1, approved 2026-10-06).
+
+   Same fix as the Production Order and Route Card pages
+   (production-orders/components/po-detail.css, route-cards/components/
+   rc-detail.css), scoped to `.jc-detail` and tokens only.
+
+   `page-fill` (innovic-theme.css "LIST FILL") asks for min-height: 100%; here
+   the page takes exactly the content area, so the tab panel gets what is left
+   and its table is the only thing that scrolls, with the header rows held.
+   The fallback the theme keeps is kept too: nothing is clipped, and the tab
+   panel never goes below six table rows, so when the chrome above genuinely
+   cannot fit (a phone, 200% zoom, both banners at once) the page outgrows the
+   content area and #content scrolls instead. */
+.page-fill.jc-detail {
+  height: 100%;
+}
+.page-fill.jc-detail > .panel--fill {
+  min-height: calc(var(--tbl-row-h) * 6 + 2px);
+}
+/* A flex column stretches its children; Back is a button, not a band. */
+.page-fill.jc-detail > .btn {
+  align-self: flex-start;
+}
+/* The tab bodies that are not one table (Documents & Quality, Material,
+   Related Records, Document changes) scroll inside the panel too, rather than
+   pushing the page past the screen. The Operations / History tables keep their
+   own `.tbl-wrap` scroll box and sticky header. */
+.page-fill.jc-detail > .panel--fill > .panel-bd--fill {
+  overflow: auto;
+}
+.jc-detail .jc-tab-pad {
+  padding: var(--sp-3);
+}
+
+/* ── Fact block: picture frame on the left, identity + clusters beside it ── */
+.jc-detail .jc-facts {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  column-gap: var(--sp-3);
+}
+.jc-detail .jc-facts-main {
+  min-width: 0;
+}
+
+/* The picture frame: as tall as the identity line plus the fact rows. */
+.jc-detail .jc-thumbs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding-right: var(--sp-3);
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+.jc-detail .jc-thumb {
+  position: relative;
+  flex: 1;
+  min-height: 120px;
+  width: 100%;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg3);
+  color: var(--text3);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font: inherit;
+  cursor: zoom-in;
+}
+.jc-detail .jc-thumb.is-empty {
+  cursor: default;
+}
+.jc-detail .jc-thumb:hover:not(.is-empty) {
+  border-color: var(--blue);
+}
+.jc-detail .jc-thumb:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.jc-detail .jc-thumb-img {
+  position: absolute;
+  inset: var(--sp-2);
+  width: calc(100% - 2 * var(--sp-2));
+  height: calc(100% - 2 * var(--sp-2));
+  object-fit: contain;
+}
+.jc-detail .jc-thumb-zoom {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  color: var(--text3);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.jc-detail .jc-thumb:hover .jc-thumb-zoom,
+.jc-detail .jc-thumb:focus-visible .jc-thumb-zoom {
+  opacity: 1;
+}
+.jc-detail .jc-thumb-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  max-width: 100%;
+}
+.jc-detail .jc-thumb-file-name {
+  max-width: 100%;
+  font-size: var(--fs-xs);
+  color: var(--blue);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.jc-detail .jc-thumb-none {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+.jc-detail .jc-thumb-sw {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.jc-detail .jc-thumb-sw button {
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  height: 22px;
+  border: 0;
+  background: var(--bg2);
+  color: var(--text3);
+  cursor: pointer;
+}
+.jc-detail .jc-thumb-sw button + button {
+  border-left: 1px solid var(--border);
+}
+.jc-detail .jc-thumb-sw button.on {
+  background: var(--blue3);
+  color: var(--blue2);
+}
+.jc-detail .jc-thumb-sw button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Identity line: long item / customer names give way, codes never do. */
+.jc-detail .cl-ident .jc-ident-name {
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jc-detail .cl-ident .jc-ident-link {
+  color: var(--blue);
+  text-decoration: none;
+}
+.jc-detail .cl-ident .jc-pol {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--purple2);
+}
+
+/* ── The grid: columns weighted to what each holds (dates and codes in 3–4
+   need more), so nothing wraps at 1440. Only while the grid is wide enough to
+   hold four columns — under that the primitive's own narrow layout takes over. */
+@container (min-width: 761px) {
+  .jc-detail .cl-grid > .cl-row {
+    grid-template-columns:
+      72px minmax(0, 198fr) minmax(0, 196fr) minmax(0, 228fr)
+      minmax(0, 226fr);
+    column-gap: var(--sp-3);
+  }
+}
+.jc-detail .cl-grid > .cl-row {
+  padding: 5px 0;
+}
+
+/* Free text opts into ONE line: the value ellipsises, the cell's title carries
+   it in full. Dates and quantities keep the primitive's wrap. */
+.jc-detail .cl-fact.jc-one-line {
+  flex-wrap: nowrap;
+}
+.jc-detail .cl-fact.jc-wide > .cl-fact-v {
+  flex: 1 1 auto;
+  margin-left: 0;
+  text-align: left;
+  font-weight: 400;
+}
+
+/* Cells carrying a staged-edit chip (ADR-202): the chip is never cut short;
+   when it does not fit beside the value it drops under it, right-aligned. */
+.jc-detail .cl-fact.jc-chip {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.jc-detail .cl-fact.jc-chip > .cl-fact-k {
+  margin-right: auto;
+}
+.jc-detail .cl-fact.jc-chip > .cl-fact-after {
+  max-width: 100%;
+  min-width: 0;
+}
+.jc-detail .cl-fact.jc-chip > .cl-fact-after > .tag {
+  max-width: calc(100% - 6px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.jc-detail .cl-fact.jc-wide.jc-chip > .cl-fact-v {
+  flex: 1 1 0;
+  min-width: 8ch;
+}
+
+/* The quiet figure after a value: "of PRO Qty 40", "+0 in QC", "34 to go". */
+.jc-detail .jc-sub {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+.jc-detail .cl-fact.jc-amber > .cl-fact-v {
+  color: var(--amber2);
+}
+.jc-detail .cl-fact.jc-red > .cl-fact-v {
+  color: var(--red2);
+}
+.jc-detail .cl-fact.jc-green > .cl-fact-v {
+  color: var(--green2);
+}
+.jc-detail .jc-yes {
+  color: var(--green2);
+  font-weight: 700;
+}
+.jc-detail .jc-no {
+  color: var(--red2);
+  font-weight: 700;
+}
+.jc-detail .jc-none {
+  color: var(--amber2);
+}
+/* Completed: a short progress track in front of the count. */
+.jc-detail .jc-bar {
+  display: inline-block;
+  width: 48px;
+  vertical-align: middle;
+  margin-right: var(--sp-2);
+}
+/* Code links inside a fact — mono, strong, blue (the old header's look). */
+.jc-detail .jc-code-link {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--blue);
+  text-decoration: none;
+}
+/* The Drawing label opens the drawing — a button that reads as a link. */
+.jc-detail .jc-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--blue);
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+/* "Current Op: …" at the right end of the tab strip. TabStrip has no slot for
+   it, so it sits over the strip's right end (as on the Production Order page). */
+.jc-detail .jc-tabs {
+  position: relative;
+}
+.jc-detail .jc-tabs-meta {
+  position: absolute;
+  top: 0;
+  right: var(--sp-3);
+  bottom: var(--panel-gap);
+  max-width: 45%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+@media (max-width: 1365px) {
+  /* Below a 1366 screen five tabs with counts leave no room — the current op
+     still shows on its row (blue edge, ▸ open). */
+  .jc-detail .jc-tabs-meta {
+    display: none;
+  }
+}
+.jc-detail .jc-tabs-meta b {
+  font-family: var(--mono);
+  color: var(--text);
+}
+.jc-detail .jc-tabs-meta .jc-running {
+  color: var(--amber2);
+}
+.jc-detail .jc-tabs-meta .jc-all-done {
+  color: var(--green2);
+  font-weight: 700;
+}

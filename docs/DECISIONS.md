@@ -11694,6 +11694,7 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
   cross-reveal, which needs no migration at all; (2) the migration, the PO-rule change and the
   auto-order; (3) the source-challan capture; (4) the second route's guard; (5) the backfill.
 
+
 - **Known limit, and the first explanation of it was wrong.** `nc_register.source_delivery_challan_id`
   is a foreign key to `delivery_challans`, so pieces that left on a **JW DC Outward** (a different
   table) cannot be recorded as a source challan — the picker simply finds nothing and the field does
@@ -11702,3 +11703,108 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
   no-job-card bought-material population the JW DC screen serves, so it bites precisely there. It
   costs no data and blocks nothing — the field is absent rather than wrong — but the reason stands
   corrected, and widening it means a second column or a polymorphic link, which is its own decision.
+
+## ADR-218: Raw material has two authors and thirteen readers
+
+**Date:** 2026-10-06
+**Status:** Accepted
+
+### Context
+
+The owner's words: *"i have multiple rm details add option screen. every time its coflict when
+added furthrt."* Traced, and the count is **15 screens that can add raw material** — Route Card
+create/edit, New Plan, Edit Plan page, the "+ Plan" box, Planning's Edit Plan modal, Create and
+Edit Job Card, BOM Master create/edit, the BOM Excel import, Create and Edit Production Order
+(`actual_size`), Item Master "Material", and Party Material "Grade". Each writes its own copy, so
+the fifteenth person to type a value creates a fifteenth answer instead of correcting the first.
+
+Two of those screens write **backwards**. `saveRouteCardForItem` is called by `executePlan` and by
+`createJobCard` / `updateJobCardTx`, and its rule is "raw material moves FORWARDS only" — a
+non-blank incoming value REPLACES what the Route Card held. It also carries no permission check.
+The production audit log proves it fired: `activity_log` detail **"IN-RC-00005 updated from
+IN-JC-26-00004"**, revision 0 → 1, material blank → EN24 / DIA 36. So adding material downstream
+does not merely disagree with the master — it rewrites it. That is the owner's complaint exactly.
+
+Evidence from the production database (this is the whole population, not a sample — 8 route cards,
+2 BOMs / 4 BOM lines, 11 plans, 8 job cards, 8 production orders):
+- **2 of 4 BOM lines disagree with the same child's Route Card.** `01037541`: card EN24 / DIA 36 vs
+  BOM-0001 L1 MS / DIA 20. `01037543-RM`: card C86200 (ASTM B 271) / DIA 10 vs L2 SS-304 / DIA 40 —
+  a bronze and a stainless for one part.
+- **Four plans off the SAME BOM split two ways.** PLN-0006 / PLN-0008 carry the card's value;
+  PLN-0007 / PLN-0009 carry the BOM line's. Not two code paths: a plan's material is written once,
+  blank-only, by whichever document existed at that second, and is never revisited.
+- **IN-PRO-00006 is open with two different metals on it** — plan and job card say SS-304 / DIA 40,
+  the route card it names says C86200 / DIA 10.
+- **PLN-0005 matches no source at all** (hand-typed EN9 / DIA 20). **PLN-0001 is blank for ever**
+  although its card is filled, because the backfill only runs on a save of the plan or the card.
+- The masters are **clean**: 14 grades, 27 sizes, zero orphan free text, zero stale id/text pairs.
+  Every contamination is in fields that are NOT master-backed — `actual_size` holds `75THK`, a
+  spelling that exists nowhere in the size master, on IN-JC-26-00001 and IN-PRO-00001.
+- `raw_material_item_id` and `rm_qty_per_piece` are **NULL on all 27 rows** that have them, and no
+  item is of type `raw_material`. Half the model is built and empty.
+
+ERPNext was the benchmark (verified against the v15 and develop source, not from memory). Its
+`Routing` DocType has **three** fields — name, disabled, operations — and its `BOM Operation` row
+has sixteen, **none** of them material; the Routing→BOM copy is an explicit twelve-field whitelist
+that could not carry material if someone added it. Material lives in exactly one DocType, `BOM`,
+always as an **item code**, never as a text attribute; many BOMs per item are allowed but exactly
+one is `is_default`, and the Work Order records **which** one it used in a mandatory `bom_no`.
+Downstream is a snapshot, editing it is off by default, and a missing BOM is a hard throw.
+
+### Decision
+
+Two rules, approved by the owner today.
+
+1. **Exactly two screens may AUTHOR raw material** — the part's **Route Card**, or the **BOM line**
+   for a BOM child. The other thirteen DISPLAY it and say where to change it.
+2. **Nothing downstream ever writes material upward.** `saveRouteCardForItem` becomes
+   fill-blanks-only per field and can never replace a value the Route Card already holds. It keeps
+   creating a card for an item that has none, so a hand-raised job-work Job Card still works.
+
+**Grade and size stay TEXT.** The owner explicitly rejected ERPNext's answer of making raw material
+a stock item: *"keep grade/size as text and only fix the precedence."* **`actual_size` stays free
+text** by the owner's decision, `75THK` and all. **Existing documents are left as they are** —
+*"leave old docs"* — so the six wrong rows above are not corrected by this change.
+
+### Alternatives considered
+
+- **Raw material becomes a stock Item carrying Grade + Size** (the ERPNext answer, and what was
+  recommended) — **rejected by the owner.** It would have made two screens structurally incapable
+  of disagreeing, let the store hold EN24 DIA 36 and MS DIA 20 as the separate stock they
+  physically are, and carried material to purchasing with no new column — a requisition for a raw
+  material item is just an ordinary item line. The owner chose the smaller change.
+- **A better precedence rule alone** — rejected as the whole fix. ADR-215 already added per-field
+  `BOM line → Route Card → blank` and it is live; the conflicts above happened anyway, because
+  precedence cannot help when fifteen screens each author a value and two write upward. Precedence
+  is kept; the authoring doors are what close.
+- **Make the Job Card a third author for job-work** — deferred, not rejected. See Consequences.
+- **A size master picker for `actual_size`** — rejected by the owner; it prints on the traveller.
+
+### Consequences
+
+- Zero migrations. No column, contract, enum or status value changes. Reads are untouched.
+- **Four Plan screens and the Item Master lose an input.** A planner who wants different material
+  must change the Route Card (or that BOM line), which is the point. PLN-0001's blank is still
+  fixable — saving its Route Card triggers the ADR-215 backfill.
+- **`sendGrade` / `sendSize` omission is load-bearing.** On this API an OMITTED field means "the
+  server decides" and an explicit `null` means "the caller owns this". The four plan screens now
+  omit. That also closes the hole ADR-215 left: a sent value means "the caller owns this pair", so
+  the server's BOM-line-first precedence never ran for a plan saved from any of these four screens.
+  Verified in the code rather than assumed: of the four, only the Edit Plan page carries
+  `bomChildCode` — New Plan and "+ Plan" cannot create a BOM child at all — so the BOM-child
+  disagreement arose on an EDIT of a child plan, and it looked hand-typed.
+- **§20.1 (one number, one writer)** is the rule satisfied. §20.4 is untouched — no new edit path.
+  No new lock site is introduced, so ADR-215's ABBA deadlock (`route_cards → plans` against
+  `executePlan`'s `plans → route_cards`, a real 40P01) cannot recur here.
+- **The two Job Card screens are NOT closed in this change.** A job-work Job Card is hand-raised
+  and is today the only place material can be set for an item with no Route Card; removing its
+  picker while also stopping the upward write would leave such a card blank for ever, with no
+  backfill to rescue it (the ADR-215 backfill fills PLANS, not job cards). Named here so it is not
+  mistaken for an oversight. Closing it means requiring a completed Route Card before a JW Job
+  Card, which is a workflow change and needs its own approval.
+- Still open, unchanged by this ADR: the Production Order guard refuses only when grade AND size
+  are both empty; **nothing refuses a Job Card with no material at all**, and the BOM cascade and
+  NC rework paths bypass the one guard that exists; the Issue slip picker is not scoped to the
+  card's RM Item, so the store can issue any item against a Job Card; `plans.material_pr_id` has no
+  writer anywhere; and the Plans module never validates grade/size against the masters, while Route
+  Cards and Job Cards both do.
