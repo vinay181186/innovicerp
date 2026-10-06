@@ -154,6 +154,16 @@ export async function listDeliveryChallans(
           -- PO chip renders poCode (green) ?? poCodeText (amber), so match the
           -- live PO's code as well as the text this DC stored when issued.
           OR dc.po_code_text ILIKE ${term} ESCAPE '\\'
+          -- ADR-217: a return challan's cell shows "NC <code>". That used to be
+          -- po_code_text; after ADR-217 that column is a real PO code, so the
+          -- NC must be reached on its own or the store cannot find the row the
+          -- screen is showing them.
+          OR EXISTS (
+            SELECT 1 FROM public.nc_register snc
+            WHERE snc.id = dc.nc_id
+              AND snc.deleted_at IS NULL
+              AND snc.code ILIKE ${term} ESCAPE '\\'
+          )
           OR EXISTS (
             SELECT 1
             FROM public.purchase_orders spo

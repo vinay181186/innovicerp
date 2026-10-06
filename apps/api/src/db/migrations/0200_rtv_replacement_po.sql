@@ -24,10 +24,15 @@
 --      rejection", beside the existing source_pr_id / source_jc_op_id /
 --      source_so_line_id.
 --
--- The partial unique index on replacement_po_id makes the auto-create
--- idempotent: the NC row is already locked FOR UPDATE in disposeNcCascade, and
--- this is the backstop, the same shape as the existing one-challan-per-NC lock
--- (delivery_challans_nc_active_uq, 0181).
+-- What actually makes the auto-create idempotent is the FOR UPDATE lock
+-- disposeNcCascade already holds on the NC row, plus setPendingNc's
+-- `WHERE status = 'pending'`: the second of two simultaneous dispositions waits,
+-- re-reads 'disposed' and is refused before it can raise an order.
+--
+-- The partial unique index below does NOT catch that case and is not claimed to:
+-- it stops TWO deviations naming ONE order, which is a different mistake. A
+-- second order for one deviation would overwrite one column on one row, which a
+-- unique index accepts.
 --
 -- ON DELETE SET NULL throughout, matching every other optional link on these
 -- tables: a document going to Trash must never cascade a delete into the other.
@@ -59,8 +64,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS nc_register_replacement_po_uq
   ON public.nc_register (replacement_po_id)
   WHERE replacement_po_id IS NOT NULL;
 
--- Read paths: "which NCs did this order answer" and "which order line answered
--- this NC" are both asked by the receiving screen.
+-- Read paths. Both support questions the screens will ask once phase 3 lands;
+-- neither is on a hot path today, and the planner may ignore them until the
+-- columns are populated.
 CREATE INDEX IF NOT EXISTS purchase_order_lines_source_nc_idx
   ON public.purchase_order_lines (source_nc_id)
   WHERE source_nc_id IS NOT NULL;

@@ -1141,7 +1141,7 @@ export interface NcForReplacementPo {
  *
  * Idempotent: an NC that already names a replacement order gets THAT order
  * back, never a second one. The partial unique index
- * `nc_register_replacement_po_uq` (migration 0199) is the database backstop,
+ * `nc_register_replacement_po_uq` (migration 0200) is the database backstop,
  * not the guard.
  */
 export async function createReplacementPoForNc(
@@ -1163,10 +1163,20 @@ export async function createReplacementPoForNc(
       .select({ id: purchaseOrders.id, code: purchaseOrders.code })
       .from(purchaseOrders)
       .where(
-        and(eq(purchaseOrders.id, nc.replacementPoId), eq(purchaseOrders.companyId, companyId)),
+        and(
+          eq(purchaseOrders.id, nc.replacementPoId),
+          eq(purchaseOrders.companyId, companyId),
+          // A trashed order is not an order. Without this the NC names a
+          // document nobody can open, the challan silently reverts to the
+          // pre-ADR-217 shape, and nothing can ever put it right: the NC is
+          // `disposed`, so the disposition cannot run again.
+          isNull(purchaseOrders.deletedAt),
+        ),
       )
       .limit(1);
-    return existing[0] ?? null;
+    // Found it: hand it back (§20.1, one order per NC). Gone: fall through and
+    // raise a fresh one, overwriting the dangling pointer.
+    if (existing[0]) return existing[0];
   }
   // No vendor to send it back to. The NC is still vendor-sourced (a GRN line, or
   // an outsource op) — `isVendorSourced` is true even when no vendor row
@@ -3667,30 +3677,51 @@ export async function closeReplacementPoForNc(
   tx: DbTransaction,
   poId: string,
   ncCode: string,
-  userId: string,
+  companyId: string,
+  user: AuthContext,
 ): Promise<void> {
-  await tx
+  const rows = await tx
     .update(purchaseOrders)
     .set({
       status: 'closed',
       shortClosedAt: new Date(),
-      shortClosedBy: userId,
+      shortClosedBy: user.id,
       shortCloseReason: `Replacement received and cleared \u2014 deviation ${ncCode} closed (ADR-217).`,
-      updatedBy: userId,
+      updatedBy: user.id,
     })
     .where(
       and(
         eq(purchaseOrders.id, poId),
+        eq(purchaseOrders.companyId, companyId),
         isNull(purchaseOrders.deletedAt),
         // Never re-stamp one already stopped, and never resurrect a cancelled
         // order: both are terminal and someone decided them on purpose.
         isNull(purchaseOrders.shortClosedAt),
         notInArray(purchaseOrders.status, ['cancelled', 'closed']),
       ),
+    )
+    .returning({ code: purchaseOrders.code });
+
+  // 0 rows is a legitimate outcome (already closed, short-closed, cancelled or
+  // trashed) and must NOT fail the deviation's close. But a close that DID run
+  // has to leave a trace: every other lifecycle write on a PO emits one, and
+  // ADR-197's History panel reads the activity log, so without this the order
+  // reads "Created" and then silently "Closed" with nothing in between.
+  const closedPo = rows[0];
+  if (closedPo) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.CloseShort,
+        entity: 'PurchaseOrder',
+        entityId: poId,
+        refId: closedPo.code,
+        detail: `${closedPo.code} closed — replacement received and cleared, deviation ${ncCode} closed (ADR-217)`,
+      },
+      companyId,
+      user,
     );
-  // No assertRowUpdated: 0 rows is a legitimate outcome (already closed, already
-  // short-closed, cancelled, or deleted). The deviation closing must not fail
-  // because its replacement order was already stopped by hand.
+  }
 }
 
 /**

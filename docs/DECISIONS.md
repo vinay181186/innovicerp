@@ -11666,8 +11666,9 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
 - **§20 is now in scope**, because this adds a write path. The replacement PO is created only inside
   `disposeNcCascade`, inside the `FOR UPDATE` lock that function already takes on the NC row (§20.1
   one writer, §20.3 limit checked inside the writing transaction). `replacement_po_id` must be null
-  before one is created, and the partial unique index is the backstop — the same shape as the
-  existing one-challan-per-NC guard.
+  before one is created. The guard is that lock plus `setPendingNc`'s `WHERE status = 'pending'`;
+  the partial unique index only stops two deviations naming ONE order, a different mistake, and
+  cannot catch a second order for one deviation.
 - **No approval step on the replacement order.** There is no money in it, so an approval gate is
   ceremony. Stated as a decision rather than an omission.
 - The rate stays editable: a vendor who charges for the rework can be priced without a second

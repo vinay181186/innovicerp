@@ -162,7 +162,11 @@ export async function markNcClosed(
         inArray(ncRegister.status, statusesThatMayMoveTo(NC_STATUS_MOVES, 'closed')),
       ),
     )
-    .returning({ code: ncRegister.code, replacementPoId: ncRegister.replacementPoId });
+    .returning({
+      code: ncRegister.code,
+      replacementPoId: ncRegister.replacementPoId,
+      companyId: ncRegister.companyId,
+    });
   assertRowUpdated(rows, 'This NC');
 
   // ADR-217 — the zero-value order this return raised has done its job: the
@@ -172,7 +176,9 @@ export async function markNcClosed(
   // the deviation and its order close together or not at all.
   const closed = rows[0];
   if (closed?.replacementPoId) {
-    await closeReplacementPoForNc(tx, closed.replacementPoId, closed.code, user.id);
+    // The deviation's OWN company, not the actor's — the order belongs to the
+    // same company as the rejection that raised it.
+    await closeReplacementPoForNc(tx, closed.replacementPoId, closed.code, closed.companyId, user);
   }
 }
 

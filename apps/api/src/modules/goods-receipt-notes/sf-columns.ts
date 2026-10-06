@@ -17,10 +17,16 @@ export const GRN_SF_COLUMNS: SfColumnMap = {
   grnDate: { sql: sql`grn.grn_date`, type: 'date' },
   // The cell renders vendorName ?? vendorCodeText.
   vendorName: { sql: sql`COALESCE(v.name, grn.vendor_code_text)`, type: 'text' },
-  // PO/NC No.: an NC-return GRN shows poCodeText (it holds the NC code);
-  // otherwise poCode ?? poCodeText.
+  // PO/NC No. ADR-217: an NC-return GRN shows the NC's OWN code, resolved, never
+  // `po_code_text` — that column held the NC code only while a return had no
+  // purchase order behind it, and a return raised after ADR-217 has one. The
+  // cell (grn-list-columns.tsx) reads `ncCode ?? poCodeText`; this must read the
+  // same, or the column's filter and sort disagree with what is on screen.
   poNcCode: {
-    sql: sql`(CASE WHEN grn.nc_id IS NOT NULL THEN grn.po_code_text
+    sql: sql`(CASE WHEN grn.nc_id IS NOT NULL
+              THEN COALESCE((SELECT n.code FROM public.nc_register n
+                             WHERE n.id = grn.nc_id AND n.deleted_at IS NULL),
+                            grn.po_code_text)
               ELSE COALESCE(po.code, grn.po_code_text) END)`,
     type: 'text',
   },

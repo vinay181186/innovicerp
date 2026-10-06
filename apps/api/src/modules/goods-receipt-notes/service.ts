@@ -535,6 +535,15 @@ export async function listGoodsReceiptNotes(
           -- PO/JWPO cell renders poCode ?? poCodeText, so match both the live
           -- PO's code and the text this GRN stored when it was raised.
           OR grn.po_code_text ILIKE ${term} ESCAPE '\\'
+          -- ADR-217: a return's cell shows the NC code. Before ADR-217 that WAS
+          -- po_code_text, so this search found it by accident; now the column
+          -- holds a real PO code and the NC has to be reached on its own.
+          OR EXISTS (
+            SELECT 1 FROM public.nc_register snc
+            WHERE snc.id = grn.nc_id
+              AND snc.deleted_at IS NULL
+              AND snc.code ILIKE ${term} ESCAPE '\\'
+          )
           OR EXISTS (
             SELECT 1
             FROM public.purchase_orders spo
@@ -637,7 +646,8 @@ export async function listGoodsReceiptNotes(
         -- before ADR-217 put the NC code in that column; one raised after it
         -- puts a real PO code there. (No backticks in here: this whole SELECT
         -- is a TypeScript template literal and one would close it.)
-        (SELECT n.code FROM public.nc_register n WHERE n.id = grn.nc_id) AS "ncCode",
+        (SELECT n.code FROM public.nc_register n
+          WHERE n.id = grn.nc_id AND n.deleted_at IS NULL) AS "ncCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         first_line.item_code AS "firstItemCode",
         first_line.item_name AS "firstItemName",

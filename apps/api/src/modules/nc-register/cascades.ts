@@ -198,6 +198,12 @@ async function resolveNcDocLinks(
       AND gl.deleted_at IS NULL
     LEFT JOIN public.goods_receipt_notes grn
       ON grn.id = gl.goods_receipt_note_id AND grn.deleted_at IS NULL
+      -- ADR-217: only an ORDINARY receipt can say which challan the pieces went
+      -- OUT on. A replacement receipt (nc_id set) carries the PARENT NC's RETURN
+      -- challan, so deriving from it answers "the challan these arrived on"
+      -- under a label that means the opposite — on a nested NC it named the
+      -- parent's return challan when nothing had gone out at all.
+      AND grn.nc_id IS NULL
     LEFT JOIN public.delivery_challans sdc
       ON sdc.id = COALESCE(${storedDcId}::uuid, grn.delivery_challan_id)
       AND sdc.company_id = ${companyId}::uuid AND sdc.deleted_at IS NULL
@@ -501,6 +507,12 @@ export async function disposeNcCascade(
         timeLogged: loaded.timeLogged,
         qcLogId: loaded.qcLogId,
         grnLineId: loaded.grnLineId,
+        // ADR-217: which challan the pieces went out on cannot be re-derived —
+        // there is no piece tracking in this system — so the remainder must
+        // inherit it or the fact is lost for that half of the rejection.
+        // `replacementPoId` is deliberately NOT inherited: the sibling is still
+        // pending and raises its own order when it is disposed.
+        sourceDeliveryChallanId: loaded.sourceDeliveryChallanId,
         // G8: the split half carries the same pieces, so it continues the same
         // parent NC (if any) as the row it was split from.
         parentNcId: loaded.parentNcId,

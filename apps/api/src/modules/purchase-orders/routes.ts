@@ -50,7 +50,7 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
   // the place it is enforced has moved.
   //
   // ADR-217 widens the LIST of acceptable reasons by one, without weakening the
-  // rule: a line may name a non-conformance (`sourceNcId`, migration 0199)
+  // rule: a line may name a non-conformance (`sourceNcId`, migration 0200)
   // instead of a PR, because a return to vendor is raised against the NC — a
   // stronger document than a system-raised PR nobody reviewed, naming an
   // inspector, a quantity, a reason and a vendor. A PO with neither a PR nor an

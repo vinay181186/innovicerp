@@ -28,16 +28,17 @@ import {
   capaRecords,
   deliveryChallanLines,
   deliveryChallans,
+  goodsReceiptNoteLines,
   items,
   jcOps,
   jobCards,
   jobWorkOrderLines,
   ncRegister,
   purchaseOrderLines,
+  purchaseOrders,
   salesOrderLines,
   salesOrders,
   users,
-  goodsReceiptNoteLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
@@ -290,11 +291,16 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     // ADR-217 — the outward challan the rejected pieces went out on: the id
     // stored on this row when somebody recorded it, else the one derived from
     // the GRN behind an Incoming-QC reject. The code comes from the same read.
-    sourceDeliveryChallanId: joins.sourceDeliveryChallanId ?? row.sourceDeliveryChallanId ?? null,
+    // NO `?? row.sourceDeliveryChallanId`: the resolve filters a trashed or
+    // other-company challan out on purpose, and falling through to the raw
+    // column would hand back a uuid for a document the user cannot open — and
+    // would disagree with the LIST, which reads the join only.
+    sourceDeliveryChallanId: joins.sourceDeliveryChallanId ?? null,
     sourceDeliveryChallanCode: joins.sourceDeliveryChallanCode ?? null,
     // ADR-217 — the zero-value job-work order this return raised. Null on every
     // NC disposed before ADR-217.
-    replacementPoId: joins.replacementPoId ?? row.replacementPoId ?? null,
+    // Same reason as the challan above: resolved or nothing.
+    replacementPoId: joins.replacementPoId ?? null,
     replacementPoCode: joins.replacementPoCode ?? null,
     splitFromNcId: row.splitFromNcId,
     // G8: "Continues NC <code>" — set by autoCreateNcFromQcReject only.
@@ -2036,6 +2042,38 @@ export async function createNcDc(
     }
 
     const qty = roundQty(Number(nc.rejectedQty));
+
+    // ADR-217 — never send against an order that has been stopped. The
+    // replacement order is zero value and carries no PR, so a buyer who does
+    // not recognise it can cancel or short-close it; without this the challan
+    // would still go out naming a Cancelled order, and the receipt after it
+    // would land on one too (recalcPoHeaderStatus returns early on a stopped PO,
+    // so nothing would ever correct it). Every other outward path takes this
+    // check — see assertPurchaseOrderIsSendable in delivery-challans/service.
+    // Refused, not silently reverted to the pre-ADR-217 shape: writing the NC
+    // code into a column named po_code_text is the exact fault this ADR removes,
+    // and doing it behind the user's back would hide a decision someone made.
+    if (source.replacementPoId) {
+      const rpo = await tx
+        .select({ code: purchaseOrders.code, status: purchaseOrders.status })
+        .from(purchaseOrders)
+        .where(
+          and(
+            eq(purchaseOrders.id, source.replacementPoId),
+            eq(purchaseOrders.companyId, companyId),
+            isNull(purchaseOrders.deletedAt),
+          ),
+        )
+        .limit(1);
+      const st = rpo[0]?.status;
+      if (st === 'cancelled' || st === 'closed') {
+        throw new ConflictError(
+          `The replacement order ${rpo[0]?.code ?? ''} for NC ${nc.code} is ${st}. ` +
+            `Nothing more can be sent against it — reopen it, or raise the challan once it is live.`,
+        );
+      }
+    }
+
     const code = await nextNcDcCode(tx, companyId);
     const reason = `Return to vendor — ${nc.dispositionRemarks ?? 'rework'}`;
 
