@@ -128,8 +128,8 @@ function PlanEditPage(): React.JSX.Element {
         isSubmitting={update.isPending}
         submitLabel="Save Changes"
         submitError={update.error instanceof Error ? update.error.message : null}
-        onSubmit={(v, rm) => {
-          const ci = toCreateInput(v, rm);
+        onSubmit={(v) => {
+          const ci = toCreateInput(v);
           update.mutate(
             {
               planDate: ci.planDate,
@@ -138,29 +138,14 @@ function PlanEditPage(): React.JSX.Element {
               planQty: ci.planQty,
               plannedStartDate: ci.plannedStartDate,
               plannedEndDate: ci.plannedEndDate,
-              // RM Grade / RM Size are sent only when the form owns the pair.
-              // Server contract (apps/api/src/modules/plans/service.ts,
-              // updatePlanTx): a pair present in the PATCH — a value OR an
-              // explicit null — means "the caller owns this, do not default it",
-              // and ONLY an omitted pair is backfilled from the plan's BOM line,
-              // else from the item's Route Card. A pair the planner left blank
-              // and never touched must therefore be absent from this body, not
-              // null. Grade and size are independent: one may be omitted while
-              // the other is sent.
-              ...(rm.sendGrade
-                ? {
-                    rawMaterialGradeId: ci.rawMaterialGradeId ?? null,
-                    rawMaterialGradeText: ci.rawMaterialGradeText ?? null,
-                  }
-                : {}),
-              ...(rm.sendSize
-                ? {
-                    rawMaterialSizeId: ci.rawMaterialSizeId ?? null,
-                    rawMaterialSizeText: ci.rawMaterialSizeText ?? null,
-                  }
-                : {}),
-              rawMaterialItemId: ci.rawMaterialItemId,
-              rmQtyPerPiece: ci.rmQtyPerPiece,
+              // ADR-218 — RM Grade, RM Size, RM Item and RM Qty per piece are
+              // deliberately ABSENT from this PATCH. Server contract
+              // (apps/api/src/modules/plans/service.ts, updatePlanTx): a field
+              // present in the body — a value OR an explicit null — means "the
+              // caller owns this, do not default it", and ONLY an omitted field
+              // is filled from the plan's BOM line, else from the item's Route
+              // Card. Those two are the only authors of raw material, so this
+              // screen sends none of the four.
               dpVendorId: ci.dpVendorId,
               dpVendorCodeText: ci.dpVendorCodeText,
               dpCost: ci.dpCost,
@@ -219,11 +204,10 @@ function toFormValues(plan: PlanDetail): PlanFormValues {
     planQty: plan.planQty,
     plannedStartDate: plan.plannedStartDate ?? '',
     plannedEndDate: plan.plannedEndDate ?? '',
-    rawMaterialGradeId: plan.rawMaterialGradeId,
+    // ADR-218 — carried for DISPLAY only; the form neither changes nor sends
+    // them, so the master ids are not carried at all.
     rawMaterialGradeText: plan.rawMaterialGradeText,
-    rawMaterialSizeId: plan.rawMaterialSizeId,
     rawMaterialSizeText: plan.rawMaterialSizeText,
-    rawMaterialItemId: plan.rawMaterialItemId,
     rawMaterialItemCode: plan.rawMaterialItemCode,
     rmQtyPerPiece: plan.rmQtyPerPiece != null ? String(plan.rmQtyPerPiece) : '',
     bomMasterId: plan.bomMasterId,

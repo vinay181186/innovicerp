@@ -1,0 +1,171 @@
+/* Route Card Create / Edit — the fit-to-one-screen form
+   (pro-routecard-create-edit-mockup.html frames 4 + 5, approved 2026-10-06).
+
+   Same page shape as the Route Card detail page (rc-detail.css): the page takes
+   exactly the content area, the facts block keeps its natural height, and the
+   Operation Sequence panel takes what is left — its table is the only thing
+   that scrolls, with the header row and the Total row held.
+   The theme's fallback is kept: nothing is clipped, and the operations panel
+   never goes below six table rows, so when the chrome above genuinely cannot
+   fit (a phone, 200% zoom, a long banner) the page outgrows the content area
+   and #content scrolls instead. Tokens only. */
+.page-fill.rc-form {
+  height: 100%;
+}
+/* Floor = the panel's own bar + six rows. `.panel` is overflow: hidden, so a
+   flex item's automatic floor is 0 and the theme's six-row floor on the table
+   would be clipped instead of holding. */
+.page-fill.rc-form > .panel--fill {
+  min-height: calc(var(--tbl-row-h) * 6 + var(--control-h-sm) + 2 * var(--sp-2) + 3px);
+}
+
+/* ── Header row: Back · code · title · Rev badge … reason · Cancel · Save ── */
+.rc-form-hd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--panel-gap);
+}
+.rc-form-hd .rc-form-sp {
+  flex: 1;
+}
+/* Why Save is off — the first validation message, the same text as before,
+   on Save's own row. One line; the full text is on hover. Keeps the
+   `.form-error` class the e2e specs locate it by. */
+.rc-form-hd .rc-why {
+  margin: 0;
+  min-width: 0;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Identity line: RC No. · Item Code ★ · item name … prefill note ─────── */
+.rc-form .cl-ident {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+}
+.rc-form .rc-id-lb {
+  color: var(--text3);
+  white-space: nowrap;
+}
+.rc-form .rc-id-code {
+  width: 240px;
+  flex: none;
+}
+.rc-form .rc-id-item {
+  width: 230px;
+  flex: none;
+}
+.rc-form .rc-id-name {
+  color: var(--text2);
+  font-weight: 600;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rc-form .rc-id-note {
+  margin-left: auto;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rc-form .rc-id-note b {
+  color: var(--text);
+}
+
+/* ── Fact rows holding inputs: the view's one-line fact, a control in place
+   of the value. Label left, control right, hairline between cells. ─────── */
+.rc-form .cl-row {
+  align-items: center;
+}
+.rc-form .cl-grid > .cl-row > .form-grp {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+}
+.rc-form .cl-grid > .cl-row > .cl-gut + .form-grp {
+  border-left: none;
+  padding-left: 0;
+}
+.rc-form .cl-grid > .cl-row > .form-grp > .form-label {
+  flex: none;
+  white-space: nowrap;
+  color: var(--text3);
+  font-weight: 400;
+}
+.rc-form .cl-grid > .cl-row > .form-grp > :not(.form-label):not(.form-help) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* A short control (a select, a qty) keeps its capped width and sits at the
+   right of its cell, under the view's values. */
+.rc-form .cl-grid > .cl-row > .form-grp > .cl-cap,
+.rc-form .cl-grid > .cl-row > .form-grp > .cl-cap-md {
+  margin-left: auto;
+}
+/* A note under a control (Plan Type's "Old setting") takes the full cell. */
+.rc-form .cl-grid > .cl-row > .form-grp > .form-help {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: right;
+}
+.rc-form .rc-ops-split {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  margin-left: var(--sp-2);
+}
+
+/* ── Operation Sequence ─────────────────────────────────────────────────── */
+/* The Total row stays at the foot of the scrolling table, as the header row
+   stays at its top. Opaque, so rows passing under it do not show through. */
+.rc-form .rc-ops tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  background: var(--bg4);
+  border-top: 1px solid var(--border);
+}
+/* The ▸ More drawer: one line — label left, the remark box filling the rest. */
+.rc-form .rc-op-drw .form-grp {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.rc-form .rc-op-drw .form-label {
+  flex: none;
+  white-space: nowrap;
+  color: var(--text3);
+  font-weight: 400;
+}
+.rc-form .rc-op-drw .innovic-input {
+  flex: 1 1 0;
+  min-width: 0;
+  /* Free text reads left to right, like Route Card Remarks above it. */
+  text-align: left;
+}
+.rc-form .rc-op-act {
+  white-space: nowrap;
+}
+
+/* Route Card Remarks / Revision Note: one row tall like an input, but a textarea
+   (Enter = new line, never submit). The user can drag it taller. */
+.rc-form textarea.rc-one-row {
+  height: var(--control-h);
+  min-height: var(--control-h);
+  resize: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
