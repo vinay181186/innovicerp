@@ -518,6 +518,18 @@ function DocumentsTab({
   );
 }
 
+/** The Documents & Quality tab body on its own — today's cards, unchanged — for
+ *  the fit-to-screen Job Card detail (jc-status-view.tsx), which owns its own
+ *  tab strip. */
+export function JcDocumentsTab(props: {
+  jc: JobCardListItem;
+  ops: JcOpEnriched[];
+  extras: JobCardStatusExtras | undefined;
+  stopped: boolean;
+}): React.JSX.Element {
+  return <DocumentsTab {...props} />;
+}
+
 // ─── The tab bar ─────────────────────────────────────────────────────────────
 
 type Tab = 'docs' | 'material' | 'related' | 'history';

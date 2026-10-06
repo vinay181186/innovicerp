@@ -154,6 +154,47 @@ export function currentOp(sortedOps: JcOpEnriched[]): JcOpEnriched | undefined {
   return sortedOps.find((o) => o.computedStatus !== 'complete');
 }
 
+/** "Current Op: Op 30 · DRL-03 · running on DRL-04" — the old header's Current
+ *  Op line, for the right end of the detail page's tab strip. Same rules as the
+ *  JcViewSummary status line below (lowest-seq op not complete; ADR-164 names
+ *  the machine it is actually running on when that differs from the plan). */
+export function JcCurrentOpMeta({
+  sortedOps,
+}: {
+  sortedOps: JcOpEnriched[];
+}): React.JSX.Element | null {
+  if (sortedOps.length === 0) return null;
+  const stuck = currentOp(sortedOps);
+  if (!stuck) return <span className="jc-all-done">All operations complete</span>;
+  const where =
+    stuck.opType === 'qc'
+      ? 'QC'
+      : stuck.opType === 'outsource'
+        ? 'Outsource'
+        : (stuck.machineCode ?? stuck.machineCodeText ?? stuck.operation);
+  const runningOn =
+    stuck.opType === 'process' && stuck.activeRunningMachineCode
+      ? resolveActualMachine({
+          planned: stuck.machineCode ?? stuck.machineCodeText,
+          activeRunningMachineCode: stuck.activeRunningMachineCode,
+        })
+      : null;
+  return (
+    <>
+      Current Op:{' '}
+      <b>
+        Op {opSrNo(stuck.opSeq)} · {where}
+      </b>
+      {runningOn?.differs ? (
+        <>
+          {' '}
+          · running on <span className="jc-running">{runningOn.label}</span>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 /** Which drawing the page shows (resolved in jc-status-view.tsx — SO line, JW
  *  line, this card's own upload, or the item master, first that exists). */
 export interface JcDrawingRef {
