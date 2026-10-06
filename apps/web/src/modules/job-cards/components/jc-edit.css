@@ -1,0 +1,198 @@
+/* Edit Job Card — the detail page's grid with the editable fields as inputs
+   (owner, 2026-10-06: "jobcard detail page mockup is ok — apply to JC edit").
+
+   The page is the detail page (jc-detail.css, loaded under the same
+   `.jc-detail` root, so the fit-to-one-screen height, the picture frame, the
+   identity line and the cluster grid come from there unchanged) plus what an
+   input in a fact cell and an editable operations table need. Scoped to
+   `.jc-edit`; tokens only, no literal colours. */
+
+/* ── An input in a fact cell ────────────────────────────────────────────────
+   Label left, control at the right where the view's value sits. When the
+   label and the control's minimum do not fit side by side the control drops
+   to a line of its own (the primitive's wrap), never squeezed to nothing. A
+   pending chip (ADR-202) wraps the same way, right-aligned under the control. */
+.jc-edit .cl-fact.jc-in {
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: var(--sp-1);
+}
+.jc-edit .cl-fact.jc-in > .cl-fact-k {
+  margin-right: auto;
+}
+.jc-edit .req {
+  color: var(--red2);
+  margin-left: 2px;
+}
+.jc-edit .jc-in-ctl {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+/* Short values get short boxes (house rule: codes / qty / dates ~12ch). */
+.jc-edit .jc-in-ctl .jc-in-qty {
+  width: 9ch;
+}
+.jc-edit .jc-in-ctl .jc-in-date {
+  width: 132px;
+}
+.jc-edit .jc-in-ctl .jc-in-sel {
+  width: 12ch;
+}
+/* Below a 1366 screen the Quantity cell cannot hold label + box + "of PRO
+   Qty n" on one line; the PRO Qty moves to the cell's hover text rather than
+   pushing the box onto a second line. */
+@media (max-width: 1365px) {
+  .jc-edit .cl-fact.jc-in .jc-in-ctl .jc-sub {
+    display: none;
+  }
+}
+/* Remarks: free text, the whole row. A one-line textarea so a remark that
+   already holds line breaks keeps them on Save (an <input> would drop them). */
+.jc-edit .cl-fact.jc-in.jc-in-wide .jc-in-ctl {
+  flex: 1 1 0;
+  min-width: 16ch;
+}
+.jc-edit .jc-in-ctl textarea.innovic-textarea {
+  width: 100%;
+  min-height: var(--control-h);
+  height: var(--control-h);
+  resize: vertical;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.jc-edit .cl-fact.jc-in > .cl-fact-after {
+  max-width: 100%;
+  min-width: 0;
+}
+.jc-edit .cl-fact.jc-in > .cl-fact-after > .tag {
+  max-width: calc(100% - 6px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Identity line: Item Code is the one editable part — a picker sized like a
+   code, the item's name after it. */
+.jc-edit .cl-ident {
+  align-items: center;
+}
+.jc-edit .cl-ident .jc-id-lb {
+  color: var(--text3);
+  white-space: nowrap;
+}
+.jc-edit .cl-ident .jc-id-item {
+  width: 200px;
+  flex: none;
+}
+.jc-edit .cl-ident .jc-id-rev {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Header: why Save is off — one line, the full text on hover. */
+.jc-edit .jc-edit-pend {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--amber2);
+}
+
+/* ── Operations panel ───────────────────────────────────────────────────── */
+.jc-edit .jc-edit-ops-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.jc-edit .jc-edit-ops-count {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text3);
+}
+.jc-edit .jc-edit-add-qc {
+  color: var(--green2);
+  border: 1px solid var(--green);
+}
+.jc-edit .jc-edit-add-osp {
+  color: var(--amber2);
+  border: 1px solid var(--amber);
+}
+
+/* The table: the detail page's operations table (jc-ops-table.css supplies
+   the held header, the QC / outsource row tints, the ▸ button and the ▸
+   detail row), with inputs in the cells. */
+.jc-edit .jc-edit-ops td {
+  vertical-align: middle;
+}
+.jc-edit .jc-edit-ops td.jc-edit-na {
+  color: var(--text3);
+}
+/* A freshly added operation is ringed for a moment so it is found at once. */
+.jc-edit .jc-edit-ops tr.jc-edit-flash > td {
+  box-shadow:
+    inset 0 2px 0 var(--amber),
+    inset 0 -2px 0 var(--amber);
+}
+.jc-edit .jc-edit-ops tr.jc-edit-flash > td:first-child {
+  box-shadow:
+    inset 2px 0 0 var(--amber),
+    inset 0 2px 0 var(--amber),
+    inset 0 -2px 0 var(--amber);
+}
+.jc-edit .jc-edit-osp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text3);
+}
+.jc-edit .jc-edit-osp.is-on {
+  color: var(--amber2);
+}
+.jc-edit .jc-edit-osp.is-locked {
+  cursor: not-allowed;
+}
+.jc-edit .jc-edit-bal {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--amber2);
+  border: 1px solid var(--amber);
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+/* ▸ detail: the op's other editable fields on one line each, then the
+   read-only figures and recent logs the old op card showed. */
+.jc-edit .jc-edit-detf {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px 14px;
+  align-items: center;
+}
+.jc-edit .jc-edit-detf .jc-ops-f {
+  align-items: center;
+}
+.jc-edit .jc-edit-detf .jc-ops-f > .innovic-input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--control-h-sm);
+}
+.jc-edit .jc-edit-detf .jc-ops-f > .innovic-input.jc-in-qty {
+  flex: 0 1 12ch;
+}
+.jc-edit .jc-edit-detf .jc-span-2 {
+  grid-column: span 2;
+}
+@media (max-width: 900px) {
+  .jc-edit .jc-edit-detf {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

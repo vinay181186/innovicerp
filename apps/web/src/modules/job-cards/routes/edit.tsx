@@ -1,13 +1,13 @@
 // Edit Job Card (parity: editJC L6076). Renders the mode-switched JC Status
-// component in EDIT mode, so view & edit share ONE canonical layout (tiles +
-// operation flow + operations table) and differ only by editable fields.
-// Write-gated to admin/manager.
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Eye, Loader2 } from 'lucide-react';
+// component in EDIT mode — the Job Card detail page's own layout (header line,
+// banners, fact block, one Operations panel) with the editable fields as
+// inputs in their cells. The header (← Back · code · Edit Job Card · status ·
+// Cancel · Save Changes) is drawn by that component, beside the Save it owns.
+// Write-gated on jc_create.edit.
+import { createRoute } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { PageHeader } from '@/ui/layout';
-import { useJobCard } from '../api';
 import { JcStatusContent } from '../components/jc-status-content';
 
 export const jobCardEditRoute = createRoute({
@@ -18,13 +18,10 @@ export const jobCardEditRoute = createRoute({
 
 function JobCardEditPage(): React.JSX.Element {
   const { id } = jobCardEditRoute.useParams();
-  const navigate = useNavigate();
   // Tier-driven, per department (jc_create sits in Production). Editing a saved
   // Job Card needs `edit` (L3 Editor and up). URL-reachable, so it gates itself.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
-  // Shares the JcStatusContent query cache (same key) — no extra request.
-  const { data: jc } = useJobCard(canWrite ? id : undefined);
 
   if (accessLoading) {
     return (
@@ -43,26 +40,5 @@ function JobCardEditPage(): React.JSX.Element {
       </div>
     );
   }
-  // Save lives inside JcStatusContent (its edit mode), so this header carries
-  // only the title, Back and the switch to the read-only view.
-  return (
-    <div>
-      <PageHeader
-        title={`Edit Job Card${jc?.code ? ` — ${jc.code}` : ''}`}
-        backLabel="Back to Job Cards"
-        onBack={() => void navigate({ to: '/job-cards' })}
-        actions={
-          <Link
-            to="/job-cards/$id"
-            params={{ id }}
-            className="btn btn-ghost"
-            title="Switch to the read-only view of this Job Card"
-          >
-            <Eye size={14} /> View mode
-          </Link>
-        }
-      />
-      <JcStatusContent id={id} mode="edit" />
-    </div>
-  );
+  return <JcStatusContent id={id} mode="edit" />;
 }

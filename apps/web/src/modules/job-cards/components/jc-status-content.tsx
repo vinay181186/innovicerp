@@ -1,58 +1,86 @@
 // JC Status content — the mode dispatcher plus the EDIT body.
 //
-// VIEW mode (the read-only status page, laid out to the 2026-09-18 mockup)
-// lives in jc-status-view.tsx. EDIT mode below reuses the VIEW's restyled header
-// (JcViewSummary + JcRouteFlowPanel, read-only) so the two screens match, then
-// keeps the editable "Job Card Details" panel + editable op cards below,
-// reusing the JC create/edit save logic. The rework/repair banner both modes
-// show is in jc-recovery-banner.tsx.
+// VIEW mode (the read-only status page, laid out to the owner-approved
+// jobcard-detail-mockup.html) lives in jc-status-view.tsx. EDIT mode below is
+// the SAME page — same header line, same banners, same fact block, same one
+// filling panel of operations — with the editable fields as inputs in their
+// cells (owner, 2026-10-06: "jobcard detail page mockup is ok — apply to JC
+// edit"; screen-layout rule 8: Create, Edit and View share one grid and one
+// sequence, only the controls differ). Precedent: production-orders/routes/
+// edit.tsx.
+//
+//   header     ← Back · JC No. · Edit Job Card · JC status badge ·
+//              (pending-edit note) · Cancel · Save Changes
+//   banners    Sent for approval · short-closed Production Order stop
+//              (ADR-182) · rework / repair child note
+//   facts      jc-edit-fact-block.tsx — the detail page's block with Item
+//              Code, Due Date, Priority, Order Qty and Remarks as inputs
+//   notes      save error · outsource-balance result · op added · the
+//              "no QC directly after OSP" hint
+//   panel      Operations — jc-edit-ops-table.tsx, one editable row per op,
+//              the rest behind ▸
+//
+// The save is unchanged: buildJcWriteInput + useUpdateJobCard, the same
+// payload (source / date / drawing / raw material / QC docs carried through
+// from the model), the same staged-for-approval result handling, and the shared
+// OutsourceBalanceModal for ADR-081. The rework/repair banner both modes show
+// is in jc-recovery-banner.tsx.
 import type {
   JcOpEnriched,
   JobCardEditModel,
   JobCardListItem,
-  JobCardStatusExtras,
   ListVendorsQuery,
   ListVendorsResponse,
   OpLog,
 } from '@innovic/shared';
-import { fmtOpSrNo } from '@innovic/shared';
+import { fmtOpSrNo, isProductionOrderStopped } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { isStagedResult } from '@/modules/document-edits/api';
+import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/api';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useOpFlow } from '@/modules/flow-views/api';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
-import {
-  jobCardsKeys,
-  useJobCard,
-  useJobCardEditModel,
-  useJobCardStatusExtras,
-  useUpdateJobCard,
-} from '../api';
+import { Banner } from '@/ui/feedback';
+import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { jobCardsKeys, useJobCard, useJobCardEditModel, useUpdateJobCard } from '../api';
 import { useJcDrawing } from '../lib/jc-drawing';
-import { JcRouteFlowPanel, JcViewSummary } from './jc-view-summary';
-import { JcOpEditCard, type JcOpEditValues } from './jc-op-edit-card';
+import { JcEditFactBlock, jcEditQtyRule } from './jc-edit-fact-block';
+import type { JcOpEditValues } from './jc-edit-op-row';
+import { JcEditOpsTable } from './jc-edit-ops-table';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
 import { RecoveryBanner } from './jc-recovery-banner';
+import { JcStatusBadge } from './jc-status-badge';
 import { JcStatusViewContent } from './jc-status-view';
+import { JcStoppedBanner } from './jc-stopped-banner';
 import {
   buildJcWriteInput,
   grandfatheredOspQcPairs,
   opsSequenceError,
 } from '../lib/build-jc-write-input';
+import './jc-detail.css';
+import './jc-edit.css';
+
+/** The server's own words when a second edit is sent while one waits
+ *  (document-edits/service.ts) — Save's hover text while it is off for that. */
+const PENDING_EDIT_MESSAGE = 'This document already has an edit waiting for approval.';
+
+// Stable row keys for ops added on this screen (display-only, never saved —
+// buildJcWriteInput maps the op fields one by one). A saved op's key is its id.
+let editOpRowSeq = 0;
+const nextEditOpRowKey = (): string => `new-${++editOpRowSeq}`;
 
 // Mode dispatcher. VIEW mode renders the read-only status body
-// (jc-status-view.tsx). EDIT mode renders the same sections (VIEW header summary
-// + operation flow + operations) with the editable fields, reusing the JC
-// create/edit save logic. No hooks here → the branch is safe for rules-of-hooks.
+// (jc-status-view.tsx); EDIT mode renders the same page with inputs. No hooks
+// here → the branch is safe for rules-of-hooks.
 export function JcStatusContent({
   id,
   mode = 'view',
@@ -68,28 +96,17 @@ export function JcStatusContent({
 }
 
 // ─── EDIT MODE ──────────────────────────────────────────────────────────────
-// Same sections as the view (tiles + operation flow + operations table) with
-// editable header + op cells. Reuses the JC create/edit save logic
-// (buildJcWriteInput + useUpdateJobCard), the shared OutsourceBalanceModal +
-// useOutsourceOpBalance, and the OP_STATUS map — no reinvented logic.
-
-/** Editable op row shape — now shared with the editable op card
- *  (`JcOpEditValues`, jc-op-edit-card.tsx). Same fields as before; only the
- *  declaration moved so the card and this screen cannot drift. */
+/** Editable op row shape (`JcOpEditValues`, jc-edit-op-row.tsx). */
 type EditOp = JcOpEditValues;
 
-// Loader: fetches the editable model + the read-only enriched ops/logs/extras,
+// Loader: fetches the editable model + the read-only enriched ops/logs,
 // then renders the form once everything resolves (so the form seeds its state
 // from props, exactly like job-card-form seeds from its `model` prop).
 function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
   const { data: jc, isLoading, isError, error } = useJobCard(id);
   const { data: model, isLoading: modelLoading, isError: modelError } = useJobCardEditModel(id);
-  const { data: enrichedOps = [], isSuccess: opsLoaded } = useJcOpsEnriched(
-    { jobCardId: id },
-    { enabled: Boolean(id) },
-  );
+  const { data: enrichedOps = [] } = useJcOpsEnriched({ jobCardId: id }, { enabled: Boolean(id) });
   const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
-  const { data: extras } = useJobCardStatusExtras(id);
 
   if (isLoading || modelLoading) {
     return (
@@ -100,22 +117,17 @@ function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
   }
   if (isError || modelError || !jc || !model) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red2)' }}>
-        {error instanceof Error ? error.message : 'Job Card not found.'}
+      <div>
+        <Link to="/job-cards" className="btn btn-ghost btn-sm">
+          ← Back
+        </Link>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {error instanceof Error ? error.message : 'Job Card not found.'}
+        </div>
       </div>
     );
   }
-  return (
-    <JcStatusEditForm
-      id={id}
-      jc={jc}
-      model={model}
-      enrichedOps={enrichedOps}
-      opsLoaded={opsLoaded}
-      logs={logs}
-      extras={extras}
-    />
-  );
+  return <JcStatusEditForm id={id} jc={jc} model={model} enrichedOps={enrichedOps} logs={logs} />;
 }
 
 function JcStatusEditForm({
@@ -123,17 +135,13 @@ function JcStatusEditForm({
   jc,
   model,
   enrichedOps,
-  opsLoaded,
   logs,
-  extras,
 }: {
   id: string;
   jc: JobCardListItem;
   model: JobCardEditModel;
   enrichedOps: JcOpEnriched[];
-  opsLoaded: boolean;
   logs: OpLog[];
-  extras: JobCardStatusExtras | undefined;
 }): React.JSX.Element {
   const navigate = useNavigate();
   const goBack = useCallback(
@@ -144,15 +152,33 @@ function JcStatusEditForm({
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
 
-  // Read-only presentational context for the shared VIEW header (JcViewSummary),
-  // so the edit screen's header matches the view exactly. ADR-182 actual size is
-  // read off the Production Order the same way the view does; the drawing ref +
-  // thumbnail come from the shared useJcDrawing (already-loaded `jc` + `model`).
-  // None of this touches the editable header/ops state or the save payload.
-  const { order: productionOrder } = useProductionOrderForJobCard(id);
+  // Read-only context for the fact block — the same reads the detail page
+  // makes (jc-status-view.tsx). ADR-182: the Production Order that built this
+  // card (actual size, and whether it was SHORT CLOSED — the server refuses
+  // every edit to a stopped order's card, so Save is off with its reason).
+  // The drawing ref + thumbnail come from the shared useJcDrawing. None of this
+  // touches the editable header/ops state or the save payload.
+  const { order: productionOrder, isLoading: productionOrderLoading } =
+    useProductionOrderForJobCard(id);
+  const stopped = productionOrder ? isProductionOrderStopped(productionOrder.status) : false;
   const { drawing, drawingRef } = useJcDrawing(jc, model);
   const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
-  const [flowOpen, setFlowOpen] = useState(true);
+  // ADR-212 — the server's Job Card check for the Quantity cluster (same query
+  // the detail page reads, so it comes from cache when arriving from there).
+  const opFlow = useOpFlow(id);
+  // ADR-202 — an edit already waiting for approval on this Job Card. Its
+  // per-field changes drive the orange chips in the input cells, and while it
+  // waits Save is off: the server keeps ONE open edit per document and refuses
+  // a second. Until the check answers Save stays off too.
+  const pendingEdit = usePendingEditForDoc('JobCard', id);
+  const pendingRows = pendingEdit.data?.rows ?? [];
+  const pendingChanges = pendingRows.flatMap((r) => r.changes);
+  const hasPendingEdit = pendingRows.length > 0;
+  // Also off while the Production Order is still being looked up: until it
+  // answers, a short-closed order's card would look editable (no banner is
+  // shown for that — only Save waits).
+  const saveBlocked = hasPendingEdit || pendingEdit.isLoading || productionOrderLoading;
+  const pendingCount = pendingChanges.length || pendingRows.length;
 
   // Item Code picker searches the SERVER (?search=), like the create form's —
   // a fixed first page (was 500) left every item after it unpickable.
@@ -230,6 +256,7 @@ function JcStatusEditForm({
 
   const [ops, setOps] = useState<EditOp[]>(
     model.ops.map((o) => ({
+      rowKey: o.id,
       id: o.id,
       // Group is display-only and not stored on the op — back-filled from the
       // machine master once the machine list loads (effect below).
@@ -329,24 +356,34 @@ function JcStatusEditForm({
   // of applied; the neutral "Sent for approval" banner shows it before we return
   // to the status page (whose fields now carry the pending-change chips).
   const [stagedNotice, setStagedNotice] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(true);
+  // Which op rows have their ▸ detail open (keyed by each op's stable rowKey,
+  // so it follows the op on Move up / down). A freshly added op opens, so its
+  // tool / cost fields are in view.
+  const [openKeys, setOpenKeys] = useState<Set<string>>(() => new Set());
+  const toggleOpen = (key: string): void =>
+    setOpenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
   const [balanceNote, setBalanceNote] = useState<string | null>(null);
   // Friendly "op line added — fill it in" feedback. addNote is the green
-  // banner text; flashIdx briefly rings the freshly-added card; opsEndRef is
-  // the scroll target so the new line is never left below the fold.
+  // banner text; flashKey briefly rings the freshly-added row; the row's ref
+  // scrolls it into view inside the table's own scroll box.
   const [addNote, setAddNote] = useState<string | null>(null);
-  const [flashIdx, setFlashIdx] = useState<number | null>(null);
-  const opsEndRef = useRef<HTMLDivElement | null>(null);
+  const [flashKey, setFlashKey] = useState<string | null>(null);
   const scrollToNewOp = useRef(false);
-  // After a new op is appended and the section is open, scroll it into view.
-  // Runs post-render so the new card exists in the DOM. Timers auto-clear the
-  // banner + highlight; the effect cleans them up on unmount / re-fire.
-  useEffect(() => {
-    if (!scrollToNewOp.current) return;
+  const newRowRef = useCallback((el: HTMLTableRowElement | null) => {
+    if (!el || !scrollToNewOp.current) return;
     scrollToNewOp.current = false;
-    opsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const t1 = setTimeout(() => setFlashIdx(null), 2500);
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, []);
+  // Timers auto-clear the banner + highlight; cleaned up on unmount / re-fire.
+  useEffect(() => {
+    if (!addNote) return undefined;
+    const t1 = setTimeout(() => setFlashKey(null), 2500);
     const t2 = setTimeout(() => setAddNote(null), 5000);
     return () => {
       clearTimeout(t1);
@@ -354,13 +391,9 @@ function JcStatusEditForm({
     };
   }, [addNote]);
 
-  // Read-only enriched columns + recent logs (from the JC Status view) keyed by
-  // op id, so each editable row shows the SAME live progress the view shows.
+  // Read-only enriched columns + recent logs keyed by op id, so each editable
+  // row shows the SAME live progress the view shows.
   const enrichedById = useMemo(() => new Map(enrichedOps.map((o) => [o.id, o])), [enrichedOps]);
-  const sortedEnriched = useMemo(
-    () => [...enrichedOps].sort((a, b) => a.opSeq - b.opSeq),
-    [enrichedOps],
-  );
   const logsByOp = useMemo(() => {
     const m = new Map<string, OpLog[]>();
     for (const l of logs) {
@@ -371,10 +404,6 @@ function JcStatusEditForm({
     for (const arr of m.values()) arr.sort((a, b) => b.logDate.localeCompare(a.logDate));
     return m;
   }, [logs]);
-  const opExtraById = useMemo(
-    () => new Map((extras?.opExtras ?? []).map((e) => [e.jcOpId, e])),
-    [extras?.opExtras],
-  );
 
   const setOp = (i: number, patch: Partial<EditOp>): void => {
     setOps((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
@@ -436,31 +465,30 @@ function JcStatusEditForm({
     });
   };
   const addOp = (kind: 'process' | 'qc' | 'outsource' = 'process'): void => {
-    let newPos = 0;
-    setOps((prev) => {
-      newPos = prev.length + 1;
-      return [
-        ...prev,
-        {
-          // OSP ops carry no machine (T32b); QC parks on the QC lane.
-          machineGroupId: null,
-          machineCode: '',
-          operation: '',
-          opType: kind,
-          cycleTimeMin: 0,
-          program: '',
-          toolNo: '',
-          toolDetails: '',
-          qcRequired: kind === 'qc',
-          outsourceVendorCode: '',
-          outsourceCost: 0,
-          hasStarted: false,
-          available: 0,
-        },
-      ];
-    });
-    // Never leave the new line hidden behind a collapsed section.
-    setDetailOpen(true);
+    const newIdx = ops.length;
+    const rowKey = nextEditOpRowKey();
+    setOps((prev) => [
+      ...prev,
+      {
+        rowKey,
+        // OSP ops carry no machine (T32b); QC parks on the QC lane.
+        machineGroupId: null,
+        machineCode: '',
+        operation: '',
+        opType: kind,
+        cycleTimeMin: 0,
+        program: '',
+        toolNo: '',
+        toolDetails: '',
+        qcRequired: kind === 'qc',
+        outsourceVendorCode: '',
+        outsourceCost: 0,
+        hasStarted: false,
+        available: 0,
+      },
+    ]);
+    // The new row opens, so nothing it needs is hidden behind ▸.
+    setOpenKeys((prev) => new Set(prev).add(rowKey));
     const kindLabel = kind === 'qc' ? 'QC' : kind === 'outsource' ? 'Outsource' : 'Machining';
     const need =
       kind === 'qc'
@@ -468,9 +496,9 @@ function JcStatusEditForm({
         : kind === 'outsource'
           ? 'pick a vendor (and operation name)'
           : 'pick a machine and operation name';
-    setFlashIdx(newPos - 1);
+    setFlashKey(rowKey);
     scrollToNewOp.current = true;
-    setAddNote(`Op ${fmtOpSrNo(newPos)} (${kindLabel}) added — ${need}, then Save.`);
+    setAddNote(`Op ${fmtOpSrNo(newIdx + 1)} (${kindLabel}) added — ${need}, then Save.`);
   };
 
   const submitting = update.isPending;
@@ -490,7 +518,31 @@ function JcStatusEditForm({
     startedIds,
   });
 
+  // The Order Qty caps the server enforces on this card (service.ts
+  // updateJobCardTx), stated in the cell; a typed qty that breaks one turns
+  // Save off with the server's own words. PRO Qty only for the card's OWN
+  // order — the server reads head.productionOrderId, not a parent's.
+  const ownOrder =
+    productionOrder && jc.productionOrderId && productionOrder.id === jc.productionOrderId
+      ? productionOrder
+      : null;
+  const qtyRule = jcEditQtyRule({
+    jcCode: jc.code,
+    savedQty: model.orderQty,
+    typedQty: orderQty.trim() === '' ? Number.NaN : Number(orderQty),
+    proCode: ownOrder?.code ?? jc.productionOrderCode ?? null,
+    proQty: ownOrder?.orderQty ?? null,
+    completedQty: model.ops.reduce((m, o) => Math.max(m, o.completedQty), 0),
+    issuedNetQty: jc.customerMaterial
+      ? Math.max(0, jc.customerMaterial.issuedToJcQty - jc.customerMaterial.returnedToStoreQty)
+      : 0,
+  });
+
   const onSave = async (): Promise<void> => {
+    // Same gates as the Save button — Ctrl+S cannot slip past them: saving,
+    // an edit already waiting (or that check / the Production Order lookup
+    // still loading), a stopped order, a qty the server would refuse.
+    if (update.isPending || saveBlocked || stopped || qtyRule.error) return;
     setError(null);
     // Shared validation + payload build. Source/date/drawing/docs are carried
     // through from the model unchanged (edit here only touches header + ops).
@@ -548,89 +600,108 @@ function JcStatusEditForm({
     }
   };
 
-  const opCount = ops.filter((o) => o.opType !== 'qc').length;
-  const qcCount = ops.filter((o) => o.opType === 'qc').length;
+  // Ctrl+S runs the same Save as the header button. Always bound, so the
+  // browser's "Save page as" never opens; onSave's own guard refuses while
+  // Save is off.
+  useSaveShortcut(() => void onSave());
+
+  // Item Code → item name (dependent field): the saved item's name while the
+  // box holds the saved code, else the picked item's from the search page.
+  const typedCode = itemCode.trim().toUpperCase();
+  const itemName =
+    typedCode === model.itemCode.trim().toUpperCase()
+      ? jc.itemName
+      : (items.find((i) => i.code.toUpperCase() === typedCode)?.name ?? '');
+
+  // Why Save is off, first reason first: a stopped order (the server refuses
+  // every edit to its card), then an edit already waiting for approval, then a
+  // typed Order Qty the server would refuse.
+  const stoppedMessage =
+    stopped && productionOrder
+      ? `Production Order ${productionOrder.code} was short closed — no further work is allowed on Job Card ${jc.code}.`
+      : undefined;
+  const saveOffTitle =
+    stoppedMessage ?? (hasPendingEdit ? PENDING_EDIT_MESSAGE : (qtyRule.error ?? undefined));
+  const pendingNote = `${pendingCount} change${
+    pendingCount === 1 ? '' : 's'
+  } waiting for approval · Save is off until it is decided`;
 
   return (
-    <div>
+    <div className="page-fill jc-detail jc-edit">
       {exit.dialog}
-      {stagedNotice ? (
-        <div
-          role="status"
-          style={{
-            color: 'var(--green2)',
-            background: 'rgba(34,197,94,0.08)',
-            border: '1px solid rgba(34,197,94,0.3)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            fontWeight: 600,
-            marginBottom: 10,
-          }}
-        >
-          {stagedNotice}
-        </div>
-      ) : null}
-      <RecoveryBanner jc={jc} />
-
-      {/* Same restyled header the VIEW shows — the shared JcViewSummary (image
-          tile, code · name · Material · Size, 5 KPI tiles, references, meta),
-          wired read-only from the edit form's already-loaded data. Editing
-          happens in the "Job Card Details" panel directly below. */}
-      <JcViewSummary
-        jc={jc}
-        ops={enrichedOps}
-        opsLoaded={opsLoaded}
-        sortedOps={sortedEnriched}
-        rmAvailable={extras?.rmAvailable ?? null}
-        actualSize={productionOrder?.actualSize ?? null}
-        drawing={drawingRef}
-        onOpenDrawing={() => setDrawingPreviewOpen(true)}
-      />
-      {drawingPreviewOpen && drawing ? (
-        <FilePreviewModal
-          storagePath={drawing.path}
-          kind="drawing"
-          source={drawing.source}
-          refCode={jc.code}
-          onClose={() => setDrawingPreviewOpen(false)}
-        />
-      ) : null}
-
-      {/* Editable header fields */}
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-hdr">
-          <div className="panel-title">▸ Job Card Details</div>
-        </div>
-        <div className="panel-body">
-          <div className="form-grid">
-            <div className="form-grp">
-              <label className="form-label">JC No.</label>
-              <input className="innovic-input" value={model.code} readOnly />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Priority</label>
-              <select
-                className="innovic-select"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
+      <DetailHeader
+        backLabel="Back"
+        backTo="/job-cards"
+        renderLink={(p) => <Link {...p} />}
+        code={jc.code}
+        // One header line, as on the detail page: code · page name · status.
+        badges={
+          <>
+            <span className="panel-title">Edit Job Card</span>
+            <JcStatusBadge status={jc.computedStatus} />
+          </>
+        }
+        actions={
+          <>
+            {hasPendingEdit ? (
+              <span className="jc-edit-pend" role="status" title={PENDING_EDIT_MESSAGE}>
+                {pendingNote}
+              </span>
+            ) : null}
+            <Link
+              to="/job-cards/$id"
+              params={{ id }}
+              className="btn btn-ghost btn-sm"
+              onClick={exit.allow}
+            >
+              Cancel
+            </Link>
+            {/* The wrapper carries the hover text: a disabled button gets none. */}
+            <span title={saveOffTitle}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={submitting || saveBlocked || stopped || Boolean(qtyRule.error)}
+                title={saveOffTitle}
+                onClick={() => void onSave()}
               >
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label">
-                Item Code <span className="req">★</span>
-              </label>
-              {/* Stores the item CODE, exactly as before; the label comes from
-                  the code itself so it survives the search page moving on. */}
+                {submitting ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Saving…
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </button>
+            </span>
+          </>
+        }
+      >
+        {stagedNotice ? (
+          <Banner tone="success" role="status">
+            {stagedNotice}
+          </Banner>
+        ) : null}
+        <JcStoppedBanner order={productionOrder} />
+        <RecoveryBanner jc={jc} />
+        <JcEditFactBlock
+          jc={jc}
+          productionOrder={productionOrder}
+          drawing={drawingRef}
+          onOpenDrawing={() => setDrawingPreviewOpen(true)}
+          pendingChanges={pendingChanges}
+          check={opFlow.data?.jobCardCheck}
+          checkError={opFlow.isError}
+          typedOrderQty={Number(orderQty)}
+          itemName={itemName}
+          qtyRule={qtyRule}
+          fields={{
+            // Stores the item CODE, exactly as before; the label comes from
+            // the code itself so it survives the search page moving on.
+            item: (
               <SearchableSelect
                 id="jc-edit-item"
-                value={
-                  items.find((i) => i.code.toUpperCase() === itemCode.trim().toUpperCase())?.id ??
-                  null
-                }
+                value={items.find((i) => i.code.toUpperCase() === typedCode)?.id ?? null}
                 onChange={(pickedId) =>
                   setItemCode(items.find((i) => i.id === pickedId)?.code ?? '')
                 }
@@ -641,220 +712,98 @@ function JcStatusEditForm({
                 selectedLabel={(o) => o.code ?? o.name}
                 placeholder="🔍 Search item code or name…"
               />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">
-                Order Qty <span className="req">★</span>
-              </label>
+            ),
+            dueDate: (
               <input
-                type="number"
-                min={1}
-                className="innovic-input"
-                value={orderQty}
-                onChange={(e) => setOrderQty(e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Due Date</label>
-              <input
+                id="jc-edit-due"
                 type="date"
-                className="innovic-input"
+                className="innovic-input jc-in-date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
               />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label">Remarks</label>
+            ),
+            priority: (
+              <select
+                id="jc-edit-priority"
+                className="innovic-select jc-in-sel"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
+              >
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+              </select>
+            ),
+            orderQty: (
+              <input
+                id="jc-edit-qty"
+                type="number"
+                min={1}
+                className="innovic-input jc-in-qty"
+                value={orderQty}
+                onChange={(e) => setOrderQty(e.target.value)}
+              />
+            ),
+            remarks: (
               <textarea
+                id="jc-edit-remarks"
                 className="innovic-textarea"
-                rows={2}
+                rows={1}
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
               />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Route / Operation Flow — the same read-only wrapping strip of fixed
-          op cards the VIEW shows, above the editable operations below. */}
-      <JcRouteFlowPanel
-        jc={jc}
-        sortedOps={sortedEnriched}
-        opExtraById={opExtraById}
-        open={flowOpen}
-        onToggle={() => setFlowOpen((v) => !v)}
-      />
-
-      {/* OPERATIONS DETAIL — same table as the view, with editable cells for
-          Machine/Operation/Cycle/Prog-Tool/QC/Outsource. The qty/status/logs
-          columns stay READ-ONLY from the enriched ops. */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <button
-          type="button"
-          onClick={() => setDetailOpen((v) => !v)}
-          className="mono"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: 11,
-            color: 'var(--cyan)',
-            fontWeight: 700,
-            marginBottom: 8,
-            padding: 0,
+            ),
           }}
-        >
-          {detailOpen ? '▾' : '▸'} Operations Detail
-        </button>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span className="text3" style={{ fontSize: 11 }}>
-            {opCount} op{opCount !== 1 ? 's' : ''}
-            {qcCount > 0 ? ` + ${qcCount} QC` : ''}
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
-            + Add Op
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            style={{ color: 'var(--green2)', border: '1px solid rgba(34,197,94,0.3)' }}
-            onClick={() => addOp('qc')}
-          >
-            + Add QC Op
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
-            onClick={() => addOp('outsource')}
-          >
-            + Add Outsource Op
-          </button>
-        </div>
-      </div>
-      {addNote ? (
-        <div
-          role="status"
-          style={{
-            color: 'var(--green2)',
-            background: 'rgba(34,197,94,0.08)',
-            border: '1px solid rgba(34,197,94,0.3)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            fontWeight: 600,
-            marginBottom: 10,
-          }}
-        >
-          {addNote}
-        </div>
+        />
+      </DetailHeader>
+      {drawingPreviewOpen && drawing ? (
+        <FilePreviewModal
+          storagePath={drawing.path}
+          kind="drawing"
+          source={drawing.source}
+          refCode={jc.code}
+          onClose={() => setDrawingPreviewOpen(false)}
+        />
       ) : null}
-      {detailOpen && opsSequenceHint ? (
-        <div
-          role="alert"
-          style={{
-            color: 'var(--red2)',
-            background: 'var(--red3)',
-            border: '1px solid var(--red)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
+
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      {balanceNote ? <Banner tone="success">{balanceNote}</Banner> : null}
+      {addNote ? <Banner tone="success">{addNote}</Banner> : null}
+      {/* The live "no QC directly after OSP" hint — the same message Save and
+          the API raise. */}
+      {opsSequenceHint ? (
+        <Banner tone="error" role="alert">
           {opsSequenceHint}
-        </div>
-      ) : null}
-      {detailOpen ? (
-        <div style={{ marginBottom: 16 }}>
-          {ops.length === 0 ? (
-            <div className="panel">
-              <div className="empty-state">No operations yet.</div>
-            </div>
-          ) : (
-            ops.map((o, i) => {
-              const en = o.id ? enrichedById.get(o.id) : undefined;
-              return (
-                <div
-                  key={o.id ?? `new-${i}`}
-                  style={
-                    flashIdx === i
-                      ? {
-                          borderRadius: 12,
-                          boxShadow: '0 0 0 2px var(--amber)',
-                          transition: 'box-shadow .3s',
-                        }
-                      : { transition: 'box-shadow .3s' }
-                  }
-                >
-                  <JcOpEditCard
-                    jc={jc}
-                    op={o}
-                    index={i}
-                    seqLabel={en ? en.opSeq : i + 1}
-                    enriched={en}
-                    machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
-                    machines={machines}
-                    machineOptions={machineOptions}
-                    machineGroupCodeById={machineGroupCodeById}
-                    onMachineSearch={setMachineSearch}
-                    onMachineChange={(code) => onOpMachineChange(i, code)}
-                    onGroupChange={(gid) => onOpGroupChange(i, gid)}
-                    vendorOptions={vendorOptions}
-                    onVendorSearch={setVendorSearch}
-                    vendorsLoading={vendorsFetching}
-                    logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
-                    isFirst={i === 0}
-                    isLast={i === ops.length - 1}
-                    onChange={(patch) => setOp(i, patch)}
-                    onMove={(dir) => moveOp(i, dir)}
-                    onRemove={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
-                    onOutsourceBalance={() => {
-                      setBalanceNote(null);
-                      setBalanceOpIdx(i);
-                    }}
-                  />
-                </div>
-              );
-            })
-          )}
-          {/* Scroll target: the effect scrolls here after a new op is added. */}
-          <div ref={opsEndRef} />
-        </div>
+        </Banner>
       ) : null}
 
-      {error ? (
-        <div
-          style={{
-            color: 'var(--red2)',
-            background: 'var(--red3)',
-            border: '1px solid var(--red)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
-
-      {balanceNote ? (
-        <div
-          style={{
-            color: 'var(--green2)',
-            background: 'rgba(34,197,94,0.08)',
-            border: '1px solid rgba(34,197,94,0.3)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {balanceNote}
-        </div>
-      ) : null}
+      <JcEditOpsTable
+        ops={ops}
+        enrichedById={enrichedById}
+        logsByOp={logsByOp}
+        shared={{
+          machines,
+          machineOptions,
+          machineGroupCodeById,
+          onMachineSearch: setMachineSearch,
+          vendorOptions,
+          onVendorSearch: setVendorSearch,
+          vendorsLoading: vendorsFetching,
+        }}
+        openKeys={openKeys}
+        flashKey={flashKey}
+        newRowRef={newRowRef}
+        onToggle={toggleOpen}
+        onAdd={addOp}
+        onChange={setOp}
+        onMachineChange={onOpMachineChange}
+        onGroupChange={onOpGroupChange}
+        onMove={moveOp}
+        onRemove={(i) => setOps((prev) => prev.filter((_, idx) => idx !== i))}
+        onOutsourceBalance={(i) => {
+          setBalanceNote(null);
+          setBalanceOpIdx(i);
+        }}
+      />
 
       {balanceOpIdx !== null && ops[balanceOpIdx]?.id ? (
         <OutsourceBalanceModal
@@ -878,26 +827,6 @@ function JcStatusEditForm({
           }}
         />
       ) : null}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <Link to="/job-cards/$id" params={{ id }} className="btn btn-ghost" onClick={exit.allow}>
-          Cancel
-        </Link>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={submitting}
-          onClick={() => void onSave()}
-        >
-          {submitting ? (
-            <>
-              <Loader2 size={13} className="animate-spin" /> Saving…
-            </>
-          ) : (
-            'Save Changes'
-          )}
-        </button>
-      </div>
     </div>
   );
 }

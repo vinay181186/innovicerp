@@ -1,40 +1,13 @@
-// Shared visual pieces of the Operations Detail op card, used by BOTH the
-// read-only card (jc-op-card.tsx) and the editable card (jc-op-edit-card.tsx)
-// so the two screens cannot drift apart visually.
+// Shared visual pieces of the Operations Detail op card (jc-op-card.tsx). The
+// editable op card that also used them has been replaced by the Edit page's
+// operations table (jc-edit-op-row.tsx).
 //
 // Presentation only — these components hold no JC logic and compute nothing.
-
-/** Small section caption inside a card ("Quantities", "Setup", …). */
-export const secLabel: React.CSSProperties = {
-  fontSize: 11,
-  color: 'var(--text3)',
-  fontWeight: 700,
-  marginBottom: 5,
-};
-
-/** Labelled wrapper for an editable SETUP field (edit card). */
-export function SetupField({
-  label,
-  width,
-  children,
-}: {
-  label: string;
-  width: number;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div style={{ width }}>
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 2 }}>{label}</div>
-      {children}
-    </div>
-  );
-}
 
 /** One quantity CHIP (JC-Detail-Restyle-Mockup.html, 2026-09-21): mono number
  *  over a small caption, in a bordered box that fills its grid cell.
  *  `highlight` tints it amber (pieces waiting); `sub` holds the caller's extra
- *  lines unchanged. Used by BOTH the read-only VIEW op card (jc-op-card.tsx) and
- *  the editable op card (jc-op-edit-card.tsx) so their quantities read the same. */
+ *  lines unchanged. Used by the read-only VIEW op card (jc-op-card.tsx). */
 export function QtyChip({
   label,
   value,
