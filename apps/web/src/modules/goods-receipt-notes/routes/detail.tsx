@@ -1,27 +1,28 @@
-// GRN detail (UI-003-05).
+// GRN detail (UI-003-05) — the page: permissions, data, the header chrome
+// (buttons, QC badge, delete confirm) and the panels in order.
+//
+// The two panels that carry the content live beside it, split out 2026-10-06
+// under CLAUDE.md §12's 400-line cap:
+//   components/grn-detail-header.tsx   the identity line + the four clusters
+//   components/grn-detail-lines.tsx    the lines table, the ▸ and the totals
+//
+// Every figure the two of them show comes from `components/grn-receipt-figures
+// .ts`, the one leaf shared with the create and edit screens — so a GRN cannot
+// read one way on Edit and another here.
+//
+// What the layout replaced, and why, is written at the top of
+// `grn-detail-header.tsx`. This file owns ONE judgement the panels do not make:
+// whether this receipt has an account at all. See `againstPo` below.
 
-import type {
-  DocumentEditChange,
-  GoodsReceiptNoteDetail,
-  GoodsReceiptNoteLineDetail,
-  GrnQcStatus,
-  Vendor,
-} from '@innovic/shared';
+import type { GrnQcStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
-import {
-  PendingChangeChip,
-  headerPendingChange,
-} from '@/modules/document-edits/components/pending-change-chip';
-import { fmtDate } from '@/lib/date';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { partyAddressLines } from '@/lib/print/company';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -31,6 +32,10 @@ import { useMyCompany } from '@/modules/settings/api';
 import { usePrintTemplates } from '@/modules/print-templates/api';
 import { useVendor } from '@/modules/vendors/api';
 import { useGoodsReceiptNote, useSoftDeleteGoodsReceiptNote } from '../api';
+import { receiptAccount } from '../components/grn-receipt-figures';
+import { ReceiptGrid, ReceiptIdent } from '../components/grn-detail-header';
+import { GrnDetailLines } from '../components/grn-detail-lines';
+import { grnTypeLabel } from '../components/grn-list-columns';
 import { QcStatusBadge } from '../components/qc-status-badge';
 import { printGrn } from '../lib/print-grn';
 
@@ -46,7 +51,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useGoodsReceiptNote(id);
   // ADR-202 — the edit(s) staged against this GRN and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
-  // record fields below. Flattened across requests (usually one).
+  // record fields in the header grid. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('GoodsReceiptNote', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   // Tier-driven, per department (Store). Was role admin/manager for Edit and
@@ -130,9 +135,6 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // edit without approve; L4 has approve without edit.
   const canDelete = perms.edit && perms.approve;
 
-  const totalReceived = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
-  const totalAccepted = detail.lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
-  const totalRejected = detail.lines.reduce((s, l) => s + l.qcRejectedQty, 0);
   // ADR-189: a GRN with ANY inspected qty (not only a fully cleared line)
   // cannot be deleted — the server refuses it, so the menu says so up front.
   const anyInspected = detail.lines.some(
@@ -151,6 +153,36 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
         ? 'in_progress'
         : 'pending';
 
+  // `GRN Type` once, for the identity line and the first cluster. Neither panel
+  // re-derives it.
+  const grnType = grnTypeLabel(detail);
+
+  // THE page's own judgement: the receipt account (PO Qty → Received Earlier →
+  // Received → Pending) and the lines table's `PO Qty` column are AGAINST-PO
+  // ONLY. `grnTypeLabel` is the one place the three sources are told apart —
+  // the same NC → DC → PO order the Open NC / Open DC / Open PO buttons below
+  // use — so the test is read off it rather than spelt out a second time.
+  // Why the other two types get no account:
+  //   - the figure a clerk types a DC or NC receipt against is the challan's
+  //     `Sent Qty`, not the purchase-order line's qty. Both sides DO come back
+  //     populated on those GRNs (a job-work DC hangs off a JW PO, which has a
+  //     line with a quantity), so this is not a null check — it is the wrong
+  //     fact. The GRN detail response carries no challan quantity, so the
+  //     equivalent account cannot be built here at all; printing the PO line's
+  //     qty under either label would put a number on screen that disagrees
+  //     with what the clerk entered against.
+  //   - on a replacement GRN (`ncId` set) the API deliberately leaves that
+  //     GRN's own receipt inside `Received Earlier`, because the PO's received
+  //     column excludes replacement receipts until QC clears them. `PO Qty −
+  //     Received Earlier − Received` would then understate what is still owed
+  //     by exactly this line's Received. Suppressing the account keeps that
+  //     figure off the screen.
+  // `receiptAccount` owns all four of its own terms and withholds the account
+  // unless EVERY line traces to an ordered line — the same rule, from the same
+  // function, that the create and edit screens obey.
+  const againstPo = grnType === 'Against PO';
+  const account = againstPo ? receiptAccount(detail.lines) : null;
+
   return (
     <div>
       <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
@@ -159,19 +191,14 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span
-                className="td-code"
-                style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
-              >
-                {detail.code}
-              </span>
-              <QcStatusBadge status={headerQcStatus} />
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              {detail.vendorName ?? detail.vendorCodeText ?? '—'}
-            </div>
+          {/* The GRN code and the vendor used to BE this header (an unlabelled
+              16px code and the vendor as the panel title). Both are identity,
+              not facts about the receipt, so they moved into the identity line
+              in the body and the panel says what the panel is. The QC badge
+              stays. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="panel-title">Receipt</span>
+            <QcStatusBadge status={headerQcStatus} />
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <AssignTaskButton
@@ -203,7 +230,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 Open NC
               </Link>
             ) : null}
-            {/* Set only on a GRN the DC receive auto-raised (Against JWPO / DC
+            {/* Set only on a GRN the DC receive auto-raised (Against JW PO / DC
                 or Against NC — both come back through the challan). */}
             {detail.deliveryChallanId ? (
               <Link
@@ -265,52 +292,22 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <DetailGrid detail={detail} vendor={vendor} pendingChanges={pendingChanges} />
+          <ReceiptIdent detail={detail} grnType={grnType} />
+          <ReceiptGrid
+            detail={detail}
+            vendor={vendor}
+            pendingChanges={pendingChanges}
+            grnType={grnType}
+            account={account}
+          />
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">Line Items ({detail.lines.length})</div>
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            Received <b style={{ color: 'var(--text)' }}>{totalReceived}</b> · Accepted{' '}
-            <b style={{ color: 'var(--green2)' }}>{totalAccepted}</b> · Deviated{' '}
-            <b style={{ color: 'var(--red2)' }}>{totalRejected}</b>
-          </span>
-        </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Ln</th>
-                {/* POL = the CUSTOMER's own PO line number, carried down from
-                    the Sales Order line behind this receipt. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item Code</th>
-                <th>Item Name</th>
-                <th>UOM</th>
-                <th className="th-num">Received</th>
-                <th>Vendor Challan No.</th>
-                <th>QC Status</th>
-                <th className="th-num">Accepted</th>
-                <th className="th-num">Deviated</th>
-                <th>QC Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.lines.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="empty-state">
-                    No lines on this GRN yet.
-                  </td>
-                </tr>
-              ) : (
-                detail.lines.map((l) => <LineRow key={l.id} line={l} />)
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <GrnDetailLines
+        lines={detail.lines}
+        againstPo={againstPo}
+        poQtyTotal={account ? account.poQty : null}
+      />
 
       <RelatedDocsPanel module="goods-receipt-notes" id={detail.id} />
 
@@ -360,127 +357,5 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
         />
       ) : null}
     </div>
-  );
-}
-
-function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element {
-  const { line: l } = props;
-  return (
-    <tr>
-      <td className="mono">{l.lineNo}</td>
-      {/* POL — the CUSTOMER's PO line number off the SO line behind this row. */}
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-        {l.clientPoLineNo ?? '—'}
-      </td>
-      {/* Item code is THE main thing — strong; CODE/REV (ADR-177). */}
-      <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-        {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
-      </td>
-      {/* The item master's name; the saved copy is the print's (plan v3 Step 4). */}
-      <td>{l.masterItemName ?? l.itemName}</td>
-      {/* UOM off the item master (A26); blank when the line has no item. */}
-      <td className="mono">{l.uom ?? '—'}</td>
-      <td className="mono td-num">{l.receivedQty}</td>
-      <td className="mono">{l.dcRefNo ?? '—'}</td>
-      <td>
-        <QcStatusBadge status={l.qcStatus} />
-      </td>
-      <td className="mono td-num" style={{ color: 'var(--green2)' }}>
-        {l.qcAcceptedQty}
-      </td>
-      <td className="mono td-num" style={{ color: 'var(--red2)' }}>
-        {l.qcRejectedQty}
-      </td>
-      <td className="text2" style={{ fontSize: 11 }}>
-        {fmtDate(l.qcDate)}
-      </td>
-    </tr>
-  );
-}
-
-function DetailGrid(props: {
-  detail: GoodsReceiptNoteDetail;
-  vendor: Vendor | null | undefined;
-  pendingChanges: readonly DocumentEditChange[];
-}): React.JSX.Element {
-  const { detail, vendor, pendingChanges } = props;
-  const vendorAddress = partyAddressLines(vendor);
-  return (
-    <div className="form-grid form-grid-3">
-      <Pair label="GRN Date" value={withChip(fmtDate(detail.grnDate), pendingChanges, 'grnDate')} />
-      {/* Two different numbers, each shown only when present: our own DC (when
-          the GRN came from a DC receive) and the vendor's challan number the
-          storekeeper typed. The staged-edit field key is `dcNo` (Vendor Challan
-          No.); our own DC code is not editable. */}
-      {detail.dcCode ? <Pair label="DC No." value={detail.dcCode} /> : null}
-      {detail.dcNo && detail.dcNo !== detail.dcCode ? (
-        <Pair label="Vendor Challan No." value={withChip(detail.dcNo, pendingChanges, 'dcNo')} />
-      ) : null}
-      <Pair
-        label="Vendor Invoice No."
-        value={withChip(detail.invoiceNo, pendingChanges, 'invoiceNo')}
-      />
-      {/* On an NC-return GRN there is no PO: the header's poCodeText holds the
-          NC code, so it is shown once, under an "NC" label. */}
-      {detail.ncCode ? (
-        <Pair label="NC No." value={detail.ncCode} />
-      ) : (
-        <Pair
-          label="PO No."
-          value={withChip(detail.poCode ?? detail.poCodeText, pendingChanges, 'poNo')}
-        />
-      )}
-      <Pair
-        label="Vendor"
-        value={withChip(detail.vendorName ?? detail.vendorCodeText, pendingChanges, 'vendor')}
-      />
-      {/* Vendor Code + full address off the vendor master (A26). */}
-      <Pair
-        label="Vendor Code"
-        value={
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {vendor?.code ?? detail.vendorCode ?? detail.vendorCodeText ?? '—'}
-          </span>
-        }
-      />
-      <Pair
-        label="Vendor Address"
-        value={vendorAddress.length > 0 ? vendorAddress.join(', ') : '—'}
-      />
-      <div className="form-grp form-full">
-        <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>
-          {withChip(detail.remarks, pendingChanges, 'remarks')}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
-  );
-}
-
-/** ADR-202 — append the amber "→ after" chip to a header field's value when an
- *  edit to that field is staged. With no pending change the value is returned
- *  as-is (falling back to an em-dash for an empty field). */
-function withChip(
-  value: React.ReactNode,
-  changes: readonly DocumentEditChange[],
-  field: string,
-): React.ReactNode {
-  const c = headerPendingChange(changes, field);
-  const shown = value == null || value === '' ? '—' : value;
-  if (!c) return shown;
-  return (
-    <>
-      {shown}
-      <PendingChangeChip after={c.after} />
-    </>
   );
 }
