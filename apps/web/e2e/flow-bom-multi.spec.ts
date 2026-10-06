@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clickRowMenuItem, findRowWithMenuItem, planningLineRows, EDIT_PLAN_ITEM, EXECUTE_PLAN_ITEM, clickPlanMenuItem, expandPlanningRows, hasPlanMenuItem } from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
+import { bomParentItemName, bomPartItemName, bomPartQty, bomPartType } from './bom-form';
 
 // A multi-item, mixed-type BOM driven the whole way: BOM -> equipment SO ->
 // explosion -> plans -> job cards -> JOB CARD EDITS -> production -> QC ->
@@ -232,22 +233,20 @@ test('@bommulti 01 — BOM with four children across three types', async ({ page
   await page.getByPlaceholder(/Hydraulic Press Assembly/i).fill(`${TAG} multi`);
 
   await pickInto(page, 'bom-parent-item', PARENT);
-  await expect(page.getByPlaceholder('auto-filled').first()).toHaveValue(PARENT_NAME, {
-    timeout: 15_000,
-  });
+  // Both Item Names are resolved-from-the-code, so both are read-only TEXT now
+  // (the parent's a fact beside its picker, the child's its own table column) —
+  // same proof as before: the name turns up by itself once the code is picked.
+  await expect(bomParentItemName(page)).toHaveText(PARENT_NAME, { timeout: 15_000 });
 
   const addChild = page.getByRole('button', { name: /Add child item/i });
   for (const [idx, c] of CHILDREN.entries()) {
     await addChild.click();
     await page.waitForTimeout(600);
     await pickInto(page, `bom-item-${idx}`, c.code);
-    await expect(page.getByPlaceholder('auto-filled').nth(idx + 1)).toHaveValue(c.name, {
-      timeout: 15_000,
-    });
-    const row = page.locator('.bomx-row').nth(idx + 1);
-    await row.locator('input[type="number"]').fill('1');
-    await row.locator('select').selectOption(c.type);
-    await expect(row.locator('select')).toHaveValue(c.type);
+    await expect(bomPartItemName(page, idx)).toHaveText(c.name, { timeout: 15_000 });
+    await bomPartQty(page, idx).fill('1');
+    await bomPartType(page, idx).selectOption(c.type);
+    await expect(bomPartType(page, idx)).toHaveValue(c.type);
   }
   await expect(page.getByText(`${CHILDREN.length} of ${CHILDREN.length} lines filled`)).toBeVisible();
 

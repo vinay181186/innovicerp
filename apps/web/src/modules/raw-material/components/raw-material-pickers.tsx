@@ -25,6 +25,10 @@ export interface RawMaterialPickerProps {
   onChange: (id: string | null, text: string | null) => void;
   disabled?: boolean | undefined;
   id?: string | undefined;
+  /** Needed where the picker sits in a TABLE CELL: the column header names the
+   *  column, not the control, so without this a screen reader reads an unnamed
+   *  combobox (BOM child lines). A form field with its own <label> omits it. */
+  ariaLabel?: string | undefined;
 }
 
 export function MaterialGradePicker({
@@ -33,6 +37,7 @@ export function MaterialGradePicker({
   onChange,
   disabled,
   id,
+  ariaLabel,
 }: RawMaterialPickerProps): React.JSX.Element {
   const [term, setTerm] = useState('');
   const list = useMaterialGradesList({
@@ -60,6 +65,7 @@ export function MaterialGradePicker({
       // The saved value is the grade itself ("EN24"), not "GRD-001 — EN24".
       selectedLabel={(o) => o.name}
       valueLabel={valueText ?? undefined}
+      {...(ariaLabel ? { ariaLabel } : {})}
       placeholder="🔍 Grade — type or browse…"
       emptyText="No grades — add them in Raw Material Master"
       disabled={disabled}
@@ -73,6 +79,7 @@ export function MaterialSizePicker({
   onChange,
   disabled,
   id,
+  ariaLabel,
 }: RawMaterialPickerProps): React.JSX.Element {
   const [term, setTerm] = useState('');
   const list = useMaterialSizesList({
@@ -99,6 +106,7 @@ export function MaterialSizePicker({
       options={options}
       selectedLabel={(o) => o.name}
       valueLabel={valueText ?? undefined}
+      {...(ariaLabel ? { ariaLabel } : {})}
       placeholder="🔍 Size — type or browse…"
       emptyText="No sizes — add them in Raw Material Master"
       disabled={disabled}
