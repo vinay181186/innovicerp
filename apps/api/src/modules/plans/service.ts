@@ -2256,6 +2256,9 @@ async function executeManufacture(
     // the routing grow one QC op per cycle. Same transaction as the JC, so a
     // failure unwinds both. Runs at the same point it always did — after the
     // ops are inserted, before the OSP PRs are raised.
+    // ADR-217: the ROUTING is still remembered here, but the raw material is
+    // NOT — this path can only fill a blank half on the card, never replace
+    // what it already holds. The card is the author; this is not.
     afterOpsInserted: async ({ machineIdByCode }) => {
       const routeCardOpsFromPlan: CreateRouteCardOpInput[] = ops.map((op) => ({
         machineId:

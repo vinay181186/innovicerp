@@ -54,7 +54,7 @@ import {
   type JcRouteCardWriteBack,
   opSrNo,
 } from '@innovic/shared';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { type AnyColumn, and, asc, desc, eq, inArray, isNull, type SQL, sql } from 'drizzle-orm';
 import {
   items,
   machineGroups,
@@ -68,7 +68,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { hasFormAccess, requireFormAccess } from '../../lib/access';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActivePartiesBatch } from '../../lib/active-party';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
@@ -1395,6 +1395,22 @@ async function rmItemCodes(
   return new Map(rows.map((r) => [r.id, r.code]));
 }
 
+/** Is a raw-material text column BLANK — never set, or left as an empty string
+ *  by older data? ADR-217: blank is the only state a document downstream of the
+ *  Route Card may write into, so this one test decides every fill. Empty string
+ *  counts as blank because it holds no information: filling it loses nothing.
+ *  (plans/rm-backfill.ts keys on NULL alone; a plan row cannot hold '' because
+ *  every writer trims to null, and a card's history is longer.) */
+function isBlankRmText(v: string | null | undefined): boolean {
+  return v === null || v === undefined || v.trim() === '';
+}
+
+/** The same test as SQL, for the UPDATE's WHERE — the concurrency guard that
+ *  makes the fill fill-blanks-only at the database, not just in memory. */
+function blankRmTextSql(col: AnyColumn): SQL {
+  return sql`coalesce(${col}, '') = ''`;
+}
+
 function rmItemNote(codes: Map<string, string>, id: string | null, qty: number | null): string {
   if (!id) return '—';
   return `${codes.get(id) ?? '?'} × ${qty ?? '—'} per piece`;
@@ -1730,24 +1746,34 @@ export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRout
  *
  *  Behaviour (legacy parity):
  *    - nothing to save (empty after stripping the auto QC op) → no-op
- *    - the source document's raw material grade + size are carried onto the
- *      card. They are what the card is cut from, and until this was wired the
- *      auto-save wrote the operations and dropped the material, so every card
- *      born from a Job Card or a plan showed a blank Grade and Size on the
- *      detail page and in the master list.
  *    - no active card for the item → create at revision 0 + a revision snapshot
- *      noted "Created from <source code>"
+ *      noted "Created from <source code>", WITH the material it was given. A
+ *      hand-raised job-work Job Card for an item that has no card is how that
+ *      card is born, so this branch still writes material in full.
  *    - active card exists → replace its ops, bump the revision, snapshot noted
  *      with the source code. One active card per item per company, matching the
  *      `route_cards_company_item_uniq` partial unique index — never a second card.
- *    - stored ops already identical → left completely untouched, so repeatedly
- *      executing the same routing does not inflate the revision history.
+ *    - stored ops already identical AND no blank material filled → left
+ *      completely untouched: no revision bump, no revision-log row, no History
+ *      row, so repeatedly executing the same routing does not inflate the
+ *      revision history.
  *
- *  PERMISSIONS — deliberate: NO `requireFormAccess(user, 'routecard_create')`
- *  here. This is a side effect of a document the caller was already authorised
- *  to save; gating it would stop a Data-Entry clerk who holds jc_create but no
- *  Route Card rights from creating a Job Card at all. The caller's gate is the
- *  gate that applies. */
+ *  RAW MATERIAL IS FILL-BLANKS-ONLY ON AN EXISTING CARD (ADR-217) — see the
+ *  long comment at the use site below. The card is the ONE author of what a
+ *  part is cut from; this function is called BY documents downstream of it, so
+ *  on an existing card it may only fill a half that is blank and may never
+ *  replace a filled one.
+ *
+ *  PERMISSIONS (ADR-217). This used to run with NO check at all, on the
+ *  argument that it is a side effect of a document the caller was already
+ *  allowed to save — which is exactly how a Job Card came to rewrite a master
+ *  nobody had rights to. It is gated now with the same helper and the same key
+ *  the explicit paths use (`routecard_create`, entry to create / edit to
+ *  change), but AT THE POINT OF WRITE: a save that changes nothing on the card
+ *  asks for nothing, so the common case (re-executing the same routing) is
+ *  unaffected, while a save that would create or rewrite the card is refused
+ *  for someone with no Route Card rights. All three callers hand us the real
+ *  AuthContext, so there is no caller without a permission context. */
 export async function saveRouteCardForItem(
   tx: DbTransaction,
   companyId: string,
@@ -1767,6 +1793,21 @@ export async function saveRouteCardForItem(
   // changing the item's standard routing silently (2026-09-28 form audit).
   const cleanOps = stripAutoTerminalQcOp(ops);
   if (cleanOps.length === 0) return null;
+
+  // ADR-217 — the permission check this path never had. Asked at most once per
+  // save, and only when a write is actually about to happen (see the
+  // PERMISSIONS note in the doc comment above). Same form key and tier as
+  // updateRouteCard, but the NON-THROWING helper on purpose: this runs as a
+  // side effect of saving a Job Card or executing a plan, and refusing here
+  // would roll back that document over a Route Card right the operator never
+  // needed before (owner decision 2026-10-06 — Route Card is view-only for
+  // several production users today). No right = the card is left alone and the
+  // caller's own save still succeeds.
+  let editGate: boolean | null = null;
+  const canWriteCard = async (): Promise<boolean> => {
+    if (editGate === null) editGate = await hasFormAccess(user, 'routecard_create', 'edit');
+    return editGate;
+  };
 
   const machinesLookup = await loadMachinesByIds(
     tx,
@@ -1801,56 +1842,91 @@ export async function saveRouteCardForItem(
 
   const card = existing[0];
   if (card) {
-    // Raw material moves FORWARDS only. A plan that names EN24 sets EN24; a
-    // plan that names nothing leaves whatever the card already held. Blanking a
-    // grade because this particular document happened not to mention one would
-    // throw away the answer to "what is this part cut from".
+    // RAW MATERIAL IS FILL-BLANKS-ONLY (ADR-217; CLAUDE.md §20.1 "one number,
+    // one writer"). The Route Card for a part — or the BOM line for a BOM
+    // child — is the ONE author of grade / size / RM item / RM qty per piece.
+    // This function is called BY the documents downstream of the card (plan
+    // execute, Job Card create / edit), so it may fill a half the card has
+    // never had and it may NEVER replace one it already holds.
+    //
+    // It used to move "forwards": any non-blank incoming value overwrote the
+    // card. That silently rewrote the master — IN-RC-00005 went Rev 0 → 1 and
+    // gained EN24 / DIA 36 from IN-JC-26-00004, with no one asking for it.
+    //
+    // PER FIELD, NOT PER ROW, and each pair moves as a pair, exactly as
+    // plans/rm-backfill.ts does it (backfillCandidateGuard + its per-half
+    // UPDATE): a card that holds a size and no grade receives ONLY its grade,
+    // and the id and the text of one half always come from the SAME document —
+    // never an id from here beside text from there.
+    //
+    // A fill is TRIGGERED BY NON-BLANK INCOMING TEXT (not by an id alone).
+    // Every caller resolves the pair through the same resolver, which rewrites
+    // the text from the master whenever an id is given, so "id without text"
+    // does not arise; keying on the text also means a fill can never repeat
+    // itself and inflate the revision history.
     const rmPatch: Partial<ResolvedRawMaterial> = {};
     const rmChanges: string[] = [];
+    // Repeated on the UPDATE's WHERE below — that is the concurrency guard: if
+    // anyone fills the same half between this read and the write, the UPDATE
+    // matches no row, nothing is claimed as written and the revision does not
+    // move. No new lock is taken (see the lock-order note on
+    // lockBackfillCandidates: route_cards must not be locked before plans).
+    const rmBlankGuards: SQL[] = [];
     if (
-      rawMaterial.rawMaterialGradeText &&
-      rawMaterial.rawMaterialGradeText !== card.rawMaterialGradeText
+      isBlankRmText(card.rawMaterialGradeText) &&
+      !isBlankRmText(rawMaterial.rawMaterialGradeText)
     ) {
       rmChanges.push(
         `Grade ${noteVal(card.rawMaterialGradeText)} → ${noteVal(rawMaterial.rawMaterialGradeText)}`,
       );
       rmPatch.rawMaterialGradeId = rawMaterial.rawMaterialGradeId;
       rmPatch.rawMaterialGradeText = rawMaterial.rawMaterialGradeText;
+      rmBlankGuards.push(blankRmTextSql(routeCards.rawMaterialGradeText));
     }
     if (
-      rawMaterial.rawMaterialSizeText &&
-      rawMaterial.rawMaterialSizeText !== card.rawMaterialSizeText
+      isBlankRmText(card.rawMaterialSizeText) &&
+      !isBlankRmText(rawMaterial.rawMaterialSizeText)
     ) {
       rmChanges.push(
         `Size ${noteVal(card.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
       );
       rmPatch.rawMaterialSizeId = rawMaterial.rawMaterialSizeId;
       rmPatch.rawMaterialSizeText = rawMaterial.rawMaterialSizeText;
+      rmBlankGuards.push(blankRmTextSql(routeCards.rawMaterialSizeText));
     }
-    // ADR-193 phase 3a: the RM item + qty per piece move forwards the same
-    // way, as a pair (resolveRmItem guarantees both or neither).
+    // ADR-193 phase 3a: the RM item + qty per piece fill the same way, as a
+    // pair (resolveRmItem guarantees both or neither). Blank means BOTH columns
+    // are null — the same test rm-backfill.ts uses for a plan's pair.
     if (
+      card.rawMaterialItemId === null &&
+      card.rmQtyPerPiece === null &&
       rawMaterial.rawMaterialItemId &&
-      rawMaterial.rmQtyPerPiece != null &&
-      (rawMaterial.rawMaterialItemId !== card.rawMaterialItemId ||
-        rawMaterial.rmQtyPerPiece !== card.rmQtyPerPiece)
+      rawMaterial.rmQtyPerPiece != null
     ) {
-      const codes = await rmItemCodes(tx, companyId, [
-        card.rawMaterialItemId,
-        rawMaterial.rawMaterialItemId,
-      ]);
+      const codes = await rmItemCodes(tx, companyId, [rawMaterial.rawMaterialItemId]);
       rmChanges.push(
-        `RM item ${rmItemNote(codes, card.rawMaterialItemId, card.rmQtyPerPiece)} → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
+        `RM item — → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
       );
       rmPatch.rawMaterialItemId = rawMaterial.rawMaterialItemId;
       rmPatch.rmQtyPerPiece = rawMaterial.rmQtyPerPiece;
+      rmBlankGuards.push(isNull(routeCards.rawMaterialItemId));
+      rmBlankGuards.push(isNull(routeCards.rmQtyPerPiece));
     }
-    if (rmChanges.length > 0) {
-      await tx
+    let rmFilled = false;
+    if (rmChanges.length > 0 && (await canWriteCard())) {
+      const updated = await tx
         .update(routeCards)
         .set({ ...rmPatch, updatedBy: user.id, updatedAt: new Date() })
-        .where(and(eq(routeCards.id, card.id), eq(routeCards.companyId, companyId)));
+        .where(
+          and(eq(routeCards.id, card.id), eq(routeCards.companyId, companyId), ...rmBlankGuards),
+        )
+        .returning({ id: routeCards.id });
+      rmFilled = updated.length > 0;
     }
+    // What was ACTUALLY written. A zero-row UPDATE (someone filled the same
+    // half first) must not be reported as a change, must not bump the revision
+    // and must not appear in History.
+    const rmWritten: Partial<ResolvedRawMaterial> = rmFilled ? rmPatch : {};
 
     const replaced = await replaceRouteCardOps(
       tx,
@@ -1862,11 +1938,13 @@ export async function saveRouteCardForItem(
         machinesLookup,
         vendorsLookup,
         notePrefix: `Updated from ${sourceCode}`,
-        headerNote: rmChanges.length > 0 ? rmChanges.join(', ') : null,
-        // A material swap IS a change, so it earns a revision even when the
-        // operations came back identical. skipWhenUnchanged exists to stop
-        // re-running the same plan inflating the history — not to hide this.
-        skipWhenUnchanged: rmChanges.length === 0,
+        headerNote: rmFilled ? rmChanges.join(', ') : null,
+        // Filling a blank half IS a change, so it earns a revision even when
+        // the operations came back identical. But ONLY a half that was really
+        // written: if nothing was filled and the ops are identical, the card is
+        // left completely alone — no revision bump, no revision-log row (the
+        // owner's complaint was a Rev that moved for nothing).
+        skipWhenUnchanged: !rmFilled,
         // The source document has no remarks; keep the card's own (0195).
         preserveRemarks: true,
       },
@@ -1875,9 +1953,11 @@ export async function saveRouteCardForItem(
     if (replaced.changed) {
       // ADR-197 — the auto-save is a revision like any other: header row with
       // the raw-material moves + the Route Card Rev bump, then the op rows.
+      // Only the halves actually written are named, so a value this save
+      // DECLINED to overwrite never shows up as a change (it was not one).
       const rmCodes =
-        rmPatch.rawMaterialItemId !== undefined
-          ? await rmItemCodes(tx, companyId, [card.rawMaterialItemId, rmPatch.rawMaterialItemId])
+        rmWritten.rawMaterialItemId !== undefined
+          ? await rmItemCodes(tx, companyId, [card.rawMaterialItemId, rmWritten.rawMaterialItemId])
           : new Map<string, string>();
       const rmCode = (rid: string | null): string | null =>
         rid ? (rmCodes.get(rid) ?? null) : null;
@@ -1888,15 +1968,15 @@ export async function saveRouteCardForItem(
         rmQtyPerPiece: card.rmQtyPerPiece,
       };
       const afterView: RcHeaderView = {};
-      if (rmPatch.rawMaterialGradeText !== undefined) {
-        afterView.rawMaterialGradeText = rmPatch.rawMaterialGradeText;
+      if (rmWritten.rawMaterialGradeText !== undefined) {
+        afterView.rawMaterialGradeText = rmWritten.rawMaterialGradeText;
       }
-      if (rmPatch.rawMaterialSizeText !== undefined) {
-        afterView.rawMaterialSizeText = rmPatch.rawMaterialSizeText;
+      if (rmWritten.rawMaterialSizeText !== undefined) {
+        afterView.rawMaterialSizeText = rmWritten.rawMaterialSizeText;
       }
-      if (rmPatch.rawMaterialItemId !== undefined) {
-        afterView.rawMaterialItemCode = rmCode(rmPatch.rawMaterialItemId);
-        afterView.rmQtyPerPiece = rmPatch.rmQtyPerPiece ?? null;
+      if (rmWritten.rawMaterialItemId !== undefined) {
+        afterView.rawMaterialItemCode = rmCode(rmWritten.rawMaterialItemId);
+        afterView.rmQtyPerPiece = rmWritten.rmQtyPerPiece ?? null;
       }
       await logRouteCardRevision(
         tx,
@@ -1921,6 +2001,12 @@ export async function saveRouteCardForItem(
       : null;
   }
 
+  // The item has NO card: this is the card being born, so the material it was
+  // given goes on in full (a hand-raised job-work Job Card for an item with no
+  // card is exactly how that happens). Nothing is overwritten here — there is
+  // nothing to overwrite, so ADR-217's rule has no surface and this branch is
+  // left exactly as it has always behaved, ungated: gating it would stop a
+  // job-work Job Card for a brand-new item.
   const code = await nextRouteCardCode(tx, companyId);
   const inserted = await tx
     .insert(routeCards)
