@@ -1,8 +1,14 @@
 // The links a recovery leaves behind on an NC (docs/QC-NC-HANDLING-DESIGN.md
-// §3–§5): the child rework / repair JC, the return challan, the NC this one
-// was split from, the rows split off it and (ADR-167) the NC whose return
-// replacement this one continues. Renders nothing when there is
-// nothing to link.
+// §3–§5): the child rework / repair JC, (ADR-217) the zero-value job-work order
+// a return to vendor raised, the return challan, the NC this one was split
+// from, the rows split off it and (ADR-167) the NC whose return replacement
+// this one continues. Renders nothing when there is nothing to link.
+//
+// ADR-217 — the replacement order is shown FIRST of the return pair, because
+// that is the order it happens in: the disposition raises the order, then the
+// challan hangs off it. `replacementPoId` is null on every NC disposed before
+// ADR-217 and on every disposition that is not a return to vendor, and null
+// renders nothing at all here — exactly like the child JC and the challan.
 
 import { NC_STATUS_LABELS, type NcRegister } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
@@ -15,7 +21,18 @@ export function NcLinksBlock(props: {
   const { detail, splitParent, siblings } = props;
   const childId = detail.childJobCardCode ? detail.childJobCardId : null;
   const dcId = detail.deliveryChallanCode ? detail.deliveryChallanId : null;
-  if (!childId && !dcId && !detail.splitFromNcId && !detail.parentNcId && siblings.length === 0)
+  // Both halves are needed to make a link: the id to route to and the code to
+  // show. A code with no id (or the reverse) is not rendered rather than
+  // rendered dead — the same rule the child JC and the challan already follow.
+  const poId = detail.replacementPoCode ? detail.replacementPoId : null;
+  if (
+    !childId &&
+    !poId &&
+    !dcId &&
+    !detail.splitFromNcId &&
+    !detail.parentNcId &&
+    siblings.length === 0
+  )
     return null;
   const linkStyle = { textDecoration: 'none' } as const;
   return (
@@ -29,6 +46,19 @@ export function NcLinksBlock(props: {
             style={{ ...linkStyle, color: 'var(--cyan)' }}
           >
             {detail.childJobCardCode}
+          </Link>
+        </InlinePair>
+      ) : null}
+      {poId ? (
+        <InlinePair label="Replacement PO No.:">
+          <Link
+            to="/purchase-orders/$id"
+            params={{ id: poId }}
+            className="mono fw-700"
+            style={{ ...linkStyle, color: 'var(--cyan)' }}
+            title="Open the zero-value job-work order this return raised"
+          >
+            {detail.replacementPoCode}
           </Link>
         </InlinePair>
       ) : null}

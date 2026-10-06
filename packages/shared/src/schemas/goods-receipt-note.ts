@@ -133,6 +133,38 @@ export const goodsReceiptNoteLineDetailSchema = goodsReceiptNoteLineSchema.exten
    *  show (plan v3 Step 4, same as Incoming QC). `itemName` stays the line's
    *  saved copy, read only by the GRN print. Null when the line has no item. */
   masterItemName: z.string().nullable().optional(),
+  /** `PO Qty` — the ordered quantity on the purchase-order line this row was
+   *  received against. READ-ONLY, joined for display: the edit and view screens
+   *  show the same receipt account the CREATE screen already shows (PO Qty →
+   *  Received Earlier → Received → `Pending`), which until now only existed
+   *  while the GRN was being typed. Null when the line traces to no PO line. */
+  poLineQty: z.number().nullable().optional(),
+  /** `Received Earlier` — what the PO line had already taken in before THIS
+   *  receipt, so `poLineQty − poLineReceivedQty − receivedQty` is the line's
+   *  `Pending`. Named for the fact, not for the column: §18 forbids reusing
+   *  `receivedQty`, which is this line's own figure.
+   *
+   *  IT IS NOT A PLAIN SUM OF OTHER GRNs, and it is SIGNED — both of those
+   *  matter, and an earlier version of this comment got both wrong:
+   *
+   *  - It is `purchase_order_lines.received_qty` (the figure
+   *    `recalcPoReceivedQty` maintains and the CREATE screen reads) MINUS this
+   *    GRN's own contribution to it. Deriving it from the one writer is what
+   *    keeps create, edit and view quoting the same number; a second hand-rolled
+   *    sum drifted the moment an NC or a replacement receipt existed (§20.1).
+   *  - It CAN BE NEGATIVE, because that column is net of return-to-vendor qty
+   *    still open at the vendor. PO line 100, this GRN receives 60, QC rejects
+   *    20 and the return challan goes out → the column is 40, this field is
+   *    40 − 60 = −20, and `Pending` is 100 − (−20) − 60 = 60, which is what the
+   *    line really still owes. Clamping it at zero was tried and REMOVED: it
+   *    read 40. Subtract it as a signed number. How a negative is PRESENTED is
+   *    the screen's decision; do not "fix" it here.
+   *
+   *  A replacement receipt (header `nc_id` set) was never in the column, so
+   *  nothing is subtracted and its own `Received` sits outside the account —
+   *  which is why the screens show no account on the NC and challan types.
+   *  Null when the line traces to no PO line. */
+  poLineReceivedQty: z.number().nullable().optional(),
 });
 export type GoodsReceiptNoteLineDetail = z.infer<typeof goodsReceiptNoteLineDetailSchema>;
 
@@ -154,6 +186,14 @@ export type GoodsReceiptNoteDetail = z.infer<typeof goodsReceiptNoteDetailSchema
 
 /** List row: header + line aggregates + vendor/PO joins. */
 export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
+  /** ADR-217 — the NC this receipt answers, resolved from `ncId`.
+   *
+   *  The list used to read `poCodeText` for an NC-return GRN, because before
+   *  ADR-217 that column CARRIED the NC code (there was no purchase order). A
+   *  return now hangs off a real zero-value job-work order, so that column holds
+   *  a PO code and the NC number would have vanished from the list. The code is
+   *  resolved here instead of inferred from a text field. */
+  ncCode: z.string().nullable().default(null),
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),

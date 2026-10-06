@@ -27,7 +27,54 @@ export const ncRegisterKeys = {
   details: () => [...ncRegisterKeys.all, 'detail'] as const,
   detail: (id: string) => [...ncRegisterKeys.details(), id] as const,
   summary: () => [...ncRegisterKeys.all, 'summary'] as const,
+  sourceChallanCandidates: (id: string) =>
+    [...ncRegisterKeys.all, 'source-challan-candidates', id] as const,
 };
+
+/** ADR-217 phase 3 — one outward challan the rejected pieces could have gone out
+ *  on, for the `Sent on DC No.` question the disposition screen asks.
+ *
+ *  Mirrors `NcSourceChallanCandidate` in
+ *  `apps/api/src/modules/nc-register/source-challan.ts`. It is declared here, not
+ *  in `packages/shared`, because that package is frozen for this change — if a
+ *  schema is added for it later, delete this and read it from there. Field names
+ *  are the registered ones (NAMING.md row 205). */
+export interface NcSourceChallanCandidate {
+  /** `delivery_challans.id` — exactly what goes back as `sourceDeliveryChallanId`. */
+  sourceDeliveryChallanId: string;
+  /** The challan number, e.g. IN-DC-00002/R1. */
+  sourceDeliveryChallanCode: string;
+  /** The challan's own date, yyyy-mm-dd. */
+  dcDate: string;
+  /** What went out for this purchase-order line on that challan. Decimal string. */
+  sentQty: string;
+  purchaseOrderId: string | null;
+  poCode: string | null;
+}
+
+export interface NcSourceChallanCandidatesResponse {
+  /** The purchase-order line the NC traces to. Null = nothing resolved, and then
+   *  `items` is empty. */
+  purchaseOrderLineId: string | null;
+  items: NcSourceChallanCandidate[];
+}
+
+/** The outward challans the pieces of THIS deviation could have gone out on,
+ *  newest first.
+ *
+ *  Only fetched while the chosen disposition is Return to Vendor (`enabled`), and
+ *  deliberately forgiving: an error leaves the list empty, which the screen
+ *  renders as "no picker at all". A deviation must stay disposable whatever this
+ *  answers — so no retry and no error surface either. */
+export function useNcSourceChallanCandidates(id: string, enabled: boolean) {
+  return useQuery<NcSourceChallanCandidatesResponse>({
+    queryKey: ncRegisterKeys.sourceChallanCandidates(id),
+    queryFn: () =>
+      apiFetch<NcSourceChallanCandidatesResponse>(`/nc-register/${id}/source-challan-candidates`),
+    enabled,
+    retry: false,
+  });
+}
 
 export function useNcRegisterSummary(
   options?: Omit<UseQueryOptions<NcRegisterSummary>, 'queryKey' | 'queryFn'>,

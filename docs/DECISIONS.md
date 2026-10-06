@@ -11643,11 +11643,30 @@ in `resolveNcSource` — phase 2, not smuggled into phase 1.
 **5. The second outward route gets the same guard.** `createJwDcOutward` (the store's own JW DC
 screen) never calls `assertNoRtvPending`, which ADR-211 recorded as "not covered". It is covered now.
 
-**6. History is corrected, not left odd.** `NC-00001` and its two documents are backfilled onto the
-new shape by a reversible script, run last and separately, so one old return does not stay unlike
-every future one.
+**6. History is NOT rewritten — reversed after looking at the actual row.** The plan said
+`NC-00001` and its two documents would be backfilled onto the new shape. On inspection that is the
+wrong call:
 
-### Migration 0199 — three nullable columns, nothing rewritten
+- The deviation is **closed**. The replacement came back on `IN-GRN-00002`, passed inspection, and
+  the chain settled. Backfilling means **creating a purchase order that never existed**, then
+  immediately closing it, and repointing two settled documents at it. Dated today it is a lie about
+  when it happened; dated back it is a fabricated document in a closed chain. Neither is a record.
+- Nothing is broken by leaving it. The gap was never in the DATA — it was in the code's ability to
+  read both shapes, and that is what phases 1 and 2 fixed. `IN-DC-00002/R1` and `IN-GRN-00002` now
+  render correctly on every screen: the GRN list resolves `NC-00001` from `nc_id`, the list search
+  and the column filter both reach it, the JW PO / DC tab lists the challan and explains the missing
+  order, and the DC list already showed `COALESCE(nc.code, po_code_text)`.
+- A pre-ADR-217 return genuinely HAD no purchase order. The documents are a faithful record of what
+  the process was at the time. Making them pretend otherwise destroys the only evidence that the
+  process changed.
+
+So: one historical return reads differently from every future one, **because it was different**.
+The code reads both shapes and will for a long time — phases 1 and 2 both carry that path
+deliberately, and it is covered by the regression tests, not by an edit to closed documents.
+
+### Migration 0200 — three nullable columns, nothing rewritten
+*(Renumbered from 0199, which a parallel session took for the store-issue change on the same
+day. Check `git ls-tree origin/test apps/api/src/db/migrations/` before claiming a number.)*
 | Column | References | Why |
 |---|---|---|
 | `nc_register.replacement_po_id` | `purchase_orders` | the order this return raised |
@@ -11664,8 +11683,9 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
 - **§20 is now in scope**, because this adds a write path. The replacement PO is created only inside
   `disposeNcCascade`, inside the `FOR UPDATE` lock that function already takes on the NC row (§20.1
   one writer, §20.3 limit checked inside the writing transaction). `replacement_po_id` must be null
-  before one is created, and the partial unique index is the backstop — the same shape as the
-  existing one-challan-per-NC guard.
+  before one is created. The guard is that lock plus `setPendingNc`'s `WHERE status = 'pending'`;
+  the partial unique index only stops two deviations naming ONE order, a different mistake, and
+  cannot catch a second order for one deviation.
 - **No approval step on the replacement order.** There is no money in it, so an approval gate is
   ceremony. Stated as a decision rather than an omission.
 - The rate stays editable: a vendor who charges for the rework can be priced without a second
@@ -11673,6 +11693,17 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
 - Shipped in five phases, safest first, each verified on TEST on its own: (1) the receiving-screen
   cross-reveal, which needs no migration at all; (2) the migration, the PO-rule change and the
   auto-order; (3) the source-challan capture; (4) the second route's guard; (5) the backfill.
+
+
+- **Known limit, and the first explanation of it was wrong.** `nc_register.source_delivery_challan_id`
+  is a foreign key to `delivery_challans`, so pieces that left on a **JW DC Outward** (a different
+  table) cannot be recorded as a source challan — the picker simply finds nothing and the field does
+  not appear. The first write-up said this "does not bite because that screen refuses job-card
+  lines". That is backwards: the population reachable through the GRN hop is exactly the
+  no-job-card bought-material population the JW DC screen serves, so it bites precisely there. It
+  costs no data and blocks nothing — the field is absent rather than wrong — but the reason stands
+  corrected, and widening it means a second column or a polymorphic link, which is its own decision.
+
 ## ADR-218: Raw material has two authors and thirteen readers
 
 **Date:** 2026-10-06

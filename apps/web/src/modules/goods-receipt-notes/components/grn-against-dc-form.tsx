@@ -12,12 +12,24 @@
 // never created a GRN and never touched the PO.
 //
 // ADR-217 Phase 1 — this tab also lists RETURN-TO-VENDOR challans (ADR-161:
-// `ncId` set, no purchase order behind them). It used to drop every one of
-// them, so a store user holding only the return challan number could not find
-// it on either tab. They are marked "Return to Vendor" in the picker and are
-// received by the SAME POST /delivery-challans/:id/receive call, with the same
-// request body, that the Against NC type makes — this is routing, not a second
-// save path, and nothing about what the server stores changes.
+// `ncId` set). It used to drop every one of them, so a store user holding only
+// the return challan number could not find it on either tab. They are marked
+// "Return to Vendor" in the picker and are received by the SAME POST
+// /delivery-challans/:id/receive call, with the same request body, that the
+// Against NC type makes — this is routing, not a second save path, and nothing
+// about what the server stores changes.
+//
+// ADR-217 Phase 2 — a return now gets a real zero-value job-work order, so
+// "a return has no purchase order" stopped being true. BOTH shapes are live and
+// will be for a long time: returns raised before ADR-217 have no order, returns
+// raised after it do. Nothing on this screen may assume either — the CHALLAN's
+// own `purchaseOrderId` is the single truth, read off the detail (list row while
+// it loads). With an order behind it a return behaves exactly like any other
+// job-work receipt: the JW PO box fills, keeps its ★ and is required. With none
+// it keeps the Phase 1 behaviour: the ★ drops and the box says why.
+// `poCodeText` is NOT that truth — on a pre-ADR-217 return that column was made
+// to carry the NC code (createNcDc's own comment), so it may only be read as an
+// NC number while `purchaseOrderId` is null.
 //
 // No OK / Rejected split and no QC fields here: everything received lands on
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
@@ -122,10 +134,11 @@ export function GrnAgainstDcForm({
   // nothing out at the vendor never appears. 200 is the API's max page and is
   // far above the number of issued-but-unreceived challans at any one time.
   // ADR-217 — rows with `ncId` are return-to-vendor challans; they are KEPT.
-  // They have no purchase order, so they never reach the JW PO list below and
-  // only appear in the challan picker while no JW PO is picked. A row with
-  // neither a PO nor an NC behind it is still dropped: nothing on this screen
-  // could show what it belongs to.
+  // A return raised under ADR-217 Phase 2 carries a purchase order, so it joins
+  // the JW PO list below and is found under its own order like any other
+  // challan; one raised before it has none and appears only while no JW PO is
+  // picked. A row with neither a PO nor an NC behind it is still dropped:
+  // nothing on this screen could show what it belongs to.
   const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
   const eligibleDcs = useMemo(
     () => (dcList.data?.items ?? []).filter((d) => d.purchaseOrderId !== null || d.ncId !== null),
@@ -162,15 +175,20 @@ export function GrnAgainstDcForm({
     return pool
       .map((d) => {
         const vendor = d.vendorName ?? d.vendorCodeText;
-        const short = `${fmtDate(d.dcDate)} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
-        // ADR-217 — a return-to-vendor challan has no PO (its `poCodeText` is
-        // the NC code), so its first segment names the NC instead and is
-        // prefixed "Return to Vendor". A return never reaches the short label:
-        // the pool above is narrowed by purchaseOrderId whenever a JW PO is
-        // picked, and a return has none.
+        // ADR-217 — a return is marked "Return to Vendor" in BOTH label forms.
+        // Phase 2 is why the short one needs it too: a return with a purchase
+        // order behind it now sits inside that order's challan list, where the
+        // pool is narrowed by purchaseOrderId and the short label is used, and
+        // it must still be impossible to mistake for an ordinary job-work send.
+        const short = `${d.ncId !== null ? `${RETURN_TAG} · ` : ''}${fmtDate(d.dcDate)} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
+        // The `poCodeText` fallback on the NC segment is ONLY legal while the
+        // challan has no purchase order: that is the pre-ADR-217 shape where
+        // the column was made to carry the NC code. Once a return HAS an order,
+        // `poCodeText` holds the order's code and `ncCode` is the resolved NC.
+        const ncLabel = d.ncCode ?? (d.purchaseOrderId === null ? d.poCodeText : null);
         const long =
           d.ncId !== null
-            ? `${RETURN_TAG} · NC ${d.ncCode ?? d.poCodeText} · ${vendor} · ${fmtDate(d.dcDate)}`
+            ? `${RETURN_TAG} · NC ${ncLabel ?? '?'} · ${vendor} · ${fmtDate(d.dcDate)}`
             : `${d.poCode ?? d.poCodeText} · ${vendor} · ${fmtDate(d.dcDate)}`;
         return {
           id: d.id,
@@ -179,7 +197,7 @@ export function GrnAgainstDcForm({
           // The NC No. rides in the hidden search text as well, so a return is
           // found by the NC number, by its own challan number, or by the word
           // "return" — whichever number the user happens to be holding.
-          searchText: `${d.code} — ${short} ${d.code} — ${long} ${d.ncCode ?? ''}`,
+          searchText: `${d.code} — ${short} ${d.code} — ${long} ${ncLabel ?? ''}`,
         };
       })
       .filter((o) => matchesSearchTerm([o.code, o.name, o.searchText], dcSearch));
@@ -265,10 +283,20 @@ export function GrnAgainstDcForm({
 
   // ADR-217 — is the picked challan a return to vendor? Detail first, list row
   // while it loads. Nothing is a return until a challan is actually picked.
-  const returnNcCode = dc
-    ? (dc.ncCode ?? pickedRow?.poCodeText ?? null)
-    : (pickedRow?.ncCode ?? pickedRow?.poCodeText ?? null);
   const isReturn = (dc ? dc.ncId : (pickedRow?.ncId ?? null)) !== null;
+  // ADR-217 Phase 2 — the CHALLAN's own purchase order, read the same way.
+  // This, not `isReturn`, decides whether the JW PO box is required: a return
+  // with a replacement order names it like any other challan, and only a return
+  // raised before ADR-217 — which genuinely has none — may leave it empty.
+  const challanPoId = dc ? dc.purchaseOrderId : (pickedRow?.purchaseOrderId ?? null);
+  const returnWithoutPo = isReturn && challanPoId === null;
+  // The NC number. `ncCode` is the real field; the `poCodeText` fallback is only
+  // for the pre-ADR-217 shape, where there was no order and that column was made
+  // to carry the NC code — reading it once an order exists would print the
+  // ORDER's code under an "NC No." label.
+  const returnNcCode =
+    (dc ? dc.ncCode : (pickedRow?.ncCode ?? null)) ??
+    (challanPoId === null ? (pickedRow?.poCodeText ?? null) : null);
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
     setLinesTouched(true);
@@ -279,14 +307,17 @@ export function GrnAgainstDcForm({
     e.preventDefault();
     setFormError(null);
     setSubmitError(null);
-    // The challan is checked first (ADR-217): a return-to-vendor challan has no
-    // purchase order behind it, so the JW PO can only be required once we know
-    // which kind of challan this is.
+    // The challan is checked first (ADR-217): whether a JW PO is required is a
+    // fact about the CHALLAN — does it have a purchase order behind it — so it
+    // can only be asked once the challan itself is in hand.
     if (!dc) {
       setFormError(dcId ? 'The challan is still loading. Try again.' : 'DC No. is required.');
       return;
     }
-    if (dc.ncId === null && !jwpoId) {
+    // Only a return raised before ADR-217 has no order behind it. Every other
+    // challan, including a Phase 2 return, must name its JW PO.
+    const noPoBehindChallan = dc.purchaseOrderId === null && dc.ncId !== null;
+    if (!noPoBehindChallan && !jwpoId) {
       setFormError('JW PO is required.');
       return;
     }
@@ -388,14 +419,18 @@ export function GrnAgainstDcForm({
               required
             />
           </FormField>
-          {/* ADR-217 — a return-to-vendor challan carries no purchase order, so
-              the JW PO stops being required (and says why) once one is picked. */}
+          {/* ADR-217 — the ★ and the box follow the CHALLAN's own purchase
+              order, never "is this a return". A return raised under Phase 2
+              has a zero-value job-work order behind it and is required to name
+              it, exactly like an ordinary job-work receipt; only a return
+              raised before ADR-217 has none, and only then does the ★ drop and
+              the box say why. */}
           <FormField
             label="JW PO"
-            required={!isReturn}
+            required={!returnWithoutPo}
             size="lg"
             htmlFor="jwpoId"
-            help={isReturn ? 'A return to vendor has no JW PO behind it.' : undefined}
+            help={returnWithoutPo ? 'This return was raised without a JW PO.' : undefined}
           >
             <SearchableSelect
               id="jwpoId"
@@ -405,14 +440,18 @@ export function GrnAgainstDcForm({
               onSearch={setJwpoSearch}
               loading={dcList.isFetching}
               placeholder={
-                isReturn ? '— none: return to vendor —' : '🔍 Type JW PO number or vendor…'
+                returnWithoutPo ? '— none: return to vendor —' : '🔍 Type JW PO number or vendor…'
               }
               valueLabel={jwpoValueLabel}
               emptyText="No JW PO has a challan awaiting receipt."
             />
           </FormField>
 
-          {/* Row 2 — DC No. · Vendor (from the DC) · Vendor Invoice No. (4 + 4 + 4). */}
+          {/* Row 2 — DC No. · Vendor (from the DC) · Vendor Invoice No.
+              (4 + 4 + 4 = 12); on a return the NC No. joins them and all four
+              narrow to 3 (3 + 3 + 3 + 3 = 12). Driven by `isReturn`, not by
+              `returnWithoutPo`: BOTH return shapes show the NC No., so the row
+              sums to 12 whether or not the return has an order behind it. */}
           <FormField label="DC No." required size={isReturn ? 'sm' : 'md'} htmlFor="dcId">
             {/* Keyed on a counter bumped by a USER change of the JWPO, so the
                 picker's own text resets then — otherwise the old challan's label

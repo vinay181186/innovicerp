@@ -12,6 +12,20 @@ import * as service from './service';
 const idParam = z.object({ id: z.string().uuid() });
 const poIdParam = z.object({ poId: z.string().uuid() });
 
+// ADR-217 phase 4 — the store's "These are new pieces, not the ones waiting to
+// go back" tick, per NC, for the JW DC Outward save. Request-only: a
+// confirmation, never a fact about the challan, so it is not stored.
+//
+// Parsed by this MODULE-LOCAL schema, exactly as ADR-197 parses the NC delete
+// reason (nc-register/routes.ts): `createJwDcOutwardInputSchema` in
+// packages/shared is frozen, and the confirmation is not part of the document.
+// The OSP challan carries the same field inside its shared header schema
+// (`rtvConfirmedNcIds`, ADR-211) — same key, same meaning, same 500 cap, so a
+// screen that handles one 409 handles both.
+const jwDcOutwardConfirmBodySchema = z.object({
+  rtvConfirmedNcIds: z.array(z.string().uuid()).max(500).optional(),
+});
+
 export async function jwDcRoutes(app: FastifyInstance): Promise<void> {
   app.get('/jw-dc/outward', async (req) => {
     if (!req.user) throw new AuthenticationError();
@@ -50,7 +64,8 @@ export async function jwDcRoutes(app: FastifyInstance): Promise<void> {
   app.post('/jw-dc/outward', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createJwDcOutwardInputSchema.parse(req.body);
-    const result = await service.createJwDcOutward(input, req.user);
+    const { rtvConfirmedNcIds } = jwDcOutwardConfirmBodySchema.parse(req.body ?? {});
+    const result = await service.createJwDcOutward(input, req.user, rtvConfirmedNcIds ?? []);
     reply.code(201);
     return result;
   });
