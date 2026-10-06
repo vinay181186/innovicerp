@@ -52,8 +52,9 @@ export const createStoreIssueInputSchema = z
     issueAgainst: z.enum(ISSUE_AGAINST),
     jobCardId: z.string().uuid().optional(),
     salesOrderId: z.string().uuid().optional(),
-    /** Who received the material — an Operator (preferred) or free text. */
-    operatorId: z.string().uuid().optional(),
+    /** Who received the material — a Production person (preferred; a login with
+     *  a granted Production right, see production-user.ts) or free text. */
+    issuedToUserId: z.string().uuid().optional(),
     issuedToText: z.string().trim().max(255).optional(),
     department: z.string().trim().max(100).optional(),
     purpose: z.string().trim().min(3, 'Enter the Purpose (at least 3 characters)').max(255),
@@ -80,9 +81,9 @@ export const createStoreIssueInputSchema = z
     message: 'Enter the Department that uses it',
     path: ['department'],
   })
-  .refine((v) => Boolean(v.operatorId) || Boolean(v.issuedToText?.trim()), {
-    message: 'Pick who received it (Operator) or type a name',
-    path: ['operatorId'],
+  .refine((v) => Boolean(v.issuedToUserId) || Boolean(v.issuedToText?.trim()), {
+    message: 'Pick who received it (a Production person) or type a name',
+    path: ['issuedToUserId'],
   });
 export type CreateStoreIssueInput = z.infer<typeof createStoreIssueInputSchema>;
 

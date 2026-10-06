@@ -1,7 +1,7 @@
 // Item Issue — slip helpers: numbering, who received it, and the lock / line
 // reads shared by Return and Reverse (ADR-193 phase 3b).
 
-import type { CreateStoreIssueInput } from '@innovic/shared';
+import { shortName, type CreateStoreIssueInput } from '@innovic/shared';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { storeIssueLines, storeIssueReturns, storeIssues } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
@@ -81,23 +81,29 @@ export async function nextStoreIssueCode(tx: DbTransaction, companyId: string): 
   return `${CODE_PREFIX}${String(next).padStart(CODE_PAD, '0')}`;
 }
 
-/** Who received it: the Operator's name, else the typed name. */
+/** Who received it: a Production login's SHORT name snapshot, else the typed
+ *  name. The chosen person is a login with a granted Production right (the
+ *  /access-control/production-users list); the short name is stored into the
+ *  issued_to text snapshot so every downstream read / print / activity-log line
+ *  is unchanged (owner decision 4). */
 export async function resolveIssuedTo(
   tx: DbTransaction,
   companyId: string,
   input: CreateStoreIssueInput,
-): Promise<{ operatorId: string | null; issuedTo: string }> {
-  if (input.operatorId) {
+): Promise<{ userId: string | null; issuedTo: string }> {
+  if (input.issuedToUserId) {
     const rows = (await tx.execute(sql`
-      SELECT id, name FROM public.operators
-      WHERE id = ${input.operatorId}::uuid AND company_id = ${companyId}::uuid
+      SELECT id, full_name, email FROM public.users
+      WHERE id = ${input.issuedToUserId}::uuid AND company_id = ${companyId}::uuid
         AND is_active = true AND deleted_at IS NULL
-    `)) as unknown as Array<{ id: string; name: string }>;
-    const op = rows[0];
-    if (!op) throw new ValidationError('Pick an active Operator (the one chosen was not found).');
-    return { operatorId: op.id, issuedTo: op.name };
+    `)) as unknown as Array<{ id: string; full_name: string | null; email: string }>;
+    const u = rows[0];
+    if (!u) {
+      throw new ValidationError('Pick an active Production person (the one chosen was not found).');
+    }
+    return { userId: u.id, issuedTo: shortName(u.full_name ?? u.email) };
   }
   const typed = input.issuedToText?.trim() ?? '';
-  if (!typed) throw new ValidationError('Pick who received it (Operator) or type a name');
-  return { operatorId: null, issuedTo: typed };
+  if (!typed) throw new ValidationError('Pick who received it (a Production person) or type a name');
+  return { userId: null, issuedTo: typed };
 }
