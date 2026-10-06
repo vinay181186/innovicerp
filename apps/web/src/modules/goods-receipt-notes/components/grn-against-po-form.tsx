@@ -23,7 +23,7 @@ import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orde
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
+import { Cluster, ClusterGrid, FormField } from '@/ui/forms';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
 import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
 import { GrnVendorCluster } from './grn-vendor-cluster';
