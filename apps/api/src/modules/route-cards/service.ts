@@ -1396,7 +1396,7 @@ async function rmItemCodes(
 }
 
 /** Is a raw-material text column BLANK — never set, or left as an empty string
- *  by older data? ADR-217: blank is the only state a document downstream of the
+ *  by older data? ADR-218: blank is the only state a document downstream of the
  *  Route Card may write into, so this one test decides every fill. Empty string
  *  counts as blank because it holds no information: filling it loses nothing.
  *  (plans/rm-backfill.ts keys on NULL alone; a plan row cannot hold '' because
@@ -1406,9 +1406,13 @@ function isBlankRmText(v: string | null | undefined): boolean {
 }
 
 /** The same test as SQL, for the UPDATE's WHERE — the concurrency guard that
- *  makes the fill fill-blanks-only at the database, not just in memory. */
+ *  makes the fill fill-blanks-only at the database, not just in memory.
+ *  `btrim` so this agrees EXACTLY with isBlankRmText: every half's guard is
+ *  AND-ed into one UPDATE, so a disagreement on a whitespace-only column makes
+ *  the whole statement match zero rows and silently drops a sibling half's
+ *  legitimate fill. */
 function blankRmTextSql(col: AnyColumn): SQL {
-  return sql`coalesce(${col}, '') = ''`;
+  return sql`coalesce(btrim(${col}), '') = ''`;
 }
 
 function rmItemNote(codes: Map<string, string>, id: string | null, qty: number | null): string {
@@ -1758,22 +1762,22 @@ export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRout
  *      row, so repeatedly executing the same routing does not inflate the
  *      revision history.
  *
- *  RAW MATERIAL IS FILL-BLANKS-ONLY ON AN EXISTING CARD (ADR-217) — see the
+ *  RAW MATERIAL IS FILL-BLANKS-ONLY ON AN EXISTING CARD (ADR-218) — see the
  *  long comment at the use site below. The card is the ONE author of what a
  *  part is cut from; this function is called BY documents downstream of it, so
  *  on an existing card it may only fill a half that is blank and may never
  *  replace a filled one.
  *
- *  PERMISSIONS (ADR-217). This used to run with NO check at all, on the
- *  argument that it is a side effect of a document the caller was already
- *  allowed to save — which is exactly how a Job Card came to rewrite a master
- *  nobody had rights to. It is gated now with the same helper and the same key
- *  the explicit paths use (`routecard_create`, entry to create / edit to
- *  change), but AT THE POINT OF WRITE: a save that changes nothing on the card
- *  asks for nothing, so the common case (re-executing the same routing) is
- *  unaffected, while a save that would create or rewrite the card is refused
- *  for someone with no Route Card rights. All three callers hand us the real
- *  AuthContext, so there is no caller without a permission context. */
+ *  PERMISSIONS (ADR-218) — read this precisely, it guards ONE thing. The
+ *  RAW-MATERIAL FILL asks for `routecard_create` edit, and only that. The
+ *  routing rewrite and the no-card CREATE branch are deliberately NOT gated:
+ *  both have always been allowed to anyone who could save the calling document,
+ *  and refusing them here would roll that document back — Route Card is
+ *  view-only for several production users today, so it would stop shop-floor
+ *  work that has never needed the right. The check is also the NON-THROWING
+ *  helper: no right means the material fill is skipped and the caller's own
+ *  save still succeeds. Tightening the routing rewrite is a separate decision
+ *  with its own blast radius. All three callers hand us the real AuthContext. */
 export async function saveRouteCardForItem(
   tx: DbTransaction,
   companyId: string,
@@ -1794,7 +1798,7 @@ export async function saveRouteCardForItem(
   const cleanOps = stripAutoTerminalQcOp(ops);
   if (cleanOps.length === 0) return null;
 
-  // ADR-217 — the permission check this path never had. Asked at most once per
+  // ADR-218 — the permission check this path never had. Asked at most once per
   // save, and only when a write is actually about to happen (see the
   // PERMISSIONS note in the doc comment above). Same form key and tier as
   // updateRouteCard, but the NON-THROWING helper on purpose: this runs as a
@@ -1842,7 +1846,7 @@ export async function saveRouteCardForItem(
 
   const card = existing[0];
   if (card) {
-    // RAW MATERIAL IS FILL-BLANKS-ONLY (ADR-217; CLAUDE.md §20.1 "one number,
+    // RAW MATERIAL IS FILL-BLANKS-ONLY (ADR-218; CLAUDE.md §20.1 "one number,
     // one writer"). The Route Card for a part — or the BOM line for a BOM
     // child — is the ONE author of grade / size / RM item / RM qty per piece.
     // This function is called BY the documents downstream of the card (plan
@@ -2004,7 +2008,7 @@ export async function saveRouteCardForItem(
   // The item has NO card: this is the card being born, so the material it was
   // given goes on in full (a hand-raised job-work Job Card for an item with no
   // card is exactly how that happens). Nothing is overwritten here — there is
-  // nothing to overwrite, so ADR-217's rule has no surface and this branch is
+  // nothing to overwrite, so ADR-218's rule has no surface and this branch is
   // left exactly as it has always behaved, ungated: gating it would stop a
   // job-work Job Card for a brand-new item.
   const code = await nextRouteCardCode(tx, companyId);

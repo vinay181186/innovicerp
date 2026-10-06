@@ -172,7 +172,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
   );
   const planHasNoRawMaterial = Boolean(plan) && !planHasRmGrade && !planHasRmSize;
   const NO_PLAN_RAW_MATERIAL =
-    'This plan has no raw material — set the Grade and Size on the plan first.';
+    // ADR-218 — must match the server's wording in production-orders/service.ts.
+    "This plan has no raw material — fill RM Grade and RM Size on the item's Route Card (or on its BOM line), then open the plan and save it again.";
 
   const canSubmit =
     Boolean(plan) &&

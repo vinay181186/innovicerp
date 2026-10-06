@@ -2,7 +2,7 @@
 // is made by plan-create-form.tsx, the same Route-Card plan as SO Planning
 // "+ Plan".
 //
-// ADR-217: raw material has ONE author — the part's Route Card, or the BOM line
+// ADR-218: raw material has ONE author — the part's Route Card, or the BOM line
 // for a BOM child. So RM Grade, RM Size, RM Item and RM Qty per piece are SHOWN
 // here and nothing more: no pickers, and all four left out of the write so the
 // server keeps filling them from their author.
@@ -46,7 +46,7 @@ export interface PlanFormValues {
   planQty: number;
   plannedStartDate: string;
   plannedEndDate: string;
-  // Raw material — ADR-217: DISPLAY ONLY. The plan's own stored values are
+  // Raw material — ADR-218: DISPLAY ONLY. The plan's own stored values are
   // carried here so the form can show them; the form never changes them and
   // never sends them, so the master ids (the link half of each pair) are not
   // kept at all — only what is read on screen.
@@ -176,7 +176,7 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     planQty: v.planQty,
     plannedStartDate: v.plannedStartDate || null,
     plannedEndDate: v.plannedEndDate || null,
-    // ADR-217 — RM Grade, RM Size, RM Item and RM Qty per piece are deliberately
+    // ADR-218 — RM Grade, RM Size, RM Item and RM Qty per piece are deliberately
     // ABSENT here. Server contract (apps/api/src/modules/plans/service.ts,
     // createPlan / updatePlanTx): a field that IS sent — a value OR an explicit
     // null — means "the caller owns this, do not default it", and only an
@@ -288,7 +288,7 @@ export function PlanForm({
     }
   }, [isEdit, nextCode?.code, values.code]);
 
-  // ADR-217 — the Route-Card prefill that used to copy grade / size / RM item
+  // ADR-218 — the Route-Card prefill that used to copy grade / size / RM item
   // into these fields is gone with the pickers. The form does not own those
   // values, so it has nothing to prefill: the server fills the plan itself from
   // the BOM line / Route Card, and this screen shows what the plan holds.
@@ -585,7 +585,7 @@ export function PlanForm({
             />
           </Field>
           {/* Grade + Size + RM Item + RM Qty per piece under one RAW MATERIAL
-              bracket, right next to the planned dates. ADR-217: all four are
+              bracket, right next to the planned dates. ADR-218: all four are
               what the plan HOLDS — shown, never picked here. */}
           <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
             <RawMaterialGroup>

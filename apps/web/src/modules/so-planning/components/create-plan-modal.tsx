@@ -7,7 +7,7 @@
 // plan with `opsSource: 'route_card'` and closes; it does NOT chain into the
 // Edit Plan modal any more.
 //
-// ADR-217: RM Grade / RM Size are SHOWN here and nothing more — their one
+// ADR-218: RM Grade / RM Size are SHOWN here and nothing more — their one
 // author is the part's Route Card (or the BOM line for a BOM child), and this
 // box leaves both out of the payload so the server fills them from there.
 //
@@ -78,7 +78,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [customerDispatchDate, setCustomerDispatchDate] = useState(
     line.dueDate ? line.dueDate.slice(0, 10) : '',
   );
-  // ADR-217 — raw material is READ here, never set. The item's Route Card is
+  // ADR-218 — raw material is READ here, never set. The item's Route Card is
   // what the server will copy onto this plan, so the same lookup that served
   // the old prefill now just supplies the two values SHOWN below.
   const { data: defaultOps } = useDefaultRouteOps(line.itemId ?? null);
@@ -142,7 +142,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       return;
     }
     setErr(null);
-    // ADR-217 — RM Grade / RM Size are NEVER sent from here. They have one
+    // ADR-218 — RM Grade / RM Size are NEVER sent from here. They have one
     // author: the part's Route Card, or the BOM line for a BOM child. Server
     // contract (apps/api/src/modules/plans/service.ts, createPlan): a field
     // that IS sent — a value OR an explicit null — means "the caller owns this
@@ -390,7 +390,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           />
         </FormField>
 
-        {/* ADR-217 — shown, not picked: these are the values the new plan will
+        {/* ADR-218 — shown, not picked: these are the values the new plan will
             be given. The pale blue grouping wash (.field-tint) is gone with the
             pickers — it would have painted over the grey "not editable" fill
             and the boxes would still have read as something to type in. */}

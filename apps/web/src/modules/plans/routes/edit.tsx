@@ -138,7 +138,7 @@ function PlanEditPage(): React.JSX.Element {
               planQty: ci.planQty,
               plannedStartDate: ci.plannedStartDate,
               plannedEndDate: ci.plannedEndDate,
-              // ADR-217 — RM Grade, RM Size, RM Item and RM Qty per piece are
+              // ADR-218 — RM Grade, RM Size, RM Item and RM Qty per piece are
               // deliberately ABSENT from this PATCH. Server contract
               // (apps/api/src/modules/plans/service.ts, updatePlanTx): a field
               // present in the body — a value OR an explicit null — means "the
@@ -204,7 +204,7 @@ function toFormValues(plan: PlanDetail): PlanFormValues {
     planQty: plan.planQty,
     plannedStartDate: plan.plannedStartDate ?? '',
     plannedEndDate: plan.plannedEndDate ?? '',
-    // ADR-217 — carried for DISPLAY only; the form neither changes nor sends
+    // ADR-218 — carried for DISPLAY only; the form neither changes nor sends
     // them, so the master ids are not carried at all.
     rawMaterialGradeText: plan.rawMaterialGradeText,
     rawMaterialSizeText: plan.rawMaterialSizeText,

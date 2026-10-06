@@ -1,5 +1,5 @@
 // Raw-material ITEM + qty per piece (ADR-193 phase 3a) — the SHAPE and the
-// write converter only. ADR-217 removed the picker component that used to live
+// write converter only. ADR-218 removed the picker component that used to live
 // here: raw material is authored on the Route Card and the BOM line, and the
 // Route Card form carries its own control. The Plan was this component's only
 // other caller and now displays the value instead of offering a picker.

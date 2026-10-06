@@ -160,7 +160,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     plan.customerDispatchDate ?? '',
   );
   const [remarks, setRemarks] = useState<string>(plan.remarks ?? '');
-  // ADR-217 — raw material is not state any more: this box SHOWS what the plan
+  // ADR-218 — raw material is not state any more: this box SHOWS what the plan
   // holds (`plan.rawMaterialGradeText` / `…SizeText`) and cannot change it. The
   // author is the part's Route Card, or the BOM line for a BOM child.
 
@@ -401,7 +401,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     plannedEndDate: plannedEndDate || null,
     customerDispatchDate: customerDispatchDate || null,
     remarks: remarks || null,
-    // ADR-217 — RM Grade / RM Size are deliberately ABSENT from this payload.
+    // ADR-218 — RM Grade / RM Size are deliberately ABSENT from this payload.
     // Server contract (apps/api/src/modules/plans/service.ts, updatePlanTx): a
     // field that IS sent — a value OR an explicit null — is applied as the
     // caller's own answer, and only an OMITTED field leaves the server free to
@@ -768,7 +768,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           />
         </FormField>
 
-        {/* RM Grade / RM Size (docs/NAMING.md) — ADR-217: what this plan holds,
+        {/* RM Grade / RM Size (docs/NAMING.md) — ADR-218: what this plan holds,
             shown and not picked. The Route Card (or the BOM line for a BOM
             child) is the only place either value can be changed. */}
         <FormField label="RM Grade" size="sm" htmlFor="edit-plan-rm-grade" help={RM_SOURCE_HELP}>

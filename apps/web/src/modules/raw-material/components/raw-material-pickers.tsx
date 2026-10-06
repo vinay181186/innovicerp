@@ -1,6 +1,6 @@
 // The Grade and Size pickers, and the read-only display that replaces them.
 //
-// ADR-217: raw material has ONE author — the part's Route Card, or the BOM line
+// ADR-218: raw material has ONE author — the part's Route Card, or the BOM line
 // for a BOM child. The PICKERS below are for those two screens. The four Plan
 // screens now show the value through `MaterialValueDisplay` and cannot set it;
 // the Job Card still carries a picker and is a later door to close.
@@ -110,7 +110,7 @@ export function MaterialSizePicker({
   );
 }
 
-/** ADR-217 — RM Grade / RM Size have exactly ONE author: the part's Route Card,
+/** ADR-218 — RM Grade / RM Size have exactly ONE author: the part's Route Card,
  *  or the BOM line for a BOM child. Every other screen SHOWS the value and
  *  cannot set it, so this is what the pickers are replaced with there: the
  *  stored value in a read-only box, or a quiet dash when there is none.
@@ -144,7 +144,7 @@ export function MaterialValueDisplay({
 }
 
 /** The one line every screen that only DISPLAYS raw material carries, so the
- *  reader knows which screen owns the value (ADR-217). Both authors are named:
+ *  reader knows which screen owns the value (ADR-218). Both authors are named:
  *  a part takes it from its Route Card, a BOM child from its BOM line. */
 export const RM_SOURCE_HELP =
   'From the Route Card — or the BOM line for a BOM child. Change it there.';

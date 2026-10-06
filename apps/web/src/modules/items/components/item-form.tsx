@@ -2,12 +2,7 @@
 // Ported against legacy itemForm / addItem / editItem
 // (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L11523, L11598,
 // L11609). Field order mirrors legacy: Code, Name, Description (full),
-// UOM, then Product image (full, last).
-//
-// ADR-217 — legacy's free-text "Material" box is NOT here. It was a raw-material
-// grade typed with no master behind it, and grade has one author: the part's
-// Route Card, or the BOM line for a BOM child. The `material` field stays in the
-// contract and the column keeps whatever it holds; it is read-only everywhere.
+// Material, UOM, then Product image (full, last).
 // Item Type + HSN Code have no legacy counterpart but exist in our schema and
 // are kept — placed after UOM so legacy's relative order is untouched.
 //
@@ -40,8 +35,8 @@
 // upsized (never downsized) so each row sums to 12, per ui/forms/FormGrid:
 //   Item Code lg · Item Name lg                         = 12
 //   Description full                                    = 12
-//   UOM xs · Item Type md · Source md                   = 10
-//   HSN Code md                                         =  4
+//   Material lg · UOM xs · Item Type md                 = 12
+//   Source lg · HSN Code lg                             = 12
 //   Track by Serial No. full (Tool / Instrument only)   = 12
 //   Product image full                                  = 12
 
@@ -352,12 +347,14 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             />
           </FormField>
 
-          {/* ADR-217 — the free-text "Material" box is gone. It was a grade
-              typed with no master behind it, and raw material has one author:
-              the part's Route Card, or the BOM line for a BOM child. The
-              column and the contract field are untouched, and every read-only
-              display of it (Item detail, the item lists, the PO item option)
-              still shows what is stored. */}
+          <FormField label="Material" size="md" htmlFor="material" error={errors.material?.message}>
+            <Input
+              id="material"
+              autoComplete="off"
+              placeholder="EN8, SS304..."
+              {...register('material')}
+            />
+          </FormField>
 
           <FormField label="UOM" size="xs" htmlFor="uom" error={errors.uom?.message}>
             <Select id="uom" options={UOMS} {...register('uom')} />
@@ -505,12 +502,14 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             />
           </FormField>
 
-          {/* ADR-217 — the free-text "Material" box is gone. It was a grade
-              typed with no master behind it, and raw material has one author:
-              the part's Route Card, or the BOM line for a BOM child. The
-              column and the contract field are untouched, and every read-only
-              display of it (Item detail, the item lists, the PO item option)
-              still shows what is stored. */}
+          <FormField label="Material" size="md" htmlFor="material" error={errors.material?.message}>
+            <Input
+              id="material"
+              autoComplete="off"
+              placeholder="EN8, SS304..."
+              {...register('material')}
+            />
+          </FormField>
 
           <FormField label="UOM" size="xs" htmlFor="uom" error={errors.uom?.message}>
             <Select id="uom" options={UOMS} {...register('uom')} />

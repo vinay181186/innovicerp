@@ -6,7 +6,7 @@
 // then, so the screen locks those two and says why. UOM is always NOS
 // (ADR-203 D1) — shown read-only and never sent.
 //
-// ADR-217: Grade is read-only here too, exactly as it is on the Add modal.
+// ADR-218: Grade is read-only here too, exactly as it is on the Add modal.
 // Raw-material grade has one author — the part's Route Card, or the BOM line
 // for a BOM child — so this screen shows it and never sends it.
 
@@ -27,7 +27,7 @@ export function EditPartyMaterialModal({
 }): React.JSX.Element {
   const [name, setName] = useState(row.name);
   const [description, setDescription] = useState(row.description ?? '');
-  // Grade — shown, never edited here (ADR-217), so it is a plain value and not
+  // Grade — shown, never edited here (ADR-218), so it is a plain value and not
   // form state.
   const material = row.material ?? '';
   const [clientSearch, setClientSearch] = useState('');
@@ -93,7 +93,7 @@ export function EditPartyMaterialModal({
     const input: UpdatePartyMaterialInput = {};
     if (nm !== row.name) input.name = nm;
     if (description.trim() !== (row.description ?? '')) input.description = description.trim();
-    // ADR-217 — Grade is never sent from here; it cannot be changed on this
+    // ADR-218 — Grade is never sent from here; it cannot be changed on this
     // screen, so there is nothing to send.
     if (!hasMovement) {
       if (clientId !== row.clientId) input.clientId = clientId;
@@ -190,7 +190,7 @@ export function EditPartyMaterialModal({
           </Field>
         </div>
 
-        {/* Grade — from the item, read-only (ADR-217). It was a free-text box
+        {/* Grade — from the item, read-only (ADR-218). It was a free-text box
             here while the Add modal showed the same label read-only, so the
             same material answered to two different grades depending on which
             box was open. Raw-material grade has one author (the Route Card, or

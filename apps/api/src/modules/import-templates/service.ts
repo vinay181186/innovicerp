@@ -143,10 +143,7 @@ export const IMPORT_TEMPLATES: Record<string, ImportTemplateSpec> = {
       { label: 'Item Code*', samples: ['ITM-001'], width: 20 },
       { label: 'Item Name*', samples: ['Shaft 50mm'], width: 28 },
       { label: 'Description', samples: ['Main drive shaft'], width: 30 },
-      // ADR-217 — no Material column: the Item Master form no longer offers the
-      // field, so the blank sheet must not invite a grade either. (The SO-line
-      // and JW-line templates above keep theirs — a different fact, and the
-      // owner's 2026-10-05 call is that it stays free text.)
+      { label: 'Material', samples: ['EN8 Steel'] },
       { label: 'UOM', samples: ['NOS'], options: [...UOMS], width: 12 },
       {
         label: 'Item Type*',

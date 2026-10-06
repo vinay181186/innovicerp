@@ -113,7 +113,7 @@ export function PlanCreateForm({
     setCustomerDispatchDate(line.dueDate ? line.dueDate.slice(0, 10) : '');
   }, [line?.soLineId]);
 
-  // ADR-217 — raw material is read here, never set. The item's Route Card is
+  // ADR-218 — raw material is read here, never set. The item's Route Card is
   // what the server will copy onto this plan, so the same lookup that loads the
   // operations also supplies the two values SHOWN below. A different line is a
   // different item, so the lookup (and the display) follows the picked line.
@@ -135,7 +135,7 @@ export function PlanCreateForm({
     if (plannedEndDate < plannedStartDate) {
       return { error: 'Planned End Date cannot be before Planned Start Date.' };
     }
-    // ADR-217 — RM Grade / RM Size are NEVER sent from here. They have one
+    // ADR-218 — RM Grade / RM Size are NEVER sent from here. They have one
     // author: the part's Route Card, or the BOM line for a BOM child. Server
     // contract (apps/api/src/modules/plans/service.ts, createPlan): a field
     // that IS sent — a value OR an explicit null — means "the caller owns this
@@ -371,7 +371,7 @@ export function PlanCreateForm({
                   onChange={(e) => edit(setCustomerDispatchDate)(e.target.value)}
                 />
               </Field>
-              {/* ADR-217 — shown, not picked. These are the values the new plan
+              {/* ADR-218 — shown, not picked. These are the values the new plan
                   will be given; the Route Card (or the BOM line) owns them. */}
               <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
                 <RawMaterialGroup>
