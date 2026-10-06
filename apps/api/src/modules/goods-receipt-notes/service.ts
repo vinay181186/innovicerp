@@ -883,14 +883,51 @@ async function getGoodsReceiptNoteInternal(
         -- revision above already resolves. Only the SO side: a job-work line
         -- belongs to a job-work order, not to a customer PO, so there is no
         -- client PO line number on that fallback and the field stays null.
-        rev_sol.client_po_line_no AS "clientPoLineNo"
+        rev_sol.client_po_line_no AS "clientPoLineNo",
+        -- "PO Qty" / "Received Earlier" — DISPLAY ONLY (nothing below writes
+        -- them). The CREATE screen can show the receipt account (PO Qty ->
+        -- Received Earlier -> Received -> Balance) because it reads the PO
+        -- detail while the GRN is being typed; the edit and view screens had
+        -- no equivalent figure once the GRN was saved, so they get it here.
+        --
+        -- Both are NULL on exactly the same rows -- a line that traces to no
+        -- PO line (a GRN booked against a DC or against an NC return) has no
+        -- ordered qty to account against. For "poLineQty" that falls out of
+        -- the LEFT JOIN; for "poLineReceivedQty" it is forced by the
+        -- "rev_pol.id IS NOT NULL" ON clause on the lateral below, so a
+        -- missing PO line reads NULL ("not applicable") and a PO line with no
+        -- other receipts reads 0 ("none yet"). Those are different facts and
+        -- the UI must be able to tell them apart.
+        --
+        -- "Received Earlier" is DERIVED FROM purchase_order_lines.received_qty
+        -- rather than re-summed here. CLAUDE.md 20.1: that column has one
+        -- writer, recalcPoLineReceivedQty in cascades.ts, and its formula is
+        -- not a plain sum (it drops replacement receipts and nets off the
+        -- return-to-vendor qty still open at the vendor). A second sum here
+        -- would be a rival definition of the same counted fact and would
+        -- disagree with the CREATE screen -- which reads that very column --
+        -- the first time an NC or a replacement GRN touched the line.
+        --
+        -- "poLineReceivedQty" is SIGNED: it can come back NEGATIVE, because
+        -- that column is net of the return-to-vendor qty still open at the
+        -- vendor. See the lateral's comment for the worked example. Callers
+        -- must subtract it as a signed number; nothing here clamps it.
+        rev_pol.qty AS "poLineQty",
+        other_rcpt.received_qty AS "poLineReceivedQty"
       FROM public.goods_receipt_note_lines gnl
       JOIN public.goods_receipt_notes grn ON grn.id = gnl.goods_receipt_note_id
       LEFT JOIN public.items i ON i.id = gnl.item_id AND i.deleted_at IS NULL
       -- Every join below is a single row per GRN line (each FK points at one
       -- parent), so none of them can multiply the lines.
+      -- company_id on rev_pol as well as the id: this join feeds itemRevision,
+      -- clientPoLineNo and poLineQty, so a cross-company purchase_order_line_id
+      -- would read another company's ordered qty straight out. Nobody has shown
+      -- that reachable -- it is defence in depth, and it makes this join match
+      -- the convention the lateral below states.
       LEFT JOIN public.purchase_order_lines rev_pol
-        ON rev_pol.id = gnl.purchase_order_line_id AND rev_pol.deleted_at IS NULL
+        ON rev_pol.id = gnl.purchase_order_line_id
+       AND rev_pol.company_id = ${companyId}::uuid
+       AND rev_pol.deleted_at IS NULL
       LEFT JOIN public.jc_ops rev_pol_op
         ON rev_pol_op.id = rev_pol.source_jc_op_id AND rev_pol_op.deleted_at IS NULL
       LEFT JOIN public.job_cards rev_pol_jc
@@ -922,6 +959,62 @@ async function getGoodsReceiptNoteInternal(
              rev_nc_jc.source_jw_line_id
            )
        AND rev_jwl.deleted_at IS NULL
+      -- "Received Earlier" = the maintained column MINUS this GRN's own
+      -- contribution to it. The column is what the CREATE screen reads, so
+      -- both screens now quote one number from one writer; all this does is
+      -- take our own row back out of it so the account does not count this
+      -- line twice.
+      --
+      --   - PER PO LINE, not per GRN line: one GRN may carry two lines against
+      --     the same PO line, so sum this GRN's lines on rev_pol.id instead of
+      --     using gnl.received_qty.
+      --   - Subtract only what the column actually contains. The predicate is
+      --     copied from recalcPoLineReceivedQty's first term:
+      --         grl.deleted_at IS NULL AND grn.nc_id IS NULL
+      --     so a soft-deleted line never counted, and a REPLACEMENT receipt (a
+      --     GRN whose header carries nc_id) was never in the column at all --
+      --     for one of those we subtract nothing and "Received Earlier" is the
+      --     column as it stands. Say it plainly, because it surprises people:
+      --     on a replacement GRN this line's own Received sits OUTSIDE the
+      --     account. Those pieces rejoin the supplied qty only as they clear
+      --     QC, via the NC's cleared_qty term in that same writer. So on a
+      --     replacement GRN, PO Qty - Received Earlier - Received UNDERSTATES
+      --     the balance by exactly this line's own Received (measured on TEST:
+      --     PO line of 100 with 25 open at the vendor, column 75, a
+      --     replacement receipt of 10 shows 15 where the PO itself still owes
+      --     25). It is not a shortfall and must not be read as one.
+      --   - NOT clamped at zero, and that is deliberate -- an earlier revision
+      --     of this query clamped it and the clamp was a BUG. The column is NET
+      --     of the return-to-vendor qty still open at the vendor, so
+      --     column - our own receipt can be legitimately negative, and that
+      --     negative is real information about what the PO line still owes:
+      --       PO line qty 100, this GRN receives 60, QC rejects 20, NC
+      --       return_to_vendor with its challan issued -> the writer sets the
+      --       column to 60 - 20 = 40. Received Earlier = 40 - 60 = -20, and
+      --       Pending = 100 - (-20) - 60 = 60, which is what the line still
+      --       owes. Clamped to 0 it read Pending = 100 - 0 - 60 = 40 -- short
+      --       by the 20 sitting at the vendor.
+      --     The clamp did not stay in its own cell; it propagated into the
+      --     result. So the SIGNED value is what this query returns, Pending
+      --     must be computed from the signed value, and how to PRESENT a
+      --     negative is the screen's decision, not this query's.
+      --   - Company-scoped like every other read in this module. It cannot
+      --     change the figure (a GRN's lines all carry its own company_id) --
+      --     it is there so a cross-company id can never widen the sum.
+      LEFT JOIN LATERAL (
+        SELECT rev_pol.received_qty
+                 - CASE
+                     WHEN grn.nc_id IS NULL THEN COALESCE((
+                       SELECT SUM(t_gnl.received_qty)
+                       FROM public.goods_receipt_note_lines t_gnl
+                       WHERE t_gnl.purchase_order_line_id = rev_pol.id
+                         AND t_gnl.goods_receipt_note_id = gnl.goods_receipt_note_id
+                         AND t_gnl.company_id = ${companyId}::uuid
+                         AND t_gnl.deleted_at IS NULL
+                     ), 0)
+                     ELSE 0
+                   END AS received_qty
+      ) other_rcpt ON rev_pol.id IS NOT NULL
       WHERE gnl.goods_receipt_note_id = ${id}::uuid
         AND gnl.deleted_at IS NULL
       ORDER BY gnl.line_no ASC
@@ -983,6 +1076,11 @@ async function getGoodsReceiptNoteInternal(
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       uom: (r['uom'] as string | null) ?? null,
       masterItemName: (r['masterItemName'] as string | null) ?? null,
+      // numeric(14,3) arrives as a string on a raw execute(); null stays null
+      // (no PO line behind the row) rather than collapsing to 0 -- see the
+      // note on the two columns in the SELECT above.
+      poLineQty: r['poLineQty'] == null ? null : Number(r['poLineQty']),
+      poLineReceivedQty: r['poLineReceivedQty'] == null ? null : Number(r['poLineReceivedQty']),
     })),
   };
 }
