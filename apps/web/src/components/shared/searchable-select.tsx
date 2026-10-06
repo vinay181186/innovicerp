@@ -50,6 +50,10 @@ export interface SearchableSelectProps {
   selectedLabel?: ((o: SearchableOption) => string) | undefined;
   id?: string | undefined;
   className?: string | undefined;
+  /** Accessible name for the box when no <label> points at it — a picker in a
+   *  table cell is named only by its column header, which a screen reader does
+   *  not read as the field's name. */
+  ariaLabel?: string | undefined;
   emptyText?: string | undefined;
 }
 
@@ -77,6 +81,7 @@ export function SearchableSelect({
   selectedLabel,
   id,
   className,
+  ariaLabel,
   emptyText = 'No matches',
 }: SearchableSelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
@@ -318,6 +323,7 @@ export function SearchableSelect({
         ref={inputRef}
         className="innovic-input"
         id={baseId}
+        {...(ariaLabel ? { 'aria-label': ariaLabel } : {})}
         type="text"
         role="combobox"
         aria-expanded={open}
