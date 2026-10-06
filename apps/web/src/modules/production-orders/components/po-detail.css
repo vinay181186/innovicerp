@@ -1,0 +1,152 @@
+/* Production Order detail — the fit-to-one-screen page
+   (pro-routecard-detail-mockup.html, approved 2026-10-06).
+
+   The page is the ClusterGrid view (ui/forms/cluster-grid.css) plus the few
+   things that page needs and the primitive does not offer. Everything here is
+   scoped to `.po-detail` and uses tokens only. */
+
+/* ── Fit to one screen ───────────────────────────────────────────────────────
+   `page-fill` (innovic-theme.css "LIST FILL") asks for min-height: 100%, which
+   lets a long table grow the page instead of scrolling — a list page never
+   meets that because it pages 25 rows at a time, but a Close Ledger or a
+   History has no pager. Here the page takes exactly the content area, so the
+   tab panel gets what is left and its table is the only thing that scrolls.
+   The fallback the theme keeps is kept too: the tab panel never goes below
+   six table rows, so when the chrome above genuinely cannot fit (a phone,
+   200% zoom) the page outgrows the content area and that scrolls instead. */
+.page-fill.po-detail {
+  height: 100%;
+}
+.page-fill.po-detail > .panel--fill {
+  min-height: calc(var(--tbl-row-h) * 6 + 2px);
+}
+/* A flex column stretches its children; Back is a button, not a band. */
+.page-fill.po-detail > .btn {
+  align-self: flex-start;
+}
+
+/* ── One-line facts ──────────────────────────────────────────────────────────
+   The primitive WRAPS a fact whose value does not fit beside its label, so a
+   date is never clipped (cluster-grid.css, pitfall 3). Free text with no
+   pending change (Created By, Route Card, RM Grade / Size, Actual Size,
+   Remarks) opts into ONE line instead: the value ellipsises and the cell's
+   title carries the full text. Dates, quantities and JC Finished do not get
+   this class and keep the primitive's wrap. */
+.po-detail .cl-fact.po-one-line {
+  flex-wrap: nowrap;
+}
+/* Remarks: reads left to right from the label, like the primitive's `wrap`
+   facts. */
+.po-detail .cl-fact.po-wide > .cl-fact-v {
+  flex: 1 1 auto;
+  margin-left: 0;
+  text-align: left;
+  font-weight: 400;
+}
+
+/* ── Cells carrying a pending-edit chip (ADR-202) ────────────────────────────
+   The chip names the proposed value, so it is never cut short. The cell keeps
+   the primitive's wrap: when label + value + chip do not fit on one line the
+   chip drops to a line of its own, right-aligned under the value, and only a
+   chip wider than the whole cell breaks its own text. Nothing ever runs past
+   the cell's right edge into the next one. */
+.po-detail .cl-fact.po-chip {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.po-detail .cl-fact.po-chip > .cl-fact-k {
+  margin-right: auto;
+}
+.po-detail .cl-fact.po-chip > .cl-fact-after {
+  max-width: 100%;
+  min-width: 0;
+}
+/* less the chip's own 6px left margin (set inline by PendingChangeChip) */
+.po-detail .cl-fact.po-chip > .cl-fact-after > .tag {
+  max-width: calc(100% - 6px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Remarks with a chip: the remark itself gives way first (ellipsis, full text
+   in the title), so a short chip still sits on the label's line. */
+.po-detail .cl-fact.po-wide.po-chip > .cl-fact-v {
+  flex: 1 1 0;
+  min-width: 8ch;
+}
+
+/* ── Available to Close ──────────────────────────────────────────────────────
+   The number the header's Close Qty… button acts on. Same shape as the green
+   `cl-lead` result rule, in blue, so it reads as "the actionable figure" and
+   not as a second result. Compound selector so it outranks the primitive's
+   narrow-width rule that drops every non-lead hairline. */
+.po-detail .cl-grid > .cl-row > .cl-fact.po-act {
+  border-left: 3px solid var(--blue);
+  padding-left: var(--sp-3);
+}
+.po-detail .cl-fact.po-act > .cl-fact-k {
+  color: var(--text2);
+  font-weight: 600;
+}
+.po-detail .cl-fact.po-act > .cl-fact-v {
+  color: var(--blue);
+}
+
+/* JC Finished: a short progress track in front of the count. */
+.po-detail .po-bar {
+  display: inline-block;
+  width: 48px;
+  vertical-align: middle;
+  margin-right: var(--sp-2);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+/* Why Close Qty… is off — the server's own words, one line, beside the button. */
+.po-detail .po-close-why {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+/* Short Closed / Closed: one line where the Close button would be. */
+.po-detail .po-banner {
+  max-width: min(560px, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--text2);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text3);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-0) var(--sp-2);
+}
+.po-detail .po-banner.is-closed {
+  border-left-color: var(--green);
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+/* "20 / 40 credited" at the right end of the tab strip. TabStrip has no slot
+   for it, so it sits over the strip's right end; the strip is a `.panel` with
+   a bottom gap, which the meta leaves alone. */
+.po-detail .po-tabs {
+  position: relative;
+}
+.po-detail .po-tabs-meta {
+  position: absolute;
+  top: 0;
+  right: var(--sp-3);
+  bottom: var(--panel-gap);
+  display: flex;
+  align-items: center;
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  pointer-events: none;
+}
+.po-detail .po-tabs-meta b {
+  font-family: var(--mono);
+  color: var(--text);
+  margin-right: var(--sp-1);
+}

@@ -1,0 +1,74 @@
+/* Production Order — Edit page and Close form
+   (pro-routecard-create-edit-mockup.html, frames 2 and 3, approved 2026-10-06).
+
+   Edit is the detail page (po-detail.css, which it also loads under the same
+   `.po-detail` root) with four cells turned into inputs, so this file only
+   adds what an input cell needs. The Close form's account is the ClusterGrid
+   primitive plus the one thing it lacks: the orange Lost Qty rule.
+   Tokens only; every rule is scoped to `.po-edit` or `.po-close-form`. */
+
+/* ── Edit: an input in a fact cell ───────────────────────────────────────────
+   Label left, control filling the rest of the cell. The primitive's wrap is
+   kept: when the label and the control's minimum do not fit side by side the
+   control drops to a line of its own at full cell width, rather than being
+   squeezed to nothing. A pending chip wraps the same way (po-detail.css
+   `.po-chip`), right-aligned under the control. */
+.po-edit .cl-fact.po-in {
+  align-items: center;
+  row-gap: var(--sp-1);
+}
+.po-edit .cl-fact.po-in .req {
+  color: var(--red2);
+  margin-left: 2px;
+}
+.po-edit .po-in-ctl {
+  flex: 1 1 0;
+  min-width: 12ch;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* A date box needs its whole dd-mm-yyyy and the picker icon. */
+.po-edit .po-in-ctl.po-in-date {
+  min-width: 132px;
+}
+/* The "in store" tick: a box and two words, no input frame. */
+.po-edit .po-in-ctl.po-in-check {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.po-edit .po-in-check > label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* Header: why Save is off — one line, the full server text in its title. */
+.po-edit .po-edit-pend {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--amber2);
+}
+
+/* ── Close form: the account ─────────────────────────────────────────────────
+   Finish Short ends the account on Lost Qty — what will be written off. Same
+   shape as the green result rule, in orange. Compound selector so it outranks
+   the primitive's narrow-width rule that drops every non-lead hairline. */
+.po-close-form .cl-grid > .cl-row > .cl-fact.po-lost {
+  border-left: 3px solid var(--amber);
+  padding-left: var(--sp-3);
+}
+.po-close-form .cl-fact.po-lost > .cl-fact-k {
+  color: var(--text2);
+  font-weight: 600;
+}
+.po-close-form .cl-fact.po-lost > .cl-fact-v {
+  color: var(--amber2);
+}

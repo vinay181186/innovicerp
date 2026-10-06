@@ -20,9 +20,19 @@ interface PoCloseLedgerProps {
   /** True when the user may reverse a close: edit right AND the order is not
    *  short closed (the server's rule). False → no ⋯ column at all. */
   canReverse: boolean;
+  /** Inside a filling tab panel (the Production Order detail page): the table's
+   *  `.tbl-wrap` is handed straight to the panel body so it takes the height
+   *  left on screen and scrolls inside it, and the POL · CODE/REV band is left
+   *  out — that page already says both in its identity line. The Close page
+   *  leaves this off and keeps the band. */
+  fill?: boolean | undefined;
 }
 
-export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX.Element {
+export function PoCloseLedger({
+  po,
+  canReverse,
+  fill = false,
+}: PoCloseLedgerProps): React.JSX.Element {
   const reverseMut = useReverseProductionOrderClose();
   // The close whose "Reverse close?" dialog is open.
   const [askClose, setAskClose] = useState<ProductionOrderClose | null>(null);
@@ -49,35 +59,36 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
     );
   }
 
-  return (
-    <div>
-      {/* Meta band — whose pieces these closes belong to. POL is the line
-          number printed on the CUSTOMER's own purchase order, shown before the
-          item code; '—' when no sales order sits behind this order. */}
-      <div
-        className="mono"
-        style={{
-          fontSize: 11,
-          color: 'var(--text3)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          flexWrap: 'wrap',
-          marginBottom: 8,
-        }}
-      >
-        <span>
-          POL{' '}
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-            {po.clientPoLineNo ?? '—'}
-          </span>
-        </span>
-        <span>·</span>
-        <span className="td-code" style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
-        </span>
-      </div>
+  // Meta band — whose pieces these closes belong to. POL is the line number
+  // printed on the CUSTOMER's own purchase order, shown before the item code;
+  // '—' when no sales order sits behind this order.
+  const band = fill ? null : (
+    <div
+      className="mono"
+      style={{
+        fontSize: 11,
+        color: 'var(--text3)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        flexWrap: 'wrap',
+        marginBottom: 8,
+      }}
+    >
+      <span>
+        POL{' '}
+        <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{po.clientPoLineNo ?? '—'}</span>
+      </span>
+      <span>·</span>
+      <span className="td-code" style={{ color: 'var(--text)' }}>
+        {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
+      </span>
+    </div>
+  );
 
+  const body = (
+    <>
+      {band}
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
@@ -158,6 +169,10 @@ export function PoCloseLedger({ po, canReverse }: PoCloseLedgerProps): React.JSX
           }}
         />
       ) : null}
-    </div>
+    </>
   );
+
+  // `fill`: a fragment, so `.tbl-wrap` is a direct child of the panel body —
+  // the fill chain (innovic-theme.css "LIST FILL") only reaches it there.
+  return fill ? body : <div>{body}</div>;
 }

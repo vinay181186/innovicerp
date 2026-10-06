@@ -435,7 +435,7 @@ function reworkColumns(currentId: string): DataTableColumn<ReworkTreeNode>[] {
   ];
 }
 
-function ReworkTreePanel({ jobCardId }: { jobCardId: string }): React.JSX.Element | null {
+export function ReworkTreePanel({ jobCardId }: { jobCardId: string }): React.JSX.Element | null {
   const [open, setOpen] = useState(true);
   const { data } = useReworkTree(jobCardId);
   const nodes = data?.nodes ?? [];

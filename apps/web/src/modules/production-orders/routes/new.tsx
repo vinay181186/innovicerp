@@ -1,54 +1,74 @@
-// Create Production Order (ADR-170, ADR-182): Plan + Route Card + Order Qty +
+// Create Production Order (ADR-170, ADR-182): Plan + Route Card + PRO Qty +
 // PRO Target Date (owner label 2026-09-30, was "Customer Dispatch Date"; the
 // wire field stays `targetDate`) → Create JC. The customer's own date shows
-// read-only as "Customer Dispatch Date" in the plan summary.
+// read-only as "Customer Dispatch Date" in the Schedule row.
 //
 // ADR-182 added three things to this screen:
-//   • Order Qty — a plan may be covered by SEVERAL orders now (50 = 20+20+10),
-//     so the screen asks how many pieces THIS order is for. It defaults to the
-//     plan's `Pending` (NAMING.md — never "Remaining"/"Balance") and is capped
-//     there; the server re-checks the cap under the plan's row lock.
+//   • PRO Qty (wire `orderQty`) — a plan may be covered by SEVERAL orders now
+//     (50 = 20+20+10), so the screen asks how many pieces THIS order is for. It
+//     defaults to the plan's `Pending` (NAMING.md — never "Remaining"/"Balance")
+//     and is capped there; the server re-checks the cap under the plan's row lock.
 //   • Raw material available — the shop floor confirms the material is on hand
-//     BEFORE the order is raised. Unticked, Create is off and the screen says
-//     exactly what the server would: "No raw material — you cannot create the
-//     production order."
+//     BEFORE the order is raised. Unticked, Save is off and its reason says
+//     exactly what the server would.
 //   • Actual Size — the size really cut, beside the plan's master-picked size.
 //     Carried onto the Job Card so the traveller prints what was actually used.
 //
 // The plan picker lists route-card-driven plans that still have Pending qty.
 // The Route Card is the ONLY source of operations — "no route card,
-// no way forward" — so with none for the item the Create JC button stays off
-// and the screen says where to make one. The PO No is a read-only preview of
-// the next number; the server assigns the real one.
+// no way forward" — so with none for the item Save stays off and the screen
+// says where to make one. The PRO No is a read-only preview of the next number
+// in the header; the server assigns the real one.
+//
+// Layout (owner-approved mock-up pro-routecard-create-edit-mockup.html, frame
+// "1 · Production Order — Create", 2026-10-06): the page fits one 1440×810
+// screen with no page scroll, on the SAME grid and cluster order as the
+// Production Order detail page — only the controls differ. Header (next no.,
+// Cancel, Save) → identity line filled from the Plan → Order · Quantity ·
+// Schedule · Material clusters → ONE read-only panel of the Route Card's
+// operations that takes the height left. The decision is WHICH PLAN: the Plan
+// No. cell carries the blue rule and every other input is off until a plan is
+// picked. The Quantity row reads Plan Qty − Covered = Pending and ends on the
+// PRO Qty typed (green rule).
 //
 // Gate + exit guard follow tpi-masters/routes/new.tsx. No Close button here on
 // purpose: closing is its own screen (Production → Entry → Close Production
 // Order) and its own permission (edit).
 
-import type { CreateProductionOrderInput, PlanType, RouteCardListItem } from '@innovic/shared';
+import type { CreateProductionOrderInput, RouteCardListItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { useSession } from '@/lib/session';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import {
+  Cluster,
+  ClusterFact,
+  ClusterGrid,
+  DocIdent,
+  FormField,
+  IdentCode,
+  IdentSep,
+} from '@/ui/forms';
+import { DetailHeader, useSaveShortcut } from '@/ui/layout';
 import {
   type PlanPickerItem,
-  planPickerLabel,
   useCreateProductionOrder,
   useNextProductionOrderCode,
   usePreselectedPlan,
 } from '../api';
 import { PlanPicker } from '../components/plan-picker';
+import { PoCreateOpsPanel } from '../components/po-create-ops-panel';
+import '../components/po-create.css';
 
 // ?planId=&planCode= open the form with that plan already picked — the Plans
 // list's "+ Create Production Order" button arrives this way. Both optional.
@@ -64,6 +84,11 @@ export const productionOrderNewRoute = createRoute({
   component: ProductionOrderNewPage,
 });
 
+/** What every input says until the one decision — the Plan — is made. */
+const PICK_PLAN_FIRST = 'Pick a plan first';
+/** The tick's full sentence; the cell itself says "In store". */
+const IN_STORE_SENTENCE = 'The material for this order is in the store';
+
 function ProductionOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const search = productionOrderNewRoute.useSearch();
@@ -78,6 +103,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
   // the form appearing when the URL is typed directly by a viewer.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
+  // Created By — the signed-in user, who the server records as the creator.
+  const { data: me } = useSession();
 
   const nextCode = useNextProductionOrderCode(perms.entry);
 
@@ -108,9 +135,13 @@ function ProductionOrderNewPage(): React.JSX.Element {
 
   // One route card per item is the rule, so the usual answer is exactly one
   // row — preselect it rather than make the user pick the only option.
+  // Skip while the list still shows the PREVIOUS plan's cards (the hook keeps
+  // them as placeholder data during the refetch) — else the old item's card
+  // gets picked under the new plan.
   useEffect(() => {
+    if (routeCards.isPlaceholderData) return;
     if (rcItems.length === 1) setRouteCardId(rcItems[0]?.id ?? null);
-  }, [rcItems]);
+  }, [rcItems, routeCards.isPlaceholderData]);
 
   const onPickPlan = (p: PlanPickerItem | null): void => {
     setPlan(p);
@@ -118,7 +149,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
     // PRO Target Date starts at the plan's Customer Dispatch Date; an older
     // plan without one falls back to its Planned End, as before.
     setTargetDate(p?.customerDispatchDate ?? p?.plannedEndDate ?? '');
-    // ADR-182 — the usual answer is "all that is left", so Order Qty starts at
+    // ADR-182 — the usual answer is "all that is left", so PRO Qty starts at
     // the plan's Pending and the user only types when ordering less.
     setOrderQtyText(p ? String(p.pendingQty) : '');
     setSubmitError(null);
@@ -133,11 +164,12 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const routeCard = rcItems.find((rc) => rc.id === routeCardId) ?? null;
   // The plan type lives on the ROUTE CARD. A direct-purchase item is bought,
   // not produced, so its card can never raise a Production Order (the API
-  // refuses it too) — Create JC stays off with the reason shown.
+  // refuses it too) — Save stays off with the reason shown.
   const directPurchase = routeCard?.planType === 'direct_purchase';
 
-  // ADR-182 — Order Qty. Pending is the ceiling the server enforces under the
-  // plan's row lock; the field simply refuses to ask for more.
+  // ADR-182 — PRO Qty. Pending is the ceiling the server enforces under the
+  // plan's row lock; the field simply refuses to ask for more. The Pending
+  // cell beside it is that same ceiling, so the row states the enforced cap.
   const pendingQty = plan?.pendingQty ?? 0;
   const orderQty = Number.parseInt(orderQtyText, 10);
   const orderQtyValid = Number.isInteger(orderQty) && orderQty > 0 && orderQty <= pendingQty;
@@ -146,11 +178,11 @@ function ProductionOrderNewPage(): React.JSX.Element {
     : pendingQty === 0
       ? `Plan ${plan.code} is fully covered by its Production Orders (${plan.planQty} of ${plan.planQty}).`
       : orderQtyText.trim() === ''
-        ? 'Order Qty is required.'
+        ? 'PRO Qty is required.'
         : !orderQtyValid
           ? orderQty > pendingQty
-            ? `Order Qty cannot be more than Pending (${pendingQty}).`
-            : 'Order Qty must be a whole number greater than 0.'
+            ? `PRO Qty cannot be more than Pending (${pendingQty}).`
+            : 'PRO Qty must be a whole number greater than 0.'
           : null;
   // The server's exact words, said here first so the user never meets it as an
   // error after a click (production-orders/service.ts).
@@ -160,8 +192,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
   // The PLAN is the only source of raw material for this order: the Production
   // Order and its Job Card copy the Grade and Size off the plan, never off the
   // route card. A plan saved before its route card existed can carry neither
-  // (PLN-0001 on production: both null) and the recap below showed that as a
-  // bare "—" with no explanation — the material simply looked like it had not
+  // (PLN-0001 on production: both null) and the Material row would show that as
+  // a bare "—" with no explanation — the material simply looked like it had not
   // loaded. Say it instead, and refuse the confirmation tick: "material is in
   // the store" against a plan that names no material confirms nothing.
   const planHasRmGrade = Boolean(
@@ -213,7 +245,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
   // Ctrl+S runs the same Save as the header button (off while it is disabled).
   useSaveShortcut(() => void save(), canSubmit && !create.isPending);
 
-  // Why Save is off — the header button's tooltip.
+  // Why Save is off — the header button's tooltip. The "Raw Material Available
+  // is required" message used to be a red banner that showed the moment the
+  // page opened; it is this tooltip now, in its turn after the fields above it.
   const saveBlockedReason = !plan
     ? 'Plan is required.'
     : noRouteCard
@@ -268,19 +302,35 @@ function ProductionOrderNewPage(): React.JSX.Element {
     );
   }
 
+  const off = !plan;
+  const createdBy = me ? (me.fullName?.trim() ? me.fullName : me.email) : null;
+  const rmItem = plan?.rawMaterialItemCode ?? null;
+  const rmGrade = plan?.rawMaterialGradeText ?? null;
+  const rmSize = plan?.rawMaterialSizeText ?? null;
+  const rmQtyPerPiece = plan?.rmQtyPerPiece ?? null;
+  const rmTickTitle = planHasNoRawMaterial ? NO_PLAN_RAW_MATERIAL : IN_STORE_SENTENCE;
+
   return (
-    <form onSubmit={(e) => void onSubmit(e)}>
+    <form className="page-fill po-create" onSubmit={(e) => void onSubmit(e)}>
       {exit.dialog}
-      <PageHeader
-        sticky
-        title="New Production Order"
-        subtitle={
-          <span className="td-code">
-            {nextCode.data?.code ?? (nextCode.isLoading ? '…' : 'IN-PRO-?????')}
-          </span>
-        }
+      <DetailHeader
         backLabel="Back"
         onBack={goBack}
+        code={nextCode.data?.code ?? (nextCode.isLoading ? '…' : 'IN-PRO-?????')}
+        // One header line, as the mock-up draws it: next no. · document name.
+        // `badges`, not `name`: `name` takes a second line this page has no
+        // height for.
+        badges={
+          <>
+            <span
+              className="po-create-next"
+              title="A preview — the server assigns the real number on Save"
+            >
+              next no.
+            </span>
+            <span className="panel-title">New Production Order</span>
+          </>
+        }
         actions={
           <>
             <button
@@ -291,343 +341,333 @@ function ProductionOrderNewPage(): React.JSX.Element {
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={!canSubmit || create.isPending}
-              title={saveBlockedReason}
-            >
-              {create.isPending ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" /> Saving…
-                </>
-              ) : (
-                <>Save Production Order &amp; Create JC</>
-              )}
-            </button>
+            {/* The wrapper carries the reason too: a disabled button gets no
+                hover in every browser. */}
+            <span title={saveBlockedReason}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={!canSubmit || create.isPending}
+                title={saveBlockedReason}
+              >
+                {create.isPending ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Saving…
+                  </>
+                ) : (
+                  <>Save Production Order &amp; Create JC</>
+                )}
+              </button>
+            </span>
           </>
         }
-      />
+      >
+        {/* What stops Save, under the header where the Save button is. */}
+        {noRouteCard ? (
+          <Banner tone="warn" role="alert">
+            ⚠ No Route Card for this item —{' '}
+            <Link to="/route-cards/new" search={newRouteCardSearch} className="fw-700">
+              create it
+            </Link>{' '}
+            first.
+          </Banner>
+        ) : null}
+        {directPurchase ? (
+          <Banner tone="warn" role="alert">
+            ⚠ Item {planItemCode ?? ''} is a Buy item — no Production Order.
+          </Banner>
+        ) : null}
+        {planHasNoRawMaterial ? (
+          <Banner tone="warn" role="alert">
+            ⚠ {NO_PLAN_RAW_MATERIAL}
+          </Banner>
+        ) : null}
+        {submitError ? (
+          <Banner tone="error" role="alert">
+            {submitError}
+          </Banner>
+        ) : null}
 
-      {/* What stops Save, under the header where the Save button is. */}
-      {noRouteCard ? (
-        <Banner tone="warn" role="alert">
-          ⚠ No Route Card for this item —{' '}
-          <Link to="/route-cards/new" search={newRouteCardSearch} className="fw-700">
-            create it
-          </Link>{' '}
-          first.
-        </Banner>
-      ) : null}
-      {directPurchase ? (
-        <Banner tone="warn" role="alert">
-          ⚠ Item {planItemCode ?? ''} is a Buy item — no Production Order.
-        </Banner>
-      ) : null}
-      {!rawMaterialAvailable ? (
-        <Banner tone="error" role="alert">
-          {NO_RAW_MATERIAL}
-        </Banner>
-      ) : null}
-      {submitError ? (
-        <Banner tone="error" role="alert">
-          {submitError}
-        </Banner>
-      ) : null}
-
-      <Panel title="Production Order Details">
-        {/* 12-column grid: PO No · Plan · PRO Target Date, the plan
-            recap, then Route Card · Order Qty · Actual Size, the raw material
-            confirmation and Remarks. */}
-        <div className="form-grid-12">
-          <div className="form-grp f-sm">
-            <label className="form-label" htmlFor="po-code">
-              Production Order No.
-            </label>
-            <input
-              id="po-code"
-              className="innovic-input mono fw-700"
-              value={nextCode.data?.code ?? ''}
-              readOnly
-              placeholder="assigned on save"
-            />
-          </div>
-
-          <div className="f-lg">
-            <PlanPicker
-              id="po-plan"
-              mode="create"
-              value={plan?.id ?? null}
-              onChange={onPickPlan}
-              fallbackLabel={plan ? planPickerLabel(plan, 'create') : undefined}
-            />
-          </div>
-
-          <div className="form-grp f-sm">
-            <label className="form-label" htmlFor="po-target-date">
-              PRO Target Date<span className="req">★</span>
-            </label>
-            <input
-              id="po-target-date"
-              type="date"
-              className="innovic-input"
-              value={targetDate}
-              onChange={(e) => setTargetDate(e.target.value)}
-              required
-            />
-          </div>
-
+        {/* WHICH plan line this order is for — filled from the Plan. Identity,
+            not facts, so it heads the grid instead of taking cells. */}
+        <DocIdent>
           {plan ? (
-            <div className="f-full">
-              <PlanSummary plan={plan} />
-            </div>
-          ) : null}
-
-          <div className="form-grp f-lg">
-            <label className="form-label" htmlFor="po-route-card">
-              Route Card<span className="req">★</span>
-            </label>
-            <select
-              id="po-route-card"
-              className="innovic-select"
-              value={routeCardId ?? ''}
-              disabled={!plan || noRouteCard || routeCards.isLoading}
-              onChange={(e) => setRouteCardId(e.target.value || null)}
-            >
-              <option value="">
-                {!plan
-                  ? 'Pick a plan first'
-                  : routeCards.isLoading
-                    ? 'Loading Route Cards…'
-                    : noRouteCard
-                      ? 'No Route Card for this item'
-                      : 'Select Route Card…'}
-              </option>
-              {rcItems.map((rc) => (
-                <option key={rc.id} value={rc.id}>
-                  {rc.code} — Route Card Rev {rc.currentRevision} — {rc.opCount} op
-                  {rc.opCount === 1 ? '' : 's'}
-                </option>
-              ))}
-            </select>
-            {routeCard ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
-                  {routeCard.code}
-                </span>{' '}
-                · Route Card Rev {routeCard.currentRevision} · {routeCard.opCount} operation
-                {routeCard.opCount === 1 ? '' : 's'} <PlanTypeChip planType={routeCard.planType} />
-                {routeCard.opCount === 0 ? (
-                  <span style={{ color: 'var(--amber2)' }}>
-                    {' '}
-                    — no operations yet. Add them on the Route Card first.
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          {/* ADR-182 — Order Qty. Defaults to the plan's Pending and is
-              capped there; the server re-checks under the plan's row lock,
-              so two people ordering at once cannot both fit. */}
-          <div className="form-grp f-sm">
-            <label className="form-label" htmlFor="po-order-qty">
-              Order Qty<span className="req">★</span>
-            </label>
-            <input
-              id="po-order-qty"
-              type="number"
-              className="innovic-input mono fw-700"
-              value={orderQtyText}
-              min={1}
-              max={pendingQty || undefined}
-              step={1}
-              disabled={!plan || pendingQty === 0}
-              onChange={(e) => setOrderQtyText(e.target.value)}
-              placeholder={plan ? String(pendingQty) : 'Pick a plan first'}
-            />
-            {plan ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Plan Qty {plan.planQty} · Covered {plan.coveredQty} · Pending{' '}
-                <span className="fw-700" style={{ color: 'var(--cyan)' }}>
-                  {plan.pendingQty}
-                </span>
-              </div>
-            ) : null}
-            {orderQtyError ? <div className="form-error">{orderQtyError}</div> : null}
-          </div>
-
-          {/* ADR-182 — what the store really had / really cut, beside the
-              plan's master-picked Raw Material Size. Optional free text. */}
-          <div className="form-grp f-sm">
-            <label className="form-label" htmlFor="po-actual-size">
-              Actual Size
-            </label>
-            <input
-              id="po-actual-size"
-              className="innovic-input"
-              value={actualSize}
-              maxLength={120}
-              onChange={(e) => setActualSize(e.target.value)}
-            />
-          </div>
-
-          {/* ADR-182 — the shop floor's confirmation that the material is
-              on hand. The server refuses a false value in these exact
-              words, so the screen says them first. */}
-          <div className="form-grp f-full">
-            <span className="form-label">
-              Raw Material Available<span className="req">★</span>
+            <>
+              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+              <IdentCode>{itemCodeWithRev(planItemCode, plan.itemRevision)}</IdentCode>
+              {planItemName ? <span>{planItemName}</span> : null}
+              {plan.soCodeText ? (
+                <>
+                  <IdentSep />
+                  {/* ADR-207 — the system SO No. then the SO's own office number. */}
+                  <IdentCode>{soNoWithInternal(plan.soCodeText, plan.soInternalNo)}</IdentCode>
+                  {/* Ln is OUR sales-order line number. POL is the line number
+                      printed on the CUSTOMER's own purchase order. Never the
+                      same fact. */}
+                  {plan.lineNo ? <span>Ln {plan.lineNo}</span> : null}
+                  {plan.clientPoLineNo ? (
+                    <span>
+                      POL <b className="po-create-pol">{plan.clientPoLineNo}</b>
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
+              <span className="po-create-from">· filled from the Plan</span>
+            </>
+          ) : (
+            <span className="po-create-from">
+              Pick a plan — the item, SO line and POL fill in from it.
             </span>
-            <label
-              htmlFor="po-rm-available"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                color: 'var(--text)',
-                cursor: planHasNoRawMaterial ? 'not-allowed' : 'pointer',
-              }}
+          )}
+        </DocIdent>
+
+        <ClusterGrid>
+          {/* When it is raised, by whom, from which Plan and Route Card. The
+              Plan is the one decision on this screen — the blue rule. */}
+          <Cluster name="Order">
+            <ClusterFact num label="Production Order Date" value={fmtDate(todayLocal())} />
+            <ClusterFact
+              className="po-create-one-line"
+              label="Created By"
+              empty={!createdBy}
+              title={createdBy ?? undefined}
+              value={createdBy ?? '—'}
+            />
+            <FormField label="Plan No." required htmlFor="po-plan" className="po-in po-create-act">
+              <PlanPicker
+                id="po-plan"
+                mode="create"
+                bare
+                codeOnly
+                className="po-create-ctl"
+                value={plan?.id ?? null}
+                onChange={onPickPlan}
+                fallbackLabel={plan ? plan.code : undefined}
+              />
+            </FormField>
+            <FormField label="Route Card" required htmlFor="po-route-card" className="po-in">
+              <select
+                id="po-route-card"
+                className="innovic-select"
+                value={routeCardId ?? ''}
+                disabled={!plan || noRouteCard || routeCards.isLoading}
+                title={
+                  routeCard
+                    ? `${routeCard.code} · Route Card Rev ${routeCard.currentRevision}`
+                    : undefined
+                }
+                onChange={(e) => setRouteCardId(e.target.value || null)}
+              >
+                <option value="">
+                  {!plan
+                    ? PICK_PLAN_FIRST
+                    : routeCards.isLoading
+                      ? 'Loading Route Cards…'
+                      : noRouteCard
+                        ? 'No Route Card for this item'
+                        : 'Select Route Card…'}
+                </option>
+                {/* The box holds the code only. "IN-RC-00012 · Route Card Rev 2"
+                    needs ~175px and the quarter cell gives the box 167px at
+                    1440 wide, so the revision was the part cut off; the bare
+                    "Rev" that would fit is not a name NAMING.md allows. The
+                    revision is in the box's hover text and in the operations
+                    panel's header right below. */}
+                {rcItems.map((rc) => (
+                  <option
+                    key={rc.id}
+                    value={rc.id}
+                    title={`${rc.code} · Route Card Rev ${rc.currentRevision}`}
+                  >
+                    {rc.code}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </Cluster>
+
+          {/* How much — Plan Qty − Covered = Pending, then the PRO Qty this
+              order is for, which starts at Pending and cannot go over it
+              (ADR-182; the server re-checks under the plan's row lock, so two
+              people ordering at once cannot both fit). `PRO Qty`, not a bare
+              `Order Qty` — it sits beside Plan Qty (NAMING.md). */}
+          <Cluster name="Quantity">
+            <ClusterFact
+              num
+              label="Plan Qty"
+              empty={!plan}
+              title="What the plan covers"
+              value={plan ? plan.planQty : '—'}
+            />
+            <ClusterFact
+              num
+              label="Covered"
+              empty={!plan}
+              title="Already on earlier Production Orders"
+              value={plan ? plan.coveredQty : '—'}
+            />
+            <ClusterFact
+              num
+              label="Pending"
+              empty={!plan}
+              title="Plan Qty − Covered: the most this order can be for"
+              value={plan ? plan.pendingQty : '—'}
+            />
+            <FormField
+              label="PRO Qty"
+              required
+              htmlFor="po-order-qty"
+              className="po-in cl-lead"
+              error={orderQtyError ?? undefined}
             >
               <input
-                id="po-rm-available"
-                type="checkbox"
-                checked={rawMaterialAvailable}
-                disabled={planHasNoRawMaterial}
-                title={planHasNoRawMaterial ? NO_PLAN_RAW_MATERIAL : undefined}
-                onChange={(e) => setRawMaterialAvailable(e.target.checked)}
+                id="po-order-qty"
+                type="number"
+                className="innovic-input cl-num"
+                value={orderQtyText}
+                min={1}
+                max={pendingQty || undefined}
+                step={1}
+                disabled={!plan || pendingQty === 0}
+                title={plan ? `1 to ${pendingQty} — no more than Pending` : undefined}
+                onChange={(e) => setOrderQtyText(e.target.value)}
+                placeholder={plan ? String(pendingQty) : PICK_PLAN_FIRST}
               />
-              The material for this order is in the store
-            </label>
-            {/* Said here, beside the control it blocks, rather than left as an
-                empty RM Grade / RM Size in the recap above. */}
-            {planHasNoRawMaterial ? (
-              <div style={{ marginTop: 6 }}>
-                <Banner tone="warn" role="alert" flush>
-                  ⚠ {NO_PLAN_RAW_MATERIAL}
-                </Banner>
-              </div>
-            ) : null}
-          </div>
+            </FormField>
+          </Cluster>
 
-          <div className="form-grp f-full">
-            <label className="form-label" htmlFor="po-remarks">
-              Remarks
-            </label>
-            <input
-              id="po-remarks"
-              className="innovic-input"
-              value={remarks}
-              maxLength={500}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Optional"
+          {/* The dates in the order they happen: the plan's window, this
+              order's own target, then the date the CUSTOMER expects it (the
+              SO / JWSO line's due date). PRO Target Date starts at the plan's
+              Customer Dispatch Date. */}
+          <Cluster name="Schedule">
+            <ClusterFact
+              num
+              label="Plan Start Date"
+              empty={!plan?.plannedStartDate}
+              value={fmtDate(plan?.plannedStartDate)}
             />
-          </div>
-        </div>
-      </Panel>
+            <ClusterFact
+              num
+              label="Plan End Date"
+              empty={!plan?.plannedEndDate}
+              value={fmtDate(plan?.plannedEndDate)}
+            />
+            <FormField label="PRO Target Date" required htmlFor="po-target-date" className="po-in">
+              <input
+                id="po-target-date"
+                type="date"
+                className="innovic-input"
+                value={targetDate}
+                disabled={off}
+                title={off ? PICK_PLAN_FIRST : undefined}
+                onChange={(e) => setTargetDate(e.target.value)}
+                required
+              />
+            </FormField>
+            <ClusterFact
+              num
+              label="Customer Dispatch Date"
+              empty={!plan?.lineDueDate}
+              value={fmtDate(plan?.lineDueDate)}
+            />
+          </Cluster>
+
+          {/* Material — what the Plan says (the PLAN is the only source of raw
+              material for this order), then the shop floor's own answers. */}
+          <Cluster name="Material">
+            <ClusterFact
+              num
+              label="RM Item"
+              empty={!rmItem}
+              title={rmItem ?? undefined}
+              value={rmItem ?? '—'}
+            />
+            <ClusterFact
+              className="po-create-one-line"
+              label="RM Grade"
+              empty={!rmGrade}
+              title={rmGrade ?? undefined}
+              value={rmGrade ?? '—'}
+            />
+            <ClusterFact
+              className="po-create-one-line"
+              label="RM Size"
+              empty={!rmSize}
+              title={rmSize ?? undefined}
+              value={rmSize ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="RM Qty / piece"
+              empty={rmQtyPerPiece == null}
+              value={rmQtyPerPiece ?? '—'}
+            />
+          </Cluster>
+          <Cluster name={null}>
+            {/* ADR-182 — what the store really had / really cut, beside the
+                plan's master-picked RM Size. Optional free text. */}
+            <FormField label="Actual Size" htmlFor="po-actual-size" className="po-in">
+              <input
+                id="po-actual-size"
+                className="innovic-input"
+                value={actualSize}
+                maxLength={120}
+                disabled={off}
+                placeholder={off ? PICK_PLAN_FIRST : undefined}
+                onChange={(e) => setActualSize(e.target.value)}
+              />
+            </FormField>
+            {/* ADR-182 — the shop floor's confirmation that the material is on
+                hand. The server refuses a false value in the words Save's
+                tooltip already gives. */}
+            <FormField
+              label="Raw Material Available"
+              required
+              htmlFor="po-rm-available"
+              className="po-in"
+            >
+              <label
+                className="check-row po-create-tick"
+                title={off ? PICK_PLAN_FIRST : rmTickTitle}
+                aria-disabled={off || planHasNoRawMaterial ? true : undefined}
+              >
+                <input
+                  id="po-rm-available"
+                  type="checkbox"
+                  checked={rawMaterialAvailable}
+                  disabled={off || planHasNoRawMaterial}
+                  title={off ? PICK_PLAN_FIRST : rmTickTitle}
+                  aria-label={IN_STORE_SENTENCE}
+                  onChange={(e) => setRawMaterialAvailable(e.target.checked)}
+                />
+                <span>In store</span>
+              </label>
+            </FormField>
+            <FormField label="Remarks" htmlFor="po-remarks" className="po-in cl-span-2">
+              <input
+                id="po-remarks"
+                className="innovic-input"
+                value={remarks}
+                maxLength={500}
+                disabled={off}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder={off ? PICK_PLAN_FIRST : 'Optional'}
+              />
+            </FormField>
+          </Cluster>
+        </ClusterGrid>
+      </DetailHeader>
+
+      {/* The one block that takes the height left: the operations the Job
+          Card will copy. Read-only; its table is the page's only scrollbar. */}
+      <PoCreateOpsPanel
+        hasPlan={Boolean(plan)}
+        routeCard={routeCard}
+        noRouteCard={noRouteCard}
+        routeCardsLoading={Boolean(planItemId) && routeCards.isLoading}
+        planRemarks={plan?.remarks ?? null}
+      />
     </form>
-  );
-}
-
-/** Plan Type read off the route card — the same words and colours the Route
- *  Card detail uses (route-cards/routes/detail.tsx). Read-only: it is never
- *  edited from here. */
-function PlanTypeChip({ planType }: { planType: PlanType }): React.JSX.Element {
-  const label =
-    planType === 'full_outsource'
-      ? 'Full Outsource'
-      : planType === 'direct_purchase'
-        ? 'Buy'
-        : planType === 'assembly'
-          ? 'Assembly'
-          : 'Manufacture';
-  const color =
-    planType === 'full_outsource'
-      ? 'var(--purple)'
-      : planType === 'direct_purchase'
-        ? 'var(--green)'
-        : 'var(--cyan)';
-  return (
-    <span
-      className="fw-700"
-      title="Plan Type (from the route card)"
-      style={{
-        display: 'inline-block',
-        fontSize: 11,
-        padding: '1px 6px',
-        borderRadius: 4,
-        color,
-        border: `1px solid ${color}`,
-        verticalAlign: 'middle',
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-/** Read-only recap of the picked plan — what the JC will be built for. */
-function PlanSummary({ plan }: { plan: PlanPickerItem }): React.JSX.Element {
-  const so = plan.soCodeText
-    ? `${soNoWithInternal(plan.soCodeText, plan.soInternalNo)}${plan.lineNo ? ` · Ln ${plan.lineNo}` : ''}`
-    : '—';
-  return (
-    <div
-      style={{
-        padding: '8px 12px',
-        background: 'var(--bg3)',
-        border: '1px solid var(--border)',
-        borderRadius: 6,
-      }}
-    >
-      <div className="form-grid form-grid-4" style={{ gap: 8 }}>
-        {/* POL — the line number printed on the CUSTOMER's own purchase order.
-            NOT the "Ln n" in SO / JWSO below, which is OUR line number. */}
-        <Fact label="POL" value={plan.clientPoLineNo ?? '—'} mono />
-        {/* CODE/REV (ADR-177); bare code when the plan's line has no revision. */}
-        <Fact
-          label="Item Code"
-          value={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
-          mono
-        />
-        <Fact label="Item Name" value={plan.itemName ?? plan.itemNameText ?? '—'} />
-        {/* ADR-182 — Plan Qty and how much of it earlier Production Orders
-            already cover. `Pending` is what this order may still be for
-            (NAMING.md: never "Remaining" or "Balance"). */}
-        <Fact label="Plan Qty" value={String(plan.planQty)} mono />
-        <Fact label="Covered" value={String(plan.coveredQty)} mono />
-        <Fact label="Pending" value={String(plan.pendingQty)} mono />
-        <Fact label="SO / JWSO No." value={so} mono />
-        {/* The customer's wanted date — the SO / JWSO line's Due Date, read-only
-            here; the PRO Target Date above is this order's own date. */}
-        <Fact label="Customer Dispatch Date" value={fmtDate(plan.lineDueDate)} mono />
-        <Fact label="Planned Start Date" value={fmtDate(plan.plannedStartDate)} mono />
-        <Fact label="Planned End Date" value={fmtDate(plan.plannedEndDate)} mono />
-        <Fact label="RM Grade" value={plan.rawMaterialGradeText ?? '—'} />
-        <Fact label="RM Size" value={plan.rawMaterialSizeText ?? '—'} />
-        {plan.remarks ? (
-          <div className="form-full">
-            <Fact label="Plan Remarks" value={plan.remarks} />
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div>
-      <div className="text3" style={{ fontSize: 11 }}>
-        {label}
-      </div>
-      <div
-        className={mono ? 'mono fw-700' : 'fw-700'}
-        style={{ fontSize: 12, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}
-        title={value}
-      >
-        {value}
-      </div>
-    </div>
   );
 }
