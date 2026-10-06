@@ -1,0 +1,265 @@
+/* New Job Card — the create form on the Job Card DETAIL page's design
+   (jobcard-detail-mockup.html frame 1; jc-detail.css). The page root carries
+   `page-fill jc-detail jcc`: jc-detail.css gives it the detail page's fit
+   (height 100%, the filling panel's six-row floor), its picture frame, its
+   weighted four-column grid and its fact styles; this file adds only what a
+   FORM needs on top — controls in the cells, the identity-line pickers, the
+   tab-strip actions and the operations editor. Scoped to `.jcc`, tokens only. */
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.jcc .jcc-next {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+/* Why Save is off — one line on Save's row; the full text is on hover. Keeps
+   `.form-error`, the class the e2e specs read refusals by. */
+.jcc .jcc-why {
+  margin: 0;
+  min-width: 0;
+  max-width: min(560px, 38vw);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Identity line: JWSO No. ★ · Ln · POL · customer · Item Code ★ · name ── */
+.jcc .cl-ident {
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+}
+.jcc .jcc-id-lb {
+  color: var(--text3);
+  white-space: nowrap;
+}
+.jcc .jcc-id-src {
+  width: 300px;
+  flex: none;
+}
+.jcc .jcc-id-item {
+  width: 200px;
+  flex: none;
+}
+.jcc .jcc-id-quiet {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  white-space: nowrap;
+}
+/* The JWSO-only rule, at the line's right end; gives way first. */
+.jcc .jcc-id-note {
+  margin-left: auto;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--amber2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Cells: a fact or a control, each one control tall, on one line ──────── */
+.jcc .cl-grid .cl-fact {
+  min-height: var(--control-h);
+  align-items: center;
+}
+/* An input in a cell: the detail page's fact with the value turned into a box
+   — label left, control right, hairline before the cell. On a narrow screen
+   the control drops under its label rather than being squeezed to nothing. */
+.jcc .cl-grid > .cl-row > .form-grp.jcc-in {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-1);
+  min-height: var(--control-h);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+}
+.jcc .cl-grid > .cl-row > .cl-gut + .form-grp.jcc-in {
+  padding-left: 0;
+  border-left: none;
+}
+.jcc .form-grp.jcc-in > .form-label {
+  flex: none;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text3);
+}
+/* `:where()` keeps this rule as weak as `.jcc .form-grp.jcc-in > x`, so the
+   date and capped rules below can still win. */
+.jcc .form-grp.jcc-in:not(.jcc-drawing) > :where(:not(.form-label, .form-help, .form-error)) {
+  flex: 1 1 0;
+  min-width: 96px;
+}
+/* A date needs room for dd-mm-yyyy and the calendar button. */
+.jcc .form-grp.jcc-in > .innovic-input[type='date'] {
+  min-width: 128px;
+}
+/* A short control (Order Qty, Priority) keeps its capped width and sits at
+   the right of its cell, under the view's values. */
+.jcc .form-grp.jcc-in > .cl-cap {
+  flex: 0 1 120px;
+  margin-left: auto;
+}
+
+/* Drawing: label · Attach · file name · ✕ — the name gives way. */
+.jcc .jcc-drawing > .jcc-attach {
+  flex: none;
+  cursor: pointer;
+}
+.jcc .jcc-drawing > .jcc-file {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jcc .jcc-drawing > .btn-icon {
+  flex: none;
+}
+
+/* Remarks: one row tall like an input, but a textarea (Enter = new line).
+   The user can drag it taller. */
+.jcc textarea.jcc-one-row {
+  height: var(--control-h);
+  min-height: var(--control-h);
+  resize: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* ── Tab strip: each tab's actions at its right end (as the detail page puts
+   "Current Op" there). Clear of the two tabs; the notes give way first. ──── */
+.jcc .jcc-tabs-act {
+  position: absolute;
+  top: 0;
+  right: var(--sp-2);
+  bottom: var(--panel-gap);
+  left: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.jcc .jcc-tabs-act > .btn {
+  flex: none;
+}
+.jcc .jcc-tabs-note {
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jcc .jcc-tabs-note b {
+  color: var(--text);
+}
+.jcc .jcc-tabs-count {
+  flex: none;
+}
+
+/* ── Operations editor ───────────────────────────────────────────────────── */
+/* Below this the fixed columns would squeeze Operation to nothing (measured at
+   1024px); the table scrolls sideways inside its .tbl-wrap instead. */
+.jcc .jcc-ops {
+  min-width: 1160px;
+}
+/* Row kinds, as on the detail page's table: QC light green, outsource light
+   purple. */
+.jcc .jcc-ops tr.jcc-op-qc > td {
+  background: var(--green3);
+}
+.jcc .jcc-ops tr.jcc-op-osp > td {
+  background: var(--purple3);
+}
+.jcc .jcc-ops .jcc-op-no {
+  color: var(--text3);
+}
+.jcc .jcc-ops tr.jcc-op-qc .jcc-op-no {
+  color: var(--green);
+}
+.jcc .jcc-ops tr.jcc-op-osp .jcc-op-no {
+  color: var(--purple);
+}
+.jcc .jcc-osp-badge {
+  color: var(--purple);
+  background: var(--purple3);
+  border: 1px solid var(--purple);
+}
+.jcc .jcc-op-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.jcc .jcc-op-name > .innovic-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.jcc .jcc-op-name > .tag {
+  flex: none;
+}
+.jcc .jcc-qc-tag {
+  background: var(--green3);
+  color: var(--green2);
+}
+.jcc .jcc-osp-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text3);
+  white-space: nowrap;
+}
+.jcc .jcc-osp-tick.is-on {
+  color: var(--amber);
+}
+.jcc .jcc-op-act {
+  white-space: nowrap;
+}
+.jcc .jcc-op-act > .btn + .btn {
+  margin-left: 2px;
+}
+/* The ▸ More drawer: one line — Tool No. then Tool Details filling the rest. */
+.jcc .jcc-op-drw-in {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.jcc .jcc-op-drw .form-grp {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.jcc .jcc-op-drw .form-grp.jcc-tool-no {
+  flex: 0 1 300px;
+}
+.jcc .jcc-op-drw .form-grp.jcc-tool-det {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.jcc .jcc-op-drw .form-label {
+  flex: none;
+  white-space: nowrap;
+  color: var(--text3);
+  font-weight: 400;
+}
+.jcc .jcc-op-drw .innovic-input {
+  flex: 1 1 0;
+  min-width: 0;
+  /* Free text reads left to right. */
+  text-align: left;
+}
+
+/* ── QC Documents ────────────────────────────────────────────────────────── */
+.jcc .jcc-doc-file {
+  cursor: pointer;
+  font-size: var(--fs-xs);
+}

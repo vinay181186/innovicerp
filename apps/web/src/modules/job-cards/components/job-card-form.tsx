@@ -1,34 +1,49 @@
-// Job Card create/edit form.
+// New Job Card — the CREATE form (/job-cards/new). Its only caller is
+// routes/new.tsx; editing a saved card is the JC Status page in edit mode
+// (routes/edit.tsx → jc-status-content.tsx), so the old `model` / edit branch
+// of this form had no caller and is gone.
 //
-// Legacy counterpart: `jcModalBody(jc)` L5943 — the ONE body builder both entry
-// points pass to showModalLg: addJC L6025 calls `jcModalBody(null)`, editJC
-// L6086 calls `jcModalBody(jc)`. Both pass the explicit saveLabel 'Save Job
-// Card', so showModalLg L28042-44 renders Cancel (.btn-ghost) + .btn-success
-// with the `&#10003;` prefix → "✓ Save Job Card". jcModalOpsHtml L5868 and
-// jcModalDocsHtml L5809 are delegates called from inside jcModalBody (L6012 /
-// L6016), not counterparts. renderJobCards L5739 is the LIST, not this form.
+// 2026-10-06 layout: the Job Card DETAIL page's design, grid and sequence
+// (jobcard-detail-mockup.html, frame 1; jc-status-view.tsx + jc-fact-block.tsx)
+// with controls where the detail page shows values — screen-layout-method
+// rule 8: Create, Edit and View share one grid and one sequence. Fits one
+// 1440×810 screen with no page scroll (`page-fill` + one <Panel fill>).
 //
-// Legacy section order: JOB CARD DETAILS → DRAWING ATTACHMENT → OPERATION
-// ROUTING → QC DOCUMENTS. Mirrored below.
+//   header     ← Back · next JC No. · New Job Card … why Save is off · Cancel ·
+//              Save Job Card
+//   banners    upload / server error · ops copied for another item · the
+//              "no QC directly after OSP" routing hint
+//   facts      picture frame (JcItemThumb: the item's photo | the drawing
+//              attached here) + identity line (JWSO No. ★ picker · Ln · POL ·
+//              customer · Item Code ★ picker · item name) + ClusterGrid:
+//     ORDER    Production Order · Plan No. · Route Card · Drawing (attach)
+//              JC Date · Due Date · Customer Dispatch Date · Priority
+//     QUANTITY Order Qty ★ · SO Qty · JC Qty · Available (the JWSO line)
+//     MATERIAL RM Item · RM Qty per piece · RM Grade · RM Size
+//     NOTES    Remarks
+//   panel      ONE tab strip + ONE filling panel, as on the detail page:
+//              Operations (jc-create-ops-table.tsx) · QC Documents
+//              (jc-create-docs-table.tsx); each tab's actions at the strip's
+//              right end.
 //
-// Started ops (hasStarted) are locked from removal/retype, mirroring
-// _hasOpStarted L6151.
+// Validation, payload, save, route-card seeding and every message are the
+// form's as before: buildJcWriteInput (lib/build-jc-write-input.ts) runs on
+// every render for Save's reason, and again on Save exactly as before.
+//
+// Legacy counterpart: addJC L6020 → jcModalBody(null) L5943.
 
 import type {
   DefaultRouteOpsResponse,
   JcRouteCardWriteBack,
-  JobCardEditModel,
   JobCardSourceOption,
   ListVendorsQuery,
   ListVendorsResponse,
 } from '@innovic/shared';
-import { fmtOpSrNo } from '@innovic/shared';
 import { useQueries } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api';
-import { isStagedResult } from '@/modules/document-edits/api';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
@@ -40,67 +55,44 @@ import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
-  RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner, Modal } from '@/ui/feedback';
-import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
+import {
+  Cluster,
+  ClusterFact,
+  ClusterGrid,
+  DocIdent,
+  FormField,
+  IdentSep,
+  SearchableSelect,
+} from '@/ui/forms';
+import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
+import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode } from '../api';
 import {
   buildJcWriteInput,
   grandfatheredOspQcPairs,
   opsSequenceError,
 } from '../lib/build-jc-write-input';
-import { JcOpEditCard } from './jc-op-edit-card';
-import { OutsourceBalanceModal } from './outsource-balance-modal';
+import { JcCreateDocsTable, type JcCreateDoc } from './jc-create-docs-table';
+import { JcCreateOpsTable, type JcCreateOp } from './jc-create-ops-table';
+import { JcItemThumb } from './jc-item-thumb';
+import type { JcDrawingRef } from './jc-view-summary';
+import './jc-detail.css';
+import './jc-create.css';
 
-const QC_DOC_TYPES = [
-  'MIR',
-  'MCR',
-  'Inspection Report Protocol',
-  'Inspection Report',
-  'Drawing',
-  'Certificate',
-  'Other',
-];
-
-// The local OP_STATUS copy that used to live here is gone: the op card reads
-// the shared map (lib/jc-op-labels.ts), so there is no second copy to drift.
-
-interface FormOp {
-  id?: string;
-  /** DISPLAY-ONLY, never saved: the Machine GROUP that narrows this row's machine
-   *  list (SO Planning / Route Card parity). buildJcWriteInput ignores it. */
-  machineGroupId: string | null;
-  machineCode: string;
-  operation: string;
-  opType: 'process' | 'qc' | 'outsource';
-  cycleTimeMin: number;
-  program: string;
-  toolNo: string;
-  toolDetails: string;
-  qcRequired: boolean;
-  outsourceVendorCode: string;
-  outsourceCost: number | null;
-  hasStarted: boolean;
-  /** Remaining qty cleared for this op (from the edit model). Drives the
-   *  "Outsource balance" action for a STARTED in-house process op. */
-  available: number;
-  /** Read-only per-op live progress (from the edit model / v_jc_op_status),
-   *  mirroring the JC Status page. Display-only — never sent on save. */
-  inputAvail: number;
-  completedQty: number;
-  qcAcceptedQty: number;
-  computedStatus: string;
-}
-
+type FormOp = JcCreateOp;
 type RouteOp = DefaultRouteOpsResponse['ops'][number];
 
-/** A Route Card's ops as fresh (never-started) Job Card form rows. Only a
- *  process op carries a machine: OSP has none (T32b) and a QC op parks on the
- *  QC lane, exactly as + Add QC Op / + Add OSP Op do. */
+// Stable keys for op rows (display-only, never saved).
+let opRowSeq = 0;
+const nextRowKey = (): string => `op-${++opRowSeq}`;
+
+/** A Route Card's ops as fresh Job Card form rows. Only a process op carries a
+ *  machine: OSP has none (T32b) and a QC op parks on the QC lane, exactly as
+ *  + Add QC Op / + Add Outsource Op do. */
 function routeOpsToFormOps(
   routeOps: readonly RouteOp[],
   machines: ReadonlyArray<{ id: string; code: string }>,
@@ -111,6 +103,7 @@ function routeOpsToFormOps(
       (op.machineId ? (machines.find((m) => m.id === op.machineId)?.code ?? '') : '');
     const opType = op.opType ?? 'process';
     return {
+      rowKey: nextRowKey(),
       machineGroupId: null,
       machineCode: opType === 'process' ? machineCode : '',
       operation: op.operation,
@@ -122,18 +115,13 @@ function routeOpsToFormOps(
       qcRequired: op.qcRequired ?? opType === 'qc',
       outsourceVendorCode: op.outsourceVendorText ?? '',
       outsourceCost: op.outsourceCost ?? 0,
-      hasStarted: false,
-      available: 0,
-      inputAvail: 0,
-      completedQty: 0,
-      qcAcceptedQty: 0,
-      computedStatus: 'waiting',
     };
   });
 }
 
 /** True when the rows are still the seeded ones, field for field. The machine
- *  group is ignored — it is display-only and back-filled after seeding. */
+ *  group (display-only, back-filled after seeding) and the row key are
+ *  ignored. */
 function sameSeedOps(a: readonly FormOp[], b: readonly FormOp[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((x, i) => {
@@ -153,15 +141,9 @@ function sameSeedOps(a: readonly FormOp[], b: readonly FormOp[]): boolean {
   });
 }
 
-interface FormDoc {
-  id?: string;
-  docType: string;
-  fileName: string;
-  storagePath: string;
-  fileSize: number | null;
-}
-
 const today = (): string => todayLocal();
+const DASH = '—';
+const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 
 function sourceLabel(o: JobCardSourceOption): string {
   const tag = o.type === 'jw' ? '[JWSO]' : '[SO]';
@@ -170,17 +152,20 @@ function sourceLabel(o: JobCardSourceOption): string {
   return `${tag} ${soNoWithInternal(o.code, o.internalSoNo)}${ln} — ${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`;
 }
 
+/** The quiet mono figure after a value ("Route Card Rev 3", "Required 12"). */
+function Sub({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <span className="jc-sub">{children}</span>;
+}
+
+type TabKey = 'ops' | 'docs';
+
 export function JobCardForm({
-  model,
   initialSourceLineId,
 }: {
-  model?: JobCardEditModel;
-  // Create mode only: pre-select this SO/JW source line (deep-linked from
-  // SO Status Review's "Create Job Card"). Cascades item/qty/due once the
-  // source options load. Ignored in edit mode (model wins).
+  // Pre-select this SO/JW source line (deep-linked from SO Status Review's
+  // "Create Job Card"). Cascades item/qty/due once the source options load.
   initialSourceLineId?: string | undefined;
 }): React.JSX.Element {
-  const isEdit = Boolean(model);
   const navigate = useNavigate();
   const goBack = useCallback(() => void navigate({ to: '/job-cards' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -193,8 +178,7 @@ export function JobCardForm({
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
   // OSP vendor picker searches the SERVER (same wiring as SO Planning's "+ Add
   // OSP Op"): the endpoint caps `limit` at 200, and the vendor master runs past
-  // that, so a static first page left every later vendor unreachable ("No
-  // matches" for VND-959).
+  // that, so a static first page left every later vendor unreachable.
   const [vendorSearch, setVendorSearch] = useState('');
   // Active vendors only, filtered by the server (A10). An op's already-linked
   // vendor that is now disabled is still resolved by code (missingVendorCodes
@@ -205,14 +189,12 @@ export function JobCardForm({
     limit: 200,
     offset: 0,
   });
-  // Machine groups exist only to label and narrow the machine picker; the id →
-  // code map lets a row show 'VMC' for the group its machine belongs to.
+  // Machine groups exist only to label and narrow the machine picker.
   const { data: machineGroupsData } = useMachineGroupsList({ limit: 200, offset: 0 });
-  const machines = machinesData?.machines ?? [];
+  const machines = useMemo(() => machinesData?.machines ?? [], [machinesData]);
   // Every vendor row this form has seen (first page + each search page), by
-  // code. A picked vendor keeps its "CODE — Name" label in the op card even
-  // after the search term moves on to another row's picker and that vendor
-  // drops out of the current page.
+  // code, so a picked vendor keeps its "CODE — Name" label after the search
+  // term moves on to another row's picker.
   const [knownVendors, setKnownVendors] = useState<
     Map<string, { id: string; code: string; name: string }>
   >(() => new Map());
@@ -234,64 +216,36 @@ export function JobCardForm({
     [machineGroupsData],
   );
 
-  // ISSUE-170: source-options lists only OPEN lines, so a JC linked to a CLOSED
-  // order would lose its own source from the datalist/label/banner. The edit
-  // model resolves that linked line (open or closed) as `linkedSourceOption`;
-  // unshift it (legacy editJC L5947-50) when it isn't already present.
-  const allSources = useMemo(() => {
-    const linked = model?.linkedSourceOption ?? null;
-    if (!linked) return sourceOptions;
-    if (sourceOptions.some((o) => o.lineId === linked.lineId)) return sourceOptions;
-    return [linked, ...sourceOptions];
-  }, [sourceOptions, model?.linkedSourceOption]);
-
   // Governance: direct SO/item Job Cards are disabled. Manual creation is
-  // JW-only — SO items go through Planning (execute a plan). Edit mode keeps
-  // whatever source the JC already has (incl. legacy SO-linked JCs).
-  const availableSources = isEdit ? allSources : allSources.filter((o) => o.type === 'jw');
+  // JW-only — SO items go through Planning (execute a plan).
+  const availableSources = useMemo(
+    () => sourceOptions.filter((o) => o.type === 'jw'),
+    [sourceOptions],
+  );
 
   const create = useCreateJobCard();
-  const update = useUpdateJobCard(model?.id ?? '');
-  // Preview the next IN-JC-YY-##### on create so the JC No. is visible before
-  // save (server still assigns authoritatively). Not fetched in edit mode.
-  const { data: nextJc } = useNextJcCode(!isEdit);
+  // Preview the next IN-JC-YY-##### so the JC No. is visible before save
+  // (the server still assigns it authoritatively).
+  const { data: nextJc } = useNextJcCode(true);
 
   // ── Header state ──
-  const initialSource = model?.sourceSoLineId
-    ? allSources.find((o) => o.lineId === model.sourceSoLineId)
-    : model?.sourceJwLineId
-      ? allSources.find((o) => o.lineId === model.sourceJwLineId)
-      : undefined;
-  const [jcDate, setJcDate] = useState(model?.jcDate ?? today());
-  const [sourceLineId, setSourceLineId] = useState<string | null>(
-    model?.sourceSoLineId ?? model?.sourceJwLineId ?? null,
-  );
-  const [sourceType, setSourceType] = useState<'so' | 'jw' | null>(
-    model?.sourceSoLineId ? 'so' : model?.sourceJwLineId ? 'jw' : null,
-  );
-  const [sourceText, setSourceText] = useState(initialSource ? sourceLabel(initialSource) : '');
-  // ISSUE-169: `sourceText` above initialises from `initialSource`, which reads
-  // `sourceOptions` — an empty array on the first render (the query hasn't
-  // resolved). The initialiser runs once and never re-syncs, so the linked
-  // SO/WO/JW label stays blank on every edit even though the balance banner
-  // (driven by the inline `selectedSource`, which recomputes each render) shows
-  // the order. This flag lets an effect below sync the display value once the
-  // linked option resolves, and stops once the user edits the field.
-  const [sourceTextSynced, setSourceTextSynced] = useState(false);
-  const [itemCode, setItemCode] = useState(model?.itemCode ?? '');
+  const [jcDate, setJcDate] = useState(today());
+  const [sourceLineId, setSourceLineId] = useState<string | null>(null);
+  const [sourceType, setSourceType] = useState<'so' | 'jw' | null>(null);
+  const [sourceText, setSourceText] = useState('');
+  const [itemCode, setItemCode] = useState('');
   // Master id of the picked item (null until picked / resolved from the code).
   const [itemId, setItemId] = useState<string | null>(null);
-  // Item is LOCKED to the JWSO line's item on create (2026-09-28 form audit):
-  // a Job Card on a JWSO line makes that line's item, never another one typed
-  // over it. Locked only when the line carries a MASTER item (itemId set) — a
-  // legacy text-only line keeps the picker editable, the same rule the server
-  // applies (createJobCard -> assertItemIsJwLineItem checks only line.item_id).
-  const lineSource = !isEdit ? allSources.find((o) => o.lineId === sourceLineId) : undefined;
+  // Item is LOCKED to the JWSO line's item (2026-09-28 form audit): a Job Card
+  // on a JWSO line makes that line's item, never another one typed over it.
+  // Locked only when the line carries a MASTER item (itemId set) — a legacy
+  // text-only line keeps the picker editable, the same rule the server applies
+  // (createJobCard -> assertItemIsJwLineItem checks only line.item_id).
+  const lineSource = sourceOptions.find((o) => o.lineId === sourceLineId);
   const lineItemCode = lineSource?.itemId ? (lineSource.itemCode ?? null) : null;
   const itemLocked = Boolean(lineItemCode);
-  // The shared master-only item picker, searching the SERVER (the old datalist
-  // held only the first 500 items, so item 501+ could not be picked). While
-  // locked, the page is fetched for the line's code so its id resolves.
+  // The shared master-only item picker, searching the SERVER. While locked,
+  // the page is fetched for the line's code so its id resolves.
   const [itemSearch, setItemSearch] = useState('');
   const itemQuerySearch = itemLocked ? (lineItemCode ?? '') : itemSearch.trim();
   const { data: itemsData, isFetching: itemsFetching } = useItemsList({
@@ -299,34 +253,27 @@ export function JobCardForm({
     limit: 50,
     offset: 0,
   });
-  const items = itemsData?.items ?? [];
+  const items = useMemo(() => itemsData?.items ?? [], [itemsData]);
   const itemIdByCode =
     items.find((i) => i.code.toUpperCase() === itemCode.trim().toUpperCase())?.id ?? null;
-  const [orderQty, setOrderQty] = useState<string>(model ? String(model.orderQty) : '');
-  const [priority, setPriority] = useState<'normal' | 'high'>(model?.priority ?? 'normal');
-  const [dueDate, setDueDate] = useState(model?.dueDate ?? '');
-  const [drawingFilePath, setDrawingFilePath] = useState<string | null>(
-    model?.drawingFilePath ?? null,
-  );
-  const [remarks, setRemarks] = useState(model?.remarks ?? '');
-  // Raw material — both optional and independent. A JC created from a plan
-  // arrives with these already filled from the plan; a hand-raised JC can pick
-  // them here. Id + text snapshot are stored together.
-  const [rmGradeId, setRmGradeId] = useState<string | null>(model?.rawMaterialGradeId ?? null);
-  const [rmGradeText, setRmGradeText] = useState<string | null>(
-    model?.rawMaterialGradeText ?? null,
-  );
-  const [rmSizeId, setRmSizeId] = useState<string | null>(model?.rawMaterialSizeId ?? null);
-  const [rmSizeText, setRmSizeText] = useState<string | null>(model?.rawMaterialSizeText ?? null);
+  const [orderQty, setOrderQty] = useState<string>('');
+  const [priority, setPriority] = useState<'normal' | 'high'>('normal');
+  const [dueDate, setDueDate] = useState('');
+  const [drawingFilePath, setDrawingFilePath] = useState<string | null>(null);
+  const [remarks, setRemarks] = useState('');
+  // Raw material — both optional and independent. Id + text snapshot are
+  // stored together.
+  const [rmGradeId, setRmGradeId] = useState<string | null>(null);
+  const [rmGradeText, setRmGradeText] = useState<string | null>(null);
+  const [rmSizeId, setRmSizeId] = useState<string | null>(null);
+  const [rmSizeText, setRmSizeText] = useState<string | null>(null);
   // Downstream inheritance (CLAUDE.md §17): a hand-raised JC (JW path) reads
-  // the raw material off the item's Route Card, exactly as a Plan does — the
-  // route card is the source of truth for what the part is cut from. Create
-  // mode only, and only while a field is still blank, so a manual pick or a
-  // plan-carried value is never overwritten.
-  const pickedItemId = isEdit ? null : (itemId ?? itemIdByCode);
+  // the raw material off the item's Route Card, exactly as a Plan does. Only
+  // while a field is still blank, so a manual pick is never overwritten.
+  const pickedItemId = itemId ?? itemIdByCode;
   const { data: itemRouteDefaults } = useDefaultRouteOps(pickedItemId);
   useEffect(() => {
-    if (isEdit || !itemRouteDefaults) return;
+    if (!itemRouteDefaults) return;
     const d = itemRouteDefaults;
     if (!rmGradeId && !rmGradeText && (d.rawMaterialGradeId || d.rawMaterialGradeText)) {
       setRmGradeId(d.rawMaterialGradeId);
@@ -336,68 +283,77 @@ export function JobCardForm({
       setRmSizeId(d.rawMaterialSizeId);
       setRmSizeText(d.rawMaterialSizeText);
     }
-  }, [isEdit, itemRouteDefaults, rmGradeId, rmGradeText, rmSizeId, rmSizeText]);
+  }, [itemRouteDefaults, rmGradeId, rmGradeText, rmSizeId, rmSizeText]);
   // ADR-193 phase 3a — the RM ITEM pair travels with a hand-raised JC too, so
-  // the store sees its Required. Create only; never sent on edit.
+  // the store sees its Required. Read off the item's Route Card; shown in the
+  // Material row (it was sent without being shown before).
   const rmItemFromRoute =
-    !isEdit && itemRouteDefaults?.rawMaterialItemId && itemRouteDefaults.rmQtyPerPiece != null
+    itemRouteDefaults?.rawMaterialItemId && itemRouteDefaults.rmQtyPerPiece != null
       ? {
           rawMaterialItemId: itemRouteDefaults.rawMaterialItemId,
           rmQtyPerPiece: itemRouteDefaults.rmQtyPerPiece,
         }
       : undefined;
-  const [drawingName, setDrawingName] = useState<string>(model?.drawingFilePath ? 'Attached' : '');
+  const [drawingName, setDrawingName] = useState<string>('');
+  // The drawing attached here, held in the browser for the picture frame: its
+  // thumbnail when it is an image, and "open" shows the user's own file. Not
+  // saved — drawingFilePath (the upload) is what the server gets.
+  const [localDrawing, setLocalDrawing] = useState<{ url: string; isImage: boolean } | null>(null);
+  const localDrawingRef = useRef<string | null>(null);
+  const replaceLocalDrawing = (file: File | null): void => {
+    if (localDrawingRef.current) URL.revokeObjectURL(localDrawingRef.current);
+    if (!file) {
+      localDrawingRef.current = null;
+      setLocalDrawing(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    localDrawingRef.current = url;
+    setLocalDrawing({
+      url,
+      isImage: file.type.startsWith('image/') || IMAGE_RE.test(file.name),
+    });
+  };
+  useEffect(
+    () => () => {
+      if (localDrawingRef.current) URL.revokeObjectURL(localDrawingRef.current);
+    },
+    [],
+  );
 
-  const [ops, setOps] = useState<FormOp[]>(
-    (model?.ops ?? []).map((o) => ({
-      id: o.id,
-      // Group is display-only and not stored on the op — back-filled from the
-      // machine master once the machine list loads (effect below).
-      machineGroupId: null,
-      machineCode: o.machineCode ?? '',
-      operation: o.operation,
-      opType: o.opType,
-      cycleTimeMin: o.cycleTimeMin,
-      program: o.program ?? '',
-      toolNo: o.toolNo ?? '',
-      toolDetails: o.toolDetails ?? '',
-      qcRequired: o.qcRequired,
-      outsourceVendorCode: o.outsourceVendorCode ?? '',
-      outsourceCost: o.outsourceCost,
-      hasStarted: o.hasStarted,
-      available: o.available ?? 0,
-      inputAvail: o.inputAvail ?? 0,
-      completedQty: o.completedQty ?? 0,
-      qcAcceptedQty: o.qcAcceptedQty ?? 0,
-      computedStatus: o.computedStatus ?? 'waiting',
-    })),
-  );
-  const [docs, setDocs] = useState<FormDoc[]>(
-    (model?.qcDocs ?? []).map((d) => ({
-      id: d.id,
-      docType: d.docType,
-      fileName: d.fileName,
-      storagePath: d.storagePath,
-      fileSize: d.fileSize,
-    })),
-  );
+  // The picked item's master row (name + product image) for the identity line
+  // and the picture frame. Kept once seen, so a later search that pages past
+  // the item does not blank it; dropped the moment the code no longer matches.
+  const [itemInfo, setItemInfo] = useState<{
+    id: string;
+    code: string;
+    name: string;
+    imagePath: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!pickedItemId) return;
+    const it = items.find((i) => i.id === pickedItemId);
+    if (!it || itemInfo?.id === it.id) return;
+    setItemInfo({ id: it.id, code: it.code, name: it.name, imagePath: it.imagePath ?? null });
+  }, [items, pickedItemId, itemInfo?.id]);
+  const pickedItem =
+    itemInfo && itemCode.trim() && itemInfo.code.toUpperCase() === itemCode.trim().toUpperCase()
+      ? itemInfo
+      : null;
+
+  const [ops, setOps] = useState<FormOp[]>([]);
+  const [docs, setDocs] = useState<JcCreateDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  // ADR-081 dual-lane: index of the started process op whose remaining qty is
-  // being outsourced from this form (null = modal closed), plus a transient
-  // success note shown after a balance is sent out.
-  const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
-  const [balanceNote, setBalanceNote] = useState<string | null>(null);
   // Shown after a save that also wrote the item's Route Card.
   const [savedNote, setSavedNote] = useState<{
     jcCode: string;
     rc: JcRouteCardWriteBack;
   } | null>(null);
+  const [tab, setTab] = useState<TabKey>('ops');
 
-  // Machine picker: the op card uses the shared SearchableSelect (same control
-  // the JC edit screen already uses), replacing this form's <datalist>, which
-  // collapsed on a pre-filled value (T32a). Only one row's dropdown is open at
-  // a time, so a shared search term is fine.
+  // Machine picker: only one row's dropdown is open at a time, so a shared
+  // search term is fine.
   const [machineSearch, setMachineSearch] = useState('');
   const machineOptions = machines
     .filter(
@@ -412,15 +368,10 @@ export function JobCardForm({
       machineGroupId: m.machineGroupId ?? null,
     }));
 
-  // Edit-page gap (test row R3-07b-1): an op's saved vendor past the first 200
-  // rows (VND-959) is on no page this form has fetched, so knownVendors had no
-  // name for it and the op card showed the bare code until a search happened to
-  // bring it in. The op carries only `outsourceVendorCode` (no name), so look
-  // each still-unknown code up by itself — one small keyed vendors-list query
-  // per code, the same key/fetch shape as useVendorsList so react-query caches
-  // it like any other page — and keep only the exact code match (the search is
-  // a substring match, so "VND-95" would also hit VND-950…). A deleted/unknown
-  // code resolves to nothing and simply stays a bare code.
+  // An op's vendor past the first 200 rows (a Route Card copy can bring one in)
+  // is on no page this form has fetched; look each still-unknown code up by
+  // itself — one small keyed vendors-list query per code, the same key/fetch
+  // shape as useVendorsList — and keep only the exact code match.
   const missingVendorCodes = useMemo(() => {
     const onPage = new Set((vendorsData?.vendors ?? []).map((v) => v.code));
     const codes = new Set<string>();
@@ -469,8 +420,7 @@ export function JobCardForm({
   }, [resolvedOpVendors]);
 
   // Picker rows = the server's page for the current term, plus any op's
-  // already-picked vendor that page does not contain (looked up from the rows
-  // seen so far), so its "CODE — Name" label and highlight survive a re-search.
+  // already-picked vendor that page does not contain.
   const vendorOptions = useMemo(() => {
     const page = (vendorsData?.vendors ?? [])
       .filter((v) => v.isActive)
@@ -488,10 +438,9 @@ export function JobCardForm({
     return page;
   }, [vendorsData, ops, knownVendors]);
 
-  // Source picker rows: the full open-JWSO line list is already in memory, so
-  // the shared SearchableSelect filters it client-side (no server search).
-  // The row reads "[JWSO] CODE / Ln — Customer (Part) [Avail: n]", the same
-  // words the old <datalist> label carried.
+  // Source picker rows: the open-JWSO line list is already in memory, so the
+  // shared SearchableSelect filters it client-side. The row reads
+  // "[JWSO] CODE / Ln — Customer (Part) [Avail: n]".
   const sourcePickerOptions = useMemo(
     () =>
       availableSources.map((o) => {
@@ -507,28 +456,15 @@ export function JobCardForm({
     [availableSources],
   );
   const selectedSource = sourceLineId
-    ? allSources.find((o) => o.lineId === sourceLineId)
+    ? sourceOptions.find((o) => o.lineId === sourceLineId)
     : undefined;
 
-  // ISSUE-169 fix: once the linked source option resolves (edit mode), display
-  // its label in the search field. Runs once, then yields to user edits.
-  useEffect(() => {
-    if (!isEdit || sourceTextSynced || !selectedSource) return;
-    setSourceText(sourceLabel(selectedSource));
-    setSourceTextSynced(true);
-  }, [isEdit, sourceTextSynced, selectedSource]);
-
-  // Ops counter (legacy jcModalOpsHtml L5927). Legacy pluralised "op(s)" off the
-  // TOTAL row count while PRINTING the non-QC count, so 1 process op + 1 QC op
-  // read "1 ops". That deviation is no longer mirrored — the plural now follows
-  // the number actually shown.
+  // Ops counter (legacy jcModalOpsHtml L5927); the plural follows the number
+  // actually shown.
   const opCount = ops.filter((o) => o.opType !== 'qc').length;
   const qcCount = ops.filter((o) => o.opType === 'qc').length;
 
   const onSourceChange = (lineId: string | null): void => {
-    // User is editing the field — freeze the ISSUE-169 auto-sync effect so it
-    // never overwrites what they type.
-    setSourceTextSynced(true);
     const opt = lineId ? availableSources.find((o) => o.lineId === lineId) : undefined;
     setSourceText(opt ? sourceLabel(opt) : '');
     if (!opt) {
@@ -548,11 +484,11 @@ export function JobCardForm({
     if (opt.dueDate && !dueDate) setDueDate(opt.dueDate);
   };
 
-  // One-time prefill when deep-linked with a source line (create mode). Waits
-  // for source options to load, then applies the same cascade as a manual pick.
+  // One-time prefill when deep-linked with a source line. Waits for source
+  // options to load, then applies the same cascade as a manual pick.
   const [appliedInitialSource, setAppliedInitialSource] = useState(false);
   useEffect(() => {
-    if (isEdit || appliedInitialSource || !initialSourceLineId) return;
+    if (appliedInitialSource || !initialSourceLineId) return;
     const opt = sourceOptions.find((o) => o.lineId === initialSourceLineId);
     if (!opt) return;
     setSourceText(sourceLabel(opt));
@@ -565,15 +501,14 @@ export function JobCardForm({
     if (opt.remaining > 0 && !orderQty) setOrderQty(String(opt.remaining));
     if (opt.dueDate && !dueDate) setDueDate(opt.dueDate);
     setAppliedInitialSource(true);
-  }, [isEdit, appliedInitialSource, initialSourceLineId, sourceOptions, orderQty, dueDate]);
+  }, [appliedInitialSource, initialSourceLineId, sourceOptions, orderQty, dueDate]);
 
   const setOp = (i: number, patch: Partial<FormOp>): void => {
     setOps((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
   };
 
   // Picking a machine that carries a group in the master fills the Group box
-  // when it is still empty — the same seeding SO Planning / Route Card do — so a
-  // card opened later reads its group, not a bare machine.
+  // when it is still empty — the same seeding SO Planning / Route Card do.
   const onOpMachineChange = (i: number, code: string): void => {
     const match = machines.find((m) => m.code.toUpperCase() === code.trim().toUpperCase());
     const current = ops[i];
@@ -586,8 +521,8 @@ export function JobCardForm({
   };
 
   // Picking a group narrows the machine list for that row. A machine already in
-  // the box that is NOT in the new group is cleared, so the row cannot read
-  // "VMC group, running a lathe" — only cleared when the mismatch is PROVEN.
+  // the box that is NOT in the new group is cleared — only when the mismatch is
+  // PROVEN.
   const onOpGroupChange = (i: number, groupId: string | null): void => {
     const current = ops[i];
     const machine = current?.machineCode
@@ -600,9 +535,9 @@ export function JobCardForm({
     });
   };
 
-  // Group is display-only and not stored, so a JC opened for editing has every
-  // row's group empty even though its machine belongs to one. Read it back off
-  // the master once the machine list is in, for rows with a machine but no group.
+  // Group is display-only and not stored, so rows seeded from a Route Card
+  // arrive with their group empty even though their machine belongs to one.
+  // Read it back off the master once the machine list is in.
   useEffect(() => {
     if (!machines.length) return;
     setOps((prev) => {
@@ -616,16 +551,16 @@ export function JobCardForm({
       });
       return changed ? next : prev;
     });
-  }, [machines]);
+  }, [machines, ops.length]);
 
   // Downstream inheritance (CLAUDE.md §17), the OPERATIONS half: a hand-raised
   // JWSO Job Card seeds its routing from the item's active Route Card, exactly
   // as a Plan loads it (plans/components/plan-form.tsx handleLoadDefaultOps).
-  // Create mode only, and once per item. The list is seeded while it is EMPTY;
-  // when the item changes it is re-seeded only if the rows are still exactly
-  // the ones seeded (untouched). A routing the user has edited is never
-  // replaced silently — a warning offers the new item's ops instead. Deleting
-  // every seeded row does not bring them back. The rows stay fully editable.
+  // Once per item. The list is seeded while it is EMPTY; when the item changes
+  // it is re-seeded only if the rows are still exactly the ones seeded
+  // (untouched). A routing the user has edited is never replaced silently — a
+  // warning offers the new item's ops instead. Deleting every seeded row does
+  // not bring them back. The rows stay fully editable.
   const [seededFrom, setSeededFrom] = useState<{
     itemId: string;
     code: string | null;
@@ -645,15 +580,14 @@ export function JobCardForm({
     });
   }, [pickedItemId, itemRouteDefaults, machines]);
   useEffect(() => {
-    if (isEdit || !pickedItemId || !itemRouteDefaults) return;
+    if (!pickedItemId || !itemRouteDefaults) return;
     if (seededFrom?.itemId === pickedItemId) return;
     if (ops.length === 0) {
       if (itemRouteDefaults.ops.length > 0) seedFromRouteCard();
       return;
     }
     // The item changed under rows seeded for the previous item: swap them
-    // only while nobody has touched them (the new item may have no Route
-    // Card — the old item's ops still do not belong to it).
+    // only while nobody has touched them.
     if (seededFrom && sameSeedOps(ops, seededFrom.ops)) {
       if (itemRouteDefaults.ops.length > 0) {
         seedFromRouteCard();
@@ -662,13 +596,13 @@ export function JobCardForm({
         setSeededFrom(null);
       }
     }
-  }, [isEdit, pickedItemId, itemRouteDefaults, seededFrom, ops, seedFromRouteCard]);
+  }, [pickedItemId, itemRouteDefaults, seededFrom, ops, seedFromRouteCard]);
   // The "from Route Card" note belongs to the item it was loaded for.
   const seededNote =
     seededFrom && seededFrom.itemId === pickedItemId && ops.length > 0 ? seededFrom : null;
   // Edited rows seeded for a DIFFERENT item than the one now picked.
   const staleSeed =
-    !isEdit && seededFrom && pickedItemId && seededFrom.itemId !== pickedItemId && ops.length > 0
+    seededFrom && pickedItemId && seededFrom.itemId !== pickedItemId && ops.length > 0
       ? seededFrom
       : null;
   const canReplaceStaleSeed = !!staleSeed && (itemRouteDefaults?.ops.length ?? 0) > 0;
@@ -686,6 +620,7 @@ export function JobCardForm({
     setOps((prev) => [
       ...prev,
       {
+        rowKey: nextRowKey(),
         // OSP ops have no machine (T32b); a QC op parks on the QC lane.
         machineGroupId: null,
         machineCode: '',
@@ -698,12 +633,6 @@ export function JobCardForm({
         qcRequired: kind === 'qc',
         outsourceVendorCode: '',
         outsourceCost: 0,
-        hasStarted: false,
-        available: 0,
-        inputAvail: 0,
-        completedQty: 0,
-        qcAcceptedQty: 0,
-        computedStatus: 'waiting',
       },
     ]);
   };
@@ -716,6 +645,7 @@ export function JobCardForm({
       const path = await uploadFile(file, companyId, { folder: 'jc-drawings' });
       setDrawingFilePath(path);
       setDrawingName(file.name);
+      replaceLocalDrawing(file);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not upload the drawing. Try again.');
     } finally {
@@ -741,23 +671,21 @@ export function JobCardForm({
     }
   };
 
-  const submitting = create.isPending || update.isPending || uploading;
+  const submitting = create.isPending || uploading;
 
-  // "No QC directly after OSP" routing rule. Pairs already saved that way on
-  // an existing JC are grandfathered; the live hint below the ops header shows
-  // the same message the Save button (and the API) would raise.
-  const allowedPairs = useMemo(() => grandfatheredOspQcPairs(model?.ops ?? []), [model?.ops]);
-  const startedIds = useMemo(
-    () => new Set((model?.ops ?? []).filter((o) => o.hasStarted).map((o) => o.id)),
-    [model?.ops],
-  );
+  // "No QC directly after OSP" routing rule. A new card has no saved pairs to
+  // grandfather and no started ops, so both sets are empty — the same calls
+  // the form always made in create mode.
+  const allowedPairs = useMemo(() => grandfatheredOspQcPairs([]), []);
+  const startedIds = useMemo(() => new Set<string>(), []);
   const opsSequenceHint = opsSequenceError(ops, { allowedPairs, startedIds });
 
-  const onSubmit = async (): Promise<void> => {
-    setError(null);
-    // Validation + payload build shared with the JC Status edit branch.
-    const result = buildJcWriteInput({
-      isEdit,
+  // Validation + payload build shared with the JC Status edit branch. Run on
+  // every render so Save can say why it is off (the first message, the same
+  // text Save raised before), and run again on Save.
+  const buildInput = (): ReturnType<typeof buildJcWriteInput> =>
+    buildJcWriteInput({
+      isEdit: false,
       jcDate,
       sourceType,
       sourceLineId,
@@ -777,22 +705,22 @@ export function JobCardForm({
       allowedPairs,
       startedIds,
     });
+  const check = buildInput();
+  const saveBlockedReason = check.ok ? undefined : check.error;
+
+  const onSubmit = async (): Promise<void> => {
+    // Same gates as the Save button (submitting / uploading, then invalid) —
+    // Ctrl+S cannot slip past them. An invalid form saves nothing; it only
+    // shows its first message, as it always did.
+    if (submitting) return;
+    setError(null);
+    const result = buildInput();
     if (!result.ok) {
       setError(result.error);
       return;
     }
     try {
-      const saved =
-        isEdit && model
-          ? await update.mutateAsync(result.payload)
-          : await create.mutateAsync(result.payload);
-      // ADR-202 — a live-JC edit may come back staged for approval (nothing
-      // saved on the card). This form is create-only in routing, so the guard
-      // mainly keeps the union type-safe; return to the list if it ever fires.
-      if (isStagedResult(saved)) {
-        exit.leave(goBack);
-        return;
-      }
+      const saved = await create.mutateAsync(result.payload);
       // No silent write-back (2026-09-28 form audit): when the save also wrote
       // these operations to the item's Route Card, say so before leaving.
       if (saved.routeCardWriteBack) {
@@ -804,46 +732,424 @@ export function JobCardForm({
       setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
     }
   };
-  // Ctrl+S runs the same Save as the header button.
-  useSaveShortcut(() => void onSubmit(), !submitting);
+  // Ctrl+S runs the same Save as the header button. Always bound, so the
+  // browser's "Save page as" never opens while Save is off; onSubmit's own
+  // guards refuse in that case.
+  useSaveShortcut(() => void onSubmit());
+
+  // ── Display-only figures ──
+  const qtyNum = Number(orderQty) || 0;
+  const required =
+    rmItemFromRoute != null
+      ? Math.round(rmItemFromRoute.rmQtyPerPiece * qtyNum * 10000) / 10000
+      : null;
+  const routeCardRev =
+    itemRouteDefaults?.routeCardRevision != null
+      ? `Route Card Rev ${itemRouteDefaults.routeCardRevision}`
+      : null;
+  const noLineTitle = 'Pick a JWSO line — the figure comes from it';
+  const handRaisedTitle =
+    'A Job Card raised here by hand, off a JWSO line, has no Production Order or Plan';
+  const drawingRef: JcDrawingRef | null = drawingFilePath
+    ? {
+        label: 'Attached to this Job Card',
+        fileName: drawingName || 'drawing',
+        thumbUrl: localDrawing?.isImage ? localDrawing.url : null,
+      }
+    : null;
+  const openDrawing = (): void => {
+    if (localDrawing) window.open(localDrawing.url, '_blank', 'noopener');
+  };
+  const remaining = selectedSource?.remaining;
 
   return (
-    <div>
+    <div className="page-fill jc-detail jcc">
       {exit.dialog}
-      <PageHeader
-        sticky
-        title={isEdit ? `Edit Job Card${model?.code ? ` — ${model.code}` : ''}` : 'New Job Card'}
-        backLabel="Back to Job Cards"
+      <DetailHeader
+        backLabel="Back"
         onBack={goBack}
+        code={nextJc?.code ?? '(auto on save)'}
+        // One header line, as the detail page draws it: JC No. · document name.
+        badges={
+          <>
+            {nextJc?.code ? (
+              <span
+                className="jcc-next"
+                title="A preview — the server assigns the real number on Save"
+              >
+                next no.
+              </span>
+            ) : null}
+            <span className="panel-title">New Job Card</span>
+          </>
+        }
         actions={
           <>
+            {/* Why Save is off — the first validation message, the same text
+                Save gave before. Full text on hover. */}
+            {saveBlockedReason ? (
+              <span className="form-error jcc-why" title={saveBlockedReason}>
+                {saveBlockedReason}
+              </span>
+            ) : null}
             <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
               Cancel
             </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={submitting}
-              onClick={() => void onSubmit()}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" /> Saving…
-                </>
-              ) : isEdit ? (
-                'Save Changes'
-              ) : (
-                'Save Job Card'
-              )}
-            </button>
+            {/* The wrapper carries the reason too: a disabled button gets no
+                hover in every browser. */}
+            <span title={saveBlockedReason}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={submitting || !check.ok}
+                title={saveBlockedReason}
+                onClick={() => void onSubmit()}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Saving…
+                  </>
+                ) : (
+                  'Save Job Card'
+                )}
+              </button>
+            </span>
           </>
         }
-      />
-      {error ? (
-        <Banner tone="error" role="alert">
-          {error}
-        </Banner>
-      ) : null}
+      >
+        {error ? (
+          <Banner tone="error" role="alert">
+            {error}
+          </Banner>
+        ) : null}
+        {staleSeed ? (
+          <Banner tone="warn" role="status">
+            <span>
+              Operations are from Route Card{' '}
+              <span className="mono fw-700">{staleSeed.code ?? DASH}</span> — item changed
+            </span>
+            {canReplaceStaleSeed ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ marginLeft: 'var(--sp-2)' }}
+                onClick={seedFromRouteCard}
+              >
+                Replace with {itemCode.trim()}&apos;s Route Card ops
+              </button>
+            ) : null}
+          </Banner>
+        ) : null}
+        {opsSequenceHint ? (
+          <Banner tone="error" role="alert">
+            {opsSequenceHint}
+          </Banner>
+        ) : null}
+
+        <div className="jc-facts">
+          <JcItemThumb
+            imagePath={pickedItem?.imagePath ?? null}
+            drawing={drawingRef}
+            onOpenDrawing={openDrawing}
+            itemLabel={`${itemCode.trim()} ${pickedItem?.name ?? ''}`.trim() || 'Item'}
+          />
+          <div className="jc-facts-main">
+            {/* WHICH line and item this card is for — the two decisions on
+                this screen, where the detail page names them. */}
+            <DocIdent>
+              <label className="jcc-id-lb" htmlFor="jc-source">
+                JWSO No.<span className="req">★</span>
+              </label>
+              <SearchableSelect
+                id="jc-source"
+                className="jcc-id-src"
+                value={sourceLineId}
+                onChange={onSourceChange}
+                options={sourcePickerOptions}
+                valueLabel={sourceText || undefined}
+                placeholder="🔍 Search JWSO number…"
+              />
+              {selectedSource ? (
+                <>
+                  {/* Ln is OUR order line number; POL is the line number on
+                      the CUSTOMER's own PO. Never the same fact. */}
+                  <span>Ln {selectedSource.lineNo || 1}</span>
+                  {selectedSource.clientPoLineNo ? (
+                    <span>
+                      POL <b className="jc-pol">{selectedSource.clientPoLineNo}</b>
+                    </span>
+                  ) : null}
+                  {selectedSource.customerName ? (
+                    <span className="jc-ident-name" title={selectedSource.customerName}>
+                      {selectedSource.customerName}
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
+              <IdentSep />
+              <label className="jcc-id-lb" htmlFor="jc-item">
+                Item Code<span className="req">★</span>
+              </label>
+              <SearchableSelect
+                id="jc-item"
+                className="jcc-id-item"
+                value={itemId ?? itemIdByCode}
+                onChange={(id) => {
+                  const it = items.find((i) => i.id === id);
+                  setItemId(it?.id ?? null);
+                  setItemCode(it?.code ?? '');
+                }}
+                onSearch={setItemSearch}
+                loading={itemsFetching}
+                options={items.map((i) => ({ id: i.id, code: i.code, name: i.name }))}
+                valueLabel={itemCode || undefined}
+                selectedLabel={(o) => o.code ?? o.name}
+                disabled={itemLocked}
+                placeholder="🔍 Search item code or name…"
+              />
+              {pickedItem?.name ? (
+                <span className="jc-ident-name" title={pickedItem.name}>
+                  {pickedItem.name}
+                </span>
+              ) : null}
+              {itemLocked ? (
+                <span className="jcc-id-quiet">The JWSO line&apos;s item — fixed.</span>
+              ) : null}
+              <span
+                className="jcc-id-note"
+                title="JWSO only. Sales Order items: Planning → Production Order."
+              >
+                ⓘ JWSO only. Sales Order items: Planning → Production Order.
+              </span>
+            </DocIdent>
+
+            <ClusterGrid>
+              {/* ── ORDER: where the card comes from and what it is made to ── */}
+              <Cluster name="Order">
+                <ClusterFact label="Production Order" empty title={handRaisedTitle} value={DASH} />
+                <ClusterFact label="Plan No." empty title={handRaisedTitle} value={DASH} />
+                {/* The item's CURRENT route card + revision — the card the
+                    operations below are copied from. */}
+                <ClusterFact
+                  label="Route Card"
+                  empty={!itemRouteDefaults?.routeCardCode}
+                  title={
+                    itemRouteDefaults?.routeCardCode
+                      ? `${itemRouteDefaults.routeCardCode}${routeCardRev ? ` · ${routeCardRev}` : ''}`
+                      : pickedItemId
+                        ? 'This item has no route card'
+                        : 'Pick the item — its route card shows here'
+                  }
+                  value={
+                    itemRouteDefaults?.routeCardCode ? (
+                      <>
+                        <span className="jc-code-link">{itemRouteDefaults.routeCardCode}</span>
+                        {routeCardRev ? <Sub> {routeCardRev}</Sub> : null}
+                      </>
+                    ) : pickedItemId && itemRouteDefaults ? (
+                      <span className="jc-none">None</span>
+                    ) : (
+                      DASH
+                    )
+                  }
+                />
+                {/* DRAWING ATTACHMENT (legacy jcModalBody L5996-6006) —
+                    optional, image or PDF. */}
+                <div className="form-grp jcc-in jcc-drawing">
+                  <span className="form-label">Drawing</span>
+                  <label
+                    className="btn btn-ghost btn-sm jcc-attach"
+                    title="Attach Drawing (optional — image or PDF)"
+                  >
+                    📎 {drawingFilePath ? 'Replace' : 'Attach'}
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      hidden
+                      aria-label="Attach Drawing"
+                      onChange={(e) => void onDrawing(e.target.files?.[0])}
+                    />
+                  </label>
+                  <span className="jcc-file" title={drawingName || undefined}>
+                    {drawingName || 'No file attached'}
+                  </span>
+                  {drawingFilePath ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm btn-icon"
+                      title="Remove the drawing"
+                      aria-label="Remove the drawing"
+                      onClick={() => {
+                        setDrawingFilePath(null);
+                        setDrawingName('');
+                        replaceLocalDrawing(null);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </div>
+              </Cluster>
+              <Cluster name={null}>
+                <FormField label="JC Date" htmlFor="jc-date" className="jcc-in">
+                  <input
+                    id="jc-date"
+                    type="date"
+                    className="innovic-input"
+                    value={jcDate}
+                    onChange={(e) => setJcDate(e.target.value)}
+                  />
+                </FormField>
+                <FormField label="Due Date" htmlFor="jc-due" className="jcc-in">
+                  <input
+                    id="jc-due"
+                    type="date"
+                    className="innovic-input"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                </FormField>
+                <ClusterFact
+                  label="Customer Dispatch Date"
+                  empty
+                  title="Comes from the Plan — a Job Card raised here by hand has none"
+                  value={DASH}
+                />
+                <FormField label="Priority" htmlFor="jc-priority" className="jcc-in">
+                  <select
+                    id="jc-priority"
+                    className="innovic-select cl-cap"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                  </select>
+                </FormField>
+              </Cluster>
+
+              {/* ── QUANTITY: this card's qty, then the JWSO line it comes
+                  off — SO Qty − JC Qty = Available, ending on the result ── */}
+              <Cluster name="Quantity">
+                <FormField label="Order Qty" required htmlFor="jc-qty" className="jcc-in">
+                  <input
+                    id="jc-qty"
+                    type="number"
+                    min={1}
+                    className="innovic-input cl-num cl-cap"
+                    value={orderQty}
+                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                    onChange={(e) => setOrderQty(e.target.value)}
+                  />
+                </FormField>
+                <ClusterFact
+                  num
+                  label="SO Qty"
+                  empty={!selectedSource}
+                  title={selectedSource ? 'Ordered on the JWSO line' : noLineTitle}
+                  value={selectedSource ? selectedSource.orderQty : DASH}
+                />
+                <ClusterFact
+                  num
+                  label="JC Qty"
+                  empty={!selectedSource}
+                  title={selectedSource ? 'Already on Job Cards for this JWSO line' : noLineTitle}
+                  value={selectedSource ? selectedSource.inJc : DASH}
+                />
+                <ClusterFact
+                  num
+                  lead={remaining != null && remaining > 0}
+                  className={remaining != null && remaining <= 0 ? 'jc-red' : ''}
+                  label="Available"
+                  empty={!selectedSource}
+                  title={
+                    selectedSource
+                      ? `Available = SO Qty ${selectedSource.orderQty} − JC Qty ${selectedSource.inJc}`
+                      : noLineTitle
+                  }
+                  value={remaining != null ? remaining : DASH}
+                />
+              </Cluster>
+
+              {/* ── MATERIAL: what it is cut from ── */}
+              <Cluster name="Material">
+                <ClusterFact
+                  num
+                  className="jc-one-line"
+                  label="RM Item"
+                  empty={!rmItemFromRoute}
+                  title={
+                    rmItemFromRoute
+                      ? "From the item's Route Card"
+                      : "Comes from the item's Route Card"
+                  }
+                  value={rmItemFromRoute ? (itemRouteDefaults?.rawMaterialItemCode ?? DASH) : DASH}
+                />
+                <ClusterFact
+                  num
+                  label="RM Qty per piece"
+                  empty={!rmItemFromRoute}
+                  title={
+                    required != null
+                      ? `RM Qty per piece × Order Qty = Required ${required}`
+                      : undefined
+                  }
+                  value={
+                    rmItemFromRoute ? (
+                      <>
+                        {rmItemFromRoute.rmQtyPerPiece}
+                        <Sub> Required {required}</Sub>
+                      </>
+                    ) : (
+                      DASH
+                    )
+                  }
+                />
+                {/* Grade + Size: both optional (no ★), the same two pickers
+                    Planning uses. */}
+                <FormField label="RM Grade" htmlFor="jc-rm-grade" className="jcc-in">
+                  <MaterialGradePicker
+                    id="jc-rm-grade"
+                    valueId={rmGradeId}
+                    valueText={rmGradeText}
+                    onChange={(id, text) => {
+                      setRmGradeId(id);
+                      setRmGradeText(text);
+                    }}
+                  />
+                </FormField>
+                <FormField label="RM Size" htmlFor="jc-rm-size" className="jcc-in">
+                  <MaterialSizePicker
+                    id="jc-rm-size"
+                    valueId={rmSizeId}
+                    valueText={rmSizeText}
+                    onChange={(id, text) => {
+                      setRmSizeId(id);
+                      setRmSizeText(text);
+                    }}
+                  />
+                </FormField>
+              </Cluster>
+
+              {/* ── NOTES ── job_cards.remarks. A one-row textarea: it reads
+                  as one line, but Enter adds a line and saved breaks survive. */}
+              <Cluster name="Notes">
+                <FormField label="Remarks" htmlFor="jc-remarks" className="jcc-in cl-span-4">
+                  <textarea
+                    id="jc-remarks"
+                    className="innovic-textarea jcc-one-row"
+                    rows={1}
+                    value={remarks}
+                    title={remarks || undefined}
+                    onChange={(e) => setRemarks(e.target.value)}
+                  />
+                </FormField>
+              </Cluster>
+            </ClusterGrid>
+          </div>
+        </div>
+      </DetailHeader>
+
       {savedNote ? (
         <Modal
           title={`Job Card ${savedNote.jcCode} saved`}
@@ -890,495 +1196,111 @@ export function JobCardForm({
         </Modal>
       ) : null}
 
-      {/* ── JC DETAILS ── 12-column grid: source order first, then JC No. /
-          date, then item / qty / due / priority, then raw material + remarks. */}
-      <Panel title="Job Card Details" style={{ marginBottom: 'var(--sp-3)' }}>
-        <FormGrid>
-          <FormField label={isEdit ? 'SO / JWSO No.' : 'JWSO No.'} required={!isEdit} size="lg">
-            {!isEdit ? (
-              <div
-                style={{
-                  fontSize: 'var(--fs-xs)',
-                  color: 'var(--amber2)',
-                  marginBottom: 4,
-                  fontWeight: 600,
-                }}
-              >
-                ⓘ JWSO only. Sales Order items: Planning → Production Order.
-              </div>
-            ) : null}
-            {isEdit ? (
-              <input
-                className="innovic-input"
-                value={sourceText}
-                readOnly
-                placeholder="Source is fixed after creation"
-                style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-                title="A Job Card’s source order cannot be changed after creation."
-              />
-            ) : (
-              <SearchableSelect
-                value={sourceLineId}
-                onChange={onSourceChange}
-                options={sourcePickerOptions}
-                valueLabel={sourceText || undefined}
-                placeholder="🔍 Search JWSO number…"
-              />
-            )}
-            {/* Line display (legacy #fSoLineDisplay, _jcCascadeFromOrder L1883-87). */}
-            {selectedSource ? (
-              <div style={{ fontSize: 'var(--fs-xs)', marginTop: 4 }}>
-                <span className="cyan fw-700">
-                  {selectedSource.type === 'jw' ? '[JW] ' : ''}Ln {selectedSource.lineNo || 1}
+      {/* The one panel that takes the height left on screen — the detail
+          page's tab strip + filling panel. */}
+      <div className="jc-tabs jcc-tabs">
+        <TabStrip
+          label="New Job Card lists"
+          activeKey={tab}
+          onChange={(k) => setTab(k === 'docs' ? 'docs' : 'ops')}
+          tabs={[
+            { key: 'ops', label: 'Operations', count: ops.length },
+            { key: 'docs', label: 'QC Documents', count: docs.length },
+          ]}
+        />
+        <div className="jcc-tabs-act">
+          {tab === 'ops' ? (
+            <>
+              {seededNote ? (
+                <span
+                  className="jcc-tabs-note"
+                  title="Loaded from the item's active Route Card — every row stays editable"
+                >
+                  Operations from Route Card <b className="mono">{seededNote.code ?? DASH}</b>
+                  {seededNote.revision != null ? ` Rev ${seededNote.revision}` : ''}
                 </span>
-                {selectedSource.clientPoLineNo ? (
-                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                    {' '}
-                    [POL:{selectedSource.clientPoLineNo}]
-                  </span>
-                ) : null}{' '}
-                — {soNoWithInternal(selectedSource.code, selectedSource.internalSoNo)}
-                {selectedSource.partName ? (
-                  <>
-                    {' · '}
-                    <b>{selectedSource.partName}</b>
-                  </>
-                ) : null}{' '}
-                · <span className="text3">{selectedSource.customerName ?? ''}</span>
-              </div>
-            ) : null}
-            {selectedSource ? (
-              <div
-                style={{
-                  marginTop: 6,
-                  padding: '6px 10px',
-                  borderRadius: 6,
-                  fontSize: 'var(--fs-xs)',
-                  background:
-                    selectedSource.remaining <= 0 ? 'var(--red3)' : 'rgba(34,197,94,0.06)',
-                  border: `1px solid ${selectedSource.remaining <= 0 ? 'var(--red)' : 'rgba(34,197,94,0.2)'}`,
-                  color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--text2)',
-                }}
-              >
-                <b style={{ color: 'var(--cyan)' }}>
-                  {soNoWithInternal(selectedSource.code, selectedSource.internalSoNo)}:
-                </b>{' '}
-                Order Qty <b>{selectedSource.orderQty}</b> | Already in JCs{' '}
-                <b>{selectedSource.inJc}</b> |{' '}
-                <b style={{ color: selectedSource.remaining <= 0 ? 'var(--red)' : 'var(--green)' }}>
-                  Available: {selectedSource.remaining}
-                </b>
-              </div>
-            ) : null}
-          </FormField>
-          <FormField label="JC No." size="sm">
-            <input
-              className="innovic-input"
-              value={model?.code ?? nextJc?.code ?? '(auto on save)'}
-              readOnly
-            />
-          </FormField>
-          <FormField label="JC Date" size="sm">
-            <input
-              type="date"
-              className="innovic-input"
-              value={jcDate}
-              onChange={(e) => setJcDate(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Item Code" required size="md">
-            <SearchableSelect
-              id="jc-item"
-              value={itemId ?? itemIdByCode}
-              onChange={(id) => {
-                const it = items.find((i) => i.id === id);
-                setItemId(it?.id ?? null);
-                setItemCode(it?.code ?? '');
-              }}
-              onSearch={setItemSearch}
-              loading={itemsFetching}
-              options={items.map((i) => ({ id: i.id, code: i.code, name: i.name }))}
-              valueLabel={itemCode || undefined}
-              selectedLabel={(o) => o.code ?? o.name}
-              disabled={itemLocked}
-              placeholder="🔍 Search item code or name…"
-            />
-            {itemLocked ? (
-              <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 2 }}>
-                The JWSO line&apos;s item — fixed.
-              </div>
-            ) : null}
-          </FormField>
-          <FormField label="Order Qty" required size="sm">
-            <input
-              type="number"
-              min={1}
-              className="innovic-input"
-              value={orderQty}
-              onChange={(e) => setOrderQty(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Due Date" size="sm">
-            <input
-              type="date"
-              className="innovic-input"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Priority" size="xs">
-            <select
-              className="innovic-select"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
-            >
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-            </select>
-          </FormField>
-          {/* Raw material — Grade + Size under one bracket, both optional
-              (no ★ on either). Same two pickers Planning uses, so a
-              hand-raised JC carries the same fields a planned one does. */}
-          <div className="f-full">
-            <RawMaterialGroup>
-              <div className="form-grp">
-                <label className="form-label">RM Grade</label>
-                <MaterialGradePicker
-                  valueId={rmGradeId}
-                  valueText={rmGradeText}
-                  onChange={(id, text) => {
-                    setRmGradeId(id);
-                    setRmGradeText(text);
-                  }}
-                />
-              </div>
-              <div className="form-grp">
-                <label className="form-label">RM Size</label>
-                <MaterialSizePicker
-                  valueId={rmSizeId}
-                  valueText={rmSizeText}
-                  onChange={(id, text) => {
-                    setRmSizeId(id);
-                    setRmSizeText(text);
-                  }}
-                />
-              </div>
-            </RawMaterialGroup>
-          </div>
-          {/* Remarks has no legacy counterpart (jcModalBody has no such field),
-              but job_cards.remarks is a real column the service persists —
-              kept per "legacy has fewer fields than ours → keep ours". */}
-          <FormField label="Remarks" size="full">
-            <textarea
-              className="innovic-textarea"
-              rows={2}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-            />
-          </FormField>
-        </FormGrid>
-      </Panel>
-
-      {/* ── DRAWING ATTACHMENT (legacy jcModalBody L5996-6006) ── */}
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-hdr">
-          <div className="panel-title">
-            ▸ Drawing Attachment <span className="text3">(optional — image or PDF)</span>
-          </div>
-        </div>
-        <div className="panel-body">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <label
-              style={{
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                background: 'var(--bg4)',
-                border: '1px solid var(--border2)',
-                borderRadius: 'var(--radius)',
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--text2)',
-              }}
-            >
-              📎 Attach Drawing
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                style={{ display: 'none' }}
-                onChange={(e) => void onDrawing(e.target.files?.[0])}
-              />
-            </label>
-            <span className="text3" style={{ fontSize: 12 }}>
-              {drawingName || 'No file attached'}
-            </span>
-            {drawingFilePath ? (
+              ) : null}
+              {ops.length > 0 ? (
+                <span
+                  className="jcc-tabs-note"
+                  title="The Job Card's operations become the item's Route Card routing (a new revision)"
+                >
+                  Save also updates the item&apos;s Route Card ·
+                </span>
+              ) : null}
+              <span className="jcc-tabs-note jcc-tabs-count">
+                {opCount} op{opCount !== 1 ? 's' : ''}
+                {qcCount > 0 ? ` + ${qcCount} QC` : ''}
+              </span>
+              {/* Create PO's order: the occasional adds as ghost buttons, the
+                  one pressed most last, in blue. */}
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  setDrawingFilePath(null);
-                  setDrawingName('');
-                }}
+                onClick={() => addOp('outsource')}
               >
-                ✕ Remove
+                + Add Outsource Op
               </button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {staleSeed ? (
-        <Banner tone="warn" role="status">
-          <span>
-            Operations are from Route Card{' '}
-            <span className="mono fw-700">{staleSeed.code ?? '—'}</span> — item changed
-          </span>
-          {canReplaceStaleSeed ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 'var(--sp-2)' }}
-              onClick={seedFromRouteCard}
-            >
-              Replace with {itemCode.trim()}&apos;s Route Card ops
-            </button>
-          ) : null}
-        </Banner>
-      ) : null}
-      {/* ── OPERATION ROUTING (legacy jcModalBody L6007-6013 + jcModalOpsHtml L5868) ── */}
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-hdr">
-          <div className="panel-title">▸ Operations — Routing Sequence</div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            {seededNote ? (
-              <span
-                className="text2"
-                style={{ fontSize: 11 }}
-                title="Loaded from the item's active Route Card — every row stays editable"
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('qc')}>
+                + Add QC Op
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => addOp('process')}
               >
-                Operations from Route Card{' '}
-                <span className="mono fw-700">{seededNote.code ?? '—'}</span>
-                {seededNote.revision != null ? ` Rev ${seededNote.revision}` : ''}
-              </span>
-            ) : null}
-            {!isEdit && ops.length > 0 ? (
-              <span
-                className="text3"
-                style={{ fontSize: 11 }}
-                title="The Job Card's operations become the item's Route Card routing (a new revision)"
-              >
-                Save also updates the item&apos;s Route Card ·
-              </span>
-            ) : null}
-            <span className="text3" style={{ fontSize: 11 }}>
-              {opCount} op{opCount !== 1 ? 's' : ''}
-              {qcCount > 0 ? ` + ${qcCount} QC` : ''}
-            </span>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
-              + Add Op
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{ color: 'var(--green2)', border: '1px solid rgba(34,197,94,0.3)' }}
-              onClick={() => addOp('qc')}
-            >
-              + Add QC Op
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{ color: 'var(--amber2)', border: '1px solid rgba(245,158,11,0.4)' }}
-              onClick={() => addOp('outsource')}
-            >
-              + Add Outsource Op
-            </button>
-          </div>
-        </div>
-        <div className="panel-body">
-          {opsSequenceHint ? (
-            <div
-              role="alert"
-              style={{
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {opsSequenceHint}
-            </div>
-          ) : null}
-          {ops.length === 0 ? (
-            <div className="empty-state">No operations yet.</div>
+                + Add Op
+              </button>
+            </>
           ) : (
-            ops.map((o, i) => (
-              <JcOpEditCard
-                key={i}
-                // Order Qty is typed on this screen; the other tiles have no
-                // source until the JC is saved, so they render “—”.
-                jc={{ orderQty: Number(orderQty) || 0 }}
-                op={o}
-                index={i}
-                seqLabel={i + 1}
-                enriched={undefined}
-                machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
-                machines={machines}
-                machineOptions={machineOptions}
-                machineGroupCodeById={machineGroupCodeById}
-                onMachineSearch={setMachineSearch}
-                onMachineChange={(code) => onOpMachineChange(i, code)}
-                onGroupChange={(gid) => onOpGroupChange(i, gid)}
-                vendorOptions={vendorOptions}
-                onVendorSearch={setVendorSearch}
-                vendorsLoading={vendorsFetching}
-                toolDetailsPlaceholder="Insert, fixtures, setup notes"
-                isFirst={i === 0}
-                isLast={i === ops.length - 1}
-                onChange={(patch) => setOp(i, patch)}
-                onMove={(dir) => moveOp(i, dir)}
-                onRemove={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
-                onOutsourceBalance={() => {
-                  setBalanceNote(null);
-                  setBalanceOpIdx(i);
-                }}
-              />
-            ))
+            <>
+              <span className="jcc-tabs-note jcc-tabs-count">
+                {docs.length} doc{docs.length !== 1 ? 's' : ''} attached
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setDocs((prev) => [
+                    ...prev,
+                    { docType: 'MIR', fileName: '', storagePath: '', fileSize: null },
+                  ])
+                }
+              >
+                + Add Document
+              </button>
+            </>
           )}
         </div>
       </div>
-
-      {/* ── QC DOCUMENTS (legacy jcModalBody L6014-6017 + jcModalDocsHtml L5809) ── */}
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-hdr">
-          <div className="panel-title">▸ QC Documents</div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <span className="text3" style={{ fontSize: 11 }}>
-              {docs.length} doc{docs.length !== 1 ? 's' : ''} attached
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() =>
-                setDocs((prev) => [
-                  ...prev,
-                  { docType: 'MIR', fileName: '', storagePath: '', fileSize: null },
-                ])
-              }
-            >
-              + Add Document
-            </button>
-          </div>
-        </div>
-        <div className="panel-body">
-          {docs.length === 0 ? (
-            <div className="empty-state" style={{ fontSize: 12 }}>
-              No QC documents.
-            </div>
-          ) : (
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 200 }}>Document Type</th>
-                  <th>Attached File</th>
-                  <th style={{ width: 40 }} />
-                </tr>
-              </thead>
-              <tbody>
-                {docs.map((d, i) => (
-                  <tr key={i}>
-                    <td>
-                      <select
-                        className="innovic-select"
-                        value={d.docType}
-                        onChange={(e) =>
-                          setDocs((prev) =>
-                            prev.map((x, idx) =>
-                              idx === i ? { ...x, docType: e.target.value } : x,
-                            ),
-                          )
-                        }
-                        style={{ fontSize: 12 }}
-                      >
-                        {QC_DOC_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <label style={{ cursor: 'pointer', fontSize: 12 }}>
-                        📎 {d.fileName || 'Attach File'}
-                        <input
-                          type="file"
-                          accept="image/*,.pdf"
-                          style={{ display: 'none' }}
-                          disabled={Boolean(d.id)}
-                          onChange={(e) => void onDocFile(i, e.target.files?.[0])}
-                        />
-                      </label>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-danger btn-sm btn-icon"
-                        onClick={() => setDocs((prev) => prev.filter((_, idx) => idx !== i))}
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      {balanceNote ? (
-        <div
-          style={{
-            color: 'var(--green2)',
-            background: 'rgba(34,197,94,0.08)',
-            border: '1px solid rgba(34,197,94,0.3)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {balanceNote}
-        </div>
-      ) : null}
-
-      {balanceOpIdx !== null && ops[balanceOpIdx]?.id ? (
-        <OutsourceBalanceModal
-          jcId={model?.id ?? ''}
-          jcCode={model?.code ?? ''}
-          opId={ops[balanceOpIdx]!.id!}
-          opSeq={balanceOpIdx + 1}
-          operation={ops[balanceOpIdx]!.operation}
-          itemCode={itemCode}
-          available={ops[balanceOpIdx]!.available}
-          defaultVendorCode={ops[balanceOpIdx]!.outsourceVendorCode}
-          onClose={() => setBalanceOpIdx(null)}
-          onDone={(qtyDone) => {
-            const idx = balanceOpIdx;
-            const op = ops[idx];
-            if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
-            setBalanceNote(`Outsource PR raised for ${qtyDone} pcs (Op ${fmtOpSrNo(idx + 1)}).`);
-            setBalanceOpIdx(null);
-          }}
-        />
-      ) : null}
+      <Panel fill bodyPadding="none" bodyClassName="tbl-wrap">
+        {tab === 'ops' ? (
+          <JcCreateOpsTable
+            ops={ops}
+            machines={machines}
+            machineOptions={machineOptions}
+            machineGroupCodeById={machineGroupCodeById}
+            onMachineSearch={setMachineSearch}
+            onMachineChange={onOpMachineChange}
+            onGroupChange={onOpGroupChange}
+            vendorOptions={vendorOptions}
+            onVendorSearch={setVendorSearch}
+            vendorsLoading={vendorsFetching}
+            onChange={setOp}
+            onMove={moveOp}
+            onRemove={(i) => setOps((prev) => prev.filter((_, idx) => idx !== i))}
+          />
+        ) : (
+          <JcCreateDocsTable
+            docs={docs}
+            onTypeChange={(i, docType) =>
+              setDocs((prev) => prev.map((x, idx) => (idx === i ? { ...x, docType } : x)))
+            }
+            onFile={(i, file) => void onDocFile(i, file)}
+            onRemove={(i) => setDocs((prev) => prev.filter((_, idx) => idx !== i))}
+          />
+        )}
+      </Panel>
     </div>
   );
 }
