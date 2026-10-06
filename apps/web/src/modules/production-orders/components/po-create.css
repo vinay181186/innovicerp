@@ -1,0 +1,177 @@
+/* Create Production Order — the fit-to-one-screen form
+   (pro-routecard-create-edit-mockup.html, frame 1, approved 2026-10-06).
+
+   The page is the Production Order detail page's ClusterGrid (same clusters,
+   same order — po-detail.css) with inputs in the cells this screen asks for.
+   Everything here is scoped to `.po-create` and uses tokens only. */
+
+/* ── Fit to one screen ───────────────────────────────────────────────────────
+   Same fix as po-detail.css: `page-fill` asks for min-height: 100%, which would
+   let the operations table grow the page. Here the page takes exactly the
+   content area, so the operations panel gets what is left and its table is the
+   only thing that scrolls. The panel never goes below six table rows, so when
+   the chrome above genuinely cannot fit (a phone, 200% zoom, three banners at
+   once) the page outgrows the content area and that scrolls instead. */
+.page-fill.po-create {
+  height: 100%;
+}
+.page-fill.po-create > .panel--fill {
+  min-height: calc(var(--tbl-row-h) * 6 + 2px);
+}
+/* A flex column stretches its children; Back is a button, not a band. */
+.page-fill.po-create > .btn {
+  align-self: flex-start;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.po-create .po-create-next {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+
+/* ── Identity line ───────────────────────────────────────────────────────── */
+.po-create .po-create-pol {
+  font-family: var(--mono);
+  color: var(--purple);
+}
+.po-create .po-create-from {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+
+/* ── Cells ───────────────────────────────────────────────────────────────────
+   Every cell is one control tall, so a row of read-only facts and inputs reads
+   on one line: the fact's label and value sit on the input's centre line. */
+.po-create .cl-grid .cl-fact {
+  min-height: var(--control-h);
+  align-items: center;
+}
+/* Free text that is not a number (Created By, RM Grade, RM Size): one line,
+   ellipsis, the full text in the cell's title — as on the detail page. */
+.po-create .cl-fact.po-create-one-line {
+  flex-wrap: nowrap;
+}
+
+/* An input in a cell: label left, control right, on ONE line — the detail
+   page's fact with the value turned into a box. The FormField's own column
+   stack becomes a row; its error line (PRO Qty) drops underneath the control
+   and only that cell grows. */
+.po-create .cl-grid > .cl-row > .form-grp.po-in {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-1);
+}
+.po-create .cl-grid > .cl-row > .form-grp.po-in:not(.cl-lead):not(.po-create-act) {
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+}
+.po-create .cl-grid > .cl-row > .cl-gut + .form-grp.po-in:not(.cl-lead):not(.po-create-act) {
+  padding-left: 0;
+  border-left: none;
+}
+.po-create .form-grp.po-in > .form-label {
+  flex: none;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text3);
+}
+.po-create .form-grp.po-in > .innovic-input,
+.po-create .form-grp.po-in > .innovic-select,
+.po-create .form-grp.po-in > .po-create-ctl,
+.po-create .form-grp.po-in > .po-create-tick {
+  flex: 1 1 0;
+  /* A floor, not 0: on a narrow screen the control drops under its label
+     (the cell grows by one line) rather than being squeezed to nothing — the
+     same "wrap, never clip" rule the primitive's facts follow. */
+  min-width: 96px;
+}
+/* A date needs room for dd-mm-yyyy and the calendar button. */
+.po-create .form-grp.po-in > .innovic-input[type='date'] {
+  min-width: 128px;
+}
+.po-create .form-grp.po-in > .po-create-tick {
+  min-width: max-content;
+}
+.po-create .form-grp.po-in > .form-error,
+.po-create .form-grp.po-in > .form-help {
+  flex-basis: 100%;
+  text-align: right;
+}
+
+/* The result the Quantity row ends on (PRO Qty) keeps the primitive's green
+   rule; its label reads like the lead fact's. */
+.po-create .form-grp.po-in.cl-lead > .form-label {
+  color: var(--text2);
+  font-weight: 600;
+}
+
+/* The one decision on the screen (Plan No.): the blue rule the detail page
+   gives its actionable figure, and a tinted box. */
+.po-create .cl-grid > .cl-row > .form-grp.po-create-act {
+  padding-left: var(--sp-3);
+  border-left: 3px solid var(--blue);
+}
+.po-create .form-grp.po-create-act > .form-label {
+  color: var(--text2);
+  font-weight: 600;
+}
+.po-create .po-create-act .innovic-input:not(:disabled) {
+  background-color: var(--blue3);
+}
+
+/* "In store" tick: the box and its two words, never wrapped. */
+.po-create .po-create-tick {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.po-create .po-create-tick[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Operations panel ────────────────────────────────────────────────────── */
+.po-create .po-create-ops-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.po-create .po-create-ops-meta {
+  display: block;
+  max-width: min(760px, 55vw);
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.po-create .po-create-ops-meta b {
+  font-family: var(--mono);
+  color: var(--text);
+}
+.po-create .po-create-ops-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-1) var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg3);
+  font-size: var(--fs-xs);
+  color: var(--text3);
+  white-space: nowrap;
+}
+.po-create .po-create-ops-remarks {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.po-create .po-create-ops-warn {
+  color: var(--amber2);
+}
+/* Before a plan / Route Card is picked the panel holds a one-line note; it
+   takes the panel's height so the footer stays on the panel's bottom edge. */
+.po-create .panel--fill > .panel-bd--fill > .empty-state {
+  flex: 1 1 auto;
+}
