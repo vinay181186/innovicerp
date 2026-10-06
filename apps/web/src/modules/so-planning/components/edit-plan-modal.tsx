@@ -34,8 +34,8 @@ import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import {
-  MaterialGradePicker,
-  MaterialSizePicker,
+  MaterialValueDisplay,
+  RM_SOURCE_HELP,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useCostCentersList } from '@/modules/cost-centers/api';
 import {
@@ -160,13 +160,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     plan.customerDispatchDate ?? '',
   );
   const [remarks, setRemarks] = useState<string>(plan.remarks ?? '');
-  // Raw material — two INDEPENDENT master pickers, both optional (no ★). The
-  // id is the link; the *Text snapshot is what this plan still prints after the
-  // master row is renamed or deactivated, so both are stored together.
-  const [rmGradeId, setRmGradeId] = useState<string | null>(plan.rawMaterialGradeId);
-  const [rmGradeText, setRmGradeText] = useState<string | null>(plan.rawMaterialGradeText);
-  const [rmSizeId, setRmSizeId] = useState<string | null>(plan.rawMaterialSizeId);
-  const [rmSizeText, setRmSizeText] = useState<string | null>(plan.rawMaterialSizeText);
+  // ADR-217 — raw material is not state any more: this box SHOWS what the plan
+  // holds (`plan.rawMaterialGradeText` / `…SizeText`) and cannot change it. The
+  // author is the part's Route Card, or the BOM line for a BOM child.
 
   // Manufacture / ops
   const [ops, setOps] = useState<OpRow[]>(() => plan.ops.map(planOpToRow));
@@ -405,10 +401,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     plannedEndDate: plannedEndDate || null,
     customerDispatchDate: customerDispatchDate || null,
     remarks: remarks || null,
-    rawMaterialGradeId: rmGradeId,
-    rawMaterialGradeText: rmGradeText,
-    rawMaterialSizeId: rmSizeId,
-    rawMaterialSizeText: rmSizeText,
+    // ADR-217 — RM Grade / RM Size are deliberately ABSENT from this payload.
+    // Server contract (apps/api/src/modules/plans/service.ts, updatePlanTx): a
+    // field that IS sent — a value OR an explicit null — is applied as the
+    // caller's own answer, and only an OMITTED field leaves the server free to
+    // fill the plan from its BOM line / Route Card. This box used to send all
+    // four keys on every save, which is what made a BOM-child plan disagree
+    // with its BOM line. Omitting them closes that.
     dpVendorCodeText: planType === 'direct_purchase' ? dpVendor || null : null,
     dpCost: planType === 'direct_purchase' ? dpCost : null,
     dpRemarks: planType === 'direct_purchase' ? dpRemarks || null : null,
@@ -769,30 +768,15 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           />
         </FormField>
 
-        {/* RM Grade / RM Size (docs/NAMING.md) — two INDEPENDENT master
-            pickers, both optional everywhere, so neither carries a ★. */}
-        <FormField label="RM Grade" size="sm" htmlFor="edit-plan-rm-grade">
-          <MaterialGradePicker
-            id="edit-plan-rm-grade"
-            valueId={rmGradeId}
-            valueText={rmGradeText}
-            onChange={(id, text) => {
-              setRmGradeId(id);
-              setRmGradeText(text);
-            }}
-          />
+        {/* RM Grade / RM Size (docs/NAMING.md) — ADR-217: what this plan holds,
+            shown and not picked. The Route Card (or the BOM line for a BOM
+            child) is the only place either value can be changed. */}
+        <FormField label="RM Grade" size="sm" htmlFor="edit-plan-rm-grade" help={RM_SOURCE_HELP}>
+          <MaterialValueDisplay id="edit-plan-rm-grade" value={plan.rawMaterialGradeText} />
         </FormField>
 
         <FormField label="RM Size" size="sm" htmlFor="edit-plan-rm-size">
-          <MaterialSizePicker
-            id="edit-plan-rm-size"
-            valueId={rmSizeId}
-            valueText={rmSizeText}
-            onChange={(id, text) => {
-              setRmSizeId(id);
-              setRmSizeText(text);
-            }}
-          />
+          <MaterialValueDisplay id="edit-plan-rm-size" value={plan.rawMaterialSizeText} />
         </FormField>
 
         <FormField label="Remarks" size="lg" htmlFor="edit-plan-remarks">

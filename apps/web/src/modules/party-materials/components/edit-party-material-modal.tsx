@@ -5,6 +5,10 @@
 // (received / in stock / issued / returned) — the server refuses a change
 // then, so the screen locks those two and says why. UOM is always NOS
 // (ADR-203 D1) — shown read-only and never sent.
+//
+// ADR-217: Grade is read-only here too, exactly as it is on the Add modal.
+// Raw-material grade has one author — the part's Route Card, or the BOM line
+// for a BOM child — so this screen shows it and never sends it.
 
 import { type PartyMaterialListItem, type UpdatePartyMaterialInput } from '@innovic/shared';
 import { useMemo, useState } from 'react';
@@ -23,7 +27,9 @@ export function EditPartyMaterialModal({
 }): React.JSX.Element {
   const [name, setName] = useState(row.name);
   const [description, setDescription] = useState(row.description ?? '');
-  const [material, setMaterial] = useState(row.material ?? '');
+  // Grade — shown, never edited here (ADR-217), so it is a plain value and not
+  // form state.
+  const material = row.material ?? '';
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState<string | null>(row.clientId);
   const [itemSearch, setItemSearch] = useState('');
@@ -87,7 +93,8 @@ export function EditPartyMaterialModal({
     const input: UpdatePartyMaterialInput = {};
     if (nm !== row.name) input.name = nm;
     if (description.trim() !== (row.description ?? '')) input.description = description.trim();
-    if (material.trim() !== (row.material ?? '')) input.material = material.trim();
+    // ADR-217 — Grade is never sent from here; it cannot be changed on this
+    // screen, so there is nothing to send.
     if (!hasMovement) {
       if (clientId !== row.clientId) input.clientId = clientId;
       if (itemId && itemId !== row.itemId) input.itemId = itemId;
@@ -183,14 +190,14 @@ export function EditPartyMaterialModal({
           </Field>
         </div>
 
+        {/* Grade — from the item, read-only (ADR-217). It was a free-text box
+            here while the Add modal showed the same label read-only, so the
+            same material answered to two different grades depending on which
+            box was open. Raw-material grade has one author (the Route Card, or
+            the BOM line for a BOM child), so this screen only shows it. */}
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Grade">
-            <input
-              type="text"
-              className="innovic-input"
-              value={material}
-              onChange={(e) => setMaterial(e.target.value)}
-            />
+            <input type="text" className="innovic-input" value={material} readOnly disabled />
           </Field>
         </div>
 

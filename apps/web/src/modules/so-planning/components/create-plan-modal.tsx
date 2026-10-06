@@ -1,11 +1,15 @@
 // Create Plan box (ADR-170). Opened by "+ Plan N" on a line of the SO/JWSO
 // Planning screen.
 //
-// A plan is now ONLY: qty + remark, a schedule (planned start / required
-// date, planned end date) and the raw material (grade, size). No operations —
-// those come from the item's Route Card when a Production Order is raised for
-// this plan. So the box saves the plan with `opsSource: 'route_card'` and
-// closes; it does NOT chain into the Edit Plan modal any more.
+// A plan is now ONLY: qty + remark and a schedule (planned start / required
+// date, planned end date). No operations — those come from the item's Route
+// Card when a Production Order is raised for this plan. So the box saves the
+// plan with `opsSource: 'route_card'` and closes; it does NOT chain into the
+// Edit Plan modal any more.
+//
+// ADR-217: RM Grade / RM Size are SHOWN here and nothing more — their one
+// author is the part's Route Card (or the BOM line for a BOM child), and this
+// box leaves both out of the payload so the server fills them from there.
 //
 // The Reserve-from-stock control that lived here stays: it books free stock
 // to this line before (or instead of) planning the shortfall.
@@ -19,7 +23,7 @@ import type {
   PlanningLine,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -27,8 +31,8 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlan, useDefaultRouteOps, useReserveStock } from '@/modules/plans/api';
 import {
-  MaterialGradePicker,
-  MaterialSizePicker,
+  MaterialValueDisplay,
+  RM_SOURCE_HELP,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import {
   Cluster,
@@ -74,44 +78,10 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [customerDispatchDate, setCustomerDispatchDate] = useState(
     line.dueDate ? line.dueDate.slice(0, 10) : '',
   );
-  const [rmGradeId, setRmGradeId] = useState<string | null>(null);
-  const [rmGradeText, setRmGradeText] = useState<string | null>(null);
-  const [rmSizeId, setRmSizeId] = useState<string | null>(null);
-  const [rmSizeText, setRmSizeText] = useState<string | null>(null);
-  // Did the planner work this pair themselves? A blank the planner never
-  // opened is "nothing to say" (omit it, let the server default from the
-  // Route Card); a blank they deliberately cleared is an answer (send null).
-  const [rmGradeTouched, setRmGradeTouched] = useState(false);
-  const [rmSizeTouched, setRmSizeTouched] = useState(false);
-  // Auto-fetch the raw material chosen on the item's route card (grade + size)
-  // — the same rule the standalone Plan form applies (plan-form.tsx): only
-  // while a field is still blank, so the planner's own pick is never
-  // overwritten. User, 2026-09-22: "I already selected the raw material
-  // during RC creation" — it must not have to be picked twice.
+  // ADR-217 — raw material is READ here, never set. The item's Route Card is
+  // what the server will copy onto this plan, so the same lookup that served
+  // the old prefill now just supplies the two values SHOWN below.
   const { data: defaultOps } = useDefaultRouteOps(line.itemId ?? null);
-  useEffect(() => {
-    if (!defaultOps) return;
-    if (
-      !rmGradeTouched &&
-      !rmGradeId &&
-      !rmGradeText &&
-      (defaultOps.rawMaterialGradeId || defaultOps.rawMaterialGradeText)
-    ) {
-      setRmGradeId(defaultOps.rawMaterialGradeId);
-      setRmGradeText(defaultOps.rawMaterialGradeText);
-    }
-    if (
-      !rmSizeTouched &&
-      !rmSizeId &&
-      !rmSizeText &&
-      (defaultOps.rawMaterialSizeId || defaultOps.rawMaterialSizeText)
-    ) {
-      setRmSizeId(defaultOps.rawMaterialSizeId);
-      setRmSizeText(defaultOps.rawMaterialSizeText);
-    }
-    // Prefill is a one-shot per lookup result; the field states are read, not
-    // dependencies, so a later manual clear is not refilled.
-  }, [defaultOps]);
   // Reserve qty is adjustable — it starts at everything that's free to book,
   // but the planner can dial it down (or back up) before pressing Reserve.
   // Clamped on render instead of via an effect: after a reserve succeeds the
@@ -172,17 +142,12 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       return;
     }
     setErr(null);
-    // RM Grade / RM Size are each sent ONLY when this box has something to say
-    // about them. Server contract (apps/api/src/modules/plans/service.ts,
-    // createPlan): a field that IS sent — a value OR an explicit null — means
-    // "the caller owns this pair, do not default it", and only an OMITTED pair
-    // is backfilled from the item's Route Card. So an untouched blank pair
-    // must be left out, otherwise this box's `null` silently switches the
-    // server's own Route-Card fallback off for every item whose Route Card is
-    // made after the plan. Touched-and-cleared still goes as null — that is
-    // the planner saying "leave it blank". Grade and size move independently.
-    const sendGrade = rmGradeTouched || rmGradeId !== null || rmGradeText !== null;
-    const sendSize = rmSizeTouched || rmSizeId !== null || rmSizeText !== null;
+    // ADR-217 — RM Grade / RM Size are NEVER sent from here. They have one
+    // author: the part's Route Card, or the BOM line for a BOM child. Server
+    // contract (apps/api/src/modules/plans/service.ts, createPlan): a field
+    // that IS sent — a value OR an explicit null — means "the caller owns this
+    // pair, do not default it", and only an OMITTED pair is filled from the
+    // BOM line / Route Card. So both pairs are OMITTED, never sent as null.
     const input: CreatePlanInput = {
       // code omitted → server assigns the next sequential PLN-NNNN.
       planDate: todayLocal(),
@@ -203,8 +168,6 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       plannedStartDate,
       plannedEndDate,
       customerDispatchDate: customerDispatchDate || null,
-      ...(sendGrade ? { rawMaterialGradeId: rmGradeId, rawMaterialGradeText: rmGradeText } : {}),
-      ...(sendSize ? { rawMaterialSizeId: rmSizeId, rawMaterialSizeText: rmSizeText } : {}),
       remarks: remarks.trim() === '' ? null : remarks.trim(),
     };
     try {
@@ -427,31 +390,16 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           />
         </FormField>
 
-        {/* The tint IS the grouping: .field-tint paints the control inside with
-            the pale blue token wash (--blue3), including the picker's own
-            <input>. It sits ON the field, so the grid cell is unchanged. */}
-        <FormField label="RM Grade" size="sm" className="field-tint">
-          <MaterialGradePicker
-            valueId={rmGradeId}
-            valueText={rmGradeText}
-            onChange={(id, text) => {
-              setRmGradeId(id);
-              setRmGradeText(text);
-              setRmGradeTouched(true);
-            }}
-          />
+        {/* ADR-217 — shown, not picked: these are the values the new plan will
+            be given. The pale blue grouping wash (.field-tint) is gone with the
+            pickers — it would have painted over the grey "not editable" fill
+            and the boxes would still have read as something to type in. */}
+        <FormField label="RM Grade" size="sm" help={RM_SOURCE_HELP}>
+          <MaterialValueDisplay value={defaultOps?.rawMaterialGradeText} />
         </FormField>
 
-        <FormField label="RM Size" size="sm" className="field-tint">
-          <MaterialSizePicker
-            valueId={rmSizeId}
-            valueText={rmSizeText}
-            onChange={(id, text) => {
-              setRmSizeId(id);
-              setRmSizeText(text);
-              setRmSizeTouched(true);
-            }}
-          />
+        <FormField label="RM Size" size="sm">
+          <MaterialValueDisplay value={defaultOps?.rawMaterialSizeText} />
         </FormField>
 
         <FormField label="Remarks" size="sm" htmlFor="create-plan-remark">
