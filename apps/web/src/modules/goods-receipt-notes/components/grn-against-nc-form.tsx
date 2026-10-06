@@ -16,11 +16,15 @@
 // ADR-217 Phase 1 — the header now shows the rest of the chain, not just the
 // NC end of it: the PO the rejected pieces were bought/job-worked on and the
 // GRN they first came in on, both read straight off GET /nc-register/:id
-// (resolveNcSource, already resolved server-side for the NC detail page). The
-// "Sent on DC No." (the OSP challan the pieces first went OUT on) is NOT
-// reachable from any existing endpoint for an NC that already has its return
-// challan — see the report for ADR-217 Phase 1 — so it is not shown rather
-// than shown wrong.
+// (resolveNcSource, already resolved server-side for the NC detail page).
+//
+// ADR-217 Phase 2 — "Sent on DC No." joins them. It is the OSP challan the
+// rejected pieces first went OUT on, and it is the number the STORE actually
+// holds, so it is also matched by the NC picker's hidden search text. Phase 1
+// could not show it because no endpoint carried it; it is now a stored column
+// (`nc_register.source_delivery_challan_id`) on the same NC read. Null is a
+// correct answer — nothing went out, or nobody could say which challan carried
+// the piece — and null shows the same quiet dash as a missing source PO.
 //
 // No OK / Rejected split and no QC fields here: everything received lands on
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
@@ -40,7 +44,7 @@ import {
   useReceiveDeliveryChallan,
 } from '@/modules/delivery-challans/api';
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
-import { useNcRegister } from '@/modules/nc-register/api';
+import { useNcRegister, useNcRegisterList } from '@/modules/nc-register/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
@@ -109,25 +113,48 @@ export function GrnAgainstNcForm({
     [dcList.data],
   );
 
+  // ADR-217 Phase 2 — "Sent on DC No." per eligible NC, for the picker's hidden
+  // search text. The challan rows above are the RETURN challans; the OUTWARD
+  // challan the pieces went out on lives on the NC itself
+  // (`sourceDeliveryChallanCode`), so the NC register is read once and joined
+  // by id. 200 is the API's page cap and the list comes back newest-first, so
+  // it covers every NC that could have a return challan out at a vendor right
+  // now. A row the cap missed simply cannot be found by its outward challan
+  // number — it is never hidden from the picker, which is still driven entirely
+  // by the challan rows.
+  const ncRegisterList = useNcRegisterList({ limit: 200, offset: 0 });
+  const sentOnDcByNcId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of ncRegisterList.data?.items ?? []) {
+      if (n.sourceDeliveryChallanCode) m.set(n.id, n.sourceDeliveryChallanCode);
+    }
+    return m;
+  }, [ncRegisterList.data]);
+
   // Option per NC. Search is client-side over the NC code, the job card, the
   // vendor and the composed "CODE — JC · Vendor" label — the last because the
   // picker re-sends its own selected label as the term when reopened.
   // ADR-217 — the RETURN CHALLAN's own number is matched too, through
-  // SearchableOption.searchText, so a store user holding only the challan can
-  // get here. It is not added to the label: the label is the NC's.
+  // SearchableOption.searchText, and (Phase 2) the OUTWARD "Sent on DC No." as
+  // well, so a store user holding either challan number can get here. Neither
+  // is added to the label: the label is the NC's.
   const ncOptions = useMemo(
     () =>
       ncRows
-        .map((d) => ({
-          id: d.ncId ?? d.id,
-          code: d.ncCode ?? d.poCodeText,
-          name: `${d.jobCardCode ?? '—'} · ${d.vendorName ?? d.vendorCodeText}`,
-          searchText: d.code,
-        }))
+        .map((d) => {
+          const ncIdOfRow = d.ncId;
+          const sentOnDc = ncIdOfRow ? (sentOnDcByNcId.get(ncIdOfRow) ?? '') : '';
+          return {
+            id: ncIdOfRow ?? d.id,
+            code: d.ncCode ?? d.poCodeText,
+            name: `${d.jobCardCode ?? '—'} · ${d.vendorName ?? d.vendorCodeText}`,
+            searchText: sentOnDc ? `${d.code} ${sentOnDc}` : d.code,
+          };
+        })
         .filter((o) =>
           matchesSearchTerm([o.code, o.name, o.searchText, `${o.code} — ${o.name}`], ncSearch),
         ),
-    [ncRows, ncSearch],
+    [ncRows, ncSearch, sentOnDcByNcId],
   );
 
   // The picked NC's return challan row (from the list) — the source of the
@@ -334,7 +361,6 @@ export function GrnAgainstNcForm({
               label="NC No."
               required
               htmlFor="ncId"
-              className="cl-span-2"
               {...(ncRow?.reason ? { help: `Return reason: ${ncRow.reason}` } : {})}
             >
               <SearchableSelect
@@ -344,11 +370,15 @@ export function GrnAgainstNcForm({
                 options={ncOptions}
                 onSearch={setNcSearch}
                 loading={dcList.isFetching}
-                placeholder="🔍 Type NC number, job card or vendor…"
+                placeholder="🔍 Type NC No., DC No., job card or vendor…"
                 valueLabel={ncValueLabel}
                 emptyText="No NC has a return challan awaiting receipt."
               />
             </FormField>
+            {/* The NC's own return challan — the paper this receipt is booked
+                against, beside the NC it belongs to. It comes off the picked
+                NC's list row, which is already loaded. */}
+            <ClusterFact label="DC No." num value={ncRow?.code ?? '—'} empty={!ncRow?.code} />
             <FormField label="GRN Date" required htmlFor="ncReceiptDate">
               <input
                 id="ncReceiptDate"
@@ -361,15 +391,21 @@ export function GrnAgainstNcForm({
             </FormField>
           </Cluster>
 
-          {/* ADR-217 — where the rejected pieces came from and what they went
-              back out on, all read off the NC. An NC raised at the machine
-              genuinely has no source PO / source GRN, and a dash is the right
-              way to say so — but ONLY once the answer is in hand. Until then
-              (`ncSourceKnown` false: no NC picked yet, or its fetch still in
-              flight) these two cells stay EMPTY, because a dash there would
-              assert an absence the screen has not established. JC No. and
-              DC No. come off the picked NC's own list row, which is already
-              loaded, so they have no such wait. */}
+          {/* ADR-217 — the chain that led here, in the order it happened, all
+              read off the NC: the PO the rejected pieces were bought or
+              job-worked on, the GRN they first came in on, and (Phase 2) the
+              OUTWARD challan they left on — which is the number the store
+              actually holds. All three use the labels the NC detail page uses
+              for the same facts, and `Sent on DC No.` is the one registered in
+              docs/NAMING.md.
+
+              An NC raised at the machine genuinely has no source PO, source GRN
+              or outward challan, and a dash is the right way to say so — but
+              ONLY once the answer is in hand. Until then (`ncSourceKnown`
+              false: no NC picked yet, or its fetch still in flight) those three
+              cells stay EMPTY, because a dash would assert an absence the
+              screen has not established. JC No. comes off the picked NC's own
+              list row, already loaded, so it has no such wait. */}
           <Cluster name="Return chain">
             <ClusterFact
               label="JC No."
@@ -391,7 +427,15 @@ export function GrnAgainstNcForm({
               empty={!ncDetail?.sourceGrnCode}
               {...(ncDetail?.sourceGrnCode ? { title: ncDetail.sourceGrnCode } : {})}
             />
-            <ClusterFact label="DC No." num value={ncRow?.code ?? '—'} empty={!ncRow?.code} />
+            <ClusterFact
+              label="Sent on DC No."
+              num
+              value={ncSourceKnown ? (ncDetail.sourceDeliveryChallanCode ?? '—') : ''}
+              empty={!ncDetail?.sourceDeliveryChallanCode}
+              {...(ncDetail?.sourceDeliveryChallanCode
+                ? { title: ncDetail.sourceDeliveryChallanCode }
+                : {})}
+            />
           </Cluster>
 
           <GrnVendorCluster
@@ -424,7 +468,7 @@ export function GrnAgainstNcForm({
             </FormField>
           </Cluster>
 
-          {/* THE ACCOUNT — `Sent Qty — Received Earlier — Received = Pending`,
+          {/* THE ACCOUNT — `Sent Qty − Received Earlier − Received = Pending`,
               recomputed from the live rows on every keystroke. On THIS screen
               the ordered figure is in hand: it is the return challan line's own
               sent qty, read off the picked challan. It is a SAVED NC GRN's read

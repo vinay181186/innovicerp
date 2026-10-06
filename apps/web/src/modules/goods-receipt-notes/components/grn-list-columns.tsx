@@ -110,10 +110,14 @@ export function goodsReceiptNoteListColumns(
       sortFilterField: 'poNcCode',
       header: 'PO/NC No.',
       nowrap: true,
-      // On an NC-return GRN poCodeText holds the NC code (no PO exists); on a
-      // purchase GRN poCode (resolved) ?? poCodeText (snapshot).
+      // ADR-217 — an NC-return GRN states its NC code, resolved from `ncId`.
+      // It used to read `poCodeText`, which held the NC code only while a return
+      // had no purchase order behind it; a return raised after ADR-217 has one,
+      // so that column is a PO code and this cell would have shown the order
+      // where the NC number belongs. The snapshot stays as the fallback for an
+      // NC row since deleted.
       render: (grn) => {
-        const ref = grn.ncId ? grn.poCodeText : (grn.poCode ?? grn.poCodeText);
+        const ref = grn.ncId ? (grn.ncCode ?? grn.poCodeText) : (grn.poCode ?? grn.poCodeText);
         return ref ? (
           <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
             {ref}

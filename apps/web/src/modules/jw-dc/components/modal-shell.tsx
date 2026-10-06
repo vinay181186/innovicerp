@@ -13,6 +13,7 @@ export function ModalShell({
   onSave,
   saving,
   saveLabel,
+  saveDisabled = false,
   dirty,
   children,
 }: {
@@ -21,6 +22,10 @@ export function ModalShell({
   onSave: () => void;
   saving: boolean;
   saveLabel: string;
+  /** Blocks Save for a reason the body already explains on screen (ADR-217
+   *  phase 4: the "These are new pieces" tick is still unticked). Optional and
+   *  false by default, so the New Inward modal is untouched. */
+  saveDisabled?: boolean;
   /** Something was typed or ticked. Then a click on the grey backdrop, the ✕
    *  or Cancel asks "Are you sure you want to exit?" instead of throwing the
    *  popup away (the shared exit guard, lib/exit-guard.tsx). */
@@ -62,7 +67,12 @@ export function ModalShell({
           <button type="button" className="btn btn-ghost" onClick={requestClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={saving || saveDisabled}
+            onClick={onSave}
+          >
             {saving ? (
               <>
                 <Loader2 size={14} className="inline animate-spin" /> Saving…

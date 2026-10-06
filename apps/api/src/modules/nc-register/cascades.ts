@@ -28,8 +28,13 @@
 //                        While it stays open, v_jc_op_status + v_osp_wip count
 //                        its rejected_qty as at_vendor and take it out of the
 //                        source op's pending, so the vendor visibly owes a
-//                        replacement and the op cannot read `complete`. The
-//                        challan is a separate action (service.createNcDc).
+//                        replacement and the op cannot read `complete`.
+//                        ADR-217: a zero-value job-work PURCHASE ORDER to the
+//                        source vendor is raised here, in this transaction, and
+//                        stored on nc.replacement_po_id — the challan and the
+//                        vendor's replacement receipt hang off it like every
+//                        other outsourcing movement. The challan itself stays a
+//                        separate action (service.createNcDc).
 //   make_fresh        → status=closed; failed_qty = rejected_qty (needs view
 //                        migration 0138); create supplementary JC inheriting
 //                        origin's source SO/JW link + parent_nc_id pointing
@@ -74,10 +79,16 @@ import { jobCardOrderChainCte } from '../../lib/production-order-link';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+// ADR-217 — the replacement order is built by the purchase-order module's own
+// writer (numbering, status, line shape all in one place), called from here.
+import { createReplacementPoForNc } from '../purchase-orders/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { reinjectLogType } from './reinject-log-type';
 import { cascadeJcCompleteUpChain } from '../op-entry/sales-cascade';
 import { climbRecoveryToAncestors, createRecoveryJobCard, ncOpenQty } from './recovery';
+// ADR-217 phase 3 — the challan the rejected pieces went out on is ASKED, and
+// what the screen answers is checked against the shortlist the server offers.
+import { assertSourceDeliveryChallan } from './source-challan';
 import type { DisposeNcInput } from './schema';
 
 type NcRow = typeof ncRegister.$inferSelect;
@@ -95,6 +106,12 @@ type NcRow = typeof ncRegister.$inferSelect;
 // guard (disposeNcCascade, WI5). A pure in-house reject resolves to all-null,
 // isVendorSourced=false. The NC list reader mirrors this same logic inline as a
 // LEFT JOIN LATERAL for pagination; keep the two in step.
+//
+// ADR-217 adds two DOCUMENT links to the same result — the replacement order and
+// the outward challan the pieces went out on. Unlike the vendor/PO/GRN above,
+// those two ARE stored columns (replacement_po_id, source_delivery_challan_id);
+// only their codes are resolved here. The source challan reads stored-first,
+// derived-second, because for an NC raised at the machine nothing can derive it.
 
 export interface NcSource {
   sourceVendorId: string | null;
@@ -103,7 +120,36 @@ export interface NcSource {
   sourcePoCode: string | null;
   sourceGrnCode: string | null;
   isVendorSourced: boolean;
+  // ─── ADR-217 document links ────────────────────────────────────────────────
+  /** The zero-value job-work order this return raised (nc.replacement_po_id).
+   *  Null on every NC disposed before ADR-217, on every disposition that is not
+   *  a return to vendor, and on a return with no resolvable vendor. */
+  replacementPoId: string | null;
+  replacementPoCode: string | null;
+  /** The outward challan the rejected pieces went out on: the stored
+   *  `nc.source_delivery_challan_id` when someone recorded it, else — for an
+   *  Incoming-QC reject — the OSP challan its GRN came back against. */
+  sourceDeliveryChallanId: string | null;
+  sourceDeliveryChallanCode: string | null;
 }
+
+/** The ADR-217 half of NcSource: the two documents an NC points AT, as opposed
+ *  to the vendor / PO / GRN it came FROM. Resolved for every NC regardless of
+ *  which source branch below answers, so the four contract fields are filled
+ *  the same way on an in-house reject as on a vendor one. */
+interface NcDocLinks {
+  replacementPoId: string | null;
+  replacementPoCode: string | null;
+  sourceDeliveryChallanId: string | null;
+  sourceDeliveryChallanCode: string | null;
+}
+
+const EMPTY_NC_DOC_LINKS: NcDocLinks = {
+  replacementPoId: null,
+  replacementPoCode: null,
+  sourceDeliveryChallanId: null,
+  sourceDeliveryChallanCode: null,
+};
 
 const EMPTY_NC_SOURCE: NcSource = {
   sourceVendorId: null,
@@ -112,13 +158,84 @@ const EMPTY_NC_SOURCE: NcSource = {
   sourcePoCode: null,
   sourceGrnCode: null,
   isVendorSourced: false,
+  ...EMPTY_NC_DOC_LINKS,
 };
+
+/** ADR-217 — resolve the replacement order and the source challan in ONE round
+ *  trip.
+ *
+ *  The replacement order is a plain FK lookup. The source challan is stored
+ *  FIRST and derived second: `nc.source_delivery_challan_id` when the person who
+ *  packed the pieces recorded it (there is no piece, lot or batch tracking in
+ *  this system, so for an NC raised at the machine nothing else can know it),
+ *  and for an Incoming-QC reject the GRN's own outward challan
+ *  (`nc.grn_line_id → goods_receipt_notes.delivery_challan_id`).
+ *
+ *  That derived hop is the SAME join, with the same filters, that
+ *  delivery-challans/rtv-candidates.ts already uses for its "Sent on DC No."
+ *  column — kept identical on purpose so the two readers cannot disagree about
+ *  which challan a return came off. */
+async function resolveNcDocLinks(
+  tx: DbTransaction,
+  companyId: string,
+  nc: {
+    grnLineId: string | null;
+    replacementPoId?: string | null;
+    sourceDeliveryChallanId?: string | null;
+  },
+): Promise<NcDocLinks> {
+  const replacementPoId = nc.replacementPoId ?? null;
+  const storedDcId = nc.sourceDeliveryChallanId ?? null;
+  // Nothing to look up — an in-house reject with no order and no challan. Skip
+  // the query entirely rather than run three LEFT JOINs over NULL.
+  if (!replacementPoId && !storedDcId && !nc.grnLineId) return { ...EMPTY_NC_DOC_LINKS };
+  const rows = (await tx.execute(sql`
+    SELECT rpo.id AS "replacementPoId", rpo.code AS "replacementPoCode",
+           sdc.id AS "sourceDeliveryChallanId", sdc.code AS "sourceDeliveryChallanCode"
+    FROM (SELECT 1) _one
+    LEFT JOIN public.purchase_orders rpo
+      ON rpo.id = ${replacementPoId}::uuid AND rpo.company_id = ${companyId}::uuid
+      AND rpo.deleted_at IS NULL
+    LEFT JOIN public.goods_receipt_note_lines gl
+      ON gl.id = ${nc.grnLineId}::uuid AND gl.company_id = ${companyId}::uuid
+      AND gl.deleted_at IS NULL
+    LEFT JOIN public.goods_receipt_notes grn
+      ON grn.id = gl.goods_receipt_note_id AND grn.deleted_at IS NULL
+      -- ADR-217: only an ORDINARY receipt can say which challan the pieces went
+      -- OUT on. A replacement receipt (nc_id set) carries the PARENT NC's RETURN
+      -- challan, so deriving from it answers "the challan these arrived on"
+      -- under a label that means the opposite — on a nested NC it named the
+      -- parent's return challan when nothing had gone out at all.
+      AND grn.nc_id IS NULL
+    LEFT JOIN public.delivery_challans sdc
+      ON sdc.id = COALESCE(${storedDcId}::uuid, grn.delivery_challan_id)
+      AND sdc.company_id = ${companyId}::uuid AND sdc.deleted_at IS NULL
+    LIMIT 1
+  `)) as unknown as Array<Record<string, unknown>>;
+  const r = rows[0];
+  return {
+    replacementPoId: (r?.['replacementPoId'] as string | null) ?? null,
+    replacementPoCode: (r?.['replacementPoCode'] as string | null) ?? null,
+    sourceDeliveryChallanId: (r?.['sourceDeliveryChallanId'] as string | null) ?? null,
+    sourceDeliveryChallanCode: (r?.['sourceDeliveryChallanCode'] as string | null) ?? null,
+  };
+}
 
 export async function resolveNcSource(
   tx: DbTransaction,
   companyId: string,
-  nc: { grnLineId: string | null; jcOpId: string | null },
+  nc: {
+    grnLineId: string | null;
+    jcOpId: string | null;
+    /** ADR-217. Optional so the callers that only need `isVendorSourced` (the
+     *  dispose guard, the flow view) can keep passing the two links they have. */
+    replacementPoId?: string | null;
+    sourceDeliveryChallanId?: string | null;
+  },
 ): Promise<NcSource> {
+  // ADR-217 — the two documents this NC points at, independent of which source
+  // branch below answers.
+  const links = await resolveNcDocLinks(tx, companyId, nc);
   // (a) Incoming-QC reject: the GRN line names the vendor directly.
   if (nc.grnLineId) {
     const rows = (await tx.execute(sql`
@@ -141,6 +258,7 @@ export async function resolveNcSource(
       sourcePoCode: (r?.['poCode'] as string | null) ?? null,
       sourceGrnCode: (r?.['grnCode'] as string | null) ?? null,
       isVendorSourced: true,
+      ...links,
     };
   }
 
@@ -169,11 +287,12 @@ export async function resolveNcSource(
         sourcePoCode: (r['poCode'] as string | null) ?? null,
         sourceGrnCode: null,
         isVendorSourced: true,
+        ...links,
       };
     }
   }
 
-  return { ...EMPTY_NC_SOURCE };
+  return { ...EMPTY_NC_SOURCE, ...links };
 }
 
 export interface DisposeNcContext {
@@ -200,6 +319,11 @@ export interface DisposeNcCascadeResult {
   /** make_fresh supplementary JC. */
   newJcCode?: string;
   newJcId?: string;
+  /** ADR-217 — the zero-value job-work order a return to vendor raised. Absent
+   *  when the disposition is not a return, or when the return had no vendor to
+   *  raise one against. */
+  replacementPoId?: string;
+  replacementPoCode?: string;
   /** use_as_is op_log row. */
   opLogId?: string;
 }
@@ -323,6 +447,12 @@ export async function disposeNcCascade(
   // retroactively re-classify NC rows dispositioned before this guard existed
   // (e.g. the existing prod NC-…-00006-Op8), whose disposition columns are left
   // exactly as they were.
+  //
+  // ADR-217 — the same resolve also supplies the vendor the replacement order
+  // is raised to, so it is kept for the return-to-vendor branches below rather
+  // than resolved a second time: the order and the challan must never be able
+  // to name two different vendors.
+  let ncSource: NcSource | null = null;
   if (
     input.action === 'return_to_vendor' ||
     input.action === 'rework' ||
@@ -331,7 +461,10 @@ export async function disposeNcCascade(
     const source = await resolveNcSource(tx, ctx.companyId, {
       grnLineId: loaded.grnLineId,
       jcOpId: loaded.jcOpId,
+      replacementPoId: loaded.replacementPoId,
+      sourceDeliveryChallanId: loaded.sourceDeliveryChallanId,
     });
+    ncSource = source;
     if (input.action === 'return_to_vendor' && !source.isVendorSourced) {
       throw new ConflictError(`Cannot return NC ${loaded.code} to vendor: it was made in-house.`);
     }
@@ -340,6 +473,28 @@ export async function disposeNcCascade(
         "This NC's material came from a vendor; return it to the vendor rather than reworking it in-house.",
       );
     }
+  }
+
+  // ADR-217 — "Sent on DC No.": which OUTWARD challan these pieces went out on.
+  // Only a return to vendor has anywhere to put it, so every other disposition
+  // ignores the field rather than storing it where nothing reads it. Checked
+  // HERE — before any write, still inside the FOR UPDATE lock on the NC taken
+  // at the top of this function — so a refusal costs nothing and the challan
+  // cannot be re-pointed between the check and the write.
+  //
+  // Nothing is auto-stored when the shortlist holds exactly one challan: the
+  // screen fills that in and SENDS it, so the stored fact always has a person
+  // behind it. A silent server-side default would read, a year later, exactly
+  // like someone having confirmed it.
+  const sourceDcId =
+    input.action === 'return_to_vendor' ? (input.sourceDeliveryChallanId ?? null) : null;
+  if (sourceDcId) {
+    await assertSourceDeliveryChallan(
+      tx,
+      ctx.companyId,
+      { id: loaded.id, code: loaded.code },
+      sourceDcId,
+    );
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -377,6 +532,12 @@ export async function disposeNcCascade(
         timeLogged: loaded.timeLogged,
         qcLogId: loaded.qcLogId,
         grnLineId: loaded.grnLineId,
+        // ADR-217: which challan the pieces went out on cannot be re-derived —
+        // there is no piece tracking in this system — so the remainder must
+        // inherit it or the fact is lost for that half of the rejection.
+        // `replacementPoId` is deliberately NOT inherited: the sibling is still
+        // pending and raises its own order when it is disposed.
+        sourceDeliveryChallanId: loaded.sourceDeliveryChallanId,
         // G8: the split half carries the same pieces, so it continues the same
         // parent NC (if any) as the row it was split from.
         parentNcId: loaded.parentNcId,
@@ -468,6 +629,27 @@ export async function disposeNcCascade(
     // return challan is raised next (createNcDc), the PO line stops counting
     // the pieces while they are out (recalcPoLineReceivedQty), and the vendor's
     // replacement is received and inspected against this NC.
+    //
+    // ADR-217 — and the order those documents hang off is raised HERE, in this
+    // transaction, under the FOR UPDATE lock taken at the top of this function.
+    const boughtPo = await createReplacementPoForNc(
+      tx,
+      ctx.companyId,
+      {
+        id: nc.id,
+        code: nc.code,
+        itemId: nc.itemId,
+        itemCodeText: nc.itemCodeText,
+        itemNameText: nc.itemNameText,
+        // AFTER any split: the qty this row owns, which is the qty going back.
+        rejectedQty: rejectedQtyNow.toFixed(3),
+        replacementPoId: nc.replacementPoId,
+        dispositionRemarks: input.remarks ?? null,
+      },
+      ncSource?.sourceVendorId ?? null,
+      today,
+      ctx.user,
+    );
     await setPendingNc(tx, ncId, loaded.code, {
       status: 'disposed',
       disposition: 'return_to_vendor',
@@ -477,9 +659,21 @@ export async function disposeNcCascade(
       dispositionBy: ctx.userId,
       dispositionAt: new Date(),
       dispositionRemarks: input.remarks ?? null,
+      // ADR-217 — null when there was no vendor to raise one against; the NC
+      // then behaves exactly as it did before ADR-217.
+      replacementPoId: boughtPo?.id ?? nc.replacementPoId ?? null,
+      // ADR-217 — the challan the pieces went out on, as answered on the
+      // screen. The key is omitted entirely when nothing was answered, so a
+      // value already on the row (a split half inherits its parent's) survives
+      // a later disposition instead of being wiped to null.
+      ...(sourceDcId ? { sourceDeliveryChallanId: sourceDcId } : {}),
       updatedBy: ctx.userId,
     });
     result.status = 'disposed';
+    if (boughtPo) {
+      result.replacementPoId = boughtPo.id;
+      result.replacementPoCode = boughtPo.code;
+    }
     return result;
   }
 
@@ -725,6 +919,31 @@ export async function disposeNcCascade(
     //
     // The challan itself is raised by service.createNcDc (design §5); the PO
     // received-qty adjustment of §12.2 happens there, at DC time, not here.
+    //
+    // ADR-217 — what IS raised here is the zero-value job-work order the challan
+    // and the vendor's replacement receipt then hang off, in this transaction
+    // and under the FOR UPDATE lock taken at the top of this function. The
+    // order's line carries no jc_op / SO-line link: those are the links the
+    // outsourcing cascades count, and a second line on this op would double its
+    // sent / received figures (§20.1 one number, one writer).
+    const replacementPo = await createReplacementPoForNc(
+      tx,
+      ctx.companyId,
+      {
+        id: nc.id,
+        code: nc.code,
+        itemId: nc.itemId,
+        itemCodeText: nc.itemCodeText,
+        itemNameText: nc.itemNameText,
+        // AFTER any split: the qty this row owns, which is the qty going back.
+        rejectedQty: rejectedQtyNow.toFixed(3),
+        replacementPoId: nc.replacementPoId,
+        dispositionRemarks: input.remarks ?? null,
+      },
+      ncSource?.sourceVendorId ?? null,
+      today,
+      ctx.user,
+    );
     await setPendingNc(tx, ncId, loaded.code, {
       status: 'disposed',
       disposition: 'return_to_vendor',
@@ -734,9 +953,20 @@ export async function disposeNcCascade(
       dispositionBy: ctx.userId,
       dispositionAt: new Date(),
       dispositionRemarks: input.remarks ?? null,
+      // ADR-217 — null when the NC had no resolvable vendor (or its vendor is
+      // disabled): the NC then behaves exactly as it did before ADR-217.
+      replacementPoId: replacementPo?.id ?? nc.replacementPoId ?? null,
+      // ADR-217 — the challan the pieces went out on, as answered on the
+      // screen. Omitted when nothing was answered, so a value already on the
+      // row (inherited by a split half) is not wiped to null.
+      ...(sourceDcId ? { sourceDeliveryChallanId: sourceDcId } : {}),
       updatedBy: ctx.userId,
     });
     result.status = 'disposed';
+    if (replacementPo) {
+      result.replacementPoId = replacementPo.id;
+      result.replacementPoCode = replacementPo.code;
+    }
     return result;
   }
 

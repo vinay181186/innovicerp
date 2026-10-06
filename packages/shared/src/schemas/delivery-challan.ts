@@ -41,8 +41,15 @@ export const deliveryChallanSchema = z.object({
   // must return this too, and typecheck is what enforces it.
   vehicleNo: z.string().nullable(),
   // ── Return-to-vendor challan raised from an NC (design §5) ──────────────
-  /** The NC this challan returns pieces for; null on an ordinary OSP DC. When
-   *  set there is no purchase order: `poCodeText` carries the NC code. */
+  /** The NC this challan returns pieces for; null on an ordinary OSP DC.
+   *
+   *  ADR-217 split this into two shapes. A return raised BEFORE it has no
+   *  purchase order and `poCodeText` carries the NC code — the fault ADR-217
+   *  exists to remove. A return raised AFTER it hangs off a zero-value job-work
+   *  order like any other challan, so `poCodeText` is a real PO code again.
+   *  **Read `purchaseOrderId` to tell them apart, never `poCodeText`.** Reading
+   *  that text field as "the NC code when ncId is set" is exactly what this
+   *  comment used to say, and it is now wrong for every new return. */
   ncId: z.string().uuid().nullable().default(null),
   ncCode: z.string().nullable().default(null),
   jobCardId: z.string().uuid().nullable().default(null),

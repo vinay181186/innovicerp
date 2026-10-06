@@ -2312,6 +2312,14 @@ export const purchaseOrderLines = pgTable(
     sourcePrId: uuid('source_pr_id').references((): AnyPgColumn => purchaseRequests.id, {
       onDelete: 'set null',
     }),
+    // ADR-217 / migration 0200 — the non-conformance this line answers, beside
+    // the three `source_*` links above. A PO is normally raised against a
+    // Purchase Request (ADR-138); a return to vendor is raised against the NC
+    // instead, which is a stronger document — it names an inspector, a quantity,
+    // a reason and a vendor.
+    sourceNcId: uuid('source_nc_id').references((): AnyPgColumn => ncRegister.id, {
+      onDelete: 'set null',
+    }),
     ramRemark: text('ram_remark'),
     lineRemarks: text('line_remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2817,6 +2825,21 @@ export const ncRegister = pgTable(
       onDelete: 'set null',
     }),
     deliveryChallanId: uuid('delivery_challan_id').references(
+      (): AnyPgColumn => deliveryChallans.id,
+      { onDelete: 'set null' },
+    ),
+    // ADR-217 / migration 0200 — the zero-value job-work order this return
+    // raised. Before it, a return was the only material movement with no
+    // purchase order, and the challan and GRN both put the NC code in a column
+    // named `po_code_text`. One per NC (partial unique index).
+    replacementPoId: uuid('replacement_po_id').references((): AnyPgColumn => purchaseOrders.id, {
+      onDelete: 'set null',
+    }),
+    // ADR-217 — which outward challan the rejected pieces went out on. NOT
+    // derivable: there is no piece, lot or batch tracking in this system, so for
+    // an NC raised at the machine the only source is the person who packed it.
+    // Null is a correct answer (nothing was sent out, or nobody could say).
+    sourceDeliveryChallanId: uuid('source_delivery_challan_id').references(
       (): AnyPgColumn => deliveryChallans.id,
       { onDelete: 'set null' },
     ),

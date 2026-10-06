@@ -94,9 +94,20 @@ export function useJwDcPoLines(poId: string | undefined) {
   });
 }
 
+/** The POST /jw-dc/outward body: the frozen document input plus the ADR-217
+ *  phase 4 confirmation, which rides alongside it exactly as the OSP challan
+ *  carries `rtvConfirmedNcIds` (ADR-211). Request-only — the server parses it
+ *  with its own schema and never stores it — so it is NOT part of
+ *  `CreateJwDcOutwardInput` in packages/shared. */
+export type CreateJwDcOutwardBody = CreateJwDcOutwardInput & {
+  /** The return-to-vendor NCs the store saw when it ticked "These are new
+   *  pieces, not the ones waiting to go back". Sent only when ticked. */
+  rtvConfirmedNcIds?: string[];
+};
+
 export function useCreateJwDcOutward() {
   const qc = useQueryClient();
-  return useMutation<JwDcOutward, Error, CreateJwDcOutwardInput>({
+  return useMutation<JwDcOutward, Error, CreateJwDcOutwardBody>({
     mutationFn: (input) => apiFetch<JwDcOutward>('/jw-dc/outward', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwDcKeys.all });

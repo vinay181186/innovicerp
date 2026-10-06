@@ -55,16 +55,16 @@ import {
   parseDocRevision,
   qtyUomProblem,
   roundQty,
-  RTV_CANDIDATE_STATE_LABELS,
   withDocRevision,
 } from '@innovic/shared';
 import type {
   DocumentEditStagedResult,
   DocumentTraceability,
   ReceiveDeliveryChallanResponse,
-  RtvPendingConflictDetails,
 } from '@innovic/shared';
-import { queryRtvCandidates } from './rtv-candidates';
+// ADR-217 phase 4 — assertNoRtvPending now lives beside its SQL in
+// rtv-candidates.ts, because the JW DC Outward path calls the same guard.
+import { assertNoRtvPending } from './rtv-candidates';
 import { diffFields } from '../../lib/audit-trail';
 import {
   DC_HEADER_EDIT_FIELDS,
@@ -154,6 +154,16 @@ export async function listDeliveryChallans(
           -- PO chip renders poCode (green) ?? poCodeText (amber), so match the
           -- live PO's code as well as the text this DC stored when issued.
           OR dc.po_code_text ILIKE ${term} ESCAPE '\\'
+          -- ADR-217: a return challan's cell shows "NC <code>". That used to be
+          -- po_code_text; after ADR-217 that column is a real PO code, so the
+          -- NC must be reached on its own or the store cannot find the row the
+          -- screen is showing them.
+          OR EXISTS (
+            SELECT 1 FROM public.nc_register snc
+            WHERE snc.id = dc.nc_id
+              AND snc.deleted_at IS NULL
+              AND snc.code ILIKE ${term} ESCAPE '\\'
+          )
           OR EXISTS (
             SELECT 1
             FROM public.purchase_orders spo
@@ -1058,63 +1068,6 @@ async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string>
   return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
 }
 
-const RTV_MESSAGE_MAX_NCS = 3;
-
-/** ADR-211 — 409 (details.kind = 'rtv_pending') when any of these PO lines has
- *  return-to-vendor pieces waiting that the store has NOT confirmed as
- *  different pieces. Confirmation is per NC: an NC whose id is in
- *  `confirmedNcIds` is let through; any other waiting NC refuses the save, and
- *  only those unconfirmed NCs are listed. Same SQL as
- *  GET /delivery-challans/rtv-candidates. */
-async function assertNoRtvPending(
-  tx: DbTransaction,
-  companyId: string,
-  poLineIds: string[],
-  confirmedNcIds: readonly string[],
-): Promise<void> {
-  const confirmed = new Set(confirmedNcIds);
-  const waiting = (
-    await queryRtvCandidates(tx, companyId, { purchaseOrderLineIds: poLineIds })
-  ).filter((c) => !confirmed.has(c.ncId));
-  if (waiting.length === 0) return;
-  const shown = waiting
-    .slice(0, RTV_MESSAGE_MAX_NCS)
-    .map(
-      (c) =>
-        `${c.ncCode} (${roundQty(Number(c.rejectedQty))} pcs, ${RTV_CANDIDATE_STATE_LABELS[c.state]})`,
-    );
-  const more = waiting.length - shown.length;
-  const list =
-    more > 0
-      ? `${shown.join(', ')} and ${more} more`
-      : shown.length > 1
-        ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
-        : shown[0]!;
-  const one = waiting.length === 1;
-  const anyReady = waiting.some((c) => c.state === 'ready');
-  const anyAwaiting = waiting.some((c) => c.state === 'awaiting_decision');
-  // A 'Waiting for QC Decision' NC cannot be sent yet (the picker greys it), so
-  // only point Ready to Send pieces at the return route.
-  const message =
-    `${list} ${one ? 'on this PO line is' : 'on these PO lines are'} waiting to go back to the vendor. ` +
-    (anyReady ? 'Send Ready to Send pieces with DC Against → Against JW PO / DC. ' : '') +
-    (anyAwaiting ? 'Pieces Waiting for QC Decision cannot be sent until QC decides. ' : '') +
-    'If these are different pieces, tick “These are new pieces, not the ones waiting to go back”.';
-  const details: RtvPendingConflictDetails = {
-    kind: 'rtv_pending',
-    ncs: waiting.map((c) => ({
-      ncId: c.ncId,
-      ncCode: c.ncCode,
-      itemCode: c.itemCode ?? c.itemCodeText,
-      rejectedQty: c.rejectedQty,
-      state: c.state,
-      // Filtered on purchaseOrderLineIds, so the resolved line is always set.
-      poLineId: c.purchaseOrderLineId ?? '',
-    })),
-  };
-  throw new ConflictError(message, details);
-}
-
 export async function createDeliveryChallan(
   input: CreateDeliveryChallanInput,
   user: AuthContext,
@@ -1673,7 +1626,9 @@ export async function updateDeliveryChallanTx(
   }
   for (const [poLineId, inc] of newIncByPoLine) {
     const pol = poLines.get(poLineId)!;
-    const baseline = roundQty((alreadySentAll.get(poLineId) ?? 0) - (thisDcCurrentByPoLine.get(poLineId) ?? 0));
+    const baseline = roundQty(
+      (alreadySentAll.get(poLineId) ?? 0) - (thisDcCurrentByPoLine.get(poLineId) ?? 0),
+    );
     const remaining = roundQty(pol.qty - baseline);
     if (inc > remaining) {
       throw new ConflictError(
@@ -1745,10 +1700,7 @@ export async function updateDeliveryChallanTx(
     };
     if (il.materialText !== undefined) lineUpdates.materialText = il.materialText ?? null;
     if (il.dcRemarks !== undefined) lineUpdates.dcRemarks = il.dcRemarks ?? null;
-    await tx
-      .update(deliveryChallanLines)
-      .set(lineUpdates)
-      .where(eq(deliveryChallanLines.id, c.id));
+    await tx.update(deliveryChallanLines).set(lineUpdates).where(eq(deliveryChallanLines.id, c.id));
   }
 
   // Header: travel details + the revision bump. Conditional on status (§20.2) —

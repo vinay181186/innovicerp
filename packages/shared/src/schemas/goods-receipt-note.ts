@@ -186,6 +186,14 @@ export type GoodsReceiptNoteDetail = z.infer<typeof goodsReceiptNoteDetailSchema
 
 /** List row: header + line aggregates + vendor/PO joins. */
 export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
+  /** ADR-217 — the NC this receipt answers, resolved from `ncId`.
+   *
+   *  The list used to read `poCodeText` for an NC-return GRN, because before
+   *  ADR-217 that column CARRIED the NC code (there was no purchase order). A
+   *  return now hangs off a real zero-value job-work order, so that column holds
+   *  a PO code and the NC number would have vanished from the list. The code is
+   *  resolved here instead of inferred from a text field. */
+  ncCode: z.string().nullable().default(null),
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),

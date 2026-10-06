@@ -242,6 +242,14 @@ export const purchaseOrderLineInputSchema = z
      *  requires at least one PR-linked line (see createPurchaseOrderInputSchema),
      *  so ADR-138 "a PO is always raised against a Purchase Request" holds. */
     sourcePrId: z.string().uuid().optional(),
+    /** ADR-217 — the non-conformance this line answers. A return to vendor is
+     *  raised against the NC instead of a Purchase Request: the NC is the
+     *  stronger document, naming an inspector, a quantity, a reason and a
+     *  vendor, where a system-raised PR for something nobody is buying would
+     *  only clog the buyer's queue. Satisfies the create input's
+     *  "at least one documented reason" rule below, exactly as `sourcePrId`
+     *  does. */
+    sourceNcId: z.string().uuid().optional(),
     ramRemark: z.string().max(2000).optional(),
     lineRemarks: z.string().max(2000).optional(),
   })
@@ -298,8 +306,13 @@ export const createPurchaseOrderInputSchema = z.object({
   lines: z
     .array(purchaseOrderLineInputSchema)
     .min(1, 'At least one line is required')
-    .refine((lines) => lines.some((l) => Boolean(l.sourcePrId)), {
-      message: 'At least one line must be raised against a Purchase Request',
+    /** ADR-138 — a PO is never raised out of nowhere; at least one line must
+     *  name the document that asked for it. ADR-217 adds the non-conformance to
+     *  that list: a return to vendor is raised against the NC. The rule's intent
+     *  (no purchase order without a documented reason behind it) is unchanged —
+     *  only its list of acceptable reasons grows by one. */
+    .refine((lines) => lines.some((l) => Boolean(l.sourcePrId) || Boolean(l.sourceNcId)), {
+      message: 'At least one line must be raised against a Purchase Request or a Non-Conformance',
     }),
 });
 export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderInputSchema>;
