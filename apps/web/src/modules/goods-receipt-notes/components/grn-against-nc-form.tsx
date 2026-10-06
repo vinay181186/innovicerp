@@ -157,6 +157,12 @@ export function GrnAgainstNcForm({
   // still in the cache for one render — can never be shown against this one.
   const { data: ncDetailData } = useNcRegister(ncId ?? undefined);
   const ncDetail = ncId !== null && ncDetailData?.id === ncId ? ncDetailData : undefined;
+  // The dash below states "this NC has no purchase order / GRN behind it — it was
+  // raised at the machine", which is a real fact about the record. It must not
+  // also be what a pending or failed fetch looks like, or the screen asserts an
+  // absence it has not established. Until the answer is in hand the boxes stay
+  // blank, exactly as they are before an NC is picked.
+  const ncSourceKnown = ncDetail !== undefined;
 
   const { data: dcData } = useDeliveryChallan(dcId ?? undefined);
   // Only trust the detail when it is the picked challan's (not the previous
@@ -363,7 +369,7 @@ export function GrnAgainstNcForm({
               id="ncSourcePo"
               className="innovic-input mono fw-700"
               readOnly
-              value={ncId ? (ncDetail?.sourcePoCode ?? '—') : ''}
+              value={ncSourceKnown ? (ncDetail.sourcePoCode ?? '—') : ''}
               title={ncDetail?.sourcePoCode ?? undefined}
               placeholder="— from the NC —"
               tabIndex={-1}
@@ -374,7 +380,7 @@ export function GrnAgainstNcForm({
               id="ncSourceGrn"
               className="innovic-input mono fw-700"
               readOnly
-              value={ncId ? (ncDetail?.sourceGrnCode ?? '—') : ''}
+              value={ncSourceKnown ? (ncDetail.sourceGrnCode ?? '—') : ''}
               title={ncDetail?.sourceGrnCode ?? undefined}
               placeholder="— from the NC —"
               tabIndex={-1}
@@ -390,7 +396,7 @@ export function GrnAgainstNcForm({
               tabIndex={-1}
             />
           </FormField>
-          <FormField label="Vendor" size="sm" htmlFor="ncVendor">
+          <FormField label="Vendor" size="lg" htmlFor="ncVendor">
             <input
               id="ncVendor"
               className="innovic-input"
@@ -401,7 +407,7 @@ export function GrnAgainstNcForm({
               tabIndex={-1}
             />
           </FormField>
-          <FormField label="Vendor Invoice No." size="sm" htmlFor="ncVendorInvoice">
+          <FormField label="Vendor Invoice No." size="lg" htmlFor="ncVendorInvoice">
             <input
               id="ncVendorInvoice"
               className="innovic-input"

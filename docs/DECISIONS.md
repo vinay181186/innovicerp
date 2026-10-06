@@ -11624,9 +11624,21 @@ outward challan, the disposition screen asks which one; with exactly one candida
 with none it stays blank.
 
 **4. The receiving screen reveals the chain from whichever end.** The GRN tabs stop hiding each
-other, and the shipped picker that already shows **PO No. · Sent on DC No. · NC No.** on one row,
-searchable by any of the three (`jwpo-dc-rtv-picker.tsx` + `queryRtvCandidates`), is reused rather
-than rebuilt.
+other: a return challan is listed on the JW PO / DC tab under its own label and is findable by its
+NC number, its challan number or the words "return to vendor", and the Against NC tab states the
+`Source PO No.` and `Source GRN No.` behind the rejection.
+
+*The shipped `jwpo-dc-rtv-picker.tsx` is NOT reused here, and it cannot be.* It is fed by
+`queryRtvCandidates`, whose predicate requires `nc.delivery_challan_id IS NULL`
+(`lib/rtv-predicates.ts`) — NCs still WAITING for a challan. The receiving screen handles the exact
+complement: NCs whose challan already exists and is issued. The two populations are disjoint, so
+reusing that picker would have listed NCs with nothing to receive behind a Select button that could
+not work. This was planned as a reuse and the plan was wrong.
+
+For the same reason **`Sent on DC No.` is not shown yet**: no endpoint carries it for an NC that
+already has its challan. `Source GRN No.` is the nearest true fact and one hop short of it. The real
+field needs `sourceDeliveryChallanId` / `sourceDeliveryChallanCode` on `ncRegisterSchema` and a join
+in `resolveNcSource` — phase 2, not smuggled into phase 1.
 
 **5. The second outward route gets the same guard.** `createJwDcOutward` (the store's own JW DC
 screen) never calls `assertNoRtvPending`, which ADR-211 recorded as "not covered". It is covered now.

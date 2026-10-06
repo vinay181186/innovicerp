@@ -265,7 +265,9 @@ export function GrnAgainstDcForm({
 
   // ADR-217 — is the picked challan a return to vendor? Detail first, list row
   // while it loads. Nothing is a return until a challan is actually picked.
-  const returnNcCode = dc ? dc.ncCode : (pickedRow?.ncCode ?? null);
+  const returnNcCode = dc
+    ? (dc.ncCode ?? pickedRow?.poCodeText ?? null)
+    : (pickedRow?.ncCode ?? pickedRow?.poCodeText ?? null);
   const isReturn = (dc ? dc.ncId : (pickedRow?.ncId ?? null)) !== null;
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
@@ -411,7 +413,7 @@ export function GrnAgainstDcForm({
           </FormField>
 
           {/* Row 2 — DC No. · Vendor (from the DC) · Vendor Invoice No. (4 + 4 + 4). */}
-          <FormField label="DC No." required size="md" htmlFor="dcId">
+          <FormField label="DC No." required size={isReturn ? 'sm' : 'md'} htmlFor="dcId">
             {/* Keyed on a counter bumped by a USER change of the JWPO, so the
                 picker's own text resets then — otherwise the old challan's label
                 would linger in the box. Not keyed on jwpoId itself: a DC pick
@@ -435,7 +437,7 @@ export function GrnAgainstDcForm({
               }
             />
           </FormField>
-          <FormField label="Vendor" size="md" htmlFor="dcVendor">
+          <FormField label="Vendor" size={isReturn ? 'sm' : 'md'} htmlFor="dcVendor">
             <input
               id="dcVendor"
               className="innovic-input"
@@ -446,10 +448,12 @@ export function GrnAgainstDcForm({
             />
           </FormField>
           {/* ADR-217 — only on a return to vendor, so an ordinary job-work
-              receipt is exactly the screen it always was. Keeps row 2 at a full
-              12 columns: DC No. · Vendor · NC No. */}
+              receipt is exactly the screen it always was. On a return the four
+              fields narrow to 3 each so the row still sums to 12 (FormGrid's
+              rule) instead of leaving Vendor Invoice No. alone on a row of its
+              own: DC No. · Vendor · NC No. · Vendor Invoice No. */}
           {isReturn ? (
-            <FormField label="NC No." size="md" htmlFor="dcNcCode">
+            <FormField label="NC No." size="sm" htmlFor="dcNcCode">
               <input
                 id="dcNcCode"
                 className="innovic-input mono fw-700"
@@ -460,7 +464,11 @@ export function GrnAgainstDcForm({
               />
             </FormField>
           ) : null}
-          <FormField label="Vendor Invoice No." size="md" htmlFor="vendorInvoice">
+          <FormField
+            label="Vendor Invoice No."
+            size={isReturn ? 'sm' : 'md'}
+            htmlFor="vendorInvoice"
+          >
             <input
               id="vendorInvoice"
               className="innovic-input"

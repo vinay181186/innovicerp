@@ -809,9 +809,14 @@ test('AB9 - Against JWPO / DC: challan picker enabled with no JWPO, long labels;
   // purchase order behind them and so carry a different label. They are checked
   // on their own shape; only the PO-backed rows can satisfy `longLabel`, and
   // only they can fill the JW PO box below.
-  const returnLabel = /^Return to Vendor · NC[-\w]* · .+ · \d{4}-\d{2}-\d{2}$/;
-  const poOpts = dcOpts.filter((o) => !o.startsWith('Return to Vendor'));
-  const rtvOpts = dcOpts.filter((o) => o.startsWith('Return to Vendor'));
+  // The option's TEXT is `CODE \u2014 name` (searchable-select optionLabel), so a
+  // return reads `IN-DC-0007 \u2014 Return to Vendor \u00b7 NC NC-0012 \u00b7 vendor \u00b7 date`.
+  // Partition on that marker, never on the start of the string.
+  const RTV_MARK = ' \u2014 Return to Vendor \u00b7 ';
+  const returnLabel =
+    /^IN-DC-\d+(?:\/R\d+)? — Return to Vendor · NC [-\w]+ · .+ · \d{4}-\d{2}-\d{2}$/;
+  const poOpts = dcOpts.filter((o) => !o.includes(RTV_MARK));
+  const rtvOpts = dcOpts.filter((o) => o.includes(RTV_MARK));
   log('AB9: ' + poOpts.length + ' PO-backed, ' + rtvOpts.length + ' return-to-vendor');
   for (const o of poOpts) expect(o, 'long label form').toMatch(longLabel);
   for (const o of rtvOpts) expect(o, 'return label form').toMatch(returnLabel);
