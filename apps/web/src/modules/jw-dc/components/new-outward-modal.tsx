@@ -24,6 +24,7 @@ import {
 } from '../api';
 import { ErrorBox, ModalShell } from './modal-shell';
 import { OutwardLineTable, type OutwardLineUi } from './outward-line-table';
+import { rtvOpenQty } from '@/modules/delivery-challans/lib/rtv-open-qty';
 
 /** PO statuses material may go out against: approved and still live. */
 const SENDABLE_PO_STATUSES: ReadonlySet<string> = new Set(['open', 'partial', 'qc_pending']);
@@ -36,7 +37,14 @@ interface RtvPanelRow {
   ncId: string;
   ncCode: string;
   itemCodeLabel: string;
+  /** GROSS — what the deviation was raised for. Kept because the 409 payload
+   *  carries only this, but NEVER shown: a partly recovered deviation would
+   *  tell the store to ship more pieces than are left. */
   rejectedQty: string;
+  /** ADR-219 — what is still to go back, net of anything already recovered or
+   *  written off. This is the figure on screen, and it is what keeps this panel
+   *  identical to the OSP Delivery Challan's (the promise two comments up). */
+  openQty: string;
   state: RtvCandidateState;
   poLineId: string | null;
 }
@@ -159,6 +167,7 @@ export function NewOutwardModal({
         ncCode: c.ncCode,
         itemCodeLabel: itemCodeWithRev(c.itemCode ?? c.itemCodeText, c.itemRevision),
         rejectedQty: c.rejectedQty,
+        openQty: c.openQty,
         state: c.state,
         poLineId: c.purchaseOrderLineId,
       });
@@ -239,6 +248,10 @@ export function NewOutwardModal({
               ncCode: n.ncCode,
               itemCodeLabel: n.itemCode ?? '—',
               rejectedQty: n.rejectedQty,
+              // The 409 payload has no netted figure, so the gross one stands in
+              // until the candidate refetch replaces it. Overstates a partly
+              // recovered deviation for a moment; never understates.
+              openQty: n.rejectedQty,
               state: n.state,
               poLineId: n.poLineId,
             }),
@@ -378,7 +391,7 @@ export function NewOutwardModal({
                 <b className="mono fw-700" style={{ color: 'var(--text)' }}>
                   {r.itemCodeLabel}
                 </b>{' '}
-                — {Number(r.rejectedQty)} pcs — {RTV_CANDIDATE_STATE_LABELS[r.state]}
+                — {rtvOpenQty(r)} pcs — {RTV_CANDIDATE_STATE_LABELS[r.state]}
               </li>
             ))}
           </ul>
