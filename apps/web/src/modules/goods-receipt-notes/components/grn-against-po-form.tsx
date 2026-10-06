@@ -1,6 +1,6 @@
 // GRN "Against PO" — the create form behind the 📦 Against PO tab of
 // <UnifiedGrnForm>. The purchase order is the single source: pick one and its
-// vendor and every line with a balance still to receive are loaded from it;
+// vendor and every line with a Pending qty still to receive are loaded from it;
 // change or clear the PO and everything below it is thrown away and reloaded.
 // No free-text PO ref, no vendor fallback, no manual item entry, no QC fields
 // — QC happens later at Incoming QC. No GRN No. box either: the server
@@ -15,7 +15,7 @@
 // The old <GoodsReceiptNoteForm> keeps serving /goods-receipt-notes/$id/edit;
 // its create mode is no longer reached.
 
-import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut } from '@innovic/shared';
+import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut, roundQty } from '@innovic/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayIst } from '@/lib/date';
@@ -23,9 +23,11 @@ import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orde
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
-import { GrnLinesTable } from './grn-lines-table';
+import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
+import { GrnVendorCluster } from './grn-vendor-cluster';
+import { type GrnLineRow, grnReceivedError, grnReceiptTotals } from './grn-receipt-figures';
 
 interface LineDraft {
   purchaseOrderLineId: string;
@@ -43,7 +45,7 @@ interface LineDraft {
   uom: string | null;
   poQty: number;
   receivedSoFar: number;
-  balance: number;
+  pending: number;
   /** Kept as text so a half-typed value never snaps to 0 under the user. */
   receiveNow: string;
   dcRefNo: string;
@@ -55,20 +57,6 @@ export interface GrnAgainstPoFormProps extends GrnTypeFormShellProps {
   initialPurchaseOrderId?: string;
   onSubmit: (values: CreateGoodsReceiptNoteInput) => Promise<void>;
   submitError: string | null;
-}
-
-/** One line's Receive Now check. Null = fine. */
-function lineQtyError(raw: string, balance: number): string | null {
-  const t = raw.trim();
-  if (t === '') return null; // blank = 0 = skipped on submit
-  const n = Number(t);
-  // Decimal for KGS / MTR, up to 3 places (0172); the server still refuses a
-  // fraction for a NOS / SET item, naming the item and its unit.
-  if (!Number.isFinite(n)) return 'Enter a number.';
-  if (Math.abs(Math.round(n * 1000) - n * 1000) > 1e-6) return 'Up to 3 decimal places only.';
-  if (n < 0) return 'Receive Now cannot be less than 0.';
-  if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
-  return null;
 }
 
 export function GrnAgainstPoForm({
@@ -145,8 +133,8 @@ export function GrnAgainstPoForm({
     setLines(
       po.lines
         .map((l): LineDraft | null => {
-          const balance = Math.round((l.qty - l.receivedQty) * 1000) / 1000;
-          if (balance <= 0) return null;
+          const pending = roundQty(l.qty - l.receivedQty);
+          if (pending <= 0) return null;
           return {
             purchaseOrderLineId: l.id,
             lineNo: l.lineNo,
@@ -159,8 +147,8 @@ export function GrnAgainstPoForm({
             uom: l.uom,
             poQty: l.qty,
             receivedSoFar: l.receivedQty,
-            balance,
-            receiveNow: String(balance),
+            pending,
+            receiveNow: String(pending),
             dcRefNo: '',
             remarks: '',
             error: null,
@@ -181,6 +169,12 @@ export function GrnAgainstPoForm({
     if (po) return `${po.code} — ${po.vendorName ?? po.vendorCodeText ?? '—'}`;
     return undefined;
   }, [poId, poOptions, po]);
+
+  // The shared check, with this line's own cap and unit. Passing the UOM is new:
+  // the PO line has always carried it, so a NOS / SET item is now refused a
+  // fraction here instead of only by the server.
+  const lineError = (l: LineDraft): string | null =>
+    grnReceivedError(l.receiveNow, { uom: l.uom, cap: l.pending });
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
     setLinesTouched(true);
@@ -203,7 +197,7 @@ export function GrnAgainstPoForm({
       return;
     }
     // Re-check every line and surface the errors inline; refuse if any.
-    const checked = lines.map((l) => ({ ...l, error: lineQtyError(l.receiveNow, l.balance) }));
+    const checked = lines.map((l) => ({ ...l, error: lineError(l) }));
     setLines(checked);
     if (checked.some((l) => l.error !== null)) {
       setFormError('Fix the highlighted quantities.');
@@ -211,7 +205,7 @@ export function GrnAgainstPoForm({
     }
     const toSend = checked.filter((l) => Number(l.receiveNow.trim() || '0') > 0);
     if (toSend.length === 0) {
-      setFormError('Enter a Receive Now qty on at least one line.');
+      setFormError('Enter a Received qty on at least one line.');
       return;
     }
 
@@ -252,6 +246,28 @@ export function GrnAgainstPoForm({
     }
   };
 
+  // ONE row list, read by the lines table AND by the header's account, so the
+  // header figure and the table's totals row can never disagree.
+  const rows: GrnLineRow[] = lines.map((l) => ({
+    key: l.purchaseOrderLineId,
+    clientPoLineNo: l.clientPoLineNo,
+    itemCode: l.itemCodeDisplay,
+    itemRevision: l.itemRevision,
+    itemName: l.itemName,
+    uom: l.uom,
+    qty: l.poQty,
+    receivedEarlier: l.receivedSoFar,
+    pendingQty: l.pending,
+    receiveNow: l.receiveNow,
+    dcRefNo: l.dcRefNo,
+    remarks: l.remarks,
+    error: l.error,
+  }));
+
+  // The header's account, from the same rows and the same `accountOf` the table
+  // foots and the view page reads — one rule, one rounding, one answer.
+  const { account } = grnReceiptTotals(rows);
+
   const listLoading = openPos.isFetching || partialPos.isFetching;
 
   // Report to the shell so its header Save / "Not saved" pill stay truthful.
@@ -277,102 +293,105 @@ export function GrnAgainstPoForm({
         </Banner>
       ) : null}
 
-      <Panel title="GRN Details">
-        <FormGrid>
-          {/* Row 1 — GRN Type · GRN Date · Purchase Order (3 + 3 + 6); GRN Date
-              sits second on all three GRN types. */}
-          {typeField}
-          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
-            <input
-              id="grnDate"
-              type="date"
-              className="innovic-input"
-              value={grnDate}
-              onChange={(e) => setGrnDate(e.target.value)}
+      {/* The receipt, in the order it happens: which paper am I receiving
+          against → who delivered it → their paperwork → how much this receipt
+          settles. Four rows of four, every row full, cluster names in the left
+          gutter. Create and Edit share this grid and this sequence; only the
+          controls differ (owner's layout method, rules 1-8). */}
+      <Panel title="Receipt">
+        <ClusterGrid>
+          <Cluster name="Against">
+            {typeField}
+            <FormField
+              label="PO No."
               required
-            />
-          </FormField>
-          <FormField
-            label="Purchase Order"
-            required
-            size="lg"
-            htmlFor="purchaseOrderId"
-            error={poIneligible}
-          >
-            <SearchableSelect
-              id="purchaseOrderId"
-              value={poId}
-              onChange={setPoId}
-              options={poOptions}
-              onSearch={setPoSearch}
-              loading={listLoading}
-              placeholder="🔍 Type PO number or vendor…"
-              valueLabel={poValueLabel}
-              emptyText="No open POs with pending qty."
-            />
-          </FormField>
+              htmlFor="purchaseOrderId"
+              className="cl-span-2"
+              {...(poIneligible
+                ? { error: poIneligible }
+                : { help: 'Open and partly-received buying POs only' })}
+            >
+              <SearchableSelect
+                id="purchaseOrderId"
+                value={poId}
+                onChange={setPoId}
+                options={poOptions}
+                onSearch={setPoSearch}
+                loading={listLoading}
+                placeholder="🔍 Type PO number or vendor…"
+                valueLabel={poValueLabel}
+                emptyText="No open POs with pending qty."
+              />
+            </FormField>
+            <FormField label="GRN Date" required htmlFor="grnDate">
+              <input
+                id="grnDate"
+                type="date"
+                className="innovic-input"
+                value={grnDate}
+                onChange={(e) => setGrnDate(e.target.value)}
+                required
+              />
+            </FormField>
+          </Cluster>
 
-          {/* Row 2 — Vendor (from the PO) · Vendor Invoice No. · Vendor Challan No. (6 + 3 + 3). */}
-          <FormField label="Vendor" size="lg" htmlFor="vendor">
-            <input
-              id="vendor"
-              className="innovic-input"
-              readOnly
-              value={vendorLabel}
-              placeholder="— from the PO —"
-              tabIndex={-1}
-            />
-          </FormField>
-          <FormField label="Vendor Invoice No." size="sm" htmlFor="invoiceNo">
-            <input
-              id="invoiceNo"
-              className="innovic-input"
-              autoComplete="off"
-              value={invoiceNo}
-              onChange={(e) => setInvoiceNo(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Vendor Challan No." size="sm" htmlFor="dcNo">
-            <input
-              id="dcNo"
-              className="innovic-input"
-              autoComplete="off"
-              value={dcNo}
-              onChange={(e) => setDcNo(e.target.value)}
-            />
-          </FormField>
+          {/* All three come from the PO / the vendor master, so all three are
+              one-line FACTS — not read-only boxes the user tries to type in. */}
+          <GrnVendorCluster
+            vendorId={po?.vendorId}
+            vendorLabel={vendorLabel}
+            vendorFrom={'— from the PO —'}
+            codeFallback={po?.vendorCodeText ?? ''}
+          />
 
-          {/* Row 3 — Remarks (full). */}
-          <FormField label="Remarks" size="full" htmlFor="remarks">
-            <textarea
-              id="remarks"
-              className="innovic-textarea"
-              rows={2}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-            />
-          </FormField>
-        </FormGrid>
+          <Cluster name="Vendor paper">
+            <FormField label="Vendor Invoice No." htmlFor="invoiceNo">
+              <input
+                id="invoiceNo"
+                className="innovic-input"
+                autoComplete="off"
+                value={invoiceNo}
+                onChange={(e) => setInvoiceNo(e.target.value)}
+              />
+            </FormField>
+            <FormField label="Vendor Challan No." htmlFor="dcNo">
+              <input
+                id="dcNo"
+                className="innovic-input"
+                autoComplete="off"
+                value={dcNo}
+                onChange={(e) => setDcNo(e.target.value)}
+              />
+            </FormField>
+            {/* The DOCUMENT's note. The line's own is `Remarks`, behind ▸ More. */}
+            <FormField label="GRN Remarks" htmlFor="remarks" className="cl-span-2">
+              <input
+                id="remarks"
+                className="innovic-input"
+                autoComplete="off"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
+            </FormField>
+          </Cluster>
+
+          {/* THE ACCOUNT — recomputed from the live rows on every keystroke.
+              Null only if a row had no PO line behind it, which cannot happen
+              here: every row IS a PO line. */}
+          {account ? <GrnReceiptAccount account={account} qtyLabel="PO Qty" /> : null}
+        </ClusterGrid>
       </Panel>
 
-      <Panel title="Line Items" bodyPadding="none">
+      <Panel title={`Line Items (${rows.length})`} bodyPadding="none">
         <GrnLinesTable
-          rows={lines.map((l) => ({
-            key: l.purchaseOrderLineId,
-            clientPoLineNo: l.clientPoLineNo,
-            itemCode: l.itemCodeDisplay,
-            itemRevision: l.itemRevision,
-            itemName: l.itemName,
-            uom: l.uom,
-            qty: l.poQty,
-            receivedSoFar: l.receivedSoFar,
-            balance: l.balance,
-            receiveNow: l.receiveNow,
-            remarks: l.remarks,
-            error: l.error,
-          }))}
+          rows={rows}
           decimal
           qtyLabel="PO Qty"
+          showAccount
+          challan={{
+            headerValue: dcNo.trim(),
+            onChange: (idx, v) => patchLine(idx, { dcRefNo: v }),
+          }}
           emptyText={
             !poId
               ? 'Select a purchase order'
@@ -382,7 +401,7 @@ export function GrnAgainstPoForm({
           }
           onReceiveNow={(idx, v) => {
             const l = lines[idx];
-            if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance) });
+            if (l) patchLine(idx, { receiveNow: v, error: lineError({ ...l, receiveNow: v }) });
           }}
           onRemarks={(idx, v) => patchLine(idx, { remarks: v })}
           onRemove={(idx) => {
