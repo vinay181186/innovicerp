@@ -440,7 +440,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     : header.parentItemCodeText.trim()
       ? itemsFetching
         ? 'Checking Item Master…'
-        : 'Not in Item Master'
+        : // Matches ARE on screen — the user is part-way through choosing one,
+          // not looking at a code that does not exist. Saying "Not in Item
+          // Master" here accused every half-typed code.
+          itemOptions.length > 0
+          ? 'auto-filled'
+          : 'Not in Item Master'
       : 'auto-filled';
 
   const onParentPicked = (id: string | null): void => {
@@ -1057,27 +1062,27 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               <label className="form-label" htmlFor="bom-parent-item">
                 Item Code<span className="req">★</span>
               </label>
-              {/* The class goes on the WRAPPER here: the shared picker keeps its
-                  `.innovic-input` inside a div of its own, which cluster-grid.css
-                  caps via `.cl-cap-md > .innovic-input`. */}
-              <div className="cl-cap-md">
-                <SearchableSelect
-                  id="bom-parent-item"
-                  value={resolvedParentId || null}
-                  onChange={onParentPicked}
-                  onSearch={onParentSearch}
-                  loading={itemsFetching}
-                  options={itemOptions}
-                  placeholder="Search parent item code…"
-                  emptyText="No matching item"
-                  selectedLabel={(o) => o.code ?? o.name}
-                  {...(parentItem
-                    ? { valueLabel: parentItem.code }
-                    : header.parentItemCodeText
-                      ? { valueLabel: header.parentItemCodeText }
-                      : {})}
-                />
-              </div>
+              {/* The cap goes to the picker's OWN className — it forwards it to
+                  the div that holds `.innovic-input`, so `.cl-cap-md >
+                  .innovic-input` matches. Wrapping it in another div makes the
+                  input a grandchild and the cap silently does nothing. */}
+              <SearchableSelect
+                className="cl-cap-md"
+                id="bom-parent-item"
+                value={resolvedParentId || null}
+                onChange={onParentPicked}
+                onSearch={onParentSearch}
+                loading={itemsFetching}
+                options={itemOptions}
+                placeholder="Search parent item code…"
+                emptyText="No matching item"
+                selectedLabel={(o) => o.code ?? o.name}
+                {...(parentItem
+                  ? { valueLabel: parentItem.code }
+                  : header.parentItemCodeText
+                    ? { valueLabel: header.parentItemCodeText }
+                    : {})}
+              />
             </div>
             {/* Resolved from the code and never typed, so it is a VALUE, not a
                 disabled input half the panel wide. */}
@@ -1421,6 +1426,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                         payload as when these two sat on a sub-row. */}
                     <td>
                       <MaterialGradePicker
+                        ariaLabel={`RM Grade, line ${idx + 1}`}
                         id={`bom-line-grade-${idx}`}
                         valueId={line.rawMaterialGradeId}
                         valueText={line.rawMaterialGradeText}
@@ -1434,6 +1440,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                     </td>
                     <td>
                       <MaterialSizePicker
+                        ariaLabel={`RM Size, line ${idx + 1}`}
                         id={`bom-line-size-${idx}`}
                         valueId={line.rawMaterialSizeId}
                         valueText={line.rawMaterialSizeText}
