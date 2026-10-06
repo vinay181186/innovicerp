@@ -44,6 +44,7 @@ import { requireWriteRole } from '../../lib/auth';
 import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
+import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { lockDocSeries } from '../../lib/doc-series-lock';
@@ -711,7 +712,15 @@ export async function listPurchaseOrders(
         -- and nothing once the PO is closed / short-closed / cancelled.
         (CASE WHEN po.status IN ('draft', 'open', 'partial', 'qc_pending')
               THEN COALESCE(line_agg.pending_qty, 0) ELSE 0 END)::float8 AS "pendingQty",
-        COALESCE(dc_agg.sent_qty, 0)::float8      AS "dcSentQty"
+        COALESCE(dc_agg.sent_qty, 0)::float8      AS "dcSentQty",
+        -- "Return Challan Pending" at HEADER grain. The +New DC picker needs it
+        -- because a PO can owe nothing fresh and still have deviated pieces
+        -- sitting in the store waiting to go back: before this it vanished from
+        -- the picker at that moment and could not be found at all. It never
+        -- widens what Against PO may send — the fresh cap is still
+        -- totalQty - dcSentQty; this only lets the screen SAY what is waiting
+        -- and point it at Against NC (§20.5).
+        COALESCE(rtv_agg.awaiting_qty, 0)::float8 AS "rtvAwaitingChallanQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.users cu ON cu.id = po.created_by
@@ -729,6 +738,43 @@ export async function listPurchaseOrders(
           ON pl.id = ls.purchase_order_line_id AND pl.deleted_at IS NULL
         GROUP BY pl.purchase_order_id
       ) dc_agg ON dc_agg.purchase_order_id = po.id
+      -- Deviated pieces on this PO that QC decided go back to the vendor and
+      -- whose return challan has not been raised yet. The state predicate is
+      -- the ONE definition in lib/rtv-predicates.ts (rtvReadyForChallanSql) --
+      -- the same one the Against NC picker and the Against PO refusal use -- so
+      -- this figure can never name pieces those two would not offer.
+      -- LATERAL and correlated on po.id, not a GROUP BY over every NC in the
+      -- company: it runs for one page of POs. One row, so it cannot multiply
+      -- the result; it is NOT in the COUNT query below (see the note there).
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(
+                 SUM(GREATEST(0, nc.rejected_qty - nc.cleared_qty - nc.failed_qty)),
+                 0
+               ) AS awaiting_qty
+        FROM public.nc_register nc
+        -- Origin op read by id + company only, with NO deleted_at filter --
+        -- MIRRORS createNcDc and rtv-candidates.ts, which resolve the PO line
+        -- that way. Adding a filter here would silently drop pieces those two
+        -- still consider waiting.
+        LEFT JOIN public.jc_ops oo
+          ON oo.id = nc.jc_op_id AND oo.company_id = nc.company_id
+        -- ADR-189 -- a bought-material NC (no job card) reaches its PO line
+        -- through the GRN line it was rejected on. Same fallback as
+        -- goods-receipt-notes/cascades.ts and rtv-candidates.ts.
+        LEFT JOIN public.goods_receipt_note_lines ngl
+          ON ngl.id = nc.grn_line_id
+        JOIN public.purchase_order_lines rpol
+          ON rpol.id = COALESCE(
+               oo.outsource_po_line_id,
+               CASE WHEN nc.job_card_id IS NULL THEN ngl.purchase_order_line_id END
+             )
+            AND rpol.purchase_order_id = po.id
+            AND rpol.company_id = po.company_id
+            AND rpol.deleted_at IS NULL
+        WHERE nc.company_id = po.company_id
+          AND nc.deleted_at IS NULL
+          AND ${rtvReadyForChallanSql('nc')}
+      ) rtv_agg ON TRUE
       WHERE po.company_id = ${companyId}::uuid
         AND po.deleted_at IS NULL
         ${searchFrag}
@@ -752,6 +798,11 @@ export async function listPurchaseOrders(
     // raw SQL too and the predicate stays defined once, used twice. The
     // line_agg join is one row per PO and cannot change the count; it is here
     // because Sort & Filter may filter on the line totals.
+    //
+    // dc_agg and rtv_agg are deliberately NOT here, and neither is registered
+    // in PO_SF_COLUMNS (sf-columns.ts): a ▾ filter on either would make this
+    // count reference an alias it does not join, so the list would come back
+    // while the header count threw. Both are display-only figures.
     const totalRows = await tx.execute(sql`
       SELECT COUNT(*)::int AS total
       FROM public.purchase_orders po
@@ -820,6 +871,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     receivedQty: Number(r['receivedQty'] ?? 0),
     pendingQty: Number(r['pendingQty'] ?? 0),
     dcSentQty: Number(r['dcSentQty'] ?? 0),
+    rtvAwaitingChallanQty: Number(r['rtvAwaitingChallanQty'] ?? 0),
   };
 }
 

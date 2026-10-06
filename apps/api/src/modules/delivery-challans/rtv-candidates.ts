@@ -66,6 +66,7 @@ function toCandidate(r: Record<string, unknown>): RtvCandidate {
     itemName: str('itemName'),
     itemNameText: str('itemNameText'),
     rejectedQty: String(r['rejectedQty'] ?? '0'),
+    openQty: String(r['openQty'] ?? '0'),
     clientPoLineNo: str('clientPoLineNo'),
     jobCardId: str('jobCardId'),
     jcCode: str('jcCode'),
@@ -117,6 +118,13 @@ export async function queryRtvCandidates(
       i.name AS "itemName",
       nc.item_name_text AS "itemNameText",
       nc.rejected_qty::text AS "rejectedQty",
+      -- What is STILL to go back. rejected_qty above is the gross figure the
+      -- deviation was raised for; a partly recovered one (some pieces already
+      -- cleared, some written off) would overstate what must ship. Same
+      -- expression as v_nc_op_breakup.rtv_awaiting_challan_qty (0138) and the
+      -- PO list's Return Challan Pending lateral, so the three agree. No cast
+      -- to integer anywhere near it: a line may be in KGS or MTR (0172).
+      GREATEST(0, nc.rejected_qty - nc.cleared_qty - nc.failed_qty)::text AS "openQty",
       sol.client_po_line_no AS "clientPoLineNo",
       nc.job_card_id AS "jobCardId",
       jc.code AS "jcCode",
@@ -262,11 +270,15 @@ export async function assertNoRtvPending(
     await queryRtvCandidates(tx, companyId, { purchaseOrderLineIds: poLineIds })
   ).filter((c) => !confirmed.has(c.ncId));
   if (waiting.length === 0) return;
+  // openQty, never rejectedQty: the gross figure the deviation was raised for
+  // would overstate what is still waiting once some pieces have been recovered
+  // or written off. Same figure the PO list serves as Return Challan Pending.
+  const totalOpen = roundQty(waiting.reduce((sum, c) => sum + Number(c.openQty), 0));
   const shown = waiting
     .slice(0, RTV_MESSAGE_MAX_NCS)
     .map(
       (c) =>
-        `${c.ncCode} (${roundQty(Number(c.rejectedQty))} pcs, ${RTV_CANDIDATE_STATE_LABELS[c.state]})`,
+        `${c.ncCode} (${roundQty(Number(c.openQty))} pcs, ${RTV_CANDIDATE_STATE_LABELS[c.state]})`,
     );
   const more = waiting.length - shown.length;
   const list =
@@ -275,14 +287,30 @@ export async function assertNoRtvPending(
       : shown.length > 1
         ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
         : shown[0]!;
-  const one = waiting.length === 1;
   const anyReady = waiting.some((c) => c.state === 'ready');
   const anyAwaiting = waiting.some((c) => c.state === 'awaiting_decision');
-  // A 'Waiting for QC Decision' NC cannot be sent yet (the picker greys it), so
-  // only point Ready to Send pieces at the return route.
+  // Says the TOTAL first, then names the deviations behind it, because the
+  // store's question is "how many are waiting", not "which records".
+  //
+  // The waiting pieces are NOT part of what this screen can send and the cap
+  // above has not changed: Against PO sends fresh material only, so it offers
+  // ordered minus already-sent and nothing more. Their route out is Against NC
+  // (one challan per deviation, raised by createNcDc).
+  //
+  // "Against JW PO / DC" reaches the SAME place by a different search — it
+  // finds return-to-vendor deviations by job-work PO No. or by the challan they
+  // first went out on, and saves through createNcDc too. It is not wrong, it is
+  // a second door. The owner named Against NC (ADR-219), so every message says
+  // that one: §18, one fact one name, and a store told two names for one action
+  // learns neither.
+  //
+  // A 'Waiting for QC Decision' deviation cannot go anywhere yet (the picker
+  // greys it), so it keeps its own sentence and only Ready to Send pieces are
+  // pointed at Against NC.
   const message =
-    `${list} ${one ? 'on this PO line is' : 'on these PO lines are'} waiting to go back to the vendor. ` +
-    (anyReady ? 'Send Ready to Send pieces with DC Against → Against JW PO / DC. ' : '') +
+    `${totalOpen} pcs on this PO are waiting to go back to the vendor (${list}). ` +
+    'This screen sends fresh material only, so those pieces are not part of what it can send. ' +
+    (anyReady ? 'Send them with DC Against → Against NC. ' : '') +
     (anyAwaiting ? 'Pieces Waiting for QC Decision cannot be sent until QC decides. ' : '') +
     'If these are different pieces, tick “These are new pieces, not the ones waiting to go back”.';
   const details: RtvPendingConflictDetails = {

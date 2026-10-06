@@ -27,4 +27,13 @@ export const PO_SF_COLUMNS: SfColumnMap = {
   totalAmount: { sql: sql`po.total_amount`, type: 'num', price: true },
   status: { sql: sql`po.status`, type: 'list' },
   createdOn: { sql: sql`(po.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // Deliberately NOT here: dcSentQty (dc_agg) and rtvAwaitingChallanQty
+  // (rtv_agg, "Return Challan Pending"). Those two aliases are joined by the
+  // LIST query only — the COUNT query does not carry them, because an
+  // unfiltered count must not aggregate every challan line and every
+  // non-conformance a second time. Registering either would let a ▾ filter
+  // build a count predicate that names an alias the count has no join for, so
+  // the rows would come back and the header count would throw. Both are
+  // display-only figures; if one ever has to be sortable, the count query must
+  // join the same alias in the same commit.
 };
