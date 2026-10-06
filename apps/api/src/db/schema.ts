@@ -4401,6 +4401,10 @@ export const storeIssues = pgTable(
     issuedToOperatorId: uuid('issued_to_operator_id').references((): AnyPgColumn => operators.id, {
       onDelete: 'set null',
     }),
+    // 0199 — "Issued To" now points at an app login holding a granted Production
+    // right (production-user.ts). issuedToOperatorId is kept, unwritten, for the
+    // historical slips that used the Operator master.
+    issuedToUserId: uuid('issued_to_user_id').references(() => users.id, { onDelete: 'set null' }),
     department: text('department'),
     // ADR-189 (migration 0152) — reversal by an opposite 'in' ledger entry;
     // all-or-none CHECK on who / when / why.

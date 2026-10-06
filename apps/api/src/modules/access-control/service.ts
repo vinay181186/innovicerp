@@ -30,6 +30,7 @@ import {
   pruneDeptsMap,
   pruneFormsMap,
   type listUserAccessQuerySchema,
+  type ProductionUserOption,
   type QcUserOption,
   type SaveUserAccessInput,
   type UserAccess,
@@ -418,6 +419,129 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
     // but an admin is rarely the person who inspected, and burying the QC team
     // under them is what made this dropdown read as "everybody".
     const band = (o: (typeof options)[number]): number => (o.isQcDept ? 0 : o._direct ? 1 : 2);
+    return options
+      .sort((a, b) => (band(a) === band(b) ? a.name.localeCompare(b.name) : band(a) - band(b)))
+      .map(({ _direct: _drop, ...o }) => o);
+  });
+}
+
+// ── Production user options ────────────────────────────────────
+// The forms that ARE a Production entry: making a Job Card, a Production Order,
+// an Op / Machine-Op entry, or maintaining a Machine / Operator / Raw Material
+// master. Someone GRANTED create on ANY one of these does Production work, which
+// is exactly what an "Issued To" dropdown on Issue from Store is asking for.
+//
+// Mirrors QC_ENTRY_FORMS: a per-form grant counts (even with no Production
+// tier), a per-page "No create" switch takes it away, and L1 (view-only) falls
+// out on its own. The tiers are NOT a ladder (L4 Approver has no entry), so this
+// asks the app's real permission, never a "tier >= L2" comparison.
+const PRODUCTION_ENTRY_FORMS: readonly AccessFormKey[] = [
+  'jc_create',
+  'prodorder_create',
+  'op_entry',
+  'machop_entry',
+  'machine_create',
+  'operator_create',
+  'rawmat_create',
+];
+
+/** Was this person GIVEN the right to make a Production entry? Asked through the
+ *  app's own permission function (same shape as wasGrantedQcEntry) so the
+ *  dropdown can never disagree with what the Production screens let someone do.
+ *  Full Access counts — those accounts may make any entry — but is sorted LAST
+ *  (see the ordering below) so an admin never reads as Production staff. */
+function wasGrantedProductionEntry(eff: EffectiveAccess): boolean {
+  return PRODUCTION_ENTRY_FORMS.some((f) => effectiveFormPerms(eff, f).entry);
+}
+
+/** Did their PRODUCTION access grant this, as opposed to Full Access covering
+ *  everything? Sort key only — separates the Production team and people granted
+ *  Production rights from the admins who merely may. */
+function grantedProductionEntryDirectly(eff: EffectiveAccess): boolean {
+  return wasGrantedProductionEntry({ ...eff, fullAccess: false });
+}
+
+/** Their Production tier for display, whatever it is — L1 included. Reported,
+ *  not filtered on: someone can qualify through a per-form grant with a low tier
+ *  or none. `normalizeDeptsMap` reads the pre-0100 literal `true` as L1. */
+function productionTierLabel(departments: unknown): string | null {
+  return normalizeDeptsMap(asDeptsMap(departments))['production'] ?? null;
+}
+
+// The people Access Control actually lets do Production work — the source list
+// behind the "Issued To" dropdown on Issue from Store. Readable by ANY
+// authenticated user in the company (not admin-only): the store clerk recording
+// an issue is who opens it. Returns names and emails only, never the permission
+// maps — exactly as listQcUserOptions does.
+export async function listProductionUserOptions(
+  user: AuthContext,
+): Promise<ProductionUserOption[]> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        acFullAccess: userAccess.fullAccess,
+        acAuditor: userAccess.auditor,
+        acMainDept: userAccess.mainDept,
+        acDepartments: userAccess.departments,
+        // Needed because the qualifying test is the app's real permission check,
+        // which unions the department tier with per-form grants and then
+        // subtracts the per-page OFF switches.
+        acForms: userAccess.forms,
+      })
+      .from(users)
+      .leftJoin(
+        userAccess,
+        and(
+          eq(userAccess.userId, users.id),
+          eq(userAccess.companyId, companyId),
+          isNull(userAccess.deletedAt),
+        ),
+      )
+      .where(
+        and(eq(users.companyId, companyId), eq(users.isActive, true), isNull(users.deletedAt)),
+      );
+
+    // `_direct` rides along purely as a sort key and is stripped before return,
+    // so the wire shape stays exactly ProductionUserOption.
+    const options: Array<ProductionUserOption & { _direct: boolean }> = rows.flatMap((r) => {
+      const fullAccess = r.acFullAccess ?? false;
+      // Built exactly as getMyAccess builds it, so this asks the same question of
+      // the same shape the Production screens ask of themselves.
+      const eff: EffectiveAccess = {
+        fullAccess,
+        auditor: r.acAuditor ?? false,
+        drawingDownload: false,
+        departments: normalizeDeptsMap(asDeptsMap(r.acDepartments)),
+        forms: cascadeFormsMap(asFormsMap(r.acForms)),
+      };
+      if (!wasGrantedProductionEntry(eff)) return [];
+      const tier = productionTierLabel(r.acDepartments);
+      return [
+        {
+          id: r.id,
+          // A login with no name set would otherwise render as a blank row. Raw
+          // here — the frontend shortens it for display.
+          name: r.fullName?.trim() || r.email,
+          email: r.email,
+          tier,
+          isProductionDept: r.acMainDept === 'production',
+          fullAccess,
+          _direct: grantedProductionEntryDirectly(eff),
+        },
+      ];
+    });
+
+    // Three bands so the list opens on the people whose job this actually is:
+    //   1. the Production team   — Production is their MAIN department
+    //   2. granted Production    — a Production tier or a per-form grant says so
+    //   3. everyone else         — Full Access accounts who merely MAY do it
+    // Within a band, by name.
+    const band = (o: (typeof options)[number]): number =>
+      o.isProductionDept ? 0 : o._direct ? 1 : 2;
     return options
       .sort((a, b) => (band(a) === band(b) ? a.name.localeCompare(b.name) : band(a) - band(b)))
       .map(({ _direct: _drop, ...o }) => o);

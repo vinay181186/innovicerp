@@ -20,7 +20,7 @@ import { JcMaterialTable } from '../../material/components/jc-material-table';
 import { SoMaterialTable } from '../../material/components/so-material-table';
 import { useCreateStoreIssue } from '../api';
 import { type DraftIssueLine, IssueLinesEditor, toIssueLines } from './issue-lines-editor';
-import { JobCardPicker, OperatorPicker, SalesOrderPicker } from './issue-pickers';
+import { JobCardPicker, ProductionUserPicker, SalesOrderPicker } from './issue-pickers';
 
 interface OverLine {
   itemCode: string;
@@ -48,7 +48,7 @@ export function NewIssueModal({
   const [salesOrderId, setSalesOrderId] = useState<string | null>(seed?.salesOrderId ?? null);
   const [department, setDepartment] = useState('');
   const [date, setDate] = useState(todayIst());
-  const [operatorId, setOperatorId] = useState<string | null>(null);
+  const [issuedToUserId, setIssuedToUserId] = useState<string | null>(null);
   const [issuedToText, setIssuedToText] = useState('');
   const [purpose, setPurpose] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -111,8 +111,8 @@ export function NewIssueModal({
     if (against === 'assembly_so' && !salesOrderId) return fail('Pick the Assembly SO.');
     if (against === 'general' && !department.trim())
       return fail('Enter the Department that uses it.');
-    if (!operatorId && !issuedToText.trim())
-      return fail('Pick who received it (Operator) or type a name.');
+    if (!issuedToUserId && !issuedToText.trim())
+      return fail('Pick who received it, or type a name.');
     if (purpose.trim().length < 3) return fail('Enter the Purpose (at least 3 characters).');
     const ls = toIssueLines(lines);
     if (!ls.ok) return fail(ls.error);
@@ -126,7 +126,7 @@ export function NewIssueModal({
     if (against === 'job_card' && jobCardId) input.jobCardId = jobCardId;
     if (against === 'assembly_so' && salesOrderId) input.salesOrderId = salesOrderId;
     if (against === 'general') input.department = department.trim();
-    if (operatorId) input.operatorId = operatorId;
+    if (issuedToUserId) input.issuedToUserId = issuedToUserId;
     else input.issuedToText = issuedToText.trim();
     if (remarks.trim()) input.remarks = remarks.trim();
     if (reason) input.confirmReason = reason;
@@ -245,13 +245,17 @@ export function NewIssueModal({
               <label className="form-label" htmlFor="si-op">
                 Issued To <span className="req">★</span>
               </label>
-              <OperatorPicker id="si-op" value={operatorId} onChange={setOperatorId} />
-              {!operatorId ? (
+              <ProductionUserPicker
+                id="si-op"
+                value={issuedToUserId}
+                onChange={setIssuedToUserId}
+              />
+              {!issuedToUserId ? (
                 <input
                   type="text"
                   className="innovic-input"
                   style={{ marginTop: 4 }}
-                  placeholder="…or type a name if not an operator"
+                  placeholder="…or type a name"
                   value={issuedToText}
                   onChange={(e) => setIssuedToText(e.target.value)}
                 />
