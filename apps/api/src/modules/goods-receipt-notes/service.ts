@@ -633,6 +633,11 @@ export async function listGoodsReceiptNotes(
         grn.deleted_at AS "deletedAt",
         v.name AS "vendorName",
         po.code AS "poCode",
+        -- ADR-217: resolved, never read off po_code_text. A return raised
+        -- before ADR-217 put the NC code in that column; one raised after it
+        -- puts a real PO code there. (No backticks in here: this whole SELECT
+        -- is a TypeScript template literal and one would close it.)
+        (SELECT n.code FROM public.nc_register n WHERE n.id = grn.nc_id) AS "ncCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         first_line.item_code AS "firstItemCode",
         first_line.item_name AS "firstItemName",
@@ -761,6 +766,7 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     deletedAt: maybeTsLike(r['deletedAt']),
     vendorName: (r['vendorName'] as string | null) ?? null,
     poCode: (r['poCode'] as string | null) ?? null,
+    ncCode: (r['ncCode'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
     firstItemCode: (r['firstItemCode'] as string | null) ?? null,
     firstItemName: (r['firstItemName'] as string | null) ?? null,
@@ -1388,7 +1394,10 @@ function grnChildRowsChanged(
     const c = byId.get(p.id);
     if (!c) return true;
     seen.add(p.id);
-    if (p.purchaseOrderLineId !== undefined && !valuesEqual(p.purchaseOrderLineId, c.purchaseOrderLineId))
+    if (
+      p.purchaseOrderLineId !== undefined &&
+      !valuesEqual(p.purchaseOrderLineId, c.purchaseOrderLineId)
+    )
       return true;
     if (p.itemId !== undefined && !valuesEqual(p.itemId, c.itemId)) return true;
     if (p.itemCodeText !== undefined && !valuesEqual(p.itemCodeText, c.itemCodeText)) return true;
@@ -1396,8 +1405,10 @@ function grnChildRowsChanged(
     if (!valuesEqual(p.receivedQty, c.receivedQty)) return true;
     if (p.dcRefNo !== undefined && !valuesEqual(p.dcRefNo, c.dcRefNo)) return true;
     if (p.qcStatus !== undefined && !valuesEqual(p.qcStatus, c.qcStatus)) return true;
-    if (p.qcAcceptedQty !== undefined && !valuesEqual(p.qcAcceptedQty, c.qcAcceptedQty)) return true;
-    if (p.qcRejectedQty !== undefined && !valuesEqual(p.qcRejectedQty, c.qcRejectedQty)) return true;
+    if (p.qcAcceptedQty !== undefined && !valuesEqual(p.qcAcceptedQty, c.qcAcceptedQty))
+      return true;
+    if (p.qcRejectedQty !== undefined && !valuesEqual(p.qcRejectedQty, c.qcRejectedQty))
+      return true;
     if (p.qcDate !== undefined && !valuesEqual(p.qcDate, c.qcDate)) return true;
     if (p.qcRemarks !== undefined && !valuesEqual(p.qcRemarks, c.qcRemarks)) return true;
     if (p.remarks !== undefined && !valuesEqual(p.remarks, c.remarks)) return true;

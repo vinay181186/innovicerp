@@ -27,6 +27,7 @@ import {
 } from '@innovic/shared';
 import { jcOps, jobCards, machines, ncRegister, opLog, purchaseOrderLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { closeReplacementPoForNc } from '../purchase-orders/service';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
@@ -161,8 +162,18 @@ export async function markNcClosed(
         inArray(ncRegister.status, statusesThatMayMoveTo(NC_STATUS_MOVES, 'closed')),
       ),
     )
-    .returning({ code: ncRegister.code });
+    .returning({ code: ncRegister.code, replacementPoId: ncRegister.replacementPoId });
   assertRowUpdated(rows, 'This NC');
+
+  // ADR-217 — the zero-value order this return raised has done its job: the
+  // replacement came back and cleared. It cannot close itself (see
+  // closeReplacementPoForNc), and leaving it open would put one permanently
+  // pending order in the buyer's list for every return. Same transaction, so
+  // the deviation and its order close together or not at all.
+  const closed = rows[0];
+  if (closed?.replacementPoId) {
+    await closeReplacementPoForNc(tx, closed.replacementPoId, closed.code, user.id);
+  }
 }
 
 // ─── Child rework / repair job card (design §4) ───────────────────────────

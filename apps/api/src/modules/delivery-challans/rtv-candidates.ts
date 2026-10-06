@@ -133,8 +133,15 @@ export async function queryRtvCandidates(
       ON gl.id = nc.grn_line_id AND gl.company_id = nc.company_id AND gl.deleted_at IS NULL
     LEFT JOIN public.goods_receipt_notes grn
       ON grn.id = gl.goods_receipt_note_id AND grn.deleted_at IS NULL
+    -- ADR-217 — the STORED source challan wins when somebody recorded it
+    -- (nc.source_delivery_challan_id): there is no piece or lot tracking in
+    -- this system, so for an NC raised at the machine the person who packed it
+    -- is the only source, and no GRN hop can answer. The derived hop stays as
+    -- the answer for an Incoming-QC reject. Same COALESCE as resolveNcSource
+    -- (nc-register/cascades.ts), so the two readers cannot disagree.
     LEFT JOIN public.delivery_challans sdc
-      ON sdc.id = grn.delivery_challan_id AND sdc.company_id = nc.company_id
+      ON sdc.id = COALESCE(nc.source_delivery_challan_id, grn.delivery_challan_id)
+        AND sdc.company_id = nc.company_id
         AND sdc.deleted_at IS NULL
     -- PO line — MIRRORS createNcDc (nc-register/service.ts, poLineId):
     --   origin op with (op_type = 'outsource' OR outsource_po_line_id set)

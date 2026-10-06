@@ -685,6 +685,19 @@ function DetailGrid(props: {
                 </span>
               </InlinePair>
             ) : null}
+            {/* ADR-217 Phase 2 — the OUTWARD challan the rejected pieces went
+                out on, the number the STORE holds. Stored on the NC, asked for
+                at disposition and never guessed, so null is a correct answer
+                and shows nothing at all rather than a wrong challan. Same
+                grouping and same `Sent on DC No.` label (docs/NAMING.md) the
+                GRN Against NC tab uses for the same fact. */}
+            {detail.sourceDeliveryChallanCode ? (
+              <InlinePair label="Sent on DC No.:">
+                <span className="td-code" style={{ color: 'var(--text)' }}>
+                  {detail.sourceDeliveryChallanCode}
+                </span>
+              </InlinePair>
+            ) : null}
           </>
         ) : isReworkDisp ? (
           <InlinePair label="Actual Machine:">{detail.machineCodeText ?? '—'}</InlinePair>

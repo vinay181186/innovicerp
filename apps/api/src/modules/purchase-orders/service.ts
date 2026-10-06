@@ -16,7 +16,7 @@
 // a PR may be covered by several — ADR-152 phase 2). Mirrors legacy `addPO()`
 // line 25728.
 
-import { type SQL, and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import {
   approvalConfig,
   deliveryChallans,
@@ -28,6 +28,7 @@ import {
   jobCards,
   jobWorkOrderLines,
   jwDcOutward,
+  ncRegister,
   purchaseOrderLines,
   purchaseOrders,
   purchaseRequests,
@@ -66,6 +67,7 @@ import {
   opSrNo,
   parseDocRevision,
   poCodePrefix,
+  roundQty,
   withDocRevision,
 } from '@innovic/shared';
 import type {
@@ -351,6 +353,37 @@ async function assertNoPartyMaterialLines(
     throw new ValidationError(
       `${offending.code} is Party Supplied Material (the customer's own material) and cannot be bought on a Purchase Order. Remove it from the PO.`,
     );
+  }
+}
+
+/** ADR-217 — a PO line may name the non-conformance it answers instead of a
+ *  Purchase Request. The NC must be THIS company's and still live: an id from
+ *  another company must not be linkable, so it is treated as not found — the
+ *  same rule, and the same wording shape, as the PR guard on the create path.
+ *
+ *  No quantity cap is applied, deliberately: what a return sends back is the
+ *  NC's own rejected qty, and the NC — unlike a PR — is not a balance several
+ *  purchase orders draw down. The one-order-per-NC rule lives on the NC row
+ *  (`replacement_po_id` + its partial unique index), not here. */
+async function assertNcIdsExist(
+  tx: DbTransaction,
+  ncIds: readonly string[],
+  companyId: string,
+): Promise<void> {
+  const unique = Array.from(new Set(ncIds));
+  if (unique.length === 0) return;
+  const rows = await tx
+    .select({ id: ncRegister.id })
+    .from(ncRegister)
+    .where(
+      and(
+        eq(ncRegister.companyId, companyId),
+        inArray(ncRegister.id, unique),
+        isNull(ncRegister.deletedAt),
+      ),
+    );
+  if (rows.length !== unique.length) {
+    throw new NotFoundError('NC not found. It may have been moved to Trash.');
   }
 }
 
@@ -1060,6 +1093,215 @@ async function nextPoCode(tx: DbTransaction, companyId: string, poType: PoType):
   return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
 }
 
+/** ADR-217 — everything a replacement order needs from its non-conformance.
+ *  Passed IN rather than re-read here: `disposeNcCascade` already holds this
+ *  row under `SELECT … FOR UPDATE` and is mid-write on it, so a second read
+ *  would be a second opinion on the same row. */
+export interface NcForReplacementPo {
+  id: string;
+  code: string;
+  itemId: string;
+  itemCodeText: string;
+  itemNameText: string | null;
+  /** AFTER any partial-disposition split: the qty THIS NC row owns. */
+  rejectedQty: string;
+  replacementPoId: string | null;
+  dispositionRemarks: string | null;
+}
+
+/**
+ * ADR-217 — a return to vendor is an ordinary job-work order that happens to
+ * cost nothing.
+ *
+ * Creates the zero-value `job_work` purchase order the rejected pieces go back
+ * on, so the return challan and the vendor's replacement receipt hang off a
+ * REAL purchase order like every other outsourcing movement — instead of the
+ * pre-ADR-217 shape, where a return was the only material movement in the
+ * system with no order behind it and two documents compensated by writing the
+ * NC number into a column named `po_code_text`.
+ *
+ * Called ONLY from `disposeNcCascade`'s two `return_to_vendor` branches, inside
+ * the transaction and the `FOR UPDATE` lock that function already holds on the
+ * NC row (§20.1 one writer; §20.3 the check and the insert in one transaction).
+ *
+ * Numbering comes from `nextPoCode(…, 'job_work')` — the same function, and so
+ * the same IN-JWPO-#####/R1 series under the same PO series lock, that
+ * `createPurchaseOrderFromPr` numbers a hand-raised job-work PO with. The one
+ * deliberate difference is the STATUS: that path opens a PO 'draft' while PO
+ * approval is on, this one is always born 'open'. ADR-217 decided that
+ * explicitly ("No approval step on the replacement order… there is no money in
+ * it, so an approval gate is ceremony"), and a draft order would also stop the
+ * store issuing the very challan the disposition just asked for.
+ *
+ * Returns null — WITHOUT failing the disposition — when the return cannot carry
+ * an order: no resolvable source vendor, a source vendor since disabled, a
+ * non-positive qty, or a party-supplied item (ADR-195). The NC then keeps
+ * `replacement_po_id` null and the pre-ADR-217 challan path runs exactly as it
+ * did before, which is also what every NC disposed before ADR-217 does.
+ *
+ * Idempotent: an NC that already names a replacement order gets THAT order
+ * back, never a second one. The partial unique index
+ * `nc_register_replacement_po_uq` (migration 0199) is the database backstop,
+ * not the guard.
+ */
+export async function createReplacementPoForNc(
+  tx: DbTransaction,
+  companyId: string,
+  nc: NcForReplacementPo,
+  /** The NC's source vendor, exactly as `resolveNcSource` resolved it — never
+   *  re-derived here, so the order and the return challan can never end up
+   *  naming two different vendors. */
+  vendorId: string | null,
+  /** The disposition date, so the order is dated the day the decision was made. */
+  poDate: string,
+  user: AuthContext,
+): Promise<{ id: string; code: string } | null> {
+  // §20.1 — one replacement order per NC. Already has one (a re-run, or a row
+  // that somehow arrives twice): hand back the order it already names.
+  if (nc.replacementPoId) {
+    const existing = await tx
+      .select({ id: purchaseOrders.id, code: purchaseOrders.code })
+      .from(purchaseOrders)
+      .where(
+        and(eq(purchaseOrders.id, nc.replacementPoId), eq(purchaseOrders.companyId, companyId)),
+      )
+      .limit(1);
+    return existing[0] ?? null;
+  }
+  // No vendor to send it back to. The NC is still vendor-sourced (a GRN line, or
+  // an outsource op) — `isVendorSourced` is true even when no vendor row
+  // resolves — so the disposition stands; it just cannot carry an order.
+  if (!vendorId) return null;
+  const qty = roundQty(Number(nc.rejectedQty));
+  // `purchase_order_lines_qty_positive` is a CHECK constraint. A non-positive
+  // qty would take the whole disposition down with the line insert, so it
+  // simply raises no order (nc_register_rejected_qty_positive means a stored NC
+  // cannot have one, and disposeNcCascade refuses qty <= 0 before this).
+  if (!(qty > 0)) return null;
+  // A10 inactive-master rule: a disabled vendor must take no NEW link. A SKIP,
+  // not a refusal — the disposition decision is QC's and must not be blocked by
+  // the vendor master, and the challan path already refuses a disabled vendor at
+  // DC time (createNcDc → assertActiveParty), which is where the user sees it.
+  const vendorRows = await tx
+    .select({ id: vendors.id, isActive: vendors.isActive })
+    .from(vendors)
+    .where(
+      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
+    )
+    .limit(1);
+  if (!vendorRows[0]?.isActive) return null;
+
+  const itemRows = await tx
+    .select({ code: items.code, name: items.name, itemType: items.itemType })
+    .from(items)
+    .where(and(eq(items.id, nc.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+    .limit(1);
+  const item = itemRows[0];
+  // ADR-195 — Party Supplied Material is the customer's own material and is
+  // never bought on a purchase order. Sending it back is still a real movement,
+  // so it keeps the pre-ADR-217 challan path rather than being refused.
+  if (item && ITEM_TYPE_RULES[item.itemType as ItemType]?.partyOwned) return null;
+
+  // S2 — number AND duplicate-check under the PO series lock nextPoCode takes,
+  // exactly as the two hand paths do.
+  const code = await nextPoCode(tx, companyId, 'job_work');
+  const dup = await tx
+    .select({ id: purchaseOrders.id })
+    .from(purchaseOrders)
+    .where(
+      and(
+        eq(purchaseOrders.companyId, companyId),
+        eq(purchaseOrders.code, code),
+        isNull(purchaseOrders.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (dup.length > 0) {
+    throw new ConflictError(`PO No. "${code}" already exists.`);
+  }
+
+  const insertedPos = await tx
+    .insert(purchaseOrders)
+    .values({
+      companyId,
+      code,
+      poDate,
+      poType: 'job_work',
+      vendorId,
+      // The vendor is a real master row (checked above), so there is nothing to
+      // snapshot in the free-text column — same rule as every other path: a
+      // real link beats carried text.
+      vendorCodeText: null,
+      // ADR-217 — ready to act on the moment it exists; see the note above.
+      status: 'open',
+      // No PR behind it, by design (ADR-217 §2): the NC is the document that
+      // asked for it, and it is named on the line's source_nc_id. Raising a
+      // zero-value PR alongside was considered and rejected — it would file a
+      // purchase request for something nobody is buying into the buyer's queue,
+      // once per rejection.
+      prId: null,
+      prCodeText: null,
+      // Zero value: subtotal / tax_amount / total_amount keep their 0 defaults.
+      remarks:
+        `Return to vendor — ${nc.code} (zero value)` +
+        (nc.dispositionRemarks?.trim() ? ` — ${nc.dispositionRemarks.trim()}` : ''),
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning({ id: purchaseOrders.id, code: purchaseOrders.code });
+  const header = insertedPos[0];
+  if (!header) throw new ValidationError('Could not raise the replacement order. Try again.');
+
+  const lineValues = {
+    companyId,
+    purchaseOrderId: header.id,
+    lineNo: 1,
+    itemId: nc.itemId,
+    // nc_register.item_id is NOT NULL, so the link is always there and the text
+    // column stays empty (purchase_order_lines_item_one_of is satisfied by it).
+    itemCodeText: null,
+    itemName: item?.name ?? nc.itemNameText ?? nc.itemCodeText,
+    qty,
+    // ADR-217 — zero value. The rate stays editable: a vendor who charges for
+    // the rework can be priced on this order without a second document.
+    rate: '0.00',
+    receivedQty: 0,
+    // ADR-217 — the rejection is this line's reason for existing, in place of
+    // the source_pr_id an ordinary line carries.
+    sourceNcId: nc.id,
+    // DELIBERATELY NOT source_jc_op_id / source_so_line_id, even on an NC that
+    // has both. Those two links are what the outsourcing cascades count: an op
+    // linked to a second PO line would have its sent / received quantities
+    // counted twice (§20.1 one number, one writer), and an SO line would show
+    // this zero-value order as fresh procurement against the customer's order.
+    // The return's own ledger is nc_register.rtv_sent_qty / rtv_received_qty.
+    lineRemarks: `Return to vendor — ${nc.code}`,
+    createdBy: user.id,
+    updatedBy: user.id,
+  };
+  // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
+  // disposeNcCascade already ran the same rule (qtyUomProblem) on this qty and
+  // this item, so this cannot refuse what it let through.
+  await assertLineQtysFitUom(tx, companyId, [lineValues]);
+  await tx.insert(purchaseOrderLines).values(lineValues);
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Create,
+      entity: 'PurchaseOrder',
+      entityId: header.id,
+      refId: header.code,
+      qty,
+      detail: `${header.code} [Return to Vendor] zero value — ${nc.code}, ${qty} pcs`,
+    },
+    companyId,
+    user,
+  );
+
+  return { id: header.id, code: header.code };
+}
+
 /**
  * Creates a PO from the PO form — header + N lines, each line naming its own
  * Purchase Request.
@@ -1135,6 +1377,14 @@ export async function createPurchaseOrder(
     const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
     // ADR-195: a customer's party-supplied material must never go on a PO.
     await assertNoPartyMaterialLines(tx, [...directIds, ...resolved.values()], companyId);
+    // ADR-217: a line may be raised against an NC instead of a PR. The shared
+    // create contract already accepts either as the "documented reason" ADR-138
+    // requires; this checks the NCs named are real, live and ours.
+    await assertNcIdsExist(
+      tx,
+      input.lines.flatMap((l) => (l.sourceNcId ? [l.sourceNcId] : [])),
+      companyId,
+    );
     const lineNos = assignLineNos(input.lines, 1);
 
     // ── The PRs this PO is raised against ─────────────────────────
@@ -1301,6 +1551,9 @@ export async function createPurchaseOrder(
         sourceJcOpId:
           l.sourceJcOpId ?? (l.sourcePrId ? (jcOpIdByPrId.get(l.sourcePrId) ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
+        // ADR-217 — the non-conformance this line answers, when it was raised
+        // against one instead of a PR.
+        sourceNcId: l.sourceNcId ?? null,
         ramRemark: l.ramRemark ?? null,
         lineRemarks:
           l.lineRemarks?.trim() ||
@@ -1868,10 +2121,8 @@ export async function updatePurchaseOrderTx(
     if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
       lockedChanges.push('Vendor');
     }
-    if (h0.poType !== undefined && h0.poType !== existingHdr.poType)
-      lockedChanges.push('PO Type');
-    if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate)
-      lockedChanges.push('PO Date');
+    if (h0.poType !== undefined && h0.poType !== existingHdr.poType) lockedChanges.push('PO Type');
+    if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate) lockedChanges.push('PO Date');
     if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
       lockedChanges.push('Tax Type');
     }
@@ -2237,6 +2488,13 @@ async function mergeLines(
   const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
   // ADR-195: a customer's party-supplied material must never go on a PO.
   await assertNoPartyMaterialLines(tx, [...directIds, ...resolved.values()], companyId);
+  // ADR-217: an edit may also raise a line against an NC — same existence /
+  // company / live check as the create path.
+  await assertNcIdsExist(
+    tx,
+    inputLines.flatMap((l) => (l.sourceNcId ? [l.sourceNcId] : [])),
+    companyId,
+  );
 
   const seenInputIds = new Set<string>();
   const toInsert: PurchaseOrderLineInput[] = [];
@@ -2298,6 +2556,10 @@ async function mergeLines(
     // or clearing it is squared up below (ADR-189): the new PR is marked
     // converted, and the old one reopens once no live PO line holds it.
     if (u.data.sourcePrId !== undefined) lineUpdate['sourcePrId'] = u.data.sourcePrId ?? null;
+    // ADR-217 — the NC link moves and clears like the PR link beside it. There
+    // is no PR-style balance to square up afterwards: an NC is one rejection,
+    // not a quantity several orders draw down.
+    if (u.data.sourceNcId !== undefined) lineUpdate['sourceNcId'] = u.data.sourceNcId ?? null;
     if (u.data.ramRemark !== undefined) lineUpdate['ramRemark'] = u.data.ramRemark ?? null;
     if (u.data.lineRemarks !== undefined) lineUpdate['lineRemarks'] = u.data.lineRemarks ?? null;
 
@@ -2354,6 +2616,8 @@ async function mergeLines(
           l.sourceJcOpId ??
           (l.sourcePrId ? (prLinkById.get(l.sourcePrId)?.sourceJcOpId ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
+        // ADR-217 — the non-conformance a line added on an edit answers.
+        sourceNcId: l.sourceNcId ?? null,
         ramRemark: l.ramRemark ?? null,
         lineRemarks:
           l.lineRemarks?.trim() ||
@@ -3371,6 +3635,62 @@ export async function rejectPurchaseOrder(
 
     return getPurchaseOrderInternal(tx, id, companyId);
   });
+}
+
+/**
+ * Close the zero-value replacement order a return to vendor raised, because its
+ * deviation has closed (ADR-217). Called from `markNcClosed`, inside the same
+ * transaction, and ONLY for an NC that has a `replacement_po_id`.
+ *
+ * Why this exists at all: the order can never close itself. A PO line's
+ * `received_qty` is RECOMPUTED by `recalcPoLineReceivedQty`, and that formula
+ * deliberately EXCLUDES replacement receipts from the received term (a GRN with
+ * `nc_id` set) — the returned pieces rejoin the supplied qty only as the NC's
+ * `cleared_qty` rises, which is accounting on the ORIGIN order's line, not on
+ * this one. So a replacement order left alone would sit `open` with its full
+ * qty Pending for ever, and every return would add one more permanently open
+ * order to the buyer's pending list. That is the same harm ADR-217 refused to
+ * cause by auto-raising a purchase request, so it must not be caused here.
+ *
+ * Deliberately NOT routed through `shortClosePurchaseOrder`: that one is a human
+ * sign-off (it demands `po_create` APPROVE and a typed reason, and refuses while
+ * material is still at the vendor). This is a system consequence of QC closing
+ * the deviation — the person closing it has QC rights, not necessarily purchase
+ * approval, and there is no money in a zero-value order to sign off. The reason
+ * names the deviation so the short close is auditable, and the three
+ * short_close_* columns are written together to satisfy their CHECK.
+ *
+ * `recalcPoHeaderStatus` returns early on a short-closed PO, so nothing reopens
+ * it afterwards.
+ */
+export async function closeReplacementPoForNc(
+  tx: DbTransaction,
+  poId: string,
+  ncCode: string,
+  userId: string,
+): Promise<void> {
+  await tx
+    .update(purchaseOrders)
+    .set({
+      status: 'closed',
+      shortClosedAt: new Date(),
+      shortClosedBy: userId,
+      shortCloseReason: `Replacement received and cleared \u2014 deviation ${ncCode} closed (ADR-217).`,
+      updatedBy: userId,
+    })
+    .where(
+      and(
+        eq(purchaseOrders.id, poId),
+        isNull(purchaseOrders.deletedAt),
+        // Never re-stamp one already stopped, and never resurrect a cancelled
+        // order: both are terminal and someone decided them on purpose.
+        isNull(purchaseOrders.shortClosedAt),
+        notInArray(purchaseOrders.status, ['cancelled', 'closed']),
+      ),
+    );
+  // No assertRowUpdated: 0 rows is a legitimate outcome (already closed, already
+  // short-closed, cancelled, or deleted). The deviation closing must not fail
+  // because its replacement order was already stopped by hand.
 }
 
 /**

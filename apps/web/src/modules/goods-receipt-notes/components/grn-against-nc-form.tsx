@@ -16,11 +16,15 @@
 // ADR-217 Phase 1 — the header now shows the rest of the chain, not just the
 // NC end of it: the PO the rejected pieces were bought/job-worked on and the
 // GRN they first came in on, both read straight off GET /nc-register/:id
-// (resolveNcSource, already resolved server-side for the NC detail page). The
-// "Sent on DC No." (the OSP challan the pieces first went OUT on) is NOT
-// reachable from any existing endpoint for an NC that already has its return
-// challan — see the report for ADR-217 Phase 1 — so it is not shown rather
-// than shown wrong.
+// (resolveNcSource, already resolved server-side for the NC detail page).
+//
+// ADR-217 Phase 2 — "Sent on DC No." joins them. It is the OSP challan the
+// rejected pieces first went OUT on, and it is the number the STORE actually
+// holds, so it is also matched by the NC picker's hidden search text. Phase 1
+// could not show it because no endpoint carried it; it is now a stored column
+// (`nc_register.source_delivery_challan_id`) on the same NC read. Null is a
+// correct answer — nothing went out, or nobody could say which challan carried
+// the piece — and null shows the same quiet dash as a missing source PO.
 //
 // No OK / Rejected split and no QC fields here: everything received lands on
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
@@ -40,7 +44,7 @@ import {
   useReceiveDeliveryChallan,
 } from '@/modules/delivery-challans/api';
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
-import { useNcRegister } from '@/modules/nc-register/api';
+import { useNcRegister, useNcRegisterList } from '@/modules/nc-register/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -120,25 +124,48 @@ export function GrnAgainstNcForm({
     [dcList.data],
   );
 
+  // ADR-217 Phase 2 — "Sent on DC No." per eligible NC, for the picker's hidden
+  // search text. The challan rows above are the RETURN challans; the OUTWARD
+  // challan the pieces went out on lives on the NC itself
+  // (`sourceDeliveryChallanCode`), so the NC register is read once and joined
+  // by id. 200 is the API's page cap and the list comes back newest-first, so
+  // it covers every NC that could have a return challan out at a vendor right
+  // now. A row the cap missed simply cannot be found by its outward challan
+  // number — it is never hidden from the picker, which is still driven entirely
+  // by the challan rows.
+  const ncRegisterList = useNcRegisterList({ limit: 200, offset: 0 });
+  const sentOnDcByNcId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of ncRegisterList.data?.items ?? []) {
+      if (n.sourceDeliveryChallanCode) m.set(n.id, n.sourceDeliveryChallanCode);
+    }
+    return m;
+  }, [ncRegisterList.data]);
+
   // Option per NC. Search is client-side over the NC code, the job card, the
   // vendor and the composed "CODE — JC · Vendor" label — the last because the
   // picker re-sends its own selected label as the term when reopened.
   // ADR-217 — the RETURN CHALLAN's own number is matched too, through
-  // SearchableOption.searchText, so a store user holding only the challan can
-  // get here. It is not added to the label: the label is the NC's.
+  // SearchableOption.searchText, and (Phase 2) the OUTWARD "Sent on DC No." as
+  // well, so a store user holding either challan number can get here. Neither
+  // is added to the label: the label is the NC's.
   const ncOptions = useMemo(
     () =>
       ncRows
-        .map((d) => ({
-          id: d.ncId ?? d.id,
-          code: d.ncCode ?? d.poCodeText,
-          name: `${d.jobCardCode ?? '—'} · ${d.vendorName ?? d.vendorCodeText}`,
-          searchText: d.code,
-        }))
+        .map((d) => {
+          const ncIdOfRow = d.ncId;
+          const sentOnDc = ncIdOfRow ? (sentOnDcByNcId.get(ncIdOfRow) ?? '') : '';
+          return {
+            id: ncIdOfRow ?? d.id,
+            code: d.ncCode ?? d.poCodeText,
+            name: `${d.jobCardCode ?? '—'} · ${d.vendorName ?? d.vendorCodeText}`,
+            searchText: sentOnDc ? `${d.code} ${sentOnDc}` : d.code,
+          };
+        })
         .filter((o) =>
           matchesSearchTerm([o.code, o.name, o.searchText, `${o.code} — ${o.name}`], ncSearch),
         ),
-    [ncRows, ncSearch],
+    [ncRows, ncSearch, sentOnDcByNcId],
   );
 
   // The picked NC's return challan row (from the list) — the source of the
@@ -340,17 +367,21 @@ export function GrnAgainstNcForm({
               options={ncOptions}
               onSearch={setNcSearch}
               loading={dcList.isFetching}
-              placeholder="🔍 Type NC number, job card or vendor…"
+              placeholder="🔍 Type NC No., DC No., job card or vendor…"
               valueLabel={ncValueLabel}
               emptyText="No NC has a return challan awaiting receipt."
             />
           </FormField>
 
-          {/* Row 2 — the return chain, in the order it happened: JC No. ·
-              Source PO No. · Source GRN No. · DC No. (the return challan)
-              (3 + 3 + 3 + 3). ADR-217: the two source numbers are new, and the
-              same labels the NC detail page already uses for the same two
-              fields. Row 3 — Vendor · Vendor Invoice No. (3 + 3). */}
+          {/* Row 2 — the chain that led here, in the order it happened:
+              JC No. · Source PO No. · Source GRN No. · Sent on DC No.
+              (3 + 3 + 3 + 3 = 12). ADR-217: all three source numbers use the
+              labels the NC detail page uses for the same facts, and
+              "Sent on DC No." is the one registered in docs/NAMING.md.
+              Row 3 — the return itself and who it is with:
+              DC No. (the return challan) · Vendor · Vendor Invoice No.
+              (3 + 6 + 3 = 12). Vendor Invoice No. is a document number, so it
+              takes the `sm` width the Against PO tab already gives it. */}
           <FormField label="JC No." size="sm" htmlFor="ncJobCard">
             <input
               id="ncJobCard"
@@ -362,8 +393,8 @@ export function GrnAgainstNcForm({
             />
           </FormField>
           {/* A quiet dash, never a blank: an NC raised at the machine with no
-              GRN behind it genuinely has no source PO / source GRN, and that is
-              correct rather than missing. */}
+              GRN behind it genuinely has no source PO / source GRN / outward
+              challan, and that is correct rather than missing. */}
           <FormField label="Source PO No." size="sm" htmlFor="ncSourcePo">
             <input
               id="ncSourcePo"
@@ -382,6 +413,21 @@ export function GrnAgainstNcForm({
               readOnly
               value={ncSourceKnown ? (ncDetail.sourceGrnCode ?? '—') : ''}
               title={ncDetail?.sourceGrnCode ?? undefined}
+              placeholder="— from the NC —"
+              tabIndex={-1}
+            />
+          </FormField>
+          {/* ADR-217 Phase 2 — the OUTWARD challan the rejected pieces left on,
+              which is the number the store holds. Same blank-vs-dash rule as
+              the two source numbers above: blank until the NC's answer is in
+              hand, then a dash when the answer is "none". */}
+          <FormField label="Sent on DC No." size="sm" htmlFor="ncSourceDc">
+            <input
+              id="ncSourceDc"
+              className="innovic-input mono fw-700"
+              readOnly
+              value={ncSourceKnown ? (ncDetail.sourceDeliveryChallanCode ?? '—') : ''}
+              title={ncDetail?.sourceDeliveryChallanCode ?? undefined}
               placeholder="— from the NC —"
               tabIndex={-1}
             />
@@ -407,7 +453,7 @@ export function GrnAgainstNcForm({
               tabIndex={-1}
             />
           </FormField>
-          <FormField label="Vendor Invoice No." size="lg" htmlFor="ncVendorInvoice">
+          <FormField label="Vendor Invoice No." size="sm" htmlFor="ncVendorInvoice">
             <input
               id="ncVendorInvoice"
               className="innovic-input"
@@ -417,7 +463,7 @@ export function GrnAgainstNcForm({
             />
           </FormField>
 
-          {/* Row 3 — Remarks (full). */}
+          {/* Row 4 — Remarks (full = 12). */}
           <FormField label="Remarks" size="full" htmlFor="ncRemarks">
             <textarea
               id="ncRemarks"

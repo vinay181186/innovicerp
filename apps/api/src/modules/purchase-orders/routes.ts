@@ -48,6 +48,13 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
   // PR-1, add a line, pick PR-2, add another — and still never be PR-less. The
   // route is open again on that basis; the rule it protects is unchanged, only
   // the place it is enforced has moved.
+  //
+  // ADR-217 widens the LIST of acceptable reasons by one, without weakening the
+  // rule: a line may name a non-conformance (`sourceNcId`, migration 0199)
+  // instead of a PR, because a return to vendor is raised against the NC — a
+  // stronger document than a system-raised PR nobody reviewed, naming an
+  // inspector, a quantity, a reason and a vendor. A PO with neither a PR nor an
+  // NC on any line is still refused.
   app.post('/purchase-orders', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createPurchaseOrderInputSchema.parse(req.body);

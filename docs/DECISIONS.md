@@ -11647,7 +11647,9 @@ screen) never calls `assertNoRtvPending`, which ADR-211 recorded as "not covered
 new shape by a reversible script, run last and separately, so one old return does not stay unlike
 every future one.
 
-### Migration 0199 — three nullable columns, nothing rewritten
+### Migration 0200 — three nullable columns, nothing rewritten
+*(Renumbered from 0199, which a parallel session took for the store-issue change on the same
+day. Check `git ls-tree origin/test apps/api/src/db/migrations/` before claiming a number.)*
 | Column | References | Why |
 |---|---|---|
 | `nc_register.replacement_po_id` | `purchase_orders` | the order this return raised |

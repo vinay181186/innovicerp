@@ -215,6 +215,13 @@ interface NcJoins {
   sourceVendorName?: string | null;
   sourcePoCode?: string | null;
   sourceGrnCode?: string | null;
+  // ADR-217 — the two documents the NC points AT: the zero-value job-work order
+  // a return to vendor raised, and the outward challan the pieces went out on.
+  // Both ids are stored columns; both codes are resolved on read.
+  replacementPoId?: string | null;
+  replacementPoCode?: string | null;
+  sourceDeliveryChallanId?: string | null;
+  sourceDeliveryChallanCode?: string | null;
 }
 
 function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}): NcRegister {
@@ -280,6 +287,15 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     sourceVendorName: joins.sourceVendorName ?? null,
     sourcePoCode: joins.sourcePoCode ?? null,
     sourceGrnCode: joins.sourceGrnCode ?? null,
+    // ADR-217 — the outward challan the rejected pieces went out on: the id
+    // stored on this row when somebody recorded it, else the one derived from
+    // the GRN behind an Incoming-QC reject. The code comes from the same read.
+    sourceDeliveryChallanId: joins.sourceDeliveryChallanId ?? row.sourceDeliveryChallanId ?? null,
+    sourceDeliveryChallanCode: joins.sourceDeliveryChallanCode ?? null,
+    // ADR-217 — the zero-value job-work order this return raised. Null on every
+    // NC disposed before ADR-217.
+    replacementPoId: joins.replacementPoId ?? row.replacementPoId ?? null,
+    replacementPoCode: joins.replacementPoCode ?? null,
     splitFromNcId: row.splitFromNcId,
     // G8: "Continues NC <code>" — set by autoCreateNcFromQcReject only.
     parentNcId: row.parentNcId,
@@ -519,7 +535,13 @@ export async function listNcRegister(
         -- came from. Mirrors resolveNcSource (cascades.ts) — GRN first, else the
         -- origin op's outsource PO line. All null on a pure in-house reject.
         ncsrc."sourceVendorId", ncsrc."sourceVendorCode", ncsrc."sourceVendorName",
-        ncsrc."sourcePoCode", ncsrc."sourceGrnCode"
+        ncsrc."sourcePoCode", ncsrc."sourceGrnCode",
+        -- ADR-217: the zero-value job-work order this return raised, and the
+        -- outward challan the rejected pieces went out on.
+        rpo.id AS "replacementPoId",
+        rpo.code AS "replacementPoCode",
+        sdc.id AS "sourceDeliveryChallanId",
+        sdc.code AS "sourceDeliveryChallanCode"
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc
         ON jc.id = nc.job_card_id AND jc.deleted_at IS NULL
@@ -543,6 +565,24 @@ export async function listNcRegister(
       -- G8: parent NC (one-per-NC FK, cannot multiply rows).
       LEFT JOIN public.nc_register pnc
         ON pnc.id = nc.parent_nc_id AND pnc.deleted_at IS NULL
+      -- ADR-217 — the replacement order (one-per-NC FK, partial unique index).
+      LEFT JOIN public.purchase_orders rpo
+        ON rpo.id = nc.replacement_po_id AND rpo.company_id = nc.company_id
+          AND rpo.deleted_at IS NULL
+      -- ADR-217 — the outward challan the pieces went out on: the id stored on
+      -- the NC when somebody recorded it, else (for an Incoming-QC reject) the
+      -- OSP challan its GRN came back against. Those two hops are the SAME join,
+      -- with the same filters, that delivery-challans/rtv-candidates.ts makes
+      -- for its "Sent on DC No." column — kept identical so the two readers
+      -- cannot disagree. All three are id-to-id FK hops: none can multiply rows.
+      LEFT JOIN public.goods_receipt_note_lines sgl
+        ON sgl.id = nc.grn_line_id AND sgl.company_id = nc.company_id
+          AND sgl.deleted_at IS NULL
+      LEFT JOIN public.goods_receipt_notes sgrn
+        ON sgrn.id = sgl.goods_receipt_note_id AND sgrn.deleted_at IS NULL
+      LEFT JOIN public.delivery_challans sdc
+        ON sdc.id = COALESCE(nc.source_delivery_challan_id, sgrn.delivery_challan_id)
+          AND sdc.company_id = nc.company_id AND sdc.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT c.code
         FROM public.capa_records c
@@ -700,6 +740,12 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     sourceVendorName: str('sourceVendorName'),
     sourcePoCode: str('sourcePoCode'),
     sourceGrnCode: str('sourceGrnCode'),
+    // ADR-217 — the replacement order and the outward challan, from the joins
+    // above (both resolved exactly as readNc resolves them).
+    sourceDeliveryChallanId: str('sourceDeliveryChallanId'),
+    sourceDeliveryChallanCode: str('sourceDeliveryChallanCode'),
+    replacementPoId: str('replacementPoId'),
+    replacementPoCode: str('replacementPoCode'),
     splitFromNcId: str('splitFromNcId'),
     parentNcId: str('parentNcId'),
     parentNcCode: str('parentNcCode'),
@@ -826,6 +872,10 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
   const source = await resolveNcSource(tx, companyId, {
     grnLineId: row.grnLineId,
     jcOpId: row.jcOpId,
+    // ADR-217 — the same resolve fills the replacement order and the source
+    // challan, so the detail screen can name both.
+    replacementPoId: row.replacementPoId,
+    sourceDeliveryChallanId: row.sourceDeliveryChallanId,
   });
   return toNcRegister(row, {
     linkedCapaCode,
@@ -843,6 +893,11 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     sourceVendorName: source.sourceVendorName,
     sourcePoCode: source.sourcePoCode,
     sourceGrnCode: source.sourceGrnCode,
+    // ADR-217 document links.
+    replacementPoId: source.replacementPoId,
+    replacementPoCode: source.replacementPoCode,
+    sourceDeliveryChallanId: source.sourceDeliveryChallanId,
+    sourceDeliveryChallanCode: source.sourceDeliveryChallanCode,
   });
 }
 
@@ -1473,11 +1528,7 @@ export async function updateNcRegisterTx(
     .select()
     .from(ncRegister)
     .where(
-      and(
-        eq(ncRegister.id, id),
-        eq(ncRegister.companyId, companyId),
-        isNull(ncRegister.deletedAt),
-      ),
+      and(eq(ncRegister.id, id), eq(ncRegister.companyId, companyId), isNull(ncRegister.deletedAt)),
     )
     .limit(1);
   if (existing.length === 0) {
@@ -1493,8 +1544,7 @@ export async function updateNcRegisterTx(
   if (input.ncDate !== undefined) updates['ncDate'] = input.ncDate;
   if (input.reasonCategory !== undefined) updates['reasonCategory'] = input.reasonCategory;
   if (input.reason !== undefined) updates['reason'] = input.reason ?? null;
-  if (input.reportedByText !== undefined)
-    updates['reportedByText'] = input.reportedByText ?? null;
+  if (input.reportedByText !== undefined) updates['reportedByText'] = input.reportedByText ?? null;
   if (input.operatorText !== undefined) updates['operatorText'] = input.operatorText ?? null;
 
   const edited = await tx
@@ -1611,6 +1661,10 @@ export async function disposeNcRegister(
       parts.push(`${labelOf(NC_DISPOSITION_LABELS, input.action)} JC ${result.childJcCode}`);
     if (input.action === 'make_fresh' && result.newJcCode)
       parts.push(`supplementary JC ${result.newJcCode}`);
+    // ADR-217 — the zero-value job-work order the return raised. Its own CREATE
+    // row is written by createReplacementPoForNc; this names it on the NC's
+    // trail, the way the rework child card is named above.
+    if (result.replacementPoCode) parts.push(`replacement PO ${result.replacementPoCode}`);
     if (input.action === 'scrap' && input.scrapCost !== undefined)
       parts.push(`Scrap Cost ${input.scrapCost}`);
     const sideEffect = parts.length > 0 ? `; ${parts.join('; ')}` : '';
@@ -1846,8 +1900,20 @@ async function nextNcDcCode(tx: DbTransaction, companyId: string): Promise<strin
  * origin op was an outsource op with a PO line — the §12.2 PO received-qty
  * adjustment, so the PO no longer counts pieces that have left the shop.
  *
- * There is no purchase order behind this challan: po_code_text carries the NC
- * code, and the existing PO-line cumulative-sent guard is not applied.
+ * ADR-217 — the challan hangs off the NC's REPLACEMENT ORDER: the zero-value
+ * job-work PO raised with the disposition (nc.replacement_po_id). Its id goes in
+ * `purchase_order_id` and its code in `po_code_text`, so a column named "PO
+ * code" holds a PO code again and every report that totals by purchase order
+ * can see the return.
+ *
+ * On an NC with no replacement order — one disposed before ADR-217, or one whose
+ * source vendor could not be resolved — this behaves exactly as it always did:
+ * `purchase_order_id` stays null and `po_code_text` carries the NC code. That is
+ * the backward-compatible path and it is deliberately unchanged.
+ *
+ * Either way the PO-line cumulative-sent guard is not applied, and the PO LINE
+ * the challan line points at is still the ORIGIN order's line (the one the
+ * pieces were received on), because that is the line §12.2 recomputes.
  */
 export async function createNcDc(
   id: string,
@@ -1918,6 +1984,10 @@ export async function createNcDc(
     const source = await resolveNcSource(tx, companyId, {
       grnLineId: nc.grnLineId,
       jcOpId: nc.jcOpId,
+      // ADR-217 — also resolves the replacement order's code for the header
+      // below, off the id stored on this NC row.
+      replacementPoId: nc.replacementPoId,
+      sourceDeliveryChallanId: nc.sourceDeliveryChallanId,
     });
     const effectiveVendorId = input.vendorId ?? source.sourceVendorId;
     // The return challan is a NEW link to the vendor: it must exist and be
@@ -1975,8 +2045,13 @@ export async function createNcDc(
         companyId,
         code,
         dcDate: input.dcDate,
-        purchaseOrderId: null,
-        poCodeText: nc.code,
+        // ADR-217 — the replacement order this return rides on. Null, with the
+        // NC code in po_code_text, only on an NC that has no replacement order:
+        // every NC disposed before ADR-217, and any return whose source vendor
+        // could not be resolved. `nc_id` stays set either way, so the challan is
+        // still findable from the rejection.
+        purchaseOrderId: source.replacementPoId,
+        poCodeText: source.replacementPoCode ?? nc.code,
         // WI4: caller's vendorId, else the NC's source vendor.
         vendorId: effectiveVendorId ?? null,
         vendorCodeText: input.vendorCodeText,

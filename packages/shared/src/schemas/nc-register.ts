@@ -100,6 +100,22 @@ export const ncRegisterSchema = z.object({
   sourceVendorName: z.string().nullable().default(null),
   sourcePoCode: z.string().nullable().default(null),
   sourceGrnCode: z.string().nullable().default(null),
+  /** ADR-217 — the outward challan the rejected pieces went out on, so a
+   *  return can be found by the number the STORE holds rather than the NC
+   *  number QC holds.
+   *
+   *  Stored (`nc_register.source_delivery_challan_id`), not derived. There is no
+   *  piece, lot or batch tracking in this system, so for an NC raised at the
+   *  machine no query can say which of an order's challans carried the piece —
+   *  only the person who packed it can. Null is a correct answer: nothing went
+   *  out, or nobody could say. */
+  sourceDeliveryChallanId: z.string().uuid().nullable().default(null),
+  sourceDeliveryChallanCode: z.string().nullable().default(null),
+  /** ADR-217 — the zero-value job-work order this return raised, created with
+   *  the disposition. Null on every NC disposed before ADR-217, and on every
+   *  disposition that is not a return to vendor. */
+  replacementPoId: z.string().uuid().nullable().default(null),
+  replacementPoCode: z.string().nullable().default(null),
   /** Sibling link: set on the remainder row when a disposition covered less
    *  than the full rejected qty. */
   splitFromNcId: z.string().uuid().nullable().default(null),
