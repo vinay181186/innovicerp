@@ -1,0 +1,22 @@
+/* Route Card detail — the fit-to-one-screen page
+   (pro-routecard-detail-mockup.html, approved 2026-10-06).
+
+   Same fix as the Production Order page (production-orders/components/
+   po-detail.css), scoped to `.rc-detail` and tokens only.
+
+   `page-fill` (innovic-theme.css "LIST FILL") asks for min-height: 100%, which
+   lets a long table grow the page instead of scrolling — a list page never
+   meets that because it pages 25 rows at a time, but Operation Sequence,
+   Revision History and History have no pager. Here the page takes exactly the
+   content area, so the tab panel gets what is left and its table is the only
+   thing that scrolls, with the header row held.
+   The fallback the theme keeps is kept too: no overflow is clipped, and the tab
+   panel never goes below six table rows, so when the chrome above genuinely
+   cannot fit (a phone, 200% zoom, a very long Route Card Remarks) the page
+   outgrows the content area and #content scrolls instead. */
+.page-fill.rc-detail {
+  height: 100%;
+}
+.page-fill.rc-detail > .panel--fill {
+  min-height: calc(var(--tbl-row-h) * 6 + 2px);
+}
