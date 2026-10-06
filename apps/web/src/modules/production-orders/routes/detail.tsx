@@ -635,7 +635,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           (Modal: no `onClose` = no way to dismiss). */}
       {closeOpen && (showCloseForm || closing) ? (
         <Modal
-          title={`Close Production Order ${data.code}`}
+          title={`Close Qty ${data.code}`}
           size="md"
           {...(closing ? {} : { onClose: () => setCloseOpen(false) })}
           closeOnOverlayClick={false}
