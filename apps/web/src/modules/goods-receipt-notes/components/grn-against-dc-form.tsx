@@ -11,6 +11,14 @@
 // reconciled. The previous version of this tab posted to /jw-dc/inward, which
 // never created a GRN and never touched the PO.
 //
+// ADR-217 Phase 1 — this tab also lists RETURN-TO-VENDOR challans (ADR-161:
+// `ncId` set, no purchase order behind them). It used to drop every one of
+// them, so a store user holding only the return challan number could not find
+// it on either tab. They are marked "Return to Vendor" in the picker and are
+// received by the SAME POST /delivery-challans/:id/receive call, with the same
+// request body, that the Against NC type makes — this is routing, not a second
+// save path, and nothing about what the server stores changes.
+//
 // No OK / Rejected split and no QC fields here: everything received lands on
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
 
@@ -55,6 +63,10 @@ interface LineDraft {
   remarks: string;
   error: string | null;
 }
+
+/** How a return-to-vendor challan is marked in the challan picker, so it can
+ *  never be mistaken for an ordinary job-work send. */
+const RETURN_TAG = 'Return to Vendor';
 
 export interface GrnAgainstDcFormProps extends GrnTypeFormShellProps {
   /** The parent screen's exit-guard `leave`: runs the post-save navigation
@@ -109,10 +121,14 @@ export function GrnAgainstDcForm({
   // eligible JWPOs are simply the distinct POs behind those rows, so a PO with
   // nothing out at the vendor never appears. 200 is the API's max page and is
   // far above the number of issued-but-unreceived challans at any one time.
-  // Rows with `ncId` are return-to-vendor challans (no PO) and are dropped.
+  // ADR-217 — rows with `ncId` are return-to-vendor challans; they are KEPT.
+  // They have no purchase order, so they never reach the JW PO list below and
+  // only appear in the challan picker while no JW PO is picked. A row with
+  // neither a PO nor an NC behind it is still dropped: nothing on this screen
+  // could show what it belongs to.
   const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
   const eligibleDcs = useMemo(
-    () => (dcList.data?.items ?? []).filter((d) => d.ncId === null && d.purchaseOrderId !== null),
+    () => (dcList.data?.items ?? []).filter((d) => d.purchaseOrderId !== null || d.ncId !== null),
     [dcList.data],
   );
 
@@ -145,13 +161,25 @@ export function GrnAgainstDcForm({
     const pool = jwpoId ? eligibleDcs.filter((d) => d.purchaseOrderId === jwpoId) : eligibleDcs;
     return pool
       .map((d) => {
+        const vendor = d.vendorName ?? d.vendorCodeText;
         const short = `${fmtDate(d.dcDate)} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
-        const long = `${d.poCode ?? d.poCodeText} · ${d.vendorName ?? d.vendorCodeText} · ${fmtDate(d.dcDate)}`;
+        // ADR-217 — a return-to-vendor challan has no PO (its `poCodeText` is
+        // the NC code), so its first segment names the NC instead and is
+        // prefixed "Return to Vendor". A return never reaches the short label:
+        // the pool above is narrowed by purchaseOrderId whenever a JW PO is
+        // picked, and a return has none.
+        const long =
+          d.ncId !== null
+            ? `${RETURN_TAG} · NC ${d.ncCode ?? d.poCodeText} · ${vendor} · ${fmtDate(d.dcDate)}`
+            : `${d.poCode ?? d.poCodeText} · ${vendor} · ${fmtDate(d.dcDate)}`;
         return {
           id: d.id,
           code: d.code,
           name: jwpoId ? short : long,
-          searchText: `${d.code} — ${short} ${d.code} — ${long}`,
+          // The NC No. rides in the hidden search text as well, so a return is
+          // found by the NC number, by its own challan number, or by the word
+          // "return" — whichever number the user happens to be holding.
+          searchText: `${d.code} — ${short} ${d.code} — ${long} ${d.ncCode ?? ''}`,
         };
       })
       .filter((o) => matchesSearchTerm([o.code, o.name, o.searchText], dcSearch));
@@ -222,13 +250,25 @@ export function GrnAgainstDcForm({
     }
   };
 
+  // The picked challan's own LIST row. It already knows the vendor and whether
+  // this is a return, which keeps both truthful for the render before the
+  // detail arrives.
+  const pickedRow = useMemo(
+    () => (dcId ? eligibleDcs.find((d) => d.id === dcId) : undefined),
+    [dcId, eligibleDcs],
+  );
   const vendorLabel = dc
     ? (dc.vendorName ?? dc.vendorCodeText)
-    : (() => {
-        // While the detail loads, the list row already knows the vendor.
-        const row = dcId ? eligibleDcs.find((d) => d.id === dcId) : undefined;
-        return row ? (row.vendorName ?? row.vendorCodeText) : '';
-      })();
+    : pickedRow
+      ? (pickedRow.vendorName ?? pickedRow.vendorCodeText)
+      : '';
+
+  // ADR-217 — is the picked challan a return to vendor? Detail first, list row
+  // while it loads. Nothing is a return until a challan is actually picked.
+  const returnNcCode = dc
+    ? (dc.ncCode ?? pickedRow?.poCodeText ?? null)
+    : (pickedRow?.ncCode ?? pickedRow?.poCodeText ?? null);
+  const isReturn = (dc ? dc.ncId : (pickedRow?.ncId ?? null)) !== null;
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
     setLinesTouched(true);
@@ -239,12 +279,15 @@ export function GrnAgainstDcForm({
     e.preventDefault();
     setFormError(null);
     setSubmitError(null);
-    if (!jwpoId) {
-      setFormError('JW PO is required.');
+    // The challan is checked first (ADR-217): a return-to-vendor challan has no
+    // purchase order behind it, so the JW PO can only be required once we know
+    // which kind of challan this is.
+    if (!dc) {
+      setFormError(dcId ? 'The challan is still loading. Try again.' : 'DC No. is required.');
       return;
     }
-    if (!dc) {
-      setFormError('DC No. is required.');
+    if (dc.ncId === null && !jwpoId) {
+      setFormError('JW PO is required.');
       return;
     }
     if (!receiptDate) {
@@ -345,7 +388,15 @@ export function GrnAgainstDcForm({
               required
             />
           </FormField>
-          <FormField label="JW PO" required size="lg" htmlFor="jwpoId">
+          {/* ADR-217 — a return-to-vendor challan carries no purchase order, so
+              the JW PO stops being required (and says why) once one is picked. */}
+          <FormField
+            label="JW PO"
+            required={!isReturn}
+            size="lg"
+            htmlFor="jwpoId"
+            help={isReturn ? 'A return to vendor has no JW PO behind it.' : undefined}
+          >
             <SearchableSelect
               id="jwpoId"
               value={jwpoId}
@@ -353,14 +404,16 @@ export function GrnAgainstDcForm({
               options={jwpoOptions}
               onSearch={setJwpoSearch}
               loading={dcList.isFetching}
-              placeholder="🔍 Type JW PO number or vendor…"
+              placeholder={
+                isReturn ? '— none: return to vendor —' : '🔍 Type JW PO number or vendor…'
+              }
               valueLabel={jwpoValueLabel}
               emptyText="No JW PO has a challan awaiting receipt."
             />
           </FormField>
 
           {/* Row 2 — DC No. · Vendor (from the DC) · Vendor Invoice No. (4 + 4 + 4). */}
-          <FormField label="DC No." required size="md" htmlFor="dcId">
+          <FormField label="DC No." required size={isReturn ? 'sm' : 'md'} htmlFor="dcId">
             {/* Keyed on a counter bumped by a USER change of the JWPO, so the
                 picker's own text resets then — otherwise the old challan's label
                 would linger in the box. Not keyed on jwpoId itself: a DC pick
@@ -373,16 +426,18 @@ export function GrnAgainstDcForm({
               options={dcOptions}
               onSearch={setDcSearch}
               loading={dcList.isFetching}
-              placeholder={jwpoId ? '🔍 Pick a DC…' : '🔍 Pick a DC (or a JW PO first)…'}
+              placeholder={
+                jwpoId ? '🔍 Pick a DC…' : '🔍 Type a DC No. or NC No. (or pick a JW PO first)…'
+              }
               valueLabel={dcValueLabel}
               emptyText={
                 jwpoId
                   ? 'No challan on this JW PO is awaiting receipt.'
-                  : 'No JW PO has a challan awaiting receipt.'
+                  : 'No challan is awaiting receipt.'
               }
             />
           </FormField>
-          <FormField label="Vendor" size="md" htmlFor="dcVendor">
+          <FormField label="Vendor" size={isReturn ? 'sm' : 'md'} htmlFor="dcVendor">
             <input
               id="dcVendor"
               className="innovic-input"
@@ -392,7 +447,28 @@ export function GrnAgainstDcForm({
               tabIndex={-1}
             />
           </FormField>
-          <FormField label="Vendor Invoice No." size="md" htmlFor="vendorInvoice">
+          {/* ADR-217 — only on a return to vendor, so an ordinary job-work
+              receipt is exactly the screen it always was. On a return the four
+              fields narrow to 3 each so the row still sums to 12 (FormGrid's
+              rule) instead of leaving Vendor Invoice No. alone on a row of its
+              own: DC No. · Vendor · NC No. · Vendor Invoice No. */}
+          {isReturn ? (
+            <FormField label="NC No." size="sm" htmlFor="dcNcCode">
+              <input
+                id="dcNcCode"
+                className="innovic-input mono fw-700"
+                readOnly
+                value={returnNcCode ?? '—'}
+                placeholder="— from the challan —"
+                tabIndex={-1}
+              />
+            </FormField>
+          ) : null}
+          <FormField
+            label="Vendor Invoice No."
+            size={isReturn ? 'sm' : 'md'}
+            htmlFor="vendorInvoice"
+          >
             <input
               id="vendorInvoice"
               className="innovic-input"

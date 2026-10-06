@@ -1,8 +1,10 @@
-// Pickers for the Item Issue slip — Job Card, Assembly (Equipment) SO and
-// Operator — each a server-searched SearchableSelect.
+// Pickers for the Item Issue slip — Job Card, Assembly (Equipment) SO and the
+// "Issued To" Production person — each a SearchableSelect.
 import { useMemo, useState } from 'react';
 import { soNoWithInternal } from '@/lib/so-number';
 import { SearchableSelect } from '@/ui/forms';
+import { useProductionUserOptions } from '../../production-users/api';
+import { NO_SERVER_SEARCH, toProductionSearchOptions } from '../../production-users/options';
 import { useJobCardsList } from '../../job-cards/api';
 import { useOperatorsList } from '../../operators/api';
 import { useSalesOrdersList } from '../../sales-orders/api';
@@ -111,6 +113,36 @@ export function OperatorPicker({
       loading={isFetching}
       placeholder="🔍 Operator code or name…"
       emptyText="No matching operator"
+    />
+  );
+}
+
+// The "Issued To" box: Production people from Access Control (the logins that may
+// make a Production entry), mirroring the QC "QC By" picker. The whole list comes
+// in one small response, so the picker's own substring filter does the searching
+// — no server ?search=. Same props as the other pickers (value = the user id).
+export function ProductionUserPicker({
+  id,
+  value,
+  onChange,
+  valueLabel,
+}: PickerProps): React.JSX.Element {
+  const { data, isFetching } = useProductionUserOptions();
+  const options = useMemo(
+    () => toProductionSearchOptions(data?.options ?? []),
+    [data],
+  );
+  return (
+    <SearchableSelect
+      id={id}
+      value={value}
+      valueLabel={valueLabel}
+      onChange={onChange}
+      options={options}
+      onSearch={NO_SERVER_SEARCH}
+      loading={isFetching}
+      placeholder="🔍 Production person name…"
+      emptyText="No matching person"
     />
   );
 }
