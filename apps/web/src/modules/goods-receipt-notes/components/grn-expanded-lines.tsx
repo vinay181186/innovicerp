@@ -4,8 +4,21 @@
 // PoExpandedLines and uses the compact nested-table density.
 //
 // Above the lines it restates the document references the list row no longer
-// shows inline: DC / vendor challan, vendor invoice and remarks (they moved off
-// the retired card's meta line into here when the card became a table row).
+// shows inline: our own DC, the vendor's challan, the vendor invoice and the
+// GRN remarks (they moved off the retired card's meta line into here when the
+// card became a table row).
+//
+// 2026-10-06, two naming fixes (CLAUDE.md §18):
+//   - `dcNo` (the VENDOR's delivery paper) was labelled `DC No.` whenever the
+//     GRN came off a challan. `DC No.` on the detail page is a DIFFERENT
+//     field — OUR outward delivery challan (`dcCode`) — so one name covered
+//     two facts, and the reader could not tell whose number they were looking
+//     at. The vendor's paper is `Vendor Challan No.` everywhere now, and our
+//     own DC is shown beside it under `DC No.` when there is one.
+//   - the columns ran Accepted / Deviated BEFORE QC Status while the detail
+//     page ran QC Status first. Settled on the verdict, then the split:
+//     QC Status → Accepted → Deviated. `UOM` was missing here and present on
+//     the detail table; added, so the two tables agree column for column.
 
 import type { GoodsReceiptNoteLineDetail } from '@innovic/shared';
 import { useMemo } from 'react';
@@ -59,12 +72,30 @@ export function GrnExpandedLines({ grnId }: { grnId: string }): React.JSX.Elemen
         title: (l) => l.masterItemName ?? l.itemName,
       },
       {
+        // UOM off the item master (A26); blank when the line has no item. The
+        // detail table has always shown it — this one had not.
+        id: 'uom',
+        header: 'UOM',
+        className: 'mono',
+        nowrap: true,
+        render: (l) => l.uom ?? '—',
+      },
+      {
         id: 'received',
         header: 'Received',
         align: 'right',
         className: 'mono fw-700',
         nowrap: true,
         render: (l) => l.receivedQty,
+      },
+      {
+        // The verdict first, then the split it breaks into — the order the
+        // detail page and the print already use.
+        id: 'qc_status',
+        kind: 'badge',
+        header: 'QC Status',
+        nowrap: true,
+        render: (l) => <QcStatusBadge status={l.qcStatus} />,
       },
       {
         id: 'accepted',
@@ -97,13 +128,6 @@ export function GrnExpandedLines({ grnId }: { grnId: string }): React.JSX.Elemen
         ),
       },
       {
-        id: 'qc_status',
-        kind: 'badge',
-        header: 'QC Status',
-        nowrap: true,
-        render: (l) => <QcStatusBadge status={l.qcStatus} />,
-      },
-      {
         id: 'qc_date',
         kind: 'date',
         header: 'QC Date',
@@ -128,11 +152,14 @@ export function GrnExpandedLines({ grnId }: { grnId: string }): React.JSX.Elemen
       >
         ▸ Lines — {data.code}
       </div>
-      {/* Document references the row no longer shows inline. DC vs vendor
-          challan turns on whether the GRN was raised against an OSP DC. */}
+      {/* Document references the row no longer shows inline. Two different
+          numbers under two different names: OUR outward challan (`dcCode`) and
+          the VENDOR's paper (`dcNo`). On a GRN raised by receiving our own DC
+          the receive service copies the DC code into `dcNo`, so the vendor's
+          cell is dropped when it would only repeat our own number. */}
       <GrnRefLine
-        dcLabel={data.deliveryChallanId ? 'DC No.' : 'Vendor Challan No.'}
-        dcNo={data.dcNo}
+        dcCode={data.dcCode}
+        dcNo={data.dcNo && data.dcNo !== data.dcCode ? data.dcNo : null}
         invoiceNo={data.invoiceNo}
         remarks={data.remarks}
       />
@@ -142,17 +169,19 @@ export function GrnExpandedLines({ grnId }: { grnId: string }): React.JSX.Elemen
 }
 
 function GrnRefLine({
-  dcLabel,
+  dcCode,
   dcNo,
   invoiceNo,
   remarks,
 }: {
-  dcLabel: string;
+  /** OUR outward delivery challan this GRN received. */
+  dcCode: string | null;
+  /** The VENDOR's own challan number, as typed by the storekeeper. */
   dcNo: string | null;
   invoiceNo: string | null;
   remarks: string | null;
 }): React.JSX.Element | null {
-  if (!dcNo && !invoiceNo && !remarks) return null;
+  if (!dcCode && !dcNo && !invoiceNo && !remarks) return null;
   return (
     <div
       className="mono"
@@ -166,9 +195,14 @@ function GrnRefLine({
         marginBottom: 'var(--sp-2)',
       }}
     >
+      {dcCode ? (
+        <span style={{ whiteSpace: 'nowrap' }}>
+          DC No. <span className="text2">{dcCode}</span>
+        </span>
+      ) : null}
       {dcNo ? (
         <span style={{ whiteSpace: 'nowrap' }}>
-          {dcLabel} <span className="text2">{dcNo}</span>
+          Vendor Challan No. <span className="text2">{dcNo}</span>
         </span>
       ) : null}
       {invoiceNo ? (

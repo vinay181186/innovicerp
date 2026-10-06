@@ -11,7 +11,7 @@
 // So "Against NC" = pick the NC → its return challan is the source → the SAME
 // receive call the Against JWPO / DC type makes. This file is that form with
 // the NC picker in front and no PO anywhere. An NC is eligible while its
-// return challan is still `issued` with a balance to receive.
+// return challan is still `issued` with a Pending qty to receive.
 //
 // ADR-217 Phase 1 — the header now shows the rest of the chain, not just the
 // NC end of it: the PO the rejected pieces were bought/job-worked on and the
@@ -30,7 +30,7 @@
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
 
 import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
-import { isWholeNumberUom, qtyUomProblem, roundQty } from '@innovic/shared';
+import { isWholeNumberUom, roundQty } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -47,10 +47,12 @@ import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-m
 import { useNcRegister, useNcRegisterList } from '@/modules/nc-register/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
 import { goodsReceiptNotesKeys } from '../api';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
-import { GrnLinesTable } from './grn-lines-table';
+import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
+import { GrnVendorCluster } from './grn-vendor-cluster';
+import { type GrnLineRow, grnReceivedError, grnReceiptTotals } from './grn-receipt-figures';
 
 interface LineDraft {
   deliveryChallanLineId: string;
@@ -62,8 +64,8 @@ interface LineDraft {
   itemName: string;
   sentQty: number;
   receivedSoFar: number;
-  balance: number;
-  /** The challan line's unit — decides whole-number vs 3-decimal Receive Now (S9). */
+  pending: number;
+  /** The challan line's unit — decides whole-number vs 3-decimal Received (S9). */
   uom: string;
   /** Kept as text so a half-typed value never snaps to 0 under the user. */
   receiveNow: string;
@@ -76,19 +78,6 @@ export interface GrnAgainstNcFormProps extends GrnTypeFormShellProps {
    *  without the "Are you sure you want to exit?" question. The guard itself
    *  lives in <UnifiedGrnForm>, which owns this form — one screen, one guard. */
   onLeave: (go: () => void) => void;
-}
-
-/** One line's Receive Now check. Null = fine. */
-function lineQtyError(raw: string, balance: number, uom: string): string | null {
-  const t = raw.trim();
-  if (t === '') return null; // blank = 0 = skipped on submit
-  const n = Number(t);
-  // S9 — decimals follow the unit: whole pieces for NOS / SET, else 3 places.
-  const unitProblem = qtyUomProblem(n, uom, 'Receive Now');
-  if (unitProblem) return unitProblem;
-  if (n < 0) return 'Receive Now cannot be less than 0.';
-  if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
-  return null;
 }
 
 export function GrnAgainstNcForm({
@@ -214,8 +203,8 @@ export function GrnAgainstNcForm({
         .map((l): LineDraft | null => {
           const sent = Number(l.qty);
           const got = already.get(l.id) ?? 0;
-          const balance = roundQty(sent - got);
-          if (balance <= 0) return null;
+          const pending = roundQty(sent - got);
+          if (pending <= 0) return null;
           return {
             deliveryChallanLineId: l.id,
             lineNo: l.lineNo,
@@ -225,9 +214,9 @@ export function GrnAgainstNcForm({
             itemName: l.itemName ?? l.itemNameText ?? '',
             sentQty: sent,
             receivedSoFar: got,
-            balance,
+            pending,
             uom: l.uom,
-            receiveNow: String(balance),
+            receiveNow: String(pending),
             remarks: '',
             error: null,
           };
@@ -247,6 +236,8 @@ export function GrnAgainstNcForm({
     : ncRow
       ? (ncRow.vendorName ?? ncRow.vendorCodeText)
       : '';
+
+  const vendorId = dc?.vendorId ?? ncRow?.vendorId ?? undefined;
 
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
     setLinesTouched(true);
@@ -271,7 +262,7 @@ export function GrnAgainstNcForm({
     }
     const checked = lines.map((l) => ({
       ...l,
-      error: lineQtyError(l.receiveNow, l.balance, l.uom),
+      error: grnReceivedError(l.receiveNow, { uom: l.uom, cap: l.pending }),
     }));
     setLines(checked);
     if (checked.some((l) => l.error !== null)) {
@@ -280,7 +271,7 @@ export function GrnAgainstNcForm({
     }
     const toSend = checked.filter((l) => Number(l.receiveNow.trim() || '0') > 0);
     if (toSend.length === 0) {
-      setFormError('Enter a Receive Now qty on at least one line.');
+      setFormError('Enter a Received qty on at least one line.');
       return;
     }
 
@@ -315,11 +306,32 @@ export function GrnAgainstNcForm({
     }
   };
 
+  // ONE row list, read by the lines table AND by the header's account, so the
+  // header figure and the table's totals row can never disagree.
+  const rows: GrnLineRow[] = lines.map((l) => ({
+    key: l.deliveryChallanLineId,
+    clientPoLineNo: l.clientPoLineNo,
+    itemCode: l.itemCode,
+    itemRevision: l.itemRevision,
+    itemName: l.itemName,
+    uom: l.uom,
+    qty: l.sentQty,
+    receivedEarlier: l.receivedSoFar,
+    pendingQty: l.pending,
+    receiveNow: l.receiveNow,
+    remarks: l.remarks,
+    error: l.error,
+  }));
+
   const ncValueLabel = useMemo(() => {
     if (!ncId) return undefined;
     const o = ncOptions.find((x) => x.id === ncId);
     return o ? `${o.code} — ${o.name}` : undefined;
   }, [ncId, ncOptions]);
+
+  // The header's account, from the same rows and the same `accountOf` the table
+  // foots — one rule, one rounding, one answer.
+  const { account } = grnReceiptTotals(rows);
 
   // Report to the shell so its header Save / "Not saved" pill stay truthful.
   const dirty = ncId !== null || vendorInvoiceText !== '' || remarks !== '' || linesTouched;
@@ -338,160 +350,141 @@ export function GrnAgainstNcForm({
         </Banner>
       ) : null}
 
-      <Panel title="GRN Details">
-        <FormGrid>
-          {/* Row 1 — GRN Type · GRN Date · NC No. (3 + 3 + 6); GRN Date sits second
-              on all three GRN types. */}
-          {typeField}
-          <FormField label="GRN Date" required size="sm" htmlFor="ncReceiptDate">
-            <input
-              id="ncReceiptDate"
-              type="date"
-              className="innovic-input"
-              value={receiptDate}
-              onChange={(e) => setReceiptDate(e.target.value)}
+      {/* Same grid, same sequence as the other two types (rule 8), with ONE
+          extra cluster this type genuinely has: the return chain, in the order
+          it happened. Every row comes out full. */}
+      <Panel title="Receipt">
+        <ClusterGrid>
+          <Cluster name="Against">
+            {typeField}
+            <FormField
+              label="NC No."
               required
-            />
-          </FormField>
-          <FormField
-            label="NC No."
-            required
-            size="lg"
-            htmlFor="ncId"
-            help={ncRow?.reason ? `Return reason: ${ncRow.reason}` : undefined}
-          >
-            <SearchableSelect
-              id="ncId"
-              value={ncId}
-              onChange={onNcChange}
-              options={ncOptions}
-              onSearch={setNcSearch}
-              loading={dcList.isFetching}
-              placeholder="🔍 Type NC No., DC No., job card or vendor…"
-              valueLabel={ncValueLabel}
-              emptyText="No NC has a return challan awaiting receipt."
-            />
-          </FormField>
+              htmlFor="ncId"
+              {...(ncRow?.reason ? { help: `Return reason: ${ncRow.reason}` } : {})}
+            >
+              <SearchableSelect
+                id="ncId"
+                value={ncId}
+                onChange={onNcChange}
+                options={ncOptions}
+                onSearch={setNcSearch}
+                loading={dcList.isFetching}
+                placeholder="🔍 Type NC No., DC No., job card or vendor…"
+                valueLabel={ncValueLabel}
+                emptyText="No NC has a return challan awaiting receipt."
+              />
+            </FormField>
+            {/* The NC's own return challan — the paper this receipt is booked
+                against, beside the NC it belongs to. It comes off the picked
+                NC's list row, which is already loaded. */}
+            <ClusterFact label="DC No." num value={ncRow?.code ?? '—'} empty={!ncRow?.code} />
+            <FormField label="GRN Date" required htmlFor="ncReceiptDate">
+              <input
+                id="ncReceiptDate"
+                type="date"
+                className="innovic-input"
+                value={receiptDate}
+                onChange={(e) => setReceiptDate(e.target.value)}
+                required
+              />
+            </FormField>
+          </Cluster>
 
-          {/* Row 2 — the chain that led here, in the order it happened:
-              JC No. · Source PO No. · Source GRN No. · Sent on DC No.
-              (3 + 3 + 3 + 3 = 12). ADR-217: all three source numbers use the
-              labels the NC detail page uses for the same facts, and
-              "Sent on DC No." is the one registered in docs/NAMING.md.
-              Row 3 — the return itself and who it is with:
-              DC No. (the return challan) · Vendor · Vendor Invoice No.
-              (3 + 6 + 3 = 12). Vendor Invoice No. is a document number, so it
-              takes the `sm` width the Against PO tab already gives it. */}
-          <FormField label="JC No." size="sm" htmlFor="ncJobCard">
-            <input
-              id="ncJobCard"
-              className="innovic-input mono fw-700"
-              readOnly
-              value={ncRow?.jobCardCode ?? ''}
-              placeholder="— from the NC —"
-              tabIndex={-1}
+          {/* ADR-217 — the chain that led here, in the order it happened, all
+              read off the NC: the PO the rejected pieces were bought or
+              job-worked on, the GRN they first came in on, and (Phase 2) the
+              OUTWARD challan they left on — which is the number the store
+              actually holds. All three use the labels the NC detail page uses
+              for the same facts, and `Sent on DC No.` is the one registered in
+              docs/NAMING.md.
+
+              An NC raised at the machine genuinely has no source PO, source GRN
+              or outward challan, and a dash is the right way to say so — but
+              ONLY once the answer is in hand. Until then (`ncSourceKnown`
+              false: no NC picked yet, or its fetch still in flight) those three
+              cells stay EMPTY, because a dash would assert an absence the
+              screen has not established. JC No. comes off the picked NC's own
+              list row, already loaded, so it has no such wait. */}
+          <Cluster name="Return chain">
+            <ClusterFact
+              label="JC No."
+              num
+              value={ncRow?.jobCardCode ?? '—'}
+              empty={!ncRow?.jobCardCode}
             />
-          </FormField>
-          {/* A quiet dash, never a blank: an NC raised at the machine with no
-              GRN behind it genuinely has no source PO / source GRN / outward
-              challan, and that is correct rather than missing. */}
-          <FormField label="Source PO No." size="sm" htmlFor="ncSourcePo">
-            <input
-              id="ncSourcePo"
-              className="innovic-input mono fw-700"
-              readOnly
+            <ClusterFact
+              label="Source PO No."
+              num
               value={ncSourceKnown ? (ncDetail.sourcePoCode ?? '—') : ''}
-              title={ncDetail?.sourcePoCode ?? undefined}
-              placeholder="— from the NC —"
-              tabIndex={-1}
+              empty={!ncDetail?.sourcePoCode}
+              {...(ncDetail?.sourcePoCode ? { title: ncDetail.sourcePoCode } : {})}
             />
-          </FormField>
-          <FormField label="Source GRN No." size="sm" htmlFor="ncSourceGrn">
-            <input
-              id="ncSourceGrn"
-              className="innovic-input mono fw-700"
-              readOnly
+            <ClusterFact
+              label="Source GRN No."
+              num
               value={ncSourceKnown ? (ncDetail.sourceGrnCode ?? '—') : ''}
-              title={ncDetail?.sourceGrnCode ?? undefined}
-              placeholder="— from the NC —"
-              tabIndex={-1}
+              empty={!ncDetail?.sourceGrnCode}
+              {...(ncDetail?.sourceGrnCode ? { title: ncDetail.sourceGrnCode } : {})}
             />
-          </FormField>
-          {/* ADR-217 Phase 2 — the OUTWARD challan the rejected pieces left on,
-              which is the number the store holds. Same blank-vs-dash rule as
-              the two source numbers above: blank until the NC's answer is in
-              hand, then a dash when the answer is "none". */}
-          <FormField label="Sent on DC No." size="sm" htmlFor="ncSourceDc">
-            <input
-              id="ncSourceDc"
-              className="innovic-input mono fw-700"
-              readOnly
+            <ClusterFact
+              label="Sent on DC No."
+              num
               value={ncSourceKnown ? (ncDetail.sourceDeliveryChallanCode ?? '—') : ''}
-              title={ncDetail?.sourceDeliveryChallanCode ?? undefined}
-              placeholder="— from the NC —"
-              tabIndex={-1}
+              empty={!ncDetail?.sourceDeliveryChallanCode}
+              {...(ncDetail?.sourceDeliveryChallanCode
+                ? { title: ncDetail.sourceDeliveryChallanCode }
+                : {})}
             />
-          </FormField>
-          <FormField label="DC No." size="sm" htmlFor="ncReturnChallan">
-            <input
-              id="ncReturnChallan"
-              className="innovic-input mono fw-700"
-              readOnly
-              value={ncRow?.code ?? ''}
-              placeholder="— from the NC —"
-              tabIndex={-1}
-            />
-          </FormField>
-          <FormField label="Vendor" size="lg" htmlFor="ncVendor">
-            <input
-              id="ncVendor"
-              className="innovic-input"
-              readOnly
-              value={vendorLabel}
-              title={vendorLabel || undefined}
-              placeholder="— from the NC —"
-              tabIndex={-1}
-            />
-          </FormField>
-          <FormField label="Vendor Invoice No." size="sm" htmlFor="ncVendorInvoice">
-            <input
-              id="ncVendorInvoice"
-              className="innovic-input"
-              autoComplete="off"
-              value={vendorInvoiceText}
-              onChange={(e) => setVendorInvoiceText(e.target.value)}
-            />
-          </FormField>
+          </Cluster>
 
-          {/* Row 4 — Remarks (full = 12). */}
-          <FormField label="Remarks" size="full" htmlFor="ncRemarks">
-            <textarea
-              id="ncRemarks"
-              className="innovic-textarea"
-              rows={2}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-            />
-          </FormField>
-        </FormGrid>
+          <GrnVendorCluster
+            vendorId={vendorId}
+            vendorLabel={vendorLabel}
+            vendorFrom={'— from the NC —'}
+            codeFallback={(dc ?? ncRow)?.vendorCodeText ?? ''}
+          />
+
+          {/* No Vendor Challan No.: the return challan IS our paper, and the
+              receive payload has no per-document vendor challan field. */}
+          <Cluster name="Vendor paper">
+            <FormField label="Vendor Invoice No." htmlFor="ncVendorInvoice">
+              <input
+                id="ncVendorInvoice"
+                className="innovic-input"
+                autoComplete="off"
+                value={vendorInvoiceText}
+                onChange={(e) => setVendorInvoiceText(e.target.value)}
+              />
+            </FormField>
+            <FormField label="GRN Remarks" htmlFor="ncRemarks" className="cl-span-3">
+              <input
+                id="ncRemarks"
+                className="innovic-input"
+                autoComplete="off"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
+            </FormField>
+          </Cluster>
+
+          {/* THE ACCOUNT — `Sent Qty − Received Earlier − Received = Pending`,
+              recomputed from the live rows on every keystroke. On THIS screen
+              the ordered figure is in hand: it is the return challan line's own
+              sent qty, read off the picked challan. It is a SAVED NC GRN's read
+              response that cannot state it — no challan quantity, and the PO
+              line figures it does carry are knowingly wrong for a replacement
+              receipt — which is why the edit and view surfaces suppress this
+              row and this screen does not. */}
+          {account ? <GrnReceiptAccount account={account} qtyLabel="Sent Qty" /> : null}
+        </ClusterGrid>
       </Panel>
 
-      <Panel title="Line Items" bodyPadding="none">
+      <Panel title={`Line Items (${rows.length})`} bodyPadding="none">
         <GrnLinesTable
-          rows={lines.map((l) => ({
-            key: l.deliveryChallanLineId,
-            clientPoLineNo: l.clientPoLineNo,
-            itemCode: l.itemCode,
-            itemRevision: l.itemRevision,
-            itemName: l.itemName,
-            qty: l.sentQty,
-            receivedSoFar: l.receivedSoFar,
-            balance: l.balance,
-            receiveNow: l.receiveNow,
-            remarks: l.remarks,
-            error: l.error,
-          }))}
+          rows={rows}
           qtyLabel="Sent Qty"
+          showAccount
           decimal={lines.some((l) => !isWholeNumberUom(l.uom))}
           emptyText={
             !ncId
@@ -502,7 +495,11 @@ export function GrnAgainstNcForm({
           }
           onReceiveNow={(idx, v) => {
             const l = lines[idx];
-            if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance, l.uom) });
+            if (l)
+              patchLine(idx, {
+                receiveNow: v,
+                error: grnReceivedError(v, { uom: l.uom, cap: l.pending }),
+              });
           }}
           onRemarks={(idx, v) => patchLine(idx, { remarks: v })}
         />

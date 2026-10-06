@@ -3,7 +3,7 @@
 // Chain: job-work / service PO → OSP delivery challan (IN-DC-…) sends our
 // material to the vendor → this screen books it back. Pick the JWPO, then one
 // of its challans still awaiting receipt — or pick the challan straight away
-// and the JWPO box fills itself from it — and every line with a balance is
+// and the JWPO box fills itself from it — and every line with a Pending qty is
 // loaded from that challan. Saving posts to POST /delivery-challans/:id/receive
 // — the SAME endpoint the standalone DC Receive page uses — so the server
 // raises the GRN (linked to the DC), updates the PO line's received qty and
@@ -35,7 +35,7 @@
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
 
 import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
-import { isWholeNumberUom, qtyUomProblem, roundQty } from '@innovic/shared';
+import { isWholeNumberUom, roundQty } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -52,10 +52,12 @@ import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-m
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
 import { goodsReceiptNotesKeys } from '../api';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
-import { GrnLinesTable } from './grn-lines-table';
+import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
+import { GrnVendorCluster } from './grn-vendor-cluster';
+import { type GrnLineRow, grnReceivedError, grnReceiptTotals } from './grn-receipt-figures';
 
 interface LineDraft {
   deliveryChallanLineId: string;
@@ -67,8 +69,8 @@ interface LineDraft {
   itemName: string;
   sentQty: number;
   receivedSoFar: number;
-  balance: number;
-  /** The challan line's unit — decides whole-number vs 3-decimal Receive Now (S9). */
+  pending: number;
+  /** The challan line's unit — decides whole-number vs 3-decimal Received (S9). */
   uom: string;
   /** Kept as text so a half-typed value never snaps to 0 under the user. */
   receiveNow: string;
@@ -85,19 +87,6 @@ export interface GrnAgainstDcFormProps extends GrnTypeFormShellProps {
    *  without the "Are you sure you want to exit?" question. The guard itself
    *  lives in <UnifiedGrnForm>, which owns this tab — one screen, one guard. */
   onLeave: (go: () => void) => void;
-}
-
-/** One line's Receive Now check. Null = fine. */
-function lineQtyError(raw: string, balance: number, uom: string): string | null {
-  const t = raw.trim();
-  if (t === '') return null; // blank = 0 = skipped on submit
-  const n = Number(t);
-  // S9 — decimals follow the unit: whole pieces for NOS / SET, else 3 places.
-  const unitProblem = qtyUomProblem(n, uom, 'Receive Now');
-  if (unitProblem) return unitProblem;
-  if (n < 0) return 'Receive Now cannot be less than 0.';
-  if (n > balance) return `Receive Now cannot be more than Pending (${balance}).`;
-  return null;
 }
 
 export function GrnAgainstDcForm({
@@ -224,8 +213,8 @@ export function GrnAgainstDcForm({
         .map((l): LineDraft | null => {
           const sent = Number(l.qty);
           const got = already.get(l.id) ?? 0;
-          const balance = roundQty(sent - got);
-          if (balance <= 0) return null;
+          const pending = roundQty(sent - got);
+          if (pending <= 0) return null;
           return {
             deliveryChallanLineId: l.id,
             lineNo: l.lineNo,
@@ -235,9 +224,9 @@ export function GrnAgainstDcForm({
             itemName: l.itemName ?? l.itemNameText ?? '',
             sentQty: sent,
             receivedSoFar: got,
-            balance,
+            pending,
             uom: l.uom,
-            receiveNow: String(balance),
+            receiveNow: String(pending),
             remarks: '',
             error: null,
           };
@@ -298,6 +287,8 @@ export function GrnAgainstDcForm({
     (dc ? dc.ncCode : (pickedRow?.ncCode ?? null)) ??
     (challanPoId === null ? (pickedRow?.poCodeText ?? null) : null);
 
+  const vendorId = dc?.vendorId ?? pickedRow?.vendorId ?? undefined;
+
   const patchLine = (idx: number, patch: Partial<LineDraft>): void => {
     setLinesTouched(true);
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -327,7 +318,7 @@ export function GrnAgainstDcForm({
     }
     const checked = lines.map((l) => ({
       ...l,
-      error: lineQtyError(l.receiveNow, l.balance, l.uom),
+      error: grnReceivedError(l.receiveNow, { uom: l.uom, cap: l.pending }),
     }));
     setLines(checked);
     if (checked.some((l) => l.error !== null)) {
@@ -336,7 +327,7 @@ export function GrnAgainstDcForm({
     }
     const toSend = checked.filter((l) => Number(l.receiveNow.trim() || '0') > 0);
     if (toSend.length === 0) {
-      setFormError('Enter a Receive Now qty on at least one line.');
+      setFormError('Enter a Received qty on at least one line.');
       return;
     }
 
@@ -372,6 +363,23 @@ export function GrnAgainstDcForm({
     }
   };
 
+  // ONE row list, read by the lines table AND by the header's account, so the
+  // header figure and the table's totals row can never disagree.
+  const rows: GrnLineRow[] = lines.map((l) => ({
+    key: l.deliveryChallanLineId,
+    clientPoLineNo: l.clientPoLineNo,
+    itemCode: l.itemCode,
+    itemRevision: l.itemRevision,
+    itemName: l.itemName,
+    uom: l.uom,
+    qty: l.sentQty,
+    receivedEarlier: l.receivedSoFar,
+    pendingQty: l.pending,
+    receiveNow: l.receiveNow,
+    remarks: l.remarks,
+    error: l.error,
+  }));
+
   const jwpoValueLabel = useMemo(() => {
     if (!jwpoId) return undefined;
     const row = eligibleDcs.find((d) => d.purchaseOrderId === jwpoId);
@@ -386,12 +394,48 @@ export function GrnAgainstDcForm({
     return o ? `${o.code} — ${o.name}` : undefined;
   }, [dcId, dcOptions]);
 
+  // The header's account, from the same rows and the same `accountOf` the table
+  // foots — one rule, one rounding, one answer.
+  const { account } = grnReceiptTotals(rows);
+
   // Report to the shell so its header Save / "Not saved" pill stay truthful.
   const dirty =
     jwpoId !== null || dcId !== null || vendorInvoiceText !== '' || remarks !== '' || linesTouched;
   useEffect(() => {
     onStatusChange({ submitting, blocked: false, dirty });
   }, [onStatusChange, submitting, dirty]);
+
+  // ADR-217 — the ★, the help line and the placeholder follow the CHALLAN's
+  // own purchase order, never "is this a return". A return raised under Phase 2
+  // has a zero-value job-work order behind it and is required to name it,
+  // exactly like an ordinary job-work receipt; only a return raised before
+  // ADR-217 has none, and only then does the ★ drop and the box say why.
+  // ONE cell, rendered either as the second of row 1 (an ordinary receipt) or
+  // across a continuation row (a return, whose row 1 names the NC instead) — so
+  // the rule above cannot come out differently in the two places.
+  const jwPoField = (wide = false): React.JSX.Element => (
+    <FormField
+      label="JW PO"
+      required={!returnWithoutPo}
+      htmlFor="jwpoId"
+      {...(wide ? { className: 'cl-span-4' } : {})}
+      {...(returnWithoutPo ? { help: 'This return was raised without a JW PO.' } : {})}
+    >
+      <SearchableSelect
+        id="jwpoId"
+        value={jwpoId}
+        onChange={onJwpoChange}
+        options={jwpoOptions}
+        onSearch={setJwpoSearch}
+        loading={dcList.isFetching}
+        placeholder={
+          returnWithoutPo ? '— none: return to vendor —' : '🔍 Type JW PO number or vendor…'
+        }
+        valueLabel={jwpoValueLabel}
+        emptyText="No JW PO has a challan awaiting receipt."
+      />
+    </FormField>
+  );
 
   const errorText = formError ?? submitError;
 
@@ -404,161 +448,138 @@ export function GrnAgainstDcForm({
         </Banner>
       ) : null}
 
-      <Panel title="GRN Details">
-        <FormGrid>
-          {/* Row 1 — GRN Type · GRN Date · JW PO (3 + 3 + 6); GRN Date sits second
-              on all three GRN types. */}
-          {typeField}
-          <FormField label="GRN Date" required size="sm" htmlFor="receiptDate">
-            <input
-              id="receiptDate"
-              type="date"
-              className="innovic-input"
-              value={receiptDate}
-              onChange={(e) => setReceiptDate(e.target.value)}
-              required
-            />
-          </FormField>
-          {/* ADR-217 — the ★ and the box follow the CHALLAN's own purchase
-              order, never "is this a return". A return raised under Phase 2
-              has a zero-value job-work order behind it and is required to name
-              it, exactly like an ordinary job-work receipt; only a return
-              raised before ADR-217 has none, and only then does the ★ drop and
-              the box say why. */}
-          <FormField
-            label="JW PO"
-            required={!returnWithoutPo}
-            size="lg"
-            htmlFor="jwpoId"
-            help={returnWithoutPo ? 'This return was raised without a JW PO.' : undefined}
-          >
-            <SearchableSelect
-              id="jwpoId"
-              value={jwpoId}
-              onChange={onJwpoChange}
-              options={jwpoOptions}
-              onSearch={setJwpoSearch}
-              loading={dcList.isFetching}
-              placeholder={
-                returnWithoutPo ? '— none: return to vendor —' : '🔍 Type JW PO number or vendor…'
-              }
-              valueLabel={jwpoValueLabel}
-              emptyText="No JW PO has a challan awaiting receipt."
-            />
-          </FormField>
-
-          {/* Row 2 — DC No. · Vendor (from the DC) · Vendor Invoice No.
-              (4 + 4 + 4 = 12); on a return the NC No. joins them and all four
-              narrow to 3 (3 + 3 + 3 + 3 = 12). Driven by `isReturn`, not by
-              `returnWithoutPo`: BOTH return shapes show the NC No., so the row
-              sums to 12 whether or not the return has an order behind it. */}
-          <FormField label="DC No." required size={isReturn ? 'sm' : 'md'} htmlFor="dcId">
-            {/* Keyed on a counter bumped by a USER change of the JWPO, so the
-                picker's own text resets then — otherwise the old challan's label
-                would linger in the box. Not keyed on jwpoId itself: a DC pick
-                auto-fills the JWPO and must keep the challan just picked. */}
-            <SearchableSelect
-              key={dcPickerKey}
-              id="dcId"
-              value={dcId}
-              onChange={onDcChange}
-              options={dcOptions}
-              onSearch={setDcSearch}
-              loading={dcList.isFetching}
-              placeholder={
-                jwpoId ? '🔍 Pick a DC…' : '🔍 Type a DC No. or NC No. (or pick a JW PO first)…'
-              }
-              valueLabel={dcValueLabel}
-              emptyText={
-                jwpoId
-                  ? 'No challan on this JW PO is awaiting receipt.'
-                  : 'No challan is awaiting receipt.'
-              }
-            />
-          </FormField>
-          <FormField label="Vendor" size={isReturn ? 'sm' : 'md'} htmlFor="dcVendor">
-            <input
-              id="dcVendor"
-              className="innovic-input"
-              readOnly
-              value={vendorLabel}
-              placeholder="— from the challan —"
-              tabIndex={-1}
-            />
-          </FormField>
-          {/* ADR-217 — only on a return to vendor, so an ordinary job-work
-              receipt is exactly the screen it always was. On a return the four
-              fields narrow to 3 each so the row still sums to 12 (FormGrid's
-              rule) instead of leaving Vendor Invoice No. alone on a row of its
-              own: DC No. · Vendor · NC No. · Vendor Invoice No. */}
-          {isReturn ? (
-            <FormField label="NC No." size="sm" htmlFor="dcNcCode">
-              <input
-                id="dcNcCode"
-                className="innovic-input mono fw-700"
-                readOnly
+      {/* Same grid, same sequence as Against PO (rule 8): which paper am I
+          receiving against → who delivered it → their paperwork → how much this
+          receipt settles. Every row comes out full. */}
+      <Panel title="Receipt">
+        <ClusterGrid>
+          <Cluster name="Against">
+            {typeField}
+            {/* ADR-217 — a return is received against its NC, so on a return the
+                second cell names the NC and the JW PO moves to a continuation
+                row of this same cluster. Phase 2 is why the JW PO cannot simply
+                be dropped there: a return raised under it HAS a zero-value
+                job-work order and is required to name it, exactly like an
+                ordinary job-work receipt. Which of the two shapes it is, is a
+                fact about the CHALLAN (`returnWithoutPo`), never "is this a
+                return" — and that stays entirely inside `jwPoField`. */}
+            {isReturn ? (
+              <ClusterFact
+                label="NC No."
+                num
                 value={returnNcCode ?? '—'}
-                placeholder="— from the challan —"
-                tabIndex={-1}
+                empty={!returnNcCode}
+                {...(returnNcCode ? { title: returnNcCode } : {})}
+              />
+            ) : (
+              jwPoField()
+            )}
+            <FormField label="DC No." required htmlFor="dcId">
+              {/* Keyed on a counter bumped by a USER change of the JWPO, so the
+                  picker's own text resets then — otherwise the old challan's
+                  label would linger in the box. Not keyed on jwpoId itself: a DC
+                  pick auto-fills the JWPO and must keep the challan just picked. */}
+              <SearchableSelect
+                key={dcPickerKey}
+                id="dcId"
+                value={dcId}
+                onChange={onDcChange}
+                options={dcOptions}
+                onSearch={setDcSearch}
+                loading={dcList.isFetching}
+                placeholder={
+                  jwpoId ? '🔍 Pick a DC…' : '🔍 Type a DC No. or NC No. (or pick a JW PO first)…'
+                }
+                valueLabel={dcValueLabel}
+                emptyText={
+                  jwpoId
+                    ? 'No challan on this JW PO is awaiting receipt.'
+                    : 'No challan is awaiting receipt.'
+                }
               />
             </FormField>
-          ) : null}
-          <FormField
-            label="Vendor Invoice No."
-            size={isReturn ? 'sm' : 'md'}
-            htmlFor="vendorInvoice"
-          >
-            <input
-              id="vendorInvoice"
-              className="innovic-input"
-              autoComplete="off"
-              value={vendorInvoiceText}
-              onChange={(e) => setVendorInvoiceText(e.target.value)}
-            />
-          </FormField>
+            <FormField label="GRN Date" required htmlFor="receiptDate">
+              <input
+                id="receiptDate"
+                type="date"
+                className="innovic-input"
+                value={receiptDate}
+                onChange={(e) => setReceiptDate(e.target.value)}
+                required
+              />
+            </FormField>
+          </Cluster>
 
-          {/* Row 3 — Remarks (full). */}
-          <FormField label="Remarks" size="full" htmlFor="dcRemarks">
-            <textarea
-              id="dcRemarks"
-              className="innovic-textarea"
-              rows={2}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-            />
-          </FormField>
-        </FormGrid>
+          {/* A return's JW PO, on a continuation row of the SAME cluster:
+              `name={null}` keeps the 104px gutter track, so this cell sits in
+              the grid's own columns instead of 104px left of the row above
+              (ClusterGrid pitfall 1). It spans all four, which is a full row. */}
+          {isReturn ? <Cluster name={null}>{jwPoField(true)}</Cluster> : null}
+
+          {/* All three come from the challan / the vendor master, so all three
+              are one-line FACTS, never read-only boxes. */}
+          <GrnVendorCluster
+            vendorId={vendorId}
+            vendorLabel={vendorLabel}
+            vendorFrom={'— from the challan —'}
+            codeFallback={(dc ?? pickedRow)?.vendorCodeText ?? ''}
+          />
+
+          {/* No Vendor Challan No. here: on this type OUR challan IS the paper,
+              and the receive payload has no per-document vendor challan field,
+              so a box would be typed and dropped. GRN Remarks takes the room. */}
+          <Cluster name="Vendor paper">
+            <FormField label="Vendor Invoice No." htmlFor="vendorInvoice">
+              <input
+                id="vendorInvoice"
+                className="innovic-input"
+                autoComplete="off"
+                value={vendorInvoiceText}
+                onChange={(e) => setVendorInvoiceText(e.target.value)}
+              />
+            </FormField>
+            <FormField label="GRN Remarks" htmlFor="dcRemarks" className="cl-span-3">
+              <input
+                id="dcRemarks"
+                className="innovic-input"
+                autoComplete="off"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
+            </FormField>
+          </Cluster>
+
+          {/* THE ACCOUNT — `Sent Qty — Received Earlier — Received = Pending`,
+              recomputed from the live rows on every keystroke. On THIS screen
+              the ordered figure is in hand: it is the challan line's own sent
+              qty, which the form has just read off the picked challan. It is a
+              saved DC / NC GRN's READ response that carries no challan
+              quantity, which is why the edit and view surfaces suppress this
+              row and this screen does not. */}
+          {account ? <GrnReceiptAccount account={account} qtyLabel="Sent Qty" /> : null}
+        </ClusterGrid>
       </Panel>
 
-      <Panel title="Line Items" bodyPadding="none">
+      <Panel title={`Line Items (${rows.length})`} bodyPadding="none">
         <GrnLinesTable
-          rows={lines.map((l) => ({
-            key: l.deliveryChallanLineId,
-            clientPoLineNo: l.clientPoLineNo,
-            itemCode: l.itemCode,
-            itemRevision: l.itemRevision,
-            itemName: l.itemName,
-            qty: l.sentQty,
-            receivedSoFar: l.receivedSoFar,
-            balance: l.balance,
-            receiveNow: l.receiveNow,
-            remarks: l.remarks,
-            error: l.error,
-          }))}
+          rows={rows}
           qtyLabel="Sent Qty"
+          showAccount
           decimal={lines.some((l) => !isWholeNumberUom(l.uom))}
           emptyText={
-            !jwpoId && !dcId
+            !dcId
               ? 'Select a DC'
-              : !dcId
-                ? 'Select a DC'
-                : !dc
-                  ? 'Loading challan lines…'
-                  : 'Every line on this DC is already received.'
+              : !dc
+                ? 'Loading challan lines…'
+                : 'Every line on this DC is already received.'
           }
           onReceiveNow={(idx, v) => {
             const l = lines[idx];
-            if (l) patchLine(idx, { receiveNow: v, error: lineQtyError(v, l.balance, l.uom) });
+            if (l)
+              patchLine(idx, {
+                receiveNow: v,
+                error: grnReceivedError(v, { uom: l.uom, cap: l.pending }),
+              });
           }}
           onRemarks={(idx, v) => patchLine(idx, { remarks: v })}
         />

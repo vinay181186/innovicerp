@@ -181,7 +181,9 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
       <PageHeader
         sticky
         title="Edit GRN"
-        subtitle={<span className="td-code">{detail.code}</span>}
+        /* No subtitle: the form's identity line carries the GRN No. (and the
+           type, the source document and the vendor) — layout rule 7. One
+           number, in one place. */
         backLabel="Back to GRN"
         onBack={goBack}
         dirty={formStatus.dirty}

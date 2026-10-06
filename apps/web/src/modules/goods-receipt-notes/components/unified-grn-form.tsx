@@ -116,10 +116,12 @@ export function UnifiedGrnForm({
   }, []);
   useSaveShortcut(submitActiveForm, canSave);
 
-  // GRN Type — rendered by the type form as the first field of its header
-  // grid, so it sits with the other header fields instead of alone on a row.
+  // GRN Type — rendered by the type form as the FIRST cell of its `Against`
+  // cluster, so it sits with the other header fields instead of alone on a row.
+  // No `size`: inside a Cluster every cell is one of four and the cluster's own
+  // span classes decide the width (ui/forms/ClusterGrid).
   const typeField = (
-    <FormField label="GRN Type" required size="sm" htmlFor="grnInwardType">
+    <FormField label="GRN Type" required htmlFor="grnInwardType">
       <select
         id="grnInwardType"
         className="innovic-select"

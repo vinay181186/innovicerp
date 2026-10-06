@@ -1,29 +1,56 @@
-// GRN form (UI-003-05) — header + dynamic line items; QC shown read-only (Incoming QC inspects, ADR-189).
-// A line Incoming QC has inspected any of locks client-side (server enforces with ConflictError).
+// GRN form — the EDIT screen for a saved GRN (/goods-receipt-notes/$id/edit).
+// Create is <UnifiedGrnForm> + one of the three type forms; this file's create
+// mode is kept for contract compatibility and is not reached from any route.
+//
+// It is the SAME grid and the SAME sequence as the create screen (owner's
+// layout method, rule 8): Against → Vendor → Vendor paper → This receipt, four
+// cells per row, every row full, cluster names in the left gutter. A clerk who
+// has learned Create has already learned Edit. Only the controls differ:
+//   - an identity line on top says WHICH GRN this is (rule 7);
+//   - GRN Type and the source document are one-line read-only FACTS, not
+//     disabled boxes (rule 4) — neither can ever be changed on a saved GRN;
+//   - the lines are the ONE shared <GrnLinesTable>, not a bordered card each.
+//
+// What went: 12 fields in a bordered card per line (rule 9's own bad example),
+// of which 9 were permanently greyed out, a half-empty header row, the
+// disabled QC Status select, the disabled Inspected By picker and the
+// read-only Accepted / Deviated / QC Date / QC Remarks boxes. The six quality
+// facts are now one-line facts behind the line's `▸ More`, where they read as
+// what they are: what Incoming QC recorded (ADR-189).
+//
+// QC is still never SET here. A line Incoming QC has inspected keeps today's
+// lock exactly: `Received` read-only and no ✕ (the server enforces it with a
+// ConflictError).
 
 import {
   type CreateGoodsReceiptNoteInput,
-  GRN_QC_STATUSES,
   type GoodsReceiptNoteDetail,
   type GrnQcStatus,
   type UpdateGoodsReceiptNoteInput,
+  isWholeNumberUom,
+  roundQty,
 } from '@innovic/shared';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { DocNumberInput } from '@/components/shared/doc-number-input';
-import { docCodeToSend } from '@/lib/use-doc-number';
+import { Loader2, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
-import { LineItemPicker } from '@/components/shared/line-item-picker';
 import { todayIst } from '@/lib/date';
-import { SearchableSelect } from '@/components/shared/searchable-select';
-import { useQcUserOptions } from '@/modules/qc-users/api';
-import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
-import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
+import {
+  Cluster,
+  ClusterFact,
+  ClusterGrid,
+  DocIdent,
+  FormField,
+  IdentCode,
+  IdentSep,
+} from '@/ui/forms';
+import { grnTypeLabel } from './grn-list-columns';
+import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
+import { type GrnLineRow, grnReceivedError, grnReceiptTotals } from './grn-receipt-figures';
+import { GrnVendorCluster } from './grn-vendor-cluster';
 
 interface LineFormValue {
   id?: string;
@@ -33,8 +60,22 @@ interface LineFormValue {
   purchaseOrderLineId?: string;
   itemId?: string;
   itemCodeText: string;
+  /** Live master code when the line is linked, else the saved snapshot — what
+   *  the row shows. `itemCodeText` stays the value that is SENT. */
+  itemCodeDisplay: string;
+  itemRevision: string | null;
+  /** POL — the customer's own PO line number off the SO line behind this row. */
+  clientPoLineNo: string | null;
   itemName: string;
-  receivedQty: number;
+  uom: string | null;
+  /** `PO Qty` on the PO line behind this row (read-only join). Null when the
+   *  row traces to no PO line — every line of a DC / NC-return GRN. */
+  poLineQty: number | null;
+  /** `Received Earlier` — received against that same PO line by OTHER GRNs.
+   *  Null on the same rows as `poLineQty`. */
+  poLineReceivedQty: number | null;
+  /** `Received` on THIS GRN. Text, so a half-typed value never snaps to 0. */
+  receivedQty: string;
   dcRefNo?: string;
   qcStatus: GrnQcStatus;
   qcAcceptedQty: number;
@@ -44,7 +85,7 @@ interface LineFormValue {
   /** Who inspected this line — the picked Access Control QC user, plus the name
    *  as it read on the day. Both are kept because the name is the record and the
    *  id is only the link: a signed-off inspection must not change wording when
-   *  that person is later renamed or removed. */
+   *  that person is later renamed or removed. Read-only here. */
   qcInspectedByUserId?: string | null;
   qcInspectedByName?: string | null;
   qcReportPath?: string | null;
@@ -54,7 +95,6 @@ interface LineFormValue {
 
 interface FormValues {
   header: {
-    code: string;
     grnDate: string;
     purchaseOrderId?: string;
     poCodeText?: string;
@@ -67,25 +107,37 @@ interface FormValues {
   lines: LineFormValue[];
 }
 
-const HEADER_DEFAULTS: FormValues['header'] = {
-  code: '',
-  // ISSUE-065 mech.1 (inlined expression, NOT fixed here — reported): this is
-  // UTC-derived, so between 00:00 and 05:30 IST it defaults Date to YESTERDAY.
-  // Legacy today() L1485-87 is correct because it reads LOCAL getFullYear/
-  // getMonth/getDate. Also module-level, so it is frozen at first import.
-  grnDate: todayIst(),
-};
+// ISSUE-065 — computed PER MOUNT and in IST. It used to be a module-level
+// constant, so the value was frozen at first import for the whole session, and
+// `todayIst()` (Intl, Asia/Kolkata) is the one helper the app already uses for
+// "today in IST" — the browser's own day is wrong on a laptop that is not set
+// to IST, and a UTC-derived day reads as YESTERDAY between 00:00 and 05:30 IST.
+function headerDefaults(): FormValues['header'] {
+  return { grnDate: todayIst() };
+}
 
-const NEW_LINE: LineFormValue = {
-  itemCodeText: '',
-  itemName: '',
-  receivedQty: 1,
-  qcStatus: 'pending',
-  qcAcceptedQty: 0,
-  qcRejectedQty: 0,
-  qcInspectedByUserId: null,
-  qcInspectedByName: null,
-};
+/** A hand-added line. `+ Add Line` is how a storekeeper books a delivery the PO
+ *  did not have a line for — the item is typed into the row's own picker and
+ *  the server resolves (or refuses) the code. It carries no PO line, so it has
+ *  no PO Qty, no Received Earlier and no Pending of its own. */
+function newLine(): LineFormValue {
+  return {
+    itemCodeText: '',
+    itemCodeDisplay: '',
+    itemRevision: null,
+    clientPoLineNo: null,
+    itemName: '',
+    uom: null,
+    poLineQty: null,
+    poLineReceivedQty: null,
+    receivedQty: '',
+    qcStatus: 'pending',
+    qcAcceptedQty: 0,
+    qcRejectedQty: 0,
+    qcInspectedByUserId: null,
+    qcInspectedByName: null,
+  };
+}
 
 type CreateMode = {
   mode: 'create';
@@ -118,40 +170,31 @@ export type GoodsReceiptNoteFormProps = CreateMode | EditMode;
 
 export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
-  const defaults: FormValues = isEdit
-    ? detailToFormValues(props.detail)
-    : {
-        header: {
-          ...HEADER_DEFAULTS,
-          ...(props.initialPurchaseOrderId
-            ? { purchaseOrderId: props.initialPurchaseOrderId }
-            : {}),
+  const isCreate = !isEdit;
+  const [defaults] = useState<FormValues>(() =>
+    props.mode === 'edit'
+      ? detailToFormValues(props.detail)
+      : {
+          header: {
+            ...headerDefaults(),
+            ...(props.initialPurchaseOrderId
+              ? { purchaseOrderId: props.initialPurchaseOrderId }
+              : {}),
+          },
+          lines: [],
         },
-        lines: [{ ...NEW_LINE }],
-      };
+  );
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const {
-    register,
-    control,
-    handleSubmit,
-    formState,
-    setValue,
-    setError,
-    clearErrors,
-    getValues,
-    watch,
-  } = form;
-  const isCreate = !isEdit;
-  const [docNoValid, setDocNoValid] = useState(true);
-  // S2: the number the field auto-filled. It is only a preview — the form
-  // sends a number only when the user changed it (docCodeToSend).
-  const [suggestedCode, setSuggestedCode] = useState('');
+  const { register, control, handleSubmit, formState, setValue, setError, clearErrors, watch } =
+    form;
   const errors = formState.errors;
+  // Why the form refused to save — shown with the API error, above Save.
+  const [formError, setFormError] = useState<string | null>(null);
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
   const { onStatusChange } = props;
-  const canSubmit = !formState.isSubmitting && !(isCreate && !docNoValid);
+  const canSubmit = !formState.isSubmitting;
   useEffect(() => {
     onStatusChange?.({
       submitting: formState.isSubmitting,
@@ -160,54 +203,181 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
     });
   }, [onStatusChange, formState.isSubmitting, formState.isDirty, canSubmit]);
 
-  // One fetch for the whole form — every line's QC By box reads the same list,
-  // and the query key is shared with the other QC By fields in the app.
-  const qcUsers = useQcUserOptions();
-  const qcOptions = useMemo(
-    () => toQcSearchOptions(qcUsers.data?.options ?? []),
-    [qcUsers.data?.options],
-  );
-
+  // ── create mode only (not reached from any route): the PO is the source ──
   const { data: posData } = usePurchaseOrdersList({ limit: 200, offset: 0 });
   // ADR-189 — a draft PO is not approved yet, so goods cannot be received on it.
-  const pos = (posData?.items ?? []).filter((p) =>
-    ['open', 'partial', 'qc_pending'].includes(p.status),
-  );
-
-  const selectedPoId = useWatch({ control, name: 'header.purchaseOrderId' });
+  const pos = isCreate
+    ? (posData?.items ?? []).filter((p) => ['open', 'partial', 'qc_pending'].includes(p.status))
+    : [];
+  const selectedPoId = watch('header.purchaseOrderId');
   const { data: selectedPoDetail } = usePurchaseOrder(
-    !isEdit && selectedPoId ? selectedPoId : undefined,
+    isCreate && selectedPoId ? selectedPoId : undefined,
   );
-
   useEffect(() => {
-    if (isEdit) return;
-    if (!selectedPoDetail) return;
-    const cur = getValues('lines');
-    const isPristine = cur.length === 1 && cur[0]!.itemCodeText === '' && cur[0]!.itemName === '';
-    if (!isPristine) return;
-    if (!getValues('header.vendorId') && selectedPoDetail.vendorId) {
+    if (isEdit || !selectedPoDetail) return;
+    if (selectedPoDetail.vendorId) {
       setValue('header.vendorId', selectedPoDetail.vendorId, { shouldDirty: true });
     }
-    const newLines = selectedPoDetail.lines
-      .filter((l) => l.qty - l.receivedQty > 0)
-      .map(
-        (l): LineFormValue => ({
-          purchaseOrderLineId: l.id,
-          ...(l.itemId ? { itemId: l.itemId } : {}),
-          itemCodeText: l.itemCodeText ?? '',
-          itemName: l.itemName,
-          receivedQty: l.qty - l.receivedQty,
-          qcStatus: 'pending',
-          qcAcceptedQty: 0,
-          qcRejectedQty: 0,
-          qcInspectedByUserId: null,
-          qcInspectedByName: null,
-        }),
-      );
-    if (newLines.length > 0) replace(newLines);
-  }, [isEdit, selectedPoDetail, getValues, setValue, replace]);
+    replace(
+      selectedPoDetail.lines
+        .filter((l) => l.qty - l.receivedQty > 0)
+        .map(
+          (l): LineFormValue => ({
+            purchaseOrderLineId: l.id,
+            ...(l.itemId ? { itemId: l.itemId } : {}),
+            itemCodeText: l.itemCodeText ?? '',
+            itemCodeDisplay: l.itemCode ?? l.itemCodeText ?? '',
+            itemRevision: l.itemRevision,
+            clientPoLineNo: l.clientPoLineNo,
+            itemName: l.itemName,
+            uom: l.uom,
+            poLineQty: l.qty,
+            poLineReceivedQty: l.receivedQty,
+            receivedQty: String(roundQty(l.qty - l.receivedQty)),
+            qcStatus: 'pending',
+            qcAcceptedQty: 0,
+            qcRejectedQty: 0,
+            qcInspectedByUserId: null,
+            qcInspectedByName: null,
+          }),
+        ),
+    );
+  }, [isEdit, selectedPoDetail, setValue, replace]);
+
+  // ── the header's read-only facts ────────────────────────────────────────
+  const detail = props.mode === 'edit' ? props.detail : undefined;
+  const linkedPoId = watch('header.purchaseOrderId');
+  const linkedVendorId = watch('header.vendorId');
+  const vendorText = watch('header.vendorCodeText') ?? '';
+  const vendorLabel = detail?.vendorName ?? selectedPoDetail?.vendorName ?? vendorText;
+  // ONE test of which inward type a saved GRN is, shared with the list and the
+  // detail page (grn-list-columns) so the three surfaces cannot drift. It
+  // answers null for a legacy row with no PO, DC or NC linked at all — that
+  // row's source box is `PO No. (not linked)`, so Against PO is its type.
+  const typeLabel = (detail ? grnTypeLabel(detail) : null) ?? 'Against PO';
+  const isNc = Boolean(detail?.ncId);
+  const isDc = !isNc && Boolean(detail?.deliveryChallanId);
+  // The receipt account and the three account columns are AGAINST PO only.
+  // A DC / NC GRN line does carry a purchase_order_line_id, so poLineQty and
+  // poLineReceivedQty come back populated — but the figure the clerk typed
+  // against on those types is the CHALLAN line's `Sent Qty`, which this
+  // response does not carry, so the PO line qty is a different fact and
+  // showing it under either label would contradict the lines. On a
+  // replacement (NC) GRN it is also wrong arithmetic: the API leaves this
+  // GRN's own receipt out of the PO line's received column until QC clears
+  // it, so Pending would understate by exactly that line's Received.
+  const isPo = !isNc && !isDc;
+  // EDIT is where a mis-keyed receipt gets corrected, so the item cells and
+  // `+ Add Line` come back here — but only on an Against PO GRN. A DC / NC
+  // line mirrors a challan or an NC line: the item is not the storekeeper's to
+  // retype, and CREATE builds its lines from the picked source document.
+  const itemEditable = isEdit && isPo;
+
+  // ── the lines, as the one shared table reads them ───────────────────────
+  const lineVals = watch('lines') ?? [];
+  const capFor = (poQty: number | null, earlier: number | null): number | undefined =>
+    isPo && poQty !== null ? roundQty(poQty - (earlier ?? 0)) : undefined;
+  // Driven by the live VALUES (watch), keyed by the field array's own ids. Not
+  // the other way round: `fields` carries RHF's generated key as `id`, which is
+  // not this line's database id, so reading a row out of it would put the wrong
+  // id in front of every other field.
+  const rows: GrnLineRow[] = lineVals.map((l, idx) => {
+    const qcCleared = l.existingQcStatus === 'completed';
+    const locked = qcCleared || (l.existingInspectedQty ?? 0) > 0;
+    // Only where the row actually offers the picker, so the "is required" note
+    // never appears under a cell that has no control.
+    const itemTyped = itemEditable && !locked;
+    const poQty = l.poLineQty ?? null;
+    const earlier = l.poLineReceivedQty ?? null;
+    const cap = capFor(poQty, earlier);
+    return {
+      key: fields[idx]?.id ?? `line-${idx}`,
+      clientPoLineNo: l.clientPoLineNo ?? null,
+      itemCode: l.itemCodeDisplay || l.itemCodeText,
+      itemRevision: l.itemRevision ?? null,
+      itemName: l.itemName,
+      itemId: l.itemId ?? null,
+      itemError: itemTyped && !l.itemName.trim() ? 'Item Name is required.' : null,
+      uom: l.uom,
+      qty: poQty,
+      receivedEarlier: earlier,
+      ...(cap === undefined ? {} : { pendingQty: cap }),
+      receiveNow: l.receivedQty ?? '',
+      dcRefNo: l.dcRefNo ?? '',
+      remarks: l.remarks ?? '',
+      // `blankIsZero: false` — this line already exists, so an empty box is a
+      // missing answer, not "not receiving this line". `cap` only where it is the
+      // figure this receipt was typed against (see `capFor`).
+      error: grnReceivedError(l.receivedQty ?? '', {
+        uom: l.uom,
+        cap,
+        blankIsZero: false,
+      }),
+      qcStatus: l.existingQcStatus ?? 'pending',
+      locked,
+      ...(isEdit
+        ? {
+            qc: {
+              acceptedQty: Number(l.qcAcceptedQty ?? 0),
+              rejectedQty: Number(l.qcRejectedQty ?? 0),
+              qcDate: l.qcDate ?? null,
+              inspectedBy: l.qcInspectedByName ?? null,
+              qcRemarks: l.qcRemarks ?? null,
+              qcReportName: l.qcReportName ?? null,
+            },
+          }
+        : {}),
+    };
+  });
+  // Decimals follow the unit (0172 / S9): whole pieces for NOS / SET, 3 places
+  // for KGS / MTR — and for a line with no unit at all, which is what this form
+  // allowed before the column existed.
+  const decimal = rows.some((r) => !isWholeNumberUom(r.uom));
+  // The account, from the same `accountOf` the table foots and the VIEW page
+  // reads, so one GRN can no longer show an account on Edit and none on Detail.
+  // It comes back null the moment any row has no PO line behind it — a legacy
+  // GRN booked without a PO, or a line just added by hand — because there is
+  // then no total to state: see `accountOf`.
+  const { account } = grnReceiptTotals(rows);
+  const showAccount = isPo && account !== null;
+  // Why the account is missing, said once where the cause is. Only when this
+  // screen WOULD have shown one.
+  const accountWithheld = isPo && account === null && rows.length > 0;
+
+  // The picker reports the resolved refs; the line keeps the typed code in BOTH
+  // `itemCodeText` (what is SENT) and `itemCodeDisplay` (what the row shows), so
+  // the cell can never show one code while saving another.
+  const onItemChange = (
+    idx: number,
+    next: { code: string; itemId: string | null; name: string },
+  ): void => {
+    setValue(`lines.${idx}.itemCodeText` as const, next.code, { shouldDirty: true });
+    setValue(`lines.${idx}.itemCodeDisplay` as const, next.code, { shouldDirty: true });
+    setValue(`lines.${idx}.itemId` as const, next.itemId ?? undefined, { shouldDirty: true });
+    setValue(`lines.${idx}.itemName` as const, next.name, { shouldDirty: true });
+  };
 
   const onValid = async (values: FormValues): Promise<void> => {
+    setFormError(null);
+    // Every line re-checked against the same rule the boxes show inline, so a
+    // bad qty is refused here rather than coming back as a 400 from the API.
+    if (rows.some((r) => r.error !== null)) {
+      setFormError('Fix the highlighted quantities.');
+      return;
+    }
+    // The server requires a name on every line (`itemName: min(1)`) and an item
+    // REF — `itemId` or `itemCodeText` (the shared refine, ADR-012 #10, and
+    // service.ts's own `Item Code is required.`). Say both in plain words here
+    // rather than letting a hand-added line come back as a 400, or worse as the
+    // refine's developer wording.
+    if (values.lines.some((l) => !l.itemName.trim())) {
+      setFormError('Item Name is required on every line.');
+      return;
+    }
+    if (values.lines.some((l) => !l.itemCodeText.trim() && !l.itemId)) {
+      setFormError('Item Code is required on every line.');
+      return;
+    }
     // A vendor is required on create (server enforces via the create schema
     // refine + migration 0080 CHECK). Either the vendor dropdown or the
     // free-text fallback satisfies it. Guard here so the user gets a friendly
@@ -216,10 +386,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
       const hasVendor =
         Boolean(values.header.vendorId) || Boolean(values.header.vendorCodeText?.trim());
       if (!hasVendor) {
-        setError('header.vendorId', {
-          type: 'required',
-          message: 'Vendor is required.',
-        });
+        setError('header.vendorId', { type: 'required', message: 'Vendor is required.' });
         return;
       }
       clearErrors('header.vendorId');
@@ -227,7 +394,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
     const headerOut = {
       ...values.header,
-      code: docCodeToSend(values.header.code, suggestedCode),
       purchaseOrderId: values.header.purchaseOrderId || undefined,
       poCodeText: values.header.poCodeText?.trim() || undefined,
       vendorId: values.header.vendorId || undefined,
@@ -249,7 +415,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         ...(l.purchaseOrderLineId ? { purchaseOrderLineId: l.purchaseOrderLineId } : {}),
         ...refs,
         itemName: l.itemName.trim(),
-        receivedQty: Number(l.receivedQty),
+        receivedQty: Number(String(l.receivedQty).trim() || '0'),
         dcRefNo: l.dcRefNo?.trim() || undefined,
         qcStatus: l.qcStatus,
         qcAcceptedQty: Number(l.qcAcceptedQty),
@@ -266,11 +432,11 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
       };
     });
 
-    if (isEdit) {
-      const { code: _drop, ...headerNoCode } = headerOut;
-      void _drop;
-      await props.onSubmit({ header: headerNoCode, lines: linesOut });
+    if (props.mode === 'edit') {
+      await props.onSubmit({ header: headerOut, lines: linesOut });
     } else {
+      // No `code`: a blank GRN No. means "auto", and the server numbers it
+      // (nextGrnCode). There is no GRN No. box on a create screen by design.
       await props.onSubmit({ header: headerOut, lines: linesOut } as CreateGoodsReceiptNoteInput);
     }
   };
@@ -278,363 +444,242 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   return (
     <form id={props.formId} onSubmit={handleSubmit(onValid)}>
       {/* Save error summary right under the page header, where Save is. */}
-      {props.submitError ? (
+      {(formError ?? props.submitError) ? (
         <Banner tone="error" role="alert">
-          {props.submitError}
+          {formError ?? props.submitError}
         </Banner>
       ) : null}
 
-      {/* Header — labels and placeholders from legacy addGRN() L26537-26550.
-          No ★ on GRN No.: legacy renders it readonly/auto (L26538) and our
-          schema has code .optional() — "blank = auto". Legacy resolves the
-          vendor from the PO and shows it read-only (_grnRefreshPOLines
-          L26672-26673); our vendor fields stay because they are the only vendor
-          entry point without legacy's Manual mode. On the 12-column grid:
-          party first, then the PO, then the vendor's paper numbers. */}
-      <Panel title="GRN Details">
-        <FormGrid>
-          {/* Same order as New GRN: GRN No. · GRN Date · PO · Vendor · the
-              vendor's paper numbers · Remarks. The old free-text "PO No." and
-              "Vendor Code" boxes show only when nothing is linked (legacy rows),
-              so the user never sees two answers to one question. */}
-          <div className="f-sm">
-            <DocNumberInput
-              type="grn"
-              label="GRN No."
-              readOnly={isEdit}
-              value={watch('header.code') ?? ''}
-              onChange={(v) => setValue('header.code', v)}
-              onValidityChange={setDocNoValid}
-              onSuggestedChange={setSuggestedCode}
-            />
-          </div>
-          <FormField label="GRN Date" required size="sm" htmlFor="grnDate">
-            <input
-              id="grnDate"
-              type="date"
-              className="innovic-input"
-              {...register('header.grnDate', { required: 'GRN Date is required.' })}
-            />
-          </FormField>
-          <FormField label="PO No." size="lg" htmlFor="purchaseOrderId">
-            <select
-              id="purchaseOrderId"
-              className="innovic-select"
-              disabled={isEdit}
-              {...register('header.purchaseOrderId')}
-            >
-              <option value="">— Select PO —</option>
-              {pos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          {watch('header.purchaseOrderId') ? null : (
-            <FormField label="PO No. (not linked)" size="sm" htmlFor="poCodeText">
+      <Panel title="Receipt">
+        {/* Rule 7 — an identity line on top says WHICH document this is. Those
+            are not facts ABOUT the GRN, so they sit above the grid. */}
+        {detail ? (
+          <DocIdent>
+            <IdentCode>{detail.code}</IdentCode>
+            <IdentSep />
+            <span>{typeLabel}</span>
+            {(detail.ncCode ?? detail.poCode ?? detail.poCodeText) ? (
+              <>
+                <IdentSep />
+                <IdentCode>{detail.ncCode ?? detail.poCode ?? detail.poCodeText}</IdentCode>
+              </>
+            ) : null}
+            {vendorLabel ? (
+              <>
+                <IdentSep />
+                <span>{vendorLabel}</span>
+              </>
+            ) : null}
+          </DocIdent>
+        ) : null}
+
+        <ClusterGrid>
+          {/* Row 1 — which paper am I receiving against. Neither GRN Type nor
+              the source document can change on a saved GRN, so on edit they are
+              FACTS, not disabled controls. */}
+          <Cluster name="Against">
+            <ClusterFact label="GRN Type" value={typeLabel} />
+            {isNc ? (
+              <ClusterFact
+                label="NC No."
+                span={2}
+                num
+                value={detail?.ncCode ?? detail?.poCodeText ?? '—'}
+                empty={!(detail?.ncCode ?? detail?.poCodeText)}
+              />
+            ) : isDc ? (
+              <>
+                <ClusterFact
+                  label="JW PO"
+                  num
+                  value={detail?.poCode ?? detail?.poCodeText ?? '—'}
+                  empty={!(detail?.poCode ?? detail?.poCodeText)}
+                />
+                <ClusterFact
+                  label="DC No."
+                  num
+                  value={detail?.dcCode ?? '—'}
+                  empty={!detail?.dcCode}
+                />
+              </>
+            ) : isEdit && linkedPoId ? (
+              <ClusterFact
+                label="PO No."
+                span={2}
+                num
+                value={detail?.poCode ?? detail?.poCodeText ?? '—'}
+                empty={!(detail?.poCode ?? detail?.poCodeText)}
+              />
+            ) : isEdit ? (
+              /* Legacy row with no PO linked: the free-text box this form has
+                 always shown, in the very cell the linked PO fact occupies, so
+                 the row still comes out full and nothing shifts. */
+              <FormField
+                label="PO No. (not linked)"
+                htmlFor="poCodeText"
+                className="cl-span-2"
+                help="This GRN was booked without a purchase order behind it."
+              >
+                <input
+                  id="poCodeText"
+                  className="innovic-input mono fw-700"
+                  autoComplete="off"
+                  {...register('header.poCodeText')}
+                />
+              </FormField>
+            ) : (
+              <FormField label="PO No." htmlFor="purchaseOrderId" className="cl-span-2">
+                <select
+                  id="purchaseOrderId"
+                  className="innovic-select"
+                  {...register('header.purchaseOrderId')}
+                >
+                  <option value="">— Select PO —</option>
+                  {pos.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            )}
+            <FormField label="GRN Date" required htmlFor="grnDate">
               <input
-                id="poCodeText"
+                id="grnDate"
+                type="date"
                 className="innovic-input"
-                autoComplete="off"
-                {...register('header.poCodeText')}
+                {...register('header.grnDate', { required: 'GRN Date is required.' })}
               />
             </FormField>
-          )}
+          </Cluster>
 
-          <VendorPicker
-            className="form-grp f-lg"
-            value={watch('header.vendorId') || null}
-            initialLabel={isEdit ? (props.detail.vendorName ?? '') : ''}
-            carriedText={watch('header.vendorId') ? '' : (watch('header.vendorCodeText') ?? '')}
-            error={errors.header?.vendorId?.message}
-            onChange={(id) => {
-              setValue('header.vendorId', id ?? '', { shouldDirty: true });
-              if (id) clearErrors('header.vendorId');
-            }}
+          {/* Row 2 — who delivered it. The one shared cluster; only the Vendor
+              cell differs by screen, and the screen hands it in. Vendor stays
+              EDITABLE here (it is the only vendor entry point this document
+              has), while its code and GSTIN are read off the master and so are
+              facts. A legacy row with no vendor linked keeps its free-text code
+              box, in the very cell the Vendor Code fact occupies — no short row
+              either way. */}
+          <GrnVendorCluster
+            vendorId={linkedVendorId}
+            vendor={
+              <VendorPicker
+                className="form-grp cl-span-2"
+                value={linkedVendorId || null}
+                initialLabel={detail?.vendorName ?? ''}
+                carriedText={linkedVendorId ? '' : vendorText}
+                {...(errors.header?.vendorId?.message
+                  ? { error: errors.header.vendorId.message }
+                  : {})}
+                onChange={(id) => {
+                  setValue('header.vendorId', id ?? '', { shouldDirty: true });
+                  if (id) clearErrors('header.vendorId');
+                }}
+              />
+            }
+            codeFallback={
+              <FormField label="Vendor Code (not linked)" htmlFor="vendorCodeText">
+                <input
+                  id="vendorCodeText"
+                  className="innovic-input mono fw-700"
+                  autoComplete="off"
+                  {...register('header.vendorCodeText')}
+                />
+              </FormField>
+            }
           />
-          {watch('header.vendorId') ? null : (
-            <FormField label="Vendor Code (not linked)" size="sm" htmlFor="vendorCodeText">
+
+          {/* Row 3 — their paperwork. */}
+          <Cluster name="Vendor paper">
+            <FormField label="Vendor Invoice No." htmlFor="invoiceNo">
               <input
-                id="vendorCodeText"
+                id="invoiceNo"
                 className="innovic-input"
                 autoComplete="off"
-                {...register('header.vendorCodeText')}
+                {...register('header.invoiceNo')}
               />
             </FormField>
-          )}
+            <FormField label="Vendor Challan No." htmlFor="dcNo">
+              <input
+                id="dcNo"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('header.dcNo')}
+              />
+            </FormField>
+            {/* The DOCUMENT's note. The line's own is `Remarks`, behind ▸ More. */}
+            <FormField label="GRN Remarks" htmlFor="remarks" className="cl-span-2">
+              <input
+                id="remarks"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('header.remarks')}
+              />
+            </FormField>
+          </Cluster>
 
-          <FormField label="Vendor Invoice No." size="lg" htmlFor="invoiceNo">
-            <input
-              id="invoiceNo"
-              className="innovic-input"
-              autoComplete="off"
-              {...register('header.invoiceNo')}
-            />
-          </FormField>
-          <FormField label="Vendor Challan No." size="lg" htmlFor="dcNo">
-            <input
-              id="dcNo"
-              className="innovic-input"
-              autoComplete="off"
-              {...register('header.dcNo')}
-            />
-          </FormField>
-
-          {/* Row 4 — Remarks (full). Legacy uses <input> (L26542); kept as
-              <textarea> — remarks is z.string().max(2000) so CR/LF survives. */}
-          <FormField label="Remarks" size="full" htmlFor="remarks">
-            <textarea
-              id="remarks"
-              className="innovic-textarea"
-              rows={2}
-              {...register('header.remarks')}
-            />
-          </FormField>
-        </FormGrid>
+          {/* Row 4 — THE ACCOUNT: how much this receipt settles. Read-only, it
+              reads left to right and ends on the result, and it recomputes from
+              the lines on every keystroke. Against PO only (see `isPo`); the
+              other two types end on row 3, with every row still full. */}
+          {showAccount && account ? (
+            <GrnReceiptAccount account={account} qtyLabel="PO Qty" />
+          ) : null}
+        </ClusterGrid>
       </Panel>
 
       <Panel
-        title="Line Items"
-        actions={
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => append({ ...NEW_LINE })}
-          >
-            <Plus size={13} /> Add Line
-          </button>
-        }
-      >
-        {fields.length === 0 ? (
-          <div className="empty-state">
-            No lines yet. Pick a PO above, or click <strong>Add Line</strong>.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {fields.map((field, idx) => {
-              // Mirrors the server (ADR-189): once Incoming QC has inspected ANY
-              // qty on a line (accepted + rejected > 0), its item and received
-              // qty cannot change and it cannot be removed — not only once QC is
-              // fully cleared. Challan no. and line remarks stay editable until
-              // QC is cleared, as before (the server accepts those edits).
-              const qcCleared = field.existingQcStatus === 'completed';
-              const locked = qcCleared || (field.existingInspectedQty ?? 0) > 0;
-              return (
-                <div
-                  key={field.id}
-                  style={{
-                    border: `1px solid ${qcCleared ? 'var(--green)' : 'var(--border)'}`,
-                    borderRadius: 8,
-                    padding: 10,
-                    background: 'var(--bg2)',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: 8,
-                      fontSize: 'var(--fs-xs)',
-                      color: 'var(--text3)',
-                      fontFamily: 'var(--mono)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <span>
-                      Line {idx + 1}
-                      {locked ? (
-                        <span
-                          className={qcCleared ? 'badge b-green' : 'badge b-amber'}
-                          style={{ marginLeft: 8 }}
-                          title="Incoming QC has inspected this line, so its item and qty cannot be changed and it cannot be removed."
-                        >
-                          {qcCleared ? 'QC Cleared' : 'QC In Progress'}
-                        </span>
-                      ) : null}
+        title={`Line Items (${rows.length})`}
+        bodyPadding="none"
+        {...(itemEditable || accountWithheld
+          ? {
+              actions: (
+                <>
+                  {/* Said where the cause is: a line with no PO line behind it
+                      is why the header has no `This receipt` row. */}
+                  {accountWithheld ? (
+                    <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                      A line that is not on the purchase order cannot be totalled against it, so
+                      this GRN shows no receipt account.
                     </span>
-                    {!locked ? (
-                      <button
-                        type="button"
-                        className="btn btn-danger btn-sm btn-icon"
-                        onClick={() => remove(idx)}
-                        aria-label={`Remove line ${idx + 1}`}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="form-grid-12">
-                    {/* Shared item cell — enforces the system item-code rule (master
-                      match ⇒ read-only auto-filled name; off-master ⇒ editable, itemId
-                      null). Controller keeps the existing required-name validation and
-                      onSubmit error display; code + itemId are mirrored via setValue so
-                      the submit shape (onValid) is unchanged. */}
-                    <Controller
-                      control={control}
-                      name={`lines.${idx}.itemName` as const}
-                      rules={{ required: 'Item Name is required.' }}
-                      render={({ field, fieldState }) => (
-                        <LineItemPicker
-                          code={watch(`lines.${idx}.itemCodeText`) ?? ''}
-                          itemId={watch(`lines.${idx}.itemId`) ?? null}
-                          itemName={field.value}
-                          readOnly={locked}
-                          nameError={fieldState.error?.message}
-                          onChange={(next) => {
-                            setValue(`lines.${idx}.itemCodeText`, next.code, { shouldDirty: true });
-                            setValue(`lines.${idx}.itemId`, next.itemId ?? undefined, {
-                              shouldDirty: true,
-                            });
-                            field.onChange(next.name);
-                          }}
-                        />
-                      )}
-                    />
-                    <div className="form-grp">
-                      <label className="form-label">
-                        Received<span className="req">★</span>
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        className="innovic-input"
-                        readOnly={locked}
-                        {...register(`lines.${idx}.receivedQty` as const, {
-                          valueAsNumber: true,
-                          min: { value: 0, message: 'Received cannot be less than 0.' },
-                        })}
-                      />
-                    </div>
-
-                    <div className="form-grp">
-                      <label className="form-label">Vendor Challan No.</label>
-                      <input
-                        className="innovic-input"
-                        autoComplete="off"
-                        readOnly={qcCleared}
-                        {...register(`lines.${idx}.dcRefNo` as const)}
-                      />
-                    </div>
-                    <div className="form-grp">
-                      <label className="form-label">QC Status</label>
-                      {/* ADR-189 — QC is recorded in Incoming QC only; the GRN
-                        shows what was inspected but never sets it. */}
-                      <select
-                        className="innovic-select"
-                        disabled
-                        {...register(`lines.${idx}.qcStatus` as const)}
-                      >
-                        {GRN_QC_STATUSES.map((s) => (
-                          <option key={s} value={s}>
-                            {GRN_QC_STATUS_LABELS[s]}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="form-grp">
-                      <label className="form-label">Accepted</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        className="innovic-input"
-                        readOnly
-                        {...register(`lines.${idx}.qcAcceptedQty` as const, {
-                          valueAsNumber: true,
-                        })}
-                      />
-                    </div>
-
-                    <div className="form-grp">
-                      <label className="form-label">Deviated</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        className="innovic-input"
-                        readOnly
-                        {...register(`lines.${idx}.qcRejectedQty` as const, {
-                          valueAsNumber: true,
-                        })}
-                      />
-                    </div>
-                    <div className="form-grp">
-                      <label className="form-label">QC Date</label>
-                      <input
-                        type="date"
-                        className="innovic-input"
-                        readOnly
-                        {...register(`lines.${idx}.qcDate` as const)}
-                      />
-                    </div>
-                    <div className="form-grp">
-                      <label className="form-label">Inspected By</label>
-                      {/* Until now the server stamped whoever SAVED the GRN, which
-                        is usually the storekeeper and not the inspector. Locked
-                        the same way as QC Status above: disabled, but still
-                        showing the recorded name. */}
-                      <SearchableSelect
-                        value={watch(`lines.${idx}.qcInspectedByUserId`) ?? null}
-                        onChange={(id) => {
-                          setValue(`lines.${idx}.qcInspectedByUserId`, id, { shouldDirty: true });
-                          // Read the SHORTENED list, not the raw one, so the box and
-                          // the dropdown agree -- and so the name stamped on the GRN
-                          // line is the one the person actually saw. Null, not '',
-                          // because this field is nullable.
-                          const picked = qcOptions.find((u) => u.id === id);
-                          setValue(
-                            `lines.${idx}.qcInspectedByName`,
-                            picked ? qcSelectedLabel(picked) : null,
-                            { shouldDirty: true },
-                          );
-                        }}
-                        options={qcOptions}
-                        onSearch={NO_SERVER_SEARCH}
-                        loading={qcUsers.isFetching}
-                        valueLabel={watch(`lines.${idx}.qcInspectedByName`) ?? ''}
-                        selectedLabel={qcSelectedLabel}
-                        disabled
-                        placeholder="Select QC person…"
-                        emptyText="No QC users. Ask an admin to set them up in Access Control."
-                      />
-                    </div>
-                    <div className="form-grp f-lg">
-                      <label className="form-label">QC Remarks</label>
-                      <input
-                        className="innovic-input"
-                        autoComplete="off"
-                        readOnly
-                        {...register(`lines.${idx}.qcRemarks` as const)}
-                      />
-                    </div>
-
-                    <div className="form-grp f-lg">
-                      <label className="form-label">Line Remarks</label>
-                      <input
-                        className="innovic-input"
-                        autoComplete="off"
-                        readOnly={qcCleared}
-                        {...register(`lines.${idx}.remarks` as const)}
-                      />
-                    </div>
-
-                    <div className="form-grp f-full">
-                      <label className="form-label">QC Report</label>
-                      {/* ADR-189 — read-only: reports are attached in Incoming QC. */}
-                      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                        {watch(`lines.${idx}.qcReportName`) ?? '—'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                  ) : null}
+                  {itemEditable ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => append(newLine())}
+                    >
+                      <Plus size={13} /> Add Line
+                    </button>
+                  ) : null}
+                </>
+              ),
+            }
+          : {})}
+      >
+        <GrnLinesTable
+          rows={rows}
+          qtyLabel="PO Qty"
+          showAccount={showAccount}
+          decimal={decimal}
+          showQc={isEdit}
+          {...(itemEditable ? { item: { onChange: onItemChange } } : {})}
+          challan={{
+            headerValue: (watch('header.dcNo') ?? '').trim(),
+            onChange: (idx, v) =>
+              setValue(`lines.${idx}.dcRefNo` as const, v, { shouldDirty: true }),
+          }}
+          emptyText={
+            isCreate ? 'Pick a PO above to load its pending lines.' : 'This GRN has no lines.'
+          }
+          onReceiveNow={(idx, v) =>
+            setValue(`lines.${idx}.receivedQty` as const, v, { shouldDirty: true })
+          }
+          onRemarks={(idx, v) =>
+            setValue(`lines.${idx}.remarks` as const, v, { shouldDirty: true })
+          }
+          onRemove={(idx) => remove(idx)}
+        />
       </Panel>
 
       {/* Bottom bar only when the page has not put Save in its sticky header. */}
@@ -658,7 +703,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 function detailToFormValues(detail: GoodsReceiptNoteDetail): FormValues {
   return {
     header: {
-      code: detail.code,
       grnDate: detail.grnDate,
       ...(detail.purchaseOrderId ? { purchaseOrderId: detail.purchaseOrderId } : {}),
       ...(detail.poCodeText ? { poCodeText: detail.poCodeText } : {}),
@@ -676,8 +720,16 @@ function detailToFormValues(detail: GoodsReceiptNoteDetail): FormValues {
         ...(l.purchaseOrderLineId ? { purchaseOrderLineId: l.purchaseOrderLineId } : {}),
         ...(l.itemId ? { itemId: l.itemId } : {}),
         itemCodeText: l.itemCodeText ?? '',
-        itemName: l.itemName,
-        receivedQty: l.receivedQty,
+        itemCodeDisplay: l.itemCode ?? l.itemCodeText ?? '',
+        itemRevision: l.itemRevision,
+        clientPoLineNo: l.clientPoLineNo,
+        // The master's live name is what the GRN SCREENS show (NAMING.md
+        // `masterItemName`); the line's saved copy is the fallback.
+        itemName: l.masterItemName ?? l.itemName,
+        uom: l.uom ?? null,
+        poLineQty: l.poLineQty ?? null,
+        poLineReceivedQty: l.poLineReceivedQty ?? null,
+        receivedQty: String(l.receivedQty),
         ...(l.dcRefNo ? { dcRefNo: l.dcRefNo } : {}),
         qcStatus: l.qcStatus,
         qcAcceptedQty: l.qcAcceptedQty,
