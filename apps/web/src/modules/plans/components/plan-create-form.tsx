@@ -19,8 +19,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import {
-  MaterialGradePicker,
-  MaterialSizePicker,
+  MaterialValueDisplay,
+  RM_SOURCE_HELP,
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { usePlanningSoDetail, usePlanningSoList } from '@/modules/so-planning/api';
@@ -76,15 +76,6 @@ export function PlanCreateForm({
     addDaysLocal(todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
   );
   const [customerDispatchDate, setCustomerDispatchDate] = useState('');
-  const [rmGradeId, setRmGradeId] = useState<string | null>(null);
-  const [rmGradeText, setRmGradeText] = useState<string | null>(null);
-  const [rmSizeId, setRmSizeId] = useState<string | null>(null);
-  const [rmSizeText, setRmSizeText] = useState<string | null>(null);
-  // Did the planner work this pair themselves? A blank the planner never
-  // opened is "nothing to say" (omit it, let the server default from the
-  // Route Card); a blank they deliberately cleared is an answer (send null).
-  const [rmGradeTouched, setRmGradeTouched] = useState(false);
-  const [rmSizeTouched, setRmSizeTouched] = useState(false);
   const [remarks, setRemarks] = useState('');
 
   // Orders that still have something to plan. A fully planned order has no
@@ -120,43 +111,13 @@ export function PlanCreateForm({
     if (!line) return;
     setPlanQty(Math.max(0, line.remaining - line.stockQty) || line.remaining);
     setCustomerDispatchDate(line.dueDate ? line.dueDate.slice(0, 10) : '');
-    setRmGradeId(null);
-    setRmGradeText(null);
-    setRmSizeId(null);
-    setRmSizeText(null);
-    // A different line is a different item: the planner has not answered for
-    // it yet, so both pairs go back to untouched.
-    setRmGradeTouched(false);
-    setRmSizeTouched(false);
   }, [line?.soLineId]);
 
-  // Raw material defaults from the item's Route Card while blank — same rule
-  // as "+ Plan" (Route Card is the source of truth, CLAUDE.md §17). A pair the
-  // planner has touched is never refilled, and a lookup that comes back blank
-  // (no Route Card yet) does NOT count as the planner answering — the pair
-  // stays untouched so the payload below can leave it out.
+  // ADR-218 — raw material is read here, never set. The item's Route Card is
+  // what the server will copy onto this plan, so the same lookup that loads the
+  // operations also supplies the two values SHOWN below. A different line is a
+  // different item, so the lookup (and the display) follows the picked line.
   const { data: defaultOps } = useDefaultRouteOps(line?.itemId ?? null);
-  useEffect(() => {
-    if (!defaultOps) return;
-    if (
-      !rmGradeTouched &&
-      !rmGradeId &&
-      !rmGradeText &&
-      (defaultOps.rawMaterialGradeId || defaultOps.rawMaterialGradeText)
-    ) {
-      setRmGradeId(defaultOps.rawMaterialGradeId);
-      setRmGradeText(defaultOps.rawMaterialGradeText);
-    }
-    if (
-      !rmSizeTouched &&
-      !rmSizeId &&
-      !rmSizeText &&
-      (defaultOps.rawMaterialSizeId || defaultOps.rawMaterialSizeText)
-    ) {
-      setRmSizeId(defaultOps.rawMaterialSizeId);
-      setRmSizeText(defaultOps.rawMaterialSizeText);
-    }
-  }, [defaultOps]);
   const hasRouteCard = !!defaultOps && defaultOps.ops.length > 0;
 
   const build = (): { input: CreatePlanInput } | { error: string } => {
@@ -174,17 +135,12 @@ export function PlanCreateForm({
     if (plannedEndDate < plannedStartDate) {
       return { error: 'Planned End Date cannot be before Planned Start Date.' };
     }
-    // RM Grade / RM Size are each sent ONLY when this form has something to
-    // say about them. Server contract (apps/api/src/modules/plans/service.ts,
-    // createPlan): a field that IS sent — a value OR an explicit null — means
-    // "the caller owns this pair, do not default it", and only an OMITTED pair
-    // is backfilled from the item's Route Card. So an untouched blank pair
-    // must be left out, otherwise this form's `null` silently switches the
-    // server's own Route-Card fallback off for every item whose Route Card is
-    // made after the plan. Touched-and-cleared still goes as null — that is
-    // the planner saying "leave it blank". Grade and size move independently.
-    const sendGrade = rmGradeTouched || rmGradeId !== null || rmGradeText !== null;
-    const sendSize = rmSizeTouched || rmSizeId !== null || rmSizeText !== null;
+    // ADR-218 — RM Grade / RM Size are NEVER sent from here. They have one
+    // author: the part's Route Card, or the BOM line for a BOM child. Server
+    // contract (apps/api/src/modules/plans/service.ts, createPlan): a field
+    // that IS sent — a value OR an explicit null — means "the caller owns this
+    // pair, do not default it", and only an OMITTED pair is filled from the
+    // BOM line / Route Card. So both pairs are OMITTED, never sent as null.
     const input: CreatePlanInput = {
       // code omitted → server assigns the next sequential PLN-NNNN.
       planDate: todayLocal(),
@@ -203,8 +159,6 @@ export function PlanCreateForm({
       plannedStartDate,
       plannedEndDate,
       customerDispatchDate: customerDispatchDate || null,
-      ...(sendGrade ? { rawMaterialGradeId: rmGradeId, rawMaterialGradeText: rmGradeText } : {}),
-      ...(sendSize ? { rawMaterialSizeId: rmSizeId, rawMaterialSizeText: rmSizeText } : {}),
       remarks: remarks.trim() === '' ? null : remarks.trim(),
     };
     return { input };
@@ -417,33 +371,20 @@ export function PlanCreateForm({
                   onChange={(e) => edit(setCustomerDispatchDate)(e.target.value)}
                 />
               </Field>
+              {/* ADR-218 — shown, not picked. These are the values the new plan
+                  will be given; the Route Card (or the BOM line) owns them. */}
               <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
                 <RawMaterialGroup>
                   <Field label="RM Grade">
-                    <MaterialGradePicker
-                      valueId={rmGradeId}
-                      valueText={rmGradeText}
-                      onChange={(id, text) => {
-                        setRmGradeId(id);
-                        setRmGradeText(text);
-                        setRmGradeTouched(true);
-                        onDirty();
-                      }}
-                    />
+                    <MaterialValueDisplay value={defaultOps?.rawMaterialGradeText} />
                   </Field>
                   <Field label="RM Size">
-                    <MaterialSizePicker
-                      valueId={rmSizeId}
-                      valueText={rmSizeText}
-                      onChange={(id, text) => {
-                        setRmSizeId(id);
-                        setRmSizeText(text);
-                        setRmSizeTouched(true);
-                        onDirty();
-                      }}
-                    />
+                    <MaterialValueDisplay value={defaultOps?.rawMaterialSizeText} />
                   </Field>
                 </RawMaterialGroup>
+                <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                  {RM_SOURCE_HELP}
+                </div>
               </div>
               <Field label="Plan Remarks" full>
                 <textarea

@@ -2,13 +2,26 @@
 //
 // Header: BOM No (auto on create) + Name + Status + Revision indicator.
 // Line editor: item picker (the shared SearchableSelect) + qty/set + bom_type
-// dropdown + remove button. Excel template download + import.
+// dropdown + RM Grade / RM Size pickers + remove button, all on ONE row.
+// Excel template download + import.
 //
 // Layout is the app theme (create-page pattern): sticky PageHeader (Cancel +
-// blue Save, Ctrl+S, "Not saved") → Panel(BOM Details) → Panel(Parent Item) →
-// Panel(Child Items: .innovic-table.tbl-grid.tbl-edit) → Panel(Revision Note).
-// The private `bomx-` stylesheet (40px inputs, 36px buttons, own palette) is
-// gone.
+// blue Save, Ctrl+S, "Not saved") → ONE untitled Panel holding the ClusterGrid
+// (cluster BOM, cluster Parent Item) → Panel(Child Items:
+// .innovic-table.tbl-grid.tbl-edit) → Panel(Revision Note). The private
+// `bomx-` stylesheet (40px inputs, 36px buttons, own palette) is gone.
+//
+// FITTING ONE SCREEN (bom-create-mockup.html, approved 2026-10-06). The screen
+// scrolled before a 4th part was visible. Four things cost that height and all
+// four are gone:
+//   • two panels with a heading band each → one panel, no heading, the two
+//     group names in the ClusterGrid's left gutter (costs no height),
+//   • raw material on a SECOND row per part → two ordinary COLUMNS, so a part
+//     costs one row instead of two (124px → 33px, measured),
+//   • the three list buttons on a toolbar band under the table → the Child
+//     Items panel header, beside the counter,
+//   • the two resolved Item Names (parent and child) were disabled inputs the
+//     user can never type in → read as values, not as empty boxes.
 
 import {
   BOM_CREATE_STATUSES,
@@ -27,7 +40,7 @@ import {
 } from '@innovic/shared';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
@@ -36,11 +49,10 @@ import { useMaterialGradesList, useMaterialSizesList } from '@/modules/raw-mater
 import {
   MaterialGradePicker,
   MaterialSizePicker,
-  RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextBomNo } from '../api';
 
@@ -409,6 +421,32 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // a list of parts that builds nothing, which is exactly the state that let
   // an equipment SO be planned and then never dispatched.
   const parentLocked = !resolvedParentId;
+
+  // The parent's Item Name is RESOLVED from the code and can never be typed, so
+  // it reads as a value, not as a half-page disabled box. The three states the
+  // old box conveyed are all kept, in words instead of an empty field:
+  //   nothing typed yet            → "auto-filled" (the old placeholder)
+  //   a code typed, still looking  → "Checking Item Master…"
+  //   a code typed, no master row  → "Not in Item Master" (the Save banner
+  //                                  says the same thing in full)
+  //   an id known, row still in    → "Loading…" (edit form, first paint)
+  const parentItemName = parentItem
+    ? parentItem.material
+      ? `${parentItem.name} [${parentItem.material}]`
+      : parentItem.name
+    : '';
+  const parentItemNameNote = resolvedParentId
+    ? 'Loading…'
+    : header.parentItemCodeText.trim()
+      ? itemsFetching
+        ? 'Checking Item Master…'
+        : // Matches ARE on screen — the user is part-way through choosing one,
+          // not looking at a code that does not exist. Saying "Not in Item
+          // Master" here accused every half-typed code.
+          itemOptions.length > 0
+          ? 'auto-filled'
+          : 'Not in Item Master'
+      : 'auto-filled';
 
   const onParentPicked = (id: string | null): void => {
     if (!id) {
@@ -904,8 +942,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
 
   const saveLabel = submitting ? 'Saving…' : mode === 'create' ? 'Save BOM' : 'Save Changes';
 
-  // Child grid: # · Item Code · Item Name · Qty / Set · BOM Type · (remove).
-  const childCols = 6;
+  // Child grid: Sr No · Item Code · Item Name · Qty / Set · BOM Type ·
+  // RM Grade · RM Size · (remove) = 8. Raw material used to be a second ROW
+  // per part; it is two columns now, so this count moved 6 → 8 and the only
+  // colSpan left is the empty-state cell.
+  const childCols = 8;
 
   return (
     <form onSubmit={submit}>
@@ -950,104 +991,125 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         </Banner>
       ) : null}
 
-      {/* ── BOM header ─────────────────────────────────────────────────── */}
-      <Panel title="BOM Details">
-        <FormGrid>
-          <FormField label="BOM No." required size="sm" htmlFor="bom-no">
-            <input
-              id="bom-no"
-              className="innovic-input mono"
-              value={header.bomNo}
-              onChange={(e) => setHeader({ ...header, bomNo: e.target.value })}
-              placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
-            />
-          </FormField>
-          <FormField label="BOM Name" required size="md" htmlFor="bom-name">
-            <input
-              id="bom-name"
-              className="innovic-input"
-              value={header.bomName}
-              onChange={(e) => setHeader({ ...header, bomName: e.target.value })}
-              placeholder="e.g. Hydraulic Press Assembly"
-            />
-          </FormField>
-          <FormField label="BOM Status" size="sm" htmlFor="bom-status">
-            <select
-              id="bom-status"
-              className="innovic-select"
-              title="Only Active BOMs attach to sales orders"
-              value={header.status}
-              onChange={(e) =>
-                setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
-              }
-            >
-              {statusChoices.map((st) => (
-                <option key={st} value={st}>
-                  {STATUS_LABEL[st]}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="BOM Rev" size="xs" htmlFor="bom-rev">
-            <input
-              id="bom-rev"
-              className="innovic-input mono is-derived"
-              value={String(bom?.revision ?? 1)}
-              readOnly
-            />
-          </FormField>
-        </FormGrid>
-      </Panel>
+      {/* ── BOM header + parent item: ONE panel, two clusters ──────────── */}
+      {/* No panel heading: "BOM Details" and "Parent Item" cost a header band
+          each, and the group names say the same thing from the ClusterGrid's
+          left gutter for nothing (screen-layout-method rule 5). The width caps
+          (.cl-cap / .cl-cap-md) keep a number out of a 460px box — the cell
+          stays a full quarter of the row, only the control is capped. */}
+      <Panel>
+        <ClusterGrid>
+          <Cluster name="BOM">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="bom-no">
+                BOM No.<span className="req">★</span>
+              </label>
+              <input
+                id="bom-no"
+                className="innovic-input mono cl-cap-md"
+                value={header.bomNo}
+                onChange={(e) => setHeader({ ...header, bomNo: e.target.value })}
+                placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="bom-name">
+                BOM Name<span className="req">★</span>
+              </label>
+              <input
+                id="bom-name"
+                className="innovic-input"
+                value={header.bomName}
+                onChange={(e) => setHeader({ ...header, bomName: e.target.value })}
+                placeholder="e.g. Hydraulic Press Assembly"
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="bom-status">
+                BOM Status
+              </label>
+              <select
+                id="bom-status"
+                className="innovic-select cl-cap-md"
+                title="Only Active BOMs attach to sales orders"
+                value={header.status}
+                onChange={(e) =>
+                  setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
+                }
+              >
+                {statusChoices.map((st) => (
+                  <option key={st} value={st}>
+                    {STATUS_LABEL[st]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="bom-rev">
+                BOM Rev
+              </label>
+              <input
+                id="bom-rev"
+                className="innovic-input is-derived cl-num cl-cap"
+                value={String(bom?.revision ?? 1)}
+                readOnly
+              />
+            </div>
+          </Cluster>
 
-      {/* ── Parent item ────────────────────────────────────────────────── */}
-      <Panel title="Parent Item">
-        <FormGrid>
-          <FormField label="Item Code" required size="md" htmlFor="bom-parent-item">
-            <SearchableSelect
-              id="bom-parent-item"
-              value={resolvedParentId || null}
-              onChange={onParentPicked}
-              onSearch={onParentSearch}
-              loading={itemsFetching}
-              options={itemOptions}
-              placeholder="Search parent item code…"
-              emptyText="No matching item"
-              selectedLabel={(o) => o.code ?? o.name}
-              {...(parentItem
-                ? { valueLabel: parentItem.code }
-                : header.parentItemCodeText
-                  ? { valueLabel: header.parentItemCodeText }
-                  : {})}
+          <Cluster name="Parent Item">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="bom-parent-item">
+                Item Code<span className="req">★</span>
+              </label>
+              {/* The cap goes to the picker's OWN className — it forwards it to
+                  the div that holds `.innovic-input`, so `.cl-cap-md >
+                  .innovic-input` matches. Wrapping it in another div makes the
+                  input a grandchild and the cap silently does nothing. */}
+              <SearchableSelect
+                className="cl-cap-md"
+                id="bom-parent-item"
+                value={resolvedParentId || null}
+                onChange={onParentPicked}
+                onSearch={onParentSearch}
+                loading={itemsFetching}
+                options={itemOptions}
+                placeholder="Search parent item code…"
+                emptyText="No matching item"
+                selectedLabel={(o) => o.code ?? o.name}
+                {...(parentItem
+                  ? { valueLabel: parentItem.code }
+                  : header.parentItemCodeText
+                    ? { valueLabel: header.parentItemCodeText }
+                    : {})}
+              />
+            </div>
+            {/* Resolved from the code and never typed, so it is a VALUE, not a
+                disabled input half the panel wide. */}
+            <ClusterFact
+              label="Item Name"
+              span={2}
+              value={parentItemName || parentItemNameNote}
+              empty={!parentItemName}
+              title={parentItemName || undefined}
             />
-          </FormField>
-          <FormField label="Item Name" size="lg" htmlFor="bom-parent-name">
-            <input
-              id="bom-parent-name"
-              className="innovic-input is-derived"
-              readOnly
-              placeholder="auto-filled"
-              value={
-                parentItem
-                  ? parentItem.material
-                    ? `${parentItem.name} [${parentItem.material}]`
-                    : parentItem.name
-                  : ''
-              }
-            />
-          </FormField>
-          <FormField label="Qty" required size="xs" htmlFor="bom-parent-qty">
-            {/* Always 1, read-only: a BOM defines the parts for ONE finished
-                unit, and every child's Qty/Set is already "per one parent".
-                Editable here would be a second place to say the same number. */}
-            <input
-              id="bom-parent-qty"
-              className="innovic-input mono is-derived"
-              readOnly
-              value="1"
-              title="A BOM builds one unit — each child's Qty / Set is per one parent."
-            />
-          </FormField>
-        </FormGrid>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="bom-parent-qty">
+                Qty<span className="req">★</span>
+              </label>
+              {/* Always 1, read-only: a BOM defines the parts for ONE finished
+                  unit, and every child's Qty/Set is already "per one parent".
+                  Editable here would be a second place to say the same number. */}
+              <input
+                id="bom-parent-qty"
+                className="innovic-input is-derived cl-num cl-cap"
+                readOnly
+                value="1"
+                title="A BOM builds one unit — each child's Qty / Set is per one parent."
+              />
+            </div>
+          </Cluster>
+        </ClusterGrid>
       </Panel>
 
       {/* ── Child items ────────────────────────────────────────────────── */}
@@ -1055,127 +1117,199 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         title="Child Items"
         bodyPadding="none"
         actions={
-          <span className="text3 mono">
-            {filledChildCount} of {lines.length} line{lines.length === 1 ? '' : 's'} filled
-          </span>
+          /* The list's three buttons live in the panel header, beside the
+             count, instead of on a toolbar band of their own under the table —
+             the band cost ~56px of a screen that could not fit four parts.
+             Its own wrapping flex row: the panel header does not wrap, so on a
+             narrow screen the count and three buttons must fold onto a second
+             line inside this cell rather than push the header wider than the
+             page. */
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 'var(--sp-2)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span className="text3 mono">
+              {filledChildCount} of {lines.length} line{lines.length === 1 ? '' : 's'} filled
+            </span>
+            {/* Only the exception is spelled out, next to the button that
+                creates blank rows. */}
+            {blankChildCount > 0 ? (
+              <span style={{ color: 'var(--amber2)' }}>
+                {blankChildCount} blank row{blankChildCount > 1 ? 's' : ''} — pick an item or remove
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={parentLocked}
+              title={parentLocked ? 'Pick the parent item first' : undefined}
+              onClick={addLine}
+            >
+              <Plus size={12} /> Add Child Item
+            </button>
+            {/* Template stays open even while locked — you may well want the
+                empty sheet before you have decided the parent. */}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={templateBusy}
+              onClick={() => void downloadTemplate()}
+            >
+              <Download size={12} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={parentLocked || rmMastersLoading}
+              title={
+                parentLocked
+                  ? 'Pick the parent item first'
+                  : rmMastersLoading
+                    ? 'Loading Raw Material Master…'
+                    : undefined
+              }
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload size={12} /> Import Excel
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              style={{ display: 'none' }}
+              onChange={(e) => void onImportFile(e)}
+            />
+          </div>
         }
       >
-        <div className="panel-body">
-          {parentLocked ? (
-            <div className="form-help" style={{ marginTop: 0 }}>
-              Pick the parent item above to unlock the part list.
-            </div>
-          ) : null}
+        {/* The help line and the three banners share one band, and the band is
+            only there when one of them is: with `bodyPadding="none"` an empty
+            `.panel-body` still spends 24px above the table, which on this
+            screen is most of a part row. Nothing about the banners themselves
+            changes. */}
+        {parentLocked || templateError || importSummary ? (
+          <div className="panel-body">
+            {parentLocked ? (
+              <div className="form-help" style={{ marginTop: 0 }}>
+                Pick the parent item above to unlock the part list.
+              </div>
+            ) : null}
 
-          {templateError ? (
-            <div style={{ marginTop: 'var(--sp-2)' }}>
-              <Banner
-                tone="error"
-                flush
-                onDismiss={() => setTemplateError(null)}
-                title={templateError}
-              />
-            </div>
-          ) : null}
+            {templateError ? (
+              <div style={{ marginTop: 'var(--sp-2)' }}>
+                <Banner
+                  tone="error"
+                  flush
+                  onDismiss={() => setTemplateError(null)}
+                  title={templateError}
+                />
+              </div>
+            ) : null}
 
-          {importSummary ? (
-            <div style={{ marginTop: 'var(--sp-2)' }}>
-              <Banner
-                tone={
-                  importFatal
-                    ? 'error'
-                    : importErrors.length > 0 || importRmWarning
-                      ? 'warn'
-                      : 'success'
-                }
-                flush
-                onDismiss={clearImportReport}
-                title={importSummary}
-              >
-                {errorRollup.length > 0 ? (
-                  <ul style={{ margin: 0, paddingLeft: 18, fontWeight: 600 }}>
-                    {errorRollup.map(([kind, count]) => (
-                      <li key={kind}>
-                        {count} row{count === 1 ? '' : 's'}: {ERROR_KIND_LABEL[kind]}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 'var(--sp-1)',
-                    flexWrap: 'wrap',
-                    marginTop: 'var(--sp-1)',
-                  }}
+            {importSummary ? (
+              <div style={{ marginTop: 'var(--sp-2)' }}>
+                <Banner
+                  tone={
+                    importFatal
+                      ? 'error'
+                      : importErrors.length > 0 || importRmWarning
+                        ? 'warn'
+                        : 'success'
+                  }
+                  flush
+                  onDismiss={clearImportReport}
+                  title={importSummary}
                 >
-                  {importErrors.length > 0 ? (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => void copyErrors()}
-                      >
-                        <Copy size={12} /> {copiedErrors ? 'Copied' : 'Copy'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={downloadErrors}
-                      >
-                        <Download size={12} /> CSV
-                      </button>
-                    </>
+                  {errorRollup.length > 0 ? (
+                    <ul style={{ margin: 0, paddingLeft: 18, fontWeight: 600 }}>
+                      {errorRollup.map(([kind, count]) => (
+                        <li key={kind}>
+                          {count} row{count === 1 ? '' : 's'}: {ERROR_KIND_LABEL[kind]}
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
-                </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 'var(--sp-1)',
+                      flexWrap: 'wrap',
+                      marginTop: 'var(--sp-1)',
+                    }}
+                  >
+                    {importErrors.length > 0 ? (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => void copyErrors()}
+                        >
+                          <Copy size={12} /> {copiedErrors ? 'Copied' : 'Copy'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={downloadErrors}
+                        >
+                          <Download size={12} /> CSV
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
 
-                {/* The way out of "not found in master": this form can only
+                  {/* The way out of "not found in master": this form can only
                     match items, so hand the unknown codes back in the Item
                     Master importer's own layout instead of leaving a dead end. */}
-                {missingCodes.length > 0 ? (
-                  <div style={{ marginTop: 'var(--sp-1)' }}>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => void downloadMissingItemsSheet()}
-                    >
-                      <Download size={12} /> Download {missingCodes.length} missing Item Code
-                      {missingCodes.length === 1 ? '' : 's'} for Item Master import
-                    </button>
-                    <div style={{ marginTop: 4 }}>
-                      Import them on Item Master, then import this BOM again.
+                  {missingCodes.length > 0 ? (
+                    <div style={{ marginTop: 'var(--sp-1)' }}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => void downloadMissingItemsSheet()}
+                      >
+                        <Download size={12} /> Download {missingCodes.length} missing Item Code
+                        {missingCodes.length === 1 ? '' : 's'} for Item Master import
+                      </button>
+                      <div style={{ marginTop: 4 }}>
+                        Import them on Item Master, then import this BOM again.
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {/* Import report. An 83-row failure used to print 10 lines and
+                  {/* Import report. An 83-row failure used to print 10 lines and
                     "… and 73 more" with no way to see, keep or clear them — so
                     the list scrolls in full, the repeated reasons are counted
                     once at the top, and the box can be dismissed. */}
-                {importErrors.length > 0 ? (
-                  <ol
-                    style={{
-                      maxHeight: 220,
-                      overflowY: 'auto',
-                      margin: 'var(--sp-1) 0 0',
-                      padding: 'var(--sp-1) var(--sp-2)',
-                      borderRadius: 'var(--radius)',
-                      background: 'var(--bg2)',
-                      border: '1px solid var(--border)',
-                      listStyle: 'none',
-                    }}
-                  >
-                    {importErrors.map((err, i) => (
-                      <li key={i}>
-                        Row #{err.rowIndex + 2}: {err.itemCode} — {err.reason}
-                      </li>
-                    ))}
-                  </ol>
-                ) : null}
-              </Banner>
-            </div>
-          ) : null}
-        </div>
+                  {importErrors.length > 0 ? (
+                    <ol
+                      style={{
+                        maxHeight: 220,
+                        overflowY: 'auto',
+                        margin: 'var(--sp-1) 0 0',
+                        padding: 'var(--sp-1) var(--sp-2)',
+                        borderRadius: 'var(--radius)',
+                        background: 'var(--bg2)',
+                        border: '1px solid var(--border)',
+                        listStyle: 'none',
+                      }}
+                    >
+                      {importErrors.map((err, i) => (
+                        <li key={i}>
+                          Row #{err.rowIndex + 2}: {err.itemCode} — {err.reason}
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
+                </Banner>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* Own scroller (.tbl-wrap): below the table's natural width it
             scrolls sideways rather than squeezing the Type select or pushing
@@ -1195,6 +1329,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   Qty / Set<span className="req">★</span>
                 </th>
                 <th style={{ width: 150 }}>BOM Type</th>
+                {/* Raw material for THIS part — two ordinary columns, not a
+                    second row per part. Both optional (a purchase / outsource
+                    part is bought, not cut), so neither carries a ★. */}
+                <th style={{ width: 150 }}>RM Grade</th>
+                <th style={{ width: 150 }}>RM Size</th>
                 <th style={{ width: 48 }} />
               </tr>
             </thead>
@@ -1219,190 +1358,117 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                     (itemPage?.items ?? []).find((i) => i.id === line.childItemId))
                   : null;
                 const inert = parentLocked ? LOCKED_ROW : undefined;
+                const itemName = item
+                  ? item.material
+                    ? `${item.name} [${item.material}]`
+                    : item.name
+                  : '';
                 return (
-                  <Fragment key={idx}>
-                    <tr aria-disabled={parentLocked} style={inert}>
-                      <td className="td-num mono fw-700">{idx + 1}</td>
-                      <td>
-                        <SearchableSelect
-                          id={`bom-item-${idx}`}
-                          value={line.childItemId || null}
-                          onChange={(id) => onItemPicked(idx, id)}
-                          onSearch={(t) => onItemSearch(idx, t)}
-                          loading={itemsFetching}
-                          options={itemOptions}
-                          placeholder="Search item code…"
-                          emptyText="No matching item"
-                          selectedLabel={(o) => o.code ?? o.name}
-                          {...(item
-                            ? { valueLabel: item.code }
-                            : line.childItemCodeText
-                              ? { valueLabel: line.childItemCodeText }
-                              : {})}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="innovic-input is-derived"
-                          readOnly
-                          placeholder="auto-filled"
-                          aria-label={`Item Name, line ${idx + 1}`}
-                          value={
-                            item
-                              ? item.material
-                                ? `${item.name} [${item.material}]`
-                                : item.name
-                              : ''
-                          }
-                        />
-                      </td>
-                      <td className="td-num">
-                        <input
-                          type="number"
-                          min={item ? qtyStepForUom(item.uom) : QTY_STEP}
-                          step={item ? qtyStepForUom(item.uom) : QTY_STEP}
-                          className="innovic-input mono"
-                          aria-label={`Qty / Set, line ${idx + 1}`}
-                          value={line.qtyPerSet}
-                          onChange={(e) => updateLine(idx, { qtyPerSet: e.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <select
-                          className="innovic-select"
-                          aria-label={`BOM Type, line ${idx + 1}`}
-                          value={line.bomType}
-                          onChange={(e) =>
-                            updateLine(idx, { bomType: e.target.value as BomLineType })
-                          }
-                        >
-                          {BOM_TYPES.map((t) => (
-                            <option key={t.value} value={t.value}>
-                              {t.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          style={{ color: 'var(--red2)' }}
-                          onClick={() => removeLine(idx)}
-                          title="Remove line"
-                          aria-label={`Remove line ${idx + 1}`}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
-                    </tr>
-
-                    {/* Raw material for THIS part, on its own sub-row rather
-                        than two more columns on the part row. Both optional (a
-                        purchase/outsource part is bought, not cut), so neither
-                        label carries a ★. */}
-                    <tr aria-disabled={parentLocked} style={inert}>
-                      <td />
-                      <td colSpan={childCols - 1} style={{ whiteSpace: 'normal' }}>
-                        <div style={{ maxWidth: 520 }}>
-                          <RawMaterialGroup>
-                            <div className="form-grp">
-                              <label className="form-label" htmlFor={`bom-line-grade-${idx}`}>
-                                RM Grade
-                              </label>
-                              <MaterialGradePicker
-                                id={`bom-line-grade-${idx}`}
-                                valueId={line.rawMaterialGradeId}
-                                valueText={line.rawMaterialGradeText}
-                                onChange={(gradeId, text) =>
-                                  updateLine(idx, {
-                                    rawMaterialGradeId: gradeId,
-                                    rawMaterialGradeText: text,
-                                  })
-                                }
-                              />
-                            </div>
-                            <div className="form-grp">
-                              <label className="form-label" htmlFor={`bom-line-size-${idx}`}>
-                                RM Size
-                              </label>
-                              <MaterialSizePicker
-                                id={`bom-line-size-${idx}`}
-                                valueId={line.rawMaterialSizeId}
-                                valueText={line.rawMaterialSizeText}
-                                onChange={(sizeId, text) =>
-                                  updateLine(idx, {
-                                    rawMaterialSizeId: sizeId,
-                                    rawMaterialSizeText: text,
-                                  })
-                                }
-                              />
-                            </div>
-                          </RawMaterialGroup>
-                        </div>
-                      </td>
-                    </tr>
-                  </Fragment>
+                  <tr key={idx} aria-disabled={parentLocked} style={inert}>
+                    <td className="td-num mono fw-700">{idx + 1}</td>
+                    <td>
+                      <SearchableSelect
+                        id={`bom-item-${idx}`}
+                        value={line.childItemId || null}
+                        onChange={(id) => onItemPicked(idx, id)}
+                        onSearch={(t) => onItemSearch(idx, t)}
+                        loading={itemsFetching}
+                        options={itemOptions}
+                        placeholder="Search item code…"
+                        emptyText="No matching item"
+                        selectedLabel={(o) => o.code ?? o.name}
+                        {...(item
+                          ? { valueLabel: item.code }
+                          : line.childItemCodeText
+                            ? { valueLabel: line.childItemCodeText }
+                            : {})}
+                      />
+                    </td>
+                    {/* Resolved from the code, never typed → plain text, with
+                        the full name on hover when the column clips it. */}
+                    <td
+                      className="text2"
+                      style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                      title={itemName || undefined}
+                    >
+                      {itemName || <span className="text3">auto-filled</span>}
+                    </td>
+                    <td className="td-num">
+                      <input
+                        type="number"
+                        min={item ? qtyStepForUom(item.uom) : QTY_STEP}
+                        step={item ? qtyStepForUom(item.uom) : QTY_STEP}
+                        className="innovic-input mono"
+                        aria-label={`Qty / Set, line ${idx + 1}`}
+                        value={line.qtyPerSet}
+                        onChange={(e) => updateLine(idx, { qtyPerSet: e.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <select
+                        className="innovic-select"
+                        aria-label={`BOM Type, line ${idx + 1}`}
+                        value={line.bomType}
+                        onChange={(e) =>
+                          updateLine(idx, { bomType: e.target.value as BomLineType })
+                        }
+                      >
+                        {BOM_TYPES.map((t) => (
+                          <option key={t.value} value={t.value}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    {/* Raw material for THIS part. A child is a different part
+                        from its parent and is cut from different stock, so it
+                        hangs off the LINE — same ids, same onChange, same saved
+                        payload as when these two sat on a sub-row. */}
+                    <td>
+                      <MaterialGradePicker
+                        ariaLabel={`RM Grade, line ${idx + 1}`}
+                        id={`bom-line-grade-${idx}`}
+                        valueId={line.rawMaterialGradeId}
+                        valueText={line.rawMaterialGradeText}
+                        onChange={(gradeId, text) =>
+                          updateLine(idx, {
+                            rawMaterialGradeId: gradeId,
+                            rawMaterialGradeText: text,
+                          })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <MaterialSizePicker
+                        ariaLabel={`RM Size, line ${idx + 1}`}
+                        id={`bom-line-size-${idx}`}
+                        valueId={line.rawMaterialSizeId}
+                        valueText={line.rawMaterialSizeText}
+                        onChange={(sizeId, text) =>
+                          updateLine(idx, {
+                            rawMaterialSizeId: sizeId,
+                            rawMaterialSizeText: text,
+                          })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: 'var(--red2)' }}
+                        onClick={() => removeLine(idx)}
+                        title="Remove line"
+                        aria-label={`Remove line ${idx + 1}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
           </table>
-        </div>
-
-        {/* Toolbar under the list — the actions belong to the list they act on. */}
-        <div
-          className="panel-body"
-          style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}
-        >
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={parentLocked}
-            title={parentLocked ? 'Pick the parent item first' : undefined}
-            onClick={addLine}
-          >
-            <Plus size={14} /> Add Child Item
-          </button>
-          {/* Template stays open even while locked — you may well want the empty
-              sheet before you have decided the parent. */}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={templateBusy}
-            onClick={() => void downloadTemplate()}
-          >
-            <Download size={14} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={parentLocked || rmMastersLoading}
-            title={
-              parentLocked
-                ? 'Pick the parent item first'
-                : rmMastersLoading
-                  ? 'Loading Raw Material Master…'
-                  : undefined
-            }
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload size={14} /> Import Excel
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{ display: 'none' }}
-            onChange={(e) => void onImportFile(e)}
-          />
-          {/* The filled-vs-total count lives in the panel header. Only the
-              exception is repeated here, next to the button that creates blank
-              rows. */}
-          {blankChildCount > 0 ? (
-            <span style={{ marginLeft: 'auto', color: 'var(--amber2)' }}>
-              {blankChildCount} blank row{blankChildCount > 1 ? 's' : ''} — pick an item or remove
-            </span>
-          ) : null}
         </div>
       </Panel>
 

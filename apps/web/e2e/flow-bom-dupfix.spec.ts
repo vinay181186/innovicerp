@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { bomPartItemName } from './bom-form';
 
 // Verifies the two BOM fixes shipped in 004dfbe, WITHOUT saving anything —
 // this spec never writes to prod, it only drives the /bom-masters/new form.
@@ -54,12 +55,12 @@ test('@bomdup item picker resolves a real code, and a duplicate part is named', 
   await pickItem(page, 0, ITEM_A);
 
   // Name auto-fills from the master → the item genuinely resolved, which is
-  // exactly what the limit=10000 400 used to prevent. nth(1): nth(0) is the
-  // parent's own auto-filled name box.
-  const nameBox = page.locator('input[readonly][placeholder="auto-filled"]').nth(1);
-  await expect(nameBox).toHaveValue(ITEM_A_NAME, { timeout: 15_000 });
+  // exactly what the limit=10000 400 used to prevent. Read off line 1's own
+  // Item Name cell, so it can never be confused with the parent's name.
+  const nameCell = bomPartItemName(page, 0);
+  await expect(nameCell).toHaveText(ITEM_A_NAME, { timeout: 15_000 });
   // eslint-disable-next-line no-console
-  console.log(`>> line 1 resolved ${ITEM_A} → "${await nameBox.inputValue()}"`);
+  console.log(`>> line 1 resolved ${ITEM_A} → "${((await nameCell.textContent()) ?? '').trim()}"`);
 
   // --- 2. the duplicate message names the part and both lines --------------
   await page.getByRole('button', { name: /Add child item/i }).click();

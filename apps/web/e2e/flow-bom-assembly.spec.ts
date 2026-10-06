@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { findRowWithMenuItem, openRowMenu, planningLineRows, executePlanFromMenu } from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
+import { bomParentItemName, bomPartItemName, bomPartQty } from './bom-form';
 
 // BOM → EQUIPMENT (assembly) SO → INVOICE, end to end.
 //
@@ -110,9 +111,10 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
 
   state.bomNo = await page.locator('input[value^="BOM-"]').first().inputValue().catch(() => '');
 
-  // ELEMENT: status must default to Active (was Draft). Only one <select> lives
-  // in the header field block; the Type pickers are down in the child rows.
-  const statusSel = page.locator('.bomx-fields select').first();
+  // ELEMENT: status must default to Active (was Draft). Taken from the field's
+  // own id — the header block's "only <select>" no longer identifies it, since
+  // every part row now carries three pickers of its own.
+  const statusSel = page.locator('#bom-status');
   const status = await statusSel.inputValue();
   // eslint-disable-next-line no-console
   console.log(`>> BOM status default: "${status}"`);
@@ -129,10 +131,20 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
   await pick(page, /Search parent item code/i, PARENT_ITEM, new RegExp(PARENT_ITEM));
   await expect(addChild, 'picking the parent unlocks the list').toBeEnabled({ timeout: 15_000 });
 
-  const parentName = page.getByPlaceholder('auto-filled').first();
+  // ELEMENT: the parent's Item Name is resolved from the code and never typed,
+  // so it is a read-only fact beside the picker — there is no input in it at
+  // all, which is a stronger form of the old "not editable" check.
+  const parentName = bomParentItemName(page);
+  await expect(parentName, 'the parent Item Name resolves').not.toHaveText(
+    /auto-filled|Checking Item Master|Not in Item Master|Loading/i,
+    { timeout: 15_000 },
+  );
   // eslint-disable-next-line no-console
-  console.log(`>> parent ${PARENT_ITEM} → "${await parentName.inputValue()}"`);
-  expect(await parentName.isEditable(), 'parent Item Name is read-only').toBe(false);
+  console.log(`>> parent ${PARENT_ITEM} → "${((await parentName.textContent()) ?? '').trim()}"`);
+  expect(
+    await parentName.locator('input, select, textarea').count(),
+    'parent Item Name is read-only',
+  ).toBe(0);
 
   await addChild.click();
   await page.waitForTimeout(800);
@@ -177,18 +189,20 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
   // the code, so this is the behaviour that actually changed.
   await pick(page, /Search item code/i, CHILD_NAME, new RegExp(CHILD_ITEM));
 
-  // ELEMENT: the name auto-fills into its own read-only box (nth(1): nth(0) is
-  // the parent's).
-  const nameBox = page.getByPlaceholder('auto-filled').nth(1);
-  await expect(nameBox, 'Item Name auto-fills').toHaveValue(new RegExp(CHILD_NAME, 'i'), {
+  // ELEMENT: the name auto-fills into the row's own Item Name column — read
+  // off line 1 directly, so it can never be confused with the parent's name.
+  const nameCell = bomPartItemName(page, 0);
+  await expect(nameCell, 'Item Name auto-fills').toHaveText(new RegExp(CHILD_NAME, 'i'), {
     timeout: 15_000,
   });
-  expect(await nameBox.isEditable(), 'Item Name is read-only').toBe(false);
+  expect(await nameCell.locator('input, select, textarea').count(), 'Item Name is read-only').toBe(
+    0,
+  );
   // eslint-disable-next-line no-console
-  console.log(`>> auto-filled name: "${await nameBox.inputValue()}"`);
+  console.log(`>> auto-filled name: "${((await nameCell.textContent()) ?? '').trim()}"`);
 
   // Qty per set.
-  await page.locator('input[type="number"]').last().fill(String(QTY_PER_SET));
+  await bomPartQty(page, 0).fill(String(QTY_PER_SET));
   await page.waitForTimeout(400);
 
   await page.getByRole('button', { name: /Save BOM/i }).click();
