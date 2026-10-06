@@ -355,6 +355,11 @@ export function NewOutwardModal({
       {/* ADR-217 phase 4 — pieces waiting to go back to the vendor on a PO line
           this challan sends. Shown only when there are some; with none, the
           New Outward DC form is exactly as before. */}
+      {poId && rtv.isLoading ? (
+        <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
+          Checking for pieces waiting to go back to the vendor…
+        </div>
+      ) : null}
       {poId && rtv.isError ? (
         <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
           Could not check for pieces waiting to go back; the save will check.

@@ -11693,3 +11693,12 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
 - Shipped in five phases, safest first, each verified on TEST on its own: (1) the receiving-screen
   cross-reveal, which needs no migration at all; (2) the migration, the PO-rule change and the
   auto-order; (3) the source-challan capture; (4) the second route's guard; (5) the backfill.
+
+- **Known limit, and the first explanation of it was wrong.** `nc_register.source_delivery_challan_id`
+  is a foreign key to `delivery_challans`, so pieces that left on a **JW DC Outward** (a different
+  table) cannot be recorded as a source challan — the picker simply finds nothing and the field does
+  not appear. The first write-up said this "does not bite because that screen refuses job-card
+  lines". That is backwards: the population reachable through the GRN hop is exactly the
+  no-job-card bought-material population the JW DC screen serves, so it bites precisely there. It
+  costs no data and blocks nothing — the field is absent rather than wrong — but the reason stands
+  corrected, and widening it means a second column or a polymorphic link, which is its own decision.

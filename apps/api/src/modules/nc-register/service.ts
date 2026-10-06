@@ -585,7 +585,11 @@ export async function listNcRegister(
         ON sgl.id = nc.grn_line_id AND sgl.company_id = nc.company_id
           AND sgl.deleted_at IS NULL
       LEFT JOIN public.goods_receipt_notes sgrn
+        -- ADR-217: never derive the OUTWARD challan from a REPLACEMENT receipt
+        -- (see resolveNcSource and rtv-candidates). The sgrn alias feeds only the
+        -- join below, so the guard belongs there.
         ON sgrn.id = sgl.goods_receipt_note_id AND sgrn.deleted_at IS NULL
+        AND sgrn.nc_id IS NULL
       LEFT JOIN public.delivery_challans sdc
         ON sdc.id = COALESCE(nc.source_delivery_challan_id, sgrn.delivery_challan_id)
           AND sdc.company_id = nc.company_id AND sdc.deleted_at IS NULL
@@ -1675,7 +1679,15 @@ export async function disposeNcRegister(
     // answered it. Read off the saved NC (its code is resolved there) and only
     // when the request carried an id, so the DERIVED challan of an Incoming-QC
     // reject is not reported as something a person stated.
-    if (input.sourceDeliveryChallanId && nc.sourceDeliveryChallanCode)
+    // Only when this disposition actually STORED it. The cascade honours the
+    // field for a return to vendor alone, so without the action check a `scrap`
+    // carrying a stray id would log the DERIVED challan as something a person
+    // stated — the exact thing the comment above promises not to do.
+    if (
+      input.action === 'return_to_vendor' &&
+      input.sourceDeliveryChallanId &&
+      nc.sourceDeliveryChallanCode
+    )
       parts.push(`sent on DC ${nc.sourceDeliveryChallanCode}`);
     if (input.action === 'scrap' && input.scrapCost !== undefined)
       parts.push(`Scrap Cost ${input.scrapCost}`);

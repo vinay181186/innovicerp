@@ -156,7 +156,18 @@ export async function queryRtvCandidates(
     -- the answer for an Incoming-QC reject. Same COALESCE as resolveNcSource
     -- (nc-register/cascades.ts), so the two readers cannot disagree.
     LEFT JOIN public.delivery_challans sdc
-      ON sdc.id = COALESCE(nc.source_delivery_challan_id, grn.delivery_challan_id)
+      -- ADR-217: only an ORDINARY receipt can say which challan the pieces went
+      -- OUT on. A replacement receipt (grn.nc_id set) carries the PARENT
+      -- deviation's RETURN challan, so deriving from it names the challan these
+      -- pieces came BACK on, under a label that means the opposite. The guard is
+      -- INSIDE the COALESCE, not on the join: the grn alias is also read by the
+      -- vendor LATERAL below, and guarding the join would blank the vendor and
+      -- change which deviations this picker lists. (No backticks in here: the
+      -- whole SELECT is a TypeScript template literal and one would close it.)
+      ON sdc.id = COALESCE(
+        nc.source_delivery_challan_id,
+        CASE WHEN grn.nc_id IS NULL THEN grn.delivery_challan_id END
+      )
         AND sdc.company_id = nc.company_id
         AND sdc.deleted_at IS NULL
     -- PO line — MIRRORS createNcDc (nc-register/service.ts, poLineId):

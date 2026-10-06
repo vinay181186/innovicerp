@@ -54,6 +54,9 @@ export interface NcSourceChallanCandidatesResponse {
 
 // A picker, not a report: one PO line's outward challans are bounded by its own
 // qty, so this cap is a safety stop and never a page size.
+/** The shortlist is capped. A PO line with more live outward challans than this
+ *  is beyond anything a person would scroll, but the refusal has to say so
+ *  rather than claim the challan is on a different line. */
 const SOURCE_CHALLAN_LIMIT = 100;
 
 function dateOnly(v: unknown): string {

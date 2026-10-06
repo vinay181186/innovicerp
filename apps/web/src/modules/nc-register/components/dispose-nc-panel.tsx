@@ -21,7 +21,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect, type SearchableOption } from '@/components/shared/searchable-select';
 import { fmtDate } from '@/lib/date';
 import { useNcSourceChallanCandidates } from '../api';
@@ -130,25 +130,39 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   // longer among the candidates is dropped rather than sent. The effect only
   // runs when the action or the candidate list changes, so a user who clears the
   // single auto-filled candidate on purpose keeps it cleared.
+  // Set when the user empties the picker themselves, so the single-candidate
+  // auto-fill does not undo their choice on the next re-run of the effect.
+  const clearedByUser = useRef(false);
+
   useEffect(() => {
     if (!isRtv) {
       setSourceDcId(null);
+      clearedByUser.current = false;
       return;
     }
-    if (sourceDcOptions.length === 1) {
-      const only = sourceDcOptions[0]?.id ?? null;
-      setSourceDcId((prev) => (prev === null ? only : prev));
-      return;
-    }
-    setSourceDcId((prev) =>
-      prev !== null && !sourceDcOptions.some((o) => o.id === prev) ? null : prev,
-    );
+    setSourceDcId((prev) => {
+      // Drop a stale id FIRST, whatever the candidate count. Skipping this on
+      // the single-candidate path left a cancelled challan selected: the field
+      // rendered blank (no matching option to label it) while Dispose still
+      // posted the doomed id, and the server refused it.
+      const live = prev !== null && sourceDcOptions.some((o) => o.id === prev) ? prev : null;
+      if (live !== null) return live;
+      // One candidate selects itself, UNLESS the user has already cleared it on
+      // purpose. Without that memory, toggling the action away and back put the
+      // challan they deliberately removed straight back in - stored, a year
+      // later, indistinguishable from one they confirmed.
+      if (sourceDcOptions.length === 1 && !clearedByUser.current) {
+        return sourceDcOptions[0]?.id ?? null;
+      }
+      return null;
+    });
   }, [isRtv, sourceDcOptions]);
 
   // The chosen challan, for the text the field SHOWS. SearchableSelect only
   // fills its box by itself when the user clicks an option, so without this the
   // one auto-selected candidate would be recorded with an empty-looking field —
   // the silent default the decision rules out.
+
   const selectedDc = sourceDcOptions.find((o) => o.id === sourceDcId);
 
   // Mirror the server guard (§3) so the operator never picks an action the API
@@ -339,7 +353,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                   <SearchableSelect
                     id="dispSourceDc"
                     value={sourceDcId}
-                    onChange={setSourceDcId}
+                    onChange={(id) => {
+                      clearedByUser.current = id === null;
+                      setSourceDcId(id);
+                    }}
                     options={sourceDcOptions}
                     valueLabel={
                       selectedDc
