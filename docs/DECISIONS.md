@@ -11643,9 +11643,26 @@ in `resolveNcSource` — phase 2, not smuggled into phase 1.
 **5. The second outward route gets the same guard.** `createJwDcOutward` (the store's own JW DC
 screen) never calls `assertNoRtvPending`, which ADR-211 recorded as "not covered". It is covered now.
 
-**6. History is corrected, not left odd.** `NC-00001` and its two documents are backfilled onto the
-new shape by a reversible script, run last and separately, so one old return does not stay unlike
-every future one.
+**6. History is NOT rewritten — reversed after looking at the actual row.** The plan said
+`NC-00001` and its two documents would be backfilled onto the new shape. On inspection that is the
+wrong call:
+
+- The deviation is **closed**. The replacement came back on `IN-GRN-00002`, passed inspection, and
+  the chain settled. Backfilling means **creating a purchase order that never existed**, then
+  immediately closing it, and repointing two settled documents at it. Dated today it is a lie about
+  when it happened; dated back it is a fabricated document in a closed chain. Neither is a record.
+- Nothing is broken by leaving it. The gap was never in the DATA — it was in the code's ability to
+  read both shapes, and that is what phases 1 and 2 fixed. `IN-DC-00002/R1` and `IN-GRN-00002` now
+  render correctly on every screen: the GRN list resolves `NC-00001` from `nc_id`, the list search
+  and the column filter both reach it, the JW PO / DC tab lists the challan and explains the missing
+  order, and the DC list already showed `COALESCE(nc.code, po_code_text)`.
+- A pre-ADR-217 return genuinely HAD no purchase order. The documents are a faithful record of what
+  the process was at the time. Making them pretend otherwise destroys the only evidence that the
+  process changed.
+
+So: one historical return reads differently from every future one, **because it was different**.
+The code reads both shapes and will for a long time — phases 1 and 2 both carry that path
+deliberately, and it is covered by the regression tests, not by an edit to closed documents.
 
 ### Migration 0200 — three nullable columns, nothing rewritten
 *(Renumbered from 0199, which a parallel session took for the store-issue change on the same

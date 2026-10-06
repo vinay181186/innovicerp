@@ -36,6 +36,11 @@
 --
 -- ON DELETE SET NULL throughout, matching every other optional link on these
 -- tables: a document going to Trash must never cascade a delete into the other.
+-- Statements are separated by the breakpoint marker apply-sql.ts splits on
+-- (apps/api/src/db/apply-sql.ts). It does NOT split on `;` — the rollback note
+-- below contains semicolons and must never be treated as runnable SQL. The
+-- marker itself is deliberately not spelled out in this comment: the splitter
+-- matches it anywhere in the file, comments included.
 -- Idempotent (IF NOT EXISTS throughout). Apply to BOTH test and production.
 -- Rollback:
 --   DROP INDEX IF EXISTS public.nc_register_replacement_po_uq;
@@ -49,9 +54,13 @@ ALTER TABLE public.nc_register
   ADD COLUMN IF NOT EXISTS replacement_po_id uuid
     REFERENCES public.purchase_orders (id) ON DELETE SET NULL;
 
+--> statement-breakpoint
+
 ALTER TABLE public.nc_register
   ADD COLUMN IF NOT EXISTS source_delivery_challan_id uuid
     REFERENCES public.delivery_challans (id) ON DELETE SET NULL;
+
+--> statement-breakpoint
 
 ALTER TABLE public.purchase_order_lines
   ADD COLUMN IF NOT EXISTS source_nc_id uuid
@@ -60,6 +69,8 @@ ALTER TABLE public.purchase_order_lines
 -- One replacement order per non-conformance. Partial, so the many NCs with no
 -- replacement order (rework, scrap, use-as-is, and every row predating ADR-217)
 -- do not collide on NULL.
+--> statement-breakpoint
+
 CREATE UNIQUE INDEX IF NOT EXISTS nc_register_replacement_po_uq
   ON public.nc_register (replacement_po_id)
   WHERE replacement_po_id IS NOT NULL;
@@ -67,9 +78,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS nc_register_replacement_po_uq
 -- Read paths. Both support questions the screens will ask once phase 3 lands;
 -- neither is on a hot path today, and the planner may ignore them until the
 -- columns are populated.
+--> statement-breakpoint
+
 CREATE INDEX IF NOT EXISTS purchase_order_lines_source_nc_idx
   ON public.purchase_order_lines (source_nc_id)
   WHERE source_nc_id IS NOT NULL;
+
+--> statement-breakpoint
 
 CREATE INDEX IF NOT EXISTS nc_register_source_dc_idx
   ON public.nc_register (source_delivery_challan_id)

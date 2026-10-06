@@ -1671,6 +1671,12 @@ export async function disposeNcRegister(
     // row is written by createReplacementPoForNc; this names it on the NC's
     // trail, the way the rework child card is named above.
     if (result.replacementPoCode) parts.push(`replacement PO ${result.replacementPoCode}`);
+    // ADR-217 phase 3 — the challan the pieces went out on, when the screen
+    // answered it. Read off the saved NC (its code is resolved there) and only
+    // when the request carried an id, so the DERIVED challan of an Incoming-QC
+    // reject is not reported as something a person stated.
+    if (input.sourceDeliveryChallanId && nc.sourceDeliveryChallanCode)
+      parts.push(`sent on DC ${nc.sourceDeliveryChallanCode}`);
     if (input.action === 'scrap' && input.scrapCost !== undefined)
       parts.push(`Scrap Cost ${input.scrapCost}`);
     const sideEffect = parts.length > 0 ? `; ${parts.join('; ')}` : '';

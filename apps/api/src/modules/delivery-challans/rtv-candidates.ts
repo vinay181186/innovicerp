@@ -5,22 +5,32 @@
 // first went out on. The challan itself is still raised by createNcDc
 // (POST /nc-register/:id/create-dc) — one writer for RTV qty (CLAUDE.md §20.1).
 //
-// Two users of the same SQL (queryRtvCandidates):
+// Four users of the same SQL (queryRtvCandidates):
 //   - GET /delivery-challans/rtv-candidates (the "Against JW PO / DC" picker)
 //   - the Against PO guard inside createDeliveryChallan (service.ts), which
 //     refuses an ordinary send on a PO line that has RTV pieces waiting unless
-//     the store confirms these are new pieces.
+//     the store confirms these are new pieces — assertNoRtvPending, below.
+//   - ADR-217 phase 4: the SECOND outward route, createJwDcOutward (jw-dc
+//     module), through the same assertNoRtvPending. ADR-211 had recorded that
+//     path as "not covered"; it is covered now, which is why the guard lives
+//     here next to its SQL and not inside one of the two callers.
+//   - ADR-217 phase 3: the source-challan shortlist
+//     (nc-register/source-challan.ts), which reads back the PO line ONE NC
+//     traces to rather than deriving it a second time.
 
 import { sql } from 'drizzle-orm';
-import type {
-  ListRtvCandidatesQuery,
-  ListRtvCandidatesResponse,
-  RtvCandidate,
-  RtvCandidateState,
+import {
+  type ListRtvCandidatesQuery,
+  type ListRtvCandidatesResponse,
+  type RtvCandidate,
+  type RtvCandidateState,
+  type RtvPendingConflictDetails,
+  RTV_CANDIDATE_STATE_LABELS,
+  roundQty,
 } from '@innovic/shared';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { AuthorizationError } from '../../lib/errors';
+import { AuthorizationError, ConflictError } from '../../lib/errors';
 import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 
 const RTV_CANDIDATES_LIMIT = 500;
@@ -30,6 +40,11 @@ export interface RtvCandidateFilter {
   purchaseOrderId?: string;
   /** Only NCs whose resolved PO line is one of these. Empty array = no rows. */
   purchaseOrderLineIds?: string[];
+  /** ADR-217 — this ONE non-conformance. Used by the source-challan capture
+   *  (nc-register/source-challan.ts) to read back the PO line this NC traces
+   *  to, through the same `rpol` derivation the picker and the Against PO guard
+   *  use, so the three can never name different PO lines. */
+  ncId?: string;
 }
 
 function dateOnly(v: unknown): string {
@@ -79,6 +94,7 @@ export async function queryRtvCandidates(
   if (filter.purchaseOrderLineIds && filter.purchaseOrderLineIds.length === 0) return [];
 
   const ready = rtvReadyForChallanSql('nc');
+  const ncFrag = filter.ncId ? sql`AND nc.id = ${filter.ncId}::uuid` : sql``;
   const poFrag = filter.purchaseOrderId ? sql`AND po.id = ${filter.purchaseOrderId}::uuid` : sql``;
   const poLineFrag = filter.purchaseOrderLineIds
     ? sql`AND rpol.pol_id IN (${sql.join(
@@ -195,6 +211,7 @@ export async function queryRtvCandidates(
         OR (nc.status = 'pending'::nc_status
             AND (nc.grn_line_id IS NOT NULL OR oo.op_type = 'outsource'))
       )
+      ${ncFrag}
       ${poFrag}
       ${poLineFrag}
     -- Ready first, so the cap never hides a Ready to Send NC behind
@@ -203,6 +220,73 @@ export async function queryRtvCandidates(
     LIMIT ${RTV_CANDIDATES_LIMIT}
   `);
   return (result as unknown as Array<Record<string, unknown>>).map(toCandidate);
+}
+
+const RTV_MESSAGE_MAX_NCS = 3;
+
+/** ADR-211 — 409 (details.kind = 'rtv_pending') when any of these PO lines has
+ *  return-to-vendor pieces waiting that the store has NOT confirmed as
+ *  different pieces. Confirmation is per NC: an NC whose id is in
+ *  `confirmedNcIds` is let through; any other waiting NC refuses the save, and
+ *  only those unconfirmed NCs are listed. Same SQL as
+ *  GET /delivery-challans/rtv-candidates.
+ *
+ *  ADR-217 phase 4 — called by BOTH outward routes (createDeliveryChallan and
+ *  createJwDcOutward), each AFTER lockPoLinesForSend on the same lines, so the
+ *  two can neither deadlock against each other nor disagree about what is
+ *  waiting. Not race-proof, and deliberately so: the NC writers (dispose,
+ *  Incoming QC, createNcDc) do not take the PO-line lock, so an NC committed in
+ *  the same instant as a save slips past; the next save on the line re-checks.
+ *  Making it race-proof would mean locking NC rows from the challan paths,
+ *  which is a bigger change than the risk (one challan, re-checked next time)
+ *  justifies. */
+export async function assertNoRtvPending(
+  tx: DbTransaction,
+  companyId: string,
+  poLineIds: string[],
+  confirmedNcIds: readonly string[],
+): Promise<void> {
+  const confirmed = new Set(confirmedNcIds);
+  const waiting = (
+    await queryRtvCandidates(tx, companyId, { purchaseOrderLineIds: poLineIds })
+  ).filter((c) => !confirmed.has(c.ncId));
+  if (waiting.length === 0) return;
+  const shown = waiting
+    .slice(0, RTV_MESSAGE_MAX_NCS)
+    .map(
+      (c) =>
+        `${c.ncCode} (${roundQty(Number(c.rejectedQty))} pcs, ${RTV_CANDIDATE_STATE_LABELS[c.state]})`,
+    );
+  const more = waiting.length - shown.length;
+  const list =
+    more > 0
+      ? `${shown.join(', ')} and ${more} more`
+      : shown.length > 1
+        ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
+        : shown[0]!;
+  const one = waiting.length === 1;
+  const anyReady = waiting.some((c) => c.state === 'ready');
+  const anyAwaiting = waiting.some((c) => c.state === 'awaiting_decision');
+  // A 'Waiting for QC Decision' NC cannot be sent yet (the picker greys it), so
+  // only point Ready to Send pieces at the return route.
+  const message =
+    `${list} ${one ? 'on this PO line is' : 'on these PO lines are'} waiting to go back to the vendor. ` +
+    (anyReady ? 'Send Ready to Send pieces with DC Against → Against JW PO / DC. ' : '') +
+    (anyAwaiting ? 'Pieces Waiting for QC Decision cannot be sent until QC decides. ' : '') +
+    'If these are different pieces, tick “These are new pieces, not the ones waiting to go back”.';
+  const details: RtvPendingConflictDetails = {
+    kind: 'rtv_pending',
+    ncs: waiting.map((c) => ({
+      ncId: c.ncId,
+      ncCode: c.ncCode,
+      itemCode: c.itemCode ?? c.itemCodeText,
+      rejectedQty: c.rejectedQty,
+      state: c.state,
+      // Filtered on purchaseOrderLineIds, so the resolved line is always set.
+      poLineId: c.purchaseOrderLineId ?? '',
+    })),
+  };
+  throw new ConflictError(message, details);
 }
 
 /** GET /delivery-challans/rtv-candidates */

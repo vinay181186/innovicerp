@@ -246,6 +246,14 @@ export const disposeNcInputSchema = z.object({
    *  job card and ignores this. Kept so old clients do not break. */
   reworkOpSeq: z.number().int().positive().optional(),
   scrapCost: z.coerce.number().nonnegative().optional(),
+  /** ADR-217 — which OUTWARD challan the rejected pieces went out on, for a
+   *  `return_to_vendor` disposition. Stored on `nc_register`, never derived:
+   *  this system has no piece, lot or batch tracking, so when the order has more
+   *  than one challan NO query can say which one carried these pieces — only
+   *  the person who packed them. The screen asks when there is a choice, fills
+   *  itself when there is exactly one candidate, and omits this when there is
+   *  none. Ignored by every other disposition. */
+  sourceDeliveryChallanId: z.string().uuid().optional(),
 });
 export type DisposeNcInput = z.infer<typeof disposeNcInputSchema>;
 

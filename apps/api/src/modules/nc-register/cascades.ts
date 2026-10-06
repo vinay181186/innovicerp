@@ -86,6 +86,9 @@ import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/q
 import { reinjectLogType } from './reinject-log-type';
 import { cascadeJcCompleteUpChain } from '../op-entry/sales-cascade';
 import { climbRecoveryToAncestors, createRecoveryJobCard, ncOpenQty } from './recovery';
+// ADR-217 phase 3 — the challan the rejected pieces went out on is ASKED, and
+// what the screen answers is checked against the shortlist the server offers.
+import { assertSourceDeliveryChallan } from './source-challan';
 import type { DisposeNcInput } from './schema';
 
 type NcRow = typeof ncRegister.$inferSelect;
@@ -472,6 +475,28 @@ export async function disposeNcCascade(
     }
   }
 
+  // ADR-217 — "Sent on DC No.": which OUTWARD challan these pieces went out on.
+  // Only a return to vendor has anywhere to put it, so every other disposition
+  // ignores the field rather than storing it where nothing reads it. Checked
+  // HERE — before any write, still inside the FOR UPDATE lock on the NC taken
+  // at the top of this function — so a refusal costs nothing and the challan
+  // cannot be re-pointed between the check and the write.
+  //
+  // Nothing is auto-stored when the shortlist holds exactly one challan: the
+  // screen fills that in and SENDS it, so the stored fact always has a person
+  // behind it. A silent server-side default would read, a year later, exactly
+  // like someone having confirmed it.
+  const sourceDcId =
+    input.action === 'return_to_vendor' ? (input.sourceDeliveryChallanId ?? null) : null;
+  if (sourceDcId) {
+    await assertSourceDeliveryChallan(
+      tx,
+      ctx.companyId,
+      { id: loaded.id, code: loaded.code },
+      sourceDcId,
+    );
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const result: DisposeNcCascadeResult = { ncId, status: 'disposed', qty };
 
@@ -637,6 +662,11 @@ export async function disposeNcCascade(
       // ADR-217 — null when there was no vendor to raise one against; the NC
       // then behaves exactly as it did before ADR-217.
       replacementPoId: boughtPo?.id ?? nc.replacementPoId ?? null,
+      // ADR-217 — the challan the pieces went out on, as answered on the
+      // screen. The key is omitted entirely when nothing was answered, so a
+      // value already on the row (a split half inherits its parent's) survives
+      // a later disposition instead of being wiped to null.
+      ...(sourceDcId ? { sourceDeliveryChallanId: sourceDcId } : {}),
       updatedBy: ctx.userId,
     });
     result.status = 'disposed';
@@ -926,6 +956,10 @@ export async function disposeNcCascade(
       // ADR-217 — null when the NC had no resolvable vendor (or its vendor is
       // disabled): the NC then behaves exactly as it did before ADR-217.
       replacementPoId: replacementPo?.id ?? nc.replacementPoId ?? null,
+      // ADR-217 — the challan the pieces went out on, as answered on the
+      // screen. Omitted when nothing was answered, so a value already on the
+      // row (inherited by a split half) is not wiped to null.
+      ...(sourceDcId ? { sourceDeliveryChallanId: sourceDcId } : {}),
       updatedBy: ctx.userId,
     });
     result.status = 'disposed';

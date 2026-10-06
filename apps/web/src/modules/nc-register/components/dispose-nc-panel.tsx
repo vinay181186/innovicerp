@@ -21,7 +21,10 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect, type SearchableOption } from '@/components/shared/searchable-select';
+import { fmtDate } from '@/lib/date';
+import { useNcSourceChallanCandidates } from '../api';
 import { ncOpenQty } from '../nc-qty';
 import { Note } from './nc-note';
 
@@ -75,12 +78,78 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   const [reworkOpSeq, setReworkOpSeq] = useState<number | ''>(nc.reworkOpSeq ?? nc.opSeq ?? '');
   const [scrapCost, setScrapCost] = useState<number | ''>('');
   const [remarks, setRemarks] = useState<string>('');
+  // ADR-217 phase 3 — which OUTWARD challan the rejected pieces went out on.
+  // ASKED, never computed: this system has no piece, lot or batch tracking, so
+  // when one order went out on two challans NO query can say which one carried
+  // these pieces — only the person who packed them. Never mandatory.
+  const [sourceDcId, setSourceDcId] = useState<string | null>(null);
 
   // Legacy in-route rework: only a row that ALREADY carries rework_op_seq
   // keeps the op picker. A fresh rework/repair raises a child JC and the
   // server ignores reworkOpSeq — so it is never sent for those.
   const isLegacyRework = nc.reworkOpSeq != null;
   const isRecovery = action === 'rework' || action === 'repair';
+  const isRtv = action === 'return_to_vendor';
+
+  // The candidate challans, loaded only once Return to Vendor is the chosen
+  // action. An empty list (nothing resolvable, or the request failed) renders no
+  // picker at all and blocks nothing — an NC raised at the machine with nothing
+  // behind it is normal and must still be disposable.
+  const sourceDcQuery = useNcSourceChallanCandidates(nc.id, isRtv);
+  // One option reads "IN-DC-00002/R1 — 06-Oct-2026 · Qty 12 · IN-JWPO-00002/R1":
+  // the challan number, the day it left, how much of this order's line went out
+  // on it and the order itself — the four facts a storekeeper recognises a
+  // despatch by. No unit word: a bought-material deviation can be in KGS or MTR
+  // and the NC read model carries no unit, so "pcs" would be a guess. The order
+  // code is also hidden search text, so typing the PO number finds its challans.
+  const sourceDcOptions = useMemo<SearchableOption[]>(
+    () =>
+      (sourceDcQuery.data?.items ?? []).map((c) => {
+        const sent = Number(c.sentQty);
+        const parts = [
+          fmtDate(c.dcDate, ''),
+          Number.isFinite(sent) && sent > 0 ? `Qty ${sent}` : '',
+          c.poCode ?? '',
+        ].filter((part) => part !== '');
+        return {
+          id: c.sourceDeliveryChallanId,
+          code: c.sourceDeliveryChallanCode,
+          // Never an empty label: with no date and nothing sent the dropdown
+          // would read "IN-DC-00002/R1 — " with a dangling dash.
+          name: parts.length > 0 ? parts.join(' · ') : c.sourceDeliveryChallanCode,
+          searchText: c.poCode,
+        };
+      }),
+    [sourceDcQuery.data],
+  );
+
+  // Dependent-field sync (house rule): the challan belongs to the return-to-
+  // vendor branch alone, so switching the action away clears it; exactly ONE
+  // candidate selects itself — visibly, in the field, so the user reads what is
+  // about to be recorded instead of it happening silently; and an id that is no
+  // longer among the candidates is dropped rather than sent. The effect only
+  // runs when the action or the candidate list changes, so a user who clears the
+  // single auto-filled candidate on purpose keeps it cleared.
+  useEffect(() => {
+    if (!isRtv) {
+      setSourceDcId(null);
+      return;
+    }
+    if (sourceDcOptions.length === 1) {
+      const only = sourceDcOptions[0]?.id ?? null;
+      setSourceDcId((prev) => (prev === null ? only : prev));
+      return;
+    }
+    setSourceDcId((prev) =>
+      prev !== null && !sourceDcOptions.some((o) => o.id === prev) ? null : prev,
+    );
+  }, [isRtv, sourceDcOptions]);
+
+  // The chosen challan, for the text the field SHOWS. SearchableSelect only
+  // fills its box by itself when the user clicks an option, so without this the
+  // one auto-selected candidate would be recorded with an empty-looking field —
+  // the silent default the decision rules out.
+  const selectedDc = sourceDcOptions.find((o) => o.id === sourceDcId);
 
   // Mirror the server guard (§3) so the operator never picks an action the API
   // will refuse. `sourceVendorId` is the read model's single signal for where
@@ -140,6 +209,13 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
     // — never sent as 0/null over a value they were not shown.
     if (action === 'scrap' && canSeePrice && scrapCost !== '') {
       payload.scrapCost = Number(scrapCost);
+    }
+    // ADR-217 phase 3 — only for a return to vendor, and only when a challan was
+    // actually chosen. Nobody is forced to answer, so the key is omitted (never
+    // sent as null) when it was left blank, and never sent at all by any other
+    // disposition.
+    if (action === 'return_to_vendor' && sourceDcId !== null) {
+      payload.sourceDeliveryChallanId = sourceDcId;
     }
     void onSubmit(payload);
   };
@@ -249,6 +325,42 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 </div>
               ) : null}
 
+              {/* ADR-217 phase 3 — `Sent on DC No.` (docs/NAMING.md row 205).
+                  Rendered only for a return to vendor, and only when there is
+                  at least one candidate: with none the field does not exist, so
+                  it can never stand in the way of a disposition. Optional by
+                  decision — a storekeeper who genuinely does not know which
+                  challan carried the pieces must still be able to dispose. */}
+              {isRtv && sourceDcOptions.length > 0 ? (
+                <div className="form-grp form-full">
+                  <label className="form-label" htmlFor="dispSourceDc">
+                    Sent on DC No.
+                  </label>
+                  <SearchableSelect
+                    id="dispSourceDc"
+                    value={sourceDcId}
+                    onChange={setSourceDcId}
+                    options={sourceDcOptions}
+                    valueLabel={
+                      selectedDc
+                        ? selectedDc.code
+                          ? `${selectedDc.code} — ${selectedDc.name}`
+                          : selectedDc.name
+                        : undefined
+                    }
+                    onSearch={() => {}}
+                    loading={sourceDcQuery.isFetching}
+                    placeholder="Click to browse the outward challans…"
+                    emptyText="No outward challan matches"
+                  />
+                  <div className="form-help">
+                    {sourceDcOptions.length === 1
+                      ? 'The one outward challan behind this deviation — change it if the pieces went out on another.'
+                      : 'Nothing in the records says which of these challans carried the rejected pieces, so only you can. Leave it blank if you are not sure.'}
+                  </div>
+                </div>
+              ) : null}
+
               {action === 'scrap' && canSeePrice ? (
                 <div className="form-grp form-full">
                   <label className="form-label" htmlFor="dispScrapCost">
@@ -291,7 +403,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             ) : null}
 
             {action === 'return_to_vendor' ? (
-              <Note tone="blue">After disposition, make the return DC from this NC.</Note>
+              <Note tone="blue">
+                Next: raise the return challan from this deviation, to send the pieces back. (The
+                field above records the challan they originally went OUT on.)
+              </Note>
             ) : null}
 
             {action === 'make_fresh' ? (

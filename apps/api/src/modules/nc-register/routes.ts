@@ -11,6 +11,7 @@ import {
   updateNcRegisterInputSchema,
 } from './schema';
 import * as service from './service';
+import { getNcSourceChallanCandidates } from './source-challan';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 // ADR-197 — a delete says why (REASON_REQUIRED_ACTIONS). Module-local body
@@ -41,6 +42,15 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.getNcRegisterRelated(id, req.user);
+  });
+
+  // ADR-217 — the outward challans the rejected pieces could have gone out on,
+  // for the Sent on DC No. field on the disposition screen. Read-only; empty
+  // list when the NC traces to no purchase-order line.
+  app.get('/nc-register/:id/source-challan-candidates', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return getNcSourceChallanCandidates(id, req.user);
   });
 
   app.post('/nc-register', async (req, reply) => {

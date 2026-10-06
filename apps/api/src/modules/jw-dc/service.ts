@@ -56,6 +56,9 @@ import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+// ADR-217 phase 4 — the one return-to-vendor guard, shared with the OSP
+// outward challan (it lives beside its SQL in the delivery-challans module).
+import { assertNoRtvPending } from '../delivery-challans/rtv-candidates';
 import { JW_DC_INWARD_SF_COLUMNS, JW_DC_OUTWARD_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
@@ -742,6 +745,10 @@ export async function getJwDcPoLines(
 export async function createJwDcOutward(
   input: CreateJwDcOutwardInput,
   user: AuthContext,
+  /** ADR-217 phase 4 — the NCs the store ticked "These are new pieces, not the
+   *  ones waiting to go back". Request-only (routes.ts parses it); never
+   *  stored. Empty = nothing confirmed, which is the normal case. */
+  rtvConfirmedNcIds: readonly string[] = [],
 ): Promise<JwDcOutward> {
   // ADR-193: JW DC moves stock, so it needs the same right as the OSP
   // Outward DC (it had no check at all — any logged-in user could post it).
@@ -837,6 +844,23 @@ export async function createJwDcOutward(
     //    The PO lines are locked first, so a concurrent OSP DC / JW DC Outward
     //    on the same line waits and then reads this challan's qty.
     await lockPoLinesForSend(tx, poLineIds, companyId);
+    // ADR-217 phase 4 — the SECOND outward route gets the ADR-211 guard. A PO
+    // line on this challan that has return-to-vendor pieces waiting (NC ready,
+    // or a vendor-sourced NC still awaiting QC's decision) is refused unless
+    // the store confirmed THAT NC as different pieces; an NC that appears after
+    // the tick still refuses, so nothing is waved through in bulk.
+    //
+    // Same guard function, same place in the sequence as createDeliveryChallan
+    // (delivery-challans/service.ts): after lockPoLinesForSend on these lines
+    // and before the sent/pending figures are read, so the two outward paths
+    // take the same locks in the same order and cannot deadlock against each
+    // other. Same race, too: the NC writers (dispose, Incoming QC, createNcDc)
+    // do not take the PO-line lock, so an NC committed in the same instant can
+    // slip past this check and the next save on the line catches it. Matched
+    // deliberately rather than "fixed" on one path only.
+    if (poLineIds.length > 0) {
+      await assertNoRtvPending(tx, companyId, poLineIds, rtvConfirmedNcIds);
+    }
     const sentMap = await sumSentOnPoLines(tx, poLineIds, companyId);
     const incoming = new Map<string, number>();
     for (const ln of input.lines) {
