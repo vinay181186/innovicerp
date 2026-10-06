@@ -13,6 +13,15 @@
 // the NC picker in front and no PO anywhere. An NC is eligible while its
 // return challan is still `issued` with a balance to receive.
 //
+// ADR-217 Phase 1 — the header now shows the rest of the chain, not just the
+// NC end of it: the PO the rejected pieces were bought/job-worked on and the
+// GRN they first came in on, both read straight off GET /nc-register/:id
+// (resolveNcSource, already resolved server-side for the NC detail page). The
+// "Sent on DC No." (the OSP challan the pieces first went OUT on) is NOT
+// reachable from any existing endpoint for an NC that already has its return
+// challan — see the report for ADR-217 Phase 1 — so it is not shown rather
+// than shown wrong.
+//
 // No OK / Rejected split and no QC fields here: everything received lands on
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
 
@@ -31,6 +40,7 @@ import {
   useReceiveDeliveryChallan,
 } from '@/modules/delivery-challans/api';
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
+import { useNcRegister } from '@/modules/nc-register/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
@@ -113,6 +123,9 @@ export function GrnAgainstNcForm({
   // Option per NC. Search is client-side over the NC code, the job card, the
   // vendor and the composed "CODE — JC · Vendor" label — the last because the
   // picker re-sends its own selected label as the term when reopened.
+  // ADR-217 — the RETURN CHALLAN's own number is matched too, through
+  // SearchableOption.searchText, so a store user holding only the challan can
+  // get here. It is not added to the label: the label is the NC's.
   const ncOptions = useMemo(
     () =>
       ncRows
@@ -120,8 +133,11 @@ export function GrnAgainstNcForm({
           id: d.ncId ?? d.id,
           code: d.ncCode ?? d.poCodeText,
           name: `${d.jobCardCode ?? '—'} · ${d.vendorName ?? d.vendorCodeText}`,
+          searchText: d.code,
         }))
-        .filter((o) => matchesSearchTerm([o.code, o.name, `${o.code} — ${o.name}`], ncSearch)),
+        .filter((o) =>
+          matchesSearchTerm([o.code, o.name, o.searchText, `${o.code} — ${o.name}`], ncSearch),
+        ),
     [ncRows, ncSearch],
   );
 
@@ -132,6 +148,15 @@ export function GrnAgainstNcForm({
     [ncId, ncRows],
   );
   const dcId = ncRow?.id ?? null;
+
+  // ADR-217 — the rest of the chain for the picked NC. GET /nc-register/:id
+  // already resolves where the rejected material came from (resolveNcSource:
+  // the GRN line's GRN, else the origin outsource op's PO), so the PO number
+  // and the GRN number are one read with no new endpoint and no guessing here.
+  // Guarded on the id exactly like `dc` below, so the PREVIOUS NC's answer —
+  // still in the cache for one render — can never be shown against this one.
+  const { data: ncDetailData } = useNcRegister(ncId ?? undefined);
+  const ncDetail = ncId !== null && ncDetailData?.id === ncId ? ncDetailData : undefined;
 
   const { data: dcData } = useDeliveryChallan(dcId ?? undefined);
   // Only trust the detail when it is the picked challan's (not the previous
@@ -315,14 +340,42 @@ export function GrnAgainstNcForm({
             />
           </FormField>
 
-          {/* Row 2 — JC No. · DC No. · Vendor (all from the NC's challan) ·
-              Vendor Invoice No. (3 + 3 + 3 + 3). */}
+          {/* Row 2 — the return chain, in the order it happened: JC No. ·
+              Source PO No. · Source GRN No. · DC No. (the return challan)
+              (3 + 3 + 3 + 3). ADR-217: the two source numbers are new, and the
+              same labels the NC detail page already uses for the same two
+              fields. Row 3 — Vendor · Vendor Invoice No. (3 + 3). */}
           <FormField label="JC No." size="sm" htmlFor="ncJobCard">
             <input
               id="ncJobCard"
-              className="innovic-input"
+              className="innovic-input mono fw-700"
               readOnly
               value={ncRow?.jobCardCode ?? ''}
+              placeholder="— from the NC —"
+              tabIndex={-1}
+            />
+          </FormField>
+          {/* A quiet dash, never a blank: an NC raised at the machine with no
+              GRN behind it genuinely has no source PO / source GRN, and that is
+              correct rather than missing. */}
+          <FormField label="Source PO No." size="sm" htmlFor="ncSourcePo">
+            <input
+              id="ncSourcePo"
+              className="innovic-input mono fw-700"
+              readOnly
+              value={ncId ? (ncDetail?.sourcePoCode ?? '—') : ''}
+              title={ncDetail?.sourcePoCode ?? undefined}
+              placeholder="— from the NC —"
+              tabIndex={-1}
+            />
+          </FormField>
+          <FormField label="Source GRN No." size="sm" htmlFor="ncSourceGrn">
+            <input
+              id="ncSourceGrn"
+              className="innovic-input mono fw-700"
+              readOnly
+              value={ncId ? (ncDetail?.sourceGrnCode ?? '—') : ''}
+              title={ncDetail?.sourceGrnCode ?? undefined}
               placeholder="— from the NC —"
               tabIndex={-1}
             />
@@ -330,7 +383,7 @@ export function GrnAgainstNcForm({
           <FormField label="DC No." size="sm" htmlFor="ncReturnChallan">
             <input
               id="ncReturnChallan"
-              className="innovic-input"
+              className="innovic-input mono fw-700"
               readOnly
               value={ncRow?.code ?? ''}
               placeholder="— from the NC —"

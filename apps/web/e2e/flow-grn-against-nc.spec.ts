@@ -805,10 +805,20 @@ test('AB9 - Against JWPO / DC: challan picker enabled with no JWPO, long labels;
   expect(dcOpts.length).toBeGreaterThan(0);
   // Long label: "IN-DC-code — JWPO · vendor · date"
   const longLabel = /^IN-DC-\d+(?:\/R\d+)? — IN-[A-Z]*PO-\d+(?:\/R\d+)? · .+ · \d{4}-\d{2}-\d{2}$/;
-  for (const o of dcOpts) expect(o, 'long label form').toMatch(longLabel);
+  // ADR-217: this tab now also lists RETURN-TO-VENDOR challans, which have no
+  // purchase order behind them and so carry a different label. They are checked
+  // on their own shape; only the PO-backed rows can satisfy `longLabel`, and
+  // only they can fill the JW PO box below.
+  const returnLabel = /^Return to Vendor · NC[-\w]* · .+ · \d{4}-\d{2}-\d{2}$/;
+  const poOpts = dcOpts.filter((o) => !o.startsWith('Return to Vendor'));
+  const rtvOpts = dcOpts.filter((o) => o.startsWith('Return to Vendor'));
+  log('AB9: ' + poOpts.length + ' PO-backed, ' + rtvOpts.length + ' return-to-vendor');
+  for (const o of poOpts) expect(o, 'long label form').toMatch(longLabel);
+  for (const o of rtvOpts) expect(o, 'return label form').toMatch(returnLabel);
+  expect(poOpts.length, 'at least one PO-backed challan to exercise').toBeGreaterThan(0);
 
   // Prefer a challan that is not the standing fixture; fall back to IN-DC-00002 read-only.
-  const pick = dcOpts.find((o) => !o.startsWith('IN-DC-00002')) ?? dcOpts[0]!;
+  const pick = poOpts.find((o) => !o.startsWith('IN-DC-00002')) ?? poOpts[0]!;
   const dcCode = /^IN-DC-\d+(?:\/R\d+)?/.exec(pick)![0];
   const poCode = /IN-[A-Z]*PO-\d+(?:\/R\d+)?/.exec(pick)![0];
   await pickFromCombo(page, 'dcId', dcCode, new RegExp(dcCode.replace('/', '\\/')));

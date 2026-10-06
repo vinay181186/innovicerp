@@ -11563,3 +11563,101 @@ decision, taken across all five readers at once, including the write-path cap.**
 - Four child-part plans exist today, all on parent `554117193000`, across `IN-SO-00520` and
   `IN-SO-00521`.
 - **Open, specified, not built:** the quantity roll-up, as set out in point 3.
+
+## ADR-217: A return to vendor is an ordinary job-work order that happens to cost nothing
+
+**Date:** 2026-10-06
+**Status:** Accepted (owner: "in case of return to vendor nc generated. create 0 value jwpo by
+default … then follow regular osp procedure with nc reference … when grn user select any
+nc/jwpo/jwdc show relative document auto", then "covers its fixed")
+
+### Context
+A return to vendor runs on a private track beside normal outsourcing, and the cost of that shows in
+the data. Traced on live production rows:
+
+| Document | Purchase Order | its `po_code_text` holds |
+|---|---|---|
+| `IN-DC-00001/R1` (normal OSP) | `IN-JWPO-00002/R1` | `IN-JWPO-00002/R1` |
+| `IN-DC-00003/R1` (normal OSP) | `IN-JWPO-00001/R1` | `IN-JWPO-00001/R1` |
+| **`IN-DC-00002/R1` (the return)** | **none** | **`NC-00001`** |
+| **`IN-GRN-00002` (the return)** | **none** | **`NC-00001`** |
+
+The return is the only material movement in the system with no purchase order, and two documents
+compensate by writing the non-conformance number into a column named "PO code". `createNcDc` says so
+in its own comment: *"There is no purchase order behind this challan: po_code_text carries the NC
+code."* Any report that totals by PO, or reads that column as a PO number, is wrong for every return.
+
+Three further findings from the trace:
+- **Dispositioning an NC `return_to_vendor` creates nothing at all.** It writes four columns and
+  returns. A person must remember to raise the challan.
+- **The GRN screen already has the three sources the owner asked for** — Against PO / Against JW PO
+  / DC / Against NC — but they hide each other on purpose
+  (`grn-against-dc-form.tsx` drops every `ncId !== null` row; the NC tab shows no PO number), so no
+  user can start from the number they happen to know.
+- **A zero value is already legal everywhere.** `purchase_order_lines.rate` is `NOT NULL DEFAULT 0`,
+  no CHECK forbids it, and the normal OSP path already produces zero-value job-work POs from an
+  auto-raised PR with `estCost: 0`.
+
+### Decision
+**1. The return gets a real order.** Choosing `return_to_vendor` creates, in the same transaction, a
+**zero-value job-work purchase order** to the source vendor for the rejected quantity, marked against
+the NC. The challan and the replacement GRN then hang off that order like every other OSP movement,
+and `po_code_text` carries a PO code again.
+
+**2. A PO line may be raised against a non-conformance as well as a purchase request.** ADR-138 says
+a PO is always raised against a PR; `createPurchaseOrderInputSchema` enforces it
+(`lines.some(l => l.sourcePrId)`). That rule exists so no purchase order appears without a documented
+reason behind it, and **an NC is a stronger document than a system-raised PR nobody reviewed** — it
+has an inspector, a quantity, a reason and a vendor. The rule's intent stands; its list of acceptable
+reasons grows by one.
+
+*Rejected:* auto-raising a zero-value PR alongside the order to satisfy the rule literally. It was
+the first proposal and it is wrong: it files a purchase request for something nobody is buying into
+the buyer's queue, once per rejection, and the buyer spends the day rejecting paperwork for returns.
+
+**3. The source challan is asked for, never guessed.** An NC raised at the machine can be traced to
+the PO line but not to the challan the pieces left on. **There is no piece, lot or batch tracking in
+this system** (`lot_no` is `so_milestones`, i.e. SO delivery lots), so which challan a specific
+rejected piece came back on is not merely unexposed — it was never recorded, and no query can
+recover it. The only honest source is the person who packed it: when the PO line has more than one
+outward challan, the disposition screen asks which one; with exactly one candidate it fills itself;
+with none it stays blank.
+
+**4. The receiving screen reveals the chain from whichever end.** The GRN tabs stop hiding each
+other, and the shipped picker that already shows **PO No. · Sent on DC No. · NC No.** on one row,
+searchable by any of the three (`jwpo-dc-rtv-picker.tsx` + `queryRtvCandidates`), is reused rather
+than rebuilt.
+
+**5. The second outward route gets the same guard.** `createJwDcOutward` (the store's own JW DC
+screen) never calls `assertNoRtvPending`, which ADR-211 recorded as "not covered". It is covered now.
+
+**6. History is corrected, not left odd.** `NC-00001` and its two documents are backfilled onto the
+new shape by a reversible script, run last and separately, so one old return does not stay unlike
+every future one.
+
+### Migration 0199 — three nullable columns, nothing rewritten
+| Column | References | Why |
+|---|---|---|
+| `nc_register.replacement_po_id` | `purchase_orders` | the order this return raised |
+| `nc_register.source_delivery_challan_id` | `delivery_challans` | which challan the pieces went out on |
+| `purchase_order_lines.source_nc_id` | `nc_register` | "I exist because of this rejection" |
+
+Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
+`source_so_line_id`). A partial unique index on `replacement_po_id` makes the auto-create idempotent.
+
+### Consequences
+- **The special case disappears.** Once a return has an order behind it, the receiving tabs no longer
+  need to hide each other, reports that total by purchase order stop having a blind spot, and a
+  field named "PO code" stops holding something that is not one.
+- **§20 is now in scope**, because this adds a write path. The replacement PO is created only inside
+  `disposeNcCascade`, inside the `FOR UPDATE` lock that function already takes on the NC row (§20.1
+  one writer, §20.3 limit checked inside the writing transaction). `replacement_po_id` must be null
+  before one is created, and the partial unique index is the backstop — the same shape as the
+  existing one-challan-per-NC guard.
+- **No approval step on the replacement order.** There is no money in it, so an approval gate is
+  ceremony. Stated as a decision rather than an omission.
+- The rate stays editable: a vendor who charges for the rework can be priced without a second
+  document.
+- Shipped in five phases, safest first, each verified on TEST on its own: (1) the receiving-screen
+  cross-reveal, which needs no migration at all; (2) the migration, the PO-rule change and the
+  auto-order; (3) the source-challan capture; (4) the second route's guard; (5) the backfill.
