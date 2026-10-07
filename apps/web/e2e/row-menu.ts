@@ -63,7 +63,7 @@ export async function clickFirstRowMenuItem(page: Page, rows: Locator, name: Nam
 }
 
 /** SO Planning order-line rows: their ⋯ is named "Actions for line N"
- *  (Plan N · Raise PR · BOM Planning · Equipment BOM · Allocate · Release). */
+ *  (Plan N · Raise PR · BOM Planning · Plan Equipment BOM · Allocate · Release). */
 export function planningLineRows(page: Page): Locator {
   return page
     .locator('tr')
@@ -102,14 +102,37 @@ export async function expandPlanningRows(page: Page): Promise<void> {
   }
 }
 
+/** Every row whose ⋯ may carry a plan's items: the order lines, and — on a
+ *  line with BOM parts — each part's own row in the ▸ detail table, whose ⋯ is
+ *  named "Actions for PLN-xxxx" (planChildMenu, 2026-10-07). */
+export function planningPlanRows(page: Page): Locator {
+  return page
+    .locator('tr')
+    .filter({ has: page.getByRole('button', { name: /^Actions for (line |PLN-)/ }) });
+}
+
+/** The row carrying THIS plan's ⋯ items: its own child row when the plan is
+ *  for a BOM part (opening the ▸ details first if they are shut), else the
+ *  order line that lists it. */
+async function planRow(page: Page, planCode: string): Promise<Locator> {
+  const own = page
+    .locator('tr')
+    .filter({ has: page.getByRole('button', { name: `Actions for ${planCode}`, exact: true }) });
+  if ((await own.count()) === 0) await expandPlanningRows(page);
+  if ((await own.count()) > 0) return own.first();
+  return planningLineRows(page).filter({ hasText: planCode }).first();
+}
+
 /** Let a plan out from the ⋯ of the first Planning line that offers it.
  *  Replaces `getByRole('button', {name: /Create JC|Raise PR/}).click()`.
  *  Polls, because the item only appears once Save Plan has landed. */
 export async function executePlanFromMenu(page: Page, timeout = 60_000): Promise<void> {
-  const rows = planningLineRows(page);
-  await rows.first().waitFor({ state: 'visible', timeout });
+  await planningLineRows(page).first().waitFor({ state: 'visible', timeout });
+  const rows = planningPlanRows(page);
   const deadline = Date.now() + timeout;
   for (;;) {
+    // A BOM part's plan offers its items on its own row inside the ▸ details.
+    await expandPlanningRows(page);
     const row = await findRowWithMenuItem(page, rows, EXECUTE_PLAN_ITEM);
     if (row) {
       await clickRowMenuItem(page, row, EXECUTE_PLAN_ITEM);
@@ -141,15 +164,15 @@ function planItemName(planCode: string, name: Name): RegExp {
   return new RegExp(`^\\s*${planCode}\\s*${action.replace(/^\^/, '')}`);
 }
 
-/** Does the line carrying `planCode` offer THAT PLAN's ⋯ item, enabled? */
+/** Does the row carrying `planCode` offer THAT PLAN's ⋯ item, enabled? */
 export async function hasPlanMenuItem(page: Page, planCode: string, name: Name): Promise<boolean> {
-  const row = planningLineRows(page).filter({ hasText: planCode }).first();
+  const row = await planRow(page, planCode);
   if ((await row.count()) === 0) return false;
   return hasRowMenuItem(page, row, planItemName(planCode, name));
 }
 
-/** Click THAT PLAN's ⋯ item on the line carrying it. */
+/** Click THAT PLAN's ⋯ item on the row carrying it. */
 export async function clickPlanMenuItem(page: Page, planCode: string, name: Name): Promise<void> {
-  const row = planningLineRows(page).filter({ hasText: planCode }).first();
+  const row = await planRow(page, planCode);
   await clickRowMenuItem(page, row, planItemName(planCode, name));
 }

@@ -1,19 +1,22 @@
-// The ONE ⋯ menu of a level-2 SO/JWSO Planning line (ADR-199 / owner's row-menu
-// spec). Every action a line or any of its plans offers is in here — the six
-// line actions the row already had (Plan · Raise PR · BOM Planning · Equipment
-// BOM · Allocate · Release), then, per plan, the jumps and the next step that
-// used to be buttons inside the plan chip (Open JC, Open Production Order,
-// + Production Order, Create JC / Raise PR, Edit plan).
+// The ⋯ menus of a level-2 SO/JWSO Planning line (ADR-199 / owner's row-menu
+// spec). planningLineMenu = the line's own ⋯: the six line actions (Plan ·
+// Raise PR · BOM Planning · Plan Equipment BOM · Allocate · Release), then, per
+// plan of an ORDINARY line, the jumps and the next step (Open JC, Open
+// Production Order, Create Route Card, Create Production Order, Create JC /
+// Raise PR, Edit plan). On a line WITH BOM parts each plan carries the same
+// per-plan items on its own child row instead (planChildMenu) — never both, so
+// one action has one place.
 //
-// Every condition and every permission gate is the one the buttons carried
-// before — nothing new is offered and nothing is quietly withdrawn. Gates
+// Create Route Card (route card pending) was added 2026-10-07 at the owner's
+// request; every other condition is the one the old chip buttons carried. Gates
 // follow the server: Plan / BOM / Allocate / Raise PR need plan_create entry;
 // Release needs edit ("an L2 data-entry planner may book, not un-book",
 // plans/service.ts releaseReservation); raising a Production Order is its own
 // permission (prodorder_create), the same gate the Plans list uses.
 //
 // The plan code is in every per-plan label, so a line carrying two or three
-// plans still reads unambiguously.
+// plans still reads unambiguously — on the child rows too, so one label names
+// one action wherever it appears.
 
 import type { PlanningDetailResponse, PlanningLine, PlanningPlanSummary } from '@innovic/shared';
 import type { RowMenuItem } from '@/ui/data';
@@ -40,17 +43,13 @@ export interface PlanningLineMenuArgs {
   onExecutePlan: (plan: PlanningPlanSummary) => Promise<void>;
 }
 
-/**
- * The per-plan entries. On the line's ⋯ they follow the line's own six and
- * carry the plan code in each label (a line can hold several plans); on a BOM
- * child row's own ⋯ the row already names the plan, so `prefix` is false.
- */
+/** The per-plan entries — on the line's ⋯ (ordinary line) or on the plan's
+ *  own child row (line with BOM parts). */
 function planItems(
   plan: PlanningPlanSummary,
   { perms, canProductionOrder, canCreateRouteCard, setModal, onExecutePlan }: PlanningLineMenuArgs,
-  prefix: boolean,
 ): RowMenuItem[] {
-  const p = prefix ? `${plan.code} · ` : '';
+  const p = `${plan.code} · `;
   const isRouteCard = plan.opsSource === 'route_card';
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
@@ -90,7 +89,13 @@ function planItems(
       label: `${p}Create Route Card`,
       icon: 'plus',
       group: 'workflow',
-      hidden: !(isRouteCard && plan.derivedStatus === 'route_card_pending' && canCreateRouteCard),
+      // No live item → the Route Card form has nothing to bind to; not offered.
+      hidden: !(
+        isRouteCard &&
+        plan.derivedStatus === 'route_card_pending' &&
+        plan.itemId &&
+        canCreateRouteCard
+      ),
       to: newRouteCardTo(plan),
     },
     {
@@ -196,10 +201,27 @@ export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
       onSelect: () => setModal({ kind: 'release', soLineId: line.soLineId }),
     },
   ];
-  // A plan for a BOM part has its own ⋯ on its child row (planning-line-
-  // expand), so it is not repeated here — one place per action.
-  const linePlans = line.plans.filter((p) => !p.bomChildCode);
-  return [...lineOwn, ...linePlans.flatMap((p) => planItems(p, args, true))];
+  // On a line with BOM parts every plan has its own ⋯ on its child row
+  // (planning-line-expand), so none is repeated here — one place per action.
+  const linePlans = hasPartRows(line) ? [] : line.plans;
+  // One Route Card per ITEM: two pending plans for one item would otherwise
+  // list two "Create Route Card" entries opening the same form.
+  const rcItems = new Set<string>();
+  const planEntries = linePlans.flatMap((plan) =>
+    planItems(plan, args).filter((it) => {
+      if (!it.key.startsWith('new-rc-') || it.hidden || !plan.itemId) return true;
+      if (rcItems.has(plan.itemId)) return false;
+      rcItems.add(plan.itemId);
+      return true;
+    }),
+  );
+  return [...lineOwn, ...planEntries];
+}
+
+/** A line whose child table lists BOM parts — its plans' actions live on the
+ *  child rows. The same test planning-line-expand uses for the part columns. */
+export function hasPartRows(line: PlanningLine): boolean {
+  return line.bomChildren.length > 0;
 }
 
 /**
@@ -214,33 +236,35 @@ export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
  */
 export function planChildMenu(
   plan: PlanningPlanSummary | null,
+  partShort: boolean,
   args: PlanningLineMenuArgs,
 ): RowMenuItem[] {
   const { line, perms, setModal } = args;
-  if (plan === null) {
-    return [
-      {
-        key: 'plan-parts',
-        label: line.hasEquipmentBom ? 'Plan Equipment BOM' : 'BOM Planning',
-        icon: 'package',
-        group: 'workflow',
-        hidden: !perms.entry || !(line.hasEquipmentBom || line.hasAssemblyBom),
-        onSelect: () =>
-          setModal({
-            kind: line.hasEquipmentBom ? 'equip-bom' : 'assembly-bom',
-            soLineId: line.soLineId,
-          }),
-      },
-    ];
-  }
+  // The part is not fully planned (no plan yet, or ⚠ short): the row that
+  // flags the gap offers the window that closes it.
+  const planParts: RowMenuItem = {
+    key: 'plan-parts',
+    label: line.hasEquipmentBom ? 'Plan Equipment BOM' : 'BOM Planning',
+    icon: 'package',
+    group: 'workflow',
+    hidden: !perms.entry || !(line.hasEquipmentBom || line.hasAssemblyBom),
+    onSelect: () =>
+      setModal({
+        kind: line.hasEquipmentBom ? 'equip-bom' : 'assembly-bom',
+        soLineId: line.soLineId,
+      }),
+  };
+  if (plan === null) return [planParts];
   return [
     {
       key: `open-plan-${plan.id}`,
       label: `Open ${plan.code}`,
       icon: 'eye',
       group: 'main',
+      hidden: !perms.view,
       to: `/plans/${plan.id}`,
     },
-    ...planItems(plan, args, false),
+    ...planItems(plan, args),
+    ...(partShort ? [planParts] : []),
   ];
 }

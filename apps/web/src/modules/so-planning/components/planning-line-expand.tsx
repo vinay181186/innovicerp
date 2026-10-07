@@ -18,6 +18,7 @@ import { fmtDate } from '@/lib/date';
 import { RowMenu, type RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 import { PrChip, planStatusOf } from './plan-chip';
+import { hasPartRows } from './planning-line-menu';
 import { lineStatusOf } from './planning-shared';
 
 /** Make / Buy / OSP — the same three words the plan chip uses. */
@@ -90,8 +91,9 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 export interface PlanningLineExpandProps {
   line: PlanningLine;
   /** The ⋯ of one item row — `planChildMenu` (planning-line-menu.ts). A part
-   *  with no plan yet passes `null`. Omitted → no ⋯ column. */
-  rowMenu?: ((plan: PlanningPlanSummary | null) => RowMenuItem[]) | undefined;
+   *  with no plan yet passes `null`. Used only on a line WITH BOM parts; an
+   *  ordinary line's plans keep their items on the line's own ⋯. */
+  rowMenu?: ((plan: PlanningPlanSummary | null, partShort: boolean) => RowMenuItem[]) | undefined;
   renderLink?: RenderLink | undefined;
 }
 
@@ -102,7 +104,8 @@ export function PlanningLineExpand({
 }: PlanningLineExpandProps): JSX.Element {
   const status = lineStatusOf(line);
   const itemRows = buildItemRows(line);
-  const hasParts = line.bomChildren.length > 0;
+  const hasParts = hasPartRows(line);
+  const showMenu = hasParts && rowMenu !== undefined;
   // A column of dashes is worse than no column: on data where the item's name
   // IS its code (and it is, on several masters) every cell would repeat the
   // code. Show the column only when some row actually adds something.
@@ -179,7 +182,7 @@ export function PlanningLineExpand({
                 <th>Planned End</th>
                 <th>Plan Status</th>
                 <th>Linked</th>
-                {rowMenu ? <th style={{ width: 40 }} aria-label="Actions" /> : null}
+                {showMenu ? <th style={{ width: 40 }} aria-label="Actions" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -235,10 +238,10 @@ export function PlanningLineExpand({
                         </td>
                       </>
                     )}
-                    {rowMenu ? (
+                    {showMenu && rowMenu ? (
                       <td style={{ textAlign: 'center' }}>
                         <RowMenu
-                          items={rowMenu(plan)}
+                          items={rowMenu(plan, row.partShort)}
                           renderLink={renderLink}
                           label={`Actions for ${plan?.code ?? code}`}
                         />
