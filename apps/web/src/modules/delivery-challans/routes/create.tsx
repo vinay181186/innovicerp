@@ -665,9 +665,17 @@ function PoDcFormBody({
     [lineDrafts],
   );
 
-  // ADR-211 warning rows: fetched candidates merged with any the server named in
-  // a 409 (by ncId, the 409 being fresher), narrowed to the lines being sent.
-  const rtvRows = useMemo<RtvPanelRow[]>(() => {
+  // Everything waiting to go back on THIS PO: fetched candidates merged with any
+  // the server named in a 409 (by ncId, the 409 being fresher). NOT narrowed.
+  //
+  // ADR-219 — this set is what the panel TELLS the user about, and it has to be
+  // the whole order, not the lines being shipped. On a fully-sent order every
+  // line's cap is 0, so no qty can legitimately be typed, so the narrowed set
+  // below is always empty — and the panel never rendered at all. That is the
+  // exact case ADR-219 exists for: the order now stays in the picker, and the
+  // storekeeper who opens it was still told nothing. The data was already in
+  // hand; only the gate was wrong.
+  const rtvOnPo = useMemo<RtvPanelRow[]>(() => {
     const byId = new Map<string, RtvPanelRow>();
     for (const c of rtv.data?.items ?? []) {
       byId.set(c.ncId, {
@@ -684,12 +692,20 @@ function PoDcFormBody({
       const had = byId.get(r.ncId);
       byId.set(r.ncId, had ? { ...had, state: r.state, poLineId: r.poLineId } : r);
     }
+    return [...byId.values()];
+  }, [rtv.data, rtvConflictRows]);
+  // ADR-211 — the deviations that may HOLD THE SAVE: only those on lines this
+  // challan is actually shipping. A deviation on a line we are not touching is
+  // worth telling the user about (rtvOnPo, above) but must not demand a tick
+  // before an unrelated line can go out. Two sets because they answer two
+  // different questions; collapsing them is what broke the panel.
+  const rtvRows = useMemo<RtvPanelRow[]>(() => {
     const sendingLineIds = new Set(sendingDrafts.map((l) => l.purchaseOrderLineId));
-    return [...byId.values()].filter((r) => r.poLineId !== null && sendingLineIds.has(r.poLineId));
-  }, [rtv.data, rtvConflictRows, sendingDrafts]);
-  // ADR-219 — the TOTAL still to go back on this PO, over the deviations shown.
-  // Netted (openQty), never the gross rejected figure.
-  const rtvOpenTotal = useMemo(() => rtvRows.reduce((sum, r) => sum + rtvOpenQty(r), 0), [rtvRows]);
+    return rtvOnPo.filter((r) => r.poLineId !== null && sendingLineIds.has(r.poLineId));
+  }, [rtvOnPo, sendingDrafts]);
+  // ADR-219 — the TOTAL still to go back on this PO, over everything waiting on
+  // it. Netted (openQty), never the gross rejected figure.
+  const rtvOpenTotal = useMemo(() => rtvOnPo.reduce((sum, r) => sum + rtvOpenQty(r), 0), [rtvOnPo]);
   const rtvShownKey = useMemo(
     () =>
       rtvRows
@@ -872,7 +888,7 @@ function PoDcFormBody({
   // not by PO No. — so seed its search only when ONE deviation is waiting and
   // the search can land on it. With several, it opens on the full list.
   const doSwitch = (): void =>
-    exit.leave(() => onSwitchToNc(rtvRows.length === 1 ? (rtvRows[0]?.ncCode ?? '') : ''));
+    exit.leave(() => onSwitchToNc(rtvOnPo.length === 1 ? (rtvOnPo[0]?.ncCode ?? '') : ''));
   const onSwitchClick = (): void => {
     if (editedForSwitch) setConfirmSwitch(true);
     else doSwitch();
@@ -998,7 +1014,7 @@ function PoDcFormBody({
           Could not check for pieces waiting to go back; the save will check.
         </div>
       ) : null}
-      {rtvRows.length > 0 ? (
+      {rtvOnPo.length > 0 ? (
         <div style={{ marginTop: 'var(--sp-3)' }}>
           {/* ADR-219 — lead with the TOTAL still to go back, and say plainly
               that this screen's quantities do not include it. */}
@@ -1017,7 +1033,7 @@ function PoDcFormBody({
               only. Raise the return on Against NC, one challan per deviation.
             </div>
             <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
-              {rtvRows.map((r) => (
+              {rtvOnPo.map((r) => (
                 <li key={r.ncId}>
                   <b className="mono fw-700">{r.ncCode}</b> —{' '}
                   <b className="mono fw-700" style={{ color: 'var(--text)' }}>
@@ -1033,15 +1049,21 @@ function PoDcFormBody({
                   ? `Send the ${rtvOpenTotal} back → Against NC`
                   : 'Send them back → Against NC'}
               </button>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={rtvConfirmed}
-                  onChange={(e) => setRtvConfirmedKey(e.target.checked ? rtvShownKey : null)}
-                />
-                These are new pieces, not the ones waiting to go back
-                <span className="req">★</span>
-              </label>
+              {/* Only when a line this challan IS shipping carries a deviation.
+                  On a fully-sent order nothing can be shipped, so there is
+                  nothing to confirm — the panel is pure information there, and
+                  demanding a tick for a Save that cannot happen would be noise. */}
+              {rtvRows.length > 0 ? (
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={rtvConfirmed}
+                    onChange={(e) => setRtvConfirmedKey(e.target.checked ? rtvShownKey : null)}
+                  />
+                  These are new pieces, not the ones waiting to go back
+                  <span className="req">★</span>
+                </label>
+              ) : null}
             </div>
           </Banner>
         </div>

@@ -320,6 +320,40 @@ export async function rescheduleJcOp(
       if (runningRows.length > 0) {
         throw new ConflictError('Stop Operation first, then change the machine.');
       }
+
+      // ADR-220 — the THIRD way to change an operation's machine, and it must be
+      // gated like the other two. The Job Card form stages a machine change for
+      // per-change approval and `changeJcOpMachine` refuses outright; leaving a
+      // drag on the schedule board ungated would make the gate pointless, since
+      // the same column on the same row is written either way.
+      // Only the MACHINE half is gated: planned_start / planned_end are
+      // scheduling fields the Job Card edit does not own, so a date-only
+      // reschedule stays free (that is why this sits inside `machineChanged`).
+      const { isDocEditApprovalOn } = await import('../document-edits/service');
+      if (await isDocEditApprovalOn(tx, companyId)) {
+        // "Live" is the Job Card registry's own rule, read through this op's
+        // card, so the three paths cannot disagree: open, not complete/closed.
+        const liveRows = (await tx.execute(sql`
+          SELECT 1 AS one
+          FROM public.jc_ops o
+          JOIN public.job_cards jc
+            ON jc.id = o.job_card_id
+           AND jc.company_id = ${companyId}::uuid
+           AND jc.deleted_at IS NULL
+          LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
+          WHERE o.id = ${jcOpId}::uuid
+            AND o.deleted_at IS NULL
+            AND jc.closed_at IS NULL
+            AND COALESCE(v.computed_status, 'no_ops') NOT IN ('complete', 'closed')
+          LIMIT 1
+        `)) as unknown as Array<{ one: number }>;
+        if (liveRows.length > 0) {
+          throw new ConflictError(
+            "Changing an operation's machine isn't available while Document Edit Approval is on — " +
+              'open the Job Card and edit it there, so the change goes for approval.',
+          );
+        }
+      }
     }
 
     // Verify target machine exists in company

@@ -33,6 +33,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # MUST be >= the production server's major version. pg_dump refuses to
+      # dump a server NEWER than itself ("aborting because of server version
+      # mismatch") and that is exactly what happened here: this step was pinned
+      # to 15, Supabase upgraded the project to Postgres 17, and the dump failed
+      # every night from June 2026 for 100 consecutive runs, producing no backup.
+      # A newer client against an older server is fine, so when Supabase next
+      # upgrades its major version, raise this number FIRST. Check the server:
+      #   SELECT current_setting('server_version');   -- 17.6 on 2026-10-07
       - name: Install PostgreSQL 17 client
         run: |
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
@@ -41,6 +49,9 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-17
+          # Print it, so a future mismatch is visible in the log at THIS step
+          # rather than as a confusing failure mid-dump.
+          pg_dump --version
 
       - name: Install Backblaze B2 CLI
         run: pipx install 'b2<4' # pin to v3 for stable authorize-account / upload-file commands
@@ -55,9 +66,8 @@ jobs:
           echo "FILE=$FILE" >> "$GITHUB_ENV"
           # --no-owner/--no-privileges keep the dump restorable into a fresh
           # Supabase project where roles differ.
-          # Print both versions: a client older than the server is a hard abort,
-          # which is exactly how this silently failed every night since 2026-06-13.
-          pg_dump --version
+          # Print the server version too: a client older than the server is a
+          # hard abort, which is how this silently failed every night since 2026-06-13.
           psql "$BACKUP_DATABASE_URL" -tAc "select version()" || true
           pg_dump --no-owner --no-privileges "$BACKUP_DATABASE_URL" | gzip -9 > "$FILE"
           ls -lh "$FILE"
