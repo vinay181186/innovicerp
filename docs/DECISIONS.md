@@ -11986,3 +11986,189 @@ the gate. The approver's screen needs NO change - it renders change rows generic
   it** - each module hand-duplicates the rule in its divert and nothing would catch a drift. And the
   approvals queue sits in System Settings next to Backup, where the Production approvers (L4/L5) will
   not look for work waiting on them.
+
+## ADR-221: Assembled By picks a Planning person, and one helper answers "who may do this work"
+
+**Date:** 2026-10-07
+**Status:** Accepted
+
+### Context
+
+`Assembled By` on the Assembly Tracker's Start panel was a free-text box. The person who
+built a machine was whatever anyone typed — unsearchable, unlinkable, and spelled three
+ways by three clerks. Access Control already knows who Planning is.
+
+The same fact also wore three names: the label said `Assembled By`, the wire field said
+`startedBy`, the column said `assembled_by`. That is how a field ends up searched for
+under the wrong word (§18), and `Assembled By` had no row in `docs/NAMING.md` at all.
+
+"Who may do this work" had already been asked twice. QC asked it first
+(`listQcUserOptions`), Production was cloned from it line for line
+(`listProductionUserOptions`, ~124 duplicated lines), and the two had **already drifted** —
+the QC side grew a `qcSelectedLabel` the Production copy never got, so a correction to one
+could not reach the other. Planning would have been the third copy.
+
+### Decision
+
+- **Who qualifies: anyone GRANTED `entry` on `plan_create` or `routecard_create`.** Those
+  are the only two `dept: 'planning'` keys in `ACCESS_FORMS`, so this is the whole
+  department, not a subset — a real difference from QC, where the subset is deliberate.
+  Asked through the app's own `effectiveFormPerms`, so the dropdown can never disagree with
+  what the Planning screens let someone do: a per-form grant counts without a Planning
+  tier, a per-page "No create" switch takes someone off it, and L1 view-only falls out by
+  itself. The tiers are NOT a ladder (L4 Approver has no `entry`), so this never compares
+  `tier >= 'L2'`. Full Access counts — those accounts may make any entry — but sorts last
+  and is badged, so an admin is never read as Planning staff. `users.role` is not the filter.
+- **Deliberately NOT the Assembly Tracker's own gate.** That screen has no form key at all:
+  its nav entry shows to anyone who can see the Planning section, and its writes run on a
+  coarse `role ∈ {admin, manager}` check. On the test database that admits a Purchase-only
+  manager who cannot even open the Planning menu. The two sets only overlap; neither
+  contains the other, so it is no use as a definition of "has Planning access".
+- **One parameterised helper, three thin wrappers.** `listDeptUserOptions({ deptKey,
+  entryForms })` owns the select, the `EffectiveAccess` rebuild, the permission test, the
+  `_direct` sort key and the three bands. `listQcUserOptions`, `listProductionUserOptions`
+  and the new `listPlanningUserOptions` wrap it. Exported names, signatures and wire shapes
+  are byte-identical to before — `isQcDept` / `isProductionDept` keep the spelling their two
+  web readers use, so not one caller changed.
+- **`GET /access-control/planning-users` is readable by any authenticated user**, not
+  admins only — the planner recording an assembly is who opens the list. Same as the
+  QC and Production routes.
+- **Stored the way Item Issue stores it:** the short name snapshot (what every read, print
+  and History line shows) plus an optional FK to the login. The server re-reads the chosen
+  person — same company, active, not deleted, **and still holding a Planning entry right** —
+  and derives the name from the database, never from what the browser sent. The permission
+  re-check matters because the picker caches for 60s and a grant can be revoked in between.
+- **Free typing is kept.** The field has always been optional and stays optional; a name
+  that is not a login still goes in as text. Send one or the other — an id wins and the text
+  is ignored.
+- **One fact, one name.** The wire field is now `assembledBy`; `startedBy` is gone. A
+  `docs/NAMING.md` row registers `Assembled By` with `startedBy` and `Started By` rejected.
+
+### Alternatives Considered
+
+- **A third copy of the QC/Production block** — rejected: the first two had already drifted,
+  and a third would have made that permanent.
+- **Generalising the wire shape too** (one `isDept` field for all three) — rejected: it
+  would have changed two shipped contracts and their web readers for no gain. The helper is
+  generic; the three contracts stay explicit.
+- **Filtering on `main_dept = 'planning'`** — rejected: that is the "Planning team" reading
+  and excludes someone holding a Planning grant from another department, and excludes every
+  admin (their `departments` map is empty).
+- **Filtering on "can VIEW any Planning screen"** — a defensible wider reading that includes
+  view-only people. Rejected as the default: you do not assign work to someone who cannot
+  save it. One word (`.view` for `.entry`) changes it if the owner disagrees.
+
+### Consequences
+
+- Migration **0201** adds `assembly_units.assembled_by_user_id` (nullable FK, `ON DELETE
+  SET NULL`) and a partial index, mirroring 0199. **Applied to TEST; PROD runs via the
+  release script.** `stopAssembly` reads the batch with a star-select, so until 0201 is
+  applied the WHOLE Assembly Tracker 500s — list, detail, Start, Stop and Undo — not just
+  the new field. Migration before API, on both databases.
+- **The FK is write-only today**, exactly as `store_issues.issued_to_user_id` has been since
+  0199: no screen, report, filter or print reads it, and the index it carries serves no
+  query yet. Kept anyway, because the snapshot alone cannot answer "which login was this"
+  once a name is edited or repeated, and adding the column later means a backfill nobody
+  can do. Said plainly here rather than claimed as traceability already delivered.
+- Stop's carry-forward of the started batch's value is pre-existing and only extended to the
+  FK, with one deliberate exception: a genuinely typed name at Stop nulls the id, so a row
+  can never link to one person while printing another's name beside it. A blank string is
+  "said nothing" and carries both forward.
+- On the test database nobody holds any Planning grant, so the dropdown there returns the
+  three Full Access accounts and no Planning team. Correct behaviour, degenerate sample —
+  the real population is on production and was not read (that read is blocked for Claude).
+- The Start panel grew a second control. It remains a pre-method inline flex strip with
+  hard-coded pixel widths, not on the owner's layout standard; converting it is a separate
+  job and was not done here.
+
+
+## ADR-222: A BOM Sales Order shows its child parts, and every order under it names its own item
+
+**Date:** 2026-10-07
+**Status:** Accepted
+
+### Context
+
+The owner, in two sentences: *"on so detail page. bom so . not showing. child item parts."* and
+*"alos on level matrix. per pro, per jc show item code,name."* Traced, and the two turn out to be the
+same gap seen from two angles.
+
+**An equipment Sales Order carries its BOM on the HEADER** (`sales_orders.bom_master_id`), not on the
+line — unlike an assembly SO, which carries it per line (`sales_order_lines.source_bom_master_id`).
+Live on TEST: **26 equipment SOs, 17 with a BOM, every BOM with exactly 2 children — and ZERO
+assembly SOs, ZERO lines carrying a source BOM.** So the header BOM is the only real case.
+
+**Why the two asks are one.** Such an SO has ONE line — the parent assembly — while every Plan,
+Production Order and Job Card beneath it is for a CHILD part. `IN-SO-00793`: one line for parent
+`V3B-ASM-464326`; under it `IN-PRO-00027` is `V3B-P1-464326` and `IN-PRO-00028` is `V3B-P2-464326`.
+The Level Matrix prints both as bare document numbers, and the only item label on the screen is the
+PARENT's — so the page does not merely omit the parts, it labels the work with the wrong item.
+
+**The parts list already exists and already works.** `GET /so-status/:soId` returns a top-level
+`bomItems` array (child code, child name, qty per set, total need, stock, shortfall, BOM type, plan
+and JC codes) plus `header.equipmentInfo` (BOM number, name, revision, parts count). A ~90-line
+component, `EquipmentBomItems` in `sales-orders/components/so-equipment-expand.tsx`, already renders
+it, and it is live on the SO list `▸` expand and on the SO Status page. **The SO detail page was never
+missing data — it was missing a panel.** The detail contract carries only `bomMasterId`, `bomStatus`
+and `bomMasterCode`; `bom_master_lines` is never touched anywhere in the sales-orders module.
+
+The matrix half is not cosmetic: `production_orders` already stores `item_code_text` /
+`item_name_text` and the query simply does not select them, but **`job_cards` has NO item text
+columns at all** — only `item_id` — so the API must join the item master. The same function already
+does exactly that join for its SO-line row.
+
+### Decision
+
+1. **Mount the existing parts table on the SO detail page**, between Line Items and the Level Matrix,
+   titled with the BOM's number, name, revision and parts count. Reuse the component and the
+   endpoint; no new endpoint, no second parts table, no contract change.
+2. **Add `itemCode` and `itemName` to the Production Order and Job Card rows of the Level Matrix**,
+   **read from the Production Order / Job Card ITSELF — never copied from the SO line.** On a BOM SO
+   they genuinely differ, and copying the line's item would print the parent's code on a child's job
+   card: worse than showing nothing.
+
+### Alternatives considered
+
+- **Add the children to the SO detail contract and query** — rejected. It would be a second way to
+  read the same fact, against §20.1's spirit, when a working endpoint and a working component already
+  exist. Reuse is both smaller and keeps one answer.
+- **Use the BOM Planning endpoint (`GET /so-planning/:id/bom/:lineId`)** — rejected: it is keyed per
+  SO line and has write side effects (it creates plans). Wrong tool for a read-only panel.
+- **Use the per-line `bomChildren` on the planning list** — rejected: it lists children only for
+  lines that already have child plans, so it is empty exactly when the owner most needs the list.
+- **Copy the item from the SO line onto the PRO/JC rows** — rejected; see the Decision. This is the
+  one choice in this ADR that could actively mislead.
+- **Show the item REVISION too** — deferred. The owner asked for code and name. The revision has
+  three candidate sources here (`sol.revision`, `ITEM_REVISION_SQL` per PRO, and the JC list's
+  `COALESCE(sol.revision, jwl.revision)`) and the obvious one is wrong for job-work rows. Not guessed.
+- **Children for assembly / with_material SOs** — out of scope: none exist in the data, and
+  `bomItems` is only populated for `type === 'equipment'`.
+
+### Consequences
+
+- Zero migrations. Zero shared-contract change. Read-only throughout: nothing is written, no status
+  moves, no quantity moves, so §20.1–20.4 have no surface. **§20.5 is the rule that applies** — the
+  parts panel calls a SECOND, heavier endpoint than the page's own, so it carries its own loading and
+  error state rather than blanking the panel.
+- **The Level Matrix contract is hand-duplicated and NOT in `packages/shared`:**
+  `apps/api/src/modules/flow-views/types.ts` and `apps/web/src/modules/flow-views/types.ts` are
+  identical copies around lines 200-253. Both are edited together; **nothing in the build keeps them
+  in step**, which is a trap for the next person.
+- Naming: the new fields are the registered `itemCode` / `itemName` (docs/NAMING.md). Noted and
+  deliberately NOT fixed here: `LevelSoLine.partName` already uses a name that register explicitly
+  bans for that fact. Renaming it is its own change.
+- `GET /so-status/:soId` is a heavy aggregation (lines, plans, job cards, stock, timelines). It is now
+  called on the detail page as well as the list expand and the status page. Accepted for a two-child
+  list; if the detail page ever feels slow, this is the first thing to look at.
+- One Production Order on TEST (`IN-PRO-00023`, item ZZ-OSP-02) has a blank `item_name_text` while
+  its `item_id` is set, which is why the name falls back to the live item rather than trusting the
+  snapshot alone.
+- **Verification note:** every pre-2026-10-07 "verified on live PROD" figure is gone — the owner
+  cleared production's transactional data that day. All numbers in this ADR are from TEST.
+
+### Open afterwards
+
+- The item revision on the matrix (above).
+- `LevelSoLine.partName` renaming.
+- Assembly / with_material SOs' per-line BOM children, if the owner ever creates one.
+- The duplicated flow-views contract: it belongs in `packages/shared` like every other contract.

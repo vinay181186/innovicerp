@@ -20,6 +20,7 @@ import type {
   AssemblyTrackerResponse,
   AssemblyUnitRow,
   AssemblyVariancePart,
+  StartAssemblyInput,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Play, RotateCcw } from 'lucide-react';
@@ -33,6 +34,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { RowMenu } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
+import { PlanningUserPicker } from '../components/planning-user-picker';
 import { VarianceConfirm } from '../components/variance-confirm';
 
 export const assemblyDetailRoute = createRoute({
@@ -50,6 +52,11 @@ function AssemblyDetailPage(): React.JSX.Element {
   // Batch quantity to START (put on the bench). No stock leaves yet — that
   // happens per unit at STOP. Serial is auto-generated server-side.
   const [qty, setQty] = useState('1');
+  // `Assembled By` — the Planning person who built the batch. The picked login
+  // (`assembledByUserId`) is the real answer; `assembledBy` is the free-typed
+  // fallback for someone without a login, kept exactly as Item Issue keeps it.
+  // Send ONE of the two (see startAssemblyInputSchema).
+  const [assembledByUserId, setAssembledByUserId] = useState<string | null>(null);
   const [assembledBy, setAssembledBy] = useState('');
   // Prefilled with today (IST) so the default is visible, not hidden in a tooltip.
   const [assemblyDate, setAssemblyDate] = useState(() => todayIst());
@@ -114,22 +121,25 @@ function AssemblyDetailPage(): React.JSX.Element {
       setActionError(`Only ${startMax} unit(s) left to start on this order.`);
       return;
     }
-    start.mutate(
-      {
-        qty: n,
-        startedBy: assembledBy || undefined,
-        startDate: assemblyDate || undefined,
-        remarks: remarks || undefined,
+    // ONE of the two `Assembled By` fields, never both: a picked login wins and
+    // the typed text is dropped, so a stale half-typed name cannot ride along.
+    const input: StartAssemblyInput = {
+      qty: n,
+      startDate: assemblyDate || undefined,
+      remarks: remarks || undefined,
+    };
+    if (assembledByUserId) input.assembledByUserId = assembledByUserId;
+    else if (assembledBy.trim()) input.assembledBy = assembledBy.trim();
+    start.mutate(input, {
+      onSuccess: () => {
+        setQty('1');
+        setAssembledByUserId(null);
+        setAssembledBy('');
+        setRemarks('');
       },
-      {
-        onSuccess: () => {
-          setQty('1');
-          setRemarks('');
-        },
-        onError: (e) =>
-          setActionError(e instanceof Error ? e.message : 'Could not start the batch. Try again.'),
-      },
-    );
+      onError: (e) =>
+        setActionError(e instanceof Error ? e.message : 'Could not start the batch. Try again.'),
+    });
   };
   // The batch the server will undo: the highest Batch No. still on the order
   // (undoLastUnit orders by unitNo desc).
@@ -242,18 +252,60 @@ function AssemblyDetailPage(): React.JSX.Element {
               title={`Up to ${startMax} unit(s) left to start on this order.`}
             />
           </div>
-          <div>
-            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+          {/* Assembled By — a Planning person from Access Control, not a typed
+              name. Still OPTIONAL (no ★), as it has always been. The picker's own
+              width is 100%, so the slot's width lives on this wrapper now. */}
+          <div style={{ width: 180 }}>
+            <label
+              className="form-label"
+              style={{ display: 'block', marginBottom: 4 }}
+              htmlFor="as-by"
+            >
               Assembled By
             </label>
-            <input
-              className="innovic-input"
-              style={{ width: 160 }}
-              value={assembledBy}
-              onChange={(e) => setAssembledBy(e.target.value)}
-              placeholder="optional"
+            <PlanningUserPicker
+              id="as-by"
+              value={assembledByUserId}
+              onChange={setAssembledByUserId}
             />
           </div>
+          {/* Free typing is kept for someone without a login, exactly as Item
+              Issue keeps it, and only while nobody is picked. It is its OWN slot
+              beside the picker, NOT stacked under it: this row is
+              `alignItems: 'flex-end'`, so a two-control slot is taller than its
+              neighbours and drags every other label a control-row up. One
+              control per slot is what keeps the row on one baseline. Item Issue
+              can stack the same two boxes because there they sit in a `form-grp`
+              grid cell, not in a bottom-aligned flex row.
+              `…or type a name` is the label, not a second name for the fact —
+              `Assembled By` is the registered name (docs/NAMING.md §A). The
+              aria-label carries the whole fact for a screen reader, which reads
+              the box out of its visual context. No ★: the field is optional. */}
+          {!assembledByUserId ? (
+            <div style={{ width: 180 }}>
+              <label
+                className="form-label"
+                /* nowrap, measured: this slot and the picker beside it are the only
+                   two the row can shrink, so below a ~976px viewport they drop under
+                   the label's 94.7px and it would wrap to two lines — which in a
+                   bottom-aligned row puts this whole strip back out of line, the very
+                   fault this slot was split out to fix. No effect at any normal width
+                   (1280 leaves 133.7px of slack even with nobody picked). */
+                style={{ display: 'block', marginBottom: 4, whiteSpace: 'nowrap' }}
+                htmlFor="as-by-typed"
+              >
+                …or type a name
+              </label>
+              <input
+                id="as-by-typed"
+                className="innovic-input"
+                aria-label="Assembled By — or type a name"
+                title="For someone who has no login. Used only while nobody is picked above."
+                value={assembledBy}
+                onChange={(e) => setAssembledBy(e.target.value)}
+              />
+            </div>
+          ) : null}
           {/* Start date + Remarks — stamped on the in-progress batch. */}
           <div>
             <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>

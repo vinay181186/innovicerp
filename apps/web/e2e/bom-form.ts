@@ -74,13 +74,12 @@ export function bomPartRemove(page: Page, idx: number): Locator {
   return bomPartRow(page, idx).getByRole('button', { name: `Remove line ${idx + 1}` });
 }
 
-/** The PARENT's Item Name. Also resolved-never-typed, so it is a read-only
- *  fact in the Parent Item cluster: label "Item Name", value beside it. While
- *  nothing is resolved the value reads "auto-filled" / "Checking Item Master…"
- *  / "Not in Item Master" / "Loading…". */
+/** The PARENT's Item Name. Resolved-never-typed, so it is a read-only box
+ *  under its "Item Name" label; read it with `toHaveValue`. Found BY ITS LABEL,
+ *  so a broken label association fails the spec. While nothing is resolved the
+ *  box is empty and its placeholder reads "auto-filled" / "Checking Item
+ *  Master…" / "Loading…"; an unknown code shows "Not in Item Master" as an
+ *  error under it. */
 export function bomParentItemName(page: Page): Locator {
-  return page
-    .locator('.cl-fact')
-    .filter({ has: page.getByText('Item Name', { exact: true }) })
-    .locator('.cl-fact-v');
+  return page.getByLabel('Item Name', { exact: true });
 }

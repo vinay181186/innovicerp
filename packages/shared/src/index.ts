@@ -67,6 +67,7 @@ export * from './schemas/production-dashboard';
 export * from './schemas/incoming-qc';
 export * from './schemas/qc-user';
 export * from './schemas/production-user';
+export * from './schemas/planning-user';
 export * from './schemas/qc-history';
 export * from './schemas/capa';
 export * from './schemas/tpi';

@@ -130,6 +130,25 @@ function orderColumns(planCode: Map<string, string>): DataTableColumn<LevelProdu
         </Link>
       ),
     },
+    // ADR-222: item read from the order itself, not the SO line.
+    {
+      header: 'Item Code',
+      nowrap: true,
+      align: 'left',
+      render: (o) => (
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {o.itemCode ?? '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Item Name',
+      align: 'left',
+      className: 'text2',
+      ellipsis: true,
+      render: (o) => o.itemName ?? '—',
+      title: (o) => o.itemName ?? '',
+    },
     {
       header: 'Plan No',
       nowrap: true,
@@ -176,6 +195,25 @@ function jobCardColumns(orderCode: Map<string, string>): DataTableColumn<LevelJo
           {j.code}
         </Link>
       ),
+    },
+    // ADR-222: item read from the card itself, not the SO line.
+    {
+      header: 'Item Code',
+      nowrap: true,
+      align: 'left',
+      render: (j) => (
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {j.itemCode ?? '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Item Name',
+      align: 'left',
+      className: 'text2',
+      ellipsis: true,
+      render: (j) => j.itemName ?? '—',
+      title: (j) => j.itemName ?? '',
     },
     {
       header: 'Production Order No',

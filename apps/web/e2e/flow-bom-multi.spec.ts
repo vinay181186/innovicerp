@@ -234,9 +234,9 @@ test('@bommulti 01 — BOM with four children across three types', async ({ page
 
   await pickInto(page, 'bom-parent-item', PARENT);
   // Both Item Names are resolved-from-the-code, so both are read-only TEXT now
-  // (the parent's a fact beside its picker, the child's its own table column) —
+  // (the parent's a read-only box, the child's its own table column) —
   // same proof as before: the name turns up by itself once the code is picked.
-  await expect(bomParentItemName(page)).toHaveText(PARENT_NAME, { timeout: 15_000 });
+  await expect(bomParentItemName(page)).toHaveValue(PARENT_NAME, { timeout: 15_000 });
 
   const addChild = page.getByRole('button', { name: /Add child item/i });
   for (const [idx, c] of CHILDREN.entries()) {

@@ -18,6 +18,7 @@ import {
   isAccessDeptKey,
   roleForAccess,
   ACCESS_FORM_KEYS,
+  type AccessDeptKey,
   type AccessDeptsMap,
   type AccessFormKey,
   type AccessFormsMap,
@@ -26,6 +27,7 @@ import {
   effectiveFormPerms,
   type EffectiveAccess,
   type ListUserAccessResponse,
+  type PlanningUserOption,
   normalizeDeptsMap,
   pruneDeptsMap,
   pruneFormsMap,
@@ -283,70 +285,52 @@ export async function listUserAccess(
   });
 }
 
-// ── QC user options ────────────────────────────────────────────
-// The forms that ARE a QC entry: recording an inspection on a job-card
-// operation, and recording one on incoming goods. Someone who may create on
-// either of these is someone who may sign off an inspection, which is exactly
-// what a "QC By" dropdown is asking for.
+// ── "Who may do this department's work" options ────────────────
 //
-// Deliberately NOT every qc-department form. Entry rights on QC Process Master
-// or TPI Master mean "may maintain a lookup list", not "may inspect", and
-// putting those people forward as inspectors would name someone who does not
-// do the job.
-const QC_ENTRY_FORMS: readonly AccessFormKey[] = ['qc_submit', 'qc_incoming'];
+// WHY THIS IS ONE HELPER: three departments have now asked the permission
+// matrix the same question — QC for "QC By" on an inspection, Production for
+// "Issued To" on Issue from Store, Planning for "Assembled By" on the Assembly
+// Tracker. The first two were written as two near-identical ~120-line blocks,
+// and they had ALREADY DRIFTED apart: the QC side kept growing (its own
+// `qcSelectedLabel` on the web, its own wording) while the Production copy
+// dropped parts of it, so a correction to one never reached the other. A third
+// copy would have made that permanent. The select, the permission test, the
+// effective-access rebuild, the three sort bands and the row mapping therefore
+// live here ONCE; a department contributes only its form keys.
 
-/** Was this person GIVEN the right to make a QC entry?
+/** One row of a department's people list.
  *
- *  Asked through the app's own permission function rather than re-derived
- *  here, so the dropdown can never disagree with what the QC screens actually
- *  let someone do. That matters in three ways a tier comparison got wrong:
+ *  `isDept` is NEUTRAL on purpose. Each department's wire contract names this
+ *  fact after itself — `isQcDept` / `isProductionDept` / `isPlanningDept` — and
+ *  the web pickers read those exact names, so the wrappers below rename it.
+ *  Every other field is identical across the three. */
+type DeptUserOption = {
+  id: string;
+  name: string;
+  email: string;
+  tier: string | null;
+  isDept: boolean;
+  fullAccess: boolean;
+};
+
+/** The people Access Control actually lets do ONE department's work — the
+ *  source list behind that department's "who did this" dropdown.
  *
- *    - a per-form grant counts. Someone given explicit entry on QC Call
- *      Register without a Quality tier is a QC user, and was invisible before.
- *    - "No create" counts. An admin who switched entry OFF for QC on one
- *      person meant it; they were still being offered as an inspector.
- *    - L1 still falls out on its own, because the L1 tier grants no entry —
- *      the old min-tier rule is subsumed rather than removed.
+ *  Readable by ANY authenticated user in the company, deliberately NOT
+ *  admin-only: the clerk filling the form in is the person who opens the list,
+ *  and `requireAdminRole` would break the one screen it exists for. It returns
+ *  names and emails only — never the permission maps — which is no more than
+ *  `/tasks/user-options` already exposes for every user.
  *
- *  Full Access counts, on the user's explicit instruction: those accounts may
- *  make any entry in the system, QC included, so refusing to let one be
- *  recorded as the inspector would deny something that is actually true. They
- *  are sorted to the BOTTOM instead (see the ordering below) so the people
- *  whose job this is open the list, rather than being mixed in with admins. */
-function wasGrantedQcEntry(eff: EffectiveAccess): boolean {
-  return QC_ENTRY_FORMS.some((f) => effectiveFormPerms(eff, f).entry);
-}
-
-/** Did their QUALITY access grant this, as opposed to Full Access covering
- *  everything? Not a filter — only the sort key that separates the QC team and
- *  the people given QC rights from the admins who merely may. */
-function grantedQcEntryDirectly(eff: EffectiveAccess): boolean {
-  return wasGrantedQcEntry({ ...eff, fullAccess: false });
-}
-
-/** Their Quality tier for display, whatever it is — L1 included. The tier no
- *  longer decides who is on the list, so it is reported rather than filtered
- *  on: someone can now qualify through a per-form grant with a low tier, or
- *  none at all. `normalizeDeptsMap` reads the pre-0100 literal `true` as L1. */
-function qcTierLabel(departments: unknown): string | null {
-  return normalizeDeptsMap(asDeptsMap(departments))['qc'] ?? null;
-}
-
-// The people Access Control actually lets do QC work — the source list behind
-// every "QC By" dropdown.
-//
-// Readable by ANY authenticated user in the company, deliberately NOT
-// admin-only: the QC clerk filling in an incoming inspection is the person who
-// opens this list, and `requireAdminRole` would break the one screen it exists
-// for. It returns names and emails only — never the permission maps — which is
-// no more than `/tasks/user-options` already exposes for every user.
-//
-// `users.role` is not the filter (see the schema comment in @innovic/shared):
-// the role is derived as the narrowest role covering everything someone was
-// granted, so a Quality lead who also writes Production derives as 'manager'
-// and would vanish from the list. What someone was GRANTED is the honest answer,
-// and `wasGrantedQcEntry` asks the app's own permission function for it.
-export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption[]> {
+ *  `users.role` is NOT the filter (see the schema comments in @innovic/shared):
+ *  the role is derived as the narrowest role covering everything someone was
+ *  granted, so a Quality lead who also writes Production derives as 'manager'
+ *  and would vanish from the list. What someone was GRANTED is the honest
+ *  answer, and the test below asks the app's own permission function for it. */
+async function listDeptUserOptions(
+  user: AuthContext,
+  dept: { deptKey: AccessDeptKey; entryForms: readonly AccessFormKey[] },
+): Promise<DeptUserOption[]> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx
@@ -376,53 +360,113 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
         and(eq(users.companyId, companyId), eq(users.isActive, true), isNull(users.deletedAt)),
       );
 
+    /** Was this person GIVEN the right to make one of this department's
+     *  entries?
+     *
+     *  Asked through the app's own permission function rather than re-derived
+     *  here, so the dropdown can never disagree with what the department's
+     *  screens actually let someone do. That matters in three ways a tier
+     *  comparison got wrong:
+     *
+     *    - a per-form grant counts. Someone given explicit entry on QC Call
+     *      Register without a Quality tier is a QC user, and was invisible
+     *      before.
+     *    - "No create" counts. An admin who switched entry OFF for one page on
+     *      one person meant it; they were still being offered.
+     *    - L1 still falls out on its own, because the L1 tier grants no entry —
+     *      the old min-tier rule is subsumed rather than removed. The tiers are
+     *      not a ladder either (L4 Approver has no entry), which is the other
+     *      reason this is never a "tier >= L2" comparison.
+     *
+     *  Full Access counts, on the user's explicit instruction: those accounts
+     *  may make any entry in the system, so refusing to let one be recorded
+     *  would deny something that is actually true. They are sorted to the
+     *  BOTTOM instead (see the bands below) so the people whose job this is
+     *  open the list, rather than being mixed in with admins. */
+    const wasGranted = (eff: EffectiveAccess): boolean =>
+      dept.entryForms.some((f) => effectiveFormPerms(eff, f).entry);
+
     // `_direct` rides along purely as a sort key and is stripped before return,
-    // so the wire shape stays exactly QcUserOption.
-    const options: Array<QcUserOption & { _direct: boolean }> = rows.flatMap((r) => {
+    // so the shape handed to the wrappers is exactly DeptUserOption.
+    const options: Array<DeptUserOption & { _direct: boolean }> = rows.flatMap((r) => {
       const fullAccess = r.acFullAccess ?? false;
       // Built exactly as getMyAccess builds it, so this asks the same question
-      // of the same shape the QC screens ask of themselves.
+      // of the same shape the department's screens ask of themselves.
       const eff: EffectiveAccess = {
         fullAccess,
         auditor: r.acAuditor ?? false,
-        // Irrelevant to who may sign off an inspection, but the shape is the
-        // shape — leaving it out would make this a different object from the
-        // one getMyAccess builds, which is the whole point of building it here.
+        // Irrelevant to who may make an entry, but the shape is the shape —
+        // leaving it out would make this a different object from the one
+        // getMyAccess builds, which is the whole point of building it here.
         drawingDownload: false,
         departments: normalizeDeptsMap(asDeptsMap(r.acDepartments)),
         forms: cascadeFormsMap(asFormsMap(r.acForms)),
       };
-      if (!wasGrantedQcEntry(eff)) return [];
-      const tier = qcTierLabel(r.acDepartments);
+      if (!wasGranted(eff)) return [];
       return [
         {
           id: r.id,
           // A login with no name set would otherwise render as a blank row.
+          // Raw here — the frontend shortens it for display.
           name: r.fullName?.trim() || r.email,
           email: r.email,
-          tier,
-          isQcDept: r.acMainDept === 'qc',
+          // Their tier in THIS department for display, whatever it is — L1
+          // included. The tier no longer decides who is on the list, so it is
+          // reported rather than filtered on: someone can qualify through a
+          // per-form grant with a low tier, or none at all.
+          // `normalizeDeptsMap` reads the pre-0100 literal `true` as L1.
+          tier: normalizeDeptsMap(asDeptsMap(r.acDepartments))[dept.deptKey] ?? null,
+          isDept: r.acMainDept === dept.deptKey,
           fullAccess,
-          // Sort key only — see the ordering below. Not part of the wire shape
-          // the UI reads.
-          _direct: grantedQcEntryDirectly(eff),
+          // Did THIS DEPARTMENT's access grant the entry, as opposed to Full
+          // Access covering everything? Not a filter — only the sort key that
+          // separates the team and the people given the rights from the admins
+          // who merely may.
+          _direct: wasGranted({ ...eff, fullAccess: false }),
         },
       ];
     });
 
     // Three bands, so the list opens on the people whose job this actually is:
-    //   1. the QC team          — Quality is their MAIN department
-    //   2. granted QC entry     — a Quality tier or a per-form grant says so
-    //   3. everyone else        — Full Access accounts who merely MAY do it
+    //   1. the department's team — it is their MAIN department
+    //   2. granted the entry     — a tier or a per-form grant says so
+    //   3. everyone else         — Full Access accounts who merely MAY do it
     // Within a band, by name. Band 3 exists because Full Access covers every
-    // entry in the system including QC, so those accounts genuinely qualify —
-    // but an admin is rarely the person who inspected, and burying the QC team
-    // under them is what made this dropdown read as "everybody".
-    const band = (o: (typeof options)[number]): number => (o.isQcDept ? 0 : o._direct ? 1 : 2);
+    // entry in the system, so those accounts genuinely qualify — but an admin
+    // is rarely the person who did the work, and burying the team under them is
+    // what made these dropdowns read as "everybody".
+    const band = (o: (typeof options)[number]): number => (o.isDept ? 0 : o._direct ? 1 : 2);
     return options
       .sort((a, b) => (band(a) === band(b) ? a.name.localeCompare(b.name) : band(a) - band(b)))
       .map(({ _direct: _drop, ...o }) => o);
   });
+}
+
+// ── QC user options ────────────────────────────────────────────
+// The forms that ARE a QC entry: recording an inspection on a job-card
+// operation, and recording one on incoming goods. Someone who may create on
+// either of these is someone who may sign off an inspection, which is exactly
+// what a "QC By" dropdown is asking for.
+//
+// Deliberately NOT every qc-department form. Entry rights on QC Process Master
+// or TPI Master mean "may maintain a lookup list", not "may inspect", and
+// putting those people forward as inspectors would name someone who does not
+// do the job.
+const QC_ENTRY_FORMS: readonly AccessFormKey[] = ['qc_submit', 'qc_incoming'];
+
+// The people Access Control actually lets do QC work — the source list behind
+// every "QC By" dropdown. Thin wrapper: the logic is listDeptUserOptions above,
+// and only the `isQcDept` field name is ours.
+export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption[]> {
+  const rows = await listDeptUserOptions(user, { deptKey: 'qc', entryForms: QC_ENTRY_FORMS });
+  return rows.map((o) => ({
+    id: o.id,
+    name: o.name,
+    email: o.email,
+    tier: o.tier,
+    isQcDept: o.isDept,
+    fullAccess: o.fullAccess,
+  }));
 }
 
 // ── Production user options ────────────────────────────────────
@@ -430,11 +474,6 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
 // an Op / Machine-Op entry, or maintaining a Machine / Operator / Raw Material
 // master. Someone GRANTED create on ANY one of these does Production work, which
 // is exactly what an "Issued To" dropdown on Issue from Store is asking for.
-//
-// Mirrors QC_ENTRY_FORMS: a per-form grant counts (even with no Production
-// tier), a per-page "No create" switch takes it away, and L1 (view-only) falls
-// out on its own. The tiers are NOT a ladder (L4 Approver has no entry), so this
-// asks the app's real permission, never a "tier >= L2" comparison.
 const PRODUCTION_ENTRY_FORMS: readonly AccessFormKey[] = [
   'jc_create',
   'prodorder_create',
@@ -445,107 +484,55 @@ const PRODUCTION_ENTRY_FORMS: readonly AccessFormKey[] = [
   'rawmat_create',
 ];
 
-/** Was this person GIVEN the right to make a Production entry? Asked through the
- *  app's own permission function (same shape as wasGrantedQcEntry) so the
- *  dropdown can never disagree with what the Production screens let someone do.
- *  Full Access counts — those accounts may make any entry — but is sorted LAST
- *  (see the ordering below) so an admin never reads as Production staff. */
-function wasGrantedProductionEntry(eff: EffectiveAccess): boolean {
-  return PRODUCTION_ENTRY_FORMS.some((f) => effectiveFormPerms(eff, f).entry);
-}
-
-/** Did their PRODUCTION access grant this, as opposed to Full Access covering
- *  everything? Sort key only — separates the Production team and people granted
- *  Production rights from the admins who merely may. */
-function grantedProductionEntryDirectly(eff: EffectiveAccess): boolean {
-  return wasGrantedProductionEntry({ ...eff, fullAccess: false });
-}
-
-/** Their Production tier for display, whatever it is — L1 included. Reported,
- *  not filtered on: someone can qualify through a per-form grant with a low tier
- *  or none. `normalizeDeptsMap` reads the pre-0100 literal `true` as L1. */
-function productionTierLabel(departments: unknown): string | null {
-  return normalizeDeptsMap(asDeptsMap(departments))['production'] ?? null;
-}
-
 // The people Access Control actually lets do Production work — the source list
-// behind the "Issued To" dropdown on Issue from Store. Readable by ANY
-// authenticated user in the company (not admin-only): the store clerk recording
-// an issue is who opens it. Returns names and emails only, never the permission
-// maps — exactly as listQcUserOptions does.
+// behind the "Issued To" dropdown on Issue from Store. Thin wrapper; only the
+// `isProductionDept` field name is ours.
 export async function listProductionUserOptions(
   user: AuthContext,
 ): Promise<ProductionUserOption[]> {
-  const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        id: users.id,
-        fullName: users.fullName,
-        email: users.email,
-        acFullAccess: userAccess.fullAccess,
-        acAuditor: userAccess.auditor,
-        acMainDept: userAccess.mainDept,
-        acDepartments: userAccess.departments,
-        // Needed because the qualifying test is the app's real permission check,
-        // which unions the department tier with per-form grants and then
-        // subtracts the per-page OFF switches.
-        acForms: userAccess.forms,
-      })
-      .from(users)
-      .leftJoin(
-        userAccess,
-        and(
-          eq(userAccess.userId, users.id),
-          eq(userAccess.companyId, companyId),
-          isNull(userAccess.deletedAt),
-        ),
-      )
-      .where(
-        and(eq(users.companyId, companyId), eq(users.isActive, true), isNull(users.deletedAt)),
-      );
-
-    // `_direct` rides along purely as a sort key and is stripped before return,
-    // so the wire shape stays exactly ProductionUserOption.
-    const options: Array<ProductionUserOption & { _direct: boolean }> = rows.flatMap((r) => {
-      const fullAccess = r.acFullAccess ?? false;
-      // Built exactly as getMyAccess builds it, so this asks the same question of
-      // the same shape the Production screens ask of themselves.
-      const eff: EffectiveAccess = {
-        fullAccess,
-        auditor: r.acAuditor ?? false,
-        drawingDownload: false,
-        departments: normalizeDeptsMap(asDeptsMap(r.acDepartments)),
-        forms: cascadeFormsMap(asFormsMap(r.acForms)),
-      };
-      if (!wasGrantedProductionEntry(eff)) return [];
-      const tier = productionTierLabel(r.acDepartments);
-      return [
-        {
-          id: r.id,
-          // A login with no name set would otherwise render as a blank row. Raw
-          // here — the frontend shortens it for display.
-          name: r.fullName?.trim() || r.email,
-          email: r.email,
-          tier,
-          isProductionDept: r.acMainDept === 'production',
-          fullAccess,
-          _direct: grantedProductionEntryDirectly(eff),
-        },
-      ];
-    });
-
-    // Three bands so the list opens on the people whose job this actually is:
-    //   1. the Production team   — Production is their MAIN department
-    //   2. granted Production    — a Production tier or a per-form grant says so
-    //   3. everyone else         — Full Access accounts who merely MAY do it
-    // Within a band, by name.
-    const band = (o: (typeof options)[number]): number =>
-      o.isProductionDept ? 0 : o._direct ? 1 : 2;
-    return options
-      .sort((a, b) => (band(a) === band(b) ? a.name.localeCompare(b.name) : band(a) - band(b)))
-      .map(({ _direct: _drop, ...o }) => o);
+  const rows = await listDeptUserOptions(user, {
+    deptKey: 'production',
+    entryForms: PRODUCTION_ENTRY_FORMS,
   });
+  return rows.map((o) => ({
+    id: o.id,
+    name: o.name,
+    email: o.email,
+    tier: o.tier,
+    isProductionDept: o.isDept,
+    fullAccess: o.fullAccess,
+  }));
+}
+
+// ── Planning user options ──────────────────────────────────────
+// The forms that ARE a Planning entry: making an SO/JWSO Plan, or maintaining
+// the Route Card Master. Those two are the ONLY forms ACCESS_FORMS puts in the
+// `planning` department (`routecard_create` moved there from `design` under
+// ADR-205 — a route card is what turns a plan into a Job Card), so this list is
+// the whole department rather than a chosen subset of it.
+//
+// Someone GRANTED create on either does Planning work, which is what the
+// "Assembled By" dropdown on the Assembly Tracker is asking for — see
+// planning-user.ts in @innovic/shared for why the Assembly Tracker's own gate
+// could not be used instead.
+const PLANNING_ENTRY_FORMS: readonly AccessFormKey[] = ['plan_create', 'routecard_create'];
+
+// The people Access Control actually lets do Planning work — the source list
+// behind "Assembled By" on the Assembly Tracker. Thin wrapper; only the
+// `isPlanningDept` field name is ours.
+export async function listPlanningUserOptions(user: AuthContext): Promise<PlanningUserOption[]> {
+  const rows = await listDeptUserOptions(user, {
+    deptKey: 'planning',
+    entryForms: PLANNING_ENTRY_FORMS,
+  });
+  return rows.map((o) => ({
+    id: o.id,
+    name: o.name,
+    email: o.email,
+    tier: o.tier,
+    isPlanningDept: o.isDept,
+    fullAccess: o.fullAccess,
+  }));
 }
 
 // Admin: full row for one user (used by the Configure modal). Returns a
