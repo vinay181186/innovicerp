@@ -25,8 +25,13 @@
 //   passed in as `buyPrQty`, already 0 on a make line.
 
 export interface SoLinePlanCoverageInput {
-  /** The SO is an Equipment SO with an Equipment BOM on its header. */
+  /** THE equipment line: an Equipment SO with an Equipment BOM on its header,
+   *  and this line's item is that BOM's parent (the machine). Any other line
+   *  on an Equipment SO — a spare part — is an ordinary line. */
   isEquipmentLine: boolean;
+  /** The line's order qty — sets never count above it (a fractional qty per
+   *  set can round the per-part cap up past one more set). */
+  orderQty: number;
   /** Live, non-cancelled plans on the line. */
   plans: ReadonlyArray<{
     planQty: number;
@@ -56,16 +61,25 @@ export function isBomPartPlan(p: {
   return Boolean(p.bomMasterId) && Boolean(p.bomChildCode);
 }
 
-/** Complete sets the part plans make, the weakest part deciding. */
+/** Float slack for floor(): 7 / 0.07 is 99.99999999999999 in JS but exactly
+ *  100 in Postgres numeric — without it the screen and SQL differ by one set. */
+const FLOOR_EPS = 1e-9;
+
+/** Complete sets the part plans make, the weakest part deciding. A part that
+ *  sits on two BOM lines needs both lines' qty per set, so qty per set is
+ *  summed per part code first (the SQL twin groups the same way). */
 export function completeSets(
   bomLines: ReadonlyArray<{ code: string; qtyPerSet: number }>,
   partPlanned: ReadonlyMap<string, number>,
 ): number {
-  const usable = bomLines.filter((b) => b.qtyPerSet > 0);
-  if (usable.length === 0) return 0;
+  const perSet = new Map<string, number>();
+  for (const b of bomLines) {
+    if (b.qtyPerSet > 0) perSet.set(b.code, (perSet.get(b.code) ?? 0) + b.qtyPerSet);
+  }
+  if (perSet.size === 0) return 0;
   let sets = Infinity;
-  for (const b of usable) {
-    sets = Math.min(sets, Math.floor((partPlanned.get(b.code) ?? 0) / b.qtyPerSet));
+  for (const [code, q] of perSet) {
+    sets = Math.min(sets, Math.floor((partPlanned.get(code) ?? 0) / q + FLOOR_EPS));
   }
   return Number.isFinite(sets) ? sets : 0;
 }
@@ -82,6 +96,8 @@ export function soLinePlanCoverage(input: SoLinePlanCoverageInput): SoLinePlanCo
     }
   }
   const ownPlanned = own + input.buyPrQty;
-  const sets = input.isEquipmentLine ? completeSets(input.bomLines, partPlanned) : 0;
+  const sets = input.isEquipmentLine
+    ? Math.min(completeSets(input.bomLines, partPlanned), Math.max(0, input.orderQty))
+    : 0;
   return { ownPlanned, sets, planned: Math.max(ownPlanned, sets) };
 }
