@@ -158,7 +158,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const grnType = grnTypeLabel(detail);
 
   // THE page's own judgement: the receipt account (PO Qty → Received Earlier →
-  // Received → Pending) and the lines table's `PO Qty` column are AGAINST-PO
+  // Received → To Receive) and the lines table's `PO Qty` column are AGAINST-PO
   // ONLY. `grnTypeLabel` is the one place the three sources are told apart —
   // the same NC → DC → PO order the Open NC / Open DC / Open PO buttons below
   // use — so the test is read off it rather than spelt out a second time.

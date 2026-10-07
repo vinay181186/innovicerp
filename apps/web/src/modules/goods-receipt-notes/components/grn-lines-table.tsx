@@ -6,7 +6,7 @@
 // screens render it, with the same columns in the same order (rule 8).
 //
 // Visible: Ln · POL · Item Code · Item Name · UOM · PO Qty · Received Earlier ·
-// Received★ · Pending · QC Status · ▸ · ✕. The per-line paperwork and the
+// Received★ · To Receive · QC Status · ▸ · ✕. The per-line paperwork and the
 // read-only quality facts sit behind `▸ More` (<GrnLineMore>), so the row never
 // grows. Arithmetic and the row shape come from `grn-receipt-figures.ts`, the
 // one leaf this file, the header's account and the view all read, so no two
@@ -15,7 +15,7 @@
 // Two props vary the row by screen, and ONLY by screen.
 //
 // `showAccount` turns on the three account columns (PO Qty / Sent Qty ·
-// Received Earlier · Pending). It is on wherever the screen HAS the ordered
+// Received Earlier · To Receive). It is on wherever the screen HAS the ordered
 // figure this receipt was typed against, and off where it does not:
 //
 //   create, every type   ON. The figure is on the rows the form has just built
@@ -67,7 +67,7 @@ export interface GrnLinesTableProps {
    *  `showAccount` is on. */
   qtyLabel?: string;
   /** Show the three account columns — the ordered qty, Received Earlier and
-   *  Pending. See the per-screen table at the top of this file. */
+   *  To Receive. See the per-screen table at the top of this file. */
   showAccount?: boolean;
   emptyText: string;
   onReceiveNow: (idx: number, value: string) => void;
@@ -113,7 +113,7 @@ export function GrnLinesTable({
     });
 
   // Ln · POL · Item Code · Item Name · UOM [· PO Qty · Received Earlier] ·
-  // Received [· Pending] · QC Status · ▸  (+ ✕ where a line can be removed).
+  // Received [· To Receive] · QC Status · ▸  (+ ✕ where a line can be removed).
   // The three bracketed columns are `showAccount`'s.
   const colCount = (showAccount ? 11 : 8) + (onRemove ? 1 : 0);
   // `received` is the COLUMN total, over every row — always knowable, so the
@@ -146,7 +146,12 @@ export function GrnLinesTable({
             <th className="th-num">
               Received<span className="req">★</span>
             </th>
-            {showAccount ? <th className="th-num">Pending</th> : null}
+            {/* `To Receive`, not `Pending`. This column is what the line still
+                has to ARRIVE: PO Qty − Received Earlier − Received. The PO
+                screens' `Pending` is a different fact — PO Qty − Accepted (QC
+                passed) — so a line can be 3 short on the PO and have nothing
+                left to receive here. One fact, one name (NAMING.md). */}
+            {showAccount ? <th className="th-num">To Receive</th> : null}
             <th>QC Status</th>
             <th aria-label="More" />
             {onRemove ? <th aria-label="Remove" /> : null}
@@ -378,7 +383,7 @@ export function GrnReceiptAccount({
       <ClusterFact label={qtyLabel} num value={fmtQty(account.poQty)} />
       <ClusterFact label="Received Earlier" num value={fmtQty(account.earlier)} />
       <ClusterFact label="Received" num value={fmtQty(account.received)} />
-      <ClusterFact label="Pending" num lead value={fmtQty(account.pending)} />
+      <ClusterFact label="To Receive" num lead value={fmtQty(account.pending)} />
     </Cluster>
   );
 }

@@ -1,6 +1,6 @@
 // GRN "Against PO" — the create form behind the 📦 Against PO tab of
 // <UnifiedGrnForm>. The purchase order is the single source: pick one and its
-// vendor and every line with a Pending qty still to receive are loaded from it;
+// vendor and every line with a qty still To Receive are loaded from it;
 // change or clear the PO and everything below it is thrown away and reloaded.
 // No free-text PO ref, no vendor fallback, no manual item entry, no QC fields
 // — QC happens later at Incoming QC. No GRN No. box either: the server

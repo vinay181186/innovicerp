@@ -4,6 +4,8 @@
 // how late it is. Modelled on ERPNext's "Purchase Order Analysis" report.
 
 import { sql } from 'drizzle-orm';
+import { poLineAcceptedRaw } from '../../../lib/po-accepted';
+import { poLinePendingRaw } from '../../../lib/po-pending';
 import type { RegisteredReport } from '../registry';
 import {
   dateCell as dateOrNull,
@@ -21,7 +23,7 @@ export const poLineAnalysisReport: RegisteredReport = {
     slug: 'po-line-analysis',
     title: 'PO line analysis',
     description:
-      'Every PO line with Qty, Received, Incoming QC Accepted / Deviated, Pending, Pending Value and Days Late. Draft and cancelled POs are left out unless picked in PO Status. A short-closed or closed PO has nothing Pending.',
+      'Every PO line with Qty, Received, Accepted / Deviated, Pending, Pending Value and Days Late. Accepted is what QC passed plus pieces a deviation recovered without a replacement, and Pending is Qty less Accepted. Draft and cancelled POs are left out unless picked in PO Status. A short-closed or closed PO has nothing Pending.',
     group: 'Purchase',
     dept: 'purchase',
     showsMoney: true,
@@ -97,13 +99,18 @@ export const poLineAnalysisReport: RegisteredReport = {
           COALESCE(it.name, pol.item_name)                 AS item_name,
           pol.qty                                          AS qty,
           pol.received_qty                                 AS received_qty,
-          COALESCE(g.accepted, 0)::numeric                 AS qc_accepted_qty,
+          -- Accepted and Pending come from the ONE definition every other
+          -- screen reads (lib/po-accepted.ts, lib/po-pending.ts): Accepted is
+          -- the QC-passed qty PLUS pieces a non-return deviation recovered
+          -- (use-as-is / rework), capped at the line qty, and Pending is
+          -- qty - Accepted. Reading Pending off received_qty made this report
+          -- disagree with the PO list, the PO detail and Store "On PO" for the
+          -- same line. ADR-189: a closed / cancelled / short-closed PO owes
+          -- nothing more — a short close sets status = 'closed', which is what
+          -- the shared Pending expression tests.
+          ${sql.raw(poLineAcceptedRaw('pol.id'))}::numeric  AS qc_accepted_qty,
           COALESCE(g.rejected, 0)::numeric                 AS qc_rejected_qty,
-          -- ADR-189: a closed / cancelled / short-closed PO owes nothing more.
-          CASE
-            WHEN po.short_closed_at IS NOT NULL OR po.status IN ('closed', 'cancelled') THEN 0
-            ELSE GREATEST(0, pol.qty - pol.received_qty)
-          END::numeric                                     AS pending_qty,
+          ${sql.raw(poLinePendingRaw('pol', 'po'))}::numeric AS pending_qty,
           pol.rate::numeric                                AS rate,
           COALESCE(pol.due_date, po.due_date)              AS due_date,
           g.last_grn_date                                  AS last_grn_date
@@ -113,8 +120,7 @@ export const poLineAnalysisReport: RegisteredReport = {
         LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
         LEFT JOIN public.items it ON it.id = pol.item_id AND it.deleted_at IS NULL
         LEFT JOIN LATERAL (
-          SELECT SUM(grl.qc_accepted_qty) AS accepted,
-                 SUM(grl.qc_rejected_qty) AS rejected,
+          SELECT SUM(grl.qc_rejected_qty) AS rejected,
                  MAX(grn.grn_date)        AS last_grn_date
           FROM public.goods_receipt_note_lines grl
           JOIN public.goods_receipt_notes grn

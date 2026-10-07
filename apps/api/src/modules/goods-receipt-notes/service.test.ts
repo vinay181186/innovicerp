@@ -393,8 +393,13 @@ describe('goods-receipt-notes service', () => {
       .from(storeTransactions)
       .where(like(storeTransactions.sourceRef, `${grnCode}%`));
     expect(txn).toHaveLength(0);
-    // PO still flips to closed (rejection counts as QC complete from header POV).
-    expect(await readPoStatus(po.id)).toBe('closed');
+    // ADR-221 — Pending is measured on ACCEPTED, so rejecting everything must NOT
+    // close the order: nothing the vendor delivered was usable, so the vendor still
+    // owes the full qty. QC is complete, but accepted (0) < qty (3), so the header
+    // sits at 'partial' until the pieces are replaced, recovered, or the buyer
+    // settles the shortfall with Close Short. This assertion read 'closed' before
+    // ADR-221 and that was the behaviour the change deliberately removes.
+    expect(await readPoStatus(po.id)).toBe('partial');
   });
 
   // ─── ADR-092: mid-route OSP returns are WIP, not finished goods ──────────

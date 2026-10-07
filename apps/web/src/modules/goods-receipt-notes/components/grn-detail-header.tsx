@@ -10,7 +10,7 @@
 //   1 Against       which paper am I receiving against
 //   2 Vendor        who delivered it
 //   3 Vendor paper  their numbers
-//   4 This receipt  how much it settles — the account, ending on `Pending`
+//   4 This receipt  how much it settles — the account, ending on `To Receive`
 //
 // Create GRN and Edit GRN fill the same clusters in the same order, so a clerk
 // who has learned one GRN screen has learned all three. What this replaced was
@@ -180,9 +180,12 @@ export function ReceiptGrid(props: {
 
       {/* 4 — how much this receipt settles. An account: it reads left to right
           and ends on the result, which carries the green rule. The result is
-          `Pending` — the registered name for "qty still owed" and the word the
-          GRN create screen already uses. (`Balance` was the mockup's word and
-          is banned: NAMING.md, owner decision 2026-10-06.)
+          `To Receive` — what these PO lines still have to ARRIVE, the same
+          word the GRN create screen uses. It was `Pending` until the PO screens
+          re-based their own `Pending` onto QC-accepted qty (PO Qty − Accepted):
+          two different facts cannot share one name, so the receivable one took
+          its own. (`Balance` stays banned: NAMING.md, owner decision
+          2026-10-06.)
 
           The row is DROPPED, not dashed, when the route hands down no account —
           on an Against JW PO / DC or Against NC receipt the figure the clerk
@@ -204,7 +207,7 @@ export function ReceiptGrid(props: {
           <ClusterFact
             num
             lead
-            label="Pending"
+            label="To Receive"
             title="PO Qty − Received Earlier − Received"
             value={fmtQty(account.pending)}
           />

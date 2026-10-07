@@ -119,7 +119,7 @@ function headerDefaults(): FormValues['header'] {
 /** A hand-added line. `+ Add Line` is how a storekeeper books a delivery the PO
  *  did not have a line for — the item is typed into the row's own picker and
  *  the server resolves (or refuses) the code. It carries no PO line, so it has
- *  no PO Qty, no Received Earlier and no Pending of its own. */
+ *  no PO Qty, no Received Earlier and no To Receive of its own. */
 function newLine(): LineFormValue {
   return {
     itemCodeText: '',
@@ -265,7 +265,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   // showing it under either label would contradict the lines. On a
   // replacement (NC) GRN it is also wrong arithmetic: the API leaves this
   // GRN's own receipt out of the PO line's received column until QC clears
-  // it, so Pending would understate by exactly that line's Received.
+  // it, so To Receive would understate by exactly that line's Received.
   const isPo = !isNc && !isDc;
   // EDIT is where a mis-keyed receipt gets corrected, so the item cells and
   // `+ Add Line` come back here — but only on an Against PO GRN. A DC / NC

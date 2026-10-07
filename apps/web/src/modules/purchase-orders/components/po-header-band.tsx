@@ -97,12 +97,15 @@ export function PoHeaderBand({
   vendor,
   totalQty,
   receivedQty,
+  qcAcceptedQty,
   pendingChanges = [],
 }: {
   detail: PurchaseOrderDetail;
   vendor: Vendor | null | undefined;
   totalQty: number;
   receivedQty: number;
+  /** Σ of the lines' QC-passed qty — Pending is measured off this. */
+  qcAcceptedQty: number;
   /** ADR-202 — staged header changes awaiting approval, for the inline chips. */
   pendingChanges?: readonly DocumentEditChange[];
 }): React.JSX.Element {
@@ -243,6 +246,16 @@ export function PoHeaderBand({
             value={
               <span className="mono" style={{ color: 'var(--green2)' }}>
                 {receivedQty}
+              </span>
+            }
+            align="right"
+          />
+          {/* Accepted = the pieces that passed QC. Pending reads off this. */}
+          <Row
+            label="Accepted"
+            value={
+              <span className="mono" style={{ color: 'var(--green2)' }}>
+                {qcAcceptedQty}
               </span>
             }
             align="right"

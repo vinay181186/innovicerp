@@ -74,7 +74,7 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
       align: 'right',
       headColor: 'var(--red2)',
       className: 'mono fw-700',
-      render: (v) => <span style={{ color: 'var(--red2)' }}>{v.totalQty - v.receivedQty}</span>,
+      render: (v) => <span style={{ color: 'var(--red2)' }}>{v.pendingQty}</span>,
     },
   ];
   if (!priceHidden) {
@@ -167,7 +167,7 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
       align: 'right',
       headColor: 'var(--red2)',
       className: 'mono fw-700',
-      render: (s) => <span style={{ color: 'var(--red2)' }}>{s.totalQty - s.receivedQty}</span>,
+      render: (s) => <span style={{ color: 'var(--red2)' }}>{s.pendingQty}</span>,
     },
   ];
   if (!priceHidden) {
