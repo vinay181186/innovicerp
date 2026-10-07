@@ -61,6 +61,9 @@ type GroupRow = {
   lines: number;
   total_qty: Num;
   received_qty: Num;
+  /** ADR-221 — Qty − Accepted, from the same expression as pending_val, so the
+   *  two columns on one row can never disagree. */
+  pending_qty: Num;
   total_val: Num;
   pending_val: Num;
 };
@@ -236,6 +239,8 @@ export async function listScPoSummary(
     lines: number;
     total_qty: Num;
     received_qty: Num;
+    /** ADR-221 — see GroupRow.pending_qty. */
+    pending_qty: Num;
     total_val: Num;
     tax_amount: Num;
     grand_total: Num;
