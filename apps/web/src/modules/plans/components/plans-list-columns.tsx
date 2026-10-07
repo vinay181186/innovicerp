@@ -22,6 +22,7 @@ import { ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
+import { newProductionOrderTo, newRouteCardTo, withQuery } from '../lib/plan-next-step';
 
 type PlanRow = ListPlansResponse['items'][number];
 
@@ -284,14 +285,6 @@ export function PlanExpanded({ row }: { row: PlanRow }): React.JSX.Element {
   );
 }
 
-/** `path?a=1&b=2`, leaving out the empty values. */
-function withQuery(path: string, params: Record<string, string | null | undefined>): string {
-  const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
-  const qs = q.toString();
-  return qs ? `${path}?${qs}` : path;
-}
-
 /** The ⋯ menu's link renderer: the Create … steps carry a query string
  *  (`/production-orders/new?planId=…`), and the router's <Link> wants it as
  *  `search`, so it is split off here. */
@@ -312,9 +305,7 @@ export function planRowMenu(
   row: PlanRow,
   opts: { canCreateRouteCard: boolean; canProductionOrder: boolean },
 ): RowMenuItem[] {
-  const itemLabel = (row.itemCode ?? row.itemCodeText) as string | null;
-  const itemName = row.itemName ?? row.itemNameText;
-  const newPoTo = withQuery('/production-orders/new', { planId: row.id, planCode: row.code });
+  const newPoTo = newProductionOrderTo(row);
   if (row.derivedStatus === 'route_card_pending') {
     return [
       {
@@ -323,7 +314,7 @@ export function planRowMenu(
         icon: 'plus',
         group: 'workflow',
         hidden: !opts.canCreateRouteCard,
-        to: withQuery('/route-cards/new', { itemId: row.itemId, itemCode: itemLabel, itemName }),
+        to: newRouteCardTo(row),
       },
     ];
   }
