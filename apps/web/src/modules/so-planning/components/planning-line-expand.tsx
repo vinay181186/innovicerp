@@ -10,10 +10,13 @@
 //   - the "In Production (no plan)" block — Job Cards raised straight from SO
 //     Status, shown so planners see production that bypassed planning and do
 //     not double-issue.
-// Every ACTION is in the row's ⋯ menu (planning-line-menu.ts), never here.
+// Every ACTION is in a ⋯ menu (planning-line-menu.ts), never a button here:
+// the line's own ⋯, and each item row's ⋯ (planChildMenu) for its plan.
 
 import type { PlanningLine, PlanningPlanSummary } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
+import { RowMenu, type RowMenuItem } from '@/ui/data';
+import type { RenderLink } from '@/ui/layout';
 import { PrChip, planStatusOf } from './plan-chip';
 import { lineStatusOf } from './planning-shared';
 
@@ -84,7 +87,19 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-export function PlanningLineExpand({ line }: { line: PlanningLine }): JSX.Element {
+export interface PlanningLineExpandProps {
+  line: PlanningLine;
+  /** The ⋯ of one item row — `planChildMenu` (planning-line-menu.ts). A part
+   *  with no plan yet passes `null`. Omitted → no ⋯ column. */
+  rowMenu?: ((plan: PlanningPlanSummary | null) => RowMenuItem[]) | undefined;
+  renderLink?: RenderLink | undefined;
+}
+
+export function PlanningLineExpand({
+  line,
+  rowMenu,
+  renderLink,
+}: PlanningLineExpandProps): JSX.Element {
   const status = lineStatusOf(line);
   const itemRows = buildItemRows(line);
   const hasParts = line.bomChildren.length > 0;
@@ -164,6 +179,7 @@ export function PlanningLineExpand({ line }: { line: PlanningLine }): JSX.Elemen
                 <th>Planned End</th>
                 <th>Plan Status</th>
                 <th>Linked</th>
+                {rowMenu ? <th style={{ width: 40 }} aria-label="Actions" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -219,6 +235,15 @@ export function PlanningLineExpand({ line }: { line: PlanningLine }): JSX.Elemen
                         </td>
                       </>
                     )}
+                    {rowMenu ? (
+                      <td style={{ textAlign: 'center' }}>
+                        <RowMenu
+                          items={rowMenu(plan)}
+                          renderLink={renderLink}
+                          label={`Actions for ${plan?.code ?? code}`}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}

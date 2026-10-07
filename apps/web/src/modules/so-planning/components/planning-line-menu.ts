@@ -17,6 +17,7 @@
 
 import type { PlanningDetailResponse, PlanningLine, PlanningPlanSummary } from '@innovic/shared';
 import type { RowMenuItem } from '@/ui/data';
+import { newProductionOrderTo, newRouteCardTo } from '@/modules/plans/lib/plan-next-step';
 import { allocateCap, lineFacts } from './reservation-modals';
 import type { ModalState } from './planning-shared';
 
@@ -26,6 +27,8 @@ export interface PlanningLineMenuArgs {
   perms: { view: boolean; entry: boolean; edit: boolean };
   /** prodorder_create entry — may this user raise a Production Order? */
   canProductionOrder: boolean;
+  /** routecard_create entry — may this user create a Route Card? */
+  canCreateRouteCard: boolean;
   setModal: (m: ModalState) => void;
   /**
    * Run the plan (create its Job Card / raise its PR). MUST return the
@@ -37,11 +40,17 @@ export interface PlanningLineMenuArgs {
   onExecutePlan: (plan: PlanningPlanSummary) => Promise<void>;
 }
 
-/** The per-plan entries appended after the line's own six. */
+/**
+ * The per-plan entries. On the line's ⋯ they follow the line's own six and
+ * carry the plan code in each label (a line can hold several plans); on a BOM
+ * child row's own ⋯ the row already names the plan, so `prefix` is false.
+ */
 function planItems(
   plan: PlanningPlanSummary,
-  { perms, canProductionOrder, setModal, onExecutePlan }: PlanningLineMenuArgs,
+  { perms, canProductionOrder, canCreateRouteCard, setModal, onExecutePlan }: PlanningLineMenuArgs,
+  prefix: boolean,
 ): RowMenuItem[] {
+  const p = prefix ? `${plan.code} · ` : '';
   const isRouteCard = plan.opsSource === 'route_card';
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
@@ -74,20 +83,31 @@ function planItems(
       to: `/production-orders/${plan.productionOrderId ?? ''}`,
     },
     {
+      // ADR-185 'route_card_pending': the item has no Route Card yet. A card
+      // belongs to the ITEM (one per item, server-enforced), so the link
+      // carries the item, as the Plans list ⋯ does.
+      key: `new-rc-${plan.id}`,
+      label: `${p}Create Route Card`,
+      icon: 'plus',
+      group: 'workflow',
+      hidden: !(isRouteCard && plan.derivedStatus === 'route_card_pending' && canCreateRouteCard),
+      to: newRouteCardTo(plan),
+    },
+    {
       // ADR-185 derived status 'gen_production_order' = "RC Created": the next
       // step for a route-card plan.
       key: `new-po-${plan.id}`,
-      label: `${plan.code} · + Production Order`,
+      label: `${p}Create Production Order`,
       icon: 'plus',
       group: 'workflow',
       hidden: !(isRouteCard && plan.derivedStatus === 'gen_production_order' && canProductionOrder),
-      to: `/production-orders/new?planId=${encodeURIComponent(plan.id)}&planCode=${encodeURIComponent(plan.code)}`,
+      to: newProductionOrderTo(plan),
     },
     {
       // Old-flow plan: let the work out. A buy / full-outsource plan raises a
       // purchase request, everything else creates the Job Card.
       key: `execute-${plan.id}`,
-      label: `${plan.code} · ${isDP || isFO ? 'Raise PR' : 'Create JC'}`,
+      label: `${p}${isDP || isFO ? 'Raise PR' : 'Create JC'}`,
       icon: 'play',
       group: 'workflow',
       hidden: !(!isRouteCard && plan.planStatus === 'planned' && perms.edit),
@@ -95,7 +115,7 @@ function planItems(
     },
     {
       key: `edit-${plan.id}`,
-      label: `${plan.code} · Edit plan`,
+      label: `${p}Edit plan`,
       icon: 'pencil',
       group: 'workflow',
       hidden: !(
@@ -150,7 +170,7 @@ export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
     },
     {
       key: 'equip-bom',
-      label: `Equipment BOM (${line.bomPartsCount})`,
+      label: `Plan Equipment BOM (${line.bomPartsCount})`,
       icon: 'package',
       group: 'workflow',
       hidden: !perms.entry || !line.hasEquipmentBom,
@@ -176,5 +196,51 @@ export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
       onSelect: () => setModal({ kind: 'release', soLineId: line.soLineId }),
     },
   ];
-  return [...lineOwn, ...line.plans.flatMap((p) => planItems(p, args))];
+  // A plan for a BOM part has its own ⋯ on its child row (planning-line-
+  // expand), so it is not repeated here — one place per action.
+  const linePlans = line.plans.filter((p) => !p.bomChildCode);
+  return [...lineOwn, ...linePlans.flatMap((p) => planItems(p, args, true))];
+}
+
+/**
+ * The ⋯ of one row in the line's child-item table: Open the plan, then the
+ * step its status allows (Create Route Card → Create Production Order, or for
+ * an old-flow plan Create JC / Edit plan), plus Open JC / Open Production
+ * Order. A part with NO plan yet offers the window that plans the parts.
+ * Only actions whose data this screen loads are offered (CLAUDE.md §20.5):
+ * Create/Close Production Order on an In-production plan need Pending qty and
+ * Job Card status, which the Planning screen does not load — they stay on
+ * the Plans list.
+ */
+export function planChildMenu(
+  plan: PlanningPlanSummary | null,
+  args: PlanningLineMenuArgs,
+): RowMenuItem[] {
+  const { line, perms, setModal } = args;
+  if (plan === null) {
+    return [
+      {
+        key: 'plan-parts',
+        label: line.hasEquipmentBom ? 'Plan Equipment BOM' : 'BOM Planning',
+        icon: 'package',
+        group: 'workflow',
+        hidden: !perms.entry || !(line.hasEquipmentBom || line.hasAssemblyBom),
+        onSelect: () =>
+          setModal({
+            kind: line.hasEquipmentBom ? 'equip-bom' : 'assembly-bom',
+            soLineId: line.soLineId,
+          }),
+      },
+    ];
+  }
+  return [
+    {
+      key: `open-plan-${plan.id}`,
+      label: `Open ${plan.code}`,
+      icon: 'eye',
+      group: 'main',
+      to: `/plans/${plan.id}`,
+    },
+    ...planItems(plan, args, false),
+  ];
 }

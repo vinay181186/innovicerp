@@ -26,7 +26,7 @@ import { usePlanningSoDetail } from '../api';
 import { OrderDetailModals, type SavedPlanNote, type StockNote } from './order-detail-modals';
 import { planningLineColumns } from './planning-line-columns';
 import { PlanningLineExpand } from './planning-line-expand';
-import { planningLineMenu } from './planning-line-menu';
+import { planChildMenu, planningLineMenu } from './planning-line-menu';
 import { JwChip, type ModalState } from './planning-shared';
 
 function HeaderField({
@@ -80,6 +80,7 @@ export function OrderDetail({
   const [savedPlan, setSavedPlan] = useState<SavedPlanNote | null>(null);
   const { data: eff } = useMyAccess();
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
+  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
 
   const backBtn = (
     <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
@@ -326,7 +327,23 @@ export function OrderDetail({
           // The plan code must stay on screen however narrow the sheet is.
           defaultPinned={['plans']}
           renderExpanded={(l) =>
-            expanded.has(l.soLineId) ? <PlanningLineExpand line={l} /> : null
+            expanded.has(l.soLineId) ? (
+              <PlanningLineExpand
+                line={l}
+                renderLink={renderRowMenuLink}
+                rowMenu={(plan) =>
+                  planChildMenu(plan, {
+                    so,
+                    line: l,
+                    perms,
+                    canProductionOrder,
+                    canCreateRouteCard,
+                    setModal,
+                    onExecutePlan: runExecutePlan,
+                  })
+                }
+              />
+            ) : null
           }
           onToggleExpanded={(l) => toggleExpanded(l.soLineId)}
           renderLink={renderRowMenuLink}
@@ -337,6 +354,7 @@ export function OrderDetail({
               line,
               perms,
               canProductionOrder,
+              canCreateRouteCard,
               setModal,
               onExecutePlan: runExecutePlan,
             })
