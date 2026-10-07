@@ -343,7 +343,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </Panel>
       ) : null}
 
-      {/* ADR-221 — the BOM's child item parts (equipment SO only). */}
+      {/* ADR-222 — the BOM's child item parts (equipment SO only). */}
       <SoBomPartsPanel so={detail} />
 
       {/* Every SO line through Plan → Production Order → Job Card → OSP docs (req. 3.5, read-only). */}

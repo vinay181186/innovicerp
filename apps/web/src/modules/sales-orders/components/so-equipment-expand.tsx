@@ -107,7 +107,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
 }
 
 /** The exploded BOM parts table — shared by the SO list ▸ expand and the SO detail
- *  panel (ADR-221). Markup moved here unchanged from EquipmentBomItems. */
+ *  panel (ADR-222). Markup moved here unchanged from EquipmentBomItems. */
 function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Element {
   // tbl-ctr — the table-alignment standard: data centred, headers untouched.
   return (
@@ -180,10 +180,10 @@ function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Eleme
   );
 }
 
-/** ADR-221 — the BOM's child item parts on the SO DETAIL page. Own loading and
+/** ADR-222 — the BOM's child item parts on the SO DETAIL page. Own loading and
  *  error state (§20.5): it calls the heavier /so-status endpoint, not the page's own. */
 export function SoBomPartsPanel({ so }: { so: SalesOrderDetail }): React.JSX.Element | null {
-  // ADR-221 — only an equipment SO has a BOM, and /so-status is a heavy
+  // ADR-222 — only an equipment SO has a BOM, and /so-status is a heavy
   // aggregation, so a non-equipment SO must not fire it at all (the hook is
   // still CALLED, per the hooks rule — `enabled` is what stops the request).
   // `live: false`: a parts list is static, so fetch once instead of polling

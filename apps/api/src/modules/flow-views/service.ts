@@ -797,9 +797,9 @@ export async function getLevelMatrix(
       planIds.length > 0
         ? await rows(
             tx,
-            // ADR-221: item from the order ITSELF (stored text, live item as the name fallback).
+            // ADR-222: item from the order ITSELF (stored text, live item as the name fallback).
             sql`SELECT po.id, po.code, po.plan_id, po.status, po.order_qty, po.credited_qty, po.lost_qty,
-                  -- ADR-221 — NULLIF as well as COALESCE: the fallback must fire on an
+                  -- ADR-222 — NULLIF as well as COALESCE: the fallback must fire on an
                   -- EMPTY STRING too, not only on NULL. On TEST the one blank name
                   -- (IN-PRO-00023) is NULL so plain COALESCE happens to work today, but
                   -- an '' would sail through and the screen renders a BLANK cell rather

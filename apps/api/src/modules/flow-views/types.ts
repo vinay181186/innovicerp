@@ -200,7 +200,7 @@ export interface LevelJcOp {
 export interface LevelJobCard {
   id: string;
   code: string;
-  /** ADR-221: the item of THIS card (never the SO line's — a BOM line's cards are for its children). */
+  /** ADR-222: the item of THIS card (never the SO line's — a BOM line's cards are for its children). */
   itemCode: string | null;
   itemName: string | null;
   orderQty: number;
@@ -213,7 +213,7 @@ export interface LevelJobCard {
 export interface LevelProductionOrder {
   id: string;
   code: string;
-  /** ADR-221: the item of THIS order (never the SO line's — a BOM line's orders are for its children). */
+  /** ADR-222: the item of THIS order (never the SO line's — a BOM line's orders are for its children). */
   itemCode: string | null;
   itemName: string | null;
   planId: string;

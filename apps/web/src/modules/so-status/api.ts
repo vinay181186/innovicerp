@@ -7,7 +7,7 @@ export const soStatusKeys = {
   detail: (soId: string) => [...soStatusKeys.all, soId] as const,
 };
 
-/** ADR-221 — `opts` is optional and both knobs DEFAULT TO TODAY'S BEHAVIOUR, so
+/** ADR-222 — `opts` is optional and both knobs DEFAULT TO TODAY'S BEHAVIOUR, so
  *  every existing caller is unchanged.
  *  `enabled: false` — do not call at all. This endpoint is a heavy aggregation
  *  (lines, plans, job cards, stock, timelines), so a screen that will not show

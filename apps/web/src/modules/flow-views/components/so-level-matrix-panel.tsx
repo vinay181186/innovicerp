@@ -130,7 +130,7 @@ function orderColumns(planCode: Map<string, string>): DataTableColumn<LevelProdu
         </Link>
       ),
     },
-    // ADR-221: item read from the order itself, not the SO line.
+    // ADR-222: item read from the order itself, not the SO line.
     {
       header: 'Item Code',
       nowrap: true,
@@ -196,7 +196,7 @@ function jobCardColumns(orderCode: Map<string, string>): DataTableColumn<LevelJo
         </Link>
       ),
     },
-    // ADR-221: item read from the card itself, not the SO line.
+    // ADR-222: item read from the card itself, not the SO line.
     {
       header: 'Item Code',
       nowrap: true,
