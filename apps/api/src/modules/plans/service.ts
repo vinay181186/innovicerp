@@ -81,7 +81,11 @@ import {
 } from '../../lib/stock-reservation';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
-import { soLineCoveredRaw } from '../../lib/so-line-coverage';
+import {
+  soLineCoveredRaw,
+  soLineIsEquipmentLineRaw,
+  soLineOwnCoveredRaw,
+} from '../../lib/so-line-coverage';
 import {
   PLAN_ACTIVE_ORDER_COUNT_SQL,
   PLAN_COVERED_QTY_SQL,
@@ -723,6 +727,23 @@ async function assertPlanQtyWithinRemaining(
   const { soLineId, jwLineId, planQty, excludePlanId, bomMasterId, bomChildCode } = opts;
   if (!soLineId && !jwLineId) return;
 
+  // ADR-185 / ADR-221 (§20.3) — lock the SO line FIRST, before either branch,
+  // so EVERY plan writer on the line (own plan, BOM part plan, Raise PR from
+  // Planning, the SO qty edit) queues on the same row lock. A part plan used
+  // to take its cap without it, so a part plan and a line-qty cut could both
+  // pass. The lock is its OWN statement on purpose: under READ COMMITTED a
+  // statement that waits on a row lock re-checks only that row, not its
+  // sub-queries, so a covered sum taken in the same statement could miss the
+  // plan / PR the lock holder just committed. The next SELECT takes a fresh
+  // snapshot and sees it (same as raisePlanningPr in so-planning).
+  if (soLineId) {
+    await tx.execute(sql`
+      SELECT 1 FROM public.sales_order_lines sol
+      WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
+      FOR UPDATE OF sol
+    `);
+  }
+
   // ADR-107 — a BOM child plan is counted in CHILD PARTS; the parent line's
   // order qty is counted in ASSEMBLIES. Measuring one against the other broke
   // BOM planning two ways: a child at 2-per-set on a 3-unit order asked for 6
@@ -741,24 +762,20 @@ async function assertPlanQtyWithinRemaining(
   }
 
   if (soLineId) {
-    // ADR-185 — lock the SO line (the SO edit guards lock it too, so a qty cut
-    // and a new plan cannot both pass), refuse a draft / cancelled order, and
-    // measure against the ONE "to plan" rule (lib/so-line-coverage.ts: plans +
-    // a Buy line's PRs + direct cards) — the figure Needs Planning shows.
-    // The lock is its OWN statement on purpose: under READ COMMITTED a
-    // statement that waits on a row lock re-checks only that row, not its
-    // sub-queries, so a covered sum taken in the same statement could miss
-    // the plan / PR the lock holder just committed. The next SELECT takes a
-    // fresh snapshot and sees it (same as raisePlanningPr in so-planning).
-    await tx.execute(sql`
-      SELECT 1 FROM public.sales_order_lines sol
-      WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
-      FOR UPDATE OF sol
-    `);
+    // ADR-185 — the SO line is already locked above. Refuse a draft /
+    // cancelled order, and measure against the "to plan" rule
+    // (lib/so-line-coverage.ts) — ADR-221: its OWN-covered form (own plans +
+    // a Buy line's PRs + direct cards, BOM part plans excluded). Part plans
+    // have their own per-part cap (ADR-107); counting them here refused an
+    // assembly line's Final Assembly plan once its parts were planned
+    // ("Pending to Plan (0)").
     const r = (await tx.execute(sql`
       SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
              sol.line_no AS "lineNo", sol.short_closed_at IS NOT NULL AS "shortClosed",
-             ${sql.raw(soLineCoveredRaw('sol'))} AS "covered",
+             ${sql.raw(soLineIsEquipmentLineRaw('sol'))} AS "isEquipmentLine",
+             COALESCE((SELECT i_l.code FROM public.items i_l WHERE i_l.id = sol.item_id),
+                      sol.item_code_text) AS "itemCode",
+             ${sql.raw(soLineOwnCoveredRaw('sol'))} AS "covered",
              COALESCE((SELECT p_x.plan_qty FROM public.plans p_x
                        WHERE p_x.id = ${excludePlanId ?? null}::uuid
                          AND p_x.so_line_id = sol.id AND p_x.deleted_at IS NULL
@@ -773,6 +790,8 @@ async function assertPlanQtyWithinRemaining(
       soCode: string;
       lineNo: number;
       shortClosed: boolean;
+      isEquipmentLine: boolean;
+      itemCode: string | null;
       covered: number;
       own: number;
     }>;
@@ -780,10 +799,22 @@ async function assertPlanQtyWithinRemaining(
     // No row = the SO line was deleted (possibly while this request waited on
     // the lock) — never wave a plan through against a line that is gone.
     if (!line) throw new NotFoundError('Sales Order line not found. Refresh the page.');
+    // ADR-221 (a) — THE equipment line (Equipment SO, live header BOM, and
+    // this line's item is that BOM's parent — the machine) is never planned
+    // itself; only its parts are, from Plan Equipment BOM. A spare-part line
+    // on the same SO is ordinary and planned as usual. Refused on
+    // create and on an edit that raises the qty. A CUT of a legacy own plan
+    // is still let through below, so a planner can wind it down.
+    const isCut = Number(line.own) > 0 && planQty <= Number(line.own);
+    if (line.isEquipmentLine && !isCut) {
+      throw new ValidationError(
+        `${line.itemCode ?? 'This item'} is an equipment item — plan its parts from Planning → Plan Equipment BOM.`,
+      );
+    }
     // A cut (or an unchanged re-save) of an existing plan only ever reduces
     // what the line is covered by — always allowed, even on an over-covered
     // line or a cancelled order, so a planner can fix an over-plan.
-    if (Number(line.own) > 0 && planQty <= Number(line.own)) return;
+    if (isCut) return;
     assertSoAcceptsWork(line.soStatus, line.soCode, 'it cannot be planned');
     // ADR-196 — a line closed short wants nothing more planned.
     if (line.shortClosed) {
@@ -1318,8 +1349,7 @@ export async function updatePlanTx(
     updates['rawMaterialGradeId'] = input.rawMaterialGradeId;
   if (input.rawMaterialGradeText !== undefined)
     updates['rawMaterialGradeText'] = input.rawMaterialGradeText;
-  if (input.rawMaterialSizeId !== undefined)
-    updates['rawMaterialSizeId'] = input.rawMaterialSizeId;
+  if (input.rawMaterialSizeId !== undefined) updates['rawMaterialSizeId'] = input.rawMaterialSizeId;
   if (input.rawMaterialSizeText !== undefined)
     updates['rawMaterialSizeText'] = input.rawMaterialSizeText;
   // ADR-193 phase 3a — RM item + qty per piece. Same "only when sent" rule,
@@ -1527,8 +1557,7 @@ export async function updatePlanTx(
       const preservedOps = input.ops.map((op) => {
         const prior = priorBySeq.get(op.opSeq);
         if (!prior) return op;
-        const sameVendorText =
-          (op.outsourceVendorText ?? '') === (prior.outsourceVendorText ?? '');
+        const sameVendorText = (op.outsourceVendorText ?? '') === (prior.outsourceVendorText ?? '');
         return {
           ...op,
           program: op.program ?? prior.program,
