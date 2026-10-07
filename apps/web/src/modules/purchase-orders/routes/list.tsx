@@ -50,20 +50,21 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
 import { PoExpandedLines } from '../components/po-expanded-lines';
 import { purchaseOrderListColumns } from '../components/po-list-columns';
-import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
+import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 
 // ADR-201 (2026-10-02): 25 POs per page, loaded from the SERVER (was one
 // 200-row fetch); search / filters / Sort & Filter run on the server over ALL
 // POs and send the list back to page 1.
 
-// PO status → row tint (ADR-199 ROW_TINT). Real status enum only: draft and
-// qc_pending read as pending work, closed is done, cancelled is cancelled; the
-// active middle (open, partly received) stays untinted.
+// PO status → row tint (ADR-199 ROW_TINT). Draft reads as pending work, closed
+// is done, cancelled is cancelled, open stays untinted. ADR-222: the retired
+// `partial` / `qc_pending` codes are untinted WITH open — they render as Open,
+// so an old row must not stand out as something else.
 const ROW_TINT_BY_STATUS: Record<PoStatus, string | undefined> = {
   draft: ROW_TINT.pending,
   open: undefined,
   partial: undefined,
-  qc_pending: ROW_TINT.pending,
+  qc_pending: undefined,
   closed: ROW_TINT.done,
   cancelled: ROW_TINT.cancelled,
 };
@@ -266,7 +267,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               }}
             >
               <option value="">All Statuses</option>
-              {PO_STATUSES.map((s) => (
+              {/* Four choices only (ADR-222). The URL schema below still
+                  ACCEPTS the retired codes so an old bookmark still loads. */}
+              {PO_STATUS_CHOICES.map((s) => (
                 <option key={s} value={s}>
                   {PO_STATUS_LABELS[s]}
                 </option>

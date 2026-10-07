@@ -79,6 +79,7 @@ import { fmtDate, todayIst } from '@/lib/date';
 import { type ExitConfirm, ExitConfirmDialog, useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
+import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { useCreateNcDc, useNcRegister } from '@/modules/nc-register/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
@@ -115,15 +116,9 @@ export const deliveryChallanNewRoute = createRoute({
 type DcSource = 'po' | 'nc' | 'jwpo_dc';
 
 // Button text + icons mirror the GRN unified form's TYPE_META style.
-/** PO status → the words the user reads; the stored codes are unchanged. */
-const PO_STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft',
-  open: 'Open',
-  partial: 'Partly Received',
-  qc_pending: 'QC Pending',
-  closed: 'Closed',
-  cancelled: 'Cancelled',
-};
+// The PO Status column reads its words from the purchase-orders module's one
+// map (poStatusLabel) — this screen used to keep a hand-typed copy, which is
+// how the picker was still saying "Partly Received" after ADR-222 retired it.
 
 const SOURCE_META: Record<DcSource, { label: string }> = {
   po: { label: 'Against PO' },
@@ -429,8 +424,13 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
     const rows = (data?.items ?? []).filter(
       (p) =>
         poSendsMaterialOut(p.poType) &&
+        // Match the server exactly (delivery-challans/service.ts assertPurchaseOrderExists):
+        // it refuses draft ("not approved yet"), cancelled AND closed. Listing a closed
+        // order let the user pick one and only then get
+        // "PO <code> is Closed. Nothing more can be sent against it." on save.
         p.status !== 'draft' &&
         p.status !== 'cancelled' &&
+        p.status !== 'closed' &&
         // Something is still to send (a PO with no lines, totalQty 0, stays
         // listed: the form, not the picker, explains that) OR deviated pieces
         // are still waiting to go back — ADR-219.
@@ -531,9 +531,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                     <td style={{ color: 'var(--purple)' }}>
                       {p.poType === 'service' ? 'Service' : 'Job Work'}
                     </td>
-                    <td className="mono">
-                      {PO_STATUS_LABEL[p.status] ?? p.status.replaceAll('_', ' ')}
-                    </td>
+                    <td className="mono">{poStatusLabel(p.status)}</td>
                     <td className="mono td-num">{p.lineCount}</td>
                     {/* Amber once something has gone out: this PO is part-way
                         through, and the challan being raised is a balance one. */}

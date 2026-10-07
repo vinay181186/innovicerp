@@ -903,10 +903,10 @@ async function approvePo(page: Page, poId: string): Promise<string> {
 /** Reads {status, received[], qty[]} for every line off the PO detail page. */
 async function readPo(page: Page, poId: string): Promise<{ code: string; status: string; received: number[]; qty: number[]; vendor: string }> {
   await page.goto('/purchase-orders/' + poId, { waitUntil: 'domcontentloaded' });
-  const table = page.locator('table.innovic-table').filter({ has: page.locator('th', { hasText: /^Received$/i }) }).first();
+  const table = page.locator('table.innovic-table').filter({ has: page.locator('th', { hasText: /^GRN Received$/i }) }).first();
   await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1500);
-  const recIdx = await colIndex(table, /^Received$/i);
+  const recIdx = await colIndex(table, /^GRN Received$/i);
   const qtyIdx = await colIndex(table, /^Qty$/i);
   const rows = table.locator('tbody tr');
   const n = await rows.count();

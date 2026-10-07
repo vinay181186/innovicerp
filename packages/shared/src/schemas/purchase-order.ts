@@ -87,6 +87,12 @@ export const purchaseOrderLineSchema = z.object({
   // (L1 Viewer without "see price") — see canSeeFormPrice on the API.
   rate: z.string().nullable(),
   receivedQty: z.number().nonnegative(),
+  /** ADR-222 — what this line's GRNs actually BOOKED IN, replacement receipts
+   *  included. Only ever rises, and MAY EXCEED qty: a piece rejected, returned
+   *  and replaced is booked twice because it arrived twice. `receivedQty` is a
+   *  different fact (what is in hand now — the GRN total less pieces back at
+   *  the vendor), which is why it is no longer the figure shown as Received. */
+  grnReceivedQty: z.number().nonnegative().default(0),
   /** Pieces this line's receipts have PASSED QC — Σ qc_accepted_qty of the
    *  line's live GRN lines, replacement receipts included. `receivedQty` says
    *  what came in; this says what was good. Pending is measured against THIS,
@@ -212,6 +218,9 @@ export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
+  /** ADR-222 — Σ per line of what the GRNs booked in. See the line field of the
+   *  same name; this is the column the PO list shows as "GRN Received". */
+  grnReceivedQty: z.number().nonnegative().default(0),
   /** Σ per line of the pieces that PASSED QC. See the line field of the same
    *  name. Shown beside Received, never instead of it: `receivedQty` keeps the
    *  meaning docs/NAMING.md registers for it (what physically came in). */

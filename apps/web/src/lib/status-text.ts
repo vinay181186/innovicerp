@@ -43,6 +43,13 @@ export function titleCaseCode(raw: string): string {
  */
 export function statusText(raw: string, kind?: string | null): string {
   const key = raw.trim().toLowerCase().replace(/ /g, '_');
+  // ADR-222 — a PURCHASE ORDER has four statuses on screen: Draft, Open,
+  // Closed, Cancelled. The retired `partial` / `qc_pending` codes (seven live
+  // rows, nothing writes them any more) read "Open" here too, so global search
+  // and the Related Documents panel agree with the PO list and detail page.
+  // Only the purchase-order kind is affected; every other document type keeps
+  // the generic wording below.
+  if (kind === 'purchase-order' && (key === 'partial' || key === 'qc_pending')) return 'Open';
   if (key === 'partial') {
     if (kind && kind.includes('invoice')) return 'Partly Paid';
     if (kind && (kind.includes('return') || kind.includes('tool'))) return 'Partly Returned';

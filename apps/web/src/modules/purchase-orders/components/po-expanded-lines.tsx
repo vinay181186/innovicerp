@@ -65,15 +65,16 @@ export function PoExpandedLines({ poId }: { poId: string }): React.JSX.Element {
       },
       {
         id: 'received',
-        header: 'Received',
+        // ADR-222 — what this line's GRNs booked in, not the in-hand figure.
+        header: 'GRN Received',
         align: 'right',
         nowrap: true,
         render: (l) => (
           <span
             className="mono fw-700"
-            style={{ color: l.receivedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+            style={{ color: l.grnReceivedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
           >
-            {l.receivedQty}
+            {l.grnReceivedQty}
           </span>
         ),
       },

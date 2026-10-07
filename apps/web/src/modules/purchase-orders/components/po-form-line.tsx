@@ -443,13 +443,18 @@ export function PoFormLine({
           <td />
           <td colSpan={colCount - 1} style={{ whiteSpace: 'normal' }}>
             <FormGrid>
+              {/* ADR-222 — this is the STORED in-hand figure the form carries
+                  (GRN total less pieces back at the vendor), not the GRN total
+                  shown as "GRN Received" on the list and detail. It is
+                  labelled for what it is rather than re-pointed, so the edit
+                  form keeps showing the value it actually holds. */}
               {isEdit ? (
-                <FormField label="Received" size="xs" htmlFor={`pof-recv-${idx}`}>
+                <FormField label="Received (in hand)" size="xs" htmlFor={`pof-recv-${idx}`}>
                   <input
                     id={`pof-recv-${idx}`}
                     className="innovic-input mono is-derived"
                     readOnly
-                    title="Received qty moves only with a GRN, never a plain edit"
+                    title="Pieces in hand now. Moves only with a GRN or a return to the vendor, never a plain edit"
                     value={line?.receivedQty ?? 0}
                   />
                 </FormField>

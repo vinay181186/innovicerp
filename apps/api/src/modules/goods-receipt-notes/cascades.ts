@@ -13,19 +13,19 @@
 //        docs/QC-NC-HANDLING-DESIGN.md §5). See the function for the rule.
 //
 //   2. recalcPoHeaderStatus(tx, poId)
-//        Recompute purchase_orders.status based on aggregate state of its
-//        PO lines + their GRN lines:
-//          - If any PO line has received_qty < line.qty (the goods have not all
-//            physically arrived) → 'open' if NOTHING has arrived yet, else
-//            'partial'.
-//          - Else, everything has arrived: if any GRN line for this PO has
-//            qc_status != 'completed' → 'qc_pending'; else if ACCEPTED covers
-//            the full qty on every line → 'closed'; else → 'partial' (QC is
-//            done and some pieces were rejected and not yet settled).
+//        Recompute purchase_orders.status. ADR-222 — a purchase order has only
+//        TWO working statuses, and the ladder is two lines long:
+//          - ACCEPTED covers the full qty on every line → 'closed'
+//          - anything else                              → 'open'
 //        ACCEPTED is the ONE definition in lib/po-accepted.ts (Σ GRN
 //        qc_accepted_qty + pieces a non-return deviation recovered, capped at
 //        the line qty) — NOT received_qty. Only ACCEPTED can close an order.
-//        Never downgrades 'cancelled' or 'draft' headers.
+//        Never downgrades 'cancelled' or 'draft' headers, and never walks a
+//        short-closed header back.
+//        'partial' and 'qc_pending' are NEVER WRITTEN again. They remain in the
+//        enum and in every status LIST (PO_OPEN_STATUSES, the Pending rule's
+//        four-status CASE, the report filters) because rows already holding
+//        them must keep behaving exactly like 'open'.
 //
 //   3. writeStoreTxnOnQcAccept(tx, line, prevStatus)
 //        Fired when a GRN line transitions from non-completed → 'completed'
@@ -141,101 +141,53 @@ export async function recalcPoHeaderStatus(
   const header = headerRows[0];
   if (!header) return;
   // ADR-189 — a PO stopped by hand stays stopped: a late QC on its received
-  // lines must not walk it back to 'partial'.
+  // lines must not reopen it.
   if (header.shortClosedAt !== null) return;
-  // Don't touch terminal or draft headers — the open/partial/qc_pending/closed
-  // ladder only applies after the PO has been "opened" to vendors.
+  // Don't touch terminal or draft headers — the open/closed ladder only applies
+  // after the PO has been "opened" to vendors.
   if (header.status === 'cancelled' || header.status === 'draft') return;
 
-  // Aggregate snapshot of the PO's lines + their GRN lines.
+  // Aggregate snapshot of the PO's lines. ONE fact decides the status, so ONE
+  // count is measured:
+  //
+  //   fully_accepted_count — QC PASSED the full ordered qty (the ONE Accepted
+  //                          rule, lib/po-accepted.ts). Only this may close an
+  //                          order: a piece booked in and then rejected is not
+  //                          work the vendor delivered.
+  //
+  // ADR-222 removed arrived_count, any_received_count and the whole
+  // grn_line_agg CTE (pending_qc_count / grn_line_count). They existed only to
+  // tell 'partial' from 'qc_pending', and neither value is written any more —
+  // "the goods are here but QC has not finished" is a QC fact that belongs on
+  // the GRN, not a purchase-order status. Nothing outside this function ever
+  // read them.
+  //
+  // Consequence, accepted by the owner: pieces rejected and never replaced
+  // (scrapped) leave the order OPEN, and the buyer settles it with Close Short
+  // and a reason. Nothing here auto-closes and nothing auto-reopens a
+  // short-closed order.
   const aggRows = (await tx.execute(sql`
-    WITH po_line_agg AS (
-      SELECT
-        COUNT(*)::int AS line_count,
-        -- TWO counts, because the ladder needs two different facts and they
-        -- are not the same fact:
-        --
-        --   arrived_count       — the goods PHYSICALLY came in (received_qty).
-        --                         This is what tells 'qc_pending' (everything
-        --                         is here, QC has not finished) apart from
-        --                         'partial' (not everything is here yet).
-        --   fully_accepted_count — QC PASSED the full ordered qty (the ONE
-        --                         Accepted rule, lib/po-accepted.ts). Only
-        --                         this may close an order: a piece booked in
-        --                         and then rejected is not work the vendor
-        --                         delivered.
-        --
-        -- Measuring BOTH on ACCEPTED made 'qc_pending' unreachable — an order
-        -- whose goods had arrived but were not yet inspected read 'partial'.
-        --
-        -- any_received_count deliberately stays on received_qty: that is what
-        -- flips an order to 'partial' the moment goods physically arrive,
-        -- before QC has looked at them.
-        --
-        -- Consequence, accepted by the owner: pieces rejected and never
-        -- replaced (scrapped) leave the order short, and the buyer settles it
-        -- with Close Short and a reason. Nothing here auto-closes.
-        SUM(CASE WHEN pol.received_qty >= pol.qty THEN 1 ELSE 0 END)::int AS arrived_count,
-        SUM(CASE WHEN ${sql.raw(poLineAcceptedRaw('pol.id'))} >= pol.qty THEN 1 ELSE 0 END)::int
-          AS fully_accepted_count,
-        SUM(CASE WHEN pol.received_qty > 0 THEN 1 ELSE 0 END)::int AS any_received_count
-      FROM public.purchase_order_lines pol
-      WHERE pol.purchase_order_id = ${poId}::uuid
-        AND pol.deleted_at IS NULL
-    ),
-    grn_line_agg AS (
-      SELECT
-        COUNT(*)::int AS grn_line_count,
-        SUM(CASE WHEN gnl.qc_status != 'completed' THEN 1 ELSE 0 END)::int AS pending_qc_count
-      FROM public.goods_receipt_note_lines gnl
-      JOIN public.purchase_order_lines pol ON pol.id = gnl.purchase_order_line_id
-      WHERE pol.purchase_order_id = ${poId}::uuid
-        AND gnl.deleted_at IS NULL
-        AND pol.deleted_at IS NULL
-    )
     SELECT
-      pla.line_count,
-      pla.arrived_count,
-      pla.fully_accepted_count,
-      pla.any_received_count,
-      gla.grn_line_count,
-      gla.pending_qc_count
-    FROM po_line_agg pla, grn_line_agg gla
+      COUNT(*)::int AS line_count,
+      SUM(CASE WHEN ${sql.raw(poLineAcceptedRaw('pol.id'))} >= pol.qty THEN 1 ELSE 0 END)::int
+        AS fully_accepted_count
+    FROM public.purchase_order_lines pol
+    WHERE pol.purchase_order_id = ${poId}::uuid
+      AND pol.deleted_at IS NULL
   `)) as unknown as Array<{
     line_count: number;
-    arrived_count: number;
     fully_accepted_count: number;
-    any_received_count: number;
-    grn_line_count: number;
-    pending_qc_count: number;
   }>;
   const agg = aggRows[0];
   if (!agg) return;
 
-  // The ladder:
-  //   every line physically arrived
-  //     → any GRN line still uninspected        : 'qc_pending'
-  //     → else QC passed the full qty everywhere: 'closed'
-  //     → else (QC done, some rejected and not yet settled): 'partial'
-  //   else anything arrived at all              : 'partial'
-  //   else                                      : 'open'
-  // Only ACCEPTED closes an order; arrival alone never does. A line left short
-  // by scrapped pieces stays 'partial' until Close Short settles it — nothing
-  // auto-closes.
-  let nextStatus: typeof header.status;
-  if (agg.line_count > 0 && agg.arrived_count === agg.line_count) {
-    if (agg.pending_qc_count > 0) {
-      nextStatus = 'qc_pending';
-    } else if (agg.fully_accepted_count === agg.line_count) {
-      nextStatus = 'closed';
-    } else {
-      nextStatus = 'partial';
-    }
-  } else if (agg.any_received_count > 0) {
-    nextStatus = 'partial';
-  } else {
-    nextStatus = 'open';
-  }
+  // The ladder (ADR-222), and it is the whole ladder:
+  //   QC passed the full qty on every line : 'closed'
+  //   anything else                        : 'open'
+  // A PO with no lines at all stays 'open' (line_count > 0 guard) — an empty
+  // order has delivered nothing.
+  const nextStatus: typeof header.status =
+    agg.line_count > 0 && agg.fully_accepted_count === agg.line_count ? 'closed' : 'open';
 
   if (nextStatus !== header.status) {
     await tx
