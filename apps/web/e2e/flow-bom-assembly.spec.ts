@@ -132,19 +132,15 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
   await expect(addChild, 'picking the parent unlocks the list').toBeEnabled({ timeout: 15_000 });
 
   // ELEMENT: the parent's Item Name is resolved from the code and never typed,
-  // so it is a read-only fact beside the picker — there is no input in it at
-  // all, which is a stronger form of the old "not editable" check.
+  // so it is a read-only box under its label; the resolving states are only
+  // its placeholder, so a non-empty VALUE means the name resolved.
   const parentName = bomParentItemName(page);
-  await expect(parentName, 'the parent Item Name resolves').not.toHaveText(
-    /auto-filled|Checking Item Master|Not in Item Master|Loading/i,
-    { timeout: 15_000 },
-  );
+  await expect(parentName, 'the parent Item Name resolves').toHaveValue(/\S/, {
+    timeout: 15_000,
+  });
   // eslint-disable-next-line no-console
-  console.log(`>> parent ${PARENT_ITEM} → "${((await parentName.textContent()) ?? '').trim()}"`);
-  expect(
-    await parentName.locator('input, select, textarea').count(),
-    'parent Item Name is read-only',
-  ).toBe(0);
+  console.log(`>> parent ${PARENT_ITEM} → "${(await parentName.inputValue()).trim()}"`);
+  await expect(parentName, 'parent Item Name is read-only').toHaveAttribute('readonly', '');
 
   await addChild.click();
   await page.waitForTimeout(800);

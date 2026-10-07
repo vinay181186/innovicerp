@@ -52,7 +52,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { Cluster, ClusterGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextBomNo } from '../api';
 
@@ -1084,15 +1084,27 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                     : {})}
               />
             </div>
-            {/* Resolved from the code and never typed, so it is a VALUE, not a
-                disabled input half the panel wide. */}
-            <ClusterFact
-              label="Item Name"
-              span={2}
-              value={parentItemName || parentItemNameNote}
-              empty={!parentItemName}
-              title={parentItemName || undefined}
-            />
+            {/* Resolved from the code and never typed. Shown like its row
+                neighbours (Qty, BOM Rev): label on top, a read-only box under
+                it. It was a one-line fact (label left, value pushed right),
+                which in this row of label-over-box fields put the name at the
+                far right beside "Qty" and left the space under "Item Name"
+                empty — read as "the name does not fill" (owner, 2026-10-07).
+                The resolving states show as the box's grey placeholder. */}
+            <div className="form-grp cl-span-2">
+              <label className="form-label" htmlFor="bom-parent-name">
+                Item Name
+              </label>
+              <input
+                id="bom-parent-name"
+                className="innovic-input is-derived"
+                readOnly
+                tabIndex={-1}
+                value={parentItemName}
+                placeholder={parentItemNameNote}
+                title={parentItemName || undefined}
+              />
+            </div>
             <div className="form-grp">
               <label className="form-label" htmlFor="bom-parent-qty">
                 Qty<span className="req">★</span>

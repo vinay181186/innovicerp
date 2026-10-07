@@ -54,15 +54,15 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
   // --- 2. picking the parent unlocks ---------------------------------------
   await pick(page, 'bom-parent-item', PARENT);
   // The Item Name is resolved from the code and can never be typed, so it is a
-  // read-only FACT beside the picker, not a field. Still the same proof: the
-  // name appears by itself once the code is picked.
+  // read-only box under its label. Still the same proof: the name appears by
+  // itself once the code is picked.
   const parentName = bomParentItemName(page);
-  await expect(parentName).toHaveText(PARENT_NAME, { timeout: 15_000 });
+  await expect(parentName).toHaveValue(PARENT_NAME, { timeout: 15_000 });
   await expect(addItem).toBeEnabled();
   await expect(importExcel).toBeEnabled();
   // eslint-disable-next-line no-console
   console.log(
-    `>> parent ${PARENT} → "${((await parentName.textContent()) ?? '').trim()}", list unlocked`,
+    `>> parent ${PARENT} → "${(await parentName.inputValue()).trim()}", list unlocked`,
   );
 
   // --- 3. the parent cannot be its own child -------------------------------
