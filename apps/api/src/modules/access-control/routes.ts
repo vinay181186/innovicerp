@@ -45,6 +45,15 @@ export async function accessControlRoutes(app: FastifyInstance): Promise<void> {
     return { options: await service.listProductionUserOptions(req.user) };
   });
 
+  // Who may do Planning work — any authenticated user in the company, not
+  // admins only: the planner recording an assembly on the Assembly Tracker is
+  // who opens this list. Its own literal segment, so /users/:userId never
+  // matches it.
+  app.get('/access-control/planning-users', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return { options: await service.listPlanningUserOptions(req.user) };
+  });
+
   // Admin: save one user's matrix.
   app.put('/access-control/users/:userId', async (req) => {
     if (!req.user) throw new AuthenticationError();

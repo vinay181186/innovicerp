@@ -28,7 +28,7 @@
 //                 | waiting (otherwise)
 
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { ActivityAction, roundQty } from '@innovic/shared';
+import { ActivityAction, roundQty, shortName } from '@innovic/shared';
 import type {
   AssemblyComponentRow,
   AssemblyComponentStatus,
@@ -88,6 +88,42 @@ function todayIso(): string {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
+}
+
+/** Who assembled it: a Planning login's SHORT name snapshot, else the typed
+ *  name, else nothing.
+ *
+ *  Mirrors `resolveIssuedTo` (modules/store-issues/slip.ts), the approved
+ *  pattern for this: the chosen person is a login with a granted Planning right
+ *  (the /access-control/planning-users list), and the short name is stored into
+ *  the `assembled_by` TEXT snapshot so every downstream read / print /
+ *  activity-log line is unchanged.
+ *
+ *  The stored name is derived from the DATABASE row, never from what the
+ *  browser sent: the id is re-read server-side (same company, active, not
+ *  deleted) so a tampered or stale payload cannot write a name the login does
+ *  not have. The one difference from Item Issue: `Assembled By` has always been
+ *  OPTIONAL on the Assembly Tracker, so "neither sent" is allowed and returns
+ *  two nulls rather than refusing. */
+async function resolveAssembledBy(
+  tx: DbTransaction,
+  companyId: string,
+  input: Pick<StartAssemblyInput, 'assembledByUserId' | 'assembledBy'>,
+): Promise<{ userId: string | null; assembledBy: string | null }> {
+  if (input.assembledByUserId) {
+    const rows = (await tx.execute(sql`
+      SELECT id, full_name, email FROM public.users
+      WHERE id = ${input.assembledByUserId}::uuid AND company_id = ${companyId}::uuid
+        AND is_active = true AND deleted_at IS NULL
+    `)) as unknown as Array<{ id: string; full_name: string | null; email: string }>;
+    const u = rows[0];
+    if (!u) {
+      throw new ValidationError('Pick an active Planning person (the one chosen was not found).');
+    }
+    return { userId: u.id, assembledBy: shortName(u.full_name ?? u.email) };
+  }
+  const typed = input.assembledBy?.trim() ?? '';
+  return { userId: null, assembledBy: typed === '' ? null : typed };
 }
 
 function deriveStatus(
@@ -748,6 +784,10 @@ export async function startAssembly(
       );
     }
 
+    // `Assembled By` — the picked Planning login (its short name is read from
+    // the users row, never from the payload) or the free-typed name. 0201.
+    const assembledByPerson = await resolveAssembledBy(tx, companyId, input);
+
     // No stock cascade: a start reserves nothing in the ledger. Components leave
     // the store at STOP, for the qty that actually came out good.
     const inserted = await tx
@@ -761,7 +801,8 @@ export async function startAssembly(
         qty: requestedQty,
         serialNo: null,
         assemblyDate: input.startDate ?? todayIso(),
-        assembledBy: input.startedBy ?? null,
+        assembledBy: assembledByPerson.assembledBy,
+        assembledByUserId: assembledByPerson.userId,
         remarks: input.remarks ?? null,
         bomMasterId: so.bomMasterId ?? null,
         dispatched: false,
@@ -867,7 +908,16 @@ export async function stopAssembly(
         assemblyDate: input.assemblyDate ?? todayIso(),
         // The Complete screen sends only the qty, so carry the started batch's
         // Assembled By / Remarks onto the completed row unless new ones are given.
+        // That carry-forward is PRE-EXISTING behaviour, not new here — 0201 only
+        // extends it so the user LINK travels with the name instead of being
+        // dropped on completion.
         assembledBy: input.assembledBy ?? batch.assembledBy ?? null,
+        // StopAssemblyInput carries no id (the Complete panel has no people
+        // picker), so a name TYPED at Stop arrives without one — and then the
+        // started batch's id must NOT be kept: it would point the link at a
+        // different person from the name printed beside it.
+        assembledByUserId:
+          input.assembledBy !== undefined ? null : (batch.assembledByUserId ?? null),
         remarks: input.remarks ?? batch.remarks ?? null,
         bomMasterId: batch.bomMasterId ?? null,
         dispatched: false,
