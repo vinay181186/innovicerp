@@ -797,8 +797,11 @@ export async function getLevelMatrix(
       planIds.length > 0
         ? await rows(
             tx,
-            sql`SELECT po.id, po.code, po.plan_id, po.status, po.order_qty, po.credited_qty, po.lost_qty
+            // ADR-221: item from the order ITSELF (stored text, live item as the name fallback).
+            sql`SELECT po.id, po.code, po.plan_id, po.status, po.order_qty, po.credited_qty, po.lost_qty,
+                  po.item_code_text AS item_code, COALESCE(po.item_name_text, i.name) AS item_name
                 FROM public.production_orders po
+                LEFT JOIN public.items i ON i.id = po.item_id
                 WHERE po.plan_id = ANY(${sql.param(planIds)}::uuid[]) AND po.deleted_at IS NULL
                 ORDER BY po.code`,
           )
@@ -813,8 +816,9 @@ export async function getLevelMatrix(
     const jcRows = await rows(
       tx,
       sql`SELECT j.id, j.code, j.order_qty, j.production_order_id, j.source_so_line_id,
-            s.computed_status
+            s.computed_status, i.code AS item_code, i.name AS item_name
           FROM public.job_cards j
+          LEFT JOIN public.items i ON i.id = j.item_id
           LEFT JOIN public.v_jc_status s ON s.job_card_id = j.id
           WHERE j.company_id = ${companyId}::uuid AND j.deleted_at IS NULL
             AND j.recovery_kind IS NULL
@@ -930,6 +934,8 @@ export async function getLevelMatrix(
       return {
         id,
         code: String(j['code']),
+        itemCode: str(j['item_code']),
+        itemName: str(j['item_name']),
         orderQty: num(j['order_qty']),
         status: str(j['computed_status']),
         productionOrderId: poId,
@@ -963,6 +969,8 @@ export async function getLevelMatrix(
           return {
             id: String(p['id']),
             code: String(p['code']),
+            itemCode: str(p['item_code']),
+            itemName: str(p['item_name']),
             planId: String(p['plan_id']),
             orderQty,
             creditedQty: credited,
