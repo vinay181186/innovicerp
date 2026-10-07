@@ -253,10 +253,8 @@ function AssemblyDetailPage(): React.JSX.Element {
             />
           </div>
           {/* Assembled By — a Planning person from Access Control, not a typed
-              name. Still OPTIONAL (no ★), as it has always been. Free typing is
-              kept for someone without a login, exactly as Item Issue keeps it:
-              the box only appears while nobody is picked. The picker's own width
-              is 100%, so the slot's width lives on this wrapper now. */}
+              name. Still OPTIONAL (no ★), as it has always been. The picker's own
+              width is 100%, so the slot's width lives on this wrapper now. */}
           <div style={{ width: 180 }}>
             <label
               className="form-label"
@@ -270,16 +268,44 @@ function AssemblyDetailPage(): React.JSX.Element {
               value={assembledByUserId}
               onChange={setAssembledByUserId}
             />
-            {!assembledByUserId ? (
+          </div>
+          {/* Free typing is kept for someone without a login, exactly as Item
+              Issue keeps it, and only while nobody is picked. It is its OWN slot
+              beside the picker, NOT stacked under it: this row is
+              `alignItems: 'flex-end'`, so a two-control slot is taller than its
+              neighbours and drags every other label a control-row up. One
+              control per slot is what keeps the row on one baseline. Item Issue
+              can stack the same two boxes because there they sit in a `form-grp`
+              grid cell, not in a bottom-aligned flex row.
+              `…or type a name` is the label, not a second name for the fact —
+              `Assembled By` is the registered name (docs/NAMING.md §A). The
+              aria-label carries the whole fact for a screen reader, which reads
+              the box out of its visual context. No ★: the field is optional. */}
+          {!assembledByUserId ? (
+            <div style={{ width: 180 }}>
+              <label
+                className="form-label"
+                /* nowrap, measured: this slot and the picker beside it are the only
+                   two the row can shrink, so below a ~976px viewport they drop under
+                   the label's 94.7px and it would wrap to two lines — which in a
+                   bottom-aligned row puts this whole strip back out of line, the very
+                   fault this slot was split out to fix. No effect at any normal width
+                   (1280 leaves 133.7px of slack even with nobody picked). */
+                style={{ display: 'block', marginBottom: 4, whiteSpace: 'nowrap' }}
+                htmlFor="as-by-typed"
+              >
+                …or type a name
+              </label>
               <input
+                id="as-by-typed"
                 className="innovic-input"
-                style={{ marginTop: 4 }}
-                placeholder="…or type a name"
+                aria-label="Assembled By — or type a name"
+                title="For someone who has no login. Used only while nobody is picked above."
                 value={assembledBy}
                 onChange={(e) => setAssembledBy(e.target.value)}
               />
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           {/* Start date + Remarks — stamped on the in-progress batch. */}
           <div>
             <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
