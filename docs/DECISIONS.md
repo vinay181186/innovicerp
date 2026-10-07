@@ -11808,3 +11808,72 @@ text** by the owner's decision, `75THK` and all. **Existing documents are left a
   card's RM Item, so the store can issue any item against a Job Card; `plans.material_pr_id` has no
   writer anywhere; and the Plans module never validates grade/size against the masters, while Route
   Cards and Job Cards both do.
+
+## ADR-219: Returns stay their own document; the order screen just stops hiding them
+
+**Date:** 2026-10-06
+**Status:** Accepted
+
+### Context
+
+A storekeeper could not work out how to send rejected pieces back. Two faults, one screen.
+
+**The order disappears.** +New DC -> Against PO drops any order whose sent qty has reached its
+ordered qty (`create.tsx` PoPickerBody). On a 50-piece order fully sent, with 20 pieces deviated
+and QC's decision "return to vendor", the order is **not in the list at all** - so the one screen
+that could explain what to do has removed it.
+
+**The screen will not say the number.** Against PO offers `min(order balance, operation balance)`.
+Neither term has any return component, which is correct - but the warning banner listed the
+deviations without totalling them, and its button said "Switch to Against JW PO / DC", a route
+name the owner does not use.
+
+A larger design was traced first and rejected: making returns go out as ORDINARY challans against
+the same order, so one screen would offer fresh and returning pieces as one number. The trace found
+**36 behaviours** keyed on a return challan being marked as a return - the protection against
+counting the same pieces twice, the operation's "is everything back" test, the order's received
+figure, and the deviation's ability to close at all. Removing that marker reproduces exactly the
+double-count the owner was complaining about (a Job Card op reading DONE 19 on INPUT 10). It would
+also have broken the short-close guard as a side effect: "sent" would become 40 against 25 back, so
+the order would refuse to close with "15 still at the vendor".
+
+### Decision
+
+**The fresh cap does not change.** Against PO offers fresh pieces only - 0 in the owner's Case 1,
+25 in Case 2. Deviated pieces are never added to it.
+
+1. **A list keeps anything with open quantity pending against it.** An order leaves the +New DC
+   picker only when it owes nothing AND has nothing waiting to go back. A new column,
+   `Return Challan Pending`, says why a 0-balance order is still listed.
+2. **The warning states the total and names the route.** "N pcs on this PO must go back to the
+   vendor - send them separately", explicitly NOT part of what this screen offers, with the button
+   reading "Send the N back -> Against NC" in the owner's own words.
+3. **Against NC fills in its own order.** Choosing a deviation fills JW PO No., vendor, qty to
+   return and the challan the pieces first went out on - the deviation already knows all four, so
+   asking again is asking twice.
+4. **The quantity is netted, not gross.** `openQty` = rejected - cleared - failed. The candidate's
+   `rejectedQty` is what the deviation was raised for, so a partly recovered one would overstate
+   what must ship.
+5. **The compulsory tick stays.** The arithmetic cannot stop a storekeeper shipping the rejected
+   pile instead of fresh material - both sit in the same store - so the physical confirmation
+   remains the only safeguard, and it stays.
+
+### Verified before building (owner's instruction)
+
+Five checks recomputed every stored quantity from its own rule, on BOTH databases: **zero
+mismatches**. `IN-JWPO-00006/R1` on test is the live proof the accounting works - 10 received, 4
+still out on an open deviation, stored received reads 6. `IN-JWPO-00005/R1` is a live instance of
+the owner's Case 2 (5 fresh owed, 5 waiting to go back) and is the eyeball case for this change.
+No live row has the Case 1 shape (fully sent AND returns waiting), so that path needs a built test
+case rather than an existing row. PROD has no returns pending at all, so it sees no behaviour
+change until the next one.
+
+### Consequences
+
+- **No migration.** Every figure already existed; this serves it where it was missing.
+- No cap, quantity guard or refusal condition changes - only the words, plus two served figures
+  and one filter clause.
+- The 36 behaviours above are untouched, by design.
+- **Not fixed here, and separate:** the Job Card op row reads DONE 19 on INPUT 10. Two of the three
+  Done calculations subtract the recovery loop; the outsource one does not, and the row omits
+  In QC, the one figure that would make it balance. Smaller, independent, and worth doing next.

@@ -45,6 +45,8 @@ function JobCardNewPage(): React.JSX.Element {
       </div>
     );
   }
-  // The form renders its own sticky PageHeader (title, Back, Cancel, Save).
+  // The form is the whole page: the Job Card detail page's layout with
+  // controls in it (header with Back · next JC No. · Cancel · Save, the fact
+  // block, and the Operations / QC Documents panel filling the screen).
   return <JobCardForm initialSourceLineId={sourceLineId} />;
 }

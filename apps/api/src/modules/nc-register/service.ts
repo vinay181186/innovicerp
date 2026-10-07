@@ -223,7 +223,33 @@ interface NcJoins {
   replacementPoCode?: string | null;
   sourceDeliveryChallanId?: string | null;
   sourceDeliveryChallanCode?: string | null;
+  // The job-work order the deviated pieces were MADE under — the one the
+  // return challan goes back against. NOT replacementPoId above: that is the
+  // zero-value order ADR-217 raises FOR the return, a different document, and
+  // confusing the two is the exact fault ADR-217 left behind.
+  purchaseOrderId?: string | null;
+  poCode?: string | null;
 }
+
+/** The PO line the deviated pieces trace to — MIRRORS createNcDc and
+ *  delivery-challans/rtv-candidates.ts, so the detail view, the picker and the
+ *  challan writer can never name different orders:
+ *    origin op's jc_ops.outsource_po_line_id, else (bought material, no job
+ *    card) the rejected GRN line's purchase_order_line_id.
+ *  The op is read by id + company with NO deleted_at filter, exactly as those
+ *  two read it. Correlated on the outer `nc_register` row, and reused by both
+ *  subqueries below so the derivation is written once. */
+const NC_ORIGIN_PO_LINE_SQL = sql`COALESCE(
+  (SELECT o.outsource_po_line_id
+     FROM public.jc_ops o
+    WHERE o.id = ${ncRegister.jcOpId} AND o.company_id = ${ncRegister.companyId}),
+  CASE WHEN ${ncRegister.jobCardId} IS NULL AND ${ncRegister.grnLineId} IS NOT NULL THEN
+    (SELECT g.purchase_order_line_id
+       FROM public.goods_receipt_note_lines g
+      WHERE g.id = ${ncRegister.grnLineId}
+      LIMIT 1)
+  END
+)`;
 
 function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}): NcRegister {
   const linkedCapaCode = joins.linkedCapaCode ?? null;
@@ -302,6 +328,13 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     // Same reason as the challan above: resolved or nothing.
     replacementPoId: joins.replacementPoId ?? null,
     replacementPoCode: joins.replacementPoCode ?? null,
+    // The ORIGINAL job-work order the deviated pieces were made under, so
+    // choosing a deviation on +New DC can fill its order in by itself. It is
+    // NEVER replacement_po_id (just above) — that is the zero-value order the
+    // return itself raised, and naming it here would send the pieces back
+    // against the wrong document.
+    purchaseOrderId: joins.purchaseOrderId ?? null,
+    poCode: joins.poCode ?? null,
     splitFromNcId: row.splitFromNcId,
     // G8: "Continues NC <code>" — set by autoCreateNcFromQcReject only.
     parentNcId: row.parentNcId,
@@ -547,7 +580,12 @@ export async function listNcRegister(
         rpo.id AS "replacementPoId",
         rpo.code AS "replacementPoCode",
         sdc.id AS "sourceDeliveryChallanId",
-        sdc.code AS "sourceDeliveryChallanCode"
+        sdc.code AS "sourceDeliveryChallanCode",
+        -- The ORIGINAL job-work order the deviated pieces were made under (the
+        -- lateral below). Distinct from "replacementPoId" just above, which is
+        -- the zero-value order the RETURN raised.
+        opo_orig."purchaseOrderId",
+        opo_orig."poCode"
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc
         ON jc.id = nc.job_card_id AND jc.deleted_at IS NULL
@@ -635,6 +673,36 @@ export async function listNcRegister(
         LEFT JOIN public.vendors opov
           ON opov.id = opo."vendorId" AND opov.deleted_at IS NULL
       ) ncsrc ON TRUE
+      -- The ORIGINAL job-work order behind the deviation — the order the return
+      -- challan goes back against, so choosing a deviation on +New DC can fill
+      -- it in by itself. Same derivation as readNc (NC_ORIGIN_PO_LINE_SQL) and
+      -- as createNcDc / rtv-candidates.ts resolve the PO line: the origin op's
+      -- outsource_po_line_id, else the rejected GRN line's PO line for bought
+      -- material. NOT rpo above — that is the zero-value replacement order
+      -- (ADR-217), the opposite direction. The op is read by id + company with
+      -- no deleted_at filter, as those readers do, which is why the jo join
+      -- above is not reused. LIMIT 1, so it cannot multiply the result; the
+      -- COUNT query deliberately omits it.
+      LEFT JOIN LATERAL (
+        SELECT po.id AS "purchaseOrderId", po.code AS "poCode"
+          FROM public.purchase_order_lines pol
+          JOIN public.purchase_orders po
+            ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
+         WHERE pol.id = COALESCE(
+                 (SELECT o.outsource_po_line_id
+                    FROM public.jc_ops o
+                   WHERE o.id = nc.jc_op_id AND o.company_id = nc.company_id),
+                 CASE WHEN nc.job_card_id IS NULL AND nc.grn_line_id IS NOT NULL THEN
+                   (SELECT g.purchase_order_line_id
+                      FROM public.goods_receipt_note_lines g
+                     WHERE g.id = nc.grn_line_id
+                     LIMIT 1)
+                 END
+               )
+           AND pol.company_id = nc.company_id
+           AND pol.deleted_at IS NULL
+         LIMIT 1
+      ) opo_orig ON TRUE
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         ${searchFrag}
@@ -756,6 +824,10 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     sourceDeliveryChallanCode: str('sourceDeliveryChallanCode'),
     replacementPoId: str('replacementPoId'),
     replacementPoCode: str('replacementPoCode'),
+    // The ORIGINAL job-work order (opo_orig lateral), never the replacement
+    // order on the line above.
+    purchaseOrderId: str('purchaseOrderId'),
+    poCode: str('poCode'),
     splitFromNcId: str('splitFromNcId'),
     parentNcId: str('parentNcId'),
     parentNcCode: str('parentNcCode'),
@@ -851,6 +923,30 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
         SELECT nso.internal_so_no FROM public.sales_orders nso
         WHERE nso.id = ${ncRegister.soId}
       )`,
+      // The ORIGINAL job-work order behind the deviation, through the shared
+      // NC_ORIGIN_PO_LINE_SQL derivation. Two scalar subqueries over the same
+      // fragment rather than a join, so the one-row-per-NC guarantee of this
+      // read is untouched. Live PO only (deleted_at IS NULL): handing back the
+      // id of a trashed order would offer a document the user cannot open.
+      // This is NOT nc_register.replacement_po_id — see toNcRegister.
+      originPoId: sql<string | null>`(
+        SELECT po.id
+          FROM public.purchase_order_lines pol
+          JOIN public.purchase_orders po
+            ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
+         WHERE pol.id = ${NC_ORIGIN_PO_LINE_SQL}
+           AND pol.company_id = ${ncRegister.companyId}
+           AND pol.deleted_at IS NULL
+      )`,
+      originPoCode: sql<string | null>`(
+        SELECT po.code
+          FROM public.purchase_order_lines pol
+          JOIN public.purchase_orders po
+            ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
+         WHERE pol.id = ${NC_ORIGIN_PO_LINE_SQL}
+           AND pol.company_id = ${ncRegister.companyId}
+           AND pol.deleted_at IS NULL
+      )`,
     })
     .from(ncRegister)
     // Resolve item code/name from the live items master, not the stale
@@ -908,6 +1004,10 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     replacementPoCode: source.replacementPoCode,
     sourceDeliveryChallanId: source.sourceDeliveryChallanId,
     sourceDeliveryChallanCode: source.sourceDeliveryChallanCode,
+    // The ORIGINAL job-work order, from the two subqueries above — never the
+    // replacement order, which arrives separately as replacementPoId.
+    purchaseOrderId: found.originPoId,
+    poCode: found.originPoCode,
   });
 }
 

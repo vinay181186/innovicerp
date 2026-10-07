@@ -286,6 +286,11 @@ export const rtvCandidateSchema = z.object({
   itemNameText: z.string().nullable(),
   /** The NC's rejected qty — exactly what the return challan line will carry. */
   rejectedQty: z.string(),
+  /** What is still to go back: rejected minus anything already recovered or
+   *  written off. `rejectedQty` above is the GROSS figure the NC was raised
+   *  for, so a partly recovered deviation would overstate what must ship —
+   *  the warning banner and its total read THIS one. */
+  openQty: z.string().default('0'),
   clientPoLineNo: z.string().nullable(),
   jobCardId: z.string().uuid().nullable(),
   jcCode: z.string().nullable(),

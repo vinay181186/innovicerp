@@ -27,6 +27,17 @@
 //     PO also warns when the chosen PO has such pieces waiting, so a return is not
 //     booked as an ordinary send by mistake.
 //
+// ADR-219 — returns stay their OWN document; this screen just stops hiding them.
+// The Against-PO cap is unchanged (fresh pieces only, deviated pieces are never
+// added to it). What changed is three things: the PO picker keeps an order listed
+// while pieces wait to go back and shows the figure as "Return Challan Pending";
+// the warning leads with the TOTAL still to go back (netted openQty, never the
+// gross rejectedQty), says it is NOT part of what this screen offers, and its
+// button hands the user to Against NC; and the Against-NC form reads the JW PO
+// No. and the challan the pieces went out on off the deviation instead of asking.
+// The compulsory tick is untouched — it is the only safeguard against shipping
+// the rejected pile by mistake, since both piles sit in the same store.
+//
 // Switching source unmounts the other side, so its picks and drafts are dropped
 // (no stale state crosses). The document picked within a source is held in that
 // side's own state; the form body is keyed on the chosen id so its dependent
@@ -81,6 +92,7 @@ import {
   useRtvCandidates,
 } from '../api';
 import { JwpoDcPickerBody } from '../components/jwpo-dc-rtv-picker';
+import { rtvOpenQty } from '../lib/rtv-open-qty';
 
 // poId only. An existing ?poId= link keeps working untouched and preselects the
 // Against-PO source; ?ncId= is dropped because the source is now state, not URL,
@@ -125,7 +137,13 @@ interface RtvPanelRow {
   ncId: string;
   ncCode: string;
   itemCodeLabel: string;
+  /** GROSS — what the deviation was raised for. Kept because the 409's details
+   *  carry only this. Never the figure shown or totalled: see `openQty`. */
   rejectedQty: string;
+  /** ADR-219 — what is STILL to go back on this deviation (rejected less
+   *  anything recovered or written off). This is what the banner shows and
+   *  totals; `rejectedQty` would overstate a partly recovered one. */
+  openQty: string;
   state: RtvCandidateState;
   poLineId: string | null;
 }
@@ -156,13 +174,17 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   // Arriving with ?poId= means the PO source, preselected. Otherwise default to
   // Against PO so the original flow is unchanged.
   const [source, setSource] = useState<DcSource>('po');
-  // The search the Against JW PO / DC picker opens with. Set to the PO No. when
-  // the Against PO warning's "Switch" button brings the user over; blank when
-  // the source is picked from the dropdown.
-  const [jwpoSearch, setJwpoSearch] = useState('');
-  const switchToJwpoDc = useCallback((poCode: string) => {
-    setJwpoSearch(poCode);
-    setSource('jwpo_dc');
+  // The search the picker on the other side opens with. Set when the Against PO
+  // warning's button brings the user over (ADR-219: to the NC No. when exactly
+  // one deviation is waiting, so the row it sends them to is already on screen);
+  // blank when the source is picked from the dropdown.
+  const [pickerSearch, setPickerSearch] = useState('');
+  // ADR-219 — the warning's button goes to Against NC, the route the owner uses
+  // for a return. It used to go to Against JW PO / DC seeded with the PO No.;
+  // that screen still exists and is still reachable from the dropdown.
+  const switchToNc = useCallback((ncSearch: string) => {
+    setPickerSearch(ncSearch);
+    setSource('nc');
   }, []);
 
   // Save lives in the sticky header, but the save handler belongs to whichever
@@ -213,7 +235,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             className="innovic-select"
             value={source}
             onChange={(e) => {
-              setJwpoSearch('');
+              setPickerSearch('');
               setSource(e.target.value as DcSource);
             }}
           >
@@ -231,12 +253,12 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             {...(initialPoId ? { initialPoId } : {})}
             exit={exit}
             saveCtl={saveCtl}
-            onSwitchToJwpoDc={switchToJwpoDc}
+            onSwitchToNc={switchToNc}
           />
         ) : source === 'nc' ? (
-          <NcDcSection exit={exit} saveCtl={saveCtl} />
+          <NcDcSection initialSearch={pickerSearch} exit={exit} saveCtl={saveCtl} />
         ) : (
-          <JwpoDcRtvSection initialSearch={jwpoSearch} exit={exit} saveCtl={saveCtl} />
+          <JwpoDcRtvSection initialSearch={pickerSearch} exit={exit} saveCtl={saveCtl} />
         )}
       </div>
     </div>
@@ -344,12 +366,14 @@ function PoDcSection({
   initialPoId,
   exit,
   saveCtl,
-  onSwitchToJwpoDc,
+  onSwitchToNc,
 }: {
   initialPoId?: string;
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
-  onSwitchToJwpoDc: (poCode: string) => void;
+  /** ADR-219 — hand the user to Against NC, seeded with the NC No. when exactly
+   *  one deviation is waiting (blank when several are). */
+  onSwitchToNc: (ncSearch: string) => void;
 }): React.JSX.Element {
   // The chosen PO. Preselected from ?poId= (the deep link), else null → picker.
   const [poId, setPoId] = useState<string | null>(initialPoId ?? null);
@@ -365,9 +389,21 @@ function PoDcSection({
       onChangePo={() => setPoId(null)}
       exit={exit}
       saveCtl={saveCtl}
-      onSwitchToJwpoDc={onSwitchToJwpoDc}
+      onSwitchToNc={onSwitchToNc}
     />
   );
+}
+
+/** `Return Challan Pending` on one PO row, read defensively.
+ *
+ *  This client returns response bodies UNPARSED (lib/api.ts), so the shared
+ *  schema's `.default(0)` never runs in the browser: an API that predates the
+ *  field sends nothing at all and the value arrives as `undefined`. Anything
+ *  that is not a usable positive number reads as 0, so the screen degrades to
+ *  exactly the old behaviour instead of rendering NaN or dropping rows. */
+function rtvPendingQty(p: { rtvAwaitingChallanQty?: number }): number {
+  const n = Number(p.rtvAwaitingChallanQty ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 // Only POs that actually send material out are offered (job work + service, per
@@ -375,7 +411,11 @@ function PoDcSection({
 // against an unissued order, and cancelled ones are dead. A PO whose lines have
 // ALL gone out already (dcSentQty >= totalQty) is excluded too: there is nothing
 // left to put on a challan, and offering it only led to a form where every line
-// said "fully sent". The whole eligible set
+// said "fully sent" — UNLESS deviated pieces are still waiting to go back to the
+// vendor (ADR-219). An order leaves this list only when it owes nothing AND has
+// nothing waiting to go back: a 50-piece order fully sent with 20 pieces to
+// return used to vanish from this screen entirely, so the one place that could
+// tell the storekeeper what to do had removed it. The whole eligible set
 // loads in one fetch and scrolls; the search box filters it client-side across
 // EVERY visible column via the shared matchesSearchTerm helper (universal-search
 // standard) — so typing a vendor, a type or a status finds the row, not only the
@@ -391,9 +431,10 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
         poSendsMaterialOut(p.poType) &&
         p.status !== 'draft' &&
         p.status !== 'cancelled' &&
-        // Something is still to send. A PO with no lines (totalQty 0) stays
-        // listed: the form, not the picker, explains that.
-        (p.totalQty === 0 || p.dcSentQty < p.totalQty),
+        // Something is still to send (a PO with no lines, totalQty 0, stays
+        // listed: the form, not the picker, explains that) OR deviated pieces
+        // are still waiting to go back — ADR-219.
+        (p.totalQty === 0 || p.dcSentQty < p.totalQty || rtvPendingQty(p) > 0),
     );
     if (search.trim() === '') return rows;
     return rows.filter((p) =>
@@ -407,17 +448,29 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           p.status,
           p.lineCount,
           `${p.dcSentQty}/${p.totalQty}`,
+          rtvPendingQty(p) > 0 ? rtvPendingQty(p) : null,
         ],
         search,
       ),
     );
   }, [data, search]);
+  // Is any order on screen holding pieces to go back? Decides whether the note
+  // under the heading that explains the marked rows is shown at all.
+  const anyRtvPending = useMemo(() => eligible.some((p) => rtvPendingQty(p) > 0), [eligible]);
 
   return (
     <>
       <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
         Pick a PO.
       </div>
+      {/* ADR-219 — why an order with nothing left to send is still in the list,
+          said once above the table instead of on every row. */}
+      {anyRtvPending ? (
+        <div style={{ fontSize: 11, color: 'var(--amber2)', marginBottom: 12 }}>
+          Marked orders have deviated pieces waiting to go back to the vendor. This screen sends
+          fresh pieces only — raise the return on Against NC.
+        </div>
+      ) : null}
 
       <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
         <label className="form-label" htmlFor="dc-po-search">
@@ -457,43 +510,64 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                 <th>PO Status</th>
                 <th className="th-num">Lines</th>
                 <th className="th-num">Sent / Order Qty</th>
+                {/* ADR-219 / NAMING §A — the SAME fact the Job Card op card
+                    calls Return Challan Pending, summed per purchase order. */}
+                <th className="th-num">Return Challan Pending</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
             <tbody>
-              {eligible.map((p) => (
-                <tr key={p.id}>
-                  <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
-                    {p.code}
-                  </td>
-                  <td className="mono">{fmtDate(p.poDate)}</td>
-                  <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
-                  <td style={{ color: 'var(--purple)' }}>
-                    {p.poType === 'service' ? 'Service' : 'Job Work'}
-                  </td>
-                  <td className="mono">
-                    {PO_STATUS_LABEL[p.status] ?? p.status.replaceAll('_', ' ')}
-                  </td>
-                  <td className="mono td-num">{p.lineCount}</td>
-                  {/* Amber once something has gone out: this PO is part-way
-                      through, and the challan being raised is a balance one. */}
-                  <td
-                    className="mono td-num"
-                    style={{ color: p.dcSentQty > 0 ? 'var(--amber)' : undefined }}
-                  >
-                    {p.dcSentQty} / {p.totalQty}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => onSelect(p.id)}
+              {eligible.map((p) => {
+                const rtvPending = rtvPendingQty(p);
+                return (
+                  // Marked when pieces are waiting to go back, so an order with
+                  // 0 left to send does not look like a mistake (ADR-219).
+                  <tr key={p.id} className={rtvPending > 0 ? 'row-pending' : undefined}>
+                    <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                      {p.code}
+                    </td>
+                    <td className="mono">{fmtDate(p.poDate)}</td>
+                    <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
+                    <td style={{ color: 'var(--purple)' }}>
+                      {p.poType === 'service' ? 'Service' : 'Job Work'}
+                    </td>
+                    <td className="mono">
+                      {PO_STATUS_LABEL[p.status] ?? p.status.replaceAll('_', ' ')}
+                    </td>
+                    <td className="mono td-num">{p.lineCount}</td>
+                    {/* Amber once something has gone out: this PO is part-way
+                        through, and the challan being raised is a balance one. */}
+                    <td
+                      className="mono td-num"
+                      style={{ color: p.dcSentQty > 0 ? 'var(--amber)' : undefined }}
                     >
-                      Select
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      {p.dcSentQty} / {p.totalQty}
+                    </td>
+                    {/* Blank, not 0, when nothing is waiting — a column of
+                        zeros would read as a figure worth checking. */}
+                    <td
+                      className="mono td-num"
+                      style={{ color: rtvPending > 0 ? 'var(--amber2)' : undefined }}
+                      title={
+                        rtvPending > 0
+                          ? `${rtvPending} pcs are waiting to go back to the vendor. Raise that challan on Against NC.`
+                          : undefined
+                      }
+                    >
+                      {rtvPending > 0 ? rtvPending : ''}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => onSelect(p.id)}
+                      >
+                        Select
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -507,13 +581,14 @@ function PoDcFormBody({
   onChangePo,
   exit,
   saveCtl,
-  onSwitchToJwpoDc,
+  onSwitchToNc,
 }: {
   poId: string;
   onChangePo: () => void;
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
-  onSwitchToJwpoDc: (poCode: string) => void;
+  /** ADR-219 — hand the user to Against NC for the pieces waiting to go back. */
+  onSwitchToNc: (ncSearch: string) => void;
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
@@ -600,6 +675,7 @@ function PoDcFormBody({
         ncCode: c.ncCode,
         itemCodeLabel: itemCodeWithRev(c.itemCode ?? c.itemCodeText, c.itemRevision),
         rejectedQty: c.rejectedQty,
+        openQty: c.openQty,
         state: c.state,
         poLineId: c.purchaseOrderLineId,
       });
@@ -611,6 +687,9 @@ function PoDcFormBody({
     const sendingLineIds = new Set(sendingDrafts.map((l) => l.purchaseOrderLineId));
     return [...byId.values()].filter((r) => r.poLineId !== null && sendingLineIds.has(r.poLineId));
   }, [rtv.data, rtvConflictRows, sendingDrafts]);
+  // ADR-219 — the TOTAL still to go back on this PO, over the deviations shown.
+  // Netted (openQty), never the gross rejected figure.
+  const rtvOpenTotal = useMemo(() => rtvRows.reduce((sum, r) => sum + rtvOpenQty(r), 0), [rtvRows]);
   const rtvShownKey = useMemo(
     () =>
       rtvRows
@@ -629,7 +708,7 @@ function PoDcFormBody({
   // it errors, so this cannot hang); a failed check does NOT block — the server
   // still refuses with 409 rtv_pending.
   const rtvBlocks = rtv.isLoading || (rtvRows.length > 0 && !rtvConfirmed);
-  // "Switch to Against JW PO / DC" drops this form: ask first if anything was
+  // "Send the N back → Against NC" drops this form: ask first if anything was
   // typed (the auto-filled DC No. alone does not count).
   const [confirmSwitch, setConfirmSwitch] = useState(false);
 
@@ -759,6 +838,12 @@ function PoDcFormBody({
             ncCode: n.ncCode,
             itemCodeLabel: n.itemCode ?? '—',
             rejectedQty: n.rejectedQty,
+            // The 409 names the NCs holding the save and carries only the gross
+            // figure, so that is the best available here. It can only overstate
+            // a partly recovered deviation, never hide one — and the fetched
+            // candidate (which does carry openQty) replaces this row as soon as
+            // the refetch below lands.
+            openQty: n.rejectedQty,
             state: n.state,
             poLineId: n.poLineId,
           }),
@@ -783,7 +868,11 @@ function PoDcFormBody({
     transport !== '' ||
     vehicleNo !== '' ||
     lineDrafts.some((l) => l.shipQty !== '' || l.materialText !== '' || l.dcRemarks !== '');
-  const doSwitch = (): void => exit.leave(() => onSwitchToJwpoDc(po.code));
+  // Against NC lists the deviations themselves and searches by NC No. / item —
+  // not by PO No. — so seed its search only when ONE deviation is waiting and
+  // the search can land on it. With several, it opens on the full list.
+  const doSwitch = (): void =>
+    exit.leave(() => onSwitchToNc(rtvRows.length === 1 ? (rtvRows[0]?.ncCode ?? '') : ''));
   const onSwitchClick = (): void => {
     if (editedForSwitch) setConfirmSwitch(true);
     else doSwitch();
@@ -911,12 +1000,22 @@ function PoDcFormBody({
       ) : null}
       {rtvRows.length > 0 ? (
         <div style={{ marginTop: 'var(--sp-3)' }}>
+          {/* ADR-219 — lead with the TOTAL still to go back, and say plainly
+              that this screen's quantities do not include it. */}
           <Banner
             tone="warn"
             role="alert"
             flush
-            title="These pieces from this PO are waiting to go back to the vendor:"
+            title={
+              rtvOpenTotal > 0
+                ? `${rtvOpenTotal} pcs on this PO must go back to the vendor — send them separately`
+                : 'Pieces on this PO must go back to the vendor — send them separately'
+            }
           >
+            <div style={{ marginBottom: 6 }}>
+              They are <b>not</b> part of what this screen offers: Against PO sends fresh pieces
+              only. Raise the return on Against NC, one challan per deviation.
+            </div>
             <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
               {rtvRows.map((r) => (
                 <li key={r.ncId}>
@@ -924,13 +1023,15 @@ function PoDcFormBody({
                   <b className="mono fw-700" style={{ color: 'var(--text)' }}>
                     {r.itemCodeLabel}
                   </b>{' '}
-                  — {Number(r.rejectedQty)} pcs — {RTV_CANDIDATE_STATE_LABELS[r.state]}
+                  — {rtvOpenQty(r)} pcs — {RTV_CANDIDATE_STATE_LABELS[r.state]}
                 </li>
               ))}
             </ul>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-ghost btn-sm" onClick={onSwitchClick}>
-                Switch to Against JW PO / DC
+                {rtvOpenTotal > 0
+                  ? `Send the ${rtvOpenTotal} back → Against NC`
+                  : 'Send them back → Against NC'}
               </button>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <input
@@ -1166,16 +1267,23 @@ function PoDcFormBody({
 // fields (vendor/date/etc.) remount clean when the chosen NC changes.
 
 function NcDcSection({
+  initialSearch,
   exit,
   saveCtl,
 }: {
+  /** ADR-219 — the NC No. the Against PO warning sent the user here to raise,
+   *  when there was exactly one. Blank otherwise. */
+  initialSearch: string;
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
 }): React.JSX.Element {
   const [ncId, setNcId] = useState<string | null>(null);
+  // Held here, not in the picker, so "Choose a different NC" comes back to the
+  // same search (the same shape as JwpoDcRtvSection).
+  const [search, setSearch] = useState(initialSearch);
 
   if (ncId === null) {
-    return <NcPickerBody onSelect={setNcId} />;
+    return <NcPickerBody search={search} onSearchChange={setSearch} onSelect={setNcId} />;
   }
   return (
     <NcDcFormBody
@@ -1194,8 +1302,15 @@ function NcDcSection({
 // scrolls; the search box filters it client-side across EVERY visible column (NC
 // No, item code, item name) via the shared matchesSearchTerm helper (universal-
 // search standard).
-function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React.JSX.Element {
-  const [search, setSearch] = useState('');
+function NcPickerBody({
+  search,
+  onSearchChange,
+  onSelect,
+}: {
+  search: string;
+  onSearchChange: (s: string) => void;
+  onSelect: (ncId: string) => void;
+}): React.JSX.Element {
   const { data, isLoading, isError } = useEligibleRtvNcs();
 
   const eligible = useMemo(() => {
@@ -1219,7 +1334,7 @@ function NcPickerBody({ onSelect }: { onSelect: (ncId: string) => void }): React
           id="dc-nc-search"
           className="innovic-input"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => onSearchChange(e.target.value)}
           placeholder="NC no, item code, item name…"
         />
       </div>
@@ -1475,8 +1590,13 @@ function NcDcFormBody({
         <Truck size={14} style={{ verticalAlign: -2 }} /> Create Return-to-Vendor Challan
       </div>
 
-      {/* Read-only NC summary. Qty to return is nc.rejectedQty by rule — the
-          full rejected quantity, never editable on this screen. */}
+      {/* Read-only NC summary. Qty to Return is nc.rejectedQty by rule — the
+          full rejected quantity, never editable on this screen.
+          ADR-219 — the JW PO the pieces were made under and the challan they
+          first went out on are read off the deviation and shown here too: it
+          already knows both, so asking the storekeeper for them is asking
+          twice. A dash means the deviation genuinely has none (an in-house
+          deviation has no purchase order behind it) — never a guess. */}
       <div
         style={{
           background: 'var(--bg)',
@@ -1526,6 +1646,28 @@ function NcDcFormBody({
               {Number(nc.rejectedQty)} pcs
             </b>
           </div>
+          {/* The job-work order the deviated pieces were made under — NOT the
+              ADR-217 replacement order (that is Replacement PO No. elsewhere). */}
+          <div>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>JW PO No.</span>
+            <br />
+            <b className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {nc.poCode ?? '—'}
+            </b>
+          </div>
+          {/* The outward challan the rejected pieces first went out on. */}
+          <div>
+            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Sent on DC No.</span>
+            <br />
+            <b className="mono fw-700" style={{ color: 'var(--text)' }}>
+              {nc.sourceDeliveryChallanCode ?? '—'}
+            </b>
+          </div>
+        </div>
+        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+          Read off the deviation — none of it is typed here, and none of it can be edited. Below,
+          the vendor is pre-filled from the deviation and may be changed; the DC date, transporter,
+          vehicle and remarks are yours to fill.
         </div>
         {/* Return to the picker WITHOUT leaving the screen — in-component state. */}
         <button

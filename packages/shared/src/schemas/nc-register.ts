@@ -111,6 +111,15 @@ export const ncRegisterSchema = z.object({
    *  out, or nobody could say. */
   sourceDeliveryChallanId: z.string().uuid().nullable().default(null),
   sourceDeliveryChallanCode: z.string().nullable().default(null),
+  /** The job-work order the deviated pieces were made under — the SAME order
+   *  the return challan goes back against. Same names as RtvCandidate carries,
+   *  so the two agree. Needed because choosing a deviation on +New DC must fill
+   *  its order in by itself: the NC already knows it, so asking again is asking
+   *  twice. Null on a deviation with no purchase order behind it (an in-house
+   *  op, or bought material with no PO line). NOT the replacement order — that
+   *  is `replacementPoCode` (ADR-217), a different document. */
+  purchaseOrderId: z.string().uuid().nullable().default(null),
+  poCode: z.string().nullable().default(null),
   /** ADR-217 — the zero-value job-work order this return raised, created with
    *  the disposition. Null on every NC disposed before ADR-217, and on every
    *  disposition that is not a return to vendor. */

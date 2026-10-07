@@ -215,6 +215,20 @@ export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
    *  `dcSentQty >= totalQty` means the PO is fully sent and has nothing left
    *  to put on a new challan. 0 on a buying PO that never ships anything. */
   dcSentQty: z.number().nonnegative().default(0),
+  /** Pieces on this PO whose return-to-vendor challan has not been raised yet
+   *  — deviated, QC decided "return to vendor", no challan out. Summed over the
+   *  PO's lines, net of anything already recovered.
+   *
+   *  The picker needs it at HEADER grain for two reasons: an order is only
+   *  truly finished when it owes nothing AND has nothing waiting to go back
+   *  (before this, a fully-sent order vanished from +New DC while pieces sat in
+   *  the store waiting), and the list must say WHY a 0-balance order is still
+   *  listed without fetching every line of all 200 rows it offers (§20.5).
+   *
+   *  Same fact and same field name as the op-level figure on the Job Card
+   *  ("Return Challan Pending", op-entry's rtvAwaitingChallanQty) — a WIDER
+   *  scope of it, summed per purchase order instead of per operation. */
+  rtvAwaitingChallanQty: z.number().nonnegative().default(0),
 });
 export type PurchaseOrderListItem = z.infer<typeof purchaseOrderListItemSchema>;
 
