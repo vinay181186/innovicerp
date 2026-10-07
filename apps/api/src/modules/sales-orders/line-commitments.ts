@@ -10,6 +10,7 @@
 // raised in parallel against the same line waits for this save to finish
 // instead of slipping in between the check and the write.
 
+import { isBomPartPlan } from '@innovic/shared';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   bomMasterLines,
@@ -47,6 +48,17 @@ export interface SoLineCommitment {
   orderCodes: string[];
   dispatchCodes: string[];
   invoiceCodes: string[];
+}
+
+/**
+ * ADR-221 — the smallest line order qty N whose ADR-107 per-part cap
+ * ceil(qtyPerSet × N) still holds `planned` (an integer plan qty) of the part:
+ * N = planned <= 0 ? 0 : floor((planned − 1) / qtyPerSet) + 1. The 1e-9 keeps
+ * float noise (7 ÷ 0.07 = 99.99999999999999) from dropping a set.
+ */
+export function minOrderForPartPlanned(planned: number, qtyPerSet: number): number {
+  if (planned <= 0) return 0;
+  return Math.floor((planned - 1) / qtyPerSet + 1e-9) + 1;
 }
 
 function pushUnique(list: string[], code: string | null | undefined): void {
@@ -141,9 +153,15 @@ export async function readSoLineCommitments(
   // cut from 10 to 8 on an order whose two parts were each planned 10. But
   // they must still hold the line up, or a cut would strand them over their
   // own per-part cap (ceil(qty_per_set × order qty), ADR-107). So each part
-  // CLAIMS ceil(Σ its planned ÷ qty_per_set) sets, read off the BOM line the
-  // part plans were raised on, and the floor is
-  //   MAX(own plans, MAX over parts of the sets claimed).
+  // CLAIMS the smallest order N its plans still fit under that cap — the
+  // least N with ceil(qps × N) ≥ P, P = Σ its planned (an integer), qps =
+  // qty_per_set summed over the part's live lines on the BOM its plans were
+  // raised on (a part on two BOM lines needs both, as completeSets sums):
+  //   N = P <= 0 ? 0 : floor((P − 1) / qps) + 1
+  // e.g. qps 0.5, P 3 → floor(2 / 0.5) + 1 = 5 (ceil(0.5 × 5) = 3; at 4 the
+  // cap would be 2). ceil(P / qps) would say 6 — one set too strict. The
+  // floor is then
+  //   MAX(own plans, MAX over parts of the order each part claims).
   // The same on an equipment line and an assembly line: for an equipment line
   // the plans' BOM is the header Equipment BOM. A part whose BOM line is gone
   // (edited after planning) claims its planned qty as-is (1 per set), the
@@ -159,7 +177,8 @@ export async function readSoLineCommitments(
     if (!p.soLineId) continue;
     const c = out.get(p.soLineId);
     if (!c) continue;
-    if (p.bomMasterId && p.bomChildCode) {
+    // The shared ADR-107 test; the two re-checks only narrow the types.
+    if (isBomPartPlan(p) && p.bomMasterId && p.bomChildCode) {
       const key = `${p.soLineId}|${p.bomMasterId}|${p.bomChildCode}`;
       const e = partPlannedByKey.get(key) ?? {
         lineId: p.soLineId,
@@ -195,15 +214,16 @@ export async function readSoLineCommitments(
       );
     for (const b of bomRows) {
       const q = Number(b.qtyPerSet);
-      if (q > 0) qtyPerSetByBomCode.set(`${b.bomMasterId}|${b.code}`, q);
+      if (!(q > 0)) continue;
+      // Accumulate, never overwrite: a part on two BOM lines needs both.
+      const k = `${b.bomMasterId}|${b.code}`;
+      qtyPerSetByBomCode.set(k, (qtyPerSetByBomCode.get(k) ?? 0) + q);
     }
   }
   const claimedSetsByLine = new Map<string, number>();
   for (const e of partPlannedByKey.values()) {
     const q = qtyPerSetByBomCode.get(`${e.bomMasterId}|${e.code}`);
-    // The 1e-9 keeps float noise (3 ÷ 0.1 = 30.000000000000004) from
-    // claiming a set more than the plans really need.
-    const claimed = q ? Math.ceil(e.qty / q - 1e-9) : e.qty;
+    const claimed = q ? minOrderForPartPlanned(e.qty, q) : e.qty;
     claimedSetsByLine.set(e.lineId, Math.max(claimedSetsByLine.get(e.lineId) ?? 0, claimed));
   }
   for (const c of out.values()) {

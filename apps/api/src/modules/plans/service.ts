@@ -81,7 +81,11 @@ import {
 } from '../../lib/stock-reservation';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { derivePlanStatus } from '../../lib/plan-derived-status';
-import { soLineCoveredRaw, soLineOwnCoveredRaw } from '../../lib/so-line-coverage';
+import {
+  soLineCoveredRaw,
+  soLineIsEquipmentLineRaw,
+  soLineOwnCoveredRaw,
+} from '../../lib/so-line-coverage';
 import {
   PLAN_ACTIVE_ORDER_COUNT_SQL,
   PLAN_COVERED_QTY_SQL,
@@ -768,7 +772,7 @@ async function assertPlanQtyWithinRemaining(
     const r = (await tx.execute(sql`
       SELECT sol.order_qty AS "orderQty", so.status AS "soStatus", so.code AS "soCode",
              sol.line_no AS "lineNo", sol.short_closed_at IS NOT NULL AS "shortClosed",
-             (so.type = 'equipment' AND so.bom_master_id IS NOT NULL) AS "isEquipmentLine",
+             ${sql.raw(soLineIsEquipmentLineRaw('sol'))} AS "isEquipmentLine",
              COALESCE((SELECT i_l.code FROM public.items i_l WHERE i_l.id = sol.item_id),
                       sol.item_code_text) AS "itemCode",
              ${sql.raw(soLineOwnCoveredRaw('sol'))} AS "covered",
@@ -795,8 +799,10 @@ async function assertPlanQtyWithinRemaining(
     // No row = the SO line was deleted (possibly while this request waited on
     // the lock) — never wave a plan through against a line that is gone.
     if (!line) throw new NotFoundError('Sales Order line not found. Refresh the page.');
-    // ADR-221 (a) — an EQUIPMENT line (Equipment SO with a header BOM) is never
-    // planned itself; only its parts are, from Plan Equipment BOM. Refused on
+    // ADR-221 (a) — THE equipment line (Equipment SO, live header BOM, and
+    // this line's item is that BOM's parent — the machine) is never planned
+    // itself; only its parts are, from Plan Equipment BOM. A spare-part line
+    // on the same SO is ordinary and planned as usual. Refused on
     // create and on an edit that raises the qty. A CUT of a legacy own plan
     // is still let through below, so a planner can wind it down.
     const isCut = Number(line.own) > 0 && planQty <= Number(line.own);

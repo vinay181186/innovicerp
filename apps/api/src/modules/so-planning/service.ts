@@ -65,7 +65,7 @@ import { readReservedByLine, readStockPositions } from '../../lib/stock-reservat
 import {
   prCoverQtyRaw,
   soLineCoveredRaw,
-  soLineOwnCoveredRaw,
+  soLineDirectJcRaw,
   soLinePlannedRaw,
 } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
@@ -337,12 +337,12 @@ export async function getPlanningSoList(
         // the % uses covered (+ direct cards) capped at the line qty, so one
         // over-covered line cannot hide another's gap. ADR-196 — a line
         // closed short counts as fully covered: nothing more is wanted on it.
-        plannedQty:
-          sql<number>`coalesce(sum(${sql.raw(soLinePlannedRaw('"sales_order_lines"'))}), 0)::numeric`.as(
-            'planned_qty',
-          ),
+        // ADR-221 — planned and direct are computed ONCE per line in the
+        // sol_cov LATERAL below; covered = planned + direct is exactly
+        // soLineCoveredRaw, without evaluating the planned expression twice.
+        plannedQty: sql<number>`coalesce(sum(sol_cov.planned), 0)::numeric`.as('planned_qty'),
         coveredQty:
-          sql<number>`coalesce(sum(CASE WHEN ${salesOrderLines.shortClosedAt} IS NOT NULL THEN ${salesOrderLines.orderQty} ELSE LEAST(${sql.raw(soLineCoveredRaw('"sales_order_lines"'))}, ${salesOrderLines.orderQty}) END), 0)::numeric`.as(
+          sql<number>`coalesce(sum(CASE WHEN ${salesOrderLines.shortClosedAt} IS NOT NULL THEN ${salesOrderLines.orderQty} ELSE LEAST((sol_cov.planned + sol_cov.direct)::numeric, ${salesOrderLines.orderQty}) END), 0)::numeric`.as(
             'covered_qty',
           ),
         maxDueDate: sql<string | null>`max(${salesOrderLines.dueDate})::text`.as('max_due'),
@@ -363,6 +363,11 @@ export async function getPlanningSoList(
           // still counts toward the order's totals); only cancelled ones drop.
           sql`${salesOrderLines.status} <> 'cancelled'`,
         ),
+      )
+      .leftJoin(
+        sql`LATERAL (SELECT ${sql.raw(soLinePlannedRaw('"sales_order_lines"'))} AS planned,
+                            ${sql.raw(soLineDirectJcRaw('"sales_order_lines"'))} AS direct) AS sol_cov`,
+        sql`true`,
       )
       .where(
         and(
@@ -854,9 +859,23 @@ export async function getPlanningSoDetail(
     for (const r of bomPartsAgg) bomPartsMap.set(r.bomMasterId, Number(r.c));
 
     // 7a. ADR-221 — the header Equipment BOM's parts, for the complete-sets
-    // count of an equipment line's Plan Qty. Same join as childBomLineRows
+    // count of THE equipment line's Plan Qty. Same join as childBomLineRows
     // above / ADR-107's cap / lib/so-line-coverage soLineEquipmentSetsRaw, so
-    // the screen and every SQL reader count the same sets.
+    // the screen and every SQL reader count the same sets. Every BOM line is
+    // passed: soLinePlanCoverage itself skips qty_per_set <= 0 and sums a
+    // part that sits on two BOM lines.
+    // THE equipment line is the one whose item is the live header BOM's
+    // parent (the machine); a spare-part line on the same SO is ordinary
+    // (soLineIsEquipmentLineRaw is the SQL twin).
+    const equipParentRows =
+      equipBomId === null
+        ? []
+        : await tx
+            .select({ parentItemId: bomMasters.parentItemId })
+            .from(bomMasters)
+            .where(and(eq(bomMasters.id, equipBomId), isNull(bomMasters.deletedAt)))
+            .limit(1);
+    const equipParentItemId = equipParentRows[0]?.parentItemId ?? null;
     const equipBomLines =
       equipBomId === null
         ? []
@@ -941,6 +960,8 @@ export async function getPlanningSoDetail(
       const itemProcurementType = toProcurementType(r.itemProcurementType);
       const linePrs = prsByLine.get(r.line.id) ?? { prs: [], prQty: 0 };
       const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
+      const isEquipmentLine =
+        hasEquipmentBom && equipParentItemId !== null && r.line.itemId === equipParentItemId;
       // ADR-221 — ONE rule (packages/shared soLinePlanCoverage, mirrored in SQL
       // by lib/so-line-coverage): BOM PART plans never add into the line. An
       // equipment line counts COMPLETE SETS of its parts (the weakest part
@@ -950,13 +971,14 @@ export async function getPlanningSoDetail(
       // ADR-171: on a BUY line the PRs are the plan — their live qty counts as
       // planned. On a make line they are reported but change no number.
       const totalPlanned = soLinePlanCoverage({
-        isEquipmentLine: hasEquipmentBom,
+        isEquipmentLine,
+        orderQty: r.line.orderQty,
         plans: linePlans.map((p) => ({
           planQty: p.planQty,
           bomMasterId: planBomMasterById.get(p.id) ?? null,
           bomChildCode: p.bomChildCode,
         })),
-        bomLines: hasEquipmentBom ? equipBomLines : [],
+        bomLines: isEquipmentLine ? equipBomLines : [],
         buyPrQty: itemProcurementType === 'buy' ? linePrs.prQty : 0,
       }).planned;
       const orderQty = r.line.orderQty;
@@ -1701,11 +1723,11 @@ export async function raisePlanningPr(
       // 3. What the line still has left to plan — ADR-185: read off the ONE
       //    shared rule (lib/so-line-coverage.ts), the same figure the Planning
       //    line and the Needs Planning table state, never rebuilt by hand here.
-      //    ADR-221: the OWN-covered form (part plans excluded) — the same cap
-      //    + Plan uses. A Buy line has no part plans, so the figure is
-      //    unchanged; it just keeps both caps on one expression.
+      //    ADR-221: the FULL covered figure (a Buy equipment line's complete
+      //    sets included), so a PR cannot be raised on top of planned parts.
+      //    + Plan's own-plan cap uses the own-covered form instead.
       const leftRows = (await tx.execute(sql`
-        SELECT GREATEST(sol.order_qty - ${sql.raw(soLineOwnCoveredRaw('sol'))}, 0)::numeric AS to_plan
+        SELECT GREATEST(sol.order_qty - ${sql.raw(soLineCoveredRaw('sol'))}, 0)::numeric AS to_plan
         FROM public.sales_order_lines sol
         WHERE sol.id = ${soLineId}::uuid
           AND sol.deleted_at IS NULL
