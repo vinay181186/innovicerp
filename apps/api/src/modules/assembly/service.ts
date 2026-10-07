@@ -28,8 +28,18 @@
 //                 | waiting (otherwise)
 
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import { ActivityAction, roundQty } from '@innovic/shared';
+import {
+  ActivityAction,
+  cascadeFormsMap,
+  effectiveFormPerms,
+  normalizeDeptsMap,
+  roundQty,
+  shortName,
+} from '@innovic/shared';
 import type {
+  AccessDeptsMap,
+  AccessFormKey,
+  AccessFormsMap,
   AssemblyComponentRow,
   AssemblyComponentStatus,
   AssemblyListResponse,
@@ -37,6 +47,7 @@ import type {
   AssemblyUnitRow,
   AssemblyUnitStatus,
   DocumentTraceability,
+  EffectiveAccess,
   ListAssembliesQuery,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
@@ -88,6 +99,102 @@ function todayIso(): string {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
+}
+
+// The two forms that ARE a Planning entry — the SAME pair the "Assembled By"
+// dropdown is built on (`PLANNING_ENTRY_FORMS` in access-control/service.ts,
+// and the whole `planning` department per ACCESS_FORMS). Named here so the
+// re-assertion below and the list can never drift into asking two questions.
+const PLANNING_ENTRY_FORMS: readonly AccessFormKey[] = ['plan_create', 'routecard_create'];
+
+// jsonb arrives as `unknown` from the driver; same defensive coercion the
+// access-control service makes before handing a stored matrix to the shared
+// helpers.
+function asJsonMap<T>(v: unknown): T {
+  return (v && typeof v === 'object' ? (v as T) : ({} as T)) ?? ({} as T);
+}
+
+/** Who assembled it: a Planning login's SHORT name snapshot, else the typed
+ *  name, else nothing.
+ *
+ *  Mirrors `resolveIssuedTo` (modules/store-issues/slip.ts), the approved
+ *  pattern for this: the chosen person is a login with a granted Planning right
+ *  (the /access-control/planning-users list), and the short name is stored into
+ *  the `assembled_by` TEXT snapshot so every downstream read / print /
+ *  activity-log line is unchanged.
+ *
+ *  The stored name is derived from the DATABASE row, never from what the
+ *  browser sent: the id is re-read server-side (same company, active, not
+ *  deleted) AND the Planning right the dropdown was built on is re-asserted
+ *  from the stored matrix — so a tampered or stale payload cannot write a name
+ *  the login does not have, nor name somebody the list would never have
+ *  offered. Both halves are needed: without the permission test a crafted
+ *  POST could record a Finance viewer as the person who built the machine with
+ *  a real FK link, and the picker caches for 60s, so a grant revoked a minute
+ *  ago would still be accepted. Full Access qualifies, exactly as the dropdown
+ *  allows it (`effectiveFormPerms` returns every right for those accounts).
+ *
+ *  The one difference from Item Issue: `Assembled By` has always been OPTIONAL
+ *  on the Assembly Tracker, so "neither sent" is allowed and returns two nulls
+ *  rather than refusing. */
+async function resolveAssembledBy(
+  tx: DbTransaction,
+  companyId: string,
+  input: Pick<StartAssemblyInput, 'assembledByUserId' | 'assembledBy'>,
+): Promise<{ userId: string | null; assembledBy: string | null }> {
+  if (input.assembledByUserId) {
+    // ONE query: the login row plus its access matrix, left-joined so a login
+    // with no access row still comes back (and then fails the test below).
+    const rows = (await tx.execute(sql`
+      SELECT u.id, u.full_name, u.email,
+             ua.full_access, ua.auditor, ua.departments, ua.forms
+      FROM public.users u
+      LEFT JOIN public.user_access ua
+        ON ua.user_id = u.id
+       AND ua.company_id = ${companyId}::uuid
+       AND ua.deleted_at IS NULL
+      WHERE u.id = ${input.assembledByUserId}::uuid AND u.company_id = ${companyId}::uuid
+        AND u.is_active = true AND u.deleted_at IS NULL
+    `)) as unknown as Array<{
+      id: string;
+      full_name: string | null;
+      email: string;
+      full_access: boolean | null;
+      auditor: boolean | null;
+      departments: unknown;
+      forms: unknown;
+    }>;
+    const u = rows[0];
+    if (!u) {
+      throw new ValidationError('Pick an active Planning person (the one chosen was not found).');
+    }
+    // Built exactly as `getMyAccess` / `listDeptUserOptions` build it, and asked
+    // through the app's own `effectiveFormPerms` — so this refuses precisely the
+    // people the dropdown refuses, per-form grants and per-page "No create"
+    // switches included.
+    const eff: EffectiveAccess = {
+      fullAccess: u.full_access ?? false,
+      auditor: u.auditor ?? false,
+      // Irrelevant to who may make a Planning entry, but the shape is the shape.
+      drawingDownload: false,
+      departments: normalizeDeptsMap(asJsonMap<AccessDeptsMap>(u.departments)),
+      forms: cascadeFormsMap(asJsonMap<AccessFormsMap>(u.forms)),
+    };
+    if (!PLANNING_ENTRY_FORMS.some((f) => effectiveFormPerms(eff, f).entry)) {
+      // A DIFFERENT failure from "not found" above, and it reads differently:
+      // the person exists, they are simply not Planning any more.
+      throw new ValidationError(
+        'The person chosen no longer has Planning rights. Pick someone from the list again.',
+      );
+    }
+    // `full_name` is nullable `text` with no NOT NULL and no CHECK, so `??`
+    // alone let a login with a blank or all-space name store `assembled_by = ''`
+    // — which the units table renders as nothing at all, not even a dash. Same
+    // guard the people list already uses (`r.fullName?.trim() || r.email`).
+    return { userId: u.id, assembledBy: shortName(u.full_name?.trim() || u.email) };
+  }
+  const typed = input.assembledBy?.trim() ?? '';
+  return { userId: null, assembledBy: typed === '' ? null : typed };
 }
 
 function deriveStatus(
@@ -748,6 +855,10 @@ export async function startAssembly(
       );
     }
 
+    // `Assembled By` — the picked Planning login (its short name is read from
+    // the users row, never from the payload) or the free-typed name. 0201.
+    const assembledByPerson = await resolveAssembledBy(tx, companyId, input);
+
     // No stock cascade: a start reserves nothing in the ledger. Components leave
     // the store at STOP, for the qty that actually came out good.
     const inserted = await tx
@@ -761,7 +872,8 @@ export async function startAssembly(
         qty: requestedQty,
         serialNo: null,
         assemblyDate: input.startDate ?? todayIso(),
-        assembledBy: input.startedBy ?? null,
+        assembledBy: assembledByPerson.assembledBy,
+        assembledByUserId: assembledByPerson.userId,
         remarks: input.remarks ?? null,
         bomMasterId: so.bomMasterId ?? null,
         dispatched: false,
@@ -853,6 +965,14 @@ export async function stopAssembly(
     const completedBefore = Number(maxRows[0]?.completed ?? 0);
     const serial = input.serialNo ?? `${batch.soCodeText}-U${nextUnitNo}`;
 
+    // `Assembled By` at Stop — the name TYPED on this Stop, or `undefined` when
+    // nothing was said. `stopAssemblyInputSchema.assembledBy` is `.optional()`
+    // with no `.min(1)`, so `""` validates: an API or retry client sending
+    // `assembledBy: ""` means "said nothing", NOT "clear it". Both the name and
+    // the user link are decided on this one value so a blank can never wipe the
+    // started batch's name and its link together.
+    const typedAtStop = input.assembledBy?.trim() || undefined;
+
     // The completed batch — a normal assembly_units row its parts are fitted to.
     const inserted = await tx
       .insert(assemblyUnits)
@@ -867,7 +987,17 @@ export async function stopAssembly(
         assemblyDate: input.assemblyDate ?? todayIso(),
         // The Complete screen sends only the qty, so carry the started batch's
         // Assembled By / Remarks onto the completed row unless new ones are given.
-        assembledBy: input.assembledBy ?? batch.assembledBy ?? null,
+        // That carry-forward is PRE-EXISTING behaviour, not new here — 0201 only
+        // extends it so the user LINK travels with the name instead of being
+        // dropped on completion.
+        assembledBy: typedAtStop ?? batch.assembledBy ?? null,
+        // StopAssemblyInput carries no id (the Complete panel has no people
+        // picker), so a name TYPED at Stop arrives without one — and then the
+        // started batch's id must NOT be kept: it would point the link at a
+        // different person from the name printed beside it. That rule is
+        // unchanged; it just keys off the same trimmed value as the name above,
+        // so a blank carries BOTH forward instead of nulling both.
+        assembledByUserId: typedAtStop !== undefined ? null : (batch.assembledByUserId ?? null),
         remarks: input.remarks ?? batch.remarks ?? null,
         bomMasterId: batch.bomMasterId ?? null,
         dispatched: false,

@@ -3837,6 +3837,15 @@ export const assemblyUnits = pgTable(
     serialNo: text('serial_no'),
     assemblyDate: date('assembly_date').notNull(),
     assembledBy: text('assembled_by'),
+    // 0201 — "Assembled By" now also points at the app login picked from the
+    // Planning people list (planning-user.ts), so the person is traceable.
+    // `assembledBy` above stays and is still written on every path: it is the
+    // SNAPSHOT every read, print and activity-log line shows, and it has to
+    // survive the login being deactivated, renamed or FK'd away by ON DELETE
+    // SET NULL. Optional on purpose — a name may still be typed free-hand.
+    assembledByUserId: uuid('assembled_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     remarks: text('remarks'),
     bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id, {
       onDelete: 'set null',

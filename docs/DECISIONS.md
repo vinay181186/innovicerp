@@ -11986,3 +11986,97 @@ the gate. The approver's screen needs NO change - it renders change rows generic
   it** - each module hand-duplicates the rule in its divert and nothing would catch a drift. And the
   approvals queue sits in System Settings next to Backup, where the Production approvers (L4/L5) will
   not look for work waiting on them.
+
+## ADR-221: Assembled By picks a Planning person, and one helper answers "who may do this work"
+
+**Date:** 2026-10-07
+**Status:** Accepted
+
+### Context
+
+`Assembled By` on the Assembly Tracker's Start panel was a free-text box. The person who
+built a machine was whatever anyone typed — unsearchable, unlinkable, and spelled three
+ways by three clerks. Access Control already knows who Planning is.
+
+The same fact also wore three names: the label said `Assembled By`, the wire field said
+`startedBy`, the column said `assembled_by`. That is how a field ends up searched for
+under the wrong word (§18), and `Assembled By` had no row in `docs/NAMING.md` at all.
+
+"Who may do this work" had already been asked twice. QC asked it first
+(`listQcUserOptions`), Production was cloned from it line for line
+(`listProductionUserOptions`, ~124 duplicated lines), and the two had **already drifted** —
+the QC side grew a `qcSelectedLabel` the Production copy never got, so a correction to one
+could not reach the other. Planning would have been the third copy.
+
+### Decision
+
+- **Who qualifies: anyone GRANTED `entry` on `plan_create` or `routecard_create`.** Those
+  are the only two `dept: 'planning'` keys in `ACCESS_FORMS`, so this is the whole
+  department, not a subset — a real difference from QC, where the subset is deliberate.
+  Asked through the app's own `effectiveFormPerms`, so the dropdown can never disagree with
+  what the Planning screens let someone do: a per-form grant counts without a Planning
+  tier, a per-page "No create" switch takes someone off it, and L1 view-only falls out by
+  itself. The tiers are NOT a ladder (L4 Approver has no `entry`), so this never compares
+  `tier >= 'L2'`. Full Access counts — those accounts may make any entry — but sorts last
+  and is badged, so an admin is never read as Planning staff. `users.role` is not the filter.
+- **Deliberately NOT the Assembly Tracker's own gate.** That screen has no form key at all:
+  its nav entry shows to anyone who can see the Planning section, and its writes run on a
+  coarse `role ∈ {admin, manager}` check. On the test database that admits a Purchase-only
+  manager who cannot even open the Planning menu. The two sets only overlap; neither
+  contains the other, so it is no use as a definition of "has Planning access".
+- **One parameterised helper, three thin wrappers.** `listDeptUserOptions({ deptKey,
+  entryForms })` owns the select, the `EffectiveAccess` rebuild, the permission test, the
+  `_direct` sort key and the three bands. `listQcUserOptions`, `listProductionUserOptions`
+  and the new `listPlanningUserOptions` wrap it. Exported names, signatures and wire shapes
+  are byte-identical to before — `isQcDept` / `isProductionDept` keep the spelling their two
+  web readers use, so not one caller changed.
+- **`GET /access-control/planning-users` is readable by any authenticated user**, not
+  admins only — the planner recording an assembly is who opens the list. Same as the
+  QC and Production routes.
+- **Stored the way Item Issue stores it:** the short name snapshot (what every read, print
+  and History line shows) plus an optional FK to the login. The server re-reads the chosen
+  person — same company, active, not deleted, **and still holding a Planning entry right** —
+  and derives the name from the database, never from what the browser sent. The permission
+  re-check matters because the picker caches for 60s and a grant can be revoked in between.
+- **Free typing is kept.** The field has always been optional and stays optional; a name
+  that is not a login still goes in as text. Send one or the other — an id wins and the text
+  is ignored.
+- **One fact, one name.** The wire field is now `assembledBy`; `startedBy` is gone. A
+  `docs/NAMING.md` row registers `Assembled By` with `startedBy` and `Started By` rejected.
+
+### Alternatives Considered
+
+- **A third copy of the QC/Production block** — rejected: the first two had already drifted,
+  and a third would have made that permanent.
+- **Generalising the wire shape too** (one `isDept` field for all three) — rejected: it
+  would have changed two shipped contracts and their web readers for no gain. The helper is
+  generic; the three contracts stay explicit.
+- **Filtering on `main_dept = 'planning'`** — rejected: that is the "Planning team" reading
+  and excludes someone holding a Planning grant from another department, and excludes every
+  admin (their `departments` map is empty).
+- **Filtering on "can VIEW any Planning screen"** — a defensible wider reading that includes
+  view-only people. Rejected as the default: you do not assign work to someone who cannot
+  save it. One word (`.view` for `.entry`) changes it if the owner disagrees.
+
+### Consequences
+
+- Migration **0201** adds `assembly_units.assembled_by_user_id` (nullable FK, `ON DELETE
+  SET NULL`) and a partial index, mirroring 0199. **Applied to TEST; PROD runs via the
+  release script.** `stopAssembly` reads the batch with a star-select, so until 0201 is
+  applied the WHOLE Assembly Tracker 500s — list, detail, Start, Stop and Undo — not just
+  the new field. Migration before API, on both databases.
+- **The FK is write-only today**, exactly as `store_issues.issued_to_user_id` has been since
+  0199: no screen, report, filter or print reads it, and the index it carries serves no
+  query yet. Kept anyway, because the snapshot alone cannot answer "which login was this"
+  once a name is edited or repeated, and adding the column later means a backfill nobody
+  can do. Said plainly here rather than claimed as traceability already delivered.
+- Stop's carry-forward of the started batch's value is pre-existing and only extended to the
+  FK, with one deliberate exception: a genuinely typed name at Stop nulls the id, so a row
+  can never link to one person while printing another's name beside it. A blank string is
+  "said nothing" and carries both forward.
+- On the test database nobody holds any Planning grant, so the dropdown there returns the
+  three Full Access accounts and no Planning team. Correct behaviour, degenerate sample —
+  the real population is on production and was not read (that read is blocked for Claude).
+- The Start panel grew a second control. It remains a pre-method inline flex strip with
+  hard-coded pixel widths, not on the owner's layout standard; converting it is a separate
+  job and was not done here.

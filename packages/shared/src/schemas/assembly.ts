@@ -204,7 +204,20 @@ export const startAssemblyInputSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  startedBy: z.string().trim().max(80).optional(),
+  /** `Assembled By` — WHO built this batch. One fact, one name (§18): the label,
+   *  this field, and the `assembly_units.assembled_by` column now all say
+   *  "assembled by". It was `startedBy` on the wire while the label said
+   *  `Assembled By` and the column said `assembled_by` — three names for one
+   *  fact, which is how a field ends up searched for under the wrong word.
+   *
+   *  `assembledByUserId` is the Planning person picked from the dropdown (see
+   *  planning-user.ts); `assembledBy` is the free-typed fallback for a name that
+   *  is not a login. Send ONE of the two: when an id is sent the server derives
+   *  the stored short name from the database and ignores any text, exactly as
+   *  `resolveIssuedTo` does for Item Issue. Both optional — unlike Item Issue's
+   *  `Issued To`, this field has always been optional and stays so. */
+  assembledByUserId: z.string().uuid().optional(),
+  assembledBy: z.string().trim().max(80).optional(),
   remarks: z.string().trim().max(500).optional(),
 });
 export type StartAssemblyInput = z.infer<typeof startAssemblyInputSchema>;
