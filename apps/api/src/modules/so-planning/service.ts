@@ -13,7 +13,12 @@
 // Query plan: batched. List endpoint = 2 round-trips. Detail = 3.
 // BOM endpoint = 5.
 
-import { ActivityAction, planningLineStatus, toPlanningLineStatus } from '@innovic/shared';
+import {
+  ActivityAction,
+  planningLineStatus,
+  soLinePlanCoverage,
+  toPlanningLineStatus,
+} from '@innovic/shared';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   ItemProcurementType,
@@ -57,7 +62,12 @@ import {
   PLAN_PENDING_QTY_SQL,
 } from '../../lib/plan-order-coverage';
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
-import { prCoverQtyRaw, soLineCoveredRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
+import {
+  prCoverQtyRaw,
+  soLineCoveredRaw,
+  soLineOwnCoveredRaw,
+  soLinePlannedRaw,
+} from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
 import { pagePlanningSoList } from './list-page';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
@@ -322,7 +332,8 @@ export async function getPlanningSoList(
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${salesOrderLines.orderQty}), 0)::int`.as('total_qty'),
         // ADR-185 — per line, by the one shared rule (lib/so-line-coverage.ts):
-        // Plan Qty = plans + a Buy line's PRs (the detail pane's totalPlanned);
+        // Plan Qty = plans + a Buy line's PRs (the detail pane's totalPlanned;
+        // ADR-221: BOM part plans count as complete sets, equipment lines only);
         // the % uses covered (+ direct cards) capped at the line qty, so one
         // over-covered line cannot hide another's gap. ADR-196 — a line
         // closed short counts as fully covered: nothing more is wanted on it.
@@ -842,6 +853,26 @@ export async function getPlanningSoDetail(
     const bomPartsMap = new Map<string, number>();
     for (const r of bomPartsAgg) bomPartsMap.set(r.bomMasterId, Number(r.c));
 
+    // 7a. ADR-221 — the header Equipment BOM's parts, for the complete-sets
+    // count of an equipment line's Plan Qty. Same join as childBomLineRows
+    // above / ADR-107's cap / lib/so-line-coverage soLineEquipmentSetsRaw, so
+    // the screen and every SQL reader count the same sets.
+    const equipBomLines =
+      equipBomId === null
+        ? []
+        : (
+            await tx
+              .select({ code: items.code, qtyPerSet: bomMasterLines.qtyPerSet })
+              .from(bomMasterLines)
+              .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
+              .where(
+                and(eq(bomMasterLines.bomMasterId, equipBomId), isNull(bomMasterLines.deletedAt)),
+              )
+          ).map((b) => ({ code: b.code, qtyPerSet: Number(b.qtyPerSet) }));
+    // The plan summary carries bom_child_code but not bom_master_id, which
+    // the part-plan test (ADR-107 / ADR-221) needs too.
+    const planBomMasterById = new Map(planRows.map((r) => [r.plan.id, r.plan.bomMasterId]));
+
     // 7b. Job Cards created directly against these SO lines WITHOUT a plan
     // (sourceSoLineId set, not referenced by any non-cancelled plan.jcId).
     // These are real production the plans table can't see — counted as covered
@@ -909,13 +940,25 @@ export async function getPlanningSoDetail(
       const linePlans = plansByLine.get(r.line.id) ?? [];
       const itemProcurementType = toProcurementType(r.itemProcurementType);
       const linePrs = prsByLine.get(r.line.id) ?? { prs: [], prQty: 0 };
-      // ADR-216 — undefined for an ordinary line, which has no parts and so
-      // keeps today's arithmetic bit for bit.
+      const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
+      // ADR-221 — ONE rule (packages/shared soLinePlanCoverage, mirrored in SQL
+      // by lib/so-line-coverage): BOM PART plans never add into the line. An
+      // equipment line counts COMPLETE SETS of its parts (the weakest part
+      // decides) or its own plans, whichever is larger; every other line,
+      // assembly included, counts its own plans only. Replaces ADR-216's
+      // plain sum, which read IN-SO-00793 (order 10, parts 10 + 10) as 20.
       // ADR-171: on a BUY line the PRs are the plan — their live qty counts as
       // planned. On a make line they are reported but change no number.
-      const totalPlanned =
-        linePlans.reduce((s, p) => s + p.planQty, 0) +
-        (itemProcurementType === 'buy' ? linePrs.prQty : 0);
+      const totalPlanned = soLinePlanCoverage({
+        isEquipmentLine: hasEquipmentBom,
+        plans: linePlans.map((p) => ({
+          planQty: p.planQty,
+          bomMasterId: planBomMasterById.get(p.id) ?? null,
+          bomChildCode: p.bomChildCode,
+        })),
+        bomLines: hasEquipmentBom ? equipBomLines : [],
+        buyPrQty: itemProcurementType === 'buy' ? linePrs.prQty : 0,
+      }).planned;
       const orderQty = r.line.orderQty;
       const direct = directJcByLine.get(r.line.id);
       const directJcQty = direct?.qty ?? 0;
@@ -935,7 +978,6 @@ export async function getPlanningSoDetail(
       // covers part of the order, so planning it again would double-count it.
       const balanceToPlan = shortClosed ? 0 : Math.max(0, orderQty - dispatchedQty - reservedQty);
 
-      const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
       const hasAssemblyBom =
         !isEquipmentSo &&
         r.line.sourceBomMasterId !== null &&
@@ -1659,8 +1701,11 @@ export async function raisePlanningPr(
       // 3. What the line still has left to plan — ADR-185: read off the ONE
       //    shared rule (lib/so-line-coverage.ts), the same figure the Planning
       //    line and the Needs Planning table state, never rebuilt by hand here.
+      //    ADR-221: the OWN-covered form (part plans excluded) — the same cap
+      //    + Plan uses. A Buy line has no part plans, so the figure is
+      //    unchanged; it just keeps both caps on one expression.
       const leftRows = (await tx.execute(sql`
-        SELECT GREATEST(sol.order_qty - ${sql.raw(soLineCoveredRaw('sol'))}, 0)::numeric AS to_plan
+        SELECT GREATEST(sol.order_qty - ${sql.raw(soLineOwnCoveredRaw('sol'))}, 0)::numeric AS to_plan
         FROM public.sales_order_lines sol
         WHERE sol.id = ${soLineId}::uuid
           AND sol.deleted_at IS NULL
