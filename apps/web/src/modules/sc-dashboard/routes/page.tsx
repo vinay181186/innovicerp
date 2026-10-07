@@ -112,17 +112,14 @@ function ScDashboardPage(): React.JSX.Element {
           </>
         }
       >
-        {/* Summary — 9 server-computed, uncapped figures off `summary`, as one
-            strip (money tiles dropped when prices are hidden). */}
+        {/* Summary — server-computed, uncapped figures off `summary`, as one
+            strip (money tiles dropped when prices are hidden). Was 9; the
+            retired "Partly Received POs" tile makes it 8 (ADR-222). */}
         <StatStrip
           items={[
             { key: 'open', label: 'Open POs', count: data.summary.openPos, color: 'var(--blue)' },
-            {
-              key: 'partial',
-              label: 'Partly Received POs',
-              count: data.summary.partialPos,
-              color: 'var(--amber2)',
-            },
+            // ADR-222 removed the "Partly Received POs" tile that sat here: the
+            // `partial` status is retired, so its count is permanently 0.
             {
               key: 'closed',
               label: 'Closed POs',

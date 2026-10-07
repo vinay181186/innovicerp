@@ -259,11 +259,11 @@ async function readPo(page: Page, poId: string): Promise<{ status: string; recei
   await page.goto('/purchase-orders/' + poId, { waitUntil: 'domcontentloaded' });
   const table = page
     .locator('table.innovic-table')
-    .filter({ has: page.locator('th', { hasText: /^Received$/i }) })
+    .filter({ has: page.locator('th', { hasText: /^GRN Received$/i }) })
     .first();
   await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(1500);
-  const recIdx = await colIndex(table, /^Received$/i);
+  const recIdx = await colIndex(table, /^GRN Received$/i);
   const qtyIdx = await colIndex(table, /^Qty$/i);
   const rows = table.locator('tbody tr');
   const n = await rows.count();

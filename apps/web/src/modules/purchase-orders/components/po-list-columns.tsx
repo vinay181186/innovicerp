@@ -4,7 +4,7 @@
 // only the Vendor name is left-aligned and shares the spare width.
 //
 // Every column reads a field the retired card / sheet already showed — except
-// nothing new: PO No., PO Date, PO Type, Vendor, PR No., Qty, Received,
+// nothing new: PO No., PO Date, PO Type, Vendor, PR No., Qty, GRN Received,
 // Accepted, Pending, Value, PO Status. Value keeps its price gate: the API nulls
 // `totalAmount` when the viewer may not see prices, and that null renders "—".
 
@@ -13,7 +13,7 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { Badge } from '@/ui/core';
 import type { DataTableColumn } from '@/ui/data';
-import { PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
+import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 import { PoStatusBadge } from './po-status-badge';
 
 // Whole rupees, Indian grouping — the same shape the Invoices list uses.
@@ -22,7 +22,15 @@ const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`
 /** Sort & Filter tick lists (server mode): stored code → the label shown. */
 const toOptions = (labels: Record<string, string>): Array<{ value: string; label: string }> =>
   Object.entries(labels).map(([value, label]) => ({ value, label }));
-const PO_STATUS_OPTIONS = toOptions(PO_STATUS_LABELS);
+// Only the four live statuses are offered (ADR-222). The filter is a server
+// match on the STORED code, so the seven legacy `partial` / `qc_pending` rows
+// — which read "Open" on screen — are not returned by the Open tick. They are
+// still reachable with no status filter at all; folding them into Open is an
+// API-side change, not one this list can make.
+const PO_STATUS_OPTIONS = PO_STATUS_CHOICES.map((value) => ({
+  value,
+  label: PO_STATUS_LABELS[value],
+}));
 const PO_TYPE_OPTIONS = toOptions(PO_TYPE_LABELS);
 
 /** `canSeePrice` — Value is sortable / filterable only for a user who may see
@@ -114,17 +122,18 @@ export function purchaseOrderListColumns({
     },
     {
       id: 'received_qty',
-      sortFilterField: 'receivedQty',
-      filterType: 'num',
-      header: 'Received',
+      // No sortFilterField: the server registers `receivedQty` (the in-hand
+      // figure), not the `grnReceivedQty` this column now shows — sorting on
+      // one while reading the other is worse than not sorting. To follow.
+      header: 'GRN Received',
       align: 'right',
       nowrap: true,
       render: (po) => (
         <span
           className="mono fw-700"
-          style={{ color: po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+          style={{ color: po.grnReceivedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
         >
-          {po.receivedQty}
+          {po.grnReceivedQty}
         </span>
       ),
     },

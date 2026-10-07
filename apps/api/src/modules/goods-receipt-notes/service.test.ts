@@ -246,11 +246,12 @@ describe('goods-receipt-notes service', () => {
     expect(detail.lines).toHaveLength(1);
     expect(detail.lines[0]?.receivedQty).toBe(4);
     expect(await readPoLineReceived(po.lineId)).toBe(4);
-    // Status went open → partial (4 of 10 received, QC still pending so not closed).
-    expect(await readPoStatus(po.id)).toBe('partial');
+    // ADR-222 — a PO is only Open or Closed. 4 of 10 received and nothing QC-passed
+    // yet, so the vendor still owes the line: 'open'.
+    expect(await readPoStatus(po.id)).toBe('open');
   });
 
-  it('PO header flips to qc_pending when fully received but QC still pending, then closed on QC accept', async () => {
+  it('PO header stays open when fully received but QC still pending, then closes on QC accept', async () => {
     const po = await freshPo('A2', 10);
     // GRN 1 — receive everything but leave QC pending.
     await service.createGoodsReceiptNote(
@@ -275,7 +276,9 @@ describe('goods-receipt-notes service', () => {
       },
       admin,
     );
-    expect(await readPoStatus(po.id)).toBe('qc_pending');
+    // ADR-222 — there is no 'qc_pending' header any more. Everything has arrived but
+    // nothing has passed QC, so the line is not yet delivered work: 'open'.
+    expect(await readPoStatus(po.id)).toBe('open');
 
     // Edit the GRN line to mark QC completed → PO header should flip to closed.
     const grns = await db
@@ -395,11 +398,10 @@ describe('goods-receipt-notes service', () => {
     expect(txn).toHaveLength(0);
     // ADR-221 — Pending is measured on ACCEPTED, so rejecting everything must NOT
     // close the order: nothing the vendor delivered was usable, so the vendor still
-    // owes the full qty. QC is complete, but accepted (0) < qty (3), so the header
-    // sits at 'partial' until the pieces are replaced, recovered, or the buyer
-    // settles the shortfall with Close Short. This assertion read 'closed' before
-    // ADR-221 and that was the behaviour the change deliberately removes.
-    expect(await readPoStatus(po.id)).toBe('partial');
+    // owes the full qty. ADR-222 — and the header word for "still owed" is 'open'.
+    // It stays there until the pieces are replaced, recovered, or the buyer settles
+    // the shortfall with Close Short. This read 'closed' before ADR-221.
+    expect(await readPoStatus(po.id)).toBe('open');
   });
 
   // ─── ADR-092: mid-route OSP returns are WIP, not finished goods ──────────
@@ -584,7 +586,8 @@ describe('goods-receipt-notes service', () => {
       admin,
     );
     expect(await readPoLineReceived(po.lineId)).toBe(4);
-    expect(await readPoStatus(po.id)).toBe('partial');
+    // ADR-222 — 'open', not 'partial': part-received is no longer its own status.
+    expect(await readPoStatus(po.id)).toBe('open');
 
     await service.softDeleteGoodsReceiptNote(detail.id, admin);
     expect(await readPoLineReceived(po.lineId)).toBe(0);

@@ -4,14 +4,29 @@
 
 import { type PoStatus, type PoTaxType, type PoType, poTaxTypeSchema } from '@innovic/shared';
 
+/** ADR-222 — a purchase order has FOUR statuses on screen: Draft, Open, Closed,
+ *  Cancelled. `partial` and `qc_pending` are retired codes that nothing writes
+ *  any more, but seven live rows still hold them, so both must keep rendering —
+ *  as "Open", because that is what they mean: an order still being worked. They
+ *  stay in the map (and in the PoStatus enum) only so those old rows render; do
+ *  not offer either as a choice anywhere.
+ *
+ *  THE ONE COPY. The DC "Against JW PO / DC" picker and the Supply Chain
+ *  dashboard each used to keep their own hand-typed copy of this map, and both
+ *  drifted (the picker still read "Partly Received"; the dashboard labelled a
+ *  draft PO "Open"). Import this — never retype it. */
 export const PO_STATUS_LABELS: Record<PoStatus, string> = {
   draft: 'Draft',
   open: 'Open',
-  partial: 'Partly Received',
-  qc_pending: 'QC Pending',
+  partial: 'Open',
+  qc_pending: 'Open',
   closed: 'Closed',
   cancelled: 'Cancelled',
 };
+
+/** The only PO statuses a filter / dropdown may OFFER (ADR-222). The retired
+ *  `partial` / `qc_pending` render as Open but are never selectable. */
+export const PO_STATUS_CHOICES: readonly PoStatus[] = ['draft', 'open', 'closed', 'cancelled'];
 
 export const PO_TYPE_LABELS: Record<PoType, string> = {
   standard: 'Standard',

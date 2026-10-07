@@ -24,11 +24,12 @@ import {
 import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
- *  grey cancelled, amber part-received / awaiting QC, grey draft, blue open. */
+ *  grey cancelled, grey draft, blue open. The retired `partial` / `qc_pending`
+ *  codes fall through to blue with open (ADR-222): an order on one of those
+ *  seven old rows reads as Open everywhere, accent included. */
 function accentFor(status: PurchaseOrderDetail['status']): string {
   if (status === 'closed') return 'var(--green)';
   if (status === 'cancelled') return 'var(--text3)';
-  if (status === 'partial' || status === 'qc_pending') return 'var(--amber)';
   if (status === 'draft') return 'var(--text3)';
   return 'var(--blue)';
 }
@@ -96,14 +97,16 @@ export function PoHeaderBand({
   detail,
   vendor,
   totalQty,
-  receivedQty,
+  grnReceivedQty,
   qcAcceptedQty,
   pendingChanges = [],
 }: {
   detail: PurchaseOrderDetail;
   vendor: Vendor | null | undefined;
   totalQty: number;
-  receivedQty: number;
+  /** ADR-222 — Σ of the lines' GRN-booked qty. The honest receipt total, which
+   *  MAY exceed Total Qty when a rejected piece was returned and replaced. */
+  grnReceivedQty: number;
   /** Σ of the lines' QC-passed qty — Pending is measured off this. */
   qcAcceptedQty: number;
   /** ADR-202 — staged header changes awaiting approval, for the inline chips. */
@@ -242,10 +245,10 @@ export function PoHeaderBand({
           <Row label="Lines" value={<span className="mono">{detail.lines.length}</span>} align="right" />
           <Row label="Total Qty" value={<span className="mono">{totalQty}</span>} align="right" />
           <Row
-            label="Received"
+            label="GRN Received"
             value={
               <span className="mono" style={{ color: 'var(--green2)' }}>
-                {receivedQty}
+                {grnReceivedQty}
               </span>
             }
             align="right"

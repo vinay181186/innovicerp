@@ -254,7 +254,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   }
 
   const totalQty = detail.lines.reduce((s, l) => s + l.qty, 0);
-  const receivedQty = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
+  // ADR-222 — the figure shown as "GRN Received" is what the GRNs booked in,
+  // not the in-hand `receivedQty` (which nets off pieces back at the vendor and
+  // read 80 on an order whose GRNs booked 100).
+  const grnReceivedQty = detail.lines.reduce((s, l) => s + l.grnReceivedQty, 0);
   // Accepted = the QC-passed share of what was received.
   const qcAcceptedQty = detail.lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
   // Money is hidden for L1 Viewers: the API nulls the header amount and every
@@ -408,7 +411,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           detail={detail}
           vendor={vendor}
           totalQty={totalQty}
-          receivedQty={receivedQty}
+          grnReceivedQty={grnReceivedQty}
           qcAcceptedQty={qcAcceptedQty}
           pendingChanges={pendingChanges}
         />
@@ -440,8 +443,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     </th>
                   </>
                 )}
+                {/* GRN Received = what this line's GRNs booked in (ADR-222);
+                    it MAY exceed Qty when a piece was returned and replaced. */}
                 <th className="th-num" style={{ color: 'var(--green2)' }}>
-                  Received
+                  GRN Received
                 </th>
                 {/* Accepted = pieces that passed QC. Pending is measured off
                     this, not off Received: a rejected piece is still owed. */}
@@ -888,7 +893,7 @@ function LineRow(props: {
           <td className="td-num mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
         </>
       )}
-      <td className="td-num mono green fw-700">{l.receivedQty}</td>
+      <td className="td-num mono green fw-700">{l.grnReceivedQty}</td>
       <td className="td-num mono green fw-700">{l.qcAcceptedQty}</td>
       <td
         className="td-num mono"

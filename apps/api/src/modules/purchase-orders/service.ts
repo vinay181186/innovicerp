@@ -45,6 +45,7 @@ import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
 import { poLineAcceptedGroupedSql, poLineAcceptedSql } from '../../lib/po-accepted';
+import { poLineGrnReceivedGroupedSql, poLineGrnReceivedSql } from '../../lib/po-grn-received';
 import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
@@ -627,7 +628,16 @@ export async function listPurchaseOrders(
           )
         )`
       : sql``;
-    const statusFrag = input.status ? sql`AND po.status = ${input.status}::po_status` : sql``;
+    // ADR-222 — a PO reads only Draft / Open / Closed / Cancelled, but rows written
+    // before that still hold `partial` / `qc_pending` and now RENDER as Open. Ticking
+    // Open must therefore find them too, or those orders vanish from the filter while
+    // sitting in the unfiltered list. Nothing writes the two codes any more, so this
+    // widening shrinks to nothing by itself as those rows are next touched.
+    const statusFrag = input.status
+      ? input.status === 'open'
+        ? sql`AND po.status IN ('open'::po_status, 'partial'::po_status, 'qc_pending'::po_status)`
+        : sql`AND po.status = ${input.status}::po_status`
+      : sql``;
     const typeFrag = input.poType ? sql`AND po.po_type = ${input.poType}::po_type` : sql``;
     const vendorFrag = input.vendorId ? sql`AND po.vendor_id = ${input.vendorId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND po.po_date >= ${input.fromDate}::date` : sql``;
@@ -654,24 +664,29 @@ export async function listPurchaseOrders(
               AND jjwl.job_work_order_id = ${input.jobWorkOrderId}::uuid
           )`
       : sql``;
-    // Per-PO line totals (Qty / Received / Accepted / Pending). One row per PO,
-    // so the count query can join it too without changing the count — it must,
-    // since Sort & Filter can filter on those figures.
+    // Per-PO line totals (Qty / Received / GRN Received / Accepted / Pending).
+    // One row per PO, so the count query can join it too without changing the
+    // count — it must, since Sort & Filter can filter on those figures.
     //
-    // Accepted comes from the ONE definition (lib/po-accepted.ts) as a grouped
-    // LEFT JOIN — one pass over the company's GRN lines, not a correlated sum
-    // per PO line. Pending is qty − ACCEPTED (lib/po-pending.ts), so the header
-    // Pending is exactly Σ of the per-line Pending the detail screen shows.
+    // Accepted comes from the ONE definition (lib/po-accepted.ts) and GRN
+    // Received from the ONE definition (lib/po-grn-received.ts), both as
+    // grouped LEFT JOINs — one pass over the company's GRN lines each, not a
+    // correlated sum per PO line. Pending is qty − ACCEPTED (lib/po-pending.ts),
+    // so the header Pending is exactly Σ of the per-line Pending the detail
+    // screen shows.
     const lineAggJoin = sql`LEFT JOIN (
         SELECT pol.purchase_order_id,
                COUNT(*) AS line_count,
                SUM(pol.qty) AS total_qty,
                SUM(pol.received_qty) AS received_qty,
+               SUM(COALESCE(grnr.grn_received, 0)) AS grn_received_qty,
                SUM(COALESCE(acc.accepted, 0)) AS accepted_qty,
                SUM(GREATEST(0, pol.qty - COALESCE(acc.accepted, 0))) AS pending_qty
         FROM public.purchase_order_lines pol
         LEFT JOIN ${poLineAcceptedGroupedSql(companyId)} acc
           ON acc.purchase_order_line_id = pol.id
+        LEFT JOIN ${poLineGrnReceivedGroupedSql(companyId)} grnr
+          ON grnr.purchase_order_line_id = pol.id
         WHERE pol.deleted_at IS NULL
         GROUP BY pol.purchase_order_id
       ) line_agg ON line_agg.purchase_order_id = po.id`;
@@ -716,6 +731,11 @@ export async function listPurchaseOrders(
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::float8   AS "totalQty",
         COALESCE(line_agg.received_qty, 0)::float8 AS "receivedQty",
+        -- ADR-222 — Σ per line of what the GRNs actually BOOKED IN (the one GRN
+        -- Received rule, lib/po-grn-received.ts). Replacement receipts count and
+        -- nothing is capped, so this may exceed totalQty; that is the honest
+        -- figure and it is shown BESIDE Received, never instead of it.
+        COALESCE(line_agg.grn_received_qty, 0)::float8 AS "grnReceivedQty",
         -- Σ per line of the pieces that PASSED QC — the one Accepted rule
         -- (lib/po-accepted.ts). Shown BESIDE Received, never instead of it.
         COALESCE(line_agg.accepted_qty, 0)::float8 AS "qcAcceptedQty",
@@ -881,6 +901,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
+    grnReceivedQty: Number(r['grnReceivedQty'] ?? 0),
     qcAcceptedQty: Number(r['qcAcceptedQty'] ?? 0),
     pendingQty: Number(r['pendingQty'] ?? 0),
     dcSentQty: Number(r['dcSentQty'] ?? 0),
@@ -941,6 +962,10 @@ export async function getPurchaseOrder(
         // screen is measured against it, so it has to be read here rather
         // than derived from received_qty.
         qcAcceptedQty: sql<number>`${poLineAcceptedSql(purchaseOrderLines.id)}::float8`,
+        // ADR-222 — what this line's GRNs actually BOOKED IN, the ONE GRN
+        // Received rule (lib/po-grn-received.ts). Read here rather than derived
+        // from received_qty, which is a different fact (what is in hand now).
+        grnReceivedQty: sql<number>`${poLineGrnReceivedSql(purchaseOrderLines.id)}::float8`,
       })
       .from(purchaseOrderLines)
       .leftJoin(items, and(eq(items.id, purchaseOrderLines.itemId), isNull(items.deletedAt)))
@@ -1007,6 +1032,7 @@ export async function getPurchaseOrder(
         r.clientPoLineNo,
         r.uom,
         Number(r.qcAcceptedQty ?? 0),
+        Number(r.grnReceivedQty ?? 0),
       ),
     );
     return {
@@ -1088,6 +1114,14 @@ function toPurchaseOrderLine(
    *  write-back paths: a line just inserted or just edited has no GRN behind
    *  it yet, so nothing has been accepted on it. */
   qcAcceptedQty: number = 0,
+  /** ADR-222 — what this line's GRNs actually BOOKED IN, replacement receipts
+   *  included and no cap (lib/po-grn-received.ts), summed in the reading
+   *  query's own SQL. A different fact from `receivedQty` (what is in hand now)
+   *  and from `qcAcceptedQty` (what was good). 0 on the write-back paths: a
+   *  line just inserted or just edited has no GRN behind it yet.
+   *  Last parameter on purpose — both figures are plain numbers, so inserting
+   *  it mid-list could silently swap it with qcAcceptedQty at a call site. */
+  grnReceivedQty: number = 0,
 ): PurchaseOrderLine {
   return {
     id: row.id,
@@ -1104,6 +1138,7 @@ function toPurchaseOrderLine(
     qty: row.qty,
     rate: row.rate,
     receivedQty: row.receivedQty,
+    grnReceivedQty,
     qcAcceptedQty,
     dueDate: row.dueDate,
     sourceSoLineId: row.sourceSoLineId,
@@ -2127,6 +2162,9 @@ export async function updatePurchaseOrderTx(
       // edited after receipts have been booked must hand back the real figure,
       // not 0.
       qcAcceptedQty: sql<number>`${poLineAcceptedSql(purchaseOrderLines.id)}::float8`,
+      // ADR-222 — same ONE GRN Received rule as the detail read
+      // (lib/po-grn-received.ts), for the same reason.
+      grnReceivedQty: sql<number>`${poLineGrnReceivedSql(purchaseOrderLines.id)}::float8`,
     })
     .from(purchaseOrderLines)
     .leftJoin(
@@ -2182,6 +2220,7 @@ export async function updatePurchaseOrderTx(
         null,
         null,
         Number(r.qcAcceptedQty ?? 0),
+        Number(r.grnReceivedQty ?? 0),
       ),
     ),
   };
@@ -3329,6 +3368,9 @@ async function getPurchaseOrderInternal(
       // here because this shape is what Approve / Reject / Short Close hand
       // back, and a short-closed PO is exactly the case that HAS receipts.
       qcAcceptedQty: sql<number>`${poLineAcceptedSql(purchaseOrderLines.id)}::float8`,
+      // ADR-222 — same ONE GRN Received rule (lib/po-grn-received.ts), for the
+      // same reason: a short-closed PO is exactly the case that HAS receipts.
+      grnReceivedQty: sql<number>`${poLineGrnReceivedSql(purchaseOrderLines.id)}::float8`,
     })
     .from(purchaseOrderLines)
     .leftJoin(
@@ -3355,6 +3397,7 @@ async function getPurchaseOrderInternal(
         null,
         null,
         Number(r.qcAcceptedQty ?? 0),
+        Number(r.grnReceivedQty ?? 0),
       ),
     ),
   };
