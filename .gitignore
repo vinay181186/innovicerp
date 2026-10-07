@@ -26,6 +26,12 @@ blob-report/
 # Harness-helper temp files (logs, scripts, extracts) used in this dev box.
 # Anything starting with _ at the repo root or any subdir is ignored.
 _*
+
+# Shared, version-controlled subagent definitions. These MUST come after `_*`
+# above: the agents folder holds `_house-rules.md`, the one copy of the rules
+# four agents read at runtime, and a bare `_*` would keep ignoring it.
+!.claude/agents/
+!.claude/agents/_*.md
 # But drizzle-kit's _journal.json is required state — override the rule:
 !**/meta/_journal.json
 # TanStack Router conventions: pathless layout routes are prefixed with `_`

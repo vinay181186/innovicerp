@@ -53,6 +53,14 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  isJcOpCommitted,
+  JC_OP_EDIT_ATTRS,
+  jcLockedOpSubject,
+  jcOpAttrApplies,
+  jcOpAttrSnapshot,
+  withoutTerminalQcOp,
+} from './jc-op-edit';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
 import {
@@ -99,12 +107,6 @@ const requireCompany = (user: AuthContext): string => {
 // Placeholder vendor on an auto-raised OSP PR when the op carries no vendor yet
 // (the buyer picks the real vendor at PR→PO time). Mirrors plans/service.ts.
 const OSP_VENDOR_TBD = '(vendor TBD)';
-
-// Outsource statuses that mean the op is committed on its own, independent of
-// the PR row: a PO has been issued, or material has physically moved to the
-// vendor. 'pending' / 'pr_raised' are pre-PO intent only — they commit the op
-// solely while the PR behind them is still alive (ADR-101).
-const OSP_MOVED_STATUSES: ReadonlySet<string> = new Set(['po_created', 'sent', 'received']);
 
 // ADR-203 — customer-material figures for a JW-sourced card (the JC
 // customer-material panel). Read off the DOCUMENTS, not the ledger: a cancelled
@@ -2085,6 +2087,190 @@ async function runningOpIds(tx: DbTransaction, jobCardId: string): Promise<Set<s
   return new Set(rows.map((r) => r.id));
 }
 
+/** One live operation as the edit-approval path sees it (ADR-220): its stored
+ *  values plus the three facts that decide whether it may still change. */
+export interface JcOpEditRow {
+  id: string;
+  opSeq: number;
+  operation: string;
+  opType: string;
+  machineCode: string | null;
+  outsourceVendorCode: string | null;
+  cycleTimeMin: number;
+  program: string | null;
+  toolNo: string | null;
+  toolDetails: string | null;
+  qcRequired: boolean;
+  outsourceCost: number;
+  /** any op_log row or a running session — the writer's "logged work". */
+  started: boolean;
+  /** PR / PO / DC paperwork points at it (isJcOpCommitted). */
+  committed: boolean;
+  /** a live non-conformance is raised against it. */
+  hasNc: boolean;
+}
+
+/** Eligible for an attribute change = not started and not committed. */
+export const jcOpEditable = (o: Pick<JcOpEditRow, 'started' | 'committed'>): boolean =>
+  !o.started && !o.committed;
+/** Eligible for removal = editable AND no non-conformance against it. */
+export const jcOpRemovable = (o: JcOpEditRow): boolean => jcOpEditable(o) && !o.hasNc;
+
+/**
+ * The Job Card's live operations with their eligibility, in op_seq order.
+ * ADR-220: ONE loader for the staging pre-check (updateJobCardOrStage) and the
+ * edit-approval entry (loadForDiff), so both decide eligibility the same way.
+ * `lock` takes `jc_ops ... FOR UPDATE` (only the jc_ops rows — not the joined
+ * purchase_requests) for loadForDiff, which must hold them from the moment the
+ * diff is derived until applyEdit has written.
+ * Started-ness reuses startedOpIds — never a second query for the same fact.
+ */
+export async function loadJcOpsForEdit(
+  tx: DbTransaction,
+  companyId: string,
+  jobCardId: string,
+  opts: { lock?: boolean } = {},
+): Promise<JcOpEditRow[]> {
+  const base = tx
+    .select({
+      id: jcOps.id,
+      opSeq: jcOps.opSeq,
+      operation: jcOps.operation,
+      opType: jcOps.opType,
+      machineCodeText: jcOps.machineCodeText,
+      outsourceVendorText: jcOps.outsourceVendorText,
+      cycleTimeMin: jcOps.cycleTimeMin,
+      program: jcOps.program,
+      toolNo: jcOps.toolNo,
+      toolDetails: jcOps.toolDetails,
+      qcRequired: jcOps.qcRequired,
+      outsourceCost: jcOps.outsourceCost,
+      outsourceStatus: jcOps.outsourceStatus,
+      outsourcePrId: jcOps.outsourcePrId,
+      outsourcePoLineId: jcOps.outsourcePoLineId,
+      prStatus: purchaseRequests.status,
+      prDeletedAt: purchaseRequests.deletedAt,
+    })
+    .from(jcOps)
+    .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
+    .where(
+      and(eq(jcOps.jobCardId, jobCardId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)),
+    )
+    .orderBy(asc(jcOps.opSeq));
+  const rows = opts.lock ? await base.for('update', { of: jcOps }) : await base;
+  if (rows.length === 0) return [];
+  const started = await startedOpIds(tx, jobCardId);
+  const ncRows = await tx
+    .select({ jcOpId: ncRegister.jcOpId })
+    .from(ncRegister)
+    .where(
+      and(
+        eq(ncRegister.companyId, companyId),
+        inArray(
+          ncRegister.jcOpId,
+          rows.map((r) => r.id),
+        ),
+        isNull(ncRegister.deletedAt),
+      ),
+    );
+  const withNc = new Set(ncRows.map((r) => r.jcOpId));
+  return rows.map((r) => ({
+    id: r.id,
+    opSeq: r.opSeq,
+    operation: r.operation,
+    opType: r.opType,
+    machineCode: r.machineCodeText,
+    outsourceVendorCode: r.outsourceVendorText,
+    cycleTimeMin: Number(r.cycleTimeMin ?? 0),
+    program: r.program,
+    toolNo: r.toolNo,
+    toolDetails: r.toolDetails,
+    qcRequired: Boolean(r.qcRequired),
+    outsourceCost: Number(r.outsourceCost ?? 0),
+    started: started.has(r.id),
+    committed: isJcOpCommitted(r),
+    hasNc: withNc.has(r.id),
+  }));
+}
+
+/**
+ * ADR-220 — the staging pre-check. Called by updateJobCardOrStage when the
+ * gate is on and the operations differ from what is stored. It throws for every
+ * change that could not be represented as an approvable box, or that the writer
+ * would refuse at approval time: an un-approvable change must never become a box,
+ * because a business error thrown later inside applyEdit rolls back the whole
+ * approval and shows the approver an error they cannot act on.
+ *
+ * Both lists are compared WITHOUT the generated terminal QC op (it has no
+ * durable id and is re-derived by the writer — see withoutTerminalQcOp).
+ */
+function assertJcOpsStageable(
+  code: string,
+  currentAll: readonly JcOpEditRow[],
+  proposedAll: readonly JcOpInput[],
+  showMoney: boolean,
+): void {
+  const current = withoutTerminalQcOp(currentAll);
+  const proposed = withoutTerminalQcOp(proposedAll);
+  if (proposed.length === 0) {
+    throw new ValidationError(
+      `${code} must keep at least one operation — it cannot be saved with an empty routing.`,
+    );
+  }
+  const curById = new Map(current.map((c) => [c.id, c]));
+  for (const p of proposed) {
+    if (p.id && !curById.has(p.id)) {
+      throw new ConflictError(
+        `${code}'s operations changed while you were editing — reload the Job Card and make the change again.`,
+      );
+    }
+  }
+  // The same routing rules a direct save runs (Machine / QC Process / Vendor
+  // required), so the approver is never asked about a routing that cannot save.
+  validateOps(proposed as JcOpInput[]);
+
+  const proposedIds = new Set(proposed.map((p) => p.id).filter((x): x is string => Boolean(x)));
+  // Re-ordering has no box of its own; refuse it rather than drop it.
+  const keptCurrent = current.filter((c) => proposedIds.has(c.id)).map((c) => c.id);
+  const keptProposed = proposed.map((p) => p.id).filter((x): x is string => Boolean(x));
+  if (keptCurrent.some((id, i) => id !== keptProposed[i])) {
+    throw new ValidationError(
+      'Changing the order of operations cannot go for approval. Remove the operation and add it again where you want it, or turn Document Edit Approval off.',
+    );
+  }
+  for (const c of current) {
+    if (proposedIds.has(c.id)) continue;
+    if (!jcOpEditable(c)) {
+      throw new ValidationError(`Cannot remove ${jcLockedOpSubject(c.opSeq, c.started)}.`);
+    }
+    if (c.hasNc) {
+      throw new ValidationError(
+        `Cannot remove Op ${opSrNo(c.opSeq)} — a Non-Conformance is raised against it.`,
+      );
+    }
+  }
+  proposed.forEach((p, i) => {
+    const c = p.id ? curById.get(p.id) : undefined;
+    if (!c || jcOpEditable(c)) return;
+    const subject = jcLockedOpSubject(c.opSeq, c.started);
+    const before = jcOpAttrSnapshot(c);
+    const after = jcOpAttrSnapshot(p);
+    // A caller who cannot see the cost posts a blinded 0 — never read as a change.
+    if (
+      JC_OP_EDIT_ATTRS.some(
+        (a) =>
+          jcOpAttrApplies(a, p.opType) &&
+          (a !== 'outsourceCost' || showMoney) &&
+          before[a] !== after[a],
+      )
+    ) {
+      throw new ValidationError(`Cannot change ${subject}.`);
+    }
+    // A locked op may not move: an earlier removal / insertion would shift it.
+    if (i + 1 !== c.opSeq) throw new ValidationError(`Cannot move ${subject}.`);
+  });
+}
+
 /** Header fields the Job Card form edits, with their screen labels (NAMING). */
 export const JC_EDIT_FIELDS = [
   { key: 'jcDate', label: 'JC Date' },
@@ -2170,6 +2356,16 @@ export async function updateJobCardTx(
       and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
     )
     .limit(1);
+  // ADR-220 LOCK ORDER — deliberately NO `job_cards` FOR UPDATE here. ADR-220
+  // first added one so this path matched the approval entry (loadForDiff takes
+  // job_cards then jc_ops). Reverted: op-entry holds a key-share on jc_ops (the
+  // op_log FK) and THEN updates job_cards in finishJc, so locking job_cards
+  // first here is the opposite order and can deadlock (40P01) when someone
+  // completes an operation while another user saves the same card. This path
+  // writes jc_ops first, which agrees with op-entry. The approval-vs-direct
+  // inversion is real but DORMANT (it needs the edit-approval gate on) and is
+  // recorded as open on ADR-220 — fix it by making loadForDiff lock in THIS
+  // order, never by flipping this one.
   const head = headRows[0];
   if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
   // ADR-182 — a short-closed Production Order's card is frozen: it records
@@ -2324,6 +2520,19 @@ export async function updateJobCardTx(
     .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
     .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
   const existingById = new Map(existing.map((o) => [o.id, o]));
+  // ADR-220 — a save must not EMPTY a routing that had operations (an approved
+  // edit that removed every box could otherwise leave a card with none). Only
+  // when the card HAS operations: a card created with an empty routing is legal
+  // (createJobCard allows it and v_jc_status reports 'no_ops'), and refusing
+  // here blocked header-only edits on those cards — the regression this fixes.
+  // Known and left open: a payload carrying ONLY the system-generated terminal
+  // QC op still passes, because `existing` is unordered here so the generated
+  // op cannot be told from a real one without an ORDER BY.
+  if (existing.length > 0 && userOps.length === 0) {
+    throw new ValidationError(
+      `${head.code} must keep at least one operation — it cannot be saved with an empty routing.`,
+    );
+  }
   // Routing rule: a QC op may not sit directly after an OSP op. Checked on
   // the USER's ops (input.ops, never the list with the appended terminal QC).
   // Rework/repair children are exempt (the server itself appends the terminal
@@ -2341,16 +2550,9 @@ export async function updateJobCardTx(
   // was later cancelled (or soft-deleted) is stale and must not keep the op
   // frozen. Real commitments still latch: a PO line pointing at the op, or a
   // status past PO issue (material has physically moved to the vendor).
-  const committed = new Set(
-    existing
-      .filter(
-        (o) =>
-          o.outsourcePoLineId != null ||
-          OSP_MOVED_STATUSES.has(o.outsourceStatus ?? '') ||
-          (o.outsourcePrId != null && o.prDeletedAt == null && o.prStatus !== 'cancelled'),
-      )
-      .map((o) => o.id),
-  );
+  // ADR-220 — the ONE definition of "committed" lives in jc-op-edit.ts (shared
+  // with the edit-approval entry's eligibility test).
+  const committed = new Set(existing.filter((o) => isJcOpCommitted(o)).map((o) => o.id));
   // `ops` may carry an appended Final Inspection QC op (no id) — harmless for payloadIds
   // (id-filtered) but the upsert loop below must iterate `ops` so it lands.
   const payloadIds = new Set(ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
@@ -2399,10 +2601,7 @@ export async function updateJobCardTx(
     const isStarted = started.has(ex.id);
     const isCommitted = committed.has(ex.id);
     if (!isStarted && !isCommitted) continue;
-    // display rule — see opSrNo in @innovic/shared
-    const subject = isStarted
-      ? `Op ${opSrNo(ex.opSeq)} — it already has logged work`
-      : `Op ${opSrNo(ex.opSeq)} — its PR / PO exists. Cancel it first`;
+    const subject = jcLockedOpSubject(ex.opSeq, isStarted);
     if (!payloadIds.has(ex.id)) {
       throw new ValidationError(`Cannot remove ${subject}.`);
     }
@@ -2530,9 +2729,30 @@ export async function updateJobCardTx(
     });
 
   if (removedIds.length > 0) {
+    // ADR-220 — an operation with a live non-conformance against it cannot go:
+    // nc_register.jc_op_id is ON DELETE SET NULL, which never fires on a SOFT
+    // delete, so the NC would be left pointing at a deleted row.
+    const ncRows = await tx
+      .select({ code: ncRegister.code, jcOpId: ncRegister.jcOpId })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.companyId, companyId),
+          inArray(ncRegister.jcOpId, removedIds),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (ncRows[0]) {
+      const ex = existingById.get(ncRows[0].jcOpId!);
+      throw new ValidationError(
+        `Cannot remove Op ${ex ? opSrNo(ex.opSeq) : ''} — Non-Conformance ${ncRows[0].code} is raised against it.`,
+      );
+    }
     await tx
       .update(jcOps)
-      .set({ deletedAt: now, updatedBy: user.id })
+      // ADR-220 — stamp WHO removed it too (deleted_by), same helper as deleteJobCard.
+      .set({ ...softDeleteStamp(user), deletedAt: now, updatedBy: user.id })
       .where(inArray(jcOps.id, removedIds));
   }
   // 2. Park kept ops' opSeq out of the 1..N range to avoid unique collisions
@@ -2715,9 +2935,10 @@ export async function updateJobCardTx(
 
 /**
  * True when the submitted operations ADD, REMOVE, re-sequence or change any op
- * versus what is stored on the Job Card. Mirrors planOpsChanged: this pass stages
- * only the JC's RECORD (header) fields, so an ops change cannot ride along
- * unapproved — updateJobCardOrStage refuses it when the gate is on. Compared by
+ * versus what is stored on the Job Card. Mirrors planOpsChanged. It is
+ * the decision "do the operations differ?" — ADR-220: a difference no longer
+ * refuses outright, it is checked by assertJcOpsStageable and then staged as
+ * one box per change. Compared by
  * position + id so a pure reorder is caught too. Machine is compared only for
  * process ops and vendor only for outsource ops (the stored *_text columns carry
  * a value only for that type), matching updateJobCardTx's own opsChanged check.
@@ -2734,8 +2955,11 @@ function jcOpsChanged(
     toolDetails: string | null;
     qcRequired: boolean | null;
     outsourceVendorText: string | null;
+    /** ADR-220 — only read when `compareCost` (a caller who can see the cost). */
+    outsourceCost?: string | number | null;
   }>,
   proposed: readonly JcOpInput[],
+  compareCost = false,
 ): boolean {
   if (proposed.length !== current.length) return true;
   const norm = (v: string | null | undefined): string | null => (v == null || v === '' ? null : v);
@@ -2758,6 +2982,17 @@ function jcOpsChanged(
     const pVendor = p.opType === 'outsource' ? norm(p.outsourceVendorCode) : null;
     const cVendor = c.opType === 'outsource' ? norm(c.outsourceVendorText) : null;
     if (pVendor !== cVendor) return true;
+    // ADR-220 — outsourceCost was the one attribute this check never looked at,
+    // so a pure OSP cost change on a live card reported "staged" and was then
+    // silently dropped by applyEdit. Compared only for an outsource op, and
+    // only when the caller can see money (a blinded form posts 0).
+    if (
+      compareCost &&
+      p.opType === 'outsource' &&
+      Number(p.outsourceCost || 0) !== Number(c.outsourceCost ?? 0)
+    ) {
+      return true;
+    }
   }
   return false;
 }
@@ -2767,9 +3002,10 @@ function jcOpsChanged(
  * when the company's gate is on, an edit to a LIVE Job Card is STAGED for
  * per-change approval and a {staged:true, request} result is returned; a
  * complete / closed card and a gate-off company fall through to updateJobCard
- * (today's behaviour). Only the Job Card's own HEADER fields can be staged —
- * changing any operation is refused while the gate is on (jcOpsChanged), never
- * silently dropped.
+ * (today's behaviour). Header fields AND operation changes (edit / remove / add,
+ * ADR-220) are staged, one box per change; an operation change that could not be
+ * approved (started, committed, has an NC, re-ordered…) is refused HERE by
+ * assertJcOpsStageable, never staged and never silently dropped.
  */
 export async function updateJobCardOrStage(
   id: string,
@@ -2797,29 +3033,33 @@ export async function updateJobCardOrStage(
     if (!head) return false;
     const live = head.closedAt == null && head.status !== 'complete' && head.status !== 'closed';
     if (!live) return false;
-    // Only HEADER fields go for approval. An ops add / remove / change cannot be
-    // staged, so refuse it clearly rather than let it ride along unapproved.
+    // ADR-220 — operation changes now go for approval too, one box per change.
+    // Whatever cannot be represented as a box (or that the writer would refuse
+    // at approval) is refused HERE, so a box the approver cannot act on never
+    // exists and nothing is ever silently dropped.
     if (input.ops !== undefined) {
-      const currentOps = await tx
-        .select({
-          id: jcOps.id,
-          operation: jcOps.operation,
-          opType: jcOps.opType,
-          cycleTimeMin: jcOps.cycleTimeMin,
-          machineCodeText: jcOps.machineCodeText,
-          program: jcOps.program,
-          toolNo: jcOps.toolNo,
-          toolDetails: jcOps.toolDetails,
-          qcRequired: jcOps.qcRequired,
-          outsourceVendorText: jcOps.outsourceVendorText,
-        })
-        .from(jcOps)
-        .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)))
-        .orderBy(asc(jcOps.opSeq));
-      if (jcOpsChanged(currentOps, input.ops)) {
-        throw new ConflictError(
-          "Editing Job Card operations isn't available while Document Edit Approval is on yet — only the Job Card's own fields go for approval. Turn the gate off to edit operations.",
-        );
+      const currentAll = await loadJcOpsForEdit(tx, companyId, id);
+      const showMoney = await canSeeFormPrice(user, 'jc_create');
+      const current = withoutTerminalQcOp(currentAll);
+      const proposed = withoutTerminalQcOp(input.ops);
+      const asComparable = current.map((c) => ({
+        id: c.id,
+        operation: c.operation,
+        opType: c.opType,
+        cycleTimeMin: c.cycleTimeMin,
+        machineCodeText: c.machineCode,
+        program: c.program,
+        toolNo: c.toolNo,
+        toolDetails: c.toolDetails,
+        qcRequired: c.qcRequired,
+        outsourceVendorText: c.outsourceVendorCode,
+        outsourceCost: c.outsourceCost,
+      }));
+      if (jcOpsChanged(asComparable, proposed, showMoney)) {
+        const codeRow = (await tx.execute(
+          sql`SELECT code FROM public.job_cards WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid LIMIT 1`,
+        )) as unknown as Array<{ code: string }>;
+        assertJcOpsStageable(codeRow[0]?.code ?? 'This Job Card', currentAll, input.ops, showMoney);
       }
     }
     return true;

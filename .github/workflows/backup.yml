@@ -66,6 +66,9 @@ jobs:
           echo "FILE=$FILE" >> "$GITHUB_ENV"
           # --no-owner/--no-privileges keep the dump restorable into a fresh
           # Supabase project where roles differ.
+          # Print the server version too: a client older than the server is a
+          # hard abort, which is how this silently failed every night since 2026-06-13.
+          psql "$BACKUP_DATABASE_URL" -tAc "select version()" || true
           pg_dump --no-owner --no-privileges "$BACKUP_DATABASE_URL" | gzip -9 > "$FILE"
           ls -lh "$FILE"
 

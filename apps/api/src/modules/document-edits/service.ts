@@ -63,10 +63,10 @@ export async function requestDocumentEdit(
     assertUnchangedSinceOpened(target.updatedAt, expectedUpdatedAt);
 
     const before = entry.beforeSnapshot(target);
-    const after = await entry.afterSnapshot(tx, companyId, input, user);
+    const after = await entry.afterSnapshot(tx, companyId, input, user, target);
     // Stable change id = the field key; one open edit per document means a field
     // key is unique within a request.
-    const changes = diffFields(before, after, entry.diffFields(target)).map((c) => ({
+    const changes = diffFields(before, after, entry.diffFields(target, input)).map((c) => ({
       ...c,
       id: c.field,
     }));
@@ -171,9 +171,12 @@ export async function decideDocumentEdit(
     const target = await entry.loadForDiff(tx, companyId, req.entityId);
     if (!target) throw new NotFoundError('The document no longer exists.');
     const before = entry.beforeSnapshot(target);
-    const after = await entry.afterSnapshot(tx, companyId, req.proposedPayload, user);
+    const after = await entry.afterSnapshot(tx, companyId, req.proposedPayload, user, target);
     const freshByField = new Map(
-      diffFields(before, after, entry.diffFields(target)).map((c) => [c.field, c]),
+      diffFields(before, after, entry.diffFields(target, req.proposedPayload)).map((c) => [
+        c.field,
+        c,
+      ]),
     );
 
     const outcomes: DocumentEditDecision[] = [];

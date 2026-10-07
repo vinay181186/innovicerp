@@ -12,7 +12,7 @@ import type {
   ListJcOpsBoardResponse,
 } from '@innovic/shared';
 import { ActivityAction, opSrNo } from '@innovic/shared';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -236,6 +236,59 @@ export async function listJcOpsBoard(
   });
 }
 
+/**
+ * Edit-approval gate (ADR-202) applied to this endpoint (ADR-220). Changing an
+ * op's machine IS an edit to a live Job Card, so it must not be a side door past
+ * the gate: with Document Edit Approval ON and the card LIVE it is REFUSED here
+ * and the user is sent to the Job Card edit screen, which stages the change for
+ * per-change approval. ADR-220 deliberately did NOT add a second staging path —
+ * one staging path, on the Job Card form.
+ *
+ * Gate OFF (the default, and the state of both databases) or a card that is not
+ * live → returns silently and this endpoint behaves exactly as before.
+ */
+async function assertMachineChangeNotGated(
+  tx: DbTransaction,
+  companyId: string,
+  jcOpId: string,
+): Promise<void> {
+  // Imported dynamically, the same way job-cards/service.ts does it: the engine's
+  // registry imports the document module services back, so every gate call site
+  // in the app loads the engine this way. jc-ops is not inside that cycle today
+  // (nothing in the registry graph imports it), so a static import would compile
+  // — keeping the one pattern means this file can never become the import that
+  // closes the cycle, and it keeps the whole registry out of this module's
+  // eager-load graph.
+  const { isDocEditApprovalOn } = await import('../document-edits/service');
+  if (!(await isDocEditApprovalOn(tx, companyId))) return;
+
+  // "Live" must mean what the Job Card registry means, or the two can disagree:
+  // mirrors jobCardEditRegistryEntry.isLive (job-cards/jobcard-edit-registry.ts
+  // ~line 90) and the same check in updateJobCardOrStage — closed_at is null and
+  // the computed status is neither complete nor closed, read off v_jc_status.
+  const headRows = (await tx.execute(sql`
+    SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt"
+    FROM public.jc_ops op
+    JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
+    LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
+    WHERE op.id = ${jcOpId}::uuid
+      AND op.company_id = ${companyId}::uuid
+      AND op.deleted_at IS NULL
+    LIMIT 1
+  `)) as unknown as Array<{ status: string; closedAt: unknown }>;
+  const head = headRows[0];
+  // No row = the op is gone / not this company's; the loader below answers that
+  // with its own "Operation not found" so the message stays the familiar one.
+  if (!head) return;
+  const live = head.closedAt == null && head.status !== 'complete' && head.status !== 'closed';
+  if (!live) return;
+
+  throw new ConflictError(
+    "Changing an operation's machine isn't available while Document Edit Approval is on — " +
+      'open the Job Card and edit it there, so the change goes for approval.',
+  );
+}
+
 export async function changeJcOpMachine(
   jcOpId: string,
   input: ChangeJcOpMachineInput,
@@ -247,6 +300,10 @@ export async function changeJcOpMachine(
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
+    // First thing in the write transaction, after the permission check above, so
+    // no path into the UPDATE can skip it (ADR-220).
+    await assertMachineChangeNotGated(tx, companyId, jcOpId);
+
     // Verify the op exists and that a machine change is still meaningful.
     //
     // Since migration 0095 every op_log row permanently carries the machine that

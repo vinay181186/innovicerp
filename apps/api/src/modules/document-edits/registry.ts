@@ -56,7 +56,7 @@ export interface DocEditRegistryEntry {
   /** The fields compared, in display order. A FUNCTION of the locked target, not
    *  a static list: PO line keys (`line:<lineId>:item|qty|rate`) are built from
    *  the document's CURRENT lines, so the set changes per document (Phase 1b). */
-  diffFields(target: DocEditTarget): readonly DiffField[];
+  diffFields(target: DocEditTarget, proposedInput?: unknown): readonly DiffField[];
   /** Lock the target row FOR UPDATE and project it. Null = gone / not visible. */
   loadForDiff(tx: DbTransaction, companyId: string, id: string): Promise<DocEditTarget | null>;
   /** The flat current-value snapshot for diffing (keys = diffFields keys). */
@@ -70,6 +70,7 @@ export interface DocEditRegistryEntry {
     companyId: string,
     input: unknown,
     user: AuthContext,
+    target?: DocEditTarget,
   ): Promise<Record<string, unknown>>;
   /** Rebuild a proposed edit input carrying ONLY the approved field keys, or
    *  null when none remain. */

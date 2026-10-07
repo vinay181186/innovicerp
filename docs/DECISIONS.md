@@ -8570,7 +8570,7 @@ This list is the valuable half of this ADR. Each of these would have stated some
 
 ### Deploy
 
-Depends on migration 0119, applied to TEST and verified. **Not applied to production** — this must not ship there until it is, or the SO screens break.
+Depends on migration 0119. Applied to TEST, then to PRODUCTION on 2026-09-11 immediately before this merge landed, and verified there: `revision` reads `text NOT NULL DEFAULT '0'`, all 45 live lines kept their values (41 at `0`, 4 at `1`), and `line_revision_text` was backfilled on all 8 drawing-history rows. The order is not optional — the code selects `line_revision_text`, which did not exist, and writes text into `revision`, which was an integer.
 
 ## ADR-161: QC–NC handling — rejected pieces are a quantity ledger with a location, not a status flag
 
@@ -11877,3 +11877,112 @@ change until the next one.
 - **Not fixed here, and separate:** the Job Card op row reads DONE 19 on INPUT 10. Two of the three
   Done calculations subtract the recovery loop; the outsource one does not, and the row omits
   In QC, the one figure that would make it balance. Smaller, independent, and worth doing next.
+
+## ADR-220: A Job Card operation change goes for approval, one box per change
+
+**Date:** 2026-10-07
+**Status:** Accepted
+
+### Context
+
+The owner hit the refusal and asked why: *"as per jobcard card logic edits. user can chhnage in
+operations. operation flow, edit , remove. why it is refusing??"* Then chose the shape:
+*"option a. user can chhnage in operations. operation flow, edit , remove. based on edit jc rights.
+there are logic exist for edit jc operations. within that logic edit can apply. and go for approval."*
+
+With the Document Edit Approval gate ON, `updateJobCardOrStage` refuses ANY operations change
+(`jcOpsChanged` -> ConflictError, "...Turn the gate off to edit operations."). That refusal is
+correct today, not a bug: the engine can only express **one scalar field, before -> after**, each
+with its own approve/reject tick; `jobcard-edit-registry.ts diffFields()` returns only
+`JC_EDIT_FIELDS` (7 header fields); and `applyEdit` deliberately re-reads the CURRENT ops and
+resubmits them unchanged. So a staged ops change would be **silently discarded on approval** - the
+approver would tick "JC Qty 10 -> 20" and the operator's added operation would vanish. Refusing beat
+dropping.
+
+**The fact that makes this the whole feature, from the production activity log:** there are exactly
+TWO `JobCard` EDIT entries on PROD and **both are operations edits** - zero header-only edits have
+ever been recorded. Turning the gate on today would block 100% of the Job Card editing that actually
+happens, and offer approval for fields nobody has touched.
+
+**And the harm has already occurred, unapproved.** `IN-JC-26-00004`: last work logged 04:56:05
+(50 pcs completed and QC-accepted on ops 10/20/30), ops 40/50/60 removed 04:57:34, `closed_at`
+04:57:57 - **23 seconds later**. Removing the tail of the route is what let the card close.
+
+Live sizing (the whole population, not a sample). PROD: 8 job cards, 18 live ops, **16 of 18 already
+carry work**, and only **2 cards are editable at all** - `IN-JC-26-00001` (6 ops, 4 done, 2 OSP steps
+sent+received, 1 NC, 2 PRs, 2 PO lines) and `IN-JC-26-00002` (nothing logged, the only safe one).
+Mid-route is real: on that one busy card five ops each have finished work both behind AND ahead of
+them. TEST: 32 cards, 72 live ops, 22 editable, and a mid-route removal has already been performed
+(`IN-JC-26-00019` op 30, with worked ops on both sides).
+
+### Decision
+
+**Each operation change is its own approvable box**, keyed on the operation's own id:
+
+```
+Op 30 CUTTING - Cycle Time    30 -> 45           [Approve] [Reject]
+Op 40 DRILLING (removed)      DRILLING -> --     [Approve] [Reject]
+Op 50 TPI (added)             -- -> TPI          [Approve] [Reject]
+```
+
+Keys: `op:<jcOpId>:<attr>` for a change, `op:remove:<jcOpId>`, `op:add:<proposedIndex>`.
+`applyEdit` rebuilds from the CURRENT ops, applies only the approved boxes, and replays through
+`updateJobCardTx` so every existing guard runs. Eligibility (not started, not committed) is decided
+at STAGING, so an un-approvable change never becomes a box - the Party GRN pattern.
+
+Also in this ADR: the generated terminal QC op is excluded from approval; `jc_ops` is locked in
+`loadForDiff`; `deleted_by` is stamped on removal; emptying the ops list is refused; removing an op
+with an NC against it is refused; and `changeJcOpMachine` stops being an unguarded side door past
+the gate. The approver's screen needs NO change - it renders change rows generically.
+
+### Alternatives considered
+
+- **ONE box carrying the whole before/after operations list** - the owner's first description of
+  option A, and **rejected after tracing**, for two mechanical reasons. (1) The approver's screen
+  cannot render it: each change sits in a single cell that is `white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis`, the new value renders in an `uppercase` chip, and newlines collapse - a
+  list would be clipped and unreadable. (2) At approval the engine recomputes and marks a change
+  `superseded` when `valuesEqual(fresh.before, c.before)` fails; with the whole list in one value,
+  **any** drift on **any** op - including an `op_seq` renumber nobody asked for - supersedes the
+  entire routing edit and silently applies nothing. Per-box keeps PO's independence.
+- **Keying on `op_seq` / "Op 30"** - rejected: `op_seq` is re-derived from payload position on every
+  write (`newSeqById`), so it is positional, not identity. Only `jc_ops.id` is stable, and only for
+  an op kept in the payload WITH its id.
+- **Leaving add/remove refused, as Purchase Order does** - offered as option B and declined. Worth
+  recording that an approvable child-row ADD or REMOVE is the **first in this codebase**: all five
+  line-level documents (PO, BOM, GRN, JWSO, SO) refuse it, so there is precedent to copy for the
+  per-attribute half only.
+- **Staging the machine-change endpoint too** - deferred; it refuses under the gate instead. One
+  staging path, on the Job Card form.
+
+### Consequences
+
+- Zero migrations, zero contract change, zero frontend change.
+- **The gate stays OFF.** PROD has no `approval_config` row at all; TEST has `doc_edit_approval =
+  false`; and there are ZERO rows in `document_edit_requests` on either database, ever. Nothing
+  changes for anyone until the owner switches it on.
+- The generated **Final Inspection** op has no durable identity - it is soft-deleted and re-inserted
+  with a NEW id whenever the routing changes (proved on TEST: same op, same `op_seq`, deleted and
+  re-created 14 minutes apart). Excluded from approval, or every edit would show a phantom add+remove.
+- **`outsourceCost` is absent from `jcOpsChanged`**, so today a pure OSP cost change on a live card
+  under the gate reports staged-success and is then silently dropped by `applyEdit`. Closed here.
+- Approving an op retyped to `outsource` makes `autoRaiseOspPrs` raise a REAL purchase requisition.
+  That fires on APPROVAL, never at staging.
+- `applyEdit` runs inside the engine's transaction, so a business error thrown by `updateJobCardTx`
+  there rolls back the whole decision and shows the approver an error they cannot act on. Mitigated
+  by deciding eligibility at staging; the residual cases are named in the implementation report.
+- **Permission is unchanged and is the owner's "edit jc rights":** `jc_create` + `edit` = Production
+  tier **L3 or L5** (or admin). L4 Approver can approve but NOT edit - approve is an independent
+  right. There is no separate operations permission and this ADR does not add one.
+- Orphan risk, corrected against live data: `nc_register.jc_op_id` is a REAL exposure (1 row PROD,
+  11 TEST) and is now guarded. `qc_assignments` and `qc_documents` are **empty on both databases**,
+  so those two are theoretical; the practical QC link is an `op_log` row with `log_type='qc'`, which
+  the logged-work guard already covers.
+- **Still open, deliberately:** the same refusal exists on five other documents - GRN lines, JWSO
+  lines, Sales Order lines AND its status, and Plan operations - each telling the user to switch off
+  a company-wide gate to do routine work. Plan operations are the natural next one: `jcOpsChanged`'s
+  own docstring says it "Mirrors planOpsChanged", so this shape should transfer. Also open: the
+  engine declares `DocEditTarget.isLive`, all 25 registries compute it, and **the engine never reads
+  it** - each module hand-duplicates the rule in its divert and nothing would catch a drift. And the
+  approvals queue sits in System Settings next to Backup, where the Production approvers (L4/L5) will
+  not look for work waiting on them.
