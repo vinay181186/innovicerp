@@ -102,7 +102,7 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
       headColor: 'var(--red2)',
       className: 'mono fw-700',
       render: (g) => {
-        const pend = g.totalQty - g.receivedQty;
+        const pend = g.pendingQty;
         return <span style={{ color: pend > 0 ? 'var(--red)' : 'var(--green)' }}>{pend}</span>;
       },
     },

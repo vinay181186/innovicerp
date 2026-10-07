@@ -26,7 +26,7 @@ import { usePlanningSoDetail } from '../api';
 import { OrderDetailModals, type SavedPlanNote, type StockNote } from './order-detail-modals';
 import { planningLineColumns } from './planning-line-columns';
 import { PlanningLineExpand } from './planning-line-expand';
-import { planningLineMenu } from './planning-line-menu';
+import { type PlanningLineMenuArgs, planChildMenu, planningLineMenu } from './planning-line-menu';
 import { JwChip, type ModalState } from './planning-shared';
 
 function HeaderField({
@@ -80,6 +80,7 @@ export function OrderDetail({
   const [savedPlan, setSavedPlan] = useState<SavedPlanNote | null>(null);
   const { data: eff } = useMyAccess();
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
+  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
 
   const backBtn = (
     <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
@@ -140,6 +141,18 @@ export function OrderDetail({
       });
     }
   };
+
+  // ONE args object per line, shared by the line's ⋯ and its child rows' ⋯ —
+  // a new gate added here reaches both menus.
+  const menuArgs = (line: PlanningLine): PlanningLineMenuArgs => ({
+    so,
+    line,
+    perms,
+    canProductionOrder,
+    canCreateRouteCard,
+    setModal,
+    onExecutePlan: runExecutePlan,
+  });
 
   return (
     <>
@@ -326,21 +339,18 @@ export function OrderDetail({
           // The plan code must stay on screen however narrow the sheet is.
           defaultPinned={['plans']}
           renderExpanded={(l) =>
-            expanded.has(l.soLineId) ? <PlanningLineExpand line={l} /> : null
+            expanded.has(l.soLineId) ? (
+              <PlanningLineExpand
+                line={l}
+                renderLink={renderRowMenuLink}
+                rowMenu={(plan, partShort) => planChildMenu(plan, partShort, menuArgs(l))}
+              />
+            ) : null
           }
           onToggleExpanded={(l) => toggleExpanded(l.soLineId)}
           renderLink={renderRowMenuLink}
           rowMenuLabel={(l) => `Actions for line ${l.lineNo}`}
-          rowMenu={(line) =>
-            planningLineMenu({
-              so,
-              line,
-              perms,
-              canProductionOrder,
-              setModal,
-              onExecutePlan: runExecutePlan,
-            })
-          }
+          rowMenu={(line) => planningLineMenu(menuArgs(line))}
           empty="This order has no lines."
         />
       </div>

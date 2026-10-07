@@ -15,6 +15,8 @@ export const scVendorRowSchema = z.object({
   uniqueItems: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
+  /** ADR-221 — Σ per line of Qty − Accepted, from the server, so the cell agrees with the Pending Value beside it and with the PO screens. */
+  pendingQty: z.number().nonnegative(),
   totalVal: z.number().nonnegative().nullable(),
   pendingVal: z.number().nonnegative().nullable(),
 });
@@ -29,6 +31,8 @@ export const scSoRowSchema = z.object({
   uniqueVendors: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
+  /** ADR-221 — Σ per line of Qty − Accepted, from the server, so the cell agrees with the Pending Value beside it and with the PO screens. */
+  pendingQty: z.number().nonnegative(),
   totalVal: z.number().nonnegative().nullable(),
   pendingVal: z.number().nonnegative().nullable(),
 });
@@ -46,6 +50,8 @@ export const scPoSummaryRowSchema = z.object({
   lines: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
+  /** ADR-221 — Σ per line of Qty − Accepted, from the server, so the cell agrees with the Pending Value beside it and with the PO screens. */
+  pendingQty: z.number().nonnegative(),
   totalVal: z.number().nonnegative().nullable(),
   taxAmount: z.number().nonnegative().nullable(),
   grandTotal: z.number().nonnegative().nullable(),

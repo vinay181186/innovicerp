@@ -4,6 +4,7 @@
 // Modelled on ERPNext's "Stock Projected Qty" report.
 
 import { sql } from 'drizzle-orm';
+import { onPoByItemSql } from '../../../lib/po-pending';
 import type { RegisteredReport } from '../registry';
 import { likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
@@ -12,7 +13,7 @@ export const projectedStockReport: RegisteredReport = {
     slug: 'projected-stock',
     title: 'Projected stock & shortage',
     description:
-      'Per item: Physical, Reserved, Available, qty still due on open material POs (short-closed POs owe nothing) and on open Production Orders, the Projected total, and the Shortage against the Reorder Level.',
+      'Per item: Physical, Reserved, Available, qty still due on open purchase orders (the same On PO figure Store Inventory shows — closed, short-closed and cancelled orders owe nothing) and on open Production Orders, the Projected total, and the Shortage against the Reorder Level.',
     group: 'Store',
     dept: 'store',
     filters: [
@@ -40,11 +41,17 @@ export const projectedStockReport: RegisteredReport = {
     const shortFrag = onlyShort ? sql`AND (x.shortage_qty > 0 OR x.projected_qty < 0)` : sql``;
 
     // Available = physical − reserved (v_item_stock_availability, 0141).
-    // On Open PO: 'standard' POs only — job-work / service POs send our own
-    // material out and back (stock-neutral, ADR-067), they add no stock.
+    // On Open PO: the ONE On-PO definition (lib/po-pending.ts onPoByItemSql,
+    // ADR-189 #6) — the same figure Store Inventory, the Item Tracker and the
+    // Reorder report show, so the four cannot disagree. It is Σ (qty −
+    // ACCEPTED) over issued orders, leaving out service POs (no goods) and
+    // lines that cover a job-card operation (our own pieces out at a vendor,
+    // which credit no stock on return); a job-work line with no operation
+    // behind it DOES come back into store, so it counts.
     // Pending from Production: order_qty − credited − lost on orders still
     // open or partially closed (ADR-179 ledger columns).
     const result = await tx.execute(sql`
+      WITH po_pending AS (${onPoByItemSql(companyId)})
       SELECT
         x.item_code, x.item_name, x.physical_qty, x.reserved_qty, x.available_qty,
         x.on_po_qty, x.production_qty, x.projected_qty, x.min_stock_qty,
@@ -61,27 +68,15 @@ export const projectedStockReport: RegisteredReport = {
           COALESCE(a.physical_qty, 0)::float8          AS physical_qty,
           COALESCE(a.reserved_qty, 0)::float8          AS reserved_qty,
           COALESCE(a.available_qty, 0)::float8         AS available_qty,
-          COALESCE(p.on_po_qty, 0)::numeric         AS on_po_qty,
+          COALESCE(p.qty, 0)::numeric               AS on_po_qty,
           COALESCE(m.production_qty, 0)::int        AS production_qty,
-          (COALESCE(a.available_qty, 0) + COALESCE(p.on_po_qty, 0)
+          (COALESCE(a.available_qty, 0) + COALESCE(p.qty, 0)
             + COALESCE(m.production_qty, 0))::float8   AS projected_qty,
           i.min_stock_qty::float8                   AS min_stock_qty
         FROM public.items i
         LEFT JOIN public.v_item_stock_availability a
           ON a.item_id = i.id AND a.company_id = i.company_id
-        LEFT JOIN (
-          SELECT pol.item_id, SUM(GREATEST(0, pol.qty - pol.received_qty)) AS on_po_qty
-          FROM public.purchase_order_lines pol
-          JOIN public.purchase_orders po
-            ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
-          WHERE pol.company_id = ${companyId}::uuid
-            AND pol.deleted_at IS NULL
-            AND pol.item_id IS NOT NULL
-            AND po.po_type = 'standard'
-            AND po.status NOT IN ('draft', 'closed', 'cancelled')
-            AND po.short_closed_at IS NULL
-          GROUP BY pol.item_id
-        ) p ON p.item_id = i.id
+        LEFT JOIN po_pending p ON p.item_id = i.id
         LEFT JOIN (
           SELECT pro.item_id,
                  SUM(GREATEST(0, pro.order_qty - COALESCE(pro.credited_qty, 0)

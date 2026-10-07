@@ -44,6 +44,7 @@ import { requireWriteRole } from '../../lib/auth';
 import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
+import { poLineAcceptedGroupedSql, poLineAcceptedSql } from '../../lib/po-accepted';
 import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
@@ -68,7 +69,6 @@ import {
   opSrNo,
   parseDocRevision,
   poCodePrefix,
-  roundQty,
   withDocRevision,
 } from '@innovic/shared';
 import type {
@@ -654,18 +654,26 @@ export async function listPurchaseOrders(
               AND jjwl.job_work_order_id = ${input.jobWorkOrderId}::uuid
           )`
       : sql``;
-    // Per-PO line totals (Qty / Received / Pending). One row per PO, so the
-    // count query can join it too without changing the count — it must, since
-    // Sort & Filter can filter on those three figures.
+    // Per-PO line totals (Qty / Received / Accepted / Pending). One row per PO,
+    // so the count query can join it too without changing the count — it must,
+    // since Sort & Filter can filter on those figures.
+    //
+    // Accepted comes from the ONE definition (lib/po-accepted.ts) as a grouped
+    // LEFT JOIN — one pass over the company's GRN lines, not a correlated sum
+    // per PO line. Pending is qty − ACCEPTED (lib/po-pending.ts), so the header
+    // Pending is exactly Σ of the per-line Pending the detail screen shows.
     const lineAggJoin = sql`LEFT JOIN (
-        SELECT purchase_order_id,
+        SELECT pol.purchase_order_id,
                COUNT(*) AS line_count,
-               SUM(qty) AS total_qty,
-               SUM(received_qty) AS received_qty,
-               SUM(GREATEST(0, qty - COALESCE(received_qty, 0))) AS pending_qty
-        FROM public.purchase_order_lines
-        WHERE deleted_at IS NULL
-        GROUP BY purchase_order_id
+               SUM(pol.qty) AS total_qty,
+               SUM(pol.received_qty) AS received_qty,
+               SUM(COALESCE(acc.accepted, 0)) AS accepted_qty,
+               SUM(GREATEST(0, pol.qty - COALESCE(acc.accepted, 0))) AS pending_qty
+        FROM public.purchase_order_lines pol
+        LEFT JOIN ${poLineAcceptedGroupedSql(companyId)} acc
+          ON acc.purchase_order_line_id = pol.id
+        WHERE pol.deleted_at IS NULL
+        GROUP BY pol.purchase_order_id
       ) line_agg ON line_agg.purchase_order_id = po.id`;
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count;
@@ -708,8 +716,12 @@ export async function listPurchaseOrders(
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::float8   AS "totalQty",
         COALESCE(line_agg.received_qty, 0)::float8 AS "receivedQty",
-        -- ADR-189 — the one Pending rule (lib/po-pending.ts): per line, clamped,
-        -- and nothing once the PO is closed / short-closed / cancelled.
+        -- Σ per line of the pieces that PASSED QC — the one Accepted rule
+        -- (lib/po-accepted.ts). Shown BESIDE Received, never instead of it.
+        COALESCE(line_agg.accepted_qty, 0)::float8 AS "qcAcceptedQty",
+        -- ADR-189 — the one Pending rule (lib/po-pending.ts): qty − ACCEPTED
+        -- per line, clamped, and nothing once the PO is closed / short-closed
+        -- / cancelled.
         (CASE WHEN po.status IN ('draft', 'open', 'partial', 'qc_pending')
               THEN COALESCE(line_agg.pending_qty, 0) ELSE 0 END)::float8 AS "pendingQty",
         COALESCE(dc_agg.sent_qty, 0)::float8      AS "dcSentQty",
@@ -869,6 +881,7 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
+    qcAcceptedQty: Number(r['qcAcceptedQty'] ?? 0),
     pendingQty: Number(r['pendingQty'] ?? 0),
     dcSentQty: Number(r['dcSentQty'] ?? 0),
     rtvAwaitingChallanQty: Number(r['rtvAwaitingChallanQty'] ?? 0),
@@ -923,6 +936,11 @@ export async function getPurchaseOrder(
         // stores none of its own; null on a hand-typed line with no item.
         uom: sql<string | null>`${items.uom}::text`,
         sourcePrCode: purchaseRequests.code,
+        // What this line's receipts have PASSED QC — the ONE Accepted rule
+        // (lib/po-accepted.ts), computed, never stored. Pending on the detail
+        // screen is measured against it, so it has to be read here rather
+        // than derived from received_qty.
+        qcAcceptedQty: sql<number>`${poLineAcceptedSql(purchaseOrderLines.id)}::float8`,
       })
       .from(purchaseOrderLines)
       .leftJoin(items, and(eq(items.id, purchaseOrderLines.itemId), isNull(items.deletedAt)))
@@ -988,6 +1006,7 @@ export async function getPurchaseOrder(
         r.itemRevision,
         r.clientPoLineNo,
         r.uom,
+        Number(r.qcAcceptedQty ?? 0),
       ),
     );
     return {
@@ -1064,6 +1083,11 @@ function toPurchaseOrderLine(
   clientPoLineNo: string | null = null,
   /** items.uom joined on item_id -- detail read only, null elsewhere. */
   uom: string | null = null,
+  /** Pieces this line's receipts have PASSED QC -- the ONE Accepted rule
+   *  (lib/po-accepted.ts), summed in the detail read's own query. 0 on the
+   *  write-back paths: a line just inserted or just edited has no GRN behind
+   *  it yet, so nothing has been accepted on it. */
+  qcAcceptedQty: number = 0,
 ): PurchaseOrderLine {
   return {
     id: row.id,
@@ -1080,6 +1104,7 @@ function toPurchaseOrderLine(
     qty: row.qty,
     rate: row.rate,
     receivedQty: row.receivedQty,
+    qcAcceptedQty,
     dueDate: row.dueDate,
     sourceSoLineId: row.sourceSoLineId,
     sourceJcOpId: row.sourceJcOpId,
@@ -1143,225 +1168,6 @@ async function nextPoCode(tx: DbTransaction, companyId: string, poType: PoType):
     if (m) max = Math.max(max, Number(m[1]));
   }
   return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
-}
-
-/** ADR-217 — everything a replacement order needs from its non-conformance.
- *  Passed IN rather than re-read here: `disposeNcCascade` already holds this
- *  row under `SELECT … FOR UPDATE` and is mid-write on it, so a second read
- *  would be a second opinion on the same row. */
-export interface NcForReplacementPo {
-  id: string;
-  code: string;
-  itemId: string;
-  itemCodeText: string;
-  itemNameText: string | null;
-  /** AFTER any partial-disposition split: the qty THIS NC row owns. */
-  rejectedQty: string;
-  replacementPoId: string | null;
-  dispositionRemarks: string | null;
-}
-
-/**
- * ADR-217 — a return to vendor is an ordinary job-work order that happens to
- * cost nothing.
- *
- * Creates the zero-value `job_work` purchase order the rejected pieces go back
- * on, so the return challan and the vendor's replacement receipt hang off a
- * REAL purchase order like every other outsourcing movement — instead of the
- * pre-ADR-217 shape, where a return was the only material movement in the
- * system with no order behind it and two documents compensated by writing the
- * NC number into a column named `po_code_text`.
- *
- * Called ONLY from `disposeNcCascade`'s two `return_to_vendor` branches, inside
- * the transaction and the `FOR UPDATE` lock that function already holds on the
- * NC row (§20.1 one writer; §20.3 the check and the insert in one transaction).
- *
- * Numbering comes from `nextPoCode(…, 'job_work')` — the same function, and so
- * the same IN-JWPO-#####/R1 series under the same PO series lock, that
- * `createPurchaseOrderFromPr` numbers a hand-raised job-work PO with. The one
- * deliberate difference is the STATUS: that path opens a PO 'draft' while PO
- * approval is on, this one is always born 'open'. ADR-217 decided that
- * explicitly ("No approval step on the replacement order… there is no money in
- * it, so an approval gate is ceremony"), and a draft order would also stop the
- * store issuing the very challan the disposition just asked for.
- *
- * Returns null — WITHOUT failing the disposition — when the return cannot carry
- * an order: no resolvable source vendor, a source vendor since disabled, a
- * non-positive qty, or a party-supplied item (ADR-195). The NC then keeps
- * `replacement_po_id` null and the pre-ADR-217 challan path runs exactly as it
- * did before, which is also what every NC disposed before ADR-217 does.
- *
- * Idempotent: an NC that already names a replacement order gets THAT order
- * back, never a second one. The partial unique index
- * `nc_register_replacement_po_uq` (migration 0200) is the database backstop,
- * not the guard.
- */
-export async function createReplacementPoForNc(
-  tx: DbTransaction,
-  companyId: string,
-  nc: NcForReplacementPo,
-  /** The NC's source vendor, exactly as `resolveNcSource` resolved it — never
-   *  re-derived here, so the order and the return challan can never end up
-   *  naming two different vendors. */
-  vendorId: string | null,
-  /** The disposition date, so the order is dated the day the decision was made. */
-  poDate: string,
-  user: AuthContext,
-): Promise<{ id: string; code: string } | null> {
-  // §20.1 — one replacement order per NC. Already has one (a re-run, or a row
-  // that somehow arrives twice): hand back the order it already names.
-  if (nc.replacementPoId) {
-    const existing = await tx
-      .select({ id: purchaseOrders.id, code: purchaseOrders.code })
-      .from(purchaseOrders)
-      .where(
-        and(
-          eq(purchaseOrders.id, nc.replacementPoId),
-          eq(purchaseOrders.companyId, companyId),
-          // A trashed order is not an order. Without this the NC names a
-          // document nobody can open, the challan silently reverts to the
-          // pre-ADR-217 shape, and nothing can ever put it right: the NC is
-          // `disposed`, so the disposition cannot run again.
-          isNull(purchaseOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    // Found it: hand it back (§20.1, one order per NC). Gone: fall through and
-    // raise a fresh one, overwriting the dangling pointer.
-    if (existing[0]) return existing[0];
-  }
-  // No vendor to send it back to. The NC is still vendor-sourced (a GRN line, or
-  // an outsource op) — `isVendorSourced` is true even when no vendor row
-  // resolves — so the disposition stands; it just cannot carry an order.
-  if (!vendorId) return null;
-  const qty = roundQty(Number(nc.rejectedQty));
-  // `purchase_order_lines_qty_positive` is a CHECK constraint. A non-positive
-  // qty would take the whole disposition down with the line insert, so it
-  // simply raises no order (nc_register_rejected_qty_positive means a stored NC
-  // cannot have one, and disposeNcCascade refuses qty <= 0 before this).
-  if (!(qty > 0)) return null;
-  // A10 inactive-master rule: a disabled vendor must take no NEW link. A SKIP,
-  // not a refusal — the disposition decision is QC's and must not be blocked by
-  // the vendor master, and the challan path already refuses a disabled vendor at
-  // DC time (createNcDc → assertActiveParty), which is where the user sees it.
-  const vendorRows = await tx
-    .select({ id: vendors.id, isActive: vendors.isActive })
-    .from(vendors)
-    .where(
-      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
-    )
-    .limit(1);
-  if (!vendorRows[0]?.isActive) return null;
-
-  const itemRows = await tx
-    .select({ code: items.code, name: items.name, itemType: items.itemType })
-    .from(items)
-    .where(and(eq(items.id, nc.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
-    .limit(1);
-  const item = itemRows[0];
-  // ADR-195 — Party Supplied Material is the customer's own material and is
-  // never bought on a purchase order. Sending it back is still a real movement,
-  // so it keeps the pre-ADR-217 challan path rather than being refused.
-  if (item && ITEM_TYPE_RULES[item.itemType as ItemType]?.partyOwned) return null;
-
-  // S2 — number AND duplicate-check under the PO series lock nextPoCode takes,
-  // exactly as the two hand paths do.
-  const code = await nextPoCode(tx, companyId, 'job_work');
-  const dup = await tx
-    .select({ id: purchaseOrders.id })
-    .from(purchaseOrders)
-    .where(
-      and(
-        eq(purchaseOrders.companyId, companyId),
-        eq(purchaseOrders.code, code),
-        isNull(purchaseOrders.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (dup.length > 0) {
-    throw new ConflictError(`PO No. "${code}" already exists.`);
-  }
-
-  const insertedPos = await tx
-    .insert(purchaseOrders)
-    .values({
-      companyId,
-      code,
-      poDate,
-      poType: 'job_work',
-      vendorId,
-      // The vendor is a real master row (checked above), so there is nothing to
-      // snapshot in the free-text column — same rule as every other path: a
-      // real link beats carried text.
-      vendorCodeText: null,
-      // ADR-217 — ready to act on the moment it exists; see the note above.
-      status: 'open',
-      // No PR behind it, by design (ADR-217 §2): the NC is the document that
-      // asked for it, and it is named on the line's source_nc_id. Raising a
-      // zero-value PR alongside was considered and rejected — it would file a
-      // purchase request for something nobody is buying into the buyer's queue,
-      // once per rejection.
-      prId: null,
-      prCodeText: null,
-      // Zero value: subtotal / tax_amount / total_amount keep their 0 defaults.
-      remarks:
-        `Return to vendor — ${nc.code} (zero value)` +
-        (nc.dispositionRemarks?.trim() ? ` — ${nc.dispositionRemarks.trim()}` : ''),
-      createdBy: user.id,
-      updatedBy: user.id,
-    })
-    .returning({ id: purchaseOrders.id, code: purchaseOrders.code });
-  const header = insertedPos[0];
-  if (!header) throw new ValidationError('Could not raise the replacement order. Try again.');
-
-  const lineValues = {
-    companyId,
-    purchaseOrderId: header.id,
-    lineNo: 1,
-    itemId: nc.itemId,
-    // nc_register.item_id is NOT NULL, so the link is always there and the text
-    // column stays empty (purchase_order_lines_item_one_of is satisfied by it).
-    itemCodeText: null,
-    itemName: item?.name ?? nc.itemNameText ?? nc.itemCodeText,
-    qty,
-    // ADR-217 — zero value. The rate stays editable: a vendor who charges for
-    // the rework can be priced on this order without a second document.
-    rate: '0.00',
-    receivedQty: 0,
-    // ADR-217 — the rejection is this line's reason for existing, in place of
-    // the source_pr_id an ordinary line carries.
-    sourceNcId: nc.id,
-    // DELIBERATELY NOT source_jc_op_id / source_so_line_id, even on an NC that
-    // has both. Those two links are what the outsourcing cascades count: an op
-    // linked to a second PO line would have its sent / received quantities
-    // counted twice (§20.1 one number, one writer), and an SO line would show
-    // this zero-value order as fresh procurement against the customer's order.
-    // The return's own ledger is nc_register.rtv_sent_qty / rtv_received_qty.
-    lineRemarks: `Return to vendor — ${nc.code}`,
-    createdBy: user.id,
-    updatedBy: user.id,
-  };
-  // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
-  // disposeNcCascade already ran the same rule (qtyUomProblem) on this qty and
-  // this item, so this cannot refuse what it let through.
-  await assertLineQtysFitUom(tx, companyId, [lineValues]);
-  await tx.insert(purchaseOrderLines).values(lineValues);
-
-  await emitActivityLog(
-    tx,
-    {
-      action: ActivityAction.Create,
-      entity: 'PurchaseOrder',
-      entityId: header.id,
-      refId: header.code,
-      qty,
-      detail: `${header.code} [Return to Vendor] zero value — ${nc.code}, ${qty} pcs`,
-    },
-    companyId,
-    user,
-  );
-
-  return { id: header.id, code: header.code };
 }
 
 /**
@@ -2314,7 +2120,14 @@ export async function updatePurchaseOrderTx(
     await tx.select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1)
   )[0]!;
   const lineRows = await tx
-    .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
+    .select({
+      row: purchaseOrderLines,
+      sourcePrCode: purchaseRequests.code,
+      // Same ONE Accepted rule as the detail read (lib/po-accepted.ts) — a PO
+      // edited after receipts have been booked must hand back the real figure,
+      // not 0.
+      qcAcceptedQty: sql<number>`${poLineAcceptedSql(purchaseOrderLines.id)}::float8`,
+    })
     .from(purchaseOrderLines)
     .leftJoin(
       purchaseRequests,
@@ -2360,7 +2173,17 @@ export async function updatePurchaseOrderTx(
   return {
     ...toPurchaseOrder(updatedHdr),
     vendorName: null,
-    lines: lineRows.map((r) => toPurchaseOrderLine(r.row, null, r.sourcePrCode)),
+    lines: lineRows.map((r) =>
+      toPurchaseOrderLine(
+        r.row,
+        null,
+        r.sourcePrCode,
+        null,
+        null,
+        null,
+        Number(r.qcAcceptedQty ?? 0),
+      ),
+    ),
   };
 }
 
@@ -3499,7 +3322,14 @@ async function getPurchaseOrderInternal(
   if (!row) throw new NotFoundError('PO not found. It may have been moved to Trash.');
 
   const lineRows = await tx
-    .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
+    .select({
+      row: purchaseOrderLines,
+      sourcePrCode: purchaseRequests.code,
+      // Same ONE Accepted rule as the detail read (lib/po-accepted.ts). Needed
+      // here because this shape is what Approve / Reject / Short Close hand
+      // back, and a short-closed PO is exactly the case that HAS receipts.
+      qcAcceptedQty: sql<number>`${poLineAcceptedSql(purchaseOrderLines.id)}::float8`,
+    })
     .from(purchaseOrderLines)
     .leftJoin(
       purchaseRequests,
@@ -3516,7 +3346,17 @@ async function getPurchaseOrderInternal(
   return {
     ...toPurchaseOrder(row.header),
     vendorName: row.vendorName,
-    lines: lineRows.map((r) => toPurchaseOrderLine(r.row, null, r.sourcePrCode)),
+    lines: lineRows.map((r) =>
+      toPurchaseOrderLine(
+        r.row,
+        null,
+        r.sourcePrCode,
+        null,
+        null,
+        null,
+        Number(r.qcAcceptedQty ?? 0),
+      ),
+    ),
   };
 }
 

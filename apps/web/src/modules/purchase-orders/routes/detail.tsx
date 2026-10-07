@@ -255,6 +255,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
   const totalQty = detail.lines.reduce((s, l) => s + l.qty, 0);
   const receivedQty = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
+  // Accepted = the QC-passed share of what was received.
+  const qcAcceptedQty = detail.lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
   // Money is hidden for L1 Viewers: the API nulls the header amount and every
   // line rate together, so a null total is the single signal to blank ₹ here.
   // Told by the server, not inferred from a null money field: a null also means
@@ -407,6 +409,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           vendor={vendor}
           totalQty={totalQty}
           receivedQty={receivedQty}
+          qcAcceptedQty={qcAcceptedQty}
           pendingChanges={pendingChanges}
         />
       </div>
@@ -440,6 +443,11 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <th className="th-num" style={{ color: 'var(--green2)' }}>
                   Received
                 </th>
+                {/* Accepted = pieces that passed QC. Pending is measured off
+                    this, not off Received: a rejected piece is still owed. */}
+                <th className="th-num" style={{ color: 'var(--green2)' }}>
+                  Accepted
+                </th>
                 <th className="th-num" style={{ color: 'var(--blue)' }}>
                   Pending
                 </th>
@@ -450,7 +458,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={priceHidden ? 10 : 12} className="empty-state">
+                  <td colSpan={priceHidden ? 11 : 13} className="empty-state">
                     No lines on this PO yet.
                   </td>
                 </tr>
@@ -824,7 +832,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   );
 }
 
-// Legacy L26336-26348. Numbers (Ln, qty, rate, amount, received, pending) sit
+// Legacy L26336-26348. Numbers (Ln, qty, rate, amount, received, accepted,
+// pending) sit
 // RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--purple) (a real
 // token with no utility class), Received is always green and Pending flips
 // blue/green on >0.
@@ -843,7 +852,9 @@ function LineRow(props: {
   // from the table entirely (header + cells), not blanked.
   const amount = l.qty * Number(l.rate ?? 0);
   // ADR-189 — the one Pending rule: 0 once the PO is closed / short-closed.
-  const pending = poLinePendingQty(l.qty, l.receivedQty, poStatus);
+  // Pending is Qty − Accepted (what passed QC), not Qty − Received: a piece
+  // that failed QC is not work the vendor delivered, so it still reads as owed.
+  const pending = poLinePendingQty(l.qty, l.qcAcceptedQty, poStatus);
   return (
     <tr>
       <td className="td-num mono fw-700" style={{ color: 'var(--blue)' }}>
@@ -878,6 +889,7 @@ function LineRow(props: {
         </>
       )}
       <td className="td-num mono green fw-700">{l.receivedQty}</td>
+      <td className="td-num mono green fw-700">{l.qcAcceptedQty}</td>
       <td
         className="td-num mono"
         style={{ color: pending > 0 ? 'var(--blue)' : 'var(--green)', fontWeight: 700 }}

@@ -1771,9 +1771,9 @@ export async function disposeNcRegister(
       parts.push(`${labelOf(NC_DISPOSITION_LABELS, input.action)} JC ${result.childJcCode}`);
     if (input.action === 'make_fresh' && result.newJcCode)
       parts.push(`supplementary JC ${result.newJcCode}`);
-    // ADR-217 — the zero-value job-work order the return raised. Its own CREATE
-    // row is written by createReplacementPoForNc; this names it on the NC's
-    // trail, the way the rework child card is named above.
+    // ADR-217's zero-value replacement order. A return to vendor no longer
+    // raises one, so this never fires on a new disposition; left in place so
+    // nothing about the older trail changes shape.
     if (result.replacementPoCode) parts.push(`replacement PO ${result.replacementPoCode}`);
     // ADR-217 phase 3 — the challan the pieces went out on, when the screen
     // answered it. Read off the saved NC (its code is resolved there) and only
@@ -2108,8 +2108,10 @@ export async function createNcDc(
     const source = await resolveNcSource(tx, companyId, {
       grnLineId: nc.grnLineId,
       jcOpId: nc.jcOpId,
-      // ADR-217 — also resolves the replacement order's code for the header
-      // below, off the id stored on this NC row.
+      // Passed so the resolve still reads the same way everywhere. Its
+      // `replacementPoId` result is no longer used for the challan header —
+      // that now names the ORIGINAL job-work order (see originPo below) — but
+      // the three deviations that already hold one still read it on screen.
       replacementPoId: nc.replacementPoId,
       sourceDeliveryChallanId: nc.sourceDeliveryChallanId,
     });
@@ -2161,35 +2163,64 @@ export async function createNcDc(
 
     const qty = roundQty(Number(nc.rejectedQty));
 
-    // ADR-217 — never send against an order that has been stopped. The
-    // replacement order is zero value and carries no PR, so a buyer who does
-    // not recognise it can cancel or short-close it; without this the challan
-    // would still go out naming a Cancelled order, and the receipt after it
-    // would land on one too (recalcPoHeaderStatus returns early on a stopped PO,
-    // so nothing would ever correct it). Every other outward path takes this
-    // check — see assertPurchaseOrderIsSendable in delivery-challans/service.
-    // Refused, not silently reverted to the pre-ADR-217 shape: writing the NC
-    // code into a column named po_code_text is the exact fault this ADR removes,
-    // and doing it behind the user's back would hide a decision someone made.
-    if (source.replacementPoId) {
-      const rpo = await tx
-        .select({ code: purchaseOrders.code, status: purchaseOrders.status })
-        .from(purchaseOrders)
-        .where(
-          and(
-            eq(purchaseOrders.id, source.replacementPoId),
-            eq(purchaseOrders.companyId, companyId),
-            isNull(purchaseOrders.deletedAt),
-          ),
-        )
-        .limit(1);
-      const st = rpo[0]?.status;
-      if (st === 'cancelled' || st === 'closed') {
-        throw new ConflictError(
-          `The replacement order ${rpo[0]?.code ?? ''} for NC ${nc.code} is ${st}. ` +
-            `Nothing more can be sent against it — reopen it, or raise the challan once it is live.`,
-        );
-      }
+    // The ORIGINAL job-work order these pieces went out on — the order that owns
+    // the origin PO line resolved just above. This is the order the return
+    // challan and the vendor's replacement receipt name on their headers.
+    //
+    // No separate zero-value order is raised for a return any more (ADR-217's
+    // replacement order is withdrawn), so there is nothing else to point at: the
+    // movement belongs to the order it came from. Read HERE, before the insert,
+    // and reused for the header recalc further down so the challan and the
+    // recalc can never name two different orders.
+    const originPo = poLineId
+      ? ((
+          await tx
+            .select({
+              id: purchaseOrders.id,
+              code: purchaseOrders.code,
+              status: purchaseOrders.status,
+            })
+            .from(purchaseOrderLines)
+            .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.purchaseOrderId))
+            .where(
+              and(
+                eq(purchaseOrderLines.id, poLineId),
+                eq(purchaseOrders.companyId, companyId),
+                isNull(purchaseOrders.deletedAt),
+              ),
+            )
+            .limit(1)
+        )[0] ?? null)
+      : null;
+
+    // The PO line is known, so the order behind it must be findable. The lookup
+    // above filters deleted_at, so no row means that order has been moved to
+    // Trash. Refuse: writing the legacy "no order" shape instead (challan
+    // purchase_order_id null, the NC code in po_code_text) would produce a
+    // challan naming no order while the line recalc further down still adjusts
+    // that very order's line — and the header recalc would be skipped, leaving
+    // its status stale for ever. Better to say so and let someone restore it.
+    if (poLineId && !originPo) {
+      throw new ConflictError(
+        `The job work order behind ${nc.code} is in Trash, so nothing can be sent against it. ` +
+          `Restore that order first, then raise the return challan.`,
+      );
+    }
+
+    // Never send against an order that has been CANCELLED: a cancelled order is
+    // a decision someone made, and material must not go out naming it.
+    //
+    // A CLOSED or short-closed original order is ALLOWED, deliberately. The
+    // pieces were received against it and are now going back — refusing would
+    // leave QC with a rejection it cannot act on, and nothing is being newly
+    // procured. recalcPoHeaderStatus already leaves a by-hand stop where it is
+    // ("a PO stopped by hand stays stopped"), so sending against a closed order
+    // does not walk its status back.
+    if (originPo?.status === 'cancelled') {
+      throw new ConflictError(
+        `Job Work PO ${originPo.code} is Cancelled, so nothing can be sent against it. ` +
+          `NC ${nc.code} cannot be returned to the vendor on this order.`,
+      );
     }
 
     const code = await nextNcDcCode(tx, companyId);
@@ -2201,13 +2232,13 @@ export async function createNcDc(
         companyId,
         code,
         dcDate: input.dcDate,
-        // ADR-217 — the replacement order this return rides on. Null, with the
-        // NC code in po_code_text, only on an NC that has no replacement order:
-        // every NC disposed before ADR-217, and any return whose source vendor
-        // could not be resolved. `nc_id` stays set either way, so the challan is
+        // The ORIGINAL job-work order the pieces went out on. Null, with the NC
+        // code in po_code_text, only when the rejection has no order behind it
+        // at all (an outsource operation never linked to a PO line, or a receipt
+        // booked without one). `nc_id` stays set either way, so the challan is
         // still findable from the rejection.
-        purchaseOrderId: source.replacementPoId,
-        poCodeText: source.replacementPoCode ?? nc.code,
+        purchaseOrderId: originPo?.id ?? null,
+        poCodeText: originPo?.code ?? nc.code,
         // WI4: caller's vendorId, else the NC's source vendor.
         vendorId: effectiveVendorId ?? null,
         vendorCodeText: input.vendorCodeText,
@@ -2310,18 +2341,18 @@ export async function createNcDc(
           user,
         );
       }
-      // The line just dropped below its ordered qty, so the header's
-      // open/partial/qc_pending/closed ladder must follow it -- otherwise a
-      // JWPO reads "closed" while its line shows 7 of 10 at the vendor.
-      const poHeader = (
-        await tx
-          .select({ purchaseOrderId: purchaseOrderLines.purchaseOrderId })
-          .from(purchaseOrderLines)
-          .where(eq(purchaseOrderLines.id, poLineId))
-          .limit(1)
-      )[0];
-      if (poHeader) {
-        await recalcPoHeaderStatus(tx, poHeader.purchaseOrderId, user.id);
+      // The line's RECEIVED just dropped below its ordered qty, so the
+      // header's open/partial/qc_pending/closed ladder must be recomputed:
+      // "everything has physically arrived" is no longer true while the pieces
+      // sit at the vendor, so an order reading qc_pending (or closed) goes back
+      // to partial -- otherwise a JWPO reads "closed" while its line shows 7 of
+      // 10 at the vendor. ACCEPTED is untouched by a return (lib/po-accepted.ts
+      // counts QC-passed pieces and non-return recoveries only), so it is the
+      // arrival leg of the ladder, not the accepted leg, that this moves.
+      // Same order the challan header names (resolved before the insert), so
+      // the two can never disagree.
+      if (originPo) {
+        await recalcPoHeaderStatus(tx, originPo.id, user.id);
       }
     }
 

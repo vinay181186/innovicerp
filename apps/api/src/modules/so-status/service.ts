@@ -205,7 +205,15 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         .groupBy(purchaseOrderLines.sourceSoLineId),
 
       // Customer dispatch DCs = SO-line-linked AND no procurement PO link
-      // (OSP DCs have purchase_order_id set; customer dispatches don't).
+      // (OSP DCs have purchase_order_id set; customer dispatches don't) AND
+      // not a return-to-vendor challan.
+      //
+      // The nc_id test is not belt-and-braces: a return-to-vendor challan DOES
+      // carry the SO line (the rejected pieces belong to that order), and when
+      // it has no origin PO line it passed both earlier tests — so pieces going
+      // BACK to a vendor were being counted as pieces dispatched to the
+      // CUSTOMER, inflating the dispatched figure on SO Status.
+      //
       // delivery_challan_lines.qty is numeric; sum returns text → cast to int
       // for the chip display (DC qtys are integers in practice).
       tx
@@ -222,6 +230,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           and(
             inArray(deliveryChallans.salesOrderLineId, lineIds),
             isNull(deliveryChallans.purchaseOrderId),
+            isNull(deliveryChallans.ncId),
             isNull(deliveryChallans.deletedAt),
             isNull(deliveryChallanLines.deletedAt),
           ),

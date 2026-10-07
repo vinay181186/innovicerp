@@ -11,7 +11,7 @@
 // So "Against NC" = pick the NC → its return challan is the source → the SAME
 // receive call the Against JWPO / DC type makes. This file is that form with
 // the NC picker in front and no PO anywhere. An NC is eligible while its
-// return challan is still `issued` with a Pending qty to receive.
+// return challan is still `issued` with a qty still To Receive.
 //
 // ADR-217 Phase 1 — the header now shows the rest of the chain, not just the
 // NC end of it: the PO the rejected pieces were bought/job-worked on and the
@@ -468,7 +468,7 @@ export function GrnAgainstNcForm({
             </FormField>
           </Cluster>
 
-          {/* THE ACCOUNT — `Sent Qty − Received Earlier − Received = Pending`,
+          {/* THE ACCOUNT — `Sent Qty − Received Earlier − Received = To Receive`,
               recomputed from the live rows on every keystroke. On THIS screen
               the ordered figure is in hand: it is the return challan line's own
               sent qty, read off the picked challan. It is a SAVED NC GRN's read

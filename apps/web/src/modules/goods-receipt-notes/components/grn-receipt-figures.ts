@@ -4,7 +4,7 @@
 //
 // It exists because the same figures are read on five surfaces that must agree
 // to the decimal: the create screens' header account, the edit screen's, the
-// view's, the line table's `Pending` column and that table's totals row. When
+// view's, the line table's `To Receive` column and that table's totals row. When
 // each had its own sum they could disagree — and they DID: the view's
 // `receiptAccount` withheld the account if any line lacked a PO line while the
 // forms' `grnReceiptTotals` skipped those lines and rendered anyway, so one GRN
@@ -140,11 +140,13 @@ export interface ReceiptAccount {
 }
 
 /**
- * THE receipt account: `PO Qty − Received Earlier − Received = Pending`.
+ * THE receipt account: `PO Qty − Received Earlier − Received = To Receive`.
  *
- * `Pending` is the registered name for this arithmetic (NAMING.md, "Qty still
- * owed") and the name the GRN line table already used. `Balance` is banned
- * (owner decision 2026-10-06).
+ * The closing figure is shown as `To Receive`: what the ordered lines still have
+ * to ARRIVE. It read `Pending` until the PO screens re-based their `Pending`
+ * onto QC-accepted qty (PO Qty − Accepted) — a line can be short on the PO and
+ * still have nothing left to receive here, so the two facts carry two names
+ * (NAMING.md). `Balance` stays banned (owner decision 2026-10-06).
  *
  * **Null unless EVERY line traces to an ordered line.** One line without one
  * (a hand-added line on an edited GRN, typed against no PO line) and there is
@@ -186,8 +188,8 @@ export function receiptAccount(
   );
 }
 
-/** `Pending` for one row — `PO Qty − Received Earlier − Received`, or null when
- *  the row has no ordered line behind it, so nobody can state it. */
+/** `To Receive` for one row — `PO Qty − Received Earlier − Received`, or null
+ *  when the row has no ordered line behind it, so nobody can state it. */
 export function grnLinePending(l: GrnLineRow): number | null {
   if (l.qty === null) return null;
   return r3(l.qty - (l.receivedEarlier ?? 0) - num(l.receiveNow));
