@@ -270,7 +270,7 @@ test('A219C1-10 — build: item + Route Card with ONE outsource op', async ({ pa
     // refuses a plan with no raw material ("This plan has no raw material —
     // fill RM Grade and RM Size on the item's Route Card"), and the plan reads
     // both off this card (ADR-218). Master-only pickers, so take what is there.
-    const grade = await pickFirst(page, page.locator('#rc-rm-grade'), 'a');
+    const grade = await pickFirst(page, page.locator('#rc-rm-grade'), '');
     const size = await pickFirst(page, page.locator('#rc-rm-size'), '');
     log(`route card RM: grade "${grade}" · size "${size}"`);
 
@@ -318,7 +318,7 @@ test('A219C1-11 — build: SO 10 → Plan → Production Order → Job Card', as
     const copt = page.locator('[role="option"], li').filter({ hasText: new RegExp(CLIENT_SEARCH) }).first();
     await copt.waitFor({ timeout: 45_000 });
     await copt.click();
-    await page.getByPlaceholder(/Client PO reference/i).fill(`${TAG}CPO-${stamp}`);
+    await page.locator('#clientPoNo').fill(`${TAG}CPO-${stamp}`);
     const item = page.getByPlaceholder(/Search item code or name/i).first();
     await item.click();
     await item.fill(s.itemCode!);
@@ -326,7 +326,7 @@ test('A219C1-11 — build: SO 10 → Plan → Production Order → Job Card', as
     await iopt.waitFor({ timeout: 45_000 });
     await iopt.click();
     await page.getByPlaceholder('Qty', { exact: true }).first().fill(String(QTY));
-    await page.getByPlaceholder('Rev', { exact: true }).first().fill('A').catch(() => {});
+    await page.getByLabel('Drawing Rev, line 1', { exact: true }).fill('A');
     await page.getByPlaceholder('₹ Rate', { exact: true }).first().fill('10').catch(() => {});
     await page.locator('#internalSoNo').fill(internal);
     await page.waitForTimeout(500);
@@ -464,9 +464,8 @@ test('A219C1-12 — build: JW PO → outward DC (all 10) → GRN 10', async ({ p
     if (!(await rate.inputValue()) || Number(await rate.inputValue()) === 0) await rate.fill('50');
     await page.locator('#pof-remarks').fill(`${TAG}ADR-219 Case 1 job-work PO — safe to cancel`);
     await shot(page, '12a-jwpo-form');
-    const save = page.locator('button.pof-btn-go');
-    const foot = await page.locator('.pof-foot-msg, .pof-foot-hint').first().innerText().catch(() => '');
-    await expect(save, 'Save on the PO form; footer says: ' + foot).toBeEnabled({ timeout: 30_000 });
+    const save = page.getByRole('button', { name: /^Save PO$/ });
+    await expect(save, 'Save on the PO form').toBeEnabled({ timeout: 30_000 });
     await save.click();
     await expect(page).toHaveURL(/purchase-orders\/[0-9a-f-]{36}$/, { timeout: 180_000 });
     const id = /purchase-orders\/([0-9a-f-]{36})/.exec(page.url())![1]!;
@@ -530,7 +529,7 @@ test('A219C1-12 — build: JW PO → outward DC (all 10) → GRN 10', async ({ p
     await page.waitForTimeout(2000);
     await pickCombo(page, 'jwpoId', s.jwpoCode!, new RegExp(s.jwpoCode!.replace('/', '\\/')));
     await pickCombo(page, 'dcId', s.dcCode!, new RegExp(s.dcCode!.replace('/', '\\/')));
-    const line1 = page.getByLabel('Receive now, line 1', { exact: true });
+    const line1 = page.getByLabel('Received, line 1', { exact: true });
     await expect(line1).toHaveValue(String(SENT), { timeout: 60_000 });
     await page.locator('#dcRemarks').fill(`${TAG}ADR-219 Case 1 OSP return, ${SENT} of ${SENT}`);
     await shot(page, '12c-grn');
@@ -566,6 +565,9 @@ test('A219C1-13 — build: Incoming QC 6 ok / 4 failed → deviation → Return 
   let s = readState();
 
   if (!s.qcDone) {
+    // Without this the row filter below becomes `hasText: undefined`, which
+    // matches EVERY pending row — the run would inspect an unrelated GRN.
+    expect(s.grnCode, 'the GRN from step 12 must exist before QC').toBeTruthy();
     await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText(/Pending Inspection/)).toBeVisible({ timeout: 90_000 });
     await page.waitForTimeout(3000);
@@ -865,6 +867,9 @@ test('A219C1-23 — PROOF 4: a fully-finished job-work order is NOT in the picke
 }) => {
   test.setTimeout(600_000);
   const s = readState();
+  // The bearer is read out of the browser's storage, which is only populated
+  // once a page has actually been opened — so open one before the first read.
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   // The picker reads exactly this page of the list, so choose the control from
   // the SAME 200 rows — otherwise "absent" could just mean "beyond the page".
   const list = await apiGet<{ items: PoListItem[] }>(page, '/purchase-orders?limit=200&offset=0');

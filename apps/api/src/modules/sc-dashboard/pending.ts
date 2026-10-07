@@ -17,7 +17,9 @@ import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import {
   PENDING_ITEM_SQL,
+  PENDING_QTY_SQL,
   PENDING_SO_SQL,
+  PENDING_VAL_SQL,
   PENDING_VENDOR_SQL,
   SC_GRN_SF_COLUMNS,
   SC_PENDING_SF_COLUMNS,
@@ -112,8 +114,12 @@ export async function listScPending(
         -- never items.revision. Cast to text: the column is text only after 0119.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision,
         pol.qty, pol.received_qty, pol.rate,
-        GREATEST(0, pol.qty - pol.received_qty) AS pending_qty,
-        GREATEST(0, (pol.qty - pol.received_qty) * pol.rate) AS pending_val,
+        -- Pending / Pending Value from the ONE definition (lib/po-pending.ts
+        -- via sf-columns.ts): qty - ACCEPTED, not qty - received_qty. The same
+        -- two expressions Sort & Filter sorts and filters on, and the same
+        -- Pending the PO list, the PO detail and the summary tables show.
+        ${PENDING_QTY_SQL} AS pending_qty,
+        ${PENDING_VAL_SQL} AS pending_val,
         po.status
       ${where}
       ORDER BY ${order}
@@ -121,8 +127,8 @@ export async function listScPending(
     `)) as unknown as PendRow[];
     const [agg] = (await tx.execute(sql`
       SELECT COUNT(*)::int AS c,
-             COALESCE(SUM(GREATEST(0, pol.qty - pol.received_qty)), 0) AS qty,
-             COALESCE(SUM(GREATEST(0, (pol.qty - pol.received_qty) * pol.rate)), 0) AS val
+             COALESCE(SUM(${PENDING_QTY_SQL}), 0) AS qty,
+             COALESCE(SUM(${PENDING_VAL_SQL}), 0) AS val
       ${where}
     `)) as unknown as Array<{ c: number; qty: string | number; val: string | number }>;
 

@@ -50,6 +50,12 @@ async function pageOf<R>(
 
 const OPEN_PO = sql`po.status IN ('open', 'partial', 'qc_pending')`;
 const PEND_VAL = sql.raw(`COALESCE(SUM(${poLinePendingRaw('pol', 'po')} * pol.rate), 0)`);
+// Pending Qty per group, from the SAME ONE definition PEND_VAL multiplies by
+// the rate (lib/po-pending.ts: qty − ACCEPTED, 0 on a closed / short-closed /
+// cancelled order). Σ(total_qty) − Σ(received_qty) is a different figure and
+// disagreed with Pending Value in the same row. Sort & Filter reads it as
+// `t.pending_qty` (sf-columns.ts).
+const PEND_QTY = sql.raw(`COALESCE(SUM(${poLinePendingRaw('pol', 'po')}), 0)`);
 
 type GroupRow = {
   lines: number;
@@ -73,7 +79,8 @@ export async function listScVendors(user: AuthContext, raw: ScTableQuery): Promi
       COALESCE(SUM(pol.qty), 0) AS total_qty,
       COALESCE(SUM(pol.received_qty), 0) AS received_qty,
       COALESCE(SUM(pol.qty * pol.rate), 0) AS total_val,
-      ${PEND_VAL} AS pending_val
+      ${PEND_VAL} AS pending_val,
+      ${PEND_QTY} AS pending_qty
     FROM purchase_orders po
     JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
     LEFT JOIN vendors v ON v.id = po.vendor_id
@@ -103,6 +110,7 @@ export async function listScVendors(user: AuthContext, raw: ScTableQuery): Promi
       uniqueItems: n(r.unique_items),
       totalQty: n(r.total_qty),
       receivedQty: n(r.received_qty),
+      pendingQty: n(r.pending_qty),
       totalVal: showMoney ? n(r.total_val) : null,
       pendingVal: showMoney ? n(r.pending_val) : null,
     })),
@@ -123,7 +131,8 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
       COALESCE(SUM(pol.qty), 0) AS total_qty,
       COALESCE(SUM(pol.received_qty), 0) AS received_qty,
       COALESCE(SUM(pol.qty * pol.rate), 0) AS total_val,
-      ${PEND_VAL} AS pending_val
+      ${PEND_VAL} AS pending_val,
+      ${PEND_QTY} AS pending_qty
     FROM purchase_orders po
     JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
     LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
@@ -153,6 +162,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
       uniqueVendors: n(r.unique_vendors),
       totalQty: n(r.total_qty),
       receivedQty: n(r.received_qty),
+      pendingQty: n(r.pending_qty),
       totalVal: showMoney ? n(r.total_val) : null,
       pendingVal: showMoney ? n(r.pending_val) : null,
     })),
@@ -178,7 +188,8 @@ export async function listScPoSummary(
         COUNT(pol.id)::int AS lines,
         COALESCE(SUM(pol.qty), 0) AS total_qty,
         COALESCE(SUM(pol.received_qty), 0) AS received_qty,
-        COALESCE(SUM(pol.qty * pol.rate), 0) AS total_val
+        COALESCE(SUM(pol.qty * pol.rate), 0) AS total_val,
+        ${PEND_QTY} AS pending_qty
       FROM purchase_orders po
       LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
       WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND po.status <> 'cancelled'
@@ -203,7 +214,7 @@ export async function listScPoSummary(
       COALESCE(v.name, vt.name, p.vendor_code_text) AS vendor_name,
       COALESCE(v.code, vt.code, p.vendor_code_text) AS vendor_code,
       so.code AS so_code, so.internal_so_no AS so_internal_no,
-      p.lines, p.total_qty, p.received_qty, p.total_val, p.tax_amount,
+      p.lines, p.total_qty, p.received_qty, p.pending_qty, p.total_val, p.tax_amount,
       p.total_val + p.tax_amount AS grand_total,
       p.status::text AS status,
       COALESCE(g.c, 0) AS grn_count
@@ -251,6 +262,7 @@ export async function listScPoSummary(
     lines: n(r.lines),
     totalQty: n(r.total_qty),
     receivedQty: n(r.received_qty),
+    pendingQty: n(r.pending_qty),
     totalVal: showMoney ? n(r.total_val) : null,
     taxAmount: showMoney ? n(r.tax_amount) : null,
     grandTotal: showMoney ? n(r.grand_total) : null,

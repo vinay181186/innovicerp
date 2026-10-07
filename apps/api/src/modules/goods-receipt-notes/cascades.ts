@@ -15,10 +15,16 @@
 //   2. recalcPoHeaderStatus(tx, poId)
 //        Recompute purchase_orders.status based on aggregate state of its
 //        PO lines + their GRN lines:
-//          - If any PO line.received_qty < line.qty → 'partial' or 'open'
-//            (we keep 'open' if NOTHING received yet; 'partial' if some).
-//          - Else (all PO lines fully received): if any GRN line for this PO
-//            has qc_status != 'completed' → 'qc_pending'; else → 'closed'.
+//          - If any PO line has received_qty < line.qty (the goods have not all
+//            physically arrived) → 'open' if NOTHING has arrived yet, else
+//            'partial'.
+//          - Else, everything has arrived: if any GRN line for this PO has
+//            qc_status != 'completed' → 'qc_pending'; else if ACCEPTED covers
+//            the full qty on every line → 'closed'; else → 'partial' (QC is
+//            done and some pieces were rejected and not yet settled).
+//        ACCEPTED is the ONE definition in lib/po-accepted.ts (Σ GRN
+//        qc_accepted_qty + pieces a non-return deviation recovered, capped at
+//        the line qty) — NOT received_qty. Only ACCEPTED can close an order.
 //        Never downgrades 'cancelled' or 'draft' headers.
 //
 //   3. writeStoreTxnOnQcAccept(tx, line, prevStatus)
@@ -36,6 +42,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { goodsReceiptNotes, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
+import { poLineAcceptedRaw } from '../../lib/po-accepted';
 import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
 
@@ -145,7 +152,32 @@ export async function recalcPoHeaderStatus(
     WITH po_line_agg AS (
       SELECT
         COUNT(*)::int AS line_count,
-        SUM(CASE WHEN pol.received_qty >= pol.qty THEN 1 ELSE 0 END)::int AS fully_received_count,
+        -- TWO counts, because the ladder needs two different facts and they
+        -- are not the same fact:
+        --
+        --   arrived_count       — the goods PHYSICALLY came in (received_qty).
+        --                         This is what tells 'qc_pending' (everything
+        --                         is here, QC has not finished) apart from
+        --                         'partial' (not everything is here yet).
+        --   fully_accepted_count — QC PASSED the full ordered qty (the ONE
+        --                         Accepted rule, lib/po-accepted.ts). Only
+        --                         this may close an order: a piece booked in
+        --                         and then rejected is not work the vendor
+        --                         delivered.
+        --
+        -- Measuring BOTH on ACCEPTED made 'qc_pending' unreachable — an order
+        -- whose goods had arrived but were not yet inspected read 'partial'.
+        --
+        -- any_received_count deliberately stays on received_qty: that is what
+        -- flips an order to 'partial' the moment goods physically arrive,
+        -- before QC has looked at them.
+        --
+        -- Consequence, accepted by the owner: pieces rejected and never
+        -- replaced (scrapped) leave the order short, and the buyer settles it
+        -- with Close Short and a reason. Nothing here auto-closes.
+        SUM(CASE WHEN pol.received_qty >= pol.qty THEN 1 ELSE 0 END)::int AS arrived_count,
+        SUM(CASE WHEN ${sql.raw(poLineAcceptedRaw('pol.id'))} >= pol.qty THEN 1 ELSE 0 END)::int
+          AS fully_accepted_count,
         SUM(CASE WHEN pol.received_qty > 0 THEN 1 ELSE 0 END)::int AS any_received_count
       FROM public.purchase_order_lines pol
       WHERE pol.purchase_order_id = ${poId}::uuid
@@ -163,14 +195,16 @@ export async function recalcPoHeaderStatus(
     )
     SELECT
       pla.line_count,
-      pla.fully_received_count,
+      pla.arrived_count,
+      pla.fully_accepted_count,
       pla.any_received_count,
       gla.grn_line_count,
       gla.pending_qc_count
     FROM po_line_agg pla, grn_line_agg gla
   `)) as unknown as Array<{
     line_count: number;
-    fully_received_count: number;
+    arrived_count: number;
+    fully_accepted_count: number;
     any_received_count: number;
     grn_line_count: number;
     pending_qc_count: number;
@@ -178,9 +212,25 @@ export async function recalcPoHeaderStatus(
   const agg = aggRows[0];
   if (!agg) return;
 
+  // The ladder:
+  //   every line physically arrived
+  //     → any GRN line still uninspected        : 'qc_pending'
+  //     → else QC passed the full qty everywhere: 'closed'
+  //     → else (QC done, some rejected and not yet settled): 'partial'
+  //   else anything arrived at all              : 'partial'
+  //   else                                      : 'open'
+  // Only ACCEPTED closes an order; arrival alone never does. A line left short
+  // by scrapped pieces stays 'partial' until Close Short settles it — nothing
+  // auto-closes.
   let nextStatus: typeof header.status;
-  if (agg.line_count > 0 && agg.fully_received_count === agg.line_count) {
-    nextStatus = agg.pending_qc_count === 0 ? 'closed' : 'qc_pending';
+  if (agg.line_count > 0 && agg.arrived_count === agg.line_count) {
+    if (agg.pending_qc_count > 0) {
+      nextStatus = 'qc_pending';
+    } else if (agg.fully_accepted_count === agg.line_count) {
+      nextStatus = 'closed';
+    } else {
+      nextStatus = 'partial';
+    }
   } else if (agg.any_received_count > 0) {
     nextStatus = 'partial';
   } else {

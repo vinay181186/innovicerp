@@ -130,6 +130,16 @@ export async function getPendingSoValue(
             )
           )
           AND dcl.deleted_at IS NULL
+          -- NOT a return-to-vendor challan (so-status/service.ts applies the
+          -- same test). An RTV challan DOES carry the SO line — the rejected
+          -- pieces belong to that order — so without this, pieces going BACK
+          -- to a vendor were counted as a dispatch to the CUSTOMER and this
+          -- SO's Pending Value fell as if the customer had been supplied.
+          AND NOT EXISTS (
+            SELECT 1 FROM public.delivery_challans dch
+            WHERE dch.id = dcl.delivery_challan_id
+              AND dch.nc_id IS NOT NULL
+          )
         WHERE sol.deleted_at IS NULL
         GROUP BY sol.sales_order_id
       ),

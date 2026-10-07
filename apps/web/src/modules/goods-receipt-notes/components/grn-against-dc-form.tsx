@@ -3,7 +3,8 @@
 // Chain: job-work / service PO → OSP delivery challan (IN-DC-…) sends our
 // material to the vendor → this screen books it back. Pick the JWPO, then one
 // of its challans still awaiting receipt — or pick the challan straight away
-// and the JWPO box fills itself from it — and every line with a Pending qty is
+// and the JWPO box fills itself from it — and every line with a qty still To
+// Receive is
 // loaded from that challan. Saving posts to POST /delivery-challans/:id/receive
 // — the SAME endpoint the standalone DC Receive page uses — so the server
 // raises the GRN (linked to the DC), updates the PO line's received qty and
@@ -549,7 +550,7 @@ export function GrnAgainstDcForm({
             </FormField>
           </Cluster>
 
-          {/* THE ACCOUNT — `Sent Qty — Received Earlier — Received = Pending`,
+          {/* THE ACCOUNT — `Sent Qty — Received Earlier — Received = To Receive`,
               recomputed from the live rows on every keystroke. On THIS screen
               the ordered figure is in hand: it is the challan line's own sent
               qty, which the form has just read off the picked challan. It is a

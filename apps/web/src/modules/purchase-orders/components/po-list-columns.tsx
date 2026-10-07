@@ -5,7 +5,7 @@
 //
 // Every column reads a field the retired card / sheet already showed — except
 // nothing new: PO No., PO Date, PO Type, Vendor, PR No., Qty, Received,
-// Pending, Value, PO Status. Value keeps its price gate: the API nulls
+// Accepted, Pending, Value, PO Status. Value keeps its price gate: the API nulls
 // `totalAmount` when the viewer may not see prices, and that null renders "—".
 
 import type { PurchaseOrderListItem } from '@innovic/shared';
@@ -125,6 +125,22 @@ export function purchaseOrderListColumns({
           style={{ color: po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
         >
           {po.receivedQty}
+        </span>
+      ),
+    },
+    {
+      id: 'accepted_qty',
+      // No sortFilterField yet — the server does not register a qcAcceptedQty
+      // sort/filter column; naming one here would break sorting. To follow.
+      header: 'Accepted',
+      align: 'right',
+      nowrap: true,
+      render: (po) => (
+        <span
+          className="mono fw-700"
+          style={{ color: po.qcAcceptedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+        >
+          {po.qcAcceptedQty}
         </span>
       ),
     },

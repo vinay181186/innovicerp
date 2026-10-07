@@ -7,6 +7,17 @@
 import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
+import { poLinePendingRaw } from '../../lib/po-pending';
+
+/** Pending Qty of a PO line — the ONE definition (lib/po-pending.ts, qty −
+ *  ACCEPTED, 0 on a closed / short-closed / cancelled order), NOT
+ *  qty − received_qty. The Pending PO Tracker shows it, sorts on it and
+ *  filters on it through this one expression, and Pending Value is that same
+ *  figure × rate — so the two figures in a row can never disagree. Valid
+ *  wherever pendingFrom's `po` / `pol` aliases are in scope. */
+export const PENDING_QTY_SQL = sql.raw(poLinePendingRaw('pol', 'po'));
+/** Pending Value = Pending Qty × rate (the same product summaries.ts sums). */
+export const PENDING_VAL_SQL = sql.raw(`(${poLinePendingRaw('pol', 'po')} * pol.rate)`);
 
 /** Vendor as the cells print it: name, else code (both fall back to the typed text). */
 export const PENDING_VENDOR_SQL = sql`COALESCE(v.name, vt.name, po.vendor_code_text)`;
@@ -30,13 +41,9 @@ export const SC_PENDING_SF_COLUMNS: SfColumnMap = {
   itemName: { sql: sql`COALESCE(i.name, pol.item_name)`, type: 'text' },
   qty: { sql: sql`pol.qty`, type: 'num' },
   receivedQty: { sql: sql`pol.received_qty`, type: 'num' },
-  pendingQty: { sql: sql`GREATEST(0, pol.qty - pol.received_qty)`, type: 'num' },
+  pendingQty: { sql: PENDING_QTY_SQL, type: 'num' },
   rate: { sql: sql`pol.rate`, type: 'num', price: true },
-  pendingVal: {
-    sql: sql`GREATEST(0, (pol.qty - pol.received_qty) * pol.rate)`,
-    type: 'num',
-    price: true,
-  },
+  pendingVal: { sql: PENDING_VAL_SQL, type: 'num', price: true },
   status: { sql: sql`po.status::text`, type: 'list' },
 };
 
@@ -47,7 +54,10 @@ export const SC_VENDOR_SF_COLUMNS: SfColumnMap = {
   uniqueItems: { sql: sql`t.unique_items`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
   receivedQty: { sql: sql`t.received_qty`, type: 'num' },
-  pendingQty: { sql: sql`(t.total_qty - t.received_qty)`, type: 'num' },
+  // The ONE Pending definition, summed per group in summaries.ts (qty −
+  // ACCEPTED), not total_qty − received_qty: ACCEPTED is what the vendor is
+  // credited with, and pending_val is that same figure × rate.
+  pendingQty: { sql: sql`t.pending_qty`, type: 'num' },
   totalVal: { sql: sql`t.total_val`, type: 'num', price: true },
   pendingVal: { sql: sql`t.pending_val`, type: 'num', price: true },
 };
@@ -61,7 +71,10 @@ export const SC_SO_SF_COLUMNS: SfColumnMap = {
   uniqueVendors: { sql: sql`t.unique_vendors`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
   receivedQty: { sql: sql`t.received_qty`, type: 'num' },
-  pendingQty: { sql: sql`(t.total_qty - t.received_qty)`, type: 'num' },
+  // The ONE Pending definition, summed per group in summaries.ts (qty −
+  // ACCEPTED), not total_qty − received_qty: ACCEPTED is what the vendor is
+  // credited with, and pending_val is that same figure × rate.
+  pendingQty: { sql: sql`t.pending_qty`, type: 'num' },
   totalVal: { sql: sql`t.total_val`, type: 'num', price: true },
   pendingVal: { sql: sql`t.pending_val`, type: 'num', price: true },
 };
@@ -76,7 +89,10 @@ export const SC_PO_SUMMARY_SF_COLUMNS: SfColumnMap = {
   lines: { sql: sql`t.lines`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
   receivedQty: { sql: sql`t.received_qty`, type: 'num' },
-  pendingQty: { sql: sql`(t.total_qty - t.received_qty)`, type: 'num' },
+  // The ONE Pending definition, summed per group in summaries.ts (qty −
+  // ACCEPTED), not total_qty − received_qty: ACCEPTED is what the vendor is
+  // credited with, and pending_val is that same figure × rate.
+  pendingQty: { sql: sql`t.pending_qty`, type: 'num' },
   totalVal: { sql: sql`t.total_val`, type: 'num', price: true },
   taxAmount: { sql: sql`t.tax_amount`, type: 'num', price: true },
   grandTotal: { sql: sql`t.grand_total`, type: 'num', price: true },

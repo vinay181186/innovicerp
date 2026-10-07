@@ -79,9 +79,6 @@ import { jobCardOrderChainCte } from '../../lib/production-order-link';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
-// ADR-217 — the replacement order is built by the purchase-order module's own
-// writer (numbering, status, line shape all in one place), called from here.
-import { createReplacementPoForNc } from '../purchase-orders/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { reinjectLogType } from './reinject-log-type';
 import { cascadeJcCompleteUpChain } from '../op-entry/sales-cascade';
@@ -319,9 +316,11 @@ export interface DisposeNcCascadeResult {
   /** make_fresh supplementary JC. */
   newJcCode?: string;
   newJcId?: string;
-  /** ADR-217 — the zero-value job-work order a return to vendor raised. Absent
-   *  when the disposition is not a return, or when the return had no vendor to
-   *  raise one against. */
+  /** ADR-217's zero-value replacement order. NO LONGER SET BY ANYTHING — a
+   *  return to vendor stopped raising an order; the challan and the vendor's
+   *  replacement receipt name the ORIGINAL job-work order instead. Kept so the
+   *  audit-trail line that reports it still compiles, and so the three
+   *  deviations raised before this change keep reading the same shape. */
   replacementPoId?: string;
   replacementPoCode?: string;
   /** use_as_is op_log row. */
@@ -448,11 +447,9 @@ export async function disposeNcCascade(
   // (e.g. the existing prod NC-…-00006-Op8), whose disposition columns are left
   // exactly as they were.
   //
-  // ADR-217 — the same resolve also supplies the vendor the replacement order
-  // is raised to, so it is kept for the return-to-vendor branches below rather
-  // than resolved a second time: the order and the challan must never be able
-  // to name two different vendors.
-  let ncSource: NcSource | null = null;
+  // The resolve used to be kept for the return-to-vendor branches below, which
+  // read its vendor to raise the ADR-217 replacement order. No order is raised
+  // any more, so the result is used only for the two guards here.
   if (
     input.action === 'return_to_vendor' ||
     input.action === 'rework' ||
@@ -464,7 +461,6 @@ export async function disposeNcCascade(
       replacementPoId: loaded.replacementPoId,
       sourceDeliveryChallanId: loaded.sourceDeliveryChallanId,
     });
-    ncSource = source;
     if (input.action === 'return_to_vendor' && !source.isVendorSourced) {
       throw new ConflictError(`Cannot return NC ${loaded.code} to vendor: it was made in-house.`);
     }
@@ -630,26 +626,15 @@ export async function disposeNcCascade(
     // the pieces while they are out (recalcPoLineReceivedQty), and the vendor's
     // replacement is received and inspected against this NC.
     //
-    // ADR-217 — and the order those documents hang off is raised HERE, in this
-    // transaction, under the FOR UPDATE lock taken at the top of this function.
-    const boughtPo = await createReplacementPoForNc(
-      tx,
-      ctx.companyId,
-      {
-        id: nc.id,
-        code: nc.code,
-        itemId: nc.itemId,
-        itemCodeText: nc.itemCodeText,
-        itemNameText: nc.itemNameText,
-        // AFTER any split: the qty this row owns, which is the qty going back.
-        rejectedQty: rejectedQtyNow.toFixed(3),
-        replacementPoId: nc.replacementPoId,
-        dispositionRemarks: input.remarks ?? null,
-      },
-      ncSource?.sourceVendorId ?? null,
-      today,
-      ctx.user,
-    );
+    // ADR-217 raised a separate zero-value job-work order here for the challan
+    // and the vendor's replacement receipt to hang off. That is WITHDRAWN: the
+    // return challan and the replacement GRN now name the ORIGINAL job-work
+    // order the pieces were bought / sent on, which createNcDc resolves from
+    // the origin PO line. No order is raised by a disposition any more, so
+    // `replacement_po_id` is never written on a new row (it stays null) — the
+    // column itself is untouched and keeps whatever the three pre-existing
+    // deviations already hold, so their orders still open, close and read
+    // exactly as before.
     await setPendingNc(tx, ncId, loaded.code, {
       status: 'disposed',
       disposition: 'return_to_vendor',
@@ -659,9 +644,6 @@ export async function disposeNcCascade(
       dispositionBy: ctx.userId,
       dispositionAt: new Date(),
       dispositionRemarks: input.remarks ?? null,
-      // ADR-217 — null when there was no vendor to raise one against; the NC
-      // then behaves exactly as it did before ADR-217.
-      replacementPoId: boughtPo?.id ?? nc.replacementPoId ?? null,
       // ADR-217 — the challan the pieces went out on, as answered on the
       // screen. The key is omitted entirely when nothing was answered, so a
       // value already on the row (a split half inherits its parent's) survives
@@ -670,10 +652,6 @@ export async function disposeNcCascade(
       updatedBy: ctx.userId,
     });
     result.status = 'disposed';
-    if (boughtPo) {
-      result.replacementPoId = boughtPo.id;
-      result.replacementPoCode = boughtPo.code;
-    }
     return result;
   }
 
@@ -920,30 +898,15 @@ export async function disposeNcCascade(
     // The challan itself is raised by service.createNcDc (design §5); the PO
     // received-qty adjustment of §12.2 happens there, at DC time, not here.
     //
-    // ADR-217 — what IS raised here is the zero-value job-work order the challan
-    // and the vendor's replacement receipt then hang off, in this transaction
-    // and under the FOR UPDATE lock taken at the top of this function. The
-    // order's line carries no jc_op / SO-line link: those are the links the
-    // outsourcing cascades count, and a second line on this op would double its
-    // sent / received figures (§20.1 one number, one writer).
-    const replacementPo = await createReplacementPoForNc(
-      tx,
-      ctx.companyId,
-      {
-        id: nc.id,
-        code: nc.code,
-        itemId: nc.itemId,
-        itemCodeText: nc.itemCodeText,
-        itemNameText: nc.itemNameText,
-        // AFTER any split: the qty this row owns, which is the qty going back.
-        rejectedQty: rejectedQtyNow.toFixed(3),
-        replacementPoId: nc.replacementPoId,
-        dispositionRemarks: input.remarks ?? null,
-      },
-      ncSource?.sourceVendorId ?? null,
-      today,
-      ctx.user,
-    );
+    // ADR-217 used to raise a separate zero-value job-work order here for the
+    // challan and the vendor's replacement receipt to hang off. That is
+    // WITHDRAWN: both documents now name the ORIGINAL job-work order the pieces
+    // went out on — the order that owns the origin operation's outsource PO
+    // line, which createNcDc resolves from that line. Nothing is raised by a
+    // disposition any more, so `replacement_po_id` is never written on a new
+    // row (it stays null). The column is left completely alone, so the three
+    // deviations that already name an order keep it, and recovery.ts still
+    // closes those orders when they clear.
     await setPendingNc(tx, ncId, loaded.code, {
       status: 'disposed',
       disposition: 'return_to_vendor',
@@ -953,9 +916,6 @@ export async function disposeNcCascade(
       dispositionBy: ctx.userId,
       dispositionAt: new Date(),
       dispositionRemarks: input.remarks ?? null,
-      // ADR-217 — null when the NC had no resolvable vendor (or its vendor is
-      // disabled): the NC then behaves exactly as it did before ADR-217.
-      replacementPoId: replacementPo?.id ?? nc.replacementPoId ?? null,
       // ADR-217 — the challan the pieces went out on, as answered on the
       // screen. Omitted when nothing was answered, so a value already on the
       // row (inherited by a split half) is not wiped to null.
@@ -963,10 +923,6 @@ export async function disposeNcCascade(
       updatedBy: ctx.userId,
     });
     result.status = 'disposed';
-    if (replacementPo) {
-      result.replacementPoId = replacementPo.id;
-      result.replacementPoCode = replacementPo.code;
-    }
     return result;
   }
 

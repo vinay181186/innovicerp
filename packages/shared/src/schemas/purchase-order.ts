@@ -87,6 +87,11 @@ export const purchaseOrderLineSchema = z.object({
   // (L1 Viewer without "see price") — see canSeeFormPrice on the API.
   rate: z.string().nullable(),
   receivedQty: z.number().nonnegative(),
+  /** Pieces this line's receipts have PASSED QC — Σ qc_accepted_qty of the
+   *  line's live GRN lines, replacement receipts included. `receivedQty` says
+   *  what came in; this says what was good. Pending is measured against THIS,
+   *  so a line with pieces rejected at QC still reads as owed. */
+  qcAcceptedQty: z.number().nonnegative().default(0),
   dueDate: z.string().nullable(),
   sourceSoLineId: z.string().uuid().nullable(),
   sourceJcOpId: z.string().uuid().nullable(),
@@ -207,8 +212,14 @@ export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
-  /** ADR-189 — Σ per line max(0, qty − received); 0 once the PO is closed,
-   *  short-closed or cancelled. The one Pending every PO screen shows. */
+  /** Σ per line of the pieces that PASSED QC. See the line field of the same
+   *  name. Shown beside Received, never instead of it: `receivedQty` keeps the
+   *  meaning docs/NAMING.md registers for it (what physically came in). */
+  qcAcceptedQty: z.number().nonnegative().default(0),
+  /** ADR-189 — Σ per line max(0, qty − ACCEPTED); 0 once the PO is closed,
+   *  short-closed or cancelled. The one Pending every PO screen shows.
+   *  Measured against Accepted, not Received: a piece that failed QC was
+   *  never delivered work, so the vendor still owes it. */
   pendingQty: z.number().nonnegative().default(0),
   /** Pieces already sent OUT against this PO's lines on delivery challans that
    *  are not cancelled — the same rule the DC sendable check applies per line.
@@ -439,12 +450,17 @@ export interface ListPurchaseOrdersResponse {
 
 /** ADR-189 — stopping an issued PO is a recorded action with a reason a reader
  *  can act on (ERPNext: Close / Cancel a Purchase Order). */
-/** ADR-189 — Pending of one PO line: qty − received, never below 0, and 0 once
+/** ADR-189 — Pending of one PO line: qty − ACCEPTED, never below 0, and 0 once
  *  the PO is closed, short-closed or cancelled (nothing more will come on it).
- *  The API's SQL twin is apps/api/src/lib/po-pending.ts. */
-export function poLinePendingQty(qty: number, receivedQty: number, poStatus: string): number {
+ *  The API's SQL twin is apps/api/src/lib/po-pending.ts.
+ *
+ *  Accepted, not received: a piece booked in and then failed at QC is not work
+ *  the vendor delivered, so the line must still read as owed. Pieces rejected
+ *  and never replaced (scrapped) therefore leave Pending standing — the buyer
+ *  settles that with Close Short and a reason, which is what zeroes it. */
+export function poLinePendingQty(qty: number, qcAcceptedQty: number, poStatus: string): number {
   if (!['draft', 'open', 'partial', 'qc_pending'].includes(poStatus)) return 0;
-  return Math.max(0, qty - receivedQty);
+  return Math.max(0, qty - qcAcceptedQty);
 }
 
 export const PO_SHORT_CLOSE_REASON_MIN = 10;
