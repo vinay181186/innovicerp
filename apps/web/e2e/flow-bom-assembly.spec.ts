@@ -133,11 +133,15 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
 
   // ELEMENT: the parent's Item Name is resolved from the code and never typed,
   // so it is a read-only box under its label; the resolving states are only
-  // its placeholder, so a non-empty VALUE means the name resolved.
+  // its placeholder, so a non-empty VALUE means the name resolved — and it
+  // must not be a stale previous pick, so it may not be the bare code either.
   const parentName = bomParentItemName(page);
   await expect(parentName, 'the parent Item Name resolves').toHaveValue(/\S/, {
     timeout: 15_000,
   });
+  await expect(parentName, 'the parent Item Name is a name, not the code').not.toHaveValue(
+    PARENT_ITEM,
+  );
   // eslint-disable-next-line no-console
   console.log(`>> parent ${PARENT_ITEM} → "${(await parentName.inputValue()).trim()}"`);
   await expect(parentName, 'parent Item Name is read-only').toHaveAttribute('readonly', '');

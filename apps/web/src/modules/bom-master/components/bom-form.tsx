@@ -52,7 +52,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { Cluster, ClusterGrid } from '@/ui/forms';
+import { Cluster, ClusterGrid, FormField } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextBomNo } from '../api';
 
@@ -422,9 +422,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // an equipment SO be planned and then never dispatched.
   const parentLocked = !resolvedParentId;
 
-  // The parent's Item Name is RESOLVED from the code and can never be typed, so
-  // it reads as a value, not as a half-page disabled box. The three states the
-  // old box conveyed are all kept, in words instead of an empty field:
+  // The parent's Item Name is RESOLVED from the code and can never be typed: a
+  // read-only box under its label (see the Parent Item cluster below for why it
+  // is not a ClusterFact). While nothing is resolved the box is empty and these
+  // words are its placeholder — except "Not in Item Master", which is an error:
   //   nothing typed yet            → "auto-filled" (the old placeholder)
   //   a code typed, still looking  → "Checking Item Master…"
   //   a code typed, no master row  → "Not in Item Master" (the Save banner
@@ -447,6 +448,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           ? 'auto-filled'
           : 'Not in Item Master'
       : 'auto-filled';
+
+  const parentNotInMaster = parentItemNameNote === 'Not in Item Master';
 
   const onParentPicked = (id: string | null): void => {
     if (!id) {
@@ -1084,27 +1087,36 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                     : {})}
               />
             </div>
-            {/* Resolved from the code and never typed. Shown like its row
-                neighbours (Qty, BOM Rev): label on top, a read-only box under
-                it. It was a one-line fact (label left, value pushed right),
-                which in this row of label-over-box fields put the name at the
-                far right beside "Qty" and left the space under "Item Name"
-                empty — read as "the name does not fill" (owner, 2026-10-07).
-                The resolving states show as the box's grey placeholder. */}
-            <div className="form-grp cl-span-2">
-              <label className="form-label" htmlFor="bom-parent-name">
-                Item Name
-              </label>
+            {/* Resolved from the code and never typed. Label on top, read-only
+                box under it, like its row neighbours (Qty, BOM Rev). It was a
+                one-line ClusterFact (label left, value pushed right), which in
+                this row of label-over-box fields put the name at the far right
+                beside "Qty" and left the space under "Item Name" empty — read
+                as "the name does not fill" (owner, 2026-10-07). The resolved
+                name is the VALUE, so it reads in full text colour, not the grey
+                of a derived hint; a long name ends in "…" with the full name on
+                hover and on focus. A code that is not in the master is an error
+                under the box, not a grey placeholder. */}
+            <FormField
+              label="Item Name"
+              htmlFor="bom-parent-name"
+              className="cl-span-2"
+              error={parentNotInMaster ? 'Not in Item Master' : undefined}
+            >
               <input
                 id="bom-parent-name"
-                className="innovic-input is-derived"
+                className={`innovic-input is-derived${parentNotInMaster ? ' is-bad' : ''}`}
+                style={
+                  parentItemName
+                    ? { color: 'var(--text)', fontWeight: 600, textOverflow: 'ellipsis' }
+                    : undefined
+                }
                 readOnly
-                tabIndex={-1}
                 value={parentItemName}
-                placeholder={parentItemNameNote}
+                placeholder={parentNotInMaster ? '' : parentItemNameNote}
                 title={parentItemName || undefined}
               />
-            </div>
+            </FormField>
             <div className="form-grp">
               <label className="form-label" htmlFor="bom-parent-qty">
                 Qty<span className="req">★</span>

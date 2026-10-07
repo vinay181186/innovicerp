@@ -75,10 +75,11 @@ export function bomPartRemove(page: Page, idx: number): Locator {
 }
 
 /** The PARENT's Item Name. Resolved-never-typed, so it is a read-only box
- *  (#bom-parent-name) under the "Item Name" label; read it with
- *  `toHaveValue`. While nothing is resolved the box is empty and its grey
- *  placeholder reads "auto-filled" / "Checking Item Master…" /
- *  "Not in Item Master" / "Loading…". */
+ *  under its "Item Name" label; read it with `toHaveValue`. Found BY ITS LABEL,
+ *  so a broken label association fails the spec. While nothing is resolved the
+ *  box is empty and its placeholder reads "auto-filled" / "Checking Item
+ *  Master…" / "Loading…"; an unknown code shows "Not in Item Master" as an
+ *  error under it. */
 export function bomParentItemName(page: Page): Locator {
-  return page.locator('#bom-parent-name');
+  return page.getByLabel('Item Name', { exact: true });
 }
