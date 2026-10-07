@@ -799,7 +799,13 @@ export async function getLevelMatrix(
             tx,
             // ADR-221: item from the order ITSELF (stored text, live item as the name fallback).
             sql`SELECT po.id, po.code, po.plan_id, po.status, po.order_qty, po.credited_qty, po.lost_qty,
-                  po.item_code_text AS item_code, COALESCE(po.item_name_text, i.name) AS item_name
+                  -- ADR-221 — NULLIF as well as COALESCE: the fallback must fire on an
+                  -- EMPTY STRING too, not only on NULL. On TEST the one blank name
+                  -- (IN-PRO-00023) is NULL so plain COALESCE happens to work today, but
+                  -- an '' would sail through and the screen renders a BLANK cell rather
+                  -- than the dash it shows for a missing value.
+                  COALESCE(NULLIF(btrim(po.item_code_text), ''), i.code) AS item_code,
+                  COALESCE(NULLIF(btrim(po.item_name_text), ''), i.name) AS item_name
                 FROM public.production_orders po
                 LEFT JOIN public.items i ON i.id = po.item_id
                 WHERE po.plan_id = ANY(${sql.param(planIds)}::uuid[]) AND po.deleted_at IS NULL
