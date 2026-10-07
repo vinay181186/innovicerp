@@ -52,6 +52,7 @@ import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/l
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { SoCloseModal, closableQty } from '../components/so-close-modal';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
+import { SoBomPartsPanel } from '../components/so-equipment-expand';
 import { SoFulfilmentBadge } from '../components/so-fulfilment-badge';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
@@ -341,6 +342,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
           />
         </Panel>
       ) : null}
+
+      {/* ADR-221 — the BOM's child item parts (equipment SO only). */}
+      <SoBomPartsPanel so={detail} />
 
       {/* Every SO line through Plan → Production Order → Job Card → OSP docs (req. 3.5, read-only). */}
       <SoLevelMatrixPanel salesOrderId={detail.id} />

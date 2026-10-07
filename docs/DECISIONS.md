@@ -11986,3 +11986,94 @@ the gate. The approver's screen needs NO change - it renders change rows generic
   it** - each module hand-duplicates the rule in its divert and nothing would catch a drift. And the
   approvals queue sits in System Settings next to Backup, where the Production approvers (L4/L5) will
   not look for work waiting on them.
+
+## ADR-221: A BOM Sales Order shows its child parts, and every order under it names its own item
+
+**Date:** 2026-10-07
+**Status:** Accepted
+
+### Context
+
+The owner, in two sentences: *"on so detail page. bom so . not showing. child item parts."* and
+*"alos on level matrix. per pro, per jc show item code,name."* Traced, and the two turn out to be the
+same gap seen from two angles.
+
+**An equipment Sales Order carries its BOM on the HEADER** (`sales_orders.bom_master_id`), not on the
+line — unlike an assembly SO, which carries it per line (`sales_order_lines.source_bom_master_id`).
+Live on TEST: **26 equipment SOs, 17 with a BOM, every BOM with exactly 2 children — and ZERO
+assembly SOs, ZERO lines carrying a source BOM.** So the header BOM is the only real case.
+
+**Why the two asks are one.** Such an SO has ONE line — the parent assembly — while every Plan,
+Production Order and Job Card beneath it is for a CHILD part. `IN-SO-00793`: one line for parent
+`V3B-ASM-464326`; under it `IN-PRO-00027` is `V3B-P1-464326` and `IN-PRO-00028` is `V3B-P2-464326`.
+The Level Matrix prints both as bare document numbers, and the only item label on the screen is the
+PARENT's — so the page does not merely omit the parts, it labels the work with the wrong item.
+
+**The parts list already exists and already works.** `GET /so-status/:soId` returns a top-level
+`bomItems` array (child code, child name, qty per set, total need, stock, shortfall, BOM type, plan
+and JC codes) plus `header.equipmentInfo` (BOM number, name, revision, parts count). A ~90-line
+component, `EquipmentBomItems` in `sales-orders/components/so-equipment-expand.tsx`, already renders
+it, and it is live on the SO list `▸` expand and on the SO Status page. **The SO detail page was never
+missing data — it was missing a panel.** The detail contract carries only `bomMasterId`, `bomStatus`
+and `bomMasterCode`; `bom_master_lines` is never touched anywhere in the sales-orders module.
+
+The matrix half is not cosmetic: `production_orders` already stores `item_code_text` /
+`item_name_text` and the query simply does not select them, but **`job_cards` has NO item text
+columns at all** — only `item_id` — so the API must join the item master. The same function already
+does exactly that join for its SO-line row.
+
+### Decision
+
+1. **Mount the existing parts table on the SO detail page**, between Line Items and the Level Matrix,
+   titled with the BOM's number, name, revision and parts count. Reuse the component and the
+   endpoint; no new endpoint, no second parts table, no contract change.
+2. **Add `itemCode` and `itemName` to the Production Order and Job Card rows of the Level Matrix**,
+   **read from the Production Order / Job Card ITSELF — never copied from the SO line.** On a BOM SO
+   they genuinely differ, and copying the line's item would print the parent's code on a child's job
+   card: worse than showing nothing.
+
+### Alternatives considered
+
+- **Add the children to the SO detail contract and query** — rejected. It would be a second way to
+  read the same fact, against §20.1's spirit, when a working endpoint and a working component already
+  exist. Reuse is both smaller and keeps one answer.
+- **Use the BOM Planning endpoint (`GET /so-planning/:id/bom/:lineId`)** — rejected: it is keyed per
+  SO line and has write side effects (it creates plans). Wrong tool for a read-only panel.
+- **Use the per-line `bomChildren` on the planning list** — rejected: it lists children only for
+  lines that already have child plans, so it is empty exactly when the owner most needs the list.
+- **Copy the item from the SO line onto the PRO/JC rows** — rejected; see the Decision. This is the
+  one choice in this ADR that could actively mislead.
+- **Show the item REVISION too** — deferred. The owner asked for code and name. The revision has
+  three candidate sources here (`sol.revision`, `ITEM_REVISION_SQL` per PRO, and the JC list's
+  `COALESCE(sol.revision, jwl.revision)`) and the obvious one is wrong for job-work rows. Not guessed.
+- **Children for assembly / with_material SOs** — out of scope: none exist in the data, and
+  `bomItems` is only populated for `type === 'equipment'`.
+
+### Consequences
+
+- Zero migrations. Zero shared-contract change. Read-only throughout: nothing is written, no status
+  moves, no quantity moves, so §20.1–20.4 have no surface. **§20.5 is the rule that applies** — the
+  parts panel calls a SECOND, heavier endpoint than the page's own, so it carries its own loading and
+  error state rather than blanking the panel.
+- **The Level Matrix contract is hand-duplicated and NOT in `packages/shared`:**
+  `apps/api/src/modules/flow-views/types.ts` and `apps/web/src/modules/flow-views/types.ts` are
+  identical copies around lines 200-253. Both are edited together; **nothing in the build keeps them
+  in step**, which is a trap for the next person.
+- Naming: the new fields are the registered `itemCode` / `itemName` (docs/NAMING.md). Noted and
+  deliberately NOT fixed here: `LevelSoLine.partName` already uses a name that register explicitly
+  bans for that fact. Renaming it is its own change.
+- `GET /so-status/:soId` is a heavy aggregation (lines, plans, job cards, stock, timelines). It is now
+  called on the detail page as well as the list expand and the status page. Accepted for a two-child
+  list; if the detail page ever feels slow, this is the first thing to look at.
+- One Production Order on TEST (`IN-PRO-00023`, item ZZ-OSP-02) has a blank `item_name_text` while
+  its `item_id` is set, which is why the name falls back to the live item rather than trusting the
+  snapshot alone.
+- **Verification note:** every pre-2026-10-07 "verified on live PROD" figure is gone — the owner
+  cleared production's transactional data that day. All numbers in this ADR are from TEST.
+
+### Open afterwards
+
+- The item revision on the matrix (above).
+- `LevelSoLine.partName` renaming.
+- Assembly / with_material SOs' per-line BOM children, if the owner ever creates one.
+- The duplicated flow-views contract: it belongs in `packages/shared` like every other contract.
