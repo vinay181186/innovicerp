@@ -161,18 +161,13 @@ export const planningLineSchema = z.object({
     )
     .default([]),
   plans: z.array(planningPlanSummarySchema),
-  /** Sum of all non-cancelled plan_qty for this SO line.
-   *
-   *  ADR-216 KNOWN FAULT, specified but NOT fixed: on a line planned through its
-   *  BOM these are CHILD-PART quantities summed into a column counted in
-   *  assemblies, so one washer needing 10 wheels + 10 gear wheels reads
-   *  "Order Qty 1, Plan Qty 20", and `remaining` then floors to 0 so the line can
-   *  read fully planned while a part has nothing against it. Correcting it means
-   *  changing `soLinePlannedRaw` (apps/api/src/lib/so-line-coverage.ts), which the
-   *  create-plan cap, Needs Planning, the Unplanned SO Lines report and the
-   *  Planning list's Plan % all read — changing this number alone makes the screen
-   *  offer a "Plan n" the server then refuses. Until that is done together,
-   *  `bomChildren` below states the per-part truth instead. */
+  /** What the line's plans cover — `soLinePlanCoverage` (lib/so-line-plan-
+   *  coverage.ts, ADR-221), the same rule `soLinePlannedRaw` applies in SQL.
+   *  EQUIPMENT line: complete SETS of its parts, the weakest part deciding
+   *  (P1 10 + P2 4 at 1 per set → 4). Every other line, ASSEMBLY included: its
+   *  own plans only — an assembly line's part plans do not cover it; its Final
+   *  Assembly plan does. A Buy line's PRs count (ADR-171). Before ADR-221 part
+   *  plans were summed in, so IN-SO-00793 read "Order 10, Plan Qty 20". */
   totalPlanned: z.number().nonnegative(),
   /**
    * Qty covered by Job Cards created directly against this SO line WITHOUT a
@@ -207,9 +202,7 @@ export const planningLineSchema = z.object({
       }),
     )
     .default([]),
-  /** max(0, orderQty - totalPlanned - directJcQty). Inherits the BOM fault
-   *  described on `totalPlanned` above: on a BOM line this floors to 0, which is
-   *  why the To Plan column and the ⋯ menu's "Plan n" can both read 0 there. */
+  /** max(0, orderQty - totalPlanned - directJcQty); 0 on a short-closed line. */
   remaining: z.number().nonnegative(),
   /** AVAILABLE stock for this line's item = physical − total active reserved
    *  (ADR-180). Kept under its old name because its MEANING is unchanged — it
