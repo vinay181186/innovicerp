@@ -2355,14 +2355,17 @@ export async function updateJobCardTx(
     .where(
       and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
     )
-    .limit(1)
-    // ADR-220 — LOCK ORDER: job_cards first, then its jc_ops. The edit-approval
-    // entry (loadForDiff) already takes job_cards then jc_ops; without this the
-    // direct path wrote jc_ops BEFORE job_cards, the opposite order, so a direct
-    // edit racing an approval could deadlock (the ADR-215 40P01 pattern). Taking
-    // the same lock first also serialises two direct edits of one card. Re-taking
-    // it inside the engine's transaction is a no-op (already held).
-    .for('update', { of: jobCards });
+    .limit(1);
+  // ADR-220 LOCK ORDER — deliberately NO `job_cards` FOR UPDATE here. ADR-220
+  // first added one so this path matched the approval entry (loadForDiff takes
+  // job_cards then jc_ops). Reverted: op-entry holds a key-share on jc_ops (the
+  // op_log FK) and THEN updates job_cards in finishJc, so locking job_cards
+  // first here is the opposite order and can deadlock (40P01) when someone
+  // completes an operation while another user saves the same card. This path
+  // writes jc_ops first, which agrees with op-entry. The approval-vs-direct
+  // inversion is real but DORMANT (it needs the edit-approval gate on) and is
+  // recorded as open on ADR-220 — fix it by making loadForDiff lock in THIS
+  // order, never by flipping this one.
   const head = headRows[0];
   if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
   // ADR-182 — a short-closed Production Order's card is frozen: it records
@@ -2471,14 +2474,6 @@ export async function updateJobCardTx(
     recoveryKind: head.recoveryKind,
     isStarted: (o) => !!o.id && started.has(o.id),
   });
-  // ADR-220 — a card must keep at least one operation. Nothing used to stop an
-  // empty list, so a save (or an approved edit that removed every box) could
-  // leave a Job Card with no routing at all.
-  if (userOps.length === 0) {
-    throw new ValidationError(
-      `${head.code} must keep at least one operation — it cannot be saved with an empty routing.`,
-    );
-  }
   const ops = withTerminalQcOp(userOps, { recoveryKind: head.recoveryKind });
   const types = validateOps(ops);
   const machineMap = await resolveCodeMap(
@@ -2525,6 +2520,19 @@ export async function updateJobCardTx(
     .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
     .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
   const existingById = new Map(existing.map((o) => [o.id, o]));
+  // ADR-220 — a save must not EMPTY a routing that had operations (an approved
+  // edit that removed every box could otherwise leave a card with none). Only
+  // when the card HAS operations: a card created with an empty routing is legal
+  // (createJobCard allows it and v_jc_status reports 'no_ops'), and refusing
+  // here blocked header-only edits on those cards — the regression this fixes.
+  // Known and left open: a payload carrying ONLY the system-generated terminal
+  // QC op still passes, because `existing` is unordered here so the generated
+  // op cannot be told from a real one without an ORDER BY.
+  if (existing.length > 0 && userOps.length === 0) {
+    throw new ValidationError(
+      `${head.code} must keep at least one operation — it cannot be saved with an empty routing.`,
+    );
+  }
   // Routing rule: a QC op may not sit directly after an OSP op. Checked on
   // the USER's ops (input.ops, never the list with the appended terminal QC).
   // Rework/repair children are exempt (the server itself appends the terminal
