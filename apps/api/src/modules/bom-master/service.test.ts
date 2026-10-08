@@ -138,12 +138,15 @@ describe('bom-master service — CRUD', () => {
       {
         bomName: 'Auto-numbered BOM',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 2, bomType: 'manufacture' }],
       },
       admin,
     );
     expect(detail.bomNo).toMatch(/^BOM-\d{4}$/);
+    // ADR-223: the server decides the status and it is always Active. Asserted
+    // on the CREATE, not just after an update — an update that sends 'active'
+    // onto an already-Active BOM proves nothing (from === to).
+    expect(detail.status).toBe('active');
     expect(detail.revision).toBe(1);
     expect(detail.lines).toHaveLength(1);
     expect(detail.revisions).toHaveLength(1);
@@ -161,7 +164,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}PARENT1`,
         bomName: 'has a parent',
         parentItemId: testParentId,
-        status: 'active',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -178,7 +180,6 @@ describe('bom-master service — CRUD', () => {
           bomNo: `${TEST_PREFIX}SELFREF`,
           bomName: 'builds itself',
           parentItemId: testParentId,
-          status: 'draft',
           lines: [
             { childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' },
             { childItemId: testParentId, qtyPerSet: 1, bomType: 'manufacture' },
@@ -196,7 +197,6 @@ describe('bom-master service — CRUD', () => {
           bomNo: `${TEST_PREFIX}NOPARENT`,
           bomName: 'ghost parent',
           parentItemId: '00000000-0000-0000-0000-000000000000',
-          status: 'draft',
           lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
         },
         admin,
@@ -210,7 +210,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}SWAP`,
         bomName: 'parent swap',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -221,7 +220,7 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}SWAP`,
         bomName: 'parent swap',
         parentItemId: testItemId3, // a different item becomes the parent
-        status: 'draft',
+        status: 'active',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -239,7 +238,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: code,
         bomName: 'Explicit-numbered',
         parentItemId: testParentId,
-        status: 'active',
         lines: [
           { childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' },
           { childItemId: testItemId2, qtyPerSet: 2, bomType: 'purchase' },
@@ -260,7 +258,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: code,
         bomName: 'first',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -271,7 +268,6 @@ describe('bom-master service — CRUD', () => {
           bomNo: code,
           bomName: 'second',
           parentItemId: testParentId,
-          status: 'draft',
           lines: [{ childItemId: testItemId2, qtyPerSet: 1, bomType: 'manufacture' }],
         },
         admin,
@@ -286,7 +282,6 @@ describe('bom-master service — CRUD', () => {
           bomNo: `${TEST_PREFIX}DUPCHILD`,
           bomName: 'same part twice',
           parentItemId: testParentId,
-          status: 'draft',
           lines: [
             { childItemId: testItemId1, qtyPerSet: 2, bomType: 'manufacture' },
             { childItemId: testItemId2, qtyPerSet: 1, bomType: 'purchase' },
@@ -304,7 +299,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}DUPCHILD-U`,
         bomName: 'ok at first',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -316,7 +310,7 @@ describe('bom-master service — CRUD', () => {
           bomNo: `${TEST_PREFIX}DUPCHILD-U`,
           bomName: 'now duplicated',
           parentItemId: testParentId,
-          status: 'draft',
+          status: 'active',
           lines: [
             { childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' },
             { childItemId: testItemId1, qtyPerSet: 3, bomType: 'purchase' },
@@ -335,7 +329,6 @@ describe('bom-master service — CRUD', () => {
           bomNo: `${TEST_PREFIX}VIEW1`,
           bomName: 'viewer attempt',
           parentItemId: testParentId,
-          status: 'draft',
           lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
         },
         viewer,
@@ -349,7 +342,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}GET1`,
         bomName: 'getter',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -374,7 +366,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}UPD1`,
         bomName: 'will be updated',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [
           { childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' },
           { childItemId: testItemId2, qtyPerSet: 2, bomType: 'purchase' },
@@ -416,7 +407,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}UPD2`,
         bomName: 'override note',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -428,7 +418,7 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}UPD2`,
         bomName: 'override note',
         parentItemId: testParentId,
-        status: 'draft',
+        status: 'active',
         lines: [{ childItemId: testItemId1, qtyPerSet: 2, bomType: 'manufacture' }],
         revisionNote: customNote,
       },
@@ -444,7 +434,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}DUP-A`,
         bomName: 'A',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -454,7 +443,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}DUP-B`,
         bomName: 'B',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId2, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -466,7 +454,7 @@ describe('bom-master service — CRUD', () => {
           bomNo: `${TEST_PREFIX}DUP-A`,
           bomName: 'B renamed',
           parentItemId: testParentId,
-          status: 'draft',
+          status: 'active',
           lines: [{ childItemId: testItemId2, qtyPerSet: 1, bomType: 'manufacture' }],
         },
         admin,
@@ -482,7 +470,7 @@ describe('bom-master service — CRUD', () => {
           bomNo: 'X',
           bomName: 'X',
           parentItemId: testParentId,
-          status: 'draft',
+          status: 'active',
           lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
         },
         admin,
@@ -496,7 +484,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}DEL1`,
         bomName: 'manager attempt',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -513,7 +500,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}DEL2`,
         bomName: 'cleanly deletable',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -530,7 +516,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}DEL3`,
         bomName: 'linked from SO',
         parentItemId: testParentId,
-        status: 'active',
         lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
       },
       admin,
@@ -575,7 +560,6 @@ describe('bom-master service — CRUD', () => {
         bomNo: `${TEST_PREFIX}LST-ACT`,
         bomName: 'active one',
         parentItemId: testParentId,
-        status: 'active',
         lines: [
           { childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' },
           { childItemId: testItemId2, qtyPerSet: 2, bomType: 'purchase' },

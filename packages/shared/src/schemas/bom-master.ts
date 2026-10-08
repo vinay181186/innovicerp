@@ -154,7 +154,11 @@ export const createBomMasterInputSchema = z
     bomNo: z.string().min(1).max(64).optional(),
     bomName: z.string().min(1).max(255),
     parentItemId: z.string().uuid('Pick the parent item this BOM builds'),
-    status: bomStatusSchema.default('draft'),
+    // ADR-223 — NO `status` on create. Every new BOM is Active, and that is
+    // decided on the server, not sent by the caller: the owner's rule is
+    // "every bom create must be active", so an Excel import or a direct API
+    // call must not be able to make a Draft either. Status is still editable
+    // AFTER create (that is how a BOM is retired to Obsolete).
     lines: z.array(createBomMasterLineInputSchema).min(1, 'Add at least one item to the BOM'),
   })
   .refine(

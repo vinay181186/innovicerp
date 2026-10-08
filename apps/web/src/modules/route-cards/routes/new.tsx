@@ -11,7 +11,6 @@ import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
   type RouteCardFormOpDraft,
-  emptyProcessOp,
   opsToInput,
   rawMaterialToInput,
 } from '../components/route-card-form';
@@ -94,7 +93,7 @@ function RouteCardNewPage(): React.JSX.Element {
           notes: '',
           planType: 'manufacture',
         }}
-        initialOps={[emptyProcessOp()]}
+        initialOps={[]}
         onSubmit={submit}
         submitting={create.isPending}
         submitError={submitError}

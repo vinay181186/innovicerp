@@ -12172,3 +12172,120 @@ does exactly that join for its SO-line row.
 - `LevelSoLine.partName` renaming.
 - Assembly / with_material SOs' per-line BOM children, if the owner ever creates one.
 - The duplicated flow-views contract: it belongs in `packages/shared` like every other contract.
+---
+
+## ADR-223: A BOM is Active the moment it is saved, and BOM Status leaves the create and edit screens
+
+**Date:** 2026-10-08
+**Status:** Accepted
+
+### Context
+
+The owner: *"in bom creation screen. there is field bom status. draft /active. i want every bom create
+must be active. remove it bom status selection draft/active."* Then, on the same change:
+*"no need in edit screen. bom sttaus picker."* Then, when offered a Retire action to keep Obsolete
+reachable: *"no need of obselete bom, reterive bom. no need to show filed on create , edit bom
+sttaus."* And, on the existing records: *"leave old docs."*
+
+A BOM carried a three-value status (`draft` / `active` / `obsolete`, `packages/shared/src/enums/bom-status.ts`)
+and the create screen opened on **Draft**. Traced, Draft gated **exactly one thing**: an equipment
+Sales Order may only link an **Active** BOM (`sales-orders/status-rules.ts` `assertBomLinkable`,
+called from five places in `sales-orders/service.ts`). Nothing else in the ERP reads it — not
+planning, not the BOM cascade, not assembly.
+
+So Draft was supposed to mean "half-built, not ready to use". It never could:
+
+- A BOM **cannot be saved at all** without a BOM Name, a parent item and **at least one child line** —
+  enforced in the form (Save is disabled, *"Add at least one child item."*) **and** on the server
+  (`createBomMasterInputSchema` → `lines.min(1)`). There was never a half-built BOM to protect.
+- The only thing Draft produced was an extra step: save the BOM, reopen it, switch it to Active —
+  and until someone remembered, **every Sales Order that needed it was refused**.
+
+The live numbers say the step was being forgotten. On TEST, **15 of 21 BOMs are still Draft**
+(`BOM-0001`…`BOM-0016`, created 28–29 Sep) and **13 equipment Sales Orders point at a Draft BOM**.
+On PRODUCTION `bom_masters` is empty — the owner cleared the transactional tables on 2026-10-07 —
+so **no production BOM is affected either way**.
+
+### Decision
+
+**1. Status stops being a create-time input entirely.** `status` was **removed from
+`createBomMasterInputSchema`**, not merely hidden on the screen. The server sets it from one named
+constant, `BOM_CREATE_STATUS = 'active'` (`packages/shared/src/lib/status-moves.ts`). This is the
+point: hiding the dropdown would still have let an Excel import, a script or a direct API call create
+a Draft. Now nothing can. `BOM_CREATE_STATUSES` (a list of one) is gone — a single value says it
+better.
+
+**2. The BOM Status field leaves the create and edit screens entirely.** Not read-only — gone. The
+owner's point is that a BOM's status is no longer anybody's decision, so a box for it is a box asking
+a question with one answer. **BOM Name takes the freed cell** (`cl-span-2`), so the cluster still fills
+its four: BOM No. | BOM Name | BOM Rev. The status **chip** also goes from the create header — the BOM
+does not exist yet — and stays on the edit header, the same state chip every other document screen
+carries. The edit screen still re-sends the status it read, so the server's status-move check
+(`canMoveStatus`, which allows `from === to`) sees no change.
+
+**2a. No Retire / Obsolete action, by decision.** Keeping Obsolete reachable was offered and
+**declined**: *"no need of obselete bom, reterive bom."* So nothing on any screen can set a BOM's
+status, and a BOM that is finished with is deleted (admin-only `DELETE /bom-masters/:id`, to Trash).
+`obsolete` stays in the enum, in `BOM_STATUS_MOVES` and as a filter pill on the list — removing a
+Postgres enum value is a migration that would buy nothing, and there are **zero** Obsolete BOMs on
+either database.
+
+**3. Old BOMs are left exactly as they are** (owner's call). No migration, no backfill. The 15 Draft
+BOMs on TEST stay Draft, the list's **Draft** filter pill stays so they can still be found, and
+`BOM_STATUS_MOVES` is untouched.
+
+### Consequences
+
+- **A new BOM is usable the moment it is saved.** The Sales Order refusal *"BOM … is Draft — only an
+  Active BOM can be linked"* can no longer happen for a BOM created from today.
+- **Nothing on a screen can change a BOM's status any more, and that is the decision, not a gap.**
+  The move is still legal in `BOM_STATUS_MOVES` and `updateBomMasterInputSchema` still carries a
+  status, so a future action or a direct API call could set one without a migration — but as shipped,
+  finishing with a BOM means deleting it (admin-only, to Trash).
+- **The BOM's status is still visible** — the badge on the BOM **detail** page and the **BOM Status**
+  column and filter pills on the BOM list are untouched. Only the create and edit forms lost it.
+- **An existing Draft BOM can no longer be promoted from a screen.** On PRODUCTION there are none, so
+  nothing is stranded. On TEST the 15 are all e2e fixtures (`V3B-` / `V3C-`). If a real Draft BOM ever
+  turns up, it is a one-line SQL update or a re-create, and that is the trade the owner accepted with
+  *"leave old docs."*
+- **The DB column keeps its `default 'draft'`** (`schema.ts:3183`). It is unreachable today — the one
+  INSERT in the app always supplies a status, and every direct `insert(bomMasters)` in the test
+  fixtures already passes `'active'` — so changing it would be a migration that alters nothing. Left
+  alone deliberately, with one eye open: **a future insert path that omits the column would produce a
+  Draft BOM that no screen can promote and no Sales Order can link.** If one is ever added, flip the
+  default in the same migration (`ALTER TABLE bom_masters ALTER COLUMN status SET DEFAULT 'active'`)
+  rather than re-deciding this.
+- **Review finding kept, not fixed:** the 15 existing Draft BOMs on TEST can no longer be promoted
+  from any screen, so a NEW Sales Order cannot link one (the 13 SOs already on them are unaffected —
+  they were linked on 28–29 Sep, before the only-Active check landed on the 30th). PRODUCTION has no
+  BOMs at all, and the TEST 15 are e2e fixtures (`V3B-` / `V3C-`), so nothing real is stranded. The
+  remedy if it ever bites is one statement — `UPDATE bom_masters SET status = 'active' WHERE status =
+  'draft'` — offered to the owner rather than run under *"leave old docs."*
+- `sales_orders.bom_status` is a **different field** — free text ('BOM Pending' / 'BOM Planned'),
+  feeding alert AL-011 and the SO screens. Not touched, not related, and easy to confuse with this
+  one.
+
+### Tests
+
+`createBomMaster` no longer accepts a status, so every create in
+`bom-master/service.test.ts`, `routes.test.ts`, `cascade.test.ts`, `bom-edit-registry.test.ts` and
+`jw-returns/bom-assembly.test.ts` dropped the field (29 call sites). Five `updateBomMaster` calls in
+`service.test.ts` had to be repointed from `'draft'` to `'active'`: the BOM they create is now Active,
+and `active → draft` is **not** an allowed move, so they would have thrown. `flow-bom-assembly.spec.ts`
+already asserted *"a new BOM opens as Active"* — it now reads the screen word from a read-only box and
+also asserts the field offers no choice. **The api suite was not run: it writes to the production
+database.** Verified by typecheck (shared + api + web), eslint, prettier and both builds.
+
+### Complex cases worth running by hand
+
+| Case | Expected |
+|---|---|
+| Create a BOM → open the equipment SO and link it | Links straight away; no Draft refusal |
+| Create a BOM, reopen it in Edit | No BOM Status field on either screen; BOM No. \| Name \| Rev fill the row |
+| BOM detail page and BOM list | Status still shown — badge, column and the three filter pills |
+| Edit an existing **Draft** BOM (change a line) and save | Saves; status stays Draft; no status-move refusal |
+| Edit an existing **Obsolete** BOM (none exist today) | Saves; stays Obsolete; still refused by the SO link |
+| Link an old Draft BOM to a new SO | Still refused — unchanged, and now unfixable from a screen |
+| BOM list → Draft / Active / Obsolete filter pills | All three still filter; the 15 old Drafts still appear |
+| Excel BOM import / direct `POST /bom-masters` with `"status":"draft"` | Saved as **Active** — the field is no longer part of the contract |
+| Double-click Save on a new BOM | One BOM (unchanged — the save key still idempotency-guards it) |

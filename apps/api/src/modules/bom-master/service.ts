@@ -59,7 +59,7 @@ import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import {
   ActivityAction,
-  BOM_CREATE_STATUSES,
+  BOM_CREATE_STATUS,
   BOM_LINE_TYPE_LABEL,
   BOM_LINE_TYPES,
   BOM_STATUS_MOVES,
@@ -705,12 +705,12 @@ export async function createBomMaster(
     assertNoDuplicateChildItems(input.lines, itemsLookup);
     assertQtyPerSetFitsUom(input.lines, itemsLookup);
 
-    // S8: a new BOM starts as Draft or Active — never Obsolete.
-    if (!BOM_CREATE_STATUSES.includes(input.status)) {
-      throw new ConflictError(
-        `A new BOM can be saved as Draft or Active only, not ${BOM_STATUS_LABELS[input.status] ?? input.status}.`,
-      );
-    }
+    // ADR-223 — every new BOM is Active, decided HERE and not sent by the
+    // caller, so an Excel import or a direct API call cannot make a Draft
+    // either. The create input carries no `status` at all. Draft guarded only
+    // one thing (an SO may link an Active BOM only) and nothing half-built
+    // could ever be saved, so the Draft step was pure friction. Status is
+    // still editable after create — that is how a BOM is retired to Obsolete.
 
     // Auto bomNo when not supplied; reject if supplied + already used.
     // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
@@ -741,7 +741,7 @@ export async function createBomMaster(
         bomName: input.bomName,
         parentItemId: input.parentItemId,
         revision: 1,
-        status: input.status,
+        status: BOM_CREATE_STATUS, // ADR-223 — always Active
         revisionDate: sql`current_date` as unknown as string,
         createdBy: user.id,
         updatedBy: user.id,
