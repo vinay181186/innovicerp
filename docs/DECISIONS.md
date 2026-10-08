@@ -12398,3 +12398,67 @@ Route Card and BOM Master. Known still to fix, in order of harm, from the same t
   read-only input and diverging here would be the inconsistency, not the fix.
 - `useNextBomNo` gained `{ enabled }`. In **edit** mode the BOM No. request now does not fire at
   all — it used to fire twice and nothing read it.
+
+## ADR-225: Multi-Level BOM — a separate BOM that nests, built the ERPNext way
+
+**Date:** 2026-10-08
+**Status:** Accepted (owner, 2026-10-08) — phase 1 building
+
+### Context
+
+BOM Master is one level deep: a line points at an item, never at that item's BOM, and nothing reads
+a child's own BOM (ADR-109/110 open items; BOM store audit G1, G3, G16). The owner decided to keep
+BOM Master exactly as it is and add a SEPARATE multi-level BOM, the ERPNext way, reusing the
+documents the ERP already has. Plan: `Master-Plan/Multi-Level-BOM-Plan.md` (outside the repo).
+
+### Decision
+
+- New document **Multi-Level BOM** (`IN-MLB-#####`, Design, access key `mlbom_create`). Tables
+  `ml_boms`, `ml_bom_lines`, `ml_bom_revisions` (0202). BOM Master tables, screens and the
+  Equipment SO → Assembly Tracker flow are not touched. The new feature never writes
+  `sales_orders.bom_master_id` or `sales_order_lines.source_bom_master_id`, so the BOM-8 cascade can
+  never fire from it.
+- A line nests by **link**: a Manufacture line whose child item has a Default Multi-Level BOM links
+  that BOM (`child_ml_bom_id`), resolved on the server, never chosen by the caller. A composite FK
+  `(child_ml_bom_id, child_item_id) → ml_boms(id, item_id)` makes a link to another item's BOM
+  impossible even for a bug.
+- **Buy / Outsource lines ignore the child's BOM** (owner decision 9) — the line type is what the
+  author typed on purpose; "has a BOM somewhere" is only an inference.
+- One **Default** per item (partial unique index). Every BOM is created with no status (as ADR-223).
+- **No loops, max 10 levels.** Checked on every write that can change links, under a per-company
+  advisory lock so two concurrent saves cannot each add half a loop; the check also walks upward so
+  no ancestor tree exceeds 10 levels.
+- **Exploded Qty** is computed in full precision down the tree and rounded to 3 decimals once
+  (TEST DB check found decimals growing per level when rounded at each step).
+- Names reuse NAMING.md: `Qty per Set`, BOM line type labels (Manufacture / Buy / Outsource),
+  `RM Grade` / `RM Size`. New names added there: Multi-Level BOM, Default, Sub-Assembly, Level,
+  Levels, Exploded Qty, Exploded Items, Used In.
+
+Owner decisions (2026-10-08, the plan's recommendations): 1 names IN-MLB / IN-MLP; 2 every level is
+built Plan → Production Order → Job Card (Assembly Tracker not used); 3 first release on
+Component / With-Material SO lines whose item is an assembly; 4 no skip-a-level switch; 5 Short =
+Required − Available − Open PO − Open PR; 6 one SO line uses old or new BOM, never both; 7 import
+over an item that has a BOM makes a new revision; 8 an import code not in Item Master is refused;
+9 Buy wins over the item's own BOM.
+
+### Phases
+
+1 Multi-Level BOM master · 2 Excel import · 3 Multi-Level Plan (read-only, tree copied and revision
+pinned) · 4 create orders (the only phase that changes existing code: plan coverage rule + SQL twin,
+plan cap, Production Order grade check, Job Card material need, Item Issue guard, old BOM popup and
+BOM-8 cascade must ignore new plans) · 5 reports & print · 6 cost (only if asked).
+
+### Alternatives considered
+
+- Add a child-BOM column to `bom_master_lines` — rejected: the owner asked for BOM Master to stay as
+  it is, and every downstream service is hard-wired to its one-level shape.
+- Store the exploded list on the BOM (ERPNext `exploded_items`) — rejected: a stored copy goes stale
+  when a child BOM changes. The tree is computed on read; the Multi-Level Plan (phase 3) copies it
+  at plan time, which is where pinning is actually needed.
+- Reuse the Assembly Tracker for sub-assemblies — rejected: Equipment-SO only, one BOM per SO,
+  parts pooled per SO.
+
+### Consequences
+
+- Phase 1 and 2 cannot affect any existing figure — new tables only.
+- No edit-approval gate on Multi-Level BOM yet (the gate ships OFF); registry entry is a follow-up.

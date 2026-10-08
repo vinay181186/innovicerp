@@ -76,6 +76,8 @@ export const ACCESS_FORMS = [
   { key: 'rawmat_create', dept: 'production', label: 'Raw Material Master' },
   // Design
   { key: 'bom_create', dept: 'design', label: 'BOM Master' },
+  // ADR-225 — separate from BOM Master; its own switch so it can be granted alone.
+  { key: 'mlbom_create', dept: 'design', label: 'Multi-Level BOM' },
   { key: 'design_create', dept: 'design', label: 'Design Tracker' },
   { key: 'dsnproj_create', dept: 'design', label: 'Design Projects' },
   { key: 'dsnissue_create', dept: 'design', label: 'Design Issues' },

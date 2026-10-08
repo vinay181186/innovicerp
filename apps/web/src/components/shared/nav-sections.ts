@@ -214,6 +214,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/design-issues', label: 'Design Issues', icon: '⚠', formKey: 'dsnissue_create' },
           { to: '/design-work-log', label: 'Design Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
           { to: '/bom-masters', label: 'BOM Master', icon: '📦', formKey: 'bom_create' },
+          { to: '/ml-boms', label: 'Multi-Level BOM', icon: '🧩', formKey: 'mlbom_create' },
           { to: '/design-tracker', label: 'Design Tracker', icon: '🎨', formKey: 'design_create' },
           // Route Card Master moved to Planning > Master (ADR-205). It is
           // listed there and nowhere else — one page, one place in the menu.

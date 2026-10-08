@@ -18,6 +18,8 @@ export const TABLE_KEYS = {
   routeCardsList: 'route-cards-list',
   bomMasterList: 'bom-master-list',
   usersList: 'users-list',
+  /** Multi-Level BOM list (ADR-225). */
+  mlBomList: 'ml-bom-list',
 
   // Transactions
   jobCardsList: 'job-cards-list',
