@@ -13,7 +13,11 @@
 // set_updated_at trigger — plans and bom_masters get theirs in 0187; their
 // services also set it explicitly on edit).
 
-import { EDIT_CONFLICT_CODE, EDIT_CONFLICT_MESSAGE } from '@innovic/shared';
+import {
+  EDIT_CONFLICT_CODE,
+  EDIT_CONFLICT_MESSAGE,
+  type EditConflictDetails,
+} from '@innovic/shared';
 import { AppError, ValidationError } from './errors';
 
 /** Milliseconds since epoch for a Date, an ISO string, or Postgres' text form
@@ -33,10 +37,18 @@ export function timestampMs(value: Date | string): number {
  * Refuse the edit (409 `edit_conflict`) when the row changed after the form
  * loaded it. No-op when the caller did not send `expectedUpdatedAt` (older
  * clients keep last-write-wins).
+ *
+ * ADR-225 — pass `changedByName` (and, if the caller has it, the row's current
+ * `updated_at` is already `current`) so the 409 can say WHO and WHEN, which is
+ * what §20.4 asks for: "changed by <name> at <time>". Omit it and the refusal
+ * still works, it just cannot name anyone — the screen then says
+ * "someone else". The name is a DISPLAY name resolved by the caller, never a
+ * login id, and never an email.
  */
 export function assertUnchangedSinceOpened(
   current: Date | string | null | undefined,
   expected: string | null | undefined,
+  changedByName?: string | null,
 ): void {
   if (expected === undefined || expected === null || expected === '') return;
   const sentMs = timestampMs(expected);
@@ -45,6 +57,10 @@ export function assertUnchangedSinceOpened(
   }
   if (current === null || current === undefined) return;
   if (timestampMs(current) !== sentMs) {
-    throw new AppError(409, EDIT_CONFLICT_CODE, EDIT_CONFLICT_MESSAGE);
+    const details: EditConflictDetails = {
+      changedByName: changedByName ?? null,
+      changedAt: current instanceof Date ? current.toISOString() : String(current),
+    };
+    throw new AppError(409, EDIT_CONFLICT_CODE, EDIT_CONFLICT_MESSAGE, details);
   }
 }
