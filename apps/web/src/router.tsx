@@ -7,6 +7,10 @@ import { bomMastersListRoute } from './modules/bom-master/routes/list';
 import { bomMasterDetailRoute } from './modules/bom-master/routes/detail';
 import { bomMasterNewRoute } from './modules/bom-master/routes/new';
 import { bomMasterEditRoute } from './modules/bom-master/routes/edit';
+import { mlBomsListRoute } from './modules/ml-bom/routes/list';
+import { mlBomDetailRoute } from './modules/ml-bom/routes/detail';
+import { mlBomNewRoute } from './modules/ml-bom/routes/new';
+import { mlBomEditRoute } from './modules/ml-bom/routes/edit';
 import { routeCardsListRoute } from './modules/route-cards/routes/list';
 import { routeCardDetailRoute } from './modules/route-cards/routes/detail';
 import { routeCardNewRoute } from './modules/route-cards/routes/new';
@@ -303,6 +307,11 @@ const routeTree = rootRoute.addChildren([
     bomMasterNewRoute,
     bomMasterDetailRoute,
     bomMasterEditRoute,
+    // Multi-Level BOM (ADR-225) — same ordering rule.
+    mlBomsListRoute,
+    mlBomNewRoute,
+    mlBomDetailRoute,
+    mlBomEditRoute,
     // Route Cards — same ordering rule.
     routeCardsListRoute,
     routeCardNewRoute,

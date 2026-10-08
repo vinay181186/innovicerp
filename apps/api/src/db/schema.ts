@@ -42,6 +42,7 @@ import {
   check,
   customType,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -53,6 +54,7 @@ import {
   text,
   time,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -3312,6 +3314,173 @@ export const bomMasterRevisions = pgTable(
     }),
     // Append-only: only INSERT policy, no UPDATE/DELETE.
     pgPolicy('bom_master_revisions_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Multi-Level BOM (ADR-225, migration 0202) ─────────────────────────────
+// A SEPARATE document from BOM Master above (which is untouched). A line may
+// link its child item's own DEFAULT Multi-Level BOM (child_ml_bom_id), so one
+// BOM nests to any depth (max ML_BOM_MAX_LEVELS). The composite FK
+// (child_ml_bom_id, child_item_id) → ml_boms(id, item_id) means a link can only
+// point at THAT child item's BOM. Links are resolved by the server only.
+
+export const mlBoms = pgTable(
+  'ml_boms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    /** IN-MLB-00001 */
+    code: text('code').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    revision: integer('revision').notNull().default(1),
+    isDefault: boolean('is_default').notNull().default(false),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('ml_boms_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    unique('ml_boms_id_item_uniq').on(t.id, t.itemId),
+    uniqueIndex('ml_boms_one_default_per_item_uniq')
+      .on(t.companyId, t.itemId)
+      .where(sql`${t.isDefault} and ${t.deletedAt} is null`),
+    index('ml_boms_item_idx').on(t.itemId),
+    pgPolicy('ml_boms_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('ml_boms_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const mlBomLines = pgTable(
+  'ml_bom_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    mlBomId: uuid('ml_bom_id')
+      .notNull()
+      .references(() => mlBoms.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    childItemId: uuid('child_item_id')
+      .notNull()
+      .references(() => items.id),
+    qtyPerSet: numeric('qty_per_set', { precision: 14, scale: 3 }).notNull(),
+    bomType: bomLineTypeEnum('bom_type').notNull(),
+    /** Server-resolved sub-assembly link (manufacture lines only). */
+    childMlBomId: uuid('child_ml_bom_id'),
+    rawMaterialGradeId: uuid('raw_material_grade_id').references(() => materialGrades.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialGradeText: text('raw_material_grade_text'),
+    rawMaterialSizeId: uuid('raw_material_size_id').references(() => materialSizes.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialSizeText: text('raw_material_size_text'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    foreignKey({
+      name: 'ml_bom_lines_child_ml_bom_fk',
+      columns: [t.childMlBomId, t.childItemId],
+      foreignColumns: [mlBoms.id, mlBoms.itemId],
+    }),
+    check(
+      'ml_bom_lines_link_manufacture_only',
+      sql`${t.childMlBomId} IS NULL OR ${t.bomType} = 'manufacture'`,
+    ),
+    check('ml_bom_lines_qty_positive', sql`${t.qtyPerSet} > 0`),
+    uniqueIndex('ml_bom_lines_bom_item_uniq')
+      .on(t.mlBomId, t.childItemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('ml_bom_lines_bom_idx').on(t.mlBomId),
+    index('ml_bom_lines_child_bom_idx').on(t.childMlBomId),
+    pgPolicy('ml_bom_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('ml_bom_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const mlBomRevisions = pgTable(
+  'ml_bom_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    mlBomId: uuid('ml_bom_id')
+      .notNull()
+      .references(() => mlBoms.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    changedByText: text('changed_by_text').notNull(),
+    notes: text('notes'),
+    linesSnapshot: jsonb('lines_snapshot').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    // Rule 3 audit columns — set once on insert; the table stays append-only.
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('ml_bom_revisions_bom_rev_uniq').on(t.mlBomId, t.revision),
+    index('ml_bom_revisions_bom_idx').on(t.mlBomId),
+    pgPolicy('ml_bom_revisions_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // Append-only: only INSERT policy, no UPDATE/DELETE.
+    pgPolicy('ml_bom_revisions_manager_insert', {
       for: 'insert',
       to: 'authenticated',
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,

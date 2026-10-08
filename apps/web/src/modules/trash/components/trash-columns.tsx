@@ -25,6 +25,7 @@ export const TYPE_OPTIONS: readonly TrashEntityType[] = [
   'Delivery Challan',
   'NC Register',
   'BOM Master',
+  'Multi-Level BOM',
   'Route Card',
   'Cost Center',
   'QC Process',

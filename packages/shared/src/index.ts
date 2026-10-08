@@ -139,6 +139,7 @@ export * from './schemas/saved-report';
 export * from './schemas/activity-log';
 export * from './schemas/alert';
 export * from './schemas/bom-master';
+export * from './schemas/ml-bom';
 export * from './schemas/route-card';
 export * from './schemas/qc-process';
 export * from './schemas/cost-center';

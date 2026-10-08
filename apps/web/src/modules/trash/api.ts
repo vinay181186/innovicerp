@@ -17,6 +17,7 @@ export type TrashEntityType =
   | 'Delivery Challan'
   | 'NC Register'
   | 'BOM Master'
+  | 'Multi-Level BOM'
   | 'Route Card'
   | 'Cost Center'
   | 'QC Process'
