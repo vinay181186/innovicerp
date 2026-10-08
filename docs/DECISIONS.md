@@ -1490,7 +1490,7 @@ Legacy `renderAccessControl` (L13861) defines a per-user permission matrix on to
 
 Ship as a UI-only matrix in this slice. The `user_access` table persists the admin's intent, `getMyAccess` exposes effective access to the web shell, and a single shared helper set (`canViewForm` / `canEntryForm` / `canEditForm` / `hasDeptAccess` in `packages/shared/src/schemas/access-control.ts`) gates client-side buttons + sidebar sections. Per-form server-side write gating on the ~30 existing modules is deferred to the focused logic-correction audit pass per `feedback-build-first-audit-later`.
 
-Day-one rollout protection: client helpers treat an "unconfigured" matrix row (no full_access + empty departments + empty forms) as allow-all. The first time an admin saves _anything_ for a user, that user moves into strict-mode gating. This isolates the rollout — admins enable the feature one user at a time rather than the whole company seeing an empty sidebar on the day the migration lands.
+Day-one rollout protection: client helpers treat an "unconfigured" matrix row (no full*access + empty departments + empty forms) as allow-all. The first time an admin saves \_anything* for a user, that user moves into strict-mode gating. This isolates the rollout — admins enable the feature one user at a time rather than the whole company seeing an empty sidebar on the day the migration lands.
 
 ### Alternatives Considered
 
@@ -2821,12 +2821,12 @@ ADR item-code auto-assign; import result lists now fall back to `p.code ?? p.nam
 ### Context
 
 Root cause of the SO-517 negative-stock bug: issuing an OSP outward Delivery Challan
-(delivery_challans — "New DC → pick JW PO → ship qty") debited finished stock
+(delivery*challans — "New DC → pick JW PO → ship qty") debited finished stock
 (`store_transactions` txn_type='out', source_type='jw_out'), and receiving the processed
 goods back credited it (grn_qc, +). With no BOM (one item code end-to-end), that send(−)/
 receive(+) pair nets to **zero production**, so a later dispatch(−) drove on-hand negative
-(−30). The material sent out is not "gone" and not "in finished store" — it is _at the vendor
-in process_, which is now tracked document-derived via `v_osp_wip` (ADR-066), not the ledger.
+(−30). The material sent out is not "gone" and not "in finished store" — it is \_at the vendor
+in process*, which is now tracked document-derived via `v_osp_wip` (ADR-066), not the ledger.
 
 ### Decision
 
@@ -3250,8 +3250,8 @@ with zero upstream progress. Company-wide audit found this was the only offendin
 `applyOutwardToJcOp` now caps the send at the op's **upstream cleared input minus what's already
 sent**: `sendable = v_jc_op_status.input_avail − outsource_sent_qty`; `qty > sendable` throws a
 `ValidationError` and the whole DC transaction rolls back (the cascade runs inside the DC-create tx).
-`input_avail` is the previous op's cleared output (or the JC order qty for op_seq 1), so a
-first-op / whole-op outsource still sends freely — only sending _ahead of_ un-cleared upstream work
+`input_avail` is the previous op's cleared output (or the JC order qty for op*seq 1), so a
+first-op / whole-op outsource still sends freely — only sending \_ahead of* un-cleared upstream work
 is blocked. Chosen the cascade (single choke point for `outsource_sent_qty`) over per-caller checks.
 
 ### Alternatives Considered
@@ -3794,12 +3794,12 @@ columns were structurally always blank.
 
 ### Context
 
-A full_outsource plan has a Material Source of "From Stock" (raw material already
+A full*outsource plan has a Material Source of "From Stock" (raw material already
 in our store → use it, buy nothing) or "Purchase New" (we don't have it → raise a
 material PR). The plan-execute code (`plans/service.ts`) raised a material PR
 whenever `foMaterialSrc` was anything except the words `self`/`inhouse`/`in-house`.
 The dropdown only ever emits "From Stock" | "Purchase New" — neither word is in
-that exclude-list, so BOTH options raised a PR. The option that means _don't buy_
+that exclude-list, so BOTH options raised a PR. The option that means \_don't buy*
 ("From Stock") wrongly triggered a purchase. Second defect: the PR's
 `vendorCodeText` was set to the source label itself (`plan.foMaterialSrc`), a
 leftover from when this column was free-text vendor name (ISSUE-253). Compounding
@@ -6825,10 +6825,10 @@ GRANTs do not bind the owner role the API connects as. The trigger compares
 raises `23514` if anything else moved — so a column added to `op_log` next year is
 frozen by default with no edit to the function.
 
-Because qty, reject_qty, log_type, machine_id and operator stay immutable, every
+Because qty, reject*qty, log_type, machine_id and operator stay immutable, every
 number ADR-125 made trustworthy is untouched by an edit: `v_op_machine_output`,
 `v_jc_op_status.completed_qty`, the Daily Report and SO costing cannot be moved
-by retiming a row. Only _when_ it happened moves.
+by retiming a row. Only \_when* it happened moves.
 
 Audit trail is two-layered: `timing_edited_at` / `timing_edited_by` on the row
 (the trigger stamps the timestamp), plus an `OP_LOG_TIME_EDIT` activity_log entry
@@ -12980,10 +12980,20 @@ finally works as designed.
   sends has been through a JS `Date` and carries milliseconds. A plain `WHERE updated_at = $token`
   **would have refused every single Job Card save.** The conditional UPDATE truncates both sides to
   milliseconds; anyone copying that shape must copy the `date_trunc` with it.
-- **Two forms re-seeded themselves from the LIVE record version**, so anyone else's save threw away
-  what the user was typing — silently, with no save involved. Plan edit (a `useMemo` keyed on
-  `plan?.updatedAt`) and Users edit (react-hook-form's reactive `values` option). Both now key on
-  the version the form opened with. The app-wide sweep found no third.
+- **THREE screens re-seeded themselves from the LIVE record**, so anyone else's save threw away what
+  the user was typing — silently, with no save involved and nothing on screen. Plan edit (a
+  `useMemo` keyed on `plan?.updatedAt`), Users edit (react-hook-form's reactive `values` option),
+  and **Access Control** (both seed effects keyed on `[data]` / `[userDetail]`, so a background
+  refetch that picked up another admin's save wiped the tiers and per-page ticks this admin had
+  set). All three now seed once, from the version the form opened with; Access Control keeps ONE
+  deliberate re-seed, in its refusal branch, where reloading is the point.
+
+  Worth recording how the third was found: a `grep` for the one shape I knew — a memo or a key on a
+  live `updatedAt` — reported "no third", and I wrote that down as fact. Access Control's instance
+  keys on the whole query result rather than on its version, so it never matched the pattern. The
+  sweep was for a SPELLING, not for the fault; it was found later by someone reading that screen for
+  another reason. A grep is evidence about a pattern, never about a class of bug.
+
 - **Saved Report could lose an update with ONE user**: it re-read without a lock and rewrote all
   five columns as `input.x ?? existing.x`.
 - **Renaming a Purchase Order rewrites that PO number onto every GRN and challan and did not stamp
@@ -13027,8 +13037,28 @@ finally works as designed.
   and not `.nullable()`, and `z.coerce.number()` would turn an explicit null into 0 regardless. So
   clearing a rate that has a value is now a no-op rather than writing 0. Both behaviours are wrong;
   the new one does not change data without being asked. Fixing it properly is a contract decision.
+- **Three of the GRN's per-line QC figures still travel as photographs.** Six of the seven read-only
+  QC fields stopped being sent; `qcStatus`, `qcAcceptedQty` and `qcRejectedQty` could not, because
+  all three carry a `.default()` in `goodsReceiptNoteLineInputSchema` — so OMITTING them is
+  indistinguishable from SETTING them to "nothing inspected", and the service's completed-line guard
+  (`if (u.data.qcStatus !== u.prev.qcStatus) throw …`) would then have made **every GRN with an
+  inspected line stop saving.** Finishing it means making those three `.optional()`, relaxing the
+  `accepted + rejected <= received` refine to skip when either is absent, and guarding the two
+  service comparisons with `!== undefined` — a contract AND backend change together, so it is its
+  own piece of work.
+
+  **The consequence to know about:** if someone completes QC on a line while a GRN edit form is
+  open, that form's save carries the stale QC status, and the GRN retry re-sends the lines as they
+  stood when the screen opened rather than rebuilding them on the fresh row (GRN lines can be added
+  and removed, so there is no safe base to re-apply onto). The completed-line guard then refuses it
+  with _"QC is Completed, so this line cannot be edited"_ — safe, but a confusing message for what
+  is really a conflict. Delivery Challan and Customer Dispatch DO rebuild per line, because their
+  line set is fixed.
+
 - **The boolean wording in a same-field clash** reads "Status is yes — Mehul had put no". Correct,
-  inelegant, and on a rare path. A per-screen value formatter is a signature change to a shared file
-  and should be its own decision.
+  inelegant, and on a rare path. The same applies to a lines-or-routing clash, where the notice
+  prints the whole digest on both sides: true and readable, but long on a big document. Both want a
+  per-screen value formatter, which is a signature change to a shared file and should be its own
+  decision.
 - **`Description` vs `Remarks` on masters** — the same fact under two names. Registered as-is and
   raised as NAMING.md C-15 rather than silently blessed; picking one changes a visible label.
