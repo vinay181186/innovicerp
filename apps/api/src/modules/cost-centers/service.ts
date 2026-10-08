@@ -4,8 +4,10 @@ import { costCenters } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import type {
   CostCenter,
   CreateCostCenterInput,
@@ -188,9 +190,10 @@ export async function updateCostCenter(
 /**
  * The body of a Cost Centre edit, inside a caller-supplied transaction. Called by
  * updateCostCenter (which opens the tx) and by the edit-approval engine's
- * applyEdit (which already holds one, with the row locked FOR UPDATE).
- * Concurrency is the engine's — this master carries no `expectedUpdatedAt` token.
- * The caller performs the write-role / edit / approve access check.
+ * applyEdit (which already holds one, with the row locked FOR UPDATE). Every
+ * §20 guard lives here: the row's FOR UPDATE lock and
+ * assertUnchangedSinceOpened. The caller performs the write-role / edit /
+ * approve access check.
  */
 export async function updateCostCenterTx(
   tx: DbTransaction,
@@ -199,14 +202,40 @@ export async function updateCostCenterTx(
   user: AuthContext,
 ): Promise<CostCenter> {
   requireCompany(user);
+  // ADR-225 / §20.4 — read under the row lock, so the version check below and
+  // the UPDATE are one atomic step: a second editor WAITS here, then sees the
+  // first editor's new updated_at and is refused instead of overwriting it.
+  // Named columns, never SELECT * (§6 rule 6).
   const existing = await tx
-    .select({ id: costCenters.id })
+    .select({
+      id: costCenters.id,
+      updatedAt: costCenters.updatedAt,
+      updatedBy: costCenters.updatedBy,
+    })
     .from(costCenters)
     .where(and(eq(costCenters.id, id), isNull(costCenters.deletedAt)))
-    .limit(1);
+    .limit(1)
+    .for('update');
   if (existing.length === 0)
     throw new NotFoundError('Cost Centre not found. It may have been moved to Trash.');
+  const cur = existing[0]!;
+  // Refuse a save made over someone else's newer edit, naming who changed it.
+  // The name lookup sits INSIDE the cheap predicate: the happy path must not
+  // pay for a query that only ever fills in an error message.
+  if (editConflicts(cur.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      cur.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, cur.updatedBy),
+    );
+  }
 
+  // `updatedAt` is stamped BY HAND here: cost_centers has no set_updated_at
+  // database trigger (unlike machines / operators / qc_processes). The version
+  // check above depends on this stamp — drop it and every concurrent edit
+  // silently wins again. Any new EDIT path on this table must stamp it too.
+  // (softDeleteCostCenter does not, deliberately: a deleted cost centre 404s
+  // on edit, so there is no version for anyone to race over.)
   const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
   if (input.name !== undefined) updates.name = input.name.trim();
   if (input.department !== undefined) updates.department = emptyToNull(input.department);
@@ -227,8 +256,9 @@ export async function updateCostCenterTx(
  * when the company gate is on and the cost centre is still editable (a master is
  * editable while it is not in Trash), the edit is STAGED for approval; otherwise
  * it falls through to updateCostCenter. A cost centre is a single record with no
- * child lines — there is no line guard, and no updatedAt token (the engine's row
- * lock guards concurrency).
+ * child lines, so there is no line guard. The form's `expectedUpdatedAt` is
+ * forwarded to the engine (ADR-225), so staging an edit from a stale form is
+ * refused the same way saving one is.
  */
 export async function updateCostCenterOrStage(
   id: string,
@@ -259,7 +289,13 @@ export async function updateCostCenterOrStage(
     return rows.length > 0;
   });
   if (shouldStage) {
-    const request = await requestDocumentEdit('CostCenter', id, input, undefined, user);
+    const request = await requestDocumentEdit(
+      'CostCenter',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
     return { staged: true, request };
   }
 

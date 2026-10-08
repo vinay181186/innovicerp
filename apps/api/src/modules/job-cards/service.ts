@@ -42,6 +42,8 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { resolveRmItem } from '../../lib/rm-item';
 import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
@@ -90,6 +92,7 @@ import type {
   JobCardStatusExtras,
   JobCardStatusOpExtra,
   JobCardStatusQcDoc,
+  JobCardUpdateInput,
   JobCardWriteInput,
   ListJobCardsQuery,
   ListJobCardsResponse,
@@ -773,6 +776,11 @@ export async function getJobCardEditModel(
   return withUserContext(user, async (tx) => {
     const headRows = (await tx.execute(sql`
       SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
+        -- §20.4 / ADR-225 — the version this form is loading. The edit screen
+        -- sends it straight back as expectedUpdatedAt, and updateJobCardTx
+        -- refuses a save made on top of someone else's newer edit. (No
+        -- backquotes in here: this SQL lives inside a template literal.)
+        jc.updated_at AS "updatedAt",
         jc.source_so_line_id AS "sourceSoLineId", jc.source_jw_line_id AS "sourceJwLineId",
         jc.order_qty AS "orderQty", jc.priority, jc.due_date AS "dueDate",
         jc.drawing_file_path AS "drawingFilePath", jc.remarks AS "remarks", i.code AS "itemCode",
@@ -890,6 +898,10 @@ export async function getJobCardEditModel(
     return {
       id: h['id'] as string,
       code: h['code'] as string,
+      // tsLike, not dateLike: this is a full instant the save compares to the
+      // millisecond, and dateLike would cut it back to a bare date and make
+      // every save look like a conflict.
+      updatedAt: tsLike(h['updatedAt']),
       jcDate: dateLike(h['jcDate']),
       sourceSoLineId: (h['sourceSoLineId'] as string | null) ?? null,
       sourceJwLineId: (h['sourceJwLineId'] as string | null) ?? null,
@@ -2284,7 +2296,7 @@ export const JC_EDIT_FIELDS = [
 
 export async function updateJobCard(
   id: string,
-  input: JobCardWriteInput,
+  input: JobCardUpdateInput,
   user: AuthContext,
 ): Promise<JobCardSaveResult> {
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
@@ -2303,8 +2315,14 @@ export async function updateJobCard(
  * The body of a Job Card edit, inside a caller-supplied transaction. Called by
  * updateJobCard (which opens the tx) and by the edit-approval engine's applyEdit
  * (which already holds one, plus the job_cards row FOR UPDATE lock taken in
- * jobCardEditRegistryEntry.loadForDiff). updateJobCard has no updated_at guard of
- * its own, so that engine-provided lock is this writer's concurrency guard. Every
+ * jobCardEditRegistryEntry.loadForDiff).
+ *
+ * ADR-225 / §20.4 — the direct path now has its own guard: the caller sends the
+ * `updatedAt` its form loaded and a save over someone else's newer edit is
+ * refused 409 `edit_conflict`. It is a CONDITIONAL UPDATE, not a row lock,
+ * because this path must not take a `job_cards` lock (see the ADR-220 lock-order
+ * note further down). The engine's replay sends no token and keeps relying on
+ * the lock it already holds. Every
  * existing business guard is preserved verbatim: the short-closed PO freeze, the
  * NC open-qty cap, item-frozen-after-logs, qty-vs-PO, qty >= completed, the
  * customer-material floor, line balance, the locked-op guards and the
@@ -2314,7 +2332,7 @@ export async function updateJobCard(
 export async function updateJobCardTx(
   tx: DbTransaction,
   id: string,
-  input: JobCardWriteInput,
+  input: JobCardUpdateInput,
   user: AuthContext,
 ): Promise<JcRouteCardWriteBack | null> {
   const companyId = requireCompany(user);
@@ -2347,6 +2365,10 @@ export async function updateJobCardTx(
       dueDate: jobCards.dueDate,
       remarks: jobCards.remarks,
       drawingFilePath: jobCards.drawingFilePath,
+      // ADR-225 — the version this row is at now, and who put it there, for the
+      // edit-conflict refusal below.
+      updatedAt: jobCards.updatedAt,
+      updatedBy: jobCards.updatedBy,
       itemCode: sql<
         string | null
       >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
@@ -2368,6 +2390,20 @@ export async function updateJobCardTx(
   // order, never by flipping this one.
   const head = headRows[0];
   if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+  // ADR-225 / §20.4 — refuse the save if someone else changed this card after the
+  // form loaded it, and say who. This read is NOT locked (see the note above), so
+  // this check alone is not atomic: it is the EARLY refusal, which stops the
+  // writes below from running at all and gives the user the readable notice. The
+  // header UPDATE at step 4 repeats the test as a conditional UPDATE, which is
+  // the part that actually closes the race. The name lookup runs only on the
+  // refusal path, so a normal save pays nothing for it.
+  if (editConflicts(head.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      head.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, head.updatedBy),
+    );
+  }
   // ADR-182 — a short-closed Production Order's card is frozen: it records
   // what really happened before the order was stopped and must not be edited.
   await assertProductionOrderNotShortClosed(tx, id);
@@ -2831,7 +2867,27 @@ export async function updateJobCardTx(
     rawMaterialItemId: head.rawMaterialItemId,
     rmQtyPerPiece: head.rmQtyPerPiece,
   });
-  await tx
+  // §20.2's shape, used here for §20.4: the version test rides ON the UPDATE's
+  // WHERE instead of on a row lock, because this path must NOT lock job_cards
+  // (the ADR-220 deadlock against Op Entry, explained at the head read above).
+  // A second editor's UPDATE waits on the row, Postgres re-checks this WHERE
+  // against the committed row, and it matches 0 rows — which we turn into the
+  // same 409 the early check raises.
+  //
+  // date_trunc to MILLISECONDS on both sides is required, not cosmetic: the
+  // job_cards_set_updated_at trigger writes updated_at from now(), which carries
+  // microseconds, while the token the form loaded came back through a JS Date and
+  // only carries milliseconds. A plain `=` would therefore refuse every single
+  // save. (The JS helpers truncate the same way — see lib/edit-conflict.ts.)
+  const expectedUpdatedAt = input.expectedUpdatedAt;
+  const headerWhere =
+    expectedUpdatedAt === undefined || expectedUpdatedAt === null || expectedUpdatedAt === ''
+      ? eq(jobCards.id, id)
+      : and(
+          eq(jobCards.id, id),
+          sql`date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${expectedUpdatedAt}::timestamptz)`,
+        );
+  const headerRowsWritten = await tx
     .update(jobCards)
     .set({
       jcDate: input.jcDate,
@@ -2854,7 +2910,30 @@ export async function updateJobCardTx(
       updatedBy: user.id,
       updatedAt: now,
     })
-    .where(eq(jobCards.id, id));
+    .where(headerWhere)
+    .returning({ id: jobCards.id });
+  if (headerRowsWritten.length === 0) {
+    // Someone committed a change to this card while this save was running (it
+    // got past the early check above, then waited on the row here). Re-read who
+    // and when, and refuse with the same 409 — throwing rolls the whole
+    // transaction back, including the operation writes at step 3.
+    const fresh = await tx
+      .select({ updatedAt: jobCards.updatedAt, updatedBy: jobCards.updatedBy })
+      .from(jobCards)
+      .where(eq(jobCards.id, id))
+      .limit(1);
+    const cur = fresh[0];
+    if (!cur) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+    assertUnchangedSinceOpened(
+      cur.updatedAt,
+      expectedUpdatedAt,
+      await rowChangedByName(tx, cur.updatedBy),
+    );
+    // The row did not move after all (so the 0 rows were not a version clash) —
+    // the card has gone from under this save some other way. Never fall through
+    // silently reporting success on a save that wrote no header.
+    throw new ConflictError('This Job Card could not be saved — reload the page and try again.');
+  }
 
   // 5. QC docs — register any new ones (dedup by storage path). Removal of an
   //    existing doc is done via the file_registry/SO-Documents delete UI.
@@ -3009,7 +3088,7 @@ function jcOpsChanged(
  */
 export async function updateJobCardOrStage(
   id: string,
-  input: JobCardWriteInput,
+  input: JobCardUpdateInput,
   user: AuthContext,
 ): Promise<JobCardSaveResult | DocumentEditStagedResult> {
   await requireFormAccess(user, 'jc_create', 'edit');
@@ -3065,7 +3144,16 @@ export async function updateJobCardOrStage(
     return true;
   });
   if (shouldStage) {
-    const request = await requestDocumentEdit('JobCard', id, input, undefined, user);
+    // ADR-225 — the staged route gets the same version check as the direct one
+    // (the engine refuses to stage an edit raised against a stale version), which
+    // is what Delivery Challan and Dispatch already pass here.
+    const request = await requestDocumentEdit(
+      'JobCard',
+      id,
+      input,
+      input.expectedUpdatedAt ?? null,
+      user,
+    );
     return { staged: true, request };
   }
 

@@ -76,18 +76,23 @@ export function isNumericValue(v: unknown): boolean {
  * still bumps the document's revision and re-posts downstream quantities, so
  * "nothing to save" has to be an answer, not a write.
  */
-export function changedKeys<T extends object>(
-  loaded: T,
-  current: Partial<T>,
-  keys?: readonly (keyof T & string)[],
-): (keyof T & string)[] {
-  const l = loaded as Record<string, unknown>;
-  const c = current as Record<string, unknown>;
-  const candidates = keys ?? (Object.keys(c) as (keyof T & string)[]);
-  const out: (keyof T & string)[] = [];
+// Compared BY KEY across two shapes on purpose, not by one generic type. The
+// record a screen loads and the payload it sends are different types: an NC's
+// stored `reason` is `string | null`, its edit input's is `string | undefined`.
+// Forcing them into one `T` makes every caller fight
+// exactTypeOptionalProperties instead of describing what it means. The
+// comparison is structural — same key, same value by the rules above — so a
+// key-indexed signature is the honest one.
+export function changedKeys(
+  loaded: Readonly<Record<string, unknown>>,
+  current: Readonly<Record<string, unknown>>,
+  keys?: readonly string[],
+): string[] {
+  const candidates = keys ?? Object.keys(current);
+  const out: string[] = [];
   for (const k of candidates) {
-    if (!(k in c) || c[k] === undefined) continue; // not touched by this screen
-    if (valuesEqual(l[k], c[k])) continue;
+    if (!(k in current) || current[k] === undefined) continue; // not touched
+    if (valuesEqual(loaded[k], current[k])) continue;
     out.push(k);
   }
   return out;
@@ -95,15 +100,16 @@ export function changedKeys<T extends object>(
 
 /**
  * `current` reduced to only the keys that differ from `loaded` — the payload an
- * edit should actually send. The same arguments as `changedKeys`.
+ * edit should actually send. The same arguments as `changedKeys`; the result
+ * keeps `current`'s own type, so the caller's mutation signature still applies.
  */
-export function changedFields<T extends object>(
-  loaded: T,
-  current: Partial<T>,
-  keys?: readonly (keyof T & string)[],
-): Partial<T> {
+export function changedFields<TCurrent extends object>(
+  loaded: Readonly<Record<string, unknown>>,
+  current: TCurrent,
+  keys?: readonly string[],
+): Partial<TCurrent> {
   const c = current as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const k of changedKeys(loaded, current, keys)) out[k] = c[k];
-  return out as Partial<T>;
+  for (const k of changedKeys(loaded, c, keys)) out[k] = c[k];
+  return out as Partial<TCurrent>;
 }

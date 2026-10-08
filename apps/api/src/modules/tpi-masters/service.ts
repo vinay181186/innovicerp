@@ -4,8 +4,10 @@ import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-o
 import { tpiMasters } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { TPI_MASTER_SF_COLUMNS } from './sf-columns';
 import type {
   CreateTpiMasterInput,
@@ -212,8 +214,9 @@ export async function updateTpiMaster(
 /**
  * The body of a TPI Inspector edit, inside a caller-supplied transaction. Called
  * by updateTpiMaster (which opens the tx) and by the edit-approval engine's
- * applyEdit (which already holds the target row lock). The caller performs the
- * edit / approve access check.
+ * applyEdit (which already holds the target row lock). Every §20 guard lives
+ * here: the row's FOR UPDATE lock and assertUnchangedSinceOpened. The caller
+ * performs the edit / approve access check.
  */
 export async function updateTpiMasterTx(
   tx: DbTransaction,
@@ -222,16 +225,38 @@ export async function updateTpiMasterTx(
   user: AuthContext,
 ): Promise<TpiMaster> {
   requireCompany(user);
+  // ADR-225 / §20.4 — read under the row lock, so the version check below and
+  // the UPDATE are one atomic step: a second editor WAITS here, then sees the
+  // first editor's new updated_at and is refused instead of overwriting it.
+  // Named columns, never SELECT * (§6 rule 6).
   const existing = await tx
-    .select({ id: tpiMasters.id })
+    .select({ id: tpiMasters.id, updatedAt: tpiMasters.updatedAt, updatedBy: tpiMasters.updatedBy })
     .from(tpiMasters)
     .where(and(eq(tpiMasters.id, id), isNull(tpiMasters.deletedAt)))
-    .limit(1);
+    .limit(1)
+    .for('update');
   if (existing.length === 0) throw new NotFoundError('TPI Inspector not found. Refresh the page.');
+  const cur = existing[0]!;
+  // Refuse a save made over someone else's newer edit, naming who changed it.
+  // The name lookup sits INSIDE the cheap predicate: the happy path must not
+  // pay for a query that only ever fills in an error message.
+  if (editConflicts(cur.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      cur.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, cur.updatedBy),
+    );
+  }
 
   // `code` is absent from UpdateTpiMasterInput and is never written here: the
   // TPI logs already signed off under that name have to keep agreeing with
   // the master. An inspector is retired with isActive, not renamed.
+  // `updatedAt` is stamped BY HAND here: tpi_masters has no set_updated_at
+  // database trigger (unlike machines / operators / qc_processes). The version
+  // check above depends on this stamp — drop it and every concurrent edit
+  // silently wins again. Any new EDIT path on this table must stamp it too.
+  // (softDeleteTpiMaster below does not, deliberately: a deleted inspector
+  // 404s on edit, so there is no version for anyone to race over.)
   const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
   if (input.organization !== undefined) updates.organization = emptyToNull(input.organization);
   if (input.contactNo !== undefined) updates.contactNo = emptyToNull(input.contactNo);
@@ -283,9 +308,15 @@ export async function updateTpiMasterOrStage(
     return rows.length > 0;
   });
   if (shouldStage) {
-    // These masters carry no expectedUpdatedAt token — concurrency is the
-    // engine's (loadForDiff locks FOR UPDATE and rechecks field freshness).
-    const request = await requestDocumentEdit('TpiInspector', id, input, undefined, user);
+    // The form's own version token rides along (ADR-225), so staging an edit
+    // from a stale form is refused the same way saving one is.
+    const request = await requestDocumentEdit(
+      'TpiInspector',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
     return { staged: true, request };
   }
 

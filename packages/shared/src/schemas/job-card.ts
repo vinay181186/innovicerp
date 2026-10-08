@@ -472,6 +472,11 @@ export type JobCardDoc = z.infer<typeof jobCardDocSchema>;
 export const jobCardEditModelSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
+  /** §20.4 / ADR-225 — the version this form loaded, sent straight back as
+   *  `expectedUpdatedAt` so a save over someone else's newer edit is refused
+   *  (409 `edit_conflict`) instead of silently overwriting it. The edit screen
+   *  reads THIS shape, so without the field here its guard cannot fire at all. */
+  updatedAt: z.string(),
   jcDate: z.string(),
   sourceSoLineId: z.string().uuid().nullable(),
   sourceJwLineId: z.string().uuid().nullable(),

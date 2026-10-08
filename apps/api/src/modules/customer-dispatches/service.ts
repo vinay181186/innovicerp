@@ -45,6 +45,8 @@ import {
   unconsumeForDispatch,
 } from '../../lib/stock-reservation';
 import { diffFields } from '../../lib/audit-trail';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { emitActivityLog } from '../activity-log/service';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
@@ -884,6 +886,15 @@ async function getDispatchInternal(
   const billedQty = (await loadBilledQtyByDispatch(tx, companyId, h.salesOrderId)).get(h.id) ?? 0;
   return {
     ...rowToHeader(h, lines.length, totalQty),
+    // §20.4 / ADR-225 — the version the edit screen loaded. It sends this back
+    // as `expectedUpdatedAt`, and updateCustomerDispatchTx refuses a save made
+    // on top of someone else's newer edit. Every single-dispatch read comes
+    // through this function, so putting it here covers the detail screen, the
+    // create response and the cancel response in one place.
+    //
+    // `updated_at` is NOT NULL on this table, so no fallback is needed; it is a
+    // Date from the driver and the contract is an ISO string.
+    updatedAt: h.updatedAt.toISOString(),
     soInternalNo: soRows[0]?.internalSoNo ?? null,
     billedQty,
     billedStatus: billedStatusOf(billedQty, totalQty),
@@ -1252,6 +1263,22 @@ export async function updateCustomerDispatchTx(
     .for('update');
   const h = rows[0];
   if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
+  // §20.4 / ADR-225 — refuse the save if someone else changed this dispatch after
+  // the form loaded it, and say who. Checked under the lock above, so check-then-
+  // write is atomic. The name lookup runs ONLY on the refusal path (see
+  // lib/row-changed-by.ts), so a normal save pays nothing for it.
+  //
+  // It matters more here than on most edits: the save below bumps the dispatch's
+  // revision (code) and reverses then reposts the whole dispatch's stock
+  // movement, so a stale save does not just lose a field — it renumbers the
+  // dispatch and re-books the goods out under the new number.
+  if (editConflicts(h.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      h.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, h.updatedBy),
+    );
+  }
   if (h.status === 'cancelled') {
     throw new ConflictError(
       `Dispatch ${h.code} is Cancelled — a cancelled dispatch can't be edited.`,
@@ -1356,6 +1383,42 @@ export async function updateCustomerDispatchTx(
     }
   }
 
+  // The before → after list (keys match the registry's `line:<id>:qty`),
+  // computed BEFORE anything is written — because it is also the test for "did
+  // this edit change anything at all?". Reused for the activity log at the end.
+  const before: Record<string, unknown> = {
+    dispatchDate: h.dispatchDate,
+    transport: h.transport,
+    vehicleNo: h.vehicleNo,
+    remarks: h.remarks,
+  };
+  const after: Record<string, unknown> = {};
+  if (input.dispatchDate !== undefined) after['dispatchDate'] = input.dispatchDate;
+  if (input.transport !== undefined) after['transport'] = input.transport ?? null;
+  if (input.vehicleNo !== undefined) after['vehicleNo'] = input.vehicleNo ?? null;
+  if (input.remarks !== undefined) after['remarks'] = input.remarks ?? null;
+  for (const c of currentLines) {
+    before[dispatchLineQtyKey(c.id)] = Number(c.qty);
+    after[dispatchLineQtyKey(c.id)] = newQtyById.get(c.id)!;
+  }
+  const changes = diffFields(before, after, [
+    ...DISPATCH_HEADER_EDIT_FIELDS,
+    ...dispatchLineDiffFields(currentLines),
+  ]);
+  // An edit that changes NOTHING is refused, not applied. This save is not free:
+  // it bumps the dispatch's revision (DSP-0007 → DSP-0007-R1) and reverses then
+  // reposts the whole dispatch's stock movement. Letting a no-op save through
+  // would renumber a live dispatch and write a reverse + re-issue pair into the
+  // stock ledger with no change behind it — worse for the store than an error on
+  // screen.
+  if (changes.length === 0) {
+    throw new ConflictError(
+      `Nothing was changed on Dispatch ${h.code}. Change a Dispatch Qty or the travel details ` +
+        `before saving — saving with no change would give the dispatch a new revision number ` +
+        `for nothing.`,
+    );
+  }
+
   const oldCode = h.code;
   const newCode = bumpDocRevision(oldCode);
   const newDispatchDate = input.dispatchDate ?? h.dispatchDate;
@@ -1435,29 +1498,11 @@ export async function updateCustomerDispatchTx(
   // The reverse / repost may have moved the SO header across fully-shipped.
   await syncSoDispatchStatus(tx, companyId, h.salesOrderId, so.code, user);
 
-  // ── Activity: EDIT with the before → after list (keys match the registry's
-  // `line:<id>:qty`). The engine emits REQUEST / APPROVE / REJECT for a staged
-  // edit; this is the direct-apply log.
-  const before: Record<string, unknown> = {
-    dispatchDate: h.dispatchDate,
-    transport: h.transport,
-    vehicleNo: h.vehicleNo,
-    remarks: h.remarks,
-  };
-  const after: Record<string, unknown> = {};
-  if (input.dispatchDate !== undefined) after['dispatchDate'] = input.dispatchDate;
-  if (input.transport !== undefined) after['transport'] = input.transport ?? null;
-  if (input.vehicleNo !== undefined) after['vehicleNo'] = input.vehicleNo ?? null;
-  if (input.remarks !== undefined) after['remarks'] = input.remarks ?? null;
-  for (const c of currentLines) {
-    before[dispatchLineQtyKey(c.id)] = Number(c.qty);
-    after[dispatchLineQtyKey(c.id)] = newQtyById.get(c.id)!;
-  }
-  const changes = diffFields(before, after, [
-    ...DISPATCH_HEADER_EDIT_FIELDS,
-    ...dispatchLineDiffFields(currentLines),
-  ]);
-  if (changes.length > 0) {
+  // ── Activity: EDIT with the before → after list computed above (keys match the
+  // registry's `line:<id>:qty`). The engine emits REQUEST / APPROVE / REJECT for
+  // a staged edit; this is the direct-apply log. `changes` is never empty — an
+  // edit with nothing in it was refused before any of the writes above.
+  {
     await emitActivityLog(
       tx,
       {

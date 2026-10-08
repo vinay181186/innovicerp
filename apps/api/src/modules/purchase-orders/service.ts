@@ -1799,28 +1799,39 @@ async function poEditWouldChange(
  *     referring to a code that no longer exists anywhere.
  *   - activity_log is NOT rewritten. Its ref_id is history — what the document
  *     was called when that happened — and rewriting history is how an audit
- *     trail stops being one. */
+ *     trail stops being one.
+ *
+ *  ADR-225 — it also STAMPS updated_at / updated_by on every row it touches,
+ *  and that is not bookkeeping. A GRN's PO No. is a field its edit screen shows
+ *  and can write, so this routine is a SECOND writer of a column a user may
+ *  have open in a form. Without the stamp, renaming a PO moved the number
+ *  underneath that form and the §20.4 version check could not see it: the next
+ *  save would be accepted as if nothing had happened. With it, the editor is
+ *  told "changed by <the person who renamed the PO> at <time>" — which is the
+ *  truth, and the reason `updated_by` is stamped too rather than left alone. */
 async function renamePoCodeEverywhere(
   tx: DbTransaction,
   companyId: string,
   oldCode: string,
   newCode: string,
+  user: AuthContext,
 ): Promise<void> {
+  const stamp = { updatedBy: user.id, updatedAt: new Date() };
   await tx
     .update(goodsReceiptNotes)
-    .set({ poCodeText: newCode })
+    .set({ poCodeText: newCode, ...stamp })
     .where(
       and(eq(goodsReceiptNotes.companyId, companyId), eq(goodsReceiptNotes.poCodeText, oldCode)),
     );
   await tx
     .update(deliveryChallans)
-    .set({ poCodeText: newCode })
+    .set({ poCodeText: newCode, ...stamp })
     .where(
       and(eq(deliveryChallans.companyId, companyId), eq(deliveryChallans.poCodeText, oldCode)),
     );
   await tx
     .update(jwDcOutward)
-    .set({ jwpoCodeText: newCode })
+    .set({ jwpoCodeText: newCode, ...stamp })
     .where(and(eq(jwDcOutward.companyId, companyId), eq(jwDcOutward.jwpoCodeText, oldCode)));
 }
 
@@ -2142,7 +2153,7 @@ export async function updatePurchaseOrderTx(
   // The snapshots move with the code, in the SAME transaction as the code
   // itself — a GRN pointing at a PO number that no longer exists, even for an
   // instant, is exactly what this must not create.
-  if (bumpRevision) await renamePoCodeEverywhere(tx, companyId, oldCode, newCode);
+  if (bumpRevision) await renamePoCodeEverywhere(tx, companyId, oldCode, newCode, user);
 
   if (input.lines !== undefined) {
     // Same quantity cap as the create paths (ADR-152 phase 2). Runs BEFORE

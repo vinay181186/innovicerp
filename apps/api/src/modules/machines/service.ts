@@ -3,8 +3,10 @@ import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-o
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import type {
   CreateMachineInput,
   ListMachinesQuery,
@@ -254,9 +256,9 @@ export async function updateMachine(
 /**
  * The body of a Machine edit, inside a caller-supplied transaction. Called by
  * updateMachine (which opens the tx) and by the edit-approval engine's applyEdit
- * (which already holds one, with the row locked FOR UPDATE). Concurrency is the
- * engine's — this master carries no `expectedUpdatedAt` token. The caller
- * performs the edit / approve access check.
+ * (which already holds one, with the row locked FOR UPDATE). Every §20 guard
+ * lives here: the row's FOR UPDATE lock and assertUnchangedSinceOpened. The
+ * caller performs the edit / approve access check.
  */
 export async function updateMachineTx(
   tx: DbTransaction,
@@ -265,12 +267,28 @@ export async function updateMachineTx(
   user: AuthContext,
 ): Promise<Machine> {
   const companyId = requireCompany(user);
+  // ADR-225 / §20.4 — read under the row lock, so the version check below and
+  // the UPDATE are one atomic step: a second editor WAITS here, then sees the
+  // first editor's new updated_at and is refused instead of overwriting it.
+  // Named columns, never SELECT * (§6 rule 6).
   const existing = await tx
-    .select({ id: machines.id })
+    .select({ id: machines.id, updatedAt: machines.updatedAt, updatedBy: machines.updatedBy })
     .from(machines)
     .where(and(eq(machines.id, id), isNull(machines.deletedAt)))
-    .limit(1);
+    .limit(1)
+    .for('update');
   if (existing.length === 0) throw new NotFoundError('Machine not found. Refresh the page.');
+  const cur = existing[0]!;
+  // Refuse a save made over someone else's newer edit, naming who changed it.
+  // The name lookup sits INSIDE the cheap predicate: the happy path must not
+  // pay for a query that only ever fills in an error message.
+  if (editConflicts(cur.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      cur.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, cur.updatedBy),
+    );
+  }
 
   const updates: Record<string, unknown> = { updatedBy: user.id };
   if (input.name !== undefined) updates.name = input.name;
@@ -307,8 +325,9 @@ export async function updateMachineTx(
  * editable while it is not in Trash), the edit is STAGED for approval and a
  * {staged:true, request} result is returned; otherwise it falls through to
  * updateMachine (today's behaviour). A machine is a single record with no child
- * lines — there is no line guard, and no updatedAt token (the engine's row lock
- * guards concurrency).
+ * lines, so there is no line guard. The form's `expectedUpdatedAt` is forwarded
+ * to the engine (ADR-225), so staging an edit from a stale form is refused the
+ * same way saving one is.
  */
 export async function updateMachineOrStage(
   id: string,
@@ -332,7 +351,7 @@ export async function updateMachineOrStage(
     return rows.length > 0;
   });
   if (shouldStage) {
-    const request = await requestDocumentEdit('Machine', id, input, undefined, user);
+    const request = await requestDocumentEdit('Machine', id, input, input.expectedUpdatedAt, user);
     return { staged: true, request };
   }
 

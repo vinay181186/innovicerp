@@ -13,6 +13,8 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { runAdHoc } from './runner';
 import type {
   AdHocSpec,
@@ -274,10 +276,29 @@ export async function updateSavedReport(
           isNull(savedReports.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      // Lock the report row. Without it this re-read and the UPDATE below are two
+      // separate statements, and every column is written back as
+      // `input.x ?? existing.x` — so two saves a moment apart (even two tabs of
+      // the SAME user) could each read the old row, and the second would write
+      // the stale value of every field the first one had just changed. That is a
+      // lost update with no competing editor at all, which is why the lock comes
+      // first and the version check second.
+      .for('update');
     const existing = rows[0];
     if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
     assertCanWrite(existing, user);
+    // ADR-225 / §20.4 — refuse the save if someone else changed this report after
+    // the form loaded it, and say who. Under the lock above, so check-then-write
+    // is atomic. The name lookup runs only on the refusal path (see
+    // lib/row-changed-by.ts), so a normal save pays nothing for it.
+    if (editConflicts(existing.updatedAt, input.expectedUpdatedAt)) {
+      assertUnchangedSinceOpened(
+        existing.updatedAt,
+        input.expectedUpdatedAt,
+        await rowChangedByName(tx, existing.updatedBy),
+      );
+    }
 
     const nextSourceKey = input.sourceKey ?? existing.sourceKey;
     const nextSpec: AdHocSpec = input.spec

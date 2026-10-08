@@ -166,9 +166,11 @@ export const grnEditRegistryEntry: DocEditRegistryEntry = {
 
   async applyEdit(tx, _companyId, id, filteredInput, _expectedUpdatedAt, user) {
     const filtered = filteredInput as { header: Record<string, unknown> };
-    // The GRN writer carries no expectedUpdatedAt token (last-write-wins). The
-    // engine already holds this GRN row FOR UPDATE (loadForDiff, same tx), which
-    // serialises concurrent approvals, so the token is not needed here.
+    // The replay deliberately sends NO expectedUpdatedAt. The writer accepts one
+    // (§20.4) and refuses a stale save, but the engine already holds this GRN row
+    // FOR UPDATE (loadForDiff, same tx), which serialises concurrent approvals,
+    // so the token is not needed here and would only refuse an approval whose
+    // staged change is still perfectly valid.
     await updateGoodsReceiptNoteTx(
       tx,
       id,

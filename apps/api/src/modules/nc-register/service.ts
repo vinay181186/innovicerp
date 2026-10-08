@@ -55,6 +55,8 @@ import {
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertRowUpdated } from '../../lib/row-lock';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 import { labelOf } from '../../lib/status-labels';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
@@ -1621,8 +1623,9 @@ export async function updateNcRegister(
  * The body of an NC edit, inside a caller-supplied transaction. Called by
  * updateNcRegister (which opens the tx) and by the edit-approval engine's
  * applyEdit (which already holds one). Every §20 guard lives here: lockNcRow,
- * the status-conditional `UPDATE … WHERE status='pending'` and its 0-row check.
- * The caller performs the edit / approve access check.
+ * assertUnchangedSinceOpened, the status-conditional `UPDATE … WHERE
+ * status='pending'` and its 0-row check. The caller performs the edit /
+ * approve access check.
  */
 export async function updateNcRegisterTx(
   tx: DbTransaction,
@@ -1647,6 +1650,21 @@ export async function updateNcRegisterTx(
   if (existing[0]!.status !== 'pending') {
     throw new ConflictError(
       `This NC is ${labelOf(NC_STATUS_LABELS, existing[0]!.status)}. Only NC Raised NCs can be edited.`,
+    );
+  }
+  // ADR-225 / §20.4 — refuse a save made over someone else's newer edit,
+  // naming who changed it. This sits ALONGSIDE the status-conditional UPDATE
+  // below, not instead of it: the status check catches a disposition (and says
+  // so, which is more useful than a bare version clash), this one catches an
+  // edit of the same still-pending NC. It is under lockNcRow above, so a
+  // second editor WAITS there, then sees the first editor's new updated_at and
+  // is refused. The name lookup sits INSIDE the cheap predicate: the happy
+  // path must not pay for a query that only ever fills in an error message.
+  if (editConflicts(existing[0]!.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      existing[0]!.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, existing[0]!.updatedBy),
     );
   }
 
@@ -1721,10 +1739,16 @@ export async function updateNcRegisterOrStage(
     return rows[0]?.status === 'pending';
   });
   if (shouldStage) {
-    // UpdateNcRegisterInput carries no expectedUpdatedAt — NC relies on its
-    // status-conditional UPDATE under lockNcRow, not an optimistic-lock token,
-    // so none is sent and the engine's drift check is a no-op for it.
-    const request = await requestDocumentEdit('NonConformance', id, input, undefined, user);
+    // The form's own version token rides along (ADR-225), so staging an edit
+    // from a stale form is refused the same way saving one is — on top of NC's
+    // own status-conditional UPDATE under lockNcRow.
+    const request = await requestDocumentEdit(
+      'NonConformance',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
     return { staged: true, request };
   }
 

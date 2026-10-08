@@ -66,6 +66,8 @@ import type {
 // rtv-candidates.ts, because the JW DC Outward path calls the same guard.
 import { assertNoRtvPending } from './rtv-candidates';
 import { diffFields } from '../../lib/audit-trail';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import {
   DC_HEADER_EDIT_FIELDS,
   dcLineDiffFields,
@@ -1515,6 +1517,22 @@ export async function updateDeliveryChallanTx(
     .for('update');
   const header = headerRows[0];
   if (!header) throw new NotFoundError('DC not found. Refresh the page.');
+  // §20.4 / ADR-225 — refuse the save if someone else changed this DC after the
+  // form loaded it, and say who. Checked under the lock above, so check-then-
+  // write is atomic. The name lookup runs ONLY on the refusal path (see
+  // lib/row-changed-by.ts), so a normal save pays nothing for it.
+  //
+  // This matters more here than on most edits: the save below bumps the DC's
+  // revision (code) and reverse-then-reposts jc_ops.outsource_sent_qty for every
+  // line, so a stale save does not just lose a field — it renumbers the challan
+  // and re-sends the pieces under the new number.
+  if (editConflicts(header.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      header.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, header.updatedBy),
+    );
+  }
   // Only an ISSUED DC with no receipts is editable. A received / cancelled DC,
   // or one with receipts, is settled downstream and must not be re-sent.
   if (header.status !== 'issued') {
@@ -1638,6 +1656,45 @@ export async function updateDeliveryChallanTx(
     }
   }
 
+  // The before → after list (keys match the registry), computed BEFORE anything
+  // is written — because it is also the test for "did this edit change anything
+  // at all?". Reused for the activity log at the end of this function.
+  const before: Record<string, unknown> = {
+    dcDate: header.dcDate,
+    transport: header.transport,
+    vehicleNo: header.vehicleNo,
+  };
+  const after: Record<string, unknown> = {};
+  if (input.dcDate !== undefined) after['dcDate'] = input.dcDate;
+  if (input.transport !== undefined) after['transport'] = input.transport ?? null;
+  if (input.vehicleNo !== undefined) after['vehicleNo'] = input.vehicleNo ?? null;
+  for (const c of currentLines) {
+    const il = inputById.get(c.id)!;
+    before[dcLineQtyKey(c.id)] = Number(c.qty);
+    after[dcLineQtyKey(c.id)] = newQtyById.get(c.id)!;
+    before[dcLineMaterialKey(c.id)] = c.materialText;
+    before[dcLineRemarksKey(c.id)] = c.dcRemarks;
+    if (il.materialText !== undefined) after[dcLineMaterialKey(c.id)] = il.materialText ?? null;
+    if (il.dcRemarks !== undefined) after[dcLineRemarksKey(c.id)] = il.dcRemarks ?? null;
+  }
+  const changes = diffFields(before, after, [
+    ...DC_HEADER_EDIT_FIELDS,
+    ...dcLineDiffFields(currentLines),
+  ]);
+  // An edit that changes NOTHING is refused, not applied. This save is not
+  // free: it bumps the challan's revision (DC-0007 → DC-0007-R1) and reverses
+  // then reposts jc_ops.outsource_sent_qty on every op-linked line. Letting a
+  // no-op save through would renumber a live challan — and rewrite the DC number
+  // stored on the job-card op — with no change behind it, which is worse for the
+  // shop floor than an error on screen.
+  if (changes.length === 0) {
+    throw new ConflictError(
+      `Nothing was changed on DC ${header.code}. Change a Challan Qty, Material, Remarks or the ` +
+        `travel details before saving — saving with no change would give the challan a new ` +
+        `revision number for nothing.`,
+    );
+  }
+
   const oldCode = header.code;
   const newCode = bumpDocRevision(oldCode);
   const newDcDate = input.dcDate ?? header.dcDate;
@@ -1720,32 +1777,11 @@ export async function updateDeliveryChallanTx(
     .returning({ id: deliveryChallans.id });
   assertRowUpdated(updatedRows, `DC ${oldCode}`);
 
-  // Activity: EDIT with the before → after list (keys match the registry). The
-  // engine emits REQUEST / APPROVE / REJECT for a staged edit; this is the
-  // direct-apply log.
-  const before: Record<string, unknown> = {
-    dcDate: header.dcDate,
-    transport: header.transport,
-    vehicleNo: header.vehicleNo,
-  };
-  const after: Record<string, unknown> = {};
-  if (input.dcDate !== undefined) after['dcDate'] = input.dcDate;
-  if (input.transport !== undefined) after['transport'] = input.transport ?? null;
-  if (input.vehicleNo !== undefined) after['vehicleNo'] = input.vehicleNo ?? null;
-  for (const c of currentLines) {
-    const il = inputById.get(c.id)!;
-    before[dcLineQtyKey(c.id)] = Number(c.qty);
-    after[dcLineQtyKey(c.id)] = newQtyById.get(c.id)!;
-    before[dcLineMaterialKey(c.id)] = c.materialText;
-    before[dcLineRemarksKey(c.id)] = c.dcRemarks;
-    if (il.materialText !== undefined) after[dcLineMaterialKey(c.id)] = il.materialText ?? null;
-    if (il.dcRemarks !== undefined) after[dcLineRemarksKey(c.id)] = il.dcRemarks ?? null;
-  }
-  const changes = diffFields(before, after, [
-    ...DC_HEADER_EDIT_FIELDS,
-    ...dcLineDiffFields(currentLines),
-  ]);
-  if (changes.length > 0) {
+  // Activity: EDIT with the before → after list computed above (keys match the
+  // registry). The engine emits REQUEST / APPROVE / REJECT for a staged edit;
+  // this is the direct-apply log. `changes` is never empty — an edit with
+  // nothing in it was refused before any of the writes above.
+  {
     await emitActivityLog(
       tx,
       {

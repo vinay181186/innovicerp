@@ -4,9 +4,14 @@
 // RECORD-level: a QC Process is a single record with no child lines, so every
 // editable field is a header field and there is no line guard. applyEdit replays
 // the approved subset through updateQcProcessTx, so the edit runs exactly as a
-// direct edit. Concurrency is the engine's: loadForDiff locks the row FOR UPDATE
-// and the engine rechecks field freshness, so this master needs no updatedAt
-// token of its own.
+// direct edit.
+//
+// The edit screen's own `expectedUpdatedAt` (ADR-225) is checked twice before
+// anything reaches here — when the edit is REQUESTED, and again inside
+// updateQcProcessTx — but it is deliberately NOT forwarded on this replay: the
+// approver is applying someone else's older request, so the requester's token
+// is not the approver's. loadForDiff's FOR UPDATE lock plus the engine's
+// field-freshness recheck at approval are what guard this path.
 //
 // A master has no money column, so there is no price-gated field here — every
 // field in QC_PROCESS_EDIT_FIELDS is visible to any editor.

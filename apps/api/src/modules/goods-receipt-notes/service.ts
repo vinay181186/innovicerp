@@ -41,6 +41,8 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
@@ -1412,9 +1414,26 @@ export async function updateGoodsReceiptNoteTx(
           isNull(goodsReceiptNotes.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      // §20.4 — lock the GRN header so the check-then-write below is atomic: a
+      // second editor waits here, then reads the first one's new updated_at and
+      // is refused. This does NOT add a new lock order: the header UPDATE a few
+      // lines down already took this same row lock before mergeLines locks the
+      // lines, so header → lines is unchanged.
+      .for('update');
     if (existingHdrRows.length === 0) {
       throw new NotFoundError('GRN not found. It may have been moved to Trash.');
+    }
+
+    // §20.4 / ADR-225 — refuse the save if someone else changed this GRN after
+    // the form loaded it, and say who. The name lookup runs only on the refusal
+    // path (see lib/row-changed-by.ts), so a normal save pays nothing for it.
+    if (editConflicts(existingHdrRows[0]!.updatedAt, input.expectedUpdatedAt)) {
+      assertUnchangedSinceOpened(
+        existingHdrRows[0]!.updatedAt,
+        input.expectedUpdatedAt,
+        await rowChangedByName(tx, existingHdrRows[0]!.updatedBy),
+      );
     }
 
     if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
@@ -1605,9 +1624,16 @@ export async function updateGoodsReceiptNoteOrStage(
     return true;
   });
   if (shouldStage) {
-    // The GRN update input carries no expectedUpdatedAt token (last-write-wins,
-    // unchanged); the engine falls back to the freshly-loaded updated_at.
-    const request = await requestDocumentEdit('GoodsReceiptNote', id, input, undefined, user);
+    // ADR-225 — the staged route gets the same version check as the direct one
+    // (the engine refuses to stage an edit raised against a stale version), which
+    // is what Delivery Challan and Dispatch already pass here.
+    const request = await requestDocumentEdit(
+      'GoodsReceiptNote',
+      id,
+      input,
+      input.expectedUpdatedAt ?? null,
+      user,
+    );
     return { staged: true, request };
   }
 
