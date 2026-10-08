@@ -5,6 +5,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { docCodeToSend } from '@/lib/use-doc-number';
+import { BOM_CREATE_STATUS } from '@innovic/shared';
 import { useCreateBomMaster, useNextBomNo } from '../api';
 import {
   BomForm,
@@ -58,10 +59,11 @@ function BomMasterNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      {/* ADR-223 — a new BOM is Active from the start, so a sales order can
-          use it the moment it is saved. The status is NOT sent: the server sets
-          it, so an Excel import or a direct API call cannot make a Draft
-          either. This seed only drives the read-only box and the badge. */}
+      {/* ADR-223 — a new BOM is Active from the start, so a sales order can use
+          it the moment it is saved. The status is NOT sent and NOT shown: the
+          server sets it from BOM_CREATE_STATUS, so an Excel import or a direct
+          API call cannot make a Draft either. The seed below comes from that
+          same constant so this screen cannot drift from the server. */}
       <BomForm
         mode="create"
         initialHeader={{
@@ -69,7 +71,7 @@ function BomMasterNewPage(): React.JSX.Element {
           bomName: '',
           parentItemId: '',
           parentItemCodeText: '',
-          status: 'active',
+          status: BOM_CREATE_STATUS,
         }}
         // Start with no part rows: the parent has to be chosen first, and an
         // empty row sitting under a locked list only invites confusion.

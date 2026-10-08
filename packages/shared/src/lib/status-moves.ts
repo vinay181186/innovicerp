@@ -69,8 +69,11 @@ export const SO_CLOSABLE_STATUSES: readonly SoStatus[] = ['open', 'dispatched', 
 // promoted by hand, but Draft guarded nothing: a BOM cannot be saved at all
 // without a name, a parent item and at least one line (form AND server), so
 // there was never a half-built BOM to protect — only an extra step before the
-// BOM could be used. Draft and Obsolete remain as STORED statuses: existing
-// Draft BOMs are untouched, and Obsolete is still reached from the Edit screen.
+// BOM could be used. Draft and Obsolete remain as STORED statuses and the moves
+// below stay legal, but NO SCREEN SETS A BOM'S STATUS ANY MORE: the create and
+// edit forms have no status field and a Retire action was declined (ADR-223
+// §2a). Existing Draft BOMs keep their status; a BOM that is finished with is
+// deleted. The only way to move one is a direct API update.
 
 /** The status every new BOM is created in (ADR-223) — not a caller's choice. */
 export const BOM_CREATE_STATUS: BomStatus = 'active';

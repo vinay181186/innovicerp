@@ -12248,9 +12248,19 @@ BOMs on TEST stay Draft, the list's **Draft** filter pill stays so they can stil
   nothing is stranded. On TEST the 15 are all e2e fixtures (`V3B-` / `V3C-`). If a real Draft BOM ever
   turns up, it is a one-line SQL update or a re-create, and that is the trade the owner accepted with
   *"leave old docs."*
-- **The DB column keeps its `default 'draft'`** (`schema.ts:3183`). It is unreachable — the one
-  INSERT in the app always supplies a status — so changing it would be a migration that alters
-  nothing. Left alone deliberately.
+- **The DB column keeps its `default 'draft'`** (`schema.ts:3183`). It is unreachable today — the one
+  INSERT in the app always supplies a status, and every direct `insert(bomMasters)` in the test
+  fixtures already passes `'active'` — so changing it would be a migration that alters nothing. Left
+  alone deliberately, with one eye open: **a future insert path that omits the column would produce a
+  Draft BOM that no screen can promote and no Sales Order can link.** If one is ever added, flip the
+  default in the same migration (`ALTER TABLE bom_masters ALTER COLUMN status SET DEFAULT 'active'`)
+  rather than re-deciding this.
+- **Review finding kept, not fixed:** the 15 existing Draft BOMs on TEST can no longer be promoted
+  from any screen, so a NEW Sales Order cannot link one (the 13 SOs already on them are unaffected —
+  they were linked on 28–29 Sep, before the only-Active check landed on the 30th). PRODUCTION has no
+  BOMs at all, and the TEST 15 are e2e fixtures (`V3B-` / `V3C-`), so nothing real is stranded. The
+  remedy if it ever bites is one statement — `UPDATE bom_masters SET status = 'active' WHERE status =
+  'draft'` — offered to the owner rather than run under *"leave old docs."*
 - `sales_orders.bom_status` is a **different field** — free text ('BOM Pending' / 'BOM Planned'),
   feeding alert AL-011 and the SO screens. Not touched, not related, and easy to confuse with this
   one.

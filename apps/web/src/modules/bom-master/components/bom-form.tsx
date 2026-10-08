@@ -947,22 +947,21 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       <PageHeader
         sticky
         title={mode === 'create' ? 'New BOM' : `Edit BOM — ${bom?.bomNo ?? ''}`}
+        /* ADR-223 — nothing under "New BOM": the BOM does not exist yet and its
+           status is no longer anybody's decision. It has to be undefined rather
+           than an empty span, because HeaderBand gates only on `under != null`
+           — an empty inline box still renders a blank line under the title. */
         subtitle={
-          <span style={{ display: 'inline-flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
-            {/* ADR-223 — no status chip on create: the BOM does not exist yet,
-                and its status is no longer anybody's decision. On edit it stays,
-                the same state chip every other document screen carries. */}
-            {mode === 'edit' ? (
-              <>
-                <span className={`badge ${STATUS_BADGE[header.status]}`}>
-                  {STATUS_LABEL[header.status]}
-                </span>
-                <span className="badge b-grey">
-                  BOM Rev {bom?.revision ?? 1} → {nextRevision}
-                </span>
-              </>
-            ) : null}
-          </span>
+          mode === 'edit' ? (
+            <span style={{ display: 'inline-flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
+              <span className={`badge ${STATUS_BADGE[header.status]}`}>
+                {STATUS_LABEL[header.status]}
+              </span>
+              <span className="badge b-grey">
+                BOM Rev {bom?.revision ?? 1} → {nextRevision}
+              </span>
+            </span>
+          ) : undefined
         }
         dirty={isDirty}
         actions={
@@ -1011,12 +1010,14 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
               />
             </div>
-            {/* ADR-223 — BOM Status left this cluster, so BOM Name takes the
-                freed cell (No. | Name Name | Rev = the row's four cells). A
-                three-field cluster would leave a hole at the right that reads
-                as a missing field, and the name is the one value here long
-                enough to want the room. */}
-            <div className="form-grp cl-span-2">
+            {/* ADR-223 — BOM Status left this cluster, leaving three fields.
+                BOM Name does NOT take the freed cell: `.cl-span-2` is overridden
+                at the 440px break but NOT at 760px, where the row drops to two
+                columns — a spanned Name would sit alone on its own line with a
+                hole above and below it. Three plain cells leave one trailing
+                gap at the end of the cluster's row, which is how every cluster
+                whose field count is not a multiple of four already looks. */}
+            <div className="form-grp">
               <label className="form-label" htmlFor="bom-name">
                 BOM Name<span className="req">★</span>
               </label>

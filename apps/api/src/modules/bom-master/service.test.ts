@@ -143,6 +143,10 @@ describe('bom-master service — CRUD', () => {
       admin,
     );
     expect(detail.bomNo).toMatch(/^BOM-\d{4}$/);
+    // ADR-223: the server decides the status and it is always Active. Asserted
+    // on the CREATE, not just after an update — an update that sends 'active'
+    // onto an already-Active BOM proves nothing (from === to).
+    expect(detail.status).toBe('active');
     expect(detail.revision).toBe(1);
     expect(detail.lines).toHaveLength(1);
     expect(detail.revisions).toHaveLength(1);
