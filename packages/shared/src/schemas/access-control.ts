@@ -34,6 +34,7 @@
 
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import {
   ACCESS_DEPT_KEYS,
   ACCESS_FORM_KEYS,
@@ -127,6 +128,9 @@ export type UserAccess = z.infer<typeof userAccessSchema>;
 
 // Save input — admin updates one user's matrix.
 export const saveUserAccessInputSchema = z.object({
+  /** §20.4 — the version this form loaded; a save over someone else's newer
+   *  edit is refused 409 `edit_conflict` (ADR-225). */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
   /** "Can download drawing files" (migration 0121). See canDownloadDrawings. */

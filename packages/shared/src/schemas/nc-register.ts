@@ -22,6 +22,7 @@ import { type NcDisposition, NC_DISPOSITIONS } from '../enums/nc-disposition';
 import { NC_REASON_CATEGORIES } from '../enums/nc-reason-category';
 import { type NcStatus, NC_STATUSES } from '../enums/nc-status';
 import { sfRawParamSchema } from './list-query';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 export const ncStatusSchema = z.enum(NC_STATUSES);
 export const ncDispositionSchema = z.enum(NC_DISPOSITIONS);
@@ -227,6 +228,9 @@ export type CreateNcRegisterInput = z.infer<typeof createNcRegisterInputSchema>;
 // UPDATE — narrow set. Disposition + cascade fields are NOT here per ADR-017
 // #7; T-040b owns that path via disposeNcInputSchema. `code` is immutable.
 export const updateNcRegisterInputSchema = z.object({
+  /** §20.4 — the version this form loaded; a save over someone else's newer
+   *  edit is refused 409 `edit_conflict` (ADR-225). */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
   ncDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'ncDate must be YYYY-MM-DD')

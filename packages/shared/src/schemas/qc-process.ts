@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 const codeRegex = /^[A-Za-z0-9._ -]+$/;
 
@@ -46,7 +47,11 @@ export const createQcProcessInputSchema = z.object({
 });
 export type CreateQcProcessInput = z.infer<typeof createQcProcessInputSchema>;
 
-export const updateQcProcessInputSchema = createQcProcessInputSchema.partial().omit({ code: true });
+export const updateQcProcessInputSchema = createQcProcessInputSchema
+  .partial()
+  .omit({ code: true })
+  // §20.4 / ADR-225 — the version this form loaded.
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateQcProcessInput = z.infer<typeof updateQcProcessInputSchema>;
 
 export const listQcProcessesQuerySchema = z.object({

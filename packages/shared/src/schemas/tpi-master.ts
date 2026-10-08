@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import { queryBoolean } from '../lib/query-boolean';
 import { sfRawParamSchema } from './list-query';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 // Same permitted characters as QC Process Master, plus '&' and ',' — inspector
 // names and firm names carry them ("R. Sharma & Co.", "Bureau Veritas, Mumbai").
@@ -65,7 +66,11 @@ export type CreateTpiMasterInput = z.infer<typeof createTpiMasterInputSchema>;
  *  every TPI log that has already snapshotted it would otherwise disagree with
  *  the master. Retire an inspector with isActive instead — same asymmetry as
  *  QC Process Master and the cost-centers master. */
-export const updateTpiMasterInputSchema = createTpiMasterInputSchema.partial().omit({ code: true });
+export const updateTpiMasterInputSchema = createTpiMasterInputSchema
+  .partial()
+  .omit({ code: true })
+  // §20.4 / ADR-225 — the version this form loaded.
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateTpiMasterInput = z.infer<typeof updateTpiMasterInputSchema>;
 
 export const listTpiMastersQuerySchema = z.object({

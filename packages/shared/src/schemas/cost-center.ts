@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
 
@@ -60,7 +61,9 @@ export type CreateCostCenterInput = z.infer<typeof createCostCenterInputSchema>;
 
 export const updateCostCenterInputSchema = createCostCenterInputSchema
   .partial()
-  .omit({ code: true });
+  .omit({ code: true })
+  // §20.4 / ADR-225 — the version this form loaded.
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateCostCenterInput = z.infer<typeof updateCostCenterInputSchema>;
 
 export const listCostCentersQuerySchema = z.object({

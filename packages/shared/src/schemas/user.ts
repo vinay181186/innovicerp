@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
 import { USER_ROLES } from '../enums/user-role';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 export const userRoleSchema = z.enum(USER_ROLES);
 
@@ -55,6 +56,9 @@ export type CreateUserInput = z.infer<typeof createUserInputSchema>;
 
 // Update only — no create (Supabase Auth owns the invite flow).
 export const updateUserInputSchema = z.object({
+  /** §20.4 — the version this form loaded; a save over someone else's newer
+   *  edit is refused 409 `edit_conflict` (ADR-225). */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
   fullName: z.string().max(255).optional(),
   role: userRoleSchema.optional(),
   phone: z.string().max(32).optional(),

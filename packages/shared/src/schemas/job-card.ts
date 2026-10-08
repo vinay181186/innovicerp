@@ -21,6 +21,7 @@ import { queryBoolean } from '../lib/query-boolean';
 import { JC_COMPUTED_STATUSES } from '../enums/jc-computed-status';
 import { JC_PRIORITIES } from '../enums/jc-priority';
 import { machineSplitSchema } from './machine-split';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 export const jcComputedStatusSchema = z.enum(JC_COMPUTED_STATUSES);
 export const jcPrioritySchema = z.enum(JC_PRIORITIES);
@@ -320,43 +321,72 @@ export type JcDocInput = z.infer<typeof jcDocInputSchema>;
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
-export const jobCardWriteInputSchema = z
-  .object({
-    jcDate: isoDate,
-    /** At most one source link (mirrors the CHECK num_nonnulls(...) <= 1). */
-    sourceSoLineId: z.string().uuid().nullable().optional(),
-    sourceJwLineId: z.string().uuid().nullable().optional(),
-    /** items.code — resolved to item_id server-side (must exist in Item Master). */
-    itemCode: z.string().min(1, 'Item Code is required').max(64),
-    orderQty: z.coerce.number().int().positive('Order Qty must be greater than 0'),
-    priority: jcPrioritySchema.default('normal'),
-    dueDate: isoDate.nullable().optional(),
-    drawingFilePath: z.string().max(512).nullable().optional(),
-    remarks: z.string().max(2000).nullable().optional(),
-    /** Raw material (both optional, both independent) — the master FK plus a
-     *  text snapshot. Copied from the plan on plan-execute; pickable by hand on
-     *  a manually raised JC. */
-    rawMaterialGradeId: z.string().uuid().nullable().optional(),
-    rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
-    rawMaterialSizeId: z.string().uuid().nullable().optional(),
-    rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
-    rawMaterialItemId: z.string().uuid().nullable().optional(),
-    rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
-    ops: z.array(jcOpInputSchema).default([]),
-    qcDocs: z.array(jcDocInputSchema).default([]),
-  })
-  .refine((d) => !(d.sourceSoLineId && d.sourceJwLineId), {
-    message: 'A Job Card can link to at most one SO or JW line',
-    path: ['sourceJwLineId'],
-  });
+// ADR-225 — the plain OBJECT, named, so the update schema can `.extend()` it
+// with the version token. `.refine()` returns a ZodEffects, which has no
+// `.extend`, and that is the ONLY reason create and update shared one schema.
+const jobCardWriteObject = z.object({
+  jcDate: isoDate,
+  /** At most one source link (mirrors the CHECK num_nonnulls(...) <= 1). */
+  sourceSoLineId: z.string().uuid().nullable().optional(),
+  sourceJwLineId: z.string().uuid().nullable().optional(),
+  /** items.code — resolved to item_id server-side (must exist in Item Master). */
+  itemCode: z.string().min(1, 'Item Code is required').max(64),
+  orderQty: z.coerce.number().int().positive('Order Qty must be greater than 0'),
+  priority: jcPrioritySchema.default('normal'),
+  dueDate: isoDate.nullable().optional(),
+  drawingFilePath: z.string().max(512).nullable().optional(),
+  remarks: z.string().max(2000).nullable().optional(),
+  /** Raw material (both optional, both independent) — the master FK plus a
+   *  text snapshot. Copied from the plan on plan-execute; pickable by hand on
+   *  a manually raised JC. */
+  rawMaterialGradeId: z.string().uuid().nullable().optional(),
+  rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+  rawMaterialSizeId: z.string().uuid().nullable().optional(),
+  rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+  rawMaterialItemId: z.string().uuid().nullable().optional(),
+  rmQtyPerPiece: z.number().min(0.0001).max(100000).multipleOf(0.0001).nullable().optional(),
+  ops: z.array(jcOpInputSchema).default([]),
+  qcDocs: z.array(jcDocInputSchema).default([]),
+});
+
+/** The one-source-link rule (mirrors the CHECK num_nonnulls(...) <= 1). Spelled
+ *  out at both call sites rather than hoisted into a shared predicate: zod
+ *  infers the refine argument from each schema, and a hand-written parameter
+ *  type has to re-state every optional field as `| undefined` under this repo's
+ *  exactOptionalPropertyTypes. Two three-line calls beat that. */
+const ONE_SOURCE_LINK_MESSAGE = 'A Job Card can link to at most one SO or JW line';
+
+export const jobCardWriteInputSchema = jobCardWriteObject.refine(
+  (d) => !(d.sourceSoLineId && d.sourceJwLineId),
+  { message: ONE_SOURCE_LINK_MESSAGE, path: ['sourceJwLineId'] },
+);
 export type JobCardWriteInput = z.infer<typeof jobCardWriteInputSchema>;
 
-// Create and edit submit the same shape (JC No. is auto-generated on create and
-// immutable on edit, so it never travels in the payload).
+// Create and edit submit the same FIELDS (JC No. is auto-generated on create
+// and immutable on edit, so it never travels in the payload). They differ in
+// exactly one thing: an edit carries the version it loaded.
 export const jobCardCreateInputSchema = jobCardWriteInputSchema;
 export type JobCardCreateInput = JobCardWriteInput;
-export const jobCardUpdateInputSchema = jobCardWriteInputSchema;
-export type JobCardUpdateInput = JobCardWriteInput;
+
+// ADR-225 — `ops` STAYS a required whole array here, deliberately. An
+// operation's step number IS its position in this list (updateJobCardTx parks
+// kept ops at op_seq + 100000 and renumbers from the index), so a partial ops
+// array cannot express a reorder. And `ops` has `.default([])`, which makes an
+// ABSENT ops key indistinguishable from "delete every operation" — so making it
+// optional here would turn "I only changed the due date" into a wiped routing.
+// The header fields merge per field; the ops do not, and a conflict on them is
+// REFUSED with the notice instead (see docs/DECISIONS.md ADR-225).
+export const jobCardUpdateInputSchema = jobCardWriteObject
+  .extend({
+    /** §20.4 — the version this form loaded; a save over someone else's newer
+     *  edit is refused 409 `edit_conflict` (ADR-225). */
+    expectedUpdatedAt: expectedUpdatedAtSchema,
+  })
+  .refine((d) => !(d.sourceSoLineId && d.sourceJwLineId), {
+    message: ONE_SOURCE_LINK_MESSAGE,
+    path: ['sourceJwLineId'],
+  });
+export type JobCardUpdateInput = z.infer<typeof jobCardUpdateInputSchema>;
 
 // ─── Cascade source options (parity: CASCADE.allOpenOrders + orderBalance) ──
 // Open SO + JW lines a new JC can be raised against, each with its JC-allocated

@@ -33,6 +33,7 @@
 import { z } from 'zod';
 import { GRN_QC_STATUSES } from '../enums/grn-qc-status';
 import { sfRawParamSchema } from './list-query';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 export const grnQcStatusSchema = z.enum(GRN_QC_STATUSES);
 
@@ -294,6 +295,9 @@ export type CreateGoodsReceiptNoteInput = z.infer<typeof createGoodsReceiptNoteI
  *  Lines whose existing qc_status is already 'completed' will be rejected
  *  by the service if the input attempts to change their QC fields. */
 export const updateGoodsReceiptNoteInputSchema = z.object({
+  /** §20.4 — the version this form loaded; a save over someone else's newer
+   *  edit is refused 409 `edit_conflict` (ADR-225). */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
   header: _grnHeaderInputBase.partial().omit({ code: true }),
   lines: z.array(goodsReceiptNoteLineInputSchema).optional(),
 });
