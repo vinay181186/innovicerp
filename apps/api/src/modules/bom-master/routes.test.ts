@@ -92,6 +92,10 @@ describe('bom-master routes', () => {
         bomNo: `${TEST_PREFIX}R1`,
         bomName: 'Routes test BOM',
         parentItemId: testParentId,
+        // ADR-223: a caller may NOT choose the status. Sent here on purpose —
+        // this is the Excel-import / direct-API case. `status` is not part of
+        // the create contract any more, the schema is not strict so it is
+        // stripped rather than rejected, and the BOM must come back Active.
         status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 3, bomType: 'manufacture' }],
       },
@@ -99,6 +103,7 @@ describe('bom-master routes', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
     expect(body.bomNo).toBe(`${TEST_PREFIX}R1`);
+    expect(body.status).toBe('active');
     expect(body.revision).toBe(1);
     expect(body.lines).toHaveLength(1);
     expect(body.revisions).toHaveLength(1);
@@ -114,7 +119,6 @@ describe('bom-master routes', () => {
         bomNo: `${TEST_PREFIX}R-VIEWER`,
         bomName: 'should be denied',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 1, bomType: 'manufacture' }],
       },
     });
@@ -130,7 +134,6 @@ describe('bom-master routes', () => {
         bomNo: `${TEST_PREFIX}R-DEL`,
         bomName: 'del test',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 1, bomType: 'manufacture' }],
       },
     });

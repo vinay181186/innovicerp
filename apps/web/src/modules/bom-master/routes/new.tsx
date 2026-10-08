@@ -4,6 +4,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { BOM_CREATE_STATUS } from '@innovic/shared';
 import { useCreateBomMaster } from '../api';
 import {
   BomForm,
@@ -39,7 +40,6 @@ function BomMasterNewPage(): React.JSX.Element {
       const created = await create.mutateAsync({
         bomName: header.bomName.trim(),
         parentItemId: header.parentItemId,
-        status: header.status,
         lines: linesToInput(lines),
       });
       exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: created.id } }));
@@ -59,8 +59,11 @@ function BomMasterNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      {/* A new BOM opens as Draft (S8): only an Active BOM links to a sales
-          order, so the user promotes it to Active once its parts are right. */}
+      {/* ADR-223 — a new BOM is Active from the start, so a sales order can use
+          it the moment it is saved. The status is NOT sent and NOT shown: the
+          server sets it from BOM_CREATE_STATUS, so an Excel import or a direct
+          API call cannot make a Draft either. The seed below comes from that
+          same constant so this screen cannot drift from the server. */}
       <BomForm
         mode="create"
         initialHeader={{
@@ -68,7 +71,7 @@ function BomMasterNewPage(): React.JSX.Element {
           bomName: '',
           parentItemId: '',
           parentItemCodeText: '',
-          status: 'draft',
+          status: BOM_CREATE_STATUS,
         }}
         // Start with no part rows: the parent has to be chosen first, and an
         // empty row sitting under a locked list only invites confusion.

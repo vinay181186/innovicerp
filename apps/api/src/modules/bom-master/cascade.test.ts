@@ -118,7 +118,6 @@ describe('BOM-8 cascadeBomToSoLine', () => {
         bomNo: `${TEST_PREFIX}BOM-A`,
         bomName: 'mixed types',
         parentItemId: testParentId,
-        status: 'active',
         lines: [
           { childItemId: itemA, qtyPerSet: 2, bomType: 'manufacture' },
           { childItemId: itemB, qtyPerSet: 3, bomType: 'purchase' },

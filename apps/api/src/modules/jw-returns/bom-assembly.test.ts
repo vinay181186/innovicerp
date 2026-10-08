@@ -70,7 +70,6 @@ async function makeBom(
       bomNo: `${P}${tag}`,
       bomName: `jw assembly ${tag}`,
       parentItemId: parentId,
-      status: 'active',
       lines: lines.map((l) => ({
         childItemId: l.itemId,
         qtyPerSet: l.qtyPerSet,
