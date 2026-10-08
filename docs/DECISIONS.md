@@ -1490,7 +1490,7 @@ Legacy `renderAccessControl` (L13861) defines a per-user permission matrix on to
 
 Ship as a UI-only matrix in this slice. The `user_access` table persists the admin's intent, `getMyAccess` exposes effective access to the web shell, and a single shared helper set (`canViewForm` / `canEntryForm` / `canEditForm` / `hasDeptAccess` in `packages/shared/src/schemas/access-control.ts`) gates client-side buttons + sidebar sections. Per-form server-side write gating on the ~30 existing modules is deferred to the focused logic-correction audit pass per `feedback-build-first-audit-later`.
 
-Day-one rollout protection: client helpers treat an "unconfigured" matrix row (no full_access + empty departments + empty forms) as allow-all. The first time an admin saves *anything* for a user, that user moves into strict-mode gating. This isolates the rollout — admins enable the feature one user at a time rather than the whole company seeing an empty sidebar on the day the migration lands.
+Day-one rollout protection: client helpers treat an "unconfigured" matrix row (no full_access + empty departments + empty forms) as allow-all. The first time an admin saves _anything_ for a user, that user moves into strict-mode gating. This isolates the rollout — admins enable the feature one user at a time rather than the whole company seeing an empty sidebar on the day the migration lands.
 
 ### Alternatives Considered
 
@@ -1503,7 +1503,7 @@ Day-one rollout protection: client helpers treat an "unconfigured" matrix row (n
 ### Consequences
 
 - Positive: matrix ships in one slice without disturbing other modules; existing non-admin users see no change until an admin explicitly grants/revokes; full audit-log emission on every save; the same shared helpers will plug into the deferred server-side gate when the audit pass runs.
-- Negative: the matrix is *advisory* on the server until the audit pass — a sophisticated client could PUT to a hidden endpoint and bypass the UI gate. Existing role-based RLS still prevents non-admins from doing things their role can't do.
+- Negative: the matrix is _advisory_ on the server until the audit pass — a sophisticated client could PUT to a hidden endpoint and bypass the UI gate. Existing role-based RLS still prevents non-admins from doing things their role can't do.
 - Risks: admins forgetting to revisit a user after granting one perm could leave them stuck in strict mode with partial access — mitigated by the matrix list view showing dept and form counts per row.
 
 ---
@@ -1602,7 +1602,7 @@ Wire the gate into `approvePurchaseOrder` (no migration — columns exist):
 ### Alternatives Considered
 
 - **Include tax in the PO value** — rejected. Legacy `tVal` is the pre-tax line sum; matching it keeps parity and avoids re-deriving tax at approve time.
-- **Use the stricter of personal AND company limit** (legacy `_isPoApprover` checks personal; `_approvePO` checks company) — rejected in favour of `_getUserApprovalLimit`'s documented "personal overrides company" precedence, which is the single helper legacy uses to *describe* a user's limit. Simpler and matches the User screen's mental model.
+- **Use the stricter of personal AND company limit** (legacy `_isPoApprover` checks personal; `_approvePO` checks company) — rejected in favour of `_getUserApprovalLimit`'s documented "personal overrides company" precedence, which is the single helper legacy uses to _describe_ a user's limit. Simpler and matches the User screen's mental model.
 - **Surface `approval_limit` as a number in the read shape** — rejected. The `numeric` column comes back from Drizzle as a string; kept as a string in `userSchema` (same convention as PO `rate`/`qty`) rather than coercing through the `as unknown as User` cast.
 
 ### Consequences
@@ -1620,7 +1620,7 @@ Wire the gate into `approvePurchaseOrder` (no migration — columns exist):
 
 ### Context
 
-Deferred audit item from ADR-036/ADR-037 (SYS-1 b / PUR-1 b): the legacy `_autoGenerateOspPR` (HTML L13302) fires when an operator *starts* a JC operation whose name matches a configured OSP process — it auto-creates a JW purchase request and, when the process has a vendor with auto-PO on, a draft JW PO. The React build never wired this; `osp_processes` (migration 0047) existed but nothing consumed it at op time. Outsource PRs only arose via SO/JW Planning or manual entry.
+Deferred audit item from ADR-036/ADR-037 (SYS-1 b / PUR-1 b): the legacy `_autoGenerateOspPR` (HTML L13302) fires when an operator _starts_ a JC operation whose name matches a configured OSP process — it auto-creates a JW purchase request and, when the process has a vendor with auto-PO on, a draft JW PO. The React build never wired this; `osp_processes` (migration 0047) existed but nothing consumed it at op time. Outsource PRs only arose via SO/JW Planning or manual entry.
 
 ### Decision
 
@@ -1661,14 +1661,14 @@ ADR-035 shipped the Access Control matrix as UI-only enforcement (sidebar/dept g
 
 ### Rationale
 
-- **Legacy's own access checks are client-side.** The legacy app is a single HTML file with no server; its 173 `canView/canEdit` calls run in the browser. ADR-035's UI-only model is therefore *faithful* to legacy, not a shortcut.
+- **Legacy's own access checks are client-side.** The legacy app is a single HTML file with no server; its 173 `canView/canEdit` calls run in the browser. ADR-035's UI-only model is therefore _faithful_ to legacy, not a shortcut.
 - **RLS already enforces the real boundaries server-side** — company isolation on every table + role-based write policies (`*_manager_write`, admin-only on settings/users/access-control/approval-config). That is strictly more than legacy ever had.
 - **Full per-form gating would be stricter than legacy and risks lockouts**, especially given the "unconfigured ⇒ allow-all" fallback (most non-admins are unconfigured on day one). Layering a fail-open server gate on top adds surface area without changing the effective boundary.
-- The per-form matrix's job is to *tailor the UI* (hide forms/depts a user shouldn't see). That job is done client-side by design.
+- The per-form matrix's job is to _tailor the UI_ (hide forms/depts a user shouldn't see). That job is done client-side by design.
 
 ### Alternatives Considered
 
-- **Focused gate on sensitive ops** (one `requireFormAccess()` helper on a few high-value write paths) — rejected for now; the genuinely sensitive paths (PO approve, user/access-control/approval-config/settings writes) are *already* admin/manager-gated at RLS + service `requireAdminRole`/`requireWriteRole`. No incremental boundary gained.
+- **Focused gate on sensitive ops** (one `requireFormAccess()` helper on a few high-value write paths) — rejected for now; the genuinely sensitive paths (PO approve, user/access-control/approval-config/settings writes) are _already_ admin/manager-gated at RLS + service `requireAdminRole`/`requireWriteRole`. No incremental boundary gained.
 - **Full server-side gating across all 30+ modules** — rejected: most invasive, highest lockout risk, partially redundant with RLS, and exceeds legacy fidelity.
 
 ### Consequences
@@ -1725,7 +1725,7 @@ Finance was the last largely-unbuilt sidebar section (LEGACY_AUDIT rows 9/71/72/
 
 Migration 0050 (additive + idempotent; existing data untouched) + four new modules: **customer-dispatches**, **invoices**, **so-costing**, **stock-valuation**.
 
-1. **Customer dispatch gates invoicing (user direction).** Legacy gated invoice qty on `salesOrderLine.dispatchedQty`, which our model lacked. Built a customer Dispatch step + register: `customer_dispatches` (+`_lines`) records dispatch of **ready (produced + QC-accepted) qty** against SO lines and maintains a new `sales_order_lines.dispatched_qty` (service-incremented on create, decremented on cancel). "Ready" = final-op effective output (QC-accepted for QC/qc-required ops, received for completed outsource, else completed) via `v_jc_op_status`, minus dispatched. This also fills the long-standing customer Dispatch Register gap (our `/delivery-challans` is the *OSP/vendor* DC). **Dispatch also reduces on-hand stock** (user direction 2026-06-02): each line inserts a `store_transactions` row (`txn_type='out'`, `source_type='dispatch'`); the existing `apply_store_txn_to_balance` trigger (migration 0020) decrements `item_stock_balances`. Cancel inserts the `in` reversal. Free-text lines (no `item_id`) skip stock. Closes the produce+QC→stock-in (`qc_accept`) → dispatch→stock-out loop.
+1. **Customer dispatch gates invoicing (user direction).** Legacy gated invoice qty on `salesOrderLine.dispatchedQty`, which our model lacked. Built a customer Dispatch step + register: `customer_dispatches` (+`_lines`) records dispatch of **ready (produced + QC-accepted) qty** against SO lines and maintains a new `sales_order_lines.dispatched_qty` (service-incremented on create, decremented on cancel). "Ready" = final-op effective output (QC-accepted for QC/qc-required ops, received for completed outsource, else completed) via `v_jc_op_status`, minus dispatched. This also fills the long-standing customer Dispatch Register gap (our `/delivery-challans` is the _OSP/vendor_ DC). **Dispatch also reduces on-hand stock** (user direction 2026-06-02): each line inserts a `store_transactions` row (`txn_type='out'`, `source_type='dispatch'`); the existing `apply_store_txn_to_balance` trigger (migration 0020) decrements `item_stock_balances`. Cancel inserts the `in` reversal. Free-text lines (no `item_id`) skip stock. Closes the produce+QC→stock-in (`qc_accept`) → dispatch→stock-out loop.
 2. **Invoices.** Fleshed out the empty `invoices` table (subtotal/GST/due/status/client snapshot) + new `invoice_payments`. Create is gated on **dispatched − already-invoiced** qty per line; payments roll up `total_paid` + flip status unpaid→partial→paid; tax-invoice print (IGST vs SGST/CGST by client GSTIN state). `invoice_status` enum.
 3. **SO Costing.** Material = with-material PO lines linked to the SO line (`source_so_line_id`, `po_type<>'job_work'`); Outsource = `jc_ops.outsource_po_line_id`; **Machine-Time = (cycle_min/60) × completed × machine.hour_rate** — added `machines.hour_rate` (₹/hr, default 0) + a Machine Master form field.
 4. **Stock Valuation.** Value = `item_stock_balances.on_hand_qty` × rate, where rate = PO-line rate behind the latest GRN → latest PO-line rate → "No Rate" (GRN lines carry no rate in our model). Grouped by `item_type` (component/assembly), since our items lack the legacy 6-category facet.
@@ -1824,6 +1824,7 @@ Screen-by-screen parity review of JW Master (legacy `renderJWMaster` L12642, `jw
 ### Decision
 
 Migration 0053 (additive, non-destructive):
+
 1. **Client material → header.** Added `client_material`, `client_material_qty`, `material_received_date`, `material_received_qty` to `job_work_orders`. Existing per-line material is copied up (SUM qtys, first material, max date). The old per-line columns are **left orphaned** (Drizzle no longer maps them) rather than dropped — non-destructive per rule #8 spirit.
 2. **Per-line rate.** Added `rate numeric(12,2) default 0` to `job_work_order_lines`; the form/detail show Rate ₹ + Amount (qty×rate); JW value total = Σ line amounts.
 
@@ -1992,6 +1993,7 @@ clicks (the earlier `otp_expired`).
 Add an admin-only **Set / reset password** action that sets a user's Supabase
 Auth password directly via the service-role Admin API
 (`auth.admin.updateUserById`) — no email, so it's immune to the email rate limit.
+
 - API: `POST /users/:id/set-password` (admin-only; verifies the target is a live
   user in the admin's company before touching Auth). `public.users.id` ==
   `auth.users.id`, so one id addresses both.
@@ -2078,6 +2080,7 @@ with legacy including all logic.
 
 Add a write layer to the job-cards module mirroring the legacy logic, mapped to
 the relational schema:
+
 - **Codes:** `IN-JC-#####` series, per company (legacy `nextJCNo`).
 - **Source link + balance:** input carries `sourceSoLineId` XOR `sourceJwLineId`;
   qty validated against `line.order_qty − Σ(other active JCs on that line)`
@@ -2228,7 +2231,7 @@ error — built once as reusable parts, then wired to SO/PO/GRN (12 more types i
 ### Decision
 
 - **One backend endpoint** `GET /doc-numbers/check?type=&code=` returns `{ exists, nextCode,
-  formatValid }` — per-company, soft-delete-aware. Per-type table/prefix/digits live in a
+formatValid }` — per-company, soft-delete-aware. Per-type table/prefix/digits live in a
   shared `DOC_NUMBER_FORMATS` map + `TABLE_NAME` (extend both for Phase 2).
 - **One hook** `useDocNumber` (TanStack Query + a new shared `useDebounce`, 500 ms) and **one
   component** `DocNumberInput` (prefill, ✓/✗/Checking indicator, blur auto-pad,
@@ -2257,10 +2260,12 @@ error — built once as reusable parts, then wired to SO/PO/GRN (12 more types i
   app-guard convention). New `/doc-numbers/check` endpoint needs an API redeploy.
 
 ## ADR-055: JW full plan parity — plans.jw_line_id, not a parallel table
+
 **Date:** 2026-07-10
 **Status:** Accepted
 
 ### Context
+
 JWSOs (IN-JW-00001, IN-JW-00002) never appeared in SO/JW Planning. Root cause:
 `getPlanningSoList` queried only `sales_orders`, and `job-cards/service.ts` had an
 explicit guard ("...until JW is supported in Planning") — JW planning was a deferred
@@ -2269,6 +2274,7 @@ migration gap, not a regression. Legacy `renderSOPlanning` merged SOs + JWs via
 Mfg/Buy/OSP → execute → JC lifecycle as SOs), not a lighter visibility-only path.
 
 ### Decision
+
 Extend the existing `plans` table with a nullable `jw_line_id` FK
 (`job_work_order_lines`), rather than build a parallel `jw_plans` table. A plan carries
 at most one of (`so_line_id`, `jw_line_id`); the service sets whichever the source is.
@@ -2280,6 +2286,7 @@ SO. Wire shape gains a `source: 'so' | 'jw'` discriminator so the Create-Plan mo
 posts `jwLineId` vs `soLineId`.
 
 ### Alternatives Considered
+
 - Parallel `jw_plans` + `jw_plan_ops` tables — rejected: doubles the plan lifecycle,
   the dashboard, execute, and every rollup query; the plans CHECKs never referenced the
   source line, so one nullable column is enough.
@@ -2287,6 +2294,7 @@ posts `jwLineId` vs `soLineId`.
   wants full make/buy/outsource planning for JWs.
 
 ### Consequences
+
 - Positive: JWs reuse the entire plan engine (types, ops, execute, PR/JC creation,
   dashboard) with one additive column; no constraint relaxation → low migration risk.
 - Negative: PRs from JW Buy/OSP plans have no JW source-line link (`purchase_requests`
@@ -2297,10 +2305,12 @@ posts `jwLineId` vs `soLineId`.
   reads 500. Pending prod apply alongside 0058/0059.
 
 ## ADR-056: JWSO create/edit header brought to Sales-Order parity
+
 **Date:** 2026-07-14
 **Status:** Accepted
 
 ### Context
+
 The "+ New JWSO Order" header lagged the "+ New Sales Order" header: plain
 auto-generated JWSO No. (no live check), a native `<select>` client picker capped
 at 200 with a navigate-away "+ New", a visible Status dropdown on create, no
@@ -2309,10 +2319,12 @@ Email Ref option. User asked for the JWSO header to behave exactly like the SO
 header.
 
 ### Decision
+
 Mirror the SO header on JWSO, minus the fields that don't fit the job-work domain:
+
 - **JWSO No.** → `DocNumberInput type="job_work_order"` (live duplicate/format check
-  + prefill). Added `job_work_order` → `IN-JW-#####` to `DOC_NUMBER_FORMATS` +
-  `TABLE_NAME` (`job_work_orders`) — no migration; reuses the existing series.
+  - prefill). Added `job_work_order` → `IN-JW-#####` to `DOC_NUMBER_FORMATS` +
+    `TABLE_NAME` (`job_work_orders`) — no migration; reuses the existing series.
 - **Client** → server-searched `SearchableSelect` + inline quick-add modal.
 - **GST %** → new `job_work_orders.gst_percent numeric(5,2) NOT NULL DEFAULT 18`
   (migration 0061) + a subtotal / GST / grand totals box under the lines.
@@ -2328,6 +2340,7 @@ Kept JWSO-specific: the free-text line editor (JWSO does NOT enforce Item Master
 and the Client Material Details block.
 
 ### Alternatives Considered
+
 - **Also add Order Type + BOM/equipment branch (full SO parity)** — rejected by the
   user: "no type field in create jwso" and "in jwso we don't create bom". Type/BOM
   don't fit job-work (client supplies material, we bill a processing charge).
@@ -2340,6 +2353,7 @@ and the Client Material Details block.
   Used `.optional()` + service/DB default 18 instead (identical behaviour).
 
 ### Consequences
+
 - Positive: one consistent order-header UX; JWSOs now show priced totals; stronger
   proof-of-order (PO No. or email) on create.
 - Negative: JWSO lines lose their independent per-line due dates (collapse to the
@@ -2362,7 +2376,7 @@ process`, because no OSP process had ever actually persisted.
 One root cause. `withUserContext` opens a real transaction (`db.transaction`), and on
 the postgres-js driver `db.transaction` → `sql.begin()` **reserves a separate
 connection from the pool**. `createOspProcess` INSERTed on its own transaction, then
-called `getOspProcess(id, user)` — a *second* `withUserContext`, therefore a second
+called `getOspProcess(id, user)` — a _second_ `withUserContext`, therefore a second
 transaction on a second connection, which by read-committed isolation cannot see the
 outer transaction's uncommitted INSERT. It threw `NotFoundError`, and that throw
 unwound the outer transaction, rolling the INSERT back. The write was lost, and the
@@ -2387,7 +2401,7 @@ This is already the dominant repo pattern — `purchase-orders`, `invoices`, `pl
 ### Alternatives Considered
 
 - **Move the read-back outside the transaction** (as `job-cards` does — it awaits
-  `withUserContext` to completion, *then* calls `getJobCard`) — works, and is not a
+  `withUserContext` to completion, _then_ calls `getJobCard`) — works, and is not a
   bug, but costs a second round trip and can observe a concurrent writer's changes.
   Fine where it stands; not worth churning.
 - **Pass `tx` through the public `getX`** (make the param optional) — rejected: an
@@ -2405,11 +2419,11 @@ This is already the dominant repo pattern — `purchase-orders`, `invoices`, `pl
 - Negative: `getX` and `getXInternal` duplicate a signature.
 - Risks: **the same nesting is live in `goods-receipt-notes/service.ts:610` and
   `:681`** — `createGoodsReceiptNote` / `updateGoodsReceiptNote` both `return
-  getGoodsReceiptNote(header.id, user)` from inside their own `withUserContext`.
+getGoodsReceiptNote(header.id, user)` from inside their own `withUserContext`.
   Same shape, same predicted failure. Untouched here (one module at a time) and not
   yet reproduced at runtime — **needs its own task**.
 - Test gap that let this ship: `osp-cascade.test.ts:157` seeds `ospProcesses` with a
-  raw `db.insert`, so it covered the *matching* logic while the *create* path had no
+  raw `db.insert`, so it covered the _matching_ logic while the _create_ path had no
   service test at all. `osp-processes/service.test.ts` now covers create→list
   round-trip and the update-freshness assertion.
 
@@ -2456,7 +2470,7 @@ call it from create/update on the existing `tx`. `getGoodsReceiptNote` stays a t
   but `innovicerp/.env.local` carries a placeholder `DATABASE_URL`, and the only real
   database is production (which CLAUDE.md §9 forbids testing against). So the GRN
   suite has never executed, and coverage that exists on paper caught nothing. This
-  bug reached production *through* a well-tested module.
+  bug reached production _through_ a well-tested module.
 - Risks: **this is systemic, not a GRN quirk.** Every service integration suite in
   the repo is in the same position. Until a dev/test database exists (CLAUDE.md §9:
   "a separate Supabase project for tests, OR a local Postgres container"), service
@@ -2486,12 +2500,12 @@ on the read/display side, and it was two independent defects on the same screen:
    - `from-pr.tsx:169` → `vendorCodeText ?? (vendorId ? '— linked —' : '—')`
    - `purchase-requests/routes/detail.tsx:199` → `vendorId ? '— linked —' : …`
 
-   Every *other* module in the app renders `vendorName ?? vendorCodeText ?? '—'`
+   Every _other_ module in the app renders `vendorName ?? vendorCodeText ?? '—'`
    (verified: GRN, PO, DC, JW-DC, and the PR **list** itself). These two were the only
-   outliers, and both were outliers *because* the join was missing.
+   outliers, and both were outliers _because_ the join was missing.
 
    It stayed invisible until OSP: `osp-cascade.ts` stamps `vendor_code_text =
-   '(vendor TBD)'` (the `NO_VENDOR_TEXT` sentinel) when the matched OSP process has no
+'(vendor TBD)'` (the `NO_VENDOR_TEXT` sentinel) when the matched OSP process has no
    vendor. The user then picked a real vendor — which sets `vendor_id` but leaves the
    sentinel in place — so the page kept rendering "(vendor TBD)" over a perfectly good
    vendor link. Any PR whose `vendorCodeText` was null would instead have shown the
@@ -2539,10 +2553,12 @@ via `onValidityChange`) and render the `poDate` error.
   see ADR-058.
 
 ## ADR-060: Auto-generated document numbers made visible in create forms (per-module next-code preview)
+
 **Date:** 2026-07-20
 **Status:** Accepted
 
 ### Context
+
 Many documents auto-generate their code server-side at insert (MAX+1 per company),
 but the create form showed nothing — a blank/placeholder field ("Auto-generated on
 save", "(auto on save)", "PLN-NNNN (auto if blank)"). Users couldn't see the number
@@ -2550,6 +2566,7 @@ they were about to get. Only the 5 central DocNumberInput types (SO/JW/PO/GRN/DC
 party-materials/party-grn prefilled. This is Task 1 of the 2026-07-20 batch.
 
 ### Decision
+
 Follow the existing party-materials/party-grn pattern: expose a per-module
 `GET /<module>/next-code` endpoint whose service wrapper (`getNext*Code(user)`) reuses
 that module's OWN generator, so the previewed number is computed the exact same way the
@@ -2561,6 +2578,7 @@ operators (OP-###), plans (PLN-####), bom-master (BOM-#### on the `bom_no` colum
 route-cards (IN-RC-#####), job-cards (year-scoped IN-JC-YY-#####, display-only field).
 
 ### Alternatives Considered
+
 - **Extend the central DOC_NUMBER_FORMATS registry to cover all types** — rejected: the
   central `computeNext` hardcodes the `code` column + a simple `^prefix\d+$` shape, which
   breaks on bom-master (`bom_no` column) and job-cards (year segment), and risks the
@@ -2569,6 +2587,7 @@ route-cards (IN-RC-#####), job-cards (year-scoped IN-JC-YY-#####, display-only f
   can disagree with the server's authoritative MAX+1.
 
 ### Consequences
+
 - Positive: the next number is visible before save across all Class A create forms; one
   uniform, low-risk pattern; each module's generator stays the single source of truth.
 - Negative: one small endpoint + hook per module (mechanical boilerplate).
@@ -2580,10 +2599,12 @@ route-cards (IN-RC-#####), job-cards (year-scoped IN-JC-YY-#####, display-only f
   suite — see ADR-058.
 
 ## ADR-061: Resolve the SO code on reads that show an "SO" column/field (SO-dash fix)
+
 **Date:** 2026-07-20
 **Status:** Accepted
 
 ### Context
+
 Two reads displayed an SO column/field that rendered "—" even when the row's SO link
 was set — the linked-display-audit gap (docs/PARITY) applied to sales orders. Task 2 of
 the 2026-07-20 batch. (a) Purchase-request LIST "SO / JC" column only rendered
@@ -2594,15 +2615,18 @@ denormalized `so_no_text`, which is never populated (create only ever stores so_
 so every SO-linked SPO showed a dash.
 
 ### Decision
+
 Resolve the SO code on read via the FK join, mirroring the job_cards template
 (source_so_line_id → sales_order_lines → sales_orders). PR list: add the two LEFT JOINs
-+ `so.code AS "soCode"`, `sol.line_no AS "soLineNo"`, carry them through toListItem, add
-both to purchaseRequestListItemSchema, and render the SO branch of the "SO / JC" column
-(SO first, else JC, else dash). Service-PO: LEFT JOIN sales_orders on so_ref_id in both
-listServicePos and getServicePoInternal, expose `soCode`, add to the list-item + detail
-schemas, and render `soCode ?? soNoText ?? '—'` in both UI spots.
+
+- `so.code AS "soCode"`, `sol.line_no AS "soLineNo"`, carry them through toListItem, add
+  both to purchaseRequestListItemSchema, and render the SO branch of the "SO / JC" column
+  (SO first, else JC, else dash). Service-PO: LEFT JOIN sales_orders on so_ref_id in both
+  listServicePos and getServicePoInternal, expose `soCode`, add to the list-item + detail
+  schemas, and render `soCode ?? soNoText ?? '—'` in both UI spots.
 
 ### Consequences
+
 - Positive: SO-sourced PRs and cost-center SPOs now show the real SO in the list/detail
   instead of a dash. No schema/data change — pure read-side resolution.
 - Negative: two more indexed-FK LEFT JOINs on those reads (single/limited rows).
@@ -2610,10 +2634,12 @@ schemas, and render `soCode ?? soNoText ?? '—'` in both UI spots.
   the resolved soCode. Verified by shared+api+web typecheck and api+web lint.
 
 ## ADR-062: Show the Sales Order on the JW Outward DC (OSP returnable gate pass)
+
 **Date:** 2026-07-20
 **Status:** Accepted
 
 ### Context
+
 The JW Outward DC (OSP returnable gate pass) had no SO column/field at all — the user
 expected to see which Sales Order the outsourced parts belong to. The SO is not stored on
 jw_dc_outward; it is reachable through the JWPO: jw_dc_outward.purchase_order_id →
@@ -2623,6 +2649,7 @@ from the JC's sourceSoLineId, so the link is reliable — and null when the JC o
 from a JWSO rather than an SO (no SO to show).
 
 ### Decision
+
 Add a resolved `soCode` to the JW Outward register list and detail. Both reads resolve it
 via a LATERAL/aggregate over the JWPO's lines (string_agg DISTINCT so.code — a JWPO can in
 principle span more than one SO). Add `soCode` to jwDcOutwardListItemSchema (detail extends
@@ -2630,6 +2657,7 @@ it), add an "SO" column to the outward register (between JWPO and Vendor) and an
 to the detail grid, each rendering `soCode ?? '—'`.
 
 ### Alternatives Considered
+
 - **Resolve via the JC-op path (source_jc_op_id → jc → sourceSoLineId)** — unnecessary: the
   OSP cascade already copies the JC's SO line straight onto the PO line, so the direct
   source_so_line_id path is both simpler and what the data carries.
@@ -2637,6 +2665,7 @@ to the detail grid, each rendering `soCode ?? '—'`.
   needs no migration/backfill and can't go stale.
 
 ### Consequences
+
 - Positive: the JW Outward DC list and detail now show the real SO; a JWSO-sourced outward
   correctly shows "—" (there is no SO). No schema/data change.
 - Negative: one LATERAL subquery per outward row on the list read (bounded by page size,
@@ -2645,10 +2674,12 @@ to the detail grid, each rendering `soCode ?? '—'`.
   typecheck and api+web lint.
 
 ## ADR-063: Resolve item code/name on detail reads that showed the snapshot/blank (item-dash fix)
+
 **Date:** 2026-07-20
 **Status:** Accepted
 
 ### Context
+
 Task 3 of the 2026-07-20 batch. Six detail reads displayed the item code/name from the
 denormalized `item_code_text`/`item_name_text` snapshot (or, for party_materials, blank —
 its snapshot column is nullable) instead of resolving the live items master via the row's
@@ -2660,6 +2691,7 @@ alias of the snapshot), jw_dc outward (lines; inward detail is served by the sam
 read), party_materials (header; could render blank).
 
 ### Decision
+
 Mirror the GRN pattern in each: LEFT JOIN items on the row/line item_id (AND items deleted_at
 IS NULL), expose nullable `itemCode`/`itemName`, keep the `*_text` snapshot as a fallback,
 add the fields to the module's shared line/detail schema, and render
@@ -2667,6 +2699,7 @@ add the fields to the module's shared line/detail schema, and render
 parallel; each kept its own read style (drizzle vs raw SQL).
 
 ### Consequences
+
 - Positive: all six detail surfaces show the live item code/name; party_materials no longer
   goes blank. Read-side only — no schema/data change.
 - Negative: one indexed-FK LEFT JOIN added per affected read.
@@ -2678,10 +2711,12 @@ parallel; each kept its own read style (drizzle vs raw SQL).
   them yet). Verified by shared+api+web typecheck and api+web lint.
 
 ## ADR-064: Auto-number preview for create forms that had no code field (Class B)
+
 **Date:** 2026-07-20
 **Status:** Accepted
 
 ### Context
+
 Class B of Task 1 (ADR-060 was Class A). Nine create forms auto-generated their code
 server-side but showed NO field for it, so the user never saw the number before saving:
 customer-dispatches (DSP-), invoices (INV-), capa (CAPA-), design-projects (DP-),
@@ -2689,6 +2724,7 @@ design-tracker (DSN-), store-issues (ISS-), tool-issues (TIS-), tasks (TSK-), an
 (both modals: JWDC-OUT- and JWIN-).
 
 ### Decision
+
 Same per-module `/next-code` endpoint pattern as Class A/party-materials (a `getNext*Code`
 wrapper reusing the module's own generator + a `useNext*Code()` hook), but because these
 create inputs have NO code field (the server always generates on save), the added field is
@@ -2696,6 +2732,7 @@ a READ-ONLY PREVIEW only — it displays `next?.code ?? '(auto on save)'` and is
 to the submit payload. jw-dc got two endpoints/hooks (outward + inward).
 
 ### Consequences
+
 - Positive: every listed create form now shows the next number up front; submit paths and
   server-side generation are unchanged (zero write-path risk).
 - Negative: one small endpoint + hook per module (mechanical).
@@ -2705,10 +2742,12 @@ to the submit payload. jw-dc got two endpoints/hooks (outward + inward).
   modules. Verified by api+web typecheck and api+web lint.
 
 ## ADR-065: Resolve the SO on the OSP Delivery Challan via the PO (the real "OSP Outward DC")
+
 **Date:** 2026-07-21
 **Status:** Accepted
 
 ### Context
+
 User reported the "OSP Outward DC" detail header SO field still showed a dash after ADR-062.
 Live-DB diagnosis (read-only) revealed the OSP outward is NOT the jw_dc_outward table
 (0 rows in prod) — it is the **delivery_challans** module ("New DC → pick a JW PO → ship
@@ -2720,6 +2759,7 @@ sales_order_lines → sales_orders (11/12 resolve; IN-DC-00007's PO line has no 
 dash there is correct).
 
 ### Decision
+
 In delivery-challans list + detail reads, add a LATERAL that resolves the SO through the
 PO's lines (string_agg DISTINCT) and change the projection to
 `COALESCE(so.code, po_so.so_code) AS "soCode"` — direct sales_order_line_id first, PO-path
@@ -2727,6 +2767,7 @@ fallback second. UI unchanged (already renders `soCode ?? soRefText ?? '—'`). 
 exact new SQL against live data before shipping (11/12 now show the real SO).
 
 ### Consequences
+
 - Positive: OSP Delivery Challans now show their SO in list + detail. Read-side only; no
   schema/data change.
 - Negative: one more LATERAL per DC read (indexed FKs, bounded rows).
@@ -2734,10 +2775,12 @@ exact new SQL against live data before shipping (11/12 now show the real SO).
   it is harmless and correct should JW-DC ever be used. Verified by api typecheck + lint.
 
 ## ADR-066: OSP At-Vendor / WIP reconciliation register (read-only, increment #1 of the OSP inventory fix)
+
 **Date:** 2026-07-21
 **Status:** Accepted
 
 ### Context
+
 The SO-517 / CONNECTING ROD trace showed on-hand stock going negative (−30) and job-card
 status wrong throughout, because outsource (OSP) send debited finished stock (`jw_out`) while
 receive credited it (`grn_qc`) — netting to zero production, then dispatch drove it negative —
@@ -2748,6 +2791,7 @@ safe, read-only foundation shipped first so the numbers can be eyeballed before 
 status view, or data is touched.
 
 ### Decision
+
 Add a read-only view `v_osp_wip` (migration 0064) — one row per outsource `jc_op` reconciling
 every ordered unit as `order_qty = accepted + at_vendor + not_sent`, all derived from existing
 documents (JC op counters + outward-DC receipt lines; identical receipt rollup to
@@ -2761,6 +2805,7 @@ Also fixed a latent typecheck error in items/routes/list.tsx (`p.code` became op
 ADR item-code auto-assign; import result lists now fall back to `p.code ?? p.name`).
 
 ### Consequences
+
 - Positive: at-vendor / in-process qty is now visible and reconciles to ordered — without
   polluting the finished-stock ledger. Foundation for increments #2–#4.
 - Negative: none functional; one more read-only view + page to maintain.
@@ -2769,38 +2814,44 @@ ADR item-code auto-assign; import result lists now fall back to `p.code ?? p.nam
   by workspace typecheck + api/web lint before ship.
 
 ## ADR-067: OSP send is stock-neutral — stop debiting finished stock on JW outward DC (increment #2)
+
 **Date:** 2026-07-21
 **Status:** Accepted
 
 ### Context
+
 Root cause of the SO-517 negative-stock bug: issuing an OSP outward Delivery Challan
 (delivery_challans — "New DC → pick JW PO → ship qty") debited finished stock
 (`store_transactions` txn_type='out', source_type='jw_out'), and receiving the processed
 goods back credited it (grn_qc, +). With no BOM (one item code end-to-end), that send(−)/
 receive(+) pair nets to **zero production**, so a later dispatch(−) drove on-hand negative
-(−30). The material sent out is not "gone" and not "in finished store" — it is *at the vendor
-in process*, which is now tracked document-derived via `v_osp_wip` (ADR-066), not the ledger.
+(−30). The material sent out is not "gone" and not "in finished store" — it is _at the vendor
+in process_, which is now tracked document-derived via `v_osp_wip` (ADR-066), not the ledger.
 
 ### Decision
+
 Remove the stock-ledger movement from the OSP DC lifecycle (Option A):
+
 - `delivery-challans/service.ts`: drop the `writeStoreTxnOnDcIssue` call on create and the
   `reverseStoreTxnOnDcCancel` call on cancel (both removed together — reversing a debit that
-  no longer happens would have *inflated* stock on cancel).
+  no longer happens would have _inflated_ stock on cancel).
 - `delivery-challans/cascades.ts`: delete `writeStoreTxnOnDcIssue` / `reverseStoreTxnOnDcCancel`
   / `DcStockTxnArgs` (now dead) and their `sql`/`storeTransactions` imports.
 - The jc_op cascades (`applyOutwardToJcOp` / `reverseOutwardFromJcOp`) are UNCHANGED — sent-qty
   and outsource_status still update, so the register and status stay correct.
 - Updated the unit test to assert **no** ledger row is written on OSP send.
-Production is credited only on QC-accept of the return (existing qc_accept path); dispatch still
-debits; the loop closes at 0 instead of −30.
+  Production is credited only on QC-accept of the return (existing qc_accept path); dispatch still
+  debits; the loop closes at 0 instead of −30.
 
 ### Alternatives Considered
+
 - Option B (keep the debit, add a separate "at vendor" liability account and net it in the
   stock view) — rejected: more moving parts, still double-represents the same pieces, and the
   no-BOM shop has no use for a WIP sub-ledger. Option A is simpler and matches how the floor
   actually thinks ("it's at the vendor, it'll come back").
 
 ### Consequences
+
 - Positive: OSP send no longer moves finished stock; combined with the register (ADR-066) the
   identity Ordered = In-store + At-vendor + On-PO + Dispatched holds. New DCs post nothing to
   the ledger.
@@ -2813,14 +2864,17 @@ debits; the loop closes at 0 instead of −30.
   run locally — only prod DB is available and must never be used for tests).
 
 ## ADR-068: Qty-driven OSP op status + one-time backfill (increments #3 & #4)
+
 **Date:** 2026-07-21
 **Status:** Accepted
 
 ### Context
+
 Two residual effects of the OSP bugs remained after ADR-066/067:
+
 1. `v_jc_op_status` marked an outsource op `complete` on the flag
    `outsource_status = 'received'`. But `receipt-cascades.ts` sets 'received' when everything
-   *sent* comes back (`cumulative >= sent_qty`), not when everything *ordered* is done — so
+   _sent_ comes back (`cumulative >= sent_qty`), not when everything _ordered_ is done — so
    SO-517 (sent 30 of 60, 30 back) was flagged received → op complete → `v_jc_status` complete
    → `tryCascadeJcComplete` set `job_cards.closed_at` and closed the SO line — with 30 pieces
    never sent. Live-verified: IN-JC-26-00020 op read `complete`, JC `closed`, SO line `closed`.
@@ -2828,6 +2882,7 @@ Two residual effects of the OSP bugs remained after ADR-066/067:
    negative (CONNECTING ROD −30, LOCKING LEVER −32, LEVER −34, SUPPORT −100, …).
 
 ### Decision
+
 **#3 — 0065 (qty-driven status, CREATE OR REPLACE `v_jc_op_status`):** replace the flag
 short-circuit with a quantity test — an outsource op is `complete` only when accepted
 (received − rejected) ≥ the op's required input qty (order_qty for op 1, else prev output);
@@ -2836,6 +2891,7 @@ not the bare `received` sub-state. Column set unchanged, so dependent `v_jc_stat
 untouched. Applied + validated: IN-JC-26-00020 op now `in_progress` (input 60, accepted 30).
 
 **#4 — 0066 (idempotent, data-only backfill):**
+
 - Stock: post one compensating `in` ledger row per item = net `jw_out` debit (source_type
   `manual_adjust`, marker source_ref `OSP-BACKFILL-ADR067`, guarded by NOT EXISTS so re-runs
   no-op). Uses the ledger — not a direct balance edit — so the trigger-maintained
@@ -2847,11 +2903,13 @@ untouched. Applied + validated: IN-JC-26-00020 op now `in_progress` (input 60, a
   Dry-run scope: exactly IN-JC-26-00020 + SO IN-SO-00517 line 23 (header already open).
 
 ### Alternatives Considered
+
 - Recompute `item_stock_balances` directly, excluding `jw_out` rows — rejected: leaves the
   erroneous rows in the ledger, so a future reconcile (0020 backfill block) would re-introduce
   the debit and drift. Compensating ledger entries keep ledger = balance.
 
 ### Consequences
+
 - Positive: OSP ops/JC/SO reflect real qty; SO-517 lands at 0 stock, JC 30-done/30-pending, SO
   line reopened. Model consistent end-to-end (register + neutral send + qty status + clean data).
 - Negative / ops note: 0066 is a **prod data mutation** — it is applied via `apply-sql.ts` with
@@ -2861,18 +2919,21 @@ untouched. Applied + validated: IN-JC-26-00020 op now `in_progress` (input 60, a
   (auditable, not silent).
 
 ## ADR-069: Default terminal DIR QC op so every produced JC credits finished stock ("Rule B")
+
 **Date:** 2026-07-21
 **Status:** Accepted
 
 ### Context
+
 Finished-goods stock is credited by exactly one event per JC: `qc_accept` fires only on a QC
-*last* op (op-entry/qc-stock-cascade.ts), and an outsource op credits via `grn_qc` when its work
+_last_ op (op-entry/qc-stock-cascade.ts), and an outsource op credits via `grn_qc` when its work
 is received. A JC whose routing is pure in-house **process** ops with **no QC** therefore never
 credits stock — dispatching it drives on-hand negative. Found while backfilling the OSP fix:
 SPACER / IN-JC-26-00007 (3 process ops, produced 60, dispatched 60 → −60), a different root cause
 from the OSP `jw_out` bug (no `jw_out` row on it).
 
 ### Decision
+
 Guarantee a terminal QC gate. When a JC's routing needs one, append a default **DIR** (Dimensional
 Inspection Report — a standard shop QC stage) QC op as the final op, at every jc_ops creation path:
 manual JW create/edit (`job-cards/service.ts`) and plan execution (`plans/service.ts`). Centralised
@@ -2892,6 +2953,7 @@ scope: exactly SPACER (+60 → 0). Guarded by a per-JC marker source_ref; ledger
 `item_stock_balances` reconcile-consistent.
 
 ### Alternatives Considered
+
 - "Credit stock on any final process 'complete'" (no QC op) — rejected: adds a second crediting
   code path and double-credits JCs that also have a QC/outsource step; the QC-op approach reuses
   the single tested `qc_accept` path.
@@ -2899,6 +2961,7 @@ scope: exactly SPACER (+60 → 0). Guarded by a per-JC marker source_ref; ledger
   double-credits any JC containing an outsource op.
 
 ### Consequences
+
 - Positive: every produced JC now passes a QC gate that credits stock exactly once; SPACER-type
   negatives cannot recur. SPACER lands at 0 after 0067.
 - Negative: one extra shop-floor action — a no-QC in-house job isn't "complete" until its DIR QC is
@@ -2908,17 +2971,20 @@ scope: exactly SPACER (+60 → 0). Guarded by a per-JC marker source_ref; ledger
   from the code push. Verified by api typecheck + lint + the `needsDefaultQcOp` unit test (7/7).
 
 ## ADR-070: Outsource op numeric columns (completed_qty / available) reflect accepted qty
+
 **Date:** 2026-07-23
 **Status:** Accepted
 
 ### Context
-0065 made an outsource op's *status* qty-driven but left `v_jc_op_status.completed_qty` and
+
+0065 made an outsource op's _status_ qty-driven but left `v_jc_op_status.completed_qty` and
 `available` deriving from op_log 'complete' rows — which outsource ops never have. So the Job Card
 op detail showed "Order 60 / Input 60 / Done 0 / Avail 60" for IN-JC-26-00020, contradicting the
 OSP At-Vendor register (accepted 30, not-sent 30) and the op's own `in_progress` status. Found
 during test Part-B (user: "order 60, input 60, avail 60").
 
 ### Decision
+
 0068 (CREATE OR REPLACE `v_jc_op_status`): for OUTSOURCE ops only, both numeric columns use the
 accepted qty (received − rejected) as "done" — the same figure the register and the prev_op_output
 LAG already use:
@@ -2931,15 +2997,19 @@ outsource. Last-op "production credit" for an outsource-last JC now credits acce
 of 0 — more correct.
 
 ### Consequences
+
 - Positive: JC detail, jc-ops board, and every op-qty display now agree with the register for
   outsource ops (IN-JC-26-00020 → Done 30 / Avail 30).
 - Negative: none functional. Ops note: 0068 is a view change applied via `apply-sql.ts` with
   operator approval, separate from the code push (the auto classifier now gates all prod applies).
+
 ## ADR-071: Canonical Job Card op-quantity columns — Order Qty / Completed Qty / Pending Qty
+
 **Date:** 2026-07-23
 **Status:** Accepted
 
 ### Context
+
 The JC Status op table showed five overlapping quantity-ish columns (Order, In[put], Done, Avail,
 Progress %). "Avail" was mislabelled (it meant remaining balance, not machine-availability) and
 "Input" (qty handed from the previous op) read as jargon and looked redundant on single-op JCs
@@ -2947,6 +3017,7 @@ Progress %). "Avail" was mislabelled (it meant remaining balance, not machine-av
 else is confusing."
 
 ### Decision
+
 Canonicalise every op-quantity display to three columns: **Order Qty · Completed Qty · Pending Qty**,
 where Completed = the op's done qty (QC → accepted; process/outsource → completed_qty, which for
 outsource is accepted-back per 0068) and **Pending = Order − Completed**. Applied to the JC Status
@@ -2956,6 +3027,7 @@ value for Pending to avoid a QC-accepted data gap in that query; kept Pend Hrs),
 compact table (`jc-ops-table.tsx`). Display-only — no API/view/gate changes.
 
 ### Consequences
+
 - Positive: op tables read Order → Completed → Pending, consistent with the JC summary cards and the
   OSP At-Vendor register. IN-JC-26-00023 → 34 / 0 / 34; IN-JC-26-00020 → 60 / 30 / 30.
 - Negative: none functional. Regression-checked: op-entry gates, the Create-PR modal default
@@ -2964,15 +3036,18 @@ compact table (`jc-ops-table.tsx`). Display-only — no API/view/gate changes.
   query) — add qc_accepted_qty there if full order-based canon is wanted on the board too.
 
 ## ADR-072: Show "At Vendor" qty on the Job Card op table
+
 **Date:** 2026-07-23
 **Status:** Accepted
 
 ### Context
+
 After ADR-071 the outsource op showed Order/Completed/Pending only, so an outsource op's Pending
 (34 for IN-JC-26-00023) hid that 10 were physically at the vendor in process and 24 not yet sent.
 User wanted the at-vendor portion visible on the JC.
 
 ### Decision
+
 Add `at_vendor_qty` (= outsource_sent_qty − received, floored at 0; 0 for non-outsource) to
 `v_jc_op_status` (migration 0069) — mirrors v_osp_wip. Surface it through op-entry `listJcOps`
 (`atVendorQty`) + the shared `jcOpEnrichedSchema`, and add an "At Vendor" column to the JC Status op
@@ -2980,6 +3055,7 @@ table (outsource ops show the number, others "—"). So an outsource row reads
 Order 34 · Completed 0 · Pending 34 · At Vendor 10 (Pending = At-Vendor + Not-Sent).
 
 ### Consequences
+
 - Positive: the in-process-at-vendor qty is visible per op on the JC. Verified: IN-JC-26-00023 → 10;
   process ops → 0.
 - Note: 0069 appends the column at the END of the view — CREATE OR REPLACE VIEW rejects
@@ -2988,10 +3064,12 @@ Order 34 · Completed 0 · Pending 34 · At Vendor 10 (Pending = At-Vendor + Not
   web/api lint.
 
 ## ADR-073: Outsource op qty is QC-accepted, not received — add "In QC" + "Incoming QC" (received ≠ accepted)
+
 **Date:** 2026-07-23
 **Status:** Accepted
 
 ### Context
+
 An OSP return writes BOTH a physical DC receipt (delivery_challan_receipt_lines.received_qty) AND
 an auto-created GRN with a separate incoming-QC step (goods_receipt_note_lines.qc_accepted_qty);
 stock only credits (grn_qc) at QC-accept. ADR-065/068/069 derived the outsource op's
@@ -3001,8 +3079,10 @@ completion test keyed off received, so a fully-received-but-unQC'd op would auto
 JC before QC ran (same family as SO-517's premature close).
 
 ### Decision
+
 Source outsource quantities from the OSP-return GRN QC columns, joined via
 goods_receipt_note_lines.purchase_order_line_id = jc_ops.outsource_po_line_id:
+
 - **0070 (v_jc_op_status):** completed_qty = SUM(qc_accepted_qty); available = input − accepted;
   at_vendor_qty = sent − received; NEW **in_qc_qty** = received − accepted − rejected (appended
   last); completion requires accepted ≥ input; a returned-but-unQC'd op computes 'received'
@@ -3016,6 +3096,7 @@ goods_receipt_note_lines.purchase_order_line_id = jc_ops.outsource_po_line_id:
   outsource_status 'Received' labels left as-is (different field).
 
 ### Consequences
+
 - Positive: Completed = truly QC-accepted; received-pending-QC is visible ("In QC") and can no
   longer be mistaken for done, nor auto-close a JC before QC. Verified: SO-517 (QC done) stays
   Completed 30 / In-QC 0; JC 23 (QC pending) → Completed 0 / In-QC 10 / "Incoming QC". Both views
@@ -3024,16 +3105,19 @@ goods_receipt_note_lines.purchase_order_line_id = jc_ops.outsource_po_line_id:
 - Negative: two more view recreates to maintain; the outsource rollup now joins GRN lines.
 
 ## ADR-074: Related Documents panel is compact/navigation-only everywhere except SO
+
 **Date:** 2026-07-23
 **Status:** Accepted
 
 ### Context
+
 The shared RelatedDocsPanel rendered a heavy Upstream/Downstream/Related status-table + timeline on
 every document detail page. User: the Related Documents section is for ease of navigation — show a
 minimal doc-type-wise list of doc names (clickable), no status/date/timeline — everywhere EXCEPT the
 Sales Order detail (which keeps the full traceability view).
 
 ### Decision
+
 Add a `variant` prop to `components/shared/related-docs-panel.tsx` defaulting to `'compact'`: one
 line per document type (section icon+title) with the doc codes as clickable links only — no
 StatusBadge, no date column, no Document Timeline. The full view (SectionBlock tables + Timeline) is
@@ -3044,15 +3128,18 @@ purchase-orders, service-pos) call the panel with no variant → compact automat
 files changed, every location resolved.
 
 ### Consequences
+
 - Positive: clean minimal navigation list everywhere; SO keeps the rich traceability. No per-page
   edits, no API change. Verified by web typecheck + lint.
 - Negative: none; the full renderer is dead only if SO ever drops variant="full".
 
 ## ADR-075: Consolidate redundant QC pages — drop QC Dashboard + QC History from nav
+
 **Date:** 2026-07-23
 **Status:** Accepted
 
 ### Context
+
 A QC page audit found 12 QC pages, all nav-linked, with three redundancy groups reading the same
 data: (A) QC History is a read-only subset of QC Call Register (same /qc-history endpoint; its
 pending rows link into the Call Register, the only page with the accept/reject write form);
@@ -3061,6 +3148,7 @@ superset with FPY/Rework/assign); (C) Incoming QC's queue duplicates the Call Re
 already links out).
 
 ### Decision
+
 Phase 1 — remove QC Dashboard and QC History from the sidebar (Quality section). Routes stay
 registered (no 404; bookmarks/deep-links keep working). Preserve capability: add a
 "📊 History & Export" link on the QC Call Register header → /qc-history (keeps History's date
@@ -3071,23 +3159,28 @@ already links to the Call Register). Sidebar reordered: entry/action pages first
 (Call Register, Command Center, Incoming QC, TPI), then SO QC Status, QC Documents, NC, CAPA.
 
 ### Consequences
+
 - Positive: two redundant top-level QC pages removed from nav with zero capability loss; no route
   deletion, so fully reversible and no broken deep-links. Web typecheck + lint green.
 - Follow-up (not done): optionally demote Incoming QC to a metrics-only view, fold History's
   export directly into the Call Register, and eventually retire the two unlinked routes.
 
 ## ADR-076: QC Call Register — two tagged QC types, uniform display, mandatory "QC By"
+
 **Date:** 2026-07-23
 **Status:** Accepted
 
 ### Context
+
 The QC Call Register mixes two QC types (incoming material QC + in-process JC-op QC) with
 inconsistent presentation: only incoming rows were tagged, both showed a "days waiting" pill, MFG
 rows showed a produced/order qty bifurcation, incoming led with GRN, and the inspector was optional
 (process) or implicit-login (incoming).
 
 ### Decision
+
 Make both QC types uniform and canonical:
+
 - **Tags:** every row carries a type badge — "INCOMING" (existing) and new "IN-PROCESS" (cyan).
 - **Drop:** the waiting-days pill (both), and the produced/order bifurcation on MFG rows
   (removed the now-dead waitColor/waitBg helpers).
@@ -3100,6 +3193,7 @@ Make both QC types uniform and canonical:
   user FK for audit). New shared field `submitIncomingQcInput.qcInspectedByName` (min 1).
 
 ### Consequences
+
 - Positive: consistent, minimal QC rows keyed on Vendor/SO/tag; QC attribution is captured on every
   entry. Verified SO resolution on GRN-00012 → SO IN-SO-00517. Workspace typecheck + web/api lint
   green; migration 0072 applied to prod before the code deploy (API writes the new column).
@@ -3107,15 +3201,18 @@ Make both QC types uniform and canonical:
   show vendor + GRN with SO blank.
 
 ## ADR-077: Full-outsource plan execution seeds a Job Card with a default OSP op
+
 **Date:** 2026-07-25
 **Status:** Accepted
 
 ### Context
+
 Executing a `full_outsource` plan previously created only a JW PR (status `pr_created`), so the
 outsourced work never landed as a trackable Job Card op — the user had to build the JC/op manually,
 and the OSP At-Vendor/QC chain (ADR-066..073) had no jc_op to trace back to.
 
 ### Decision
+
 `executeFullOutsource` now, when the plan has a resolved `itemId` (job_cards.item_id is NOT NULL),
 seeds a Job Card with **one outsource jc_op** as the default OSP route: `op_type='outsource'`,
 `operation = plan.foProcess`, `outsourceVendorId/Text` + `outsourceCost` prefilled from the plan's
@@ -3127,6 +3224,7 @@ are QC'd via incoming QC (`grn_qc`), consistent with Rule B (`needsDefaultQcOp` 
 ADR-069). A **text-only plan (no itemId)** keeps the prior PR-only path.
 
 ### Consequences
+
 - Positive: a full-outsource plan lands as an editable JC op that flows through the OSP register /
   qty-driven status / QC pipeline built in ADR-066..073; the material-PR branch is unchanged.
 - Negative: none for existing already-executed plans (unchanged). The full_outsource unit test was
@@ -3134,10 +3232,12 @@ ADR-069). A **text-only plan (no itemId)** keeps the prior PR-only path.
   verified by api typecheck + lint + diff review.
 
 ## ADR-078: Availability guard on OSP send (cannot outsource more than the previous stage cleared)
+
 **Date:** 2026-07-25
 **Status:** Accepted
 
 ### Context
+
 The in-house progress paths enforce "you can't work quantity you don't have": `submitOpLog` and
 `submitQcLog` reject `qty > available`. The OSP-send path had no equivalent check —
 `applyOutwardToJcOp` (delivery-challan outward cascade) blindly did `outsource_sent_qty += qty`.
@@ -3146,20 +3246,23 @@ Audit of IN-SO-00537 / IN-JC-26-00034 found op S2 (outsource, op_seq 4) with `in
 with zero upstream progress. Company-wide audit found this was the only offending record.
 
 ### Decision
+
 `applyOutwardToJcOp` now caps the send at the op's **upstream cleared input minus what's already
 sent**: `sendable = v_jc_op_status.input_avail − outsource_sent_qty`; `qty > sendable` throws a
 `ValidationError` and the whole DC transaction rolls back (the cascade runs inside the DC-create tx).
 `input_avail` is the previous op's cleared output (or the JC order qty for op_seq 1), so a
-first-op / whole-op outsource still sends freely — only sending *ahead of* un-cleared upstream work
+first-op / whole-op outsource still sends freely — only sending _ahead of_ un-cleared upstream work
 is blocked. Chosen the cascade (single choke point for `outsource_sent_qty`) over per-caller checks.
 
 ### Alternatives Considered
+
 - Guard in the DC-create service before the cascade — rejected: duplicates logic and misses any
   future caller; the cascade is the one authoritative writer of `outsource_sent_qty`.
 - Cap by the op's `available` (input − accepted) instead of `input − sent` — rejected: `available`
   reflects remaining-to-accept, not remaining-to-send; multi-batch sends need the sent-based cap.
 
 ### Consequences
+
 - Positive: OSP send now obeys the same availability rule as in-house op/QC logging; the SO-537 class
   of error is impossible. Existing tests unaffected (their outsource ops are op_seq 1, input = order).
 - Negative: none for valid flows. Integration test added (guard rejects send with 0 upstream); the
@@ -3167,17 +3270,21 @@ is blocked. Chosen the cascade (single choke point for `outsource_sent_qty`) ove
   typecheck + lint + diff review.
 
 ## ADR-079: Job-Work cycle completion — issue party material, return goods, bill labour
+
 **Date:** 2026-07-25
 **Status:** Accepted
 
 ### Context
+
 The customer-material job-work (JWSO) flow was half-built: Party GRN received client material
 into a separate party-stock ledger (party_materials), and a JW-sourced Job Card machined it, but
 three steps were missing — consuming (issuing) party material to the JC (`issued_qty` was never
 mutated), returning processed goods to the customer, and billing labour (no JW branch in invoices).
 
 ### Decision
+
 Three lean single-line documents + two reconciliation counters (migration 0074):
+
 - **Party Material Issue** (`IN-PMI-#####`) — issues client material to a JC; debits
   `party_materials.stock_qty`, credits `issued_qty`. Guard: `qty <= stock_qty`. Never writes
   own-stock `store_transactions` (party material stays isolated).
@@ -3192,16 +3299,19 @@ Every guard follows the upstream/downstream availability rule (ADR-078 lineage):
 than received, return more than produced, or bill more than returned.
 
 ### Consequences
+
 - Positive: the JWSO loop now reconciles received → issued → produced → returned → invoiced, with
   party stock tracked separately from own inventory. Additive migration (new tables + default-0
   columns), no existing behaviour changed.
 - Negative: no web create screens yet (API + list views only); flagged for a follow-up.
 
 ## ADR-082: Reject decision belongs at Incoming QC, not at any receive step
+
 **Date:** 2026-07-27
 **Status:** Accepted (partially implemented — see Status of implementation)
 
 ### Context
+
 Vendor-return rejects were captured at the OSP Delivery Challan RECEIVE gate,
 which (a) raised a defect (NC) only for whole `op_type='outsource'` ops — so an
 ADR-081 dual-lane PROCESS op that carried an OSP balance had its reject silently
@@ -3211,18 +3321,21 @@ NOT raise an NC on reject at all, unlike production QC (`op-entry` submitQcLog,
 which calls `autoCreateNcFromQcReject`).
 
 ### Decision
+
 Reject is decided ONLY at Incoming QC. At any receive step the user enters
 **received qty only**; everything received lands on a GRN as `qc_status='pending'`.
 Incoming QC decides **Accept / Reject**, and a Reject raises a defect record (NC),
 mirroring production QC. Terminology: the good qty is **"Accept"**, never "OK".
 
 ### Alternatives Considered
+
 - Broaden the two `op_type='outsource'` filters on the DC-receive path (fix the
   dual-lane NC only) — rejected as the whole answer: leaves the two-surface
   inconsistency and the Incoming-QC no-NC gap.
 - Keep reject at both receive and QC — rejected: double capture, double NC risk.
 
 ### Consequences
+
 - Positive: one reject surface; dual-lane split-job reject bug eliminated by
   construction (no gate reject to miss); received qty always flows through
   Incoming QC before crediting stock.
@@ -3233,6 +3346,7 @@ mirroring production QC. Terminology: the good qty is **"Accept"**, never "OK".
   treatment; flagged for verification.
 
 ### Status of implementation
+
 - DONE: Incoming QC raises NC on reject for job-work returns; OSP DC receive is
   received-only (gate-reject field + dead gate-NC code removed). Typecheck + lint
   clean; integration tests updated but not executed (no test DB in env).
@@ -3240,10 +3354,12 @@ mirroring production QC. Terminology: the good qty is **"Accept"**, never "OK".
   NC (schema change); disposition whitelist. See docs/PENDING-qc-reject-refactor.md.
 
 ## ADR-083: Job-Card operation-edit guards (lock started / OSP-committed / finished)
+
 **Date:** 2026-07-28
 **Status:** Accepted
 
 ### Context
+
 `updateJobCard` let you reorder/add/remove/retype ops on an existing JC. The only
 guard was "op has an op_log" (blocks remove + retype). Three gaps let an operator
 silently corrupt the routing math (each op's input = the previous op's output):
@@ -3252,8 +3368,10 @@ committed to a PR/PO/DC (but with no op_log) could be removed/retyped/moved,
 orphaning that paperwork; (C) a **complete/closed** JC could still be edited.
 
 ### Decision
+
 Three server guards in `updateJobCard` (apps/api/src/modules/job-cards/service.ts),
 plus UI: grey the ▲/▼ move buttons for started ops in both edit surfaces.
+
 - **Reorder lock:** a started op's new op_seq must equal its old op_seq (append
   downstream is still allowed). Error: "Cannot re-sequence an operation that
   already has logged work."
@@ -3269,24 +3387,28 @@ plus UI: grey the ▲/▼ move buttons for started ops in both edit surfaces.
   operation that already has logged work."
 
 ### Alternatives Considered
+
 - Cascade-cancel the PR/PO when an OSP op is removed — rejected: implicit
   document cancellation is surprising; require the explicit existing cancel flow.
 - Block ALL edits on a complete JC (incl. header) — rejected: only structural op
   changes are frozen; header edits still allowed.
 
 ### Consequences
+
 - Positive: routing math can no longer be silently scrambled on a live JC; no
   orphaned OSP paperwork; finished JCs are immutable (mirrors PO/JWSO pattern).
 - Negative: to remove a committed OSP op you must first cancel its DC/PO/PR.
-- Note: the UI only greys move buttons for *started* ops (edit model lacks the
+- Note: the UI only greys move buttons for _started_ ops (edit model lacks the
   OSP-committed flag); the server enforces the OSP-committed + freeze cases with
   clear messages. Threading a committed flag into the edit model is a follow-up.
 
 ## ADR-084: Block outsource-balance while an in-house machine session is running
+
 **Date:** 2026-07-28
 **Status:** Accepted
 
 ### Context
+
 The ADR-081 "Outsource balance" action guards only on `v_jc_op_status.available`
 (= order − completed − already-outsourced). An **open in-house running session**
 carries no committed qty, so it does NOT reduce `available`. Result: an op that a
@@ -3296,20 +3418,24 @@ vendor. After that, `available` is 0, so the still-running operator can't even l
 output — the machine is tied up on a fully-outsourced job.
 
 ### Decision
+
 `outsourceOpBalance` (jc-ops/outsource-balance.ts) now rejects when the op has an
 active in-house running session (`running_ops.status='running' AND is_osp=false`):
+
 > "Stop the running machine session before outsourcing this operation — finish or
->  stop the in-house run, then outsource the remaining balance."
-Correct workflow: stop the session (records what was actually completed) → the
-true remaining balance is now outsourceable.
+> stop the in-house run, then outsource the remaining balance."
+> Correct workflow: stop the session (records what was actually completed) → the
+> true remaining balance is now outsourceable.
 
 ### Alternatives Considered
+
 - Subtract the "in-session" qty from `available` — rejected: a running session has
   no committed quantity to subtract.
 - Require completed > 0 before outsourcing — rejected: doesn't close it (complete
   1, keep a live session on the rest, outsource the rest).
 
 ### Consequences
+
 - Positive: can't outsource pieces a machine is actively producing; no double-book.
 - Negative: one extra step (stop the session first) when a machine is mid-run.
 - Note: server-enforced. UI still shows the "🏭 Outsource balance" button during a
@@ -3317,10 +3443,12 @@ true remaining balance is now outsourceable.
   rejects with the message above. Disabling the button while running is a follow-up.
 
 ## ADR-085: JC edit → OSP op auto-raises the JW_OSP PR (matches plan-execute)
+
 **Date:** 2026-07-30
 **Status:** Accepted (partially supersedes the manual-OSP-PR stance for the edit path)
 
 ### Context
+
 Executing a Plan (`executeManufacture` / `executeFullOutsource`, plans/service.ts)
 auto-raises one `jw_osp` IN-JWPR per outsource op and stamps the op `pr_raised`.
 But `updateJobCard` (job-cards/service.ts) had **no PR logic**: editing a JC and
@@ -3333,6 +3461,7 @@ An earlier stance made OSP-PR a manual, manager-triggered action (`POST
 edit path auto-raise instead, for parity with plan-execute.
 
 ### Decision
+
 `updateJobCard` now, after the op-upsert, re-queries ops that are `op_type=
 'outsource'` with `outsource_pr_id IS NULL AND outsource_status IS NULL` and
 raises one `jw_osp` PR each — same insert as `executeManufacture` (vendor id/text
@@ -3343,6 +3472,7 @@ re-raised; the ADR-083 lock guard already blocks retyping a committed op). Raise
 PR codes are appended to the JC EDIT activity-log line.
 
 ### Alternatives Considered
+
 - One-click "Raise PR" button on the edit UI (keeps PRs explicit) — rejected by
   the user in favour of automatic parity with plan-execute.
 - Reuse `generateOspPrForOp` (op-entry/osp-cascade) — rejected: it requires the op
@@ -3351,6 +3481,7 @@ PR codes are appended to the JC EDIT activity-log line.
   create and edit behaviour identical.
 
 ### Consequences
+
 - Positive: edit-to-OSP now produces the PR exactly like creating via a Plan;
   "awaiting PR with no PR" is gone; back-fills any pre-existing OSP op that had no PR.
 - Negative: a mis-ticked OSP checkbox that is then saved will spawn a real PR
@@ -3359,10 +3490,12 @@ PR codes are appended to the JC EDIT activity-log line.
   still goes through the ADR-081 "Outsource balance" lane, unchanged.
 
 ## ADR-086: PO type is derived from the source PR, not the convert form
+
 **Date:** 2026-07-30
 **Status:** Accepted
 
 ### Context
+
 `poType` distinguishes a plain buy (`standard`, received via GRN) from outward
 job-work / OSP (`job_work`, shipped out on a DC). The PR→PO convert paths
 (`createPurchaseOrderFromPr` service.ts, and the bulk batch) copied the form's
@@ -3378,6 +3511,7 @@ like `standard`) and `service` (real Service POs use the separate `service_pos`
 table, so picking it mis-files an orphan into `purchase_orders`).
 
 ### Decision
+
 Both convert paths now derive `poType` from the PR, ignoring the form value:
 `pr_type='jw_osp' OR source_jc_op_id IS NOT NULL → 'job_work', else 'standard'`
 (bulk: `job_work` only if EVERY PR in the batch is OSP). The manual PO create form
@@ -3385,6 +3519,7 @@ and the from-pr convert form dropdowns are filtered to only `standard` + `job_wo
 (hiding `outsource`/`service`) to prevent mis-filing.
 
 ### Alternatives Considered
+
 - Guard the DC action on OSP linkage (PO line `source_jc_op_id`) instead of type —
   kept as a possible defense-in-depth follow-up, but fixing the type at the source
   is the root cause and also restores the correct Receive button for buys.
@@ -3392,6 +3527,7 @@ and the from-pr convert form dropdowns are filtered to only `standard` + `job_wo
   rows carry those values, so the enum stays; only the dropdowns are filtered.
 
 ### Consequences
+
 - Positive: a direct-purchase buy now converts to a `standard` PO — no bogus DC,
   Receive/GRN restored; OSP PRs still correctly become `job_work` (unchanged).
 - Data: pre-existing mislabeled POs (e.g. IN-PO-00004) need a one-off backfill to
@@ -3400,10 +3536,12 @@ and the from-pr convert form dropdowns are filtered to only `standard` + `job_wo
   closed at the UI (the Service PO module remains the canonical service path).
 
 ## ADR-087: Service PO state machine — dedicated complete/cancel + no status-via-edit
+
 **Date:** 2026-07-30
 **Status:** Accepted
 
 ### Context
+
 `service_pos.status` is `draft|pending|approved|completed|cancelled`, but the app
 only ever reached `approved` (via the admin-only `approveServicePo`). `completed`
 and `cancelled` were dead labels — no action produced them. Worse, `updateServicePo`
@@ -3413,6 +3551,7 @@ stamp (`updateServicePoInputSchema` was `create.partial().omit(spoNo)`, which st
 carried `status`).
 
 ### Decision
+
 - Omit `status` from `updateServicePoInputSchema` (now `.omit({ spoNo, status })`),
   and drop the `updates.status` line in `updateServicePo`. State changes go ONLY
   through dedicated actions with role + transition guards.
@@ -3423,6 +3562,7 @@ carried `status`).
   "Cancel PO" (with confirm) buttons on the SPO detail, gated on manager/admin.
 
 ### Consequences
+
 - Positive: full lifecycle create → approve → complete / cancel; the approval
   back-door is closed (approve stays admin-only via the dedicated action).
 - Still open (separate follow-ups, not lifecycle): no SPO edit screen (the PATCH +
@@ -3431,20 +3571,24 @@ carried `status`).
   `service_po_lines` has no `deleted_at` (hard-deleted on line replace).
 
 ## ADR-088: Service PO simplified to Open → Completed (no submit/approval step)
+
 **Date:** 2026-07-30
 **Status:** Accepted (supersedes the approval flow of ADR-087)
 
 ### Context
+
 Per user direction, the Service PO approval workflow (draft → submit → admin
 approve) was unnecessary friction for a simple non-inventory expense doc. Desired
 model: **Save → "Open" → Mark Completed** (with Cancel), no approval.
 
 ### Decision
+
 Reuse the existing `service_po_status` enum — **no DB migration** (migrations are
 not auto-applied on deploy: the Railway Dockerfile just runs the server; `db:migrate`
 is manual, and prod writes are classifier-gated). The single active state is stored
 as `pending` and surfaced everywhere in the Service PO UI as **"Open"**; the legacy
 `draft`/`approved` values also render as "Open" (so existing rows read sensibly).
+
 - Create: one **"Save Service PO"** button; the server forces `status='pending'`
   and ignores any client status (closes the create-side back-door too).
 - `completeServicePo`: now completes from any non-terminal state (was approved-only).
@@ -3454,6 +3598,7 @@ as `pending` and surfaced everywhere in the Service PO UI as **"Open"**; the leg
   Completed / Cancelled. Status label + colour maps show draft/pending/approved → Open.
 
 ### Consequences
+
 - Positive: exactly the requested UX, deployed with zero DB/schema change and no
   manual migration step.
 - Trade-off: internal DB value `pending` ≠ its UI label "Open" — documented here to
@@ -3462,10 +3607,12 @@ as `pending` and surfaced everywhere in the Service PO UI as **"Open"**; the leg
 - The ADR-087 back-door fix still holds: status never moves via a raw edit.
 
 ## ADR-088: JC Operations Detail — table → card layout (design-only)
+
 **Date:** 2026-07-30
 **Status:** Accepted
 
 ### Context
+
 The Job Card Operations Detail read as a 13–15 column table on all three surfaces
 (create `job-card-form.tsx`, view + edit `jc-status-content.tsx`). The user supplied
 a card mock-up and asked for it on all three, explicitly scoped as **design-only**:
@@ -3476,11 +3623,13 @@ copies of the `OP_STATUS` map, and two files well past the 400-line rule
 (`jc-status-content.tsx` 1709 L, `job-card-form.tsx` 1127 L).
 
 ### Decision
+
 Extract the row into two shared components and re-lay-out the columns as card
 slots, copying every value, badge, button, condition and destination verbatim:
+
 - `lib/jc-op-labels.ts` — `OP_STATUS`, `OUTSOURCE_STATUS_LABEL` (moved, byte-identical)
-  + `opAccentColor(cls)`, which derives the card's left bar from the SAME class the
-  status badge uses, so bar and badge cannot disagree.
+  - `opAccentColor(cls)`, which derives the card's left bar from the SAME class the
+    status badge uses, so bar and badge cannot disagree.
 - `components/jc-op-card.tsx` — read-only card (view). The table's Action cell
   becomes a footer strip; ▶ Start / ✚ Log / 🔬 QC(n) / ✓ Done / PR:/PO: keep their
   exact conditions and destinations.
@@ -3495,6 +3644,7 @@ Per-screen wording is preserved via props rather than normalised: `cycleLabel`
 had no logs column).
 
 ### Alternatives Considered
+
 - One card component with a `mode` prop — rejected: the read-only and editable
   bodies share almost no markup, and the branchy result would be harder to review
   than two focused files.
@@ -3503,6 +3653,7 @@ had no logs column).
   follow-up instead.
 
 ### Consequences
+
 - Positive: one card definition per mode; `jc-status-content.tsx` 1709 → ~1065 L and
   `job-card-form.tsx` 1127 → ~849 L; the duplicate `OP_STATUS` copy in
   `job-card-form.tsx` is gone.
@@ -3516,6 +3667,7 @@ had no logs column).
   renders "1 ops"; `toolNo` is written but has no input on any screen.
 
 ## ADR-089: JC op cards — unit label, log caption and plural corrected (labels only)
+
 **Date:** 2026-08-03
 **Status:** Accepted
 
@@ -3525,6 +3677,7 @@ had no logs column).
 > JC one as **ADR-088b**. This entry takes 089 so the sequence continues cleanly.
 
 ### Context
+
 Three cosmetic defects survived ADR-088b because that port was scoped to layout only
 and reproduced the old table's wording byte-for-byte, including its mistakes:
 
@@ -3537,6 +3690,7 @@ and reproduced the old table's wording byte-for-byte, including its mistakes:
    **non-QC** count, so `1 process op + 1 QC op` rendered "1 ops".
 
 ### Decision
+
 Fix the labels, touch no logic. The rendered numbers, the queries, the save payload
 and every button condition are unchanged.
 
@@ -3547,12 +3701,14 @@ and every button condition are unchanged.
 - Plural follows the number actually shown: `{opCount} op{opCount !== 1 ? 's' : ''}`.
 
 ### Alternatives Considered
+
 - Convert `cycle_time_min` to hours for display — rejected: a data-presentation change
   in a labels-only pass, and shop-floor cycle times are quoted in minutes.
 - Rename the DB column to remove the ambiguity — rejected: a migration for a typo in
   one header, with every reader and the API contract to follow.
 
 ### Consequences
+
 - Positive: one unit for one column across the whole module; captions can no longer
   contradict what is on screen.
 - Neutral: `job-card-form.tsx` drops its now-redundant `cycleLabel` override — the
@@ -3564,10 +3720,12 @@ and every button condition are unchanged.
   behaviour; the save order is correct, only the printed label lags.
 
 ## ADR-090: Op-card PENDING counts what reached the op; Tool No. gets an input
+
 **Date:** 2026-08-03
 **Status:** Accepted
 
 ### Context
+
 Two defects deferred by ADR-088b/089, both confirmed against the live DB before
 any code changed.
 
@@ -3596,12 +3754,14 @@ initialised it to `''`; edit round-tripped the DB value untouched. Live DB: **14
 columns were structurally always blank.
 
 ### Decision
+
 1. `pendingQty = max(0, inputAvail − done)` on both the view card and the edit
    card. `input_avail` (from `v_jc_op_status`) is the qty upstream has cleared.
 2. Add a `Tool No.` input to the edit card's SETUP row, next to Program,
    `maxLength={120}` to match `z.string().max(120)` in the shared schema.
 
 ### Alternatives Considered
+
 - Keep `order − done` and add a second "READY" tile — rejected: two qty tiles
   answering nearly the same question, and PENDING would still be the misleading
   one an operator reads first.
@@ -3612,6 +3772,7 @@ columns were structurally always blank.
   smaller than removing four call sites.
 
 ### Consequences
+
 - Positive: PENDING now means "what I can work on", matching what `available`
   and `computed_status` already say; a `waiting` op reads 0 instead of the full
   order. Tool No. becomes capturable, so the view chip, print column and Excel
@@ -3627,16 +3788,18 @@ columns were structurally always blank.
   loses that reading; the ORDER and COMPLETED tiles still give it.
 
 ## ADR-091: Full-Outsource Material Source — buy only on "Purchase New"
+
 **Date:** 2026-08-03
 **Status:** Accepted
 
 ### Context
+
 A full_outsource plan has a Material Source of "From Stock" (raw material already
 in our store → use it, buy nothing) or "Purchase New" (we don't have it → raise a
 material PR). The plan-execute code (`plans/service.ts`) raised a material PR
 whenever `foMaterialSrc` was anything except the words `self`/`inhouse`/`in-house`.
 The dropdown only ever emits "From Stock" | "Purchase New" — neither word is in
-that exclude-list, so BOTH options raised a PR. The option that means *don't buy*
+that exclude-list, so BOTH options raised a PR. The option that means _don't buy_
 ("From Stock") wrongly triggered a purchase. Second defect: the PR's
 `vendorCodeText` was set to the source label itself (`plan.foMaterialSrc`), a
 leftover from when this column was free-text vendor name (ISSUE-253). Compounding
@@ -3645,6 +3808,7 @@ it, `plan-form.tsx` (new/edit routes) rendered Material Source as a FREE-TEXT bo
 dropdown — the two entry points disagreed on what values the column holds.
 
 ### Decision
+
 - Raise a material PR **only** when `foMaterialSrc?.trim().toLowerCase() === 'purchase new'`.
   "From Stock" (and any legacy/empty value) raises nothing. Matches legacy intent.
 - Stop writing the source label into the vendor field; raise the material PR with
@@ -3656,6 +3820,7 @@ dropdown — the two entry points disagreed on what values the column holds.
   real dropdown values (Purchase New = buys, From Stock = does not).
 
 ### Consequences
+
 - Positive: "From Stock" no longer double-buys material already in store; material
   PRs no longer carry a bogus "From Stock"/"Purchase New" vendor name.
 - Negative: a legacy full_outsource plan that stored a supplier code in
@@ -3667,10 +3832,12 @@ dropdown — the two entry points disagreed on what values the column holds.
   feature — see the audit notes on reservation risks.
 
 ## ADR-092: Mid-route OSP returns credit WIP, not store — store is credited once at JC close
+
 **Date:** 2026-08-03
 **Status:** Accepted
 
 ### Context
+
 Innovic runs **no BOM**: the raw bar and the finished part carry the same item code
 end-to-end (e.g. 554117146000 LEVER CATCH RAMMER on the SO line, plan, PR, PO, DC,
 GRN). A job-work return is therefore byte-identical to a purchase receipt at the
@@ -3679,6 +3846,7 @@ GRN, and `creditGrnQcStock` (goods-receipt-notes/cascades.ts) credited stock for
 the routing.
 
 The business rule (confirmed with the user, 2026-08-03):
+
 1. No BOM → track material in/out on the actual item code.
 2. Full outsource starts with zero stock; nothing is issued from store, so the
    outward DC must not debit (already true — ADR-067).
@@ -3687,7 +3855,7 @@ The business rule (confirmed with the user, 2026-08-03):
    the last op is in-house, incoming QC when the last op is the vendor return.
 
 Rule 4 was already satisfied for the common case: 9 of the 10 outsource ops in prod
-are `op_seq 1 of 1` on `full_outsource` JCs, so the OSP op *is* the last op and the
+are `op_seq 1 of 1` on `full_outsource` JCs, so the OSP op _is_ the last op and the
 grn_qc credit is correct. Audit confirmed IN-GRN-00016 (+10, PLN-0009) and
 IN-GRN-00002/00004 (+45/+4, PLN-0003) are all legitimate last-op credits — an earlier
 reading of these as "phantom stock" was wrong and is retracted.
@@ -3700,6 +3868,7 @@ op-entry/qc-stock-cascade → **+100 booked for 50 physical pieces**. Latent onl
 because op3 has `outsource_status = NULL` (never sent).
 
 ### Decision
+
 Guard inside `creditGrnQcStock` — the single choke point for grn_qc credits (the
 three `writeStoreTxnOnQcAccept` call sites in goods-receipt-notes/service.ts delegate
 to it, and incoming-qc/service.ts:322 calls it directly, so one guard covers all four
@@ -3709,14 +3878,16 @@ paths). Skip the ledger write when the GRN line is the return of an outsource op
 The GRN line resolves to its jc_op by two paths, because
 `jc_ops.outsource_po_line_id` is only stamped once the outward DC is issued (populated
 on 2 of 10 prod ops):
+
 1. `jc_ops.outsource_po_line_id = grn_line.purchase_order_line_id`
 2. GRN → PO → `purchase_orders.pr_id` → `purchase_requests.source_jc_op_id`
-An ordinary purchase GRN resolves to no op and is never blocked.
+   An ordinary purchase GRN resolves to no op and is never blocked.
 
 Mirrors the `MAX(op_seq)` last-op test that op-entry/qc-stock-cascade.ts already
 applies before crediting on internal QC — same rule, now enforced on both paths.
 
 ### Alternatives Considered
+
 - Blanket "never credit on `po_type='job_work'` GRNs" — rejected: correct for the
   mid-route case but breaks the 9 last-op full_outsource JCs, which would then never
   credit finished goods at all (a full_outsource JC has no final QC op to fall back on
@@ -3726,6 +3897,7 @@ applies before crediting on internal QC — same rule, now enforced on both path
   exposure on mid-route ops, where nothing was ever in store to debit.
 
 ### Consequences
+
 - Positive: the double-credit is closed before it ever fires; last-op behaviour is
   untouched, so no existing ledger row changes meaning and no data repair is needed.
 - Positive: the "credit once, at JC close" rule is now enforced identically whether
@@ -3737,10 +3909,12 @@ applies before crediting on internal QC — same rule, now enforced on both path
   zero stock), the label's intended meaning is unresolved — see TASKS.md.
 
 ## ADR-093: Store/Inventory gains an "At Vendor" column
+
 **Date:** 2026-08-03
 **Status:** Accepted
 
 ### Context
+
 ADR-067 made OSP send stock-neutral and put "material at the vendor" in
 `v_osp_wip`, not the ledger. That is correct accounting, but the Store screen
 (`store-inventory/service.ts`) only ever selected in_stock / min_qty / on_po_qty /
@@ -3759,6 +3933,7 @@ a job-work PO (IN-PO-00008, 5 pcs). Left as-is for now; the At-Vendor column giv
 the missing signal without changing an existing number's definition.
 
 ### Decision
+
 Add `atVendorQty` to `storeInventoryRowSchema` and a matching `at_vendor` CTE
 (`SUM(v_osp_wip.at_vendor_qty)` grouped by item, company-scoped) to the Store
 rollup query, surfaced as an "At Vendor" column between On PO and Mfg Pending,
@@ -3769,12 +3944,14 @@ Verified against live data: the one item with material out now reads
 `in stock 5 · at vendor 5 · on PO 15`.
 
 ### Alternatives Considered
-- Net at-vendor *into* in_stock — rejected: in_stock must stay the shelf count and
+
+- Net at-vendor _into_ in_stock — rejected: in_stock must stay the shelf count and
   the ledger's balance; conflating them re-creates the ambiguity ADR-067 removed.
 - Split `on_po_qty` into purchase vs job-work in the same change — deferred: it
   redefines an existing displayed number, so it wants its own decision.
 
 ### Consequences
+
 - Positive: the storekeeper can see that 5 pcs are out at a vendor and will return.
 - Negative: one more CTE per Store list query; `v_osp_wip` is document-derived, so
   the cost scales with jc_ops rather than items.
@@ -3782,10 +3959,12 @@ Verified against live data: the one item with material out now reads
   totalStockPieces tile (left untouched deliberately).
 
 ## ADR-094: "From Stock" removed — full-outsource material is always purchased
+
 **Date:** 2026-08-03
 **Status:** Accepted (supersedes the choice introduced in ADR-091)
 
 ### Context
+
 The Material Source picker on a full-outsource plan offered "From Stock" and
 "Purchase New". ADR-091 fixed the backend so only "Purchase New" raised a
 material PR — correct as far as it went, but it left "From Stock" meaning
@@ -3802,6 +3981,7 @@ Live data agreed: all 8 full_outsource plans carried 'From Stock', and not one o
 them ever produced a store issue — because there was never anything to issue.
 
 ### Decision
+
 Remove the option. Material source is fixed at `FO_MATERIAL_SRC = 'Purchase New'`,
 exported from `packages/shared/src/schemas/plan.ts` so both UIs and any future
 caller share one literal.
@@ -3819,6 +3999,7 @@ caller share one literal.
   so the guard is a legacy shim, not a live branch.
 
 ### Alternatives Considered
+
 - Leave a one-option `<select>` — rejected: a dropdown with a single choice reads
   as broken and invites re-adding the retired value.
 - Delete `fo_material_src` from the schema — rejected: 8 prod rows carry it and the
@@ -3827,6 +4008,7 @@ caller share one literal.
   it would change behaviour for un-executed legacy 'From Stock' rows.
 
 ### Consequences
+
 - Positive: the option that could leave a vendor with no material is gone; every
   new full-outsource plan raises a material PR on execute.
 - Positive: one shared constant replaces two hand-typed string literals across
@@ -3838,10 +4020,12 @@ caller share one literal.
   option. Not modelled; today it is indistinguishable from 'Purchase New'.
 
 ## ADR-095: Full outsource raises ONE PR — no material PR at all
+
 **Date:** 2026-08-03
 **Status:** Accepted (supersedes ADR-091 and ADR-094)
 
 ### Context
+
 ADR-094 removed the "From Stock" option and made every full-outsource plan
 'Purchase New', so every plan raised a material PR alongside the JW PR. Testing
 PLN-0019 (LOCKING LEVER, 30) exposed why that is wrong.
@@ -3851,9 +4035,9 @@ full-outsource JC has exactly one op — the outsource op, which is therefore th
 JC's LAST op. So the ADR-092 guard does not fire and the vendor's return credits
 stock. Buying material as well would credit the same 30 pieces twice:
 
-  material GRN  +30  →  30
-  DC to vendor    0  →  30   (stock-neutral, ADR-067)
-  vendor return +30  →  60   ← 60 booked for 30 physical pieces
+material GRN +30 → 30
+DC to vendor 0 → 30 (stock-neutral, ADR-067)
+vendor return +30 → 60 ← 60 booked for 30 physical pieces
 
 The missing leg is a debit when the material ships out, which ADR-067 removed
 after SO-517. Rather than reintroduce a conditional debit, the user's answer was
@@ -3862,6 +4046,7 @@ material pr. single jwpr we are ok with it."** On a full-outsource job the vendo
 supplies his own material; Innovic buys the finished part, not the raw stock.
 
 ### Decision
+
 `executeFullOutsource` raises exactly one PR — the JW PR for the vendor's work.
 The material-PR block is deleted outright, not gated behind a value test, so no
 legacy `fo_material_src` value can resurrect it. `fo_mat_pr_id` is written NULL
@@ -3882,6 +4067,7 @@ Net stock effect is now correct with no further change: nothing is bought, the
 vendor's return is the single credit, +30 for 30 pieces.
 
 ### Alternatives Considered
+
 - Debit stock on the outward DC when material was purchased for that JC
   ("Option 1", offered to the user) — rejected: reintroduces the debit ADR-067
   removed after SO-517, needs a plan → material PR → PO → GRN trace to stay safe,
@@ -3891,6 +4077,7 @@ vendor's return is the single credit, +30 for 30 pieces.
   would never reach store at all.
 
 ### Consequences
+
 - Positive: one PR, one PO, one DC, one GRN. The double-credit cannot occur
   because there is no second receipt.
 - Positive: ADR-092's mid-route guard is untouched and still needed — it covers
@@ -3902,10 +4089,12 @@ vendor's return is the single credit, +30 for 30 pieces.
   under ADR-094 before this change and should be cancelled by hand.
 
 ## ADR-096: Client-material gate — first op of a JWSO Job Card is capped at Party-GRN received qty
+
 **Date:** 2026-08-04
 **Status:** Accepted
 
 ### Context
+
 In job-work (JWSO), the client supplies the raw material, recorded via a Party
 Material GRN. Audit found NO gate: `startOp`/`submitOpLog` only checked
 `v_jc_op_status.available` (derived from `jc.order_qty`), never material
@@ -3916,7 +4105,9 @@ actually received for that part, rising automatically as more material arrives
 (order 50, received 30 → only 30 workable; +20 received → remaining 20 unlock).
 
 ### Decision
+
 Enforce a client-material cap in the op-entry service guards:
+
 - New helper `loadMaterialCap(tx, op, companyId)` in `op-entry/service.ts`.
 - Applies ONLY to the FIRST op (lowest non-deleted `op_seq`) of a JWSO-sourced
   Job Card (`job_cards.source_jw_line_id IS NOT NULL`). Later ops need no check
@@ -3934,6 +4125,7 @@ Enforce a client-material cap in the op-entry service guards:
   existing Party-GRN data.
 
 ### Alternatives Considered
+
 - Add a real FK `party_grn_lines.jw_line_id` + per-line expected qty + a
   "client supplies material" flag — rejected FOR NOW: needs a migration,
   backfill, and a Party-GRN form change; higher risk, can't be applied/tested
@@ -3944,6 +4136,7 @@ Enforce a client-material cap in the op-entry service guards:
   explicitly wants partial progress up to the received qty.
 
 ### Consequences
+
 - Positive: closes the biggest control gap — no JWSO production without recorded
   client material; partial-material flow works; limit self-updates on each GRN.
 - Negative / behavior change: any in-flight JWSO Job Card with no recorded Party
@@ -3956,16 +4149,20 @@ Enforce a client-material cap in the op-entry service guards:
   per-line matching independent of the free-text line number.
 
 ## ADR-097: Client-material gate extended to ALL first-op doors (QC + outsource)
+
 **Date:** 2026-08-04
 **Status:** Accepted (extends ADR-096)
 
 ### Context
+
 ADR-096 gated only the machining doors (`startOp` + `submitOpLog`). Operator
 requirement clarified: the restriction must apply to the FIRST op of a JWSO Job
 Card WHATEVER its type — no client material → no action at all.
 
 ### Decision
+
 `loadMaterialCap` is now exported and reused across the three first-op doors:
+
 - **Machining** (`op-entry/service.ts` `startOp`, `submitOpLog`) — ADR-096.
 - **QC / inspection** (`op-entry/service.ts` `submitQcLog`) — cap the inspected
   qty (`qty + rejectQty`) at material received when the QC op is the first op.
@@ -3978,6 +4175,7 @@ Rule everywhere: first op of a JWSO Job Card, capped at Party-GRN received qty,
 zero received → fully locked, limit rises automatically on each new GRN.
 
 ### Consequences
+
 - Positive: the gate now holds regardless of routing shape (machining-first,
   QC-first incoming inspection, or full-outsource send-first).
 - Not covered: the alternate `jw-dc` outward path is op-unaware (does not touch
@@ -3987,10 +4185,12 @@ zero received → fully locked, limit rises automatically on each new GRN.
   (op-entry deps do not import delivery-challans).
 
 ## ADR-098: Phase-A guard rails — over-plan/over-ship caps, on-hand floors, concurrency locks
+
 **Date:** 2026-08-04
 **Status:** Accepted
 
 ### Context
+
 Verification audit confirmed several qty-conservation holes were still live:
 over-planning and over-dispatch had no server cap; customer-dispatch and the
 jw-dc outward path could drive on-hand negative; concurrent op logs / dispatches
@@ -3998,7 +4198,9 @@ could both pass a read-then-write check and over-commit. These are the quick,
 no-migration "Phase A" guard rails.
 
 ### Decision
+
 Pure-code guards (no schema change):
+
 - **Over-plan cap** (`plans/service.ts`): new `assertPlanQtyWithinRemaining`,
   called in `createPlan` + `updatePlan`. Reads authoritative `order_qty` from
   the SO/JW line and sums non-cancelled sibling plans; rejects planQty beyond
@@ -4015,11 +4217,13 @@ Pure-code guards (no schema change):
   lines in `createDispatch` before the availability read (double-dispatch race).
 
 ### Deferred (not in Phase A)
+
 - The store_transactions insert RLS-role fix (#6 second half) needs a DB
   migration and the audit found the policy may not be enforced at runtime
   (pooled connection role). Moved to Phase D with the other migrations.
 
 ### Consequences
+
 - Positive: closes over-plan, over-ship, negative-stock (dispatch + jw_out), and
   the two read-then-write races — all without a migration.
 - Verified: `pnpm --filter api typecheck` + `lint` clean. Not run against the
@@ -4028,10 +4232,12 @@ Pure-code guards (no schema change):
   order qty — a behavior change for any caller that relied on the old freedom.
 
 ## ADR-099: Qty-aware SO/JW line close — don't close until fully produced (Phase B #1a/#9)
+
 **Date:** 2026-08-04
 **Status:** Accepted
 
 ### Context
+
 `tryCascadeJcComplete` closed a SO/JW line the instant ANY of its Job Cards
 reached `complete`, with no comparison to the line's order qty. A line of
 orderQty 100 served by a JC of 40 closed on that JC's completion, stranding the
@@ -4039,6 +4245,7 @@ orderQty 100 served by a JC of 40 closed on that JC's completion, stranding the
 from planning (could never be planned).
 
 ### Decision
+
 `op-entry/sales-cascade.ts`: new `producedForLine(tx, lineCol, lineId)` sums the
 FINAL-op effective output across all non-deleted JCs for the line (QC-accepted /
 Incoming-QC-accepted GRN qty for outsource / completed qty) — the SAME calc the
@@ -4048,6 +4255,7 @@ skip (`so_line_qty_incomplete` / `jw_line_qty_incomplete`) when produced <
 ordered, closing the line only once the whole qty is produced.
 
 ### Consequences
+
 - Positive: partial JCs no longer close a bigger line; the balance stays `open`
   and visible in planning. Fixes the stranded-balance bug.
 - Nuance: a complete JC on a not-yet-fully-produced multi-JC line no longer sets
@@ -4059,15 +4267,18 @@ ordered, closing the line only once the whole qty is produced.
 - Verified: `pnpm --filter api typecheck` + `lint` clean.
 
 ## ADR-100: Party GRN over-receipt block — cannot receive more than the line's order qty
+
 **Date:** 2026-08-04
 **Status:** Accepted
 
 ### Context
+
 Party Material GRN had no ceiling: cumulative received for a JW line could exceed
 the order qty (e.g. IN-JW-00002 line 1 ordered 100, received 60 then 100 = 160).
 Nothing stopped it.
 
 ### Decision
+
 `party-grn/service.ts createPartyGrn`: before inserting each line, sum existing
 received for that JW line (matched by `jw_line_no_text` = line_no, across all
 non-deleted GRNs for the order) plus earlier lines in the same receipt; reject
@@ -4076,16 +4287,19 @@ the remaining receivable qty. Lines with no line number are not attributable to
 a part and are not capped (data-quality gap, flagged).
 
 ### Consequences
+
 - Positive: hard stop on receiving more material than ordered, per part.
 - Existing over-received rows are NOT retroactively corrected (Party GRN has no
   edit/delete path); the block applies to new receipts only.
 - Verified: `pnpm --filter api typecheck` + `lint` clean.
 
 ## ADR-101: Cancelling a PR must release its JC op — dead paperwork commits nothing
+
 **Date:** 2026-08-04
 **Status:** Accepted
 
 ### Context
+
 Reported against SO-002 → PLN-0022 → IN-JWPR-00024 → IN-JC-26-00022. The user
 raised a full-outsource plan, decided the operation should be done in-house
 instead, **cancelled the PR**, then opened the JC to retype op 1 from
@@ -4098,15 +4312,15 @@ They had already done exactly that. The instruction was unsatisfiable.
 
 Root cause, confirmed against the live DB:
 
-* `rejectPurchaseRequest` (`purchase-requests/service.ts`) set
+- `rejectPurchaseRequest` (`purchase-requests/service.ts`) set
   `purchase_requests.status = 'cancelled'` and appended the reason to remarks.
   That is **all** it did.
-* The stamp the PR had written onto its source operation —
+- The stamp the PR had written onto its source operation —
   `jc_ops.outsource_pr_id` + `jc_ops.outsource_status = 'pr_raised'` — was left
   in place. A grep of the whole API found **no code path anywhere** that ever
   sets either column back to NULL (only a test fixture). The stamp was a
   one-way latch.
-* The JC-edit lock guard (`job-cards/service.ts`) computed `committed` from
+- The JC-edit lock guard (`job-cards/service.ts`) computed `committed` from
   those three columns alone:
   `outsourceStatus != null || outsourcePrId != null || outsourcePoLineId != null`.
   It never checked whether the PR behind the stamp was still alive.
@@ -4124,6 +4338,7 @@ in-house → OSP. There is no reverse action, so the JC-edit retype is the only
 OSP → in-house route — and it was the blocked one.
 
 ### Decision
+
 Dead paperwork commits nothing. Fixed on both sides:
 
 1. **Release on cancel** (`purchase-requests/service.ts`). A new
@@ -4149,6 +4364,7 @@ outsource_status IS NULL`). That is the intended next state: an op that is still
 `op_type = 'outsource'` with no live PR does need one.
 
 ### Alternatives Considered
+
 - **Guard fix only** — rejected: the four legacy rows would keep a stamp
   pointing at a cancelled PR, so the DB would keep lying about op state and the
   OSP register could show phantom rows.
@@ -4162,6 +4378,7 @@ outsource_status IS NULL`). That is the intended next state: an op that is still
   stay an explicit, logged act on the PR.
 
 ### Consequences
+
 - Positive: the error message is now satisfiable — cancel the PR, then retype
   or remove the op. This is the OSP → in-house route that was missing.
 - Positive: `jc_ops` outsource columns now mean what they say. An op carrying
@@ -4170,7 +4387,7 @@ outsource_status IS NULL`). That is the intended next state: an op that is still
 - Negative: after cancelling a PR, re-saving the JC with the op still typed
   `outsource` auto-raises a fresh PR. Correct, but it will surprise anyone who
   expected the op to stay bare.
-- Risk: an op whose real commitment lives *only* in a status past PO issue and
+- Risk: an op whose real commitment lives _only_ in a status past PO issue and
   nowhere else stays locked. Deliberate — `sent`/`received` means material is
   physically at a vendor.
 - **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
@@ -4178,29 +4395,35 @@ outsource_status IS NULL`). That is the intended next state: an op that is still
   treat the first CI run as their real verification.
 
 ## ADR-101: Direct Purchase disabled for JWSO plans (UI + server)
+
 **Date:** 2026-08-04
 **Status:** Accepted
 
 ### Context
+
 Direct Purchase = buy the finished item outright; meaningless for job-work,
 where the client owns the job and supplies material. The plan-edit modal still
 offered it for JWSO plans and there was no server guard.
 
 ### Decision
+
 - Web `edit-plan-modal.tsx`: hide the Direct Purchase tab when `plan.jwLineId`
   is set (`isJw`).
 - API `plans/service.ts`: `createPlan` + `updatePlan` reject
   `planType='direct_purchase'` when a `jwLineId` is present.
 
 ### Consequences
+
 - JWSO plans can only be Manufacture / Full Outsource (+ Assembly). SO plans
   keep all types. Verified: api+web typecheck + lint clean.
 
 ## ADR-102: Party GRN must name a real JWSO line, and the material must be that line's part
+
 **Date:** 2026-08-04
 **Status:** Accepted
 
 ### Context
+
 Audit of the live Party GRN data for IN-JW-00002 (client Arindam, CLI-009):
 
 ```
@@ -4226,7 +4449,7 @@ Three separate defects, one screen:
 
 Consequence beyond the party stock number: `op-entry/service.ts` caps a JWSO
 Job Card's first operation at the party-GRN received qty for that line
-(ADR-096/097), matching on the *same* `jw_line_no_text`. So line 1 could start
+(ADR-096/097), matching on the _same_ `jw_line_no_text`. So line 1 could start
 160 pieces on a 100-piece order, while line 2 believed it had 1 piece of client
 material that does not exist — and the real LEVER was not counted where it
 belonged.
@@ -4235,9 +4458,10 @@ The over-receipt on line 1 predates ADR-100: PGRN-00001/00002 were entered at
 14:19 and 14:37, the cap was written at 14:45.
 
 ### Decision
+
 1. **`jwLineNoText` is REQUIRED** (`packages/shared/src/schemas/party-grn.ts`,
    `.min(1)`), and `createPartyGrn` additionally verifies the number is a real
-   line on *that* JWSO — unknown line numbers are rejected by name, listing the
+   line on _that_ JWSO — unknown line numbers are rejected by name, listing the
    valid ones. This restores ADR-100's cap unconditionally rather than leaving
    it opt-in.
 2. **Part identity is enforced.** `party_materials.item_id` must equal
@@ -4254,9 +4478,10 @@ The over-receipt on line 1 predates ADR-100: PGRN-00001/00002 were entered at
 5. **UI matches the server.** The JWSO Line box is now a real `<select>` of that
    JWSO's lines; the material picker is filtered to the JWSO's client and
    disabled until a JWSO is chosen; the material's linked item code is shown
-   beside its name and a part mismatch is flagged in red *before* Save.
+   beside its name and a part mismatch is flagged in red _before_ Save.
 
 ### Alternatives Considered
+
 - **UI-only fix (dropdown, no server guard)** — rejected: the API is reachable
   directly, and the existing bad rows prove free text is not survivable.
 - **Warn instead of refuse on a part mismatch** — rejected: the mismatch
@@ -4267,6 +4492,7 @@ The over-receipt on line 1 predates ADR-100: PGRN-00001/00002 were entered at
 - **Renumbering the duplicate ADR-101** — not done; see Consequences.
 
 ### Consequences
+
 - Positive: the order-qty cap can no longer be bypassed by leaving a box blank.
 - Positive: wrong-part receipts are impossible, and existing mistakes are now
   reversible.
@@ -4289,10 +4515,12 @@ The over-receipt on line 1 predates ADR-100: PGRN-00001/00002 were entered at
   verification. `party-grn` had no test file at all before this change.
 
 ## ADR-103: JWSO production is gated on material ISSUED, not merely RECEIVED
+
 **Date:** 2026-08-05
 **Status:** Accepted
 
 ### Context
+
 ADR-096/097 capped the first op of a JWSO Job Card at the Party-GRN **received**
 qty for the part. Receiving was therefore sufficient to start work, which made
 the Party Material Issue document optional in practice. The live database held
@@ -4310,12 +4538,13 @@ Party stock never came down, because nothing forced the document that draws it
 down. A Party Material Register built on those numbers would publish stock the
 company does not hold.
 
-User's rule (2026-08-05): *"user can only start log after issuing qty — party
-material issued. in case of qty 0 no start log"*, with 1 piece received = 1
+User's rule (2026-08-05): _"user can only start log after issuing qty — party
+material issued. in case of qty 0 no start log"_, with 1 piece received = 1
 piece issued = 1 piece machinable, the customer always supplying material on a
 JWSO, and existing job cards left alone.
 
 ### Decision
+
 1. **The gate measures ISSUED to the job card.** `loadMaterialCap` returns the
    qty issued to THIS Job Card; `shortfall = orderQty − issued`. Zero issued
    blocks `startOp` outright, not just `submitOpLog` — an operator cannot even
@@ -4333,7 +4562,7 @@ JWSO, and existing job cards left alone.
    capping again double-counted the same restriction.
 4. **The issue document is tightened** (the ADR-102 treatment, applied here):
    - **Job Card is mandatory.** It is the ONLY link from an issue to a JWSO
-     *line* — the table has no `job_work_order_line_id` — and the gate is
+     _line_ — the table has no `job_work_order_line_id` — and the gate is
      per-line. While it was optional, a blank job card made the issue invisible
      to the gate: material issued, operator still blocked, no explanation.
    - **Client identity** — the material must belong to the JWSO's customer.
@@ -4356,6 +4585,7 @@ JWSO, and existing job cards left alone.
    not govern never shows a misleading zero.
 
 ### Alternatives Considered
+
 - **Auto-issue on op log** (my recommendation at the time) — the system writes
   the issue itself when work is logged. Rejected by the user in favour of an
   explicit document. Auto-issue assumes 1:1 silently and leaves no human record
@@ -4366,6 +4596,7 @@ JWSO, and existing job cards left alone.
   rejected: least typing, but the register would disagree with the paperwork.
 
 ### Consequences
+
 - Positive: party stock now moves when material actually leaves the store, so a
   client-wise Party Material Register can be built on numbers that mean
   something.
@@ -4386,10 +4617,12 @@ JWSO, and existing job cards left alone.
   prod DB. Verified by typecheck + lint only.
 
 ## ADR-104: Return + Invoice must offer CLOSED JWSOs — a finished job is exactly when they are due
+
 **Date:** 2026-08-05
 **Status:** Accepted
 
 ### Context
+
 Found by the end-to-end chain run (`flow-jwso-chain.spec.ts`). IN-JW-00004 was
 driven the whole way — material received, issued, machined, QC passed — and then
 stalled:
@@ -4414,6 +4647,7 @@ Neither service checked JWSO status. `createJwReturnChallan` bounds a return by
 status check at all. The block was purely the picker.
 
 ### Decision
+
 Drop the `status: 'open'` filter from the JWSO picker on **jw-returns** and
 **jw-invoices**. Both pickers are search-driven (the user types the JWSO number
 or customer), and the real limits already live in the service.
@@ -4423,6 +4657,7 @@ against a finished order is a genuine mistake worth blocking; returning and
 billing a finished order is the whole point of finishing it.
 
 ### Alternatives Considered
+
 - **Show only closed JWSOs with unreturned/unbilled qty** — better filtering,
   but it needs a rollup the list endpoint does not expose today, and it would
   still hide a legitimately re-opened order. The qty guards already refuse an
@@ -4433,6 +4668,7 @@ billing a finished order is the whole point of finishing it.
   never reach the form.
 
 ### Consequences
+
 - Positive: a finished JWSO can be returned and invoiced. IN-JW-00004 is
   reachable again.
 - Negative: the picker now lists closed JWSOs too, so an old fully-returned
@@ -4444,10 +4680,12 @@ billing a finished order is the whole point of finishing it.
   blockage explicitly rather than failing silently.
 
 ## ADR-105: A JWSO Job Card's final QC must NOT credit own stock
+
 **Date:** 2026-08-05
 **Status:** Accepted
 
 ### Context
+
 Found by the end-to-end chain run. Driving IN-JW-00004 through to QC produced
 this ledger row:
 
@@ -4461,10 +4699,10 @@ Those ten pieces are **the customer's**. Arindam supplied the material
 
 The full picture, confirmed in code:
 
-* `party-material-issues/service.ts` correctly writes **no** own-stock ledger
+- `party-material-issues/service.ts` correctly writes **no** own-stock ledger
   row — its own header comment says so.
-* `jw-returns/service.ts` writes **no** ledger row when the goods ship back.
-* `op-entry/qc-stock-cascade.ts` credited own stock on the last QC op with **no
+- `jw-returns/service.ts` writes **no** ledger row when the goods ship back.
+- `op-entry/qc-stock-cascade.ts` credited own stock on the last QC op with **no
   exclusion for JWSO-sourced Job Cards**.
 
 So the credit went in and nothing ever took it out. Every customer-material job
@@ -4472,10 +4710,11 @@ overstated inventory by its full quantity, permanently. This is the same
 no-BOM failure mode as ADR-067 and ADR-092: raw and finished share one item
 code, so the customer's part is indistinguishable from ours.
 
-User's instruction, 2026-08-05: *"customer goods credited to your own stock —
-do not do that."*
+User's instruction, 2026-08-05: _"customer goods credited to your own stock —
+do not do that."_
 
 ### Decision
+
 `tryApplyQcStockCascade` returns `{ fired: false }` when the Job Card has a
 `source_jw_line_id`. The JC's source link is already loaded for `itemId`, so
 this is one extra column and one guard — no new query.
@@ -4485,6 +4724,7 @@ The test asserts the distinction with two Job Cards identical in every respect
 explain the different outcome.
 
 ### Alternatives Considered
+
 - **Credit at QC, then debit on the return challan** — rejected: it would book
   the customer's goods as ours for the window between machining and dispatch,
   where they would appear available to sell or issue. They are never ours.
@@ -4496,6 +4736,7 @@ explain the different outcome.
   the first option, plus it leaves two wrong numbers instead of none.
 
 ### Consequences
+
 - Positive: own-stock figures stop drifting upward on every job-work order.
 - Positive: the party-material side is now the single place customer material
   is tracked, which is what it was designed for.
@@ -4514,15 +4755,17 @@ explain the different outcome.
   prod DB. Verified by typecheck + lint only.
 
 ## ADR-106: JWSO stock mirrors SO — final QC credits, JW Return Challan debits
+
 **Date:** 2026-08-06
 **Status:** Accepted — **supersedes ADR-105**
 
 ### Context
+
 ADR-105 (one day old) stopped a JWSO Job Card's final QC from crediting own
 stock, on the reasoning that the finished parts belong to the customer.
 
-The user rejected that framing: *"i want jwso job card. final qc accept qty.
-credits my own stock. as so jc is already doing."*
+The user rejected that framing: _"i want jwso job card. final qc accept qty.
+credits my own stock. as so jc is already doing."_
 
 They are right, and ADR-105 diagnosed the wrong half. The machined parts **are**
 physically in the store between QC passing and the lorry leaving — the ledger
@@ -4539,6 +4782,7 @@ JWSO : qc_accept (in)  →  (nothing)           ← the hole
 ```
 
 ### Decision
+
 Make the job-work side symmetric with the sales side.
 
 1. **Revert the ADR-105 guard.** `tryApplyQcStockCascade` credits stock for a
@@ -4549,9 +4793,9 @@ Make the job-work side symmetric with the sales side.
    `out` on create, compensating `in` on cancel. It deliberately mirrors
    `moveDispatchStock` in `customer-dispatches/service.ts`, including the
    **on-hand floor** — a return is refused when the ledger says the parts are
-   not there yet: *"Insufficient stock to return: on-hand 0, requested 10.
+   not there yet: _"Insufficient stock to return: on-hand 0, requested 10.
    Complete machining + final QC so the parts are booked in before returning
-   them."* That is the SO-517 class of bug, and job work is just as exposed.
+   them."_ That is the SO-517 class of bug, and job work is just as exposed.
 3. **New source type `jw_return`** (migration 0084, applied). NOT `jw_out` —
    that is the historical OSP-send debit retired by ADR-067, and reusing it
    would make the ledger unreadable.
@@ -4559,6 +4803,7 @@ Make the job-work side symmetric with the sales side.
    ledger keeps the whole history. Same as a cancelled customer dispatch.
 
 ### Alternatives Considered
+
 - **Keep ADR-105 (no credit, no debit)** — rejected by the user. It also leaves
   a real gap: finished goods sitting in the building appear nowhere in stock,
   so nobody can see them.
@@ -4568,6 +4813,7 @@ Make the job-work side symmetric with the sales side.
   come.
 
 ### Consequences
+
 - Positive: own stock now reflects reality on both sides. Job-work goods appear
   when machined and disappear when returned.
 - Positive: the on-hand floor means a return challan can no longer be raised for
@@ -4579,7 +4825,7 @@ Make the job-work side symmetric with the sales side.
 - **ADR-105's data note still stands and is now WORSE-shaped than described
   there.** Two `qc_accept` rows on JWSO Job Cards total 60 pieces
   (`IN-JC-26-00024 Op #3` +50 of 559918174000; `IN-JC-26-00026 Op #2` +10 of
-  554117146000). Under ADR-106 those credits are *correct* — what is missing is
+  554117146000). Under ADR-106 those credits are _correct_ — what is missing is
   the matching `jw_return` debit for anything already sent back. IN-JW-00002's
   two return challans (10 + 40 = 50 of LEVER) also predate this change and
   posted no debit. Netting the ledger against physical reality is still a data
@@ -4588,10 +4834,12 @@ Make the job-work side symmetric with the sales side.
   Verified by typecheck + lint; migration 0084 applied and the enum verified.
 
 ## ADR-107: A BOM child plan is capped by its own requirement, not the parent line's
+
 **Date:** 2026-08-06
 **Status:** Accepted
 
 ### Context
+
 Found by the BOM → equipment-SO e2e run. `BOM-0001` (one child, `554117144000`
 COVER, **2 per set**) on `IN-SO-00007` (**3** assemblies). The BOM planning modal
 correctly computed a need of **6** covers, offered it, and the server rejected
@@ -4617,6 +4865,7 @@ the single case where assemblies and parts happen to be the same number, which
 is why this survived.
 
 ### Decision
+
 When a plan carries `bom_master_id` **and** `bom_child_code` on an SO line, cap
 it against its own requirement instead:
 
@@ -4637,6 +4886,7 @@ The refusal message now names the part and shows the arithmetic:
 `… for BOM part 554117144000 (needs 6 = 2 per set x 3 ordered, already planned 0)`.
 
 ### Alternatives Considered
+
 - **Skip the guard entirely for BOM plans** — rejected: it would allow planning
   1000 covers against a 3-assembly order, with nothing to catch it.
 - **Cap at the parent line qty × the largest qty_per_set on the BOM** — rejected:
@@ -4647,6 +4897,7 @@ The refusal message now names the part and shows the arithmetic:
   reachable directly.
 
 ### Consequences
+
 - Positive: multi-child BOMs and qty-per-set > 1 are plannable, which is most
   real BOMs. Only the degenerate 1-child-1-per-set case worked before.
 - Positive: over-planning a child is still refused, now against the correct
@@ -4668,7 +4919,7 @@ The refusal message now names the part and shows the arithmetic:
 ### Context
 
 `bom_masters` held a name, a status and a list of child parts — and nothing
-that said *what those parts add up to*. The parent was implied by whichever
+that said _what those parts add up to_. The parent was implied by whichever
 sales-order line happened to carry `source_bom_master_id`, which means:
 
 - Reading a BOM on its own told you nothing about what it builds.
@@ -4676,8 +4927,8 @@ sales-order line happened to carry `source_bom_master_id`, which means:
   "correct", because no rule tied a BOM to one product.
 - It is the root of the open gap noted after the assembly e2e run: an
   equipment SO can be planned and produced, but never dispatched or invoiced,
-  because producing the BOM children credits stock for the *children* and
-  nothing ever credits the *parent*. Nothing could credit the parent — the
+  because producing the BOM children credits stock for the _children_ and
+  nothing ever credits the _parent_. Nothing could credit the parent — the
   parent was never recorded.
 
 The user's instruction: "first add parent item, same as child item card, only
@@ -4702,7 +4953,7 @@ partial index for the "which BOM builds this item?" lookup.
 - **The form is the backfill.** Since update also requires a parent, each old
   BOM gets one the first time anybody edits it. Once
   `SELECT bom_no FROM bom_masters WHERE parent_item_id IS NULL AND deleted_at
-  IS NULL` returns zero rows, the column can be tightened to NOT NULL.
+IS NULL` returns zero rows, the column can be tightened to NOT NULL.
 
 **UI:** the parent sits at the top of the Part List panel in a card with the
 same grid tracks as a child row (index / code picker / auto-filled name), so it
@@ -4736,7 +4987,7 @@ already has parts, and hiding them would read as "my BOM lost its parts").
   (`Parent OLD → NEW · …`) instead of changing silently.
 - Negative: the six existing BOMs cannot be edited until a parent is chosen.
   That is the intended cutover, but it will surprise whoever hits it first.
-- Risk: nothing yet *uses* `parent_item_id` in planning or dispatch. It records
+- Risk: nothing yet _uses_ `parent_item_id` in planning or dispatch. It records
   the fact; the assembly step that acts on it is still an open design decision.
 - **Tests UNRUN.** `apps/api/test/global-setup.ts` deletes from the live DB
   (`DELETE FROM public.items WHERE code LIKE 'T%-%'`) and no separate test
@@ -4751,9 +5002,9 @@ already has parts, and hiding them would read as "my BOM lost its parts").
 
 ### Context
 
-This closes the gap ADR-108 named: *"an equipment SO can be planned and
+This closes the gap ADR-108 named: _"an equipment SO can be planned and
 produced, but never dispatched or invoiced, because producing the BOM children
-credits stock for the children and nothing ever credits the parent."*
+credits stock for the children and nothing ever credits the parent."_
 
 The user's scenario, verbatim in shape: parent PEN = 1 x ITEM-1 + 1 x ITEM-2.
 SO for 10 pens. ITEM-1 runs CNC-1 -> CNC-2 -> QC and credits stock on final QC.
@@ -4772,8 +5023,8 @@ spawns every child JC / PR with `source_so_line_id` = **the parent SO line**.
 2. **The stock leg pointed at the phantom.** `createDispatch` moved stock for
    `sales_order_lines.item_id` — the parent. Nothing ever credits the parent
    (the QC cascade credits `job_cards.item_id`, i.e. the child), so the on-hand
-   floor saw 0 and the dispatch either hard-failed with *"Insufficient stock to
-   dispatch: on-hand 0"* or, when the parent was free text, **silently moved
+   floor saw 0 and the dispatch either hard-failed with _"Insufficient stock to
+   dispatch: on-hand 0"_ or, when the parent was free text, **silently moved
    nothing** — leaving component stock permanently overstated.
 
 ### Decision
@@ -4803,7 +5054,7 @@ therefore cannot leave the ledger unbalanced.
 - **Derive readiness from component stock** (what `assembly/service.ts` does for
   Equipment SOs) — rejected for dispatch: stock is company-wide and unreserved,
   so a component consumed by another SO would still read as ready here.
-  Production output on *this* SO line is the honest number, and
+  Production output on _this_ SO line is the honest number, and
   `moveDispatchStock`'s existing on-hand floor remains the ledger-side guard.
   This is the established split — see the SO-517 comment in that function.
 - **Credit the parent on assembly** (an assembly JC consuming children,
@@ -4844,8 +5095,8 @@ then found BOM support was not broken there — it was **absent at every layer**
 no column on `job_work_order_lines`, no field on the create form, no cascade,
 no readiness branch, no "where used" reporting, and no trace of it in the
 legacy HTML either. `so-planning/service.ts` even documents the assumption in
-a comment: *"JW lines carry no BOM master, so the Equipment and assembly-BOM
-branches are always off here."*
+a comment: _"JW lines carry no BOM master, so the Equipment and assembly-BOM
+branches are always off here."_
 
 That is defensible for classic job work — the client sends raw material, you
 machine it, you send it back. It is wrong for **assembly** job work, which the
@@ -4868,8 +5119,8 @@ same three-part treatment ADR-109 gave sales orders:
    the BOM, so a BOM edited in between cannot unbalance it.
 
 **Component types are gated by CONTEXT** (the user's rule, 2026-08-07:
-*"jwso bom type - purchase disable. jwso fulloutsource, manf valid. in case of
-invalid type show friendly err. block for that type."*):
+_"jwso bom type - purchase disable. jwso fulloutsource, manf valid. in case of
+invalid type show friendly err. block for that type."_):
 
 - `manufacture` — allowed, spawns a child JC.
 - `outsource` — allowed, spawns a child JC **carrying an OUTSOURCE op**.
@@ -4885,7 +5136,7 @@ invalid type show friendly err. block for that type."*):
   readiness work with no new code because an outsource final op is already
   scored from its GRN.
 - **A CHECK constraint for the purchase rule** — rejected. The BOM is not
-  invalid; it is invalid *here*. The same BOM is legitimate on a sales order,
+  invalid; it is invalid _here_. The same BOM is legitimate on a sales order,
   where buying the material is the whole point. A DB constraint would have to
   live on the BOM and would break sales.
 - **Silently ignoring purchase components on a JW BOM** — rejected outright.
@@ -4937,11 +5188,11 @@ correctly did not list it.
 Three screens each did their own arithmetic and produced three answers for that
 one op:
 
-| Screen | Formula | Op2 |
-| --- | --- | --- |
-| JC detail card (`jc-op-card.tsx:138`) | `inputAvail − qcAccepted` | **5** |
-| Op Entry table (`jc-ops-table.tsx:82`) | `available` | **50** |
-| QC dashboards | `v_jc_op_status.qc_pending` | **0** ← correct |
+| Screen                                 | Formula                     | Op2             |
+| -------------------------------------- | --------------------------- | --------------- |
+| JC detail card (`jc-op-card.tsx:138`)  | `inputAvail − qcAccepted`   | **5**           |
+| Op Entry table (`jc-ops-table.tsx:82`) | `available`                 | **50**          |
+| QC dashboards                          | `v_jc_op_status.qc_pending` | **0** ← correct |
 
 The JC card subtracted what QC **accepted** but never what it **rejected**, so
 every rejected piece stayed on that screen as "still to inspect" forever —
@@ -4973,7 +5224,7 @@ three screens cannot drift apart again.
 - **Fix the formula in `jc-op-card.tsx`** (subtract `qcRejectedQty` too) —
   rejected. It repairs one screen and leaves the Op Entry table printing 50,
   and it keeps a business calculation in a React component, which CLAUDE.md
-  §6 rule 1 forbids. The bug existed *because* the number had three definitions.
+  §6 rule 1 forbids. The bug existed _because_ the number had three definitions.
 - **Have the card read `qcPending` for QC ops and `available` otherwise** —
   rejected. Correct output, but the op-type switch is itself the business rule
   and would then have to be duplicated into every screen that grows a Pending
@@ -5277,10 +5528,10 @@ ledger and the shop floor diverged by one BOM per unit, permanently.
 Live evidence, `IN-SO-00016` "Rotator" — 5 units assembled, each needing 1 PAWL
 and 1 SUPPORT:
 
-| Component | ledger IN | ledger OUT | balance | actually consumed |
-| --- | --- | --- | --- | --- |
-| PAWL `554117210000` | 10 (one GRN) | **none** | 10 | 5 |
-| SUPPORT `559904000000` | 4 (one JC) | **none** | 4 | 5 |
+| Component              | ledger IN    | ledger OUT | balance | actually consumed |
+| ---------------------- | ------------ | ---------- | ------- | ----------------- |
+| PAWL `554117210000`    | 10 (one GRN) | **none**   | 10      | 5                 |
+| SUPPORT `559904000000` | 4 (one JC)   | **none**   | 4       | 5                 |
 
 Five of each sit inside finished machines while both still read as free stock,
 so the tracker kept offering to build five more Rotators out of parts that no
@@ -5325,7 +5576,7 @@ tracker reads. Can Assemble now genuinely falls as units are built.
   assembled for weeks. It also would not have helped here, because the
   tracker's Dispatch button never creates a Customer Dispatch document.
 - **Block assembly when a component is short** (what legacy does, HTML L28901)
-  — rejected *for now*. The live data already carries a component at −1, so
+  — rejected _for now_. The live data already carries a component at −1, so
   gating would stop the floor assembling on day one. The debit is honest either
   way: on-hand goes negative and says so. Gate once the shelf has been counted.
 - **Reserve stock at planning time** — rejected as a much larger change. Named
@@ -5399,8 +5650,8 @@ together under one auto-generated serial (`<SO code>-U<n>`).
   satisfies "one serial" but leaves N rows, which the user explicitly did not
   want; and it needs no schema change but complicates Undo (five undos for one
   batch).
-- **No stock cap, keep ADR-115's "assembly never gates"** — rejected *for this
-  action only*. The user asked for the cap on the batch qty specifically; the
+- **No stock cap, keep ADR-115's "assembly never gates"** — rejected _for this
+  action only_. The user asked for the cap on the batch qty specifically; the
   per-component ledger can still go negative through other paths, but the batch
   button will not knowingly over-build past Can Assemble.
 
@@ -5428,7 +5679,7 @@ Traced from the user's OSP case on IN-JC-26-00093 / IN-JWPR-00052 / PLN-0072:
 passed 4 and rejected 1, and the 1 was dispositioned `return_to_vendor`.
 
 `nc-register/cascades.ts` closed the NC and stopped — its module header said so
-outright: *"return_to_vendor → status=closed; no other cascade."* Verified
+outright: _"return_to_vendor → status=closed; no other cascade."_ Verified
 against live data, the consequences were:
 
 - **The piece vanished.** Not in stock (only the 4 accepted were credited, one
@@ -5499,10 +5750,12 @@ no backfill, self-healing.
   only `return_to_vendor` NC in the entire database, so there was no backfill.
 
 ## ADR-118: Customer Dispatch restyled to SO Master — cards + frozen header + SO-form line table
+
 **Date:** 2026-08-13
 **Status:** Accepted
 
 ### Context
+
 `customer-dispatches` was the last Entry screen still on the pre-SO-Master
 layout. Two concrete defects, both the ones the SO card port exists to fix:
 
@@ -5512,7 +5765,7 @@ layout. Two concrete defects, both the ones the SO card port exists to fix:
    `max-width` and no ellipsis, so the table grew with the content and scrolled
    sideways. `tbl-frozen` was not applied, so Dispatch No. slid out of view on
    that scroll. The expanded line table was nested in a `<td colSpan={10}>`
-   *without* its own wrapper, so its 8 nowrap columns pushed the parent table
+   _without_ its own wrapper, so its 8 nowrap columns pushed the parent table
    wider still. Title, filters and KPI tiles were plain flow content and
    scrolled away; only the `<th>` band was pinned (z-index 5, from the theme).
    `.tbl-wrap`'s `max-height: calc(100vh - 220px)` also nested a second vertical
@@ -5527,18 +5780,19 @@ layout. Two concrete defects, both the ones the SO card port exists to fix:
    were `fontSize: 9` — below `--fs-mono`, the smallest token in the scale.
 
 ### Decision
+
 Restyle both pages to SO Master. **Presentation only — no data, validation,
 payload, query, mutation or calculation changed.**
 
 - **List:** frozen header band (`position:sticky, top:0, zIndex:20,
-  background:var(--bg), borderBottom`) carrying title + count line + SO filter +
+background:var(--bg), borderBottom`) carrying title + count line + SO filter +
   search + Export + Print + Expand all + New. Dispatch Log becomes one `.panel`
   card per dispatch: 4px accent bar (green dispatched / grey cancelled), Band 1
   identity + status badge + actions, Band 2 metric strip (`Total Qty`, `Lines`)
-  + mono meta line (date · SO · dispatched by · remarks), Band 3 the item lines.
-  KPI tiles and the Item-wise Summary panel are unchanged and left outside the
-  band so they scroll away. Loading / error / empty become the SO
-  `.panel.empty-state` chain instead of early returns.
+  - mono meta line (date · SO · dispatched by · remarks), Band 3 the item lines.
+    KPI tiles and the Item-wise Summary panel are unchanged and left outside the
+    band so they scroll away. Loading / error / empty become the SO
+    `.panel.empty-state` chain instead of early returns.
 - **Create:** SO-form page shell — top action bar with Back + title + crumb +
   Cancel/Save (SO deliberately has no sticky footer), `.form-grid-4` header with
   the SO picker on `.form-span-2`, and the line editor rebuilt as the SO line
@@ -5551,6 +5805,7 @@ payload, query, mutation or calculation changed.**
   rule (list was already at 415).
 
 ### Alternatives Considered
+
 - **Wrap the grid / table in `overflow-x: auto`** — rejected: it hides the
   overflow rather than removing it, and the standing UI rule is that a list wide
   enough to scroll sideways is the signal to switch to cards, not to add a
@@ -5566,6 +5821,7 @@ payload, query, mutation or calculation changed.**
   no-hard-coded-hex rule is explicit, so the border is `var(--red)` instead.
 
 ### Consequences
+
 - Positive: no horizontal scrollbar on either page; Dispatch No. is always
   visible; the module now reads as part of the same ERP as SO / JWSO / PO / JC.
   Every field that was on screen is still on screen.
@@ -5578,10 +5834,12 @@ payload, query, mutation or calculation changed.**
   for still need a real render.
 
 ## ADR-119: Service PO lines are bought against an Item Master item, not free text
+
 **Date:** 2026-08-13
 **Status:** Accepted
 
 ### Context
+
 The New Service PO line grid had one free-text `Description` column — the only
 "what are we buying" field in the app that was not an Item Master picker. Users
 were already typing bare item codes into it: all 4 live `service_po_lines` rows
@@ -5592,6 +5850,7 @@ The system-wide item rule (docs/CONVENTIONS.md "Item pickers") requires code →
 master-only picker, name → auto-filled and read-only.
 
 ### Decision
+
 Split the column in two: **Item Code** first (a master-only `<SearchableSelect>`,
 per the `dropdown` skill), then **Item Name**, auto-fetched from the picked item
 and rendered read-only. On the DB side `service_po_lines.description` is renamed
@@ -5602,6 +5861,7 @@ company. Reads resolve code + name **live** from a `leftJoin items`, with the
 stored snapshot as the fallback for pre-0094 rows.
 
 ### Alternatives Considered
+
 - **Keep `description` and add the item columns beside it** — rejected: two
   places would claim to say what the line is, and the grid would carry a stale
   third column no form writes.
@@ -5614,7 +5874,8 @@ stored snapshot as the fallback for pre-0094 rows.
   and they match `purchase_order_lines`.
 
 ### Consequences
-- Positive: SPO print now shows item code *and* name; an item rename shows on old
+
+- Positive: SPO print now shows item code _and_ name; an item rename shows on old
   Service POs; the code can no longer be mistyped.
 - Negative: a service that is not in the Item Master cannot be put on a Service PO
   until someone adds it there — this is a real workflow change for ad-hoc expenses
@@ -5623,10 +5884,12 @@ stored snapshot as the fallback for pre-0094 rows.
   together; the currently deployed API selects `description`.
 
 ## ADR-120: KPI counts are one single-row strip, and the PR list is SO-Master cards
+
 **Date:** 2026-08-13
 **Status:** Accepted
 
 ### Context
+
 Purchase Requests was the last list still carrying two shapes the rest of the app
 had moved off. (a) Its four status counts were four separate `.panel` cards in a
 flex row (`StatusCard`, list.tsx L572) — ~120px of height, centred text against a
@@ -5638,6 +5901,7 @@ the table ran past the viewport and the PR No. scrolled out of view — the same
 failure the SO/WO, JWSO and Dispatch lists were already fixed for (ADR-118).
 
 ### Decision
+
 1. **KPI counts = one strip, never cards.** New shared `<StatStrip>`
    (`components/shared/stat-strip.tsx`): one container, one row, each stat a real
    `<button>` with a left-aligned uppercase label over its coloured number,
@@ -5654,6 +5918,7 @@ failure the SO/WO, JWSO and Dispatch lists were already fixed for (ADR-118).
    before the change.
 
 ### Alternatives Considered
+
 - **Keep the cards, just shrink them** — rejected: the height is not the only
   problem; centred text and the selection ring are what make them read as tiles
   rather than a filter bar.
@@ -5667,6 +5932,7 @@ failure the SO/WO, JWSO and Dispatch lists were already fixed for (ADR-118).
   user rather than silently replaced.
 
 ### Consequences
+
 - Positive: no horizontal scroll; PR No. always visible; ~2× the counts' vertical
   space returned to the list; `<StatStrip>` means the next list reuses instead of
   hand-rolling.
@@ -5676,10 +5942,12 @@ failure the SO/WO, JWSO and Dispatch lists were already fixed for (ADR-118).
   lint pass, the side-by-side-with-SO-Master check still needs a real render.
 
 ## ADR-121: OSP Outward DC list — SO-Master cards, frozen band, and a read-only StatStrip
+
 **Date:** 2026-08-13
 **Status:** Accepted
 
 ### Context
+
 `delivery-challans/routes/list.tsx` was the last Purchase-group Entry screen on
 the pre-card layout, and at 479 lines it was already over the CLAUDE.md §12
 400-line rule. Four concrete defects:
@@ -5694,7 +5962,7 @@ the pre-card layout, and at 479 lines it was already over the CLAUDE.md §12
    `overflow-y: auto`. On this page ~300–340px of chrome (topbar, breadcrumbs,
    content padding, header row, KPI tiles, warning panel) sits above the wrap,
    so a wrap capped at `100vh - 220px` runs past the fold: the inner scroller
-   appears *and* `#content` scrolls. The sticky `<th>` then freezes against the
+   appears _and_ `#content` scrolls. The sticky `<th>` then freezes against the
    inner wrap rather than the viewport, so the header only pins after you have
    already scrolled the page to the bottom.
 3. **KPI tiles violated the `styling` skill Rule 3 / ADR-120** — three
@@ -5705,14 +5973,15 @@ the pre-card layout, and at 479 lines it was already over the CLAUDE.md §12
    first load and the list jumped ~116px when it arrived.
 
 ### Decision
+
 Restyle the list to SO Master. **Presentation only — no data, filters, query,
 pagination maths, print output or navigation changed.**
 
 - One `.panel` card per DC (`components/dc-card.tsx`): 4px accent bar (amber
   issued / green received / grey cancelled), Band 1 identity + vendor + PO chip
-  + status + `+ Receive`, Band 2 metric strip (`Sent`, `Lines`) + mono meta line
-  (date · SO · transport). Whole card opens the detail page; `+ Receive` and the
-  code link `stopPropagation`.
+  - status + `+ Receive`, Band 2 metric strip (`Sent`, `Lines`) + mono meta line
+    (date · SO · transport). Whole card opens the detail page; `+ Receive` and the
+    code link `stopPropagation`.
 - Frozen header band carrying title + count + search + status filter + Print
   Register + New DC, with `<StatStrip>` inside it per Rule 3.
 - `<StatStrip>` widened (`components/shared/stat-strip.tsx`): `count` accepts a
@@ -5724,6 +5993,7 @@ pagination maths, print output or navigation changed.**
 - Loading / error / empty become the SO `.panel.empty-state` chain.
 
 ### Alternatives Considered
+
 - **Add `tbl-frozen` + `max-width`/ellipsis on Vendor and SO** — the two
   cheapest fixes, and they do stop the DC No. disappearing. Rejected as the
   endpoint: the page still scrolls sideways, still nests two vertical
@@ -5740,6 +6010,7 @@ pagination maths, print output or navigation changed.**
   line.
 
 ### Consequences
+
 - Positive: no horizontal scroll, no nested scrollbar, DC No. always visible,
   `lineCount` now on screen (it was already fetched and already on the printed
   register), and the file drops 479 → 311 lines.
@@ -5752,17 +6023,19 @@ pagination maths, print output or navigation changed.**
   error boxes are untouched and still violate the no-hard-coded-hex rule.
 
 ## ADR-122: Party Material GRN — SO-Master cards, frozen band, StatStrip, and a 969-line file split
+
 **Date:** 2026-08-13
 **Status:** Accepted
 
 ### Context
+
 `party-grn/routes/list.tsx` was 969 lines — the list page, two hand-rolled
 modals, a line-row editor and a label helper in one file, more than twice the
 CLAUDE.md §12 400-line limit. Defects found:
 
 1. **Horizontal scroll.** 11 columns under `.innovic-table td`'s
    `white-space: nowrap`, with **four** unbounded free-text columns — Client,
-   Received By (which renders the user's *email*), Client PO and DC No. — none
+   Received By (which renders the user's _email_), Client PO and DC No. — none
    with a max-width. Only Remarks was defended with an ellipsis + `title`, so
    the file already contained the fix and simply had not applied it to the
    others. No `tbl-frozen`, so the GRN No. scrolled off with everything else.
@@ -5782,6 +6055,7 @@ CLAUDE.md §12 400-line limit. Defects found:
    `zIndex: 100` while the SO Master dialogs use 200.
 
 ### Decision
+
 Restyle and split. **Presentation only — no data, query, validation, payload or
 mutation behaviour changed. Every validation and confirm message string is
 verbatim, and the `dlPGrnMaterial` datalist id and `pgrn-jwso` picker id are
@@ -5802,6 +6076,7 @@ preserved because they are load-bearing.**
   (`idx % 2` → inline background) dropped; `.innovic-table` already does it.
 
 ### Alternatives Considered
+
 - **Make the card clickable to a detail page** (styling skill Rule 2) —
   impossible: `GET /party-grn/:id` exists on the API and `usePartyGrnDetail` is
   written, but **no detail route exists in the web app**, so there is nowhere to
@@ -5819,6 +6094,7 @@ preserved because they are load-bearing.**
   reference is not an improvement.
 
 ### Consequences
+
 - Positive: no horizontal scroll, no nested scrollbar, GRN No. always visible,
   search always reachable, modal usable on a narrow screen, line editor no
   longer clips. 969 lines → five files, largest 397.
@@ -5829,7 +6105,9 @@ preserved because they are load-bearing.**
   dependent queries), so a real render matters more here than it did there.
 
 ### Pre-existing defects found during the audit — reported, NOT fixed
+
 Recorded so they are not lost. None were introduced or touched by this change.
+
 1. **`total` ignores the search filter** (`service.ts` counts with company +
    not-deleted only, omitting the search predicate the items query applies), so
    "Showing 1–50 of N" and the Next button lie whenever the user searches.
@@ -5974,23 +6252,25 @@ import cycle. Parent 779 → 624.
   saved, so it needs its own task and user sign-off.
 
 ## ADR-125: The machine belongs on the qty, not on the operation
+
 **Date:** 2026-08-16
 **Status:** Accepted
 
 ### Context
-User request, traced on IN-JC-26-00093: *"half parts are machined, other half
+
+User request, traced on IN-JC-26-00093: _"half parts are machined, other half
 pending, I want to change machine — both the records must be maintained, qty
-wise machine used."*
+wise machine used."_
 
 That was impossible, and the reason was where the machine was stored:
 
-| Table | Machine | Qty |
-|---|---|---|
-| `jc_ops` | ONE `machine_id`, overwritable | none |
-| `op_log` | **no machine column at all** | `qty`, `reject_qty` |
-| `running_ops` | `machine_id` per session | **no qty** |
+| Table         | Machine                        | Qty                 |
+| ------------- | ------------------------------ | ------------------- |
+| `jc_ops`      | ONE `machine_id`, overwritable | none                |
+| `op_log`      | **no machine column at all**   | `qty`, `reject_qty` |
+| `running_ops` | `machine_id` per session       | **no qty**          |
 
-So every machine-wise number attributed qty through the operation's *current*
+So every machine-wise number attributed qty through the operation's _current_
 machine — `daily-report/service.ts:51`, `so-costing/service.ts:208`,
 `op-log-viewer/service.ts:72`. Change the machine and all past production
 silently re-attributed to the new one; the first machine's output vanished from
@@ -6001,8 +6281,8 @@ activity-log entry.
 but carries no qty, and no key joins an `op_log` row to the session that was
 open when it was written. The two cannot be correlated after the fact.
 
-Hence the lock at `jc-ops/service.ts:171-176` — *"only waiting/available
-allowed"* (ADR-083). **That lock was a bandage over the data model, not a
+Hence the lock at `jc-ops/service.ts:171-176` — _"only waiting/available
+allowed"_ (ADR-083). **That lock was a bandage over the data model, not a
 business rule**: it prevented corruption by preventing the operation entirely.
 `production-schedule/service.ts:273` was a hole in it, guarding only on
 `complete`, so an in-progress op could be silently reassigned there.
@@ -6010,11 +6290,12 @@ business rule**: it prevented corruption by preventing the operation entirely.
 Separately audited and found sound-but-misleading: Job Queue "Running" is
 `EXISTS(running_ops WHERE status='running')` (`job-queue/service.ts:76-79`), and
 `stopOp` (`op-entry/service.ts:961`) captures no qty. An op stopped after
-logging qty correctly reads `in_progress`; one stopped *without* logging drops to
+logging qty correctly reads `in_progress`; one stopped _without_ logging drops to
 `available` and looks untouched. That second path is a data-entry hazard, not a
 model defect, and is left as-is here.
 
 ### Decision
+
 Migration 0095. `op_log` gains `machine_id` + `machine_code_text`, stamped at log
 time from the OPEN running session (falling back to the op's machine), so each
 quantity permanently carries the machine that produced it. Backfilled from
@@ -6039,8 +6320,9 @@ against the old machine, then switch). `in_progress` is now allowed, because it
 no longer rewrites anything. Every swap emits an activity-log entry.
 
 ### Alternatives Considered
+
 - **A separate `jc_op_machine_history` table (from/to/changed_at).** Rejected:
-  it records the *routing decision* but still cannot answer "how many pieces did
+  it records the _routing decision_ but still cannot answer "how many pieces did
   CNC-01 make" — you would have to interval-join log dates against change
   timestamps and hope no two happened on the same day. The log rows already are
   the history once they carry a machine.
@@ -6054,10 +6336,11 @@ no longer rewrites anything. Every swap emits an activity-log entry.
   by the user's requirement — one JC, both records.
 
 ### Consequences
+
 - **Positive:** qty-wise machine history is permanent and self-evident; changing
   machines mid-job is a normal forward-looking action; the `production-schedule`
   hole is closed; machine output is finally queryable over a date range.
-- **Negative:** pre-0095 rows carry the *backfilled* machine, not an observed
+- **Negative:** pre-0095 rows carry the _backfilled_ machine, not an observed
   one. That is the best available truth, not a measurement — do not present it
   as if the machine were recorded at the time.
 - **Risk:** `so-costing` machine-time now has per-machine rates available; if it
@@ -6225,10 +6508,12 @@ only return a master row's id, and `purchase_requests_item_check`
   `po-vendor-field.tsx` 104 → 67.
 
 ## ADR-126: A machine label next to a qty must say WHICH of the two machines it means
+
 **Date:** 2026-08-16
 **Status:** Accepted
 
 ### Context
+
 ADR-125 moved the machine onto `op_log`, so the DATA is now right. Tracing
 IN-JC-26-00093 op 1 immediately afterwards showed the SCREENS are not. The JC
 Operations row read:
@@ -6258,13 +6543,14 @@ Two outright defects, not just labelling:
    rendered "on CNC-03". Verified: the old SQL returned `CNC-03` for all five
    log rows; the fixed SQL returns `CNC-01, CNC-01, CNC-01, CNC-02, CNC-01`.
 2. **The machine-change audit line** asserted the op TOTAL against the single
-   outgoing machine — *"10 pcs already completed stay recorded against CNC-02"*
+   outgoing machine — _"10 pcs already completed stay recorded against CNC-02"_
    when 5 were on CNC-01. Wrong from the second swap onward.
 3. And a machine change made through the **JC edit form** emitted no machine
    detail at all — only the generic `Updated <JC>` line — so one of the two
    swaps on JC-93 left no trace.
 
 ### Decision
+
 The display rule, applied everywhere:
 
 > Never print a machine beside a quantity without saying which meaning it
@@ -6276,6 +6562,7 @@ machine, so the common path is unchanged.
 
 Phase 1 (this ADR) fixes the three defects above and leaves the labelling work
 staged:
+
 - Completion feed joins `COALESCE(ol.machine_id, o.machine_id)`, mirroring the
   shape `daily-report/service.ts:57-58` already uses.
 - New `apps/api/src/lib/machine-split.ts` — `loadMachineSplit` reads
@@ -6286,6 +6573,7 @@ staged:
 - `updateJobCard` collects machine swaps and appends them to its activity line.
 
 ### Alternatives Considered
+
 - **Show the log's machine in the machine column instead.** Rejected: on the
   Job Queue and Machine Loading the column legitimately means "where the
   remaining work runs" — replacing it would break the forward-looking screens to
@@ -6297,6 +6585,7 @@ staged:
   second source would drift.
 
 ### Consequences
+
 - Positive: log-row screens now name the machine that did the work; the audit
   line survives repeated swaps; a swap made from the JC edit form is traceable.
 - Negative: the ranked labelling work (JC Operations board, op cards, Op Entry
@@ -6317,6 +6606,7 @@ filled by a `LEFT JOIN LATERAL … json_agg` over `v_op_machine_output` in
 the company.
 
 Render rule, implemented in `jc-ops/routes/list.tsx`:
+
 - `machines.length <= 1` → **byte-identical to before.** No marker, no
   breakdown. This is the overwhelmingly common case.
 - `machines.length > 1` → the Machine cell appends an amber `⚙N` chip (with the
@@ -6327,6 +6617,7 @@ The Change Machine modal used the same broken pairing (`row.completed` total
 next to `row.machineCode` singular) and now lists each machine's own qty.
 
 Verified against live data on IN-JC-26-00093:
+
 - op 1 → `machineCode CNC-03`, `completed 10`, `machines [CNC-01 5, CNC-02 5]` —
   the marker case. CNC-03 has produced nothing.
 - op 3 → one machine, renders unchanged.
@@ -6379,6 +6670,7 @@ alter a sum; it only supplies the label data. No UI consumes
 `SoCostingOpRow.machines` yet.
 
 Verified against live data after the change:
+
 - The LATERAL returns **105 rows for 105 ops** — one per op, so it can never
   multiply a costing row.
 - Distribution across the company: **74 ops with no machine, 30 with exactly
@@ -6394,19 +6686,22 @@ Remaining after Phase 4: no UI renders `SoCostingOpRow.machines`; and ISSUE-272
 untouched and still open.
 
 ## ADR-128: Assembly Tracker "Short" measures the remaining balance, not the full order
+
 **Date:** 2026-08-16
 **Status:** Accepted
 
 ### Context
+
 On the Assembly Tracker detail page the **Short** column read
 `shortfall = max(0, totalNeed − finalReady)` where `totalNeed = qtyPerSet ×
 orderQty` (the whole order) and stock is live. Assembling a unit debits its
-components from stock (ADR-115), so as units were built the Short value *climbed*
+components from stock (ADR-115), so as units were built the Short value _climbed_
 by the amount already consumed and never fell — a component with exactly enough
 stock for the last remaining unit could still show a large "shortage". Users read
 this as "the Short column isn't updating / is wrong".
 
 ### Decision
+
 Compute `shortfall` against the units STILL to build:
 `remainingNeed = qtyPerSet × (unitsRequired − assembledQty)`;
 `shortfall = max(0, remainingNeed − min(max(stock, override), remainingNeed))`.
@@ -6416,6 +6711,7 @@ full-order semantics (they answer "can the whole order be built"). The assembled
 units read was moved above the component loop so `assembledQty` is in scope.
 
 ### Alternatives Considered
+
 - Redefine `totalNeed` itself to the remaining balance — rejected: it also feeds
   the Need column, `enoughForUnits`, `status`, and `canAssemble`, which are
   legitimately full-order measures. Changing it would shift all of them.
@@ -6423,8 +6719,9 @@ units read was moved above the component loop so `assembledQty` is in scope.
   two shortage columns is more confusing than one that means what users expect.
 
 ### Consequences
+
 - Positive: Short now aligns with the "In Assembly" column (`qtyPerSet ×
-  remainingUnits`) and drops to 0 once stock covers what's left. Scope is one
+remainingUnits`) and drops to 0 once stock covers what's left. Scope is one
   field, isolated to `assembly/service.ts`; the only consumer is the assembly
   detail Short column.
 - Negative / Risk: the Short number no longer answers "is the entire order
@@ -6435,10 +6732,12 @@ units read was moved above the component loop so `assembledQty` is in scope.
   `shortfall`, so they stay green.
 
 ## ADR-129: Assembly Start / Stop (WIP) with partial completion
+
 **Date:** 2026-08-16
 **Status:** Accepted
 
 ### Context
+
 Assembling an Equipment SO was atomic: one "Assemble" click built N units, debited
 their BOM components, and the batch was done. The user wanted a two-step floor
 flow — START a batch (parts go to the bench, nothing leaves stock yet), then STOP
@@ -6446,8 +6745,10 @@ it entering how many actually came out good; the good qty completes and the
 remainder stays "in assembly" to finish later.
 
 ### Decision
+
 Add a `status` column to `assembly_units` (`in_progress` | `completed`, default
 `completed` so existing/one-shot rows are unaffected). Model:
+
 - **START** (`startAssembly`) inserts an `in_progress` batch of the started qty.
   **No stock movement.** Capped so committed (completed + in-progress) never
   exceeds the order.
@@ -6465,6 +6766,7 @@ count). `Short` (ADR-128) measures against `order − assembledQty(completed)`.
 Dispatch is blocked on an in-progress batch.
 
 ### Alternatives Considered
+
 - **Debit components at START (reserve)** — rejected by the user; a start now
   reserves nothing and stock only moves at STOP for the good units.
 - **A `completed_qty` counter on one row** instead of spawning completed rows —
@@ -6475,6 +6777,7 @@ Dispatch is blocked on an in-progress batch.
   stays in assembly (the in-progress batch keeps the remainder) to complete later.
 
 ### Consequences
+
 - Positive: real WIP tracking; the "In Assembly" column is now a true started-
   but-not-completed count instead of a derived remainder; partial yields are
   first-class; the stock ledger and undo paths are untouched (each completed
@@ -6492,8 +6795,8 @@ Dispatch is blocked on an in-progress batch.
 
 ### Context
 
-User, 2026-08-17: *"after click on Start the op entry must be editable … i want
-date and time only user can edit. not qty."*
+User, 2026-08-17: _"after click on Start the op entry must be editable … i want
+date and time only user can edit. not qty."_
 
 The audit that preceded this found `op_log` is editable **nowhere**:
 
@@ -6525,7 +6828,7 @@ frozen by default with no edit to the function.
 Because qty, reject_qty, log_type, machine_id and operator stay immutable, every
 number ADR-125 made trustworthy is untouched by an edit: `v_op_machine_output`,
 `v_jc_op_status.completed_qty`, the Daily Report and SO costing cannot be moved
-by retiming a row. Only *when* it happened moves.
+by retiming a row. Only _when_ it happened moves.
 
 Audit trail is two-layered: `timing_edited_at` / `timing_edited_by` on the row
 (the trigger stamps the timestamp), plus an `OP_LOG_TIME_EDIT` activity_log entry
@@ -6543,7 +6846,7 @@ insert policies make.
 - **A. Edit `running_ops` only, leave `op_log` alone** — rejected: the JC status
   feed, the log history and the Daily Report all read `op_log`, so the wrong time
   would stay visible everywhere the operator actually looks.
-- **C. Append a *correcting* start marker and take the latest** — rejected: needs
+- **C. Append a _correcting_ start marker and take the latest** — rejected: needs
   no policy change, but leaves two start lines in a feed operators read as
   history, and does nothing for a `complete` or `qc` row (the common case).
 - **Open the whole row to admins** — rejected: that is the ADR-011 #4 guarantee,
@@ -6558,7 +6861,7 @@ insert policies make.
   with an audit trail — instead of by hand in the database with none.
 - Positive: `op_log` remains append-only where it counts. Quantities are still
   provably immutable, now by a trigger rather than by the absence of a route.
-- Negative: `op_log` is no longer *literally* insert-only; anyone reasoning about
+- Negative: `op_log` is no longer _literally_ insert-only; anyone reasoning about
   the table must know the trigger exists. Recorded here and in `docs/SCHEMA.md`.
 - Risk: an operator retiming an entry into a different shift/day moves it in the
   Daily Report. That is the intended behaviour (the report is date-driven), but it
@@ -6575,14 +6878,14 @@ insert policies make.
 
 ### Context
 
-The user's original ask, 2026-08-17: *"after click on start op entry must be
+The user's original ask, 2026-08-17: _"after click on start op entry must be
 editable. but that goes for approval. first click it is approved entry. when
-entry edit it goes for approval."*
+entry edit it goes for approval."_
 
 ADR-127 delivered the first half — date and time became editable, qty stayed
 frozen — but applied the edit immediately. Asked to choose between "apply now,
-review after" and "hold until approved", the user chose **hold**: *"for update
-in time update until approval."*
+review after" and "hold until approved", the user chose **hold**: _"for update
+in time update until approval."_
 
 That is the stronger reading and the safer one. `log_date` drives the Daily
 Report, the JC completion feed and every date-ranged production query, so an
@@ -6837,12 +7140,12 @@ Nobody closed it. `closeSoLineIfComplete` (sales-cascade.ts) fires when a job
 card completes and compares **what that JC produced** against the **SO line's
 order qty**. On an equipment order those are not the same unit:
 
-| | |
-|---|---|
-| SO line qty | 5 (finished equipment) |
-| Attached job card | `IN-JC-26-00096` — item 554117186000 AUTOMATIC FIRE CHECK LEVER, qty 49 |
-| That item | a child line of `BOM-0016`, the BOM on this SO |
-| Its final op accepted | 49 |
+|                       |                                                                         |
+| --------------------- | ----------------------------------------------------------------------- |
+| SO line qty           | 5 (finished equipment)                                                  |
+| Attached job card     | `IN-JC-26-00096` — item 554117186000 AUTOMATIC FIRE CHECK LEVER, qty 49 |
+| That item             | a child line of `BOM-0016`, the BOM on this SO                          |
+| Its final op accepted | 49                                                                      |
 
 49 >= 5, so the line closed, then the header, then `listAssemblies` dropped it
 (`ne(status, 'closed')`) — with **0 of 5 assembled**.
@@ -6931,7 +7234,7 @@ reversible data migration, deliberately not bundled with a behaviour change.
 
 ### Context
 
-Traced from the user's question: *"in editing jc there is qc process, change process is simply input type field"*, then *"my concern is if I want to edit process, there is no link between qc process master."*
+Traced from the user's question: _"in editing jc there is qc process, change process is simply input type field"_, then _"my concern is if I want to edit process, there is no link between qc process master."_
 
 There was no link, at any layer:
 
@@ -6939,7 +7242,7 @@ There was no link, at any layer:
 - **API** — `apps/api/src/modules/job-cards/` never referenced `qc_processes`. The only check was non-empty (`service.ts:1118`).
 - **Web** — `jc-op-edit-card.tsx:195` was one plain `<input>` shared by all three op types; for a QC op it only swapped the placeholder to "QC process name ★". `job-cards` never imported `useQcProcessesList`.
 
-The master was built for exactly this. `packages/shared/src/schemas/qc-process.ts` opens with *"Used by Route Cards + Job Cards to populate the QC op dropdowns (legacy `_selQCProcesses` L23516)"* — and the only consumer in the whole web app was `so-planning/components/edit-plan-modal.tsx:155`.
+The master was built for exactly this. `packages/shared/src/schemas/qc-process.ts` opens with _"Used by Route Cards + Job Cards to populate the QC op dropdowns (legacy `_selQCProcesses` L23516)"_ — and the only consumer in the whole web app was `so-planning/components/edit-plan-modal.tsx:155`.
 
 Three findings made this worth closing now rather than later:
 
@@ -6965,10 +7268,10 @@ Everything else was already safe: all QC quantity logic keys off the `op_type = 
 
 ### Alternatives Considered
 
-- **Add a real `qc_process_id` FK column** — rejected *for now*. It is the only change that removes the problem permanently and lets the database enforce it, but it is a schema migration plus a backfill across three tables, and at 3 master rows and 2 ops in use the guard above buys the same safety today. Revisit when QC processes multiply.
+- **Add a real `qc_process_id` FK column** — rejected _for now_. It is the only change that removes the problem permanently and lets the database enforce it, but it is a schema migration plus a backfill across three tables, and at 3 master rows and 2 ops in use the guard above buys the same safety today. Revisit when QC processes multiply.
 - **Unlock renaming the process name** — rejected. Without the FK, a rename must also rewrite `jc_ops` / `plan_ops` / `route_card_ops` **and** the hardcoded `DEFAULT_FINAL_QC_OP`. Unlocking it alone is precisely what would split QC history. The immutability stays until the FK exists.
 - **A plain `<select>`, matching `edit-plan-modal`** — rejected. `SearchableSelect` is this repo's one dropdown (`dropdown` skill: one component, one behaviour), and it sits directly beside the Machine picker in the same card, which is already a `SearchableSelect`.
-- **Blocking free text with a hard `<select>`** — rejected as the *display* rule. `valueLabel` keeps an unrecognised stored name on screen, so a document holding an older or now-inactive name never silently reads as blank. It cannot be typed over: `SearchableSelect` only clears a selection it actually resolved.
+- **Blocking free text with a hard `<select>`** — rejected as the _display_ rule. `valueLabel` keeps an unrecognised stored name on screen, so a document holding an older or now-inactive name never silently reads as blank. It cannot be typed over: `SearchableSelect` only clears a selection it actually resolved.
 - **Extending the in-use guard to every master** — deliberately out of scope. **No master in this repo guards delete by usage** — Machines, Cost Centers, Vendors, Items and Operators were all checked and all only block duplicate codes on create. That is a house-wide gap and its own task.
 
 ### Consequences
@@ -6987,7 +7290,7 @@ Everything else was already safe: all QC quantity logic keys off the `op_type = 
 
 ### Context
 
-An audit of the live ERP against the user's *ERP Generic Role Audit Checklist* (L1–L7 tier structure, department tagging, price-access flag, 7 structural checks) produced `Innovic-ERP-Generic-Role-Audit.pdf`. Its findings, all verified against production data and the current source:
+An audit of the live ERP against the user's _ERP Generic Role Audit Checklist_ (L1–L7 tier structure, department tagging, price-access flag, 7 structural checks) produced `Innovic-ERP-Generic-Role-Audit.pdf`. Its findings, all verified against production data and the current source:
 
 **The system was role-based, not tier-plus-department based.** Every user carries exactly one global `users.role` out of eight, and that single value decides what they may save — in every department, on every screen. Of the seven tiers in the checklist, **one existed** (L6 Super Admin = `admin`), four existed partially, and **two could not be expressed at all**:
 
@@ -7004,9 +7307,9 @@ An audit of the live ERP against the user's *ERP Generic Role Audit Checklist* (
 
 **Three structural checks failed outright:**
 
-1. *Approver cannot approve their own record* — **FAIL.** `approvePurchaseOrder` checked the approver list, the draft status and the rupee ceiling, and never compared the approver against `created_by`. `approvePurchaseRequest` checked less still: any manager approved any PR, including their own.
-2. *L3 loses edit rights once the record crosses approval* — **FAIL.** `updatePurchaseOrder` deliberately preserved the *status* (so an edit could not sneak draft→open) but re-merged the lines and recalculated the totals at any status. **The approval ceiling was therefore defeatable: approve a cheap PO, then edit the rates upward.**
-3. *No role name is tied to a job title* — **FAIL.** `procurement`, `dispatch` and `design` are department names, and all three are **dead values** — they appear in no permission rule anywhere, so a user assigned one silently cannot save anything.
+1. _Approver cannot approve their own record_ — **FAIL.** `approvePurchaseOrder` checked the approver list, the draft status and the rupee ceiling, and never compared the approver against `created_by`. `approvePurchaseRequest` checked less still: any manager approved any PR, including their own.
+2. _L3 loses edit rights once the record crosses approval_ — **FAIL.** `updatePurchaseOrder` deliberately preserved the _status_ (so an edit could not sneak draft→open) but re-merged the lines and recalculated the totals at any status. **The approval ceiling was therefore defeatable: approve a cheap PO, then edit the rates upward.**
+3. _No role name is tied to a job title_ — **FAIL.** `procurement`, `dispatch` and `design` are department names, and all three are **dead values** — they appear in no permission rule anywhere, so a user assigned one silently cannot save anything.
 
 Live state at the time of the decision: 6 users — 3 admins, 1 manager, 1 operator, 1 viewer; **2 users with no `user_access` row at all** and 1 with an empty one (all three fall through the "unconfigured ⇒ allow-all" rollout rule and see every menu); **exactly one user genuinely configured**; no `approval_config` row, so the defaults are in force and, with an empty approvers list, only an admin can approve any PO; 0 purchase orders, so zero historic self-approvals to clean up.
 
@@ -7014,13 +7317,13 @@ Live state at the time of the decision: 6 users — 3 admins, 1 manager, 1 opera
 
 **1. A tier is granted per department.** `user_access.departments` changes from `dept → true` to `dept → tier key`. Five tiers live there:
 
-| Tier | Name | view | entry | edit | approve |
-| --- | --- | --- | --- | --- | --- |
-| L1 | Viewer | ✓ | | | |
-| L2 | Data Entry | ✓ | ✓ | | |
-| L3 | Editor / Executor | ✓ | ✓ | ✓ | |
-| L4 | Approver | ✓ | | | ✓ |
-| L5 | Department Admin | ✓ | ✓ | ✓ | ✓ |
+| Tier | Name              | view | entry | edit | approve |
+| ---- | ----------------- | ---- | ----- | ---- | ------- |
+| L1   | Viewer            | ✓    |       |      |         |
+| L2   | Data Entry        | ✓    | ✓     |      |         |
+| L3   | Editor / Executor | ✓    | ✓     | ✓    |         |
+| L4   | Approver          | ✓    |       |      | ✓       |
+| L5   | Department Admin  | ✓    | ✓     | ✓    | ✓       |
 
 "L3 in Sales, L1 in Store" is now one user, not two roles. The remaining two tiers are whole-account flags, because neither is per-department by nature: **L6 Super Admin** = the existing `full_access`; **L7 Auditor** = the new `auditor` column (reads every department, writes nothing). The two are mutually exclusive and the service resolves the conflict on save rather than storing a row that says both.
 
@@ -7030,32 +7333,32 @@ Live state at the time of the decision: 6 users — 3 admins, 1 manager, 1 opera
 
 **4. The matrix is now enforced on the server** — `requireFormAccess(user, formKey, action)` in `apps/api/src/lib/access.ts` — but **wired only into the approve/reject paths of Purchase Orders and Purchase Requests** in this change. Those went first precisely because `approve` is a brand-new action with no legacy behaviour to preserve: nobody can be locked out of something they could do yesterday.
 
-**5. `users.role` is untouched, and stays the outer wall.** The 176 RLS policies keyed to it are unchanged. Both layers must pass, so **a tier can only ever narrow what the role already allows** — never widen it. `maxTierForRole()` exposes the ceiling (admin/manager → L5, qc → L3, operator → L2, everyone else → L1) and the UI *warns* when a chosen tier exceeds it rather than blocking, since an admin may legitimately set the tier first and fix the role after.
+**5. `users.role` is untouched, and stays the outer wall.** The 176 RLS policies keyed to it are unchanged. Both layers must pass, so **a tier can only ever narrow what the role already allows** — never widen it. `maxTierForRole()` exposes the ceiling (admin/manager → L5, qc → L3, operator → L2, everyone else → L1) and the UI _warns_ when a chosen tier exceeds it rather than blocking, since an admin may legitimately set the tier first and fix the role after.
 
-**6. Self-approval is refused** — `assertNotSelfApproval` on both PO and PR approval. **It applies to admins too.** An approval the raiser signed themselves is not an approval, and "the admin did it" is exactly the case an auditor cares about. Rejecting your own document stays allowed: that is just cancelling your own request. *(Superseded 2026-10-01 by ADR-198: self-approval of PR and PO is now allowed for users who hold Approve rights, and a self-approved PO skips the amount ceiling. The rest of ADR-134 stands.)*
+**6. Self-approval is refused** — `assertNotSelfApproval` on both PO and PR approval. **It applies to admins too.** An approval the raiser signed themselves is not an approval, and "the admin did it" is exactly the case an auditor cares about. Rejecting your own document stays allowed: that is just cancelling your own request. _(Superseded 2026-10-01 by ADR-198: self-approval of PR and PO is now allowed for users who hold Approve rights, and a self-approved PO skips the amount ceiling. The rest of ADR-134 stands.)_
 
 **7. Money is frozen once a PO leaves draft.** Lines/rates, vendor, PO type, PO date, tax type and the three tax percentages are refused on a non-draft PO; due date, remarks and the PR reference stay open, because chasing a delivery date is not a change to what was approved. To change the money, reject back to draft.
 
 ### Alternatives Considered
 
-- **Replace `users.role` with the (department, tier) pairs outright** — rejected *for this change*. It is the end state, but it means re-auditing all 176 RLS policies and rewriting the 128 hard-coded role checks in the screens. Layering the tier as a *restriction* on top of the role delivers the model now, cannot over-grant by construction, and leaves the sweep as its own task.
+- **Replace `users.role` with the (department, tier) pairs outright** — rejected _for this change_. It is the end state, but it means re-auditing all 176 RLS policies and rewriting the 128 hard-coded role checks in the screens. Layering the tier as a _restriction_ on top of the role delivers the model now, cannot over-grant by construction, and leaves the sweep as its own task.
 - **Four loose checkboxes per department instead of a tier dropdown** — rejected. It would let an admin build "edit but not view", which is not a tier and cannot be enforced coherently downstream. A level is a single choice.
 - **Subtractive form ticks (a tick can revoke what the tier gave)** — rejected. It makes the effective permission the result of a chain, and one stray untick silently strands a user. Additive keeps the two inputs independently readable.
 - **An `allow_self_approval` escape hatch on `approval_config`** — rejected. It is the one switch that would undo the control the checklist is asking for. Where a company genuinely has one person, the answer is a second approver account. Noted as reversible if it blocks live operation.
-- **Backfilling every `true` department to L3** — rejected. It would hand write rights to users who had none. The migration maps each existing tick to the tier matching that user's *current* role, and the shared normaliser reads any un-migrated `true` as **L1**, so a missed migration degrades to read-only rather than to over-granted.
+- **Backfilling every `true` department to L3** — rejected. It would hand write rights to users who had none. The migration maps each existing tick to the tier matching that user's _current_ role, and the shared normaliser reads any un-migrated `true` as **L1**, so a missed migration degrades to read-only rather than to over-granted.
 - **A second `dept_tiers` column beside `departments`** — rejected. Two columns describing one thing invites them to disagree.
 
 ### Consequences
 
 - **Positive:** L1–L5 are now expressible per department and L7 exists as a real flag, so 6 of the checklist's 7 tiers are configurable (L6 already was). Structural checks 4 and 5 move from FAIL to PASS.
 - **Positive:** the access matrix stops being decoration for at least one action — Approve is genuinely enforced server-side on POs and PRs.
-- **Positive:** the ACCESS activity-log line now records *what the access became* ("Sales L3 · Store L1"), not just that it changed.
+- **Positive:** the ACCESS activity-log line now records _what the access became_ ("Sales L3 · Store L1"), not just that it changed.
 - **Positive:** User Management and Access Control are finally linked — the user list shows each person's tier summary and flags the read-only roles, so "what can this person actually do?" is answerable from one screen.
 - **Negative / not addressed:** the other ~30 modules with form keys still gate writes on the role alone. The matrix's view/entry/edit ticks remain unenforced outside the approve paths. That sweep is the next task and is deliberately separate.
 - **Negative:** an approver who is the only person able to approve must now find a second person. With 3 admins live this is not currently blocking.
 - **Negative:** editing an approved PO's rates now requires rejecting it back to draft — a real workflow change for whoever raises POs, and the intended one.
 - **Risk:** the migration must land **before** the API deploy — the service selects `user_access.auditor`. Both backfill expressions were dry-run as SELECTs against production first.
-- **Not addressed:** the three dead roles (`procurement`, `dispatch`, `design`) are now *labelled* read-only in the UI but still exist in the dropdown. Retiring or wiring them is a separate decision. Price access is still not a flag anywhere — that is its own piece of work.
+- **Not addressed:** the three dead roles (`procurement`, `dispatch`, `design`) are now _labelled_ read-only in the UI but still exist in the dropdown. Retiring or wiring them is a separate decision. Price access is still not a flag anywhere — that is its own piece of work.
 
 ## ADR-135: Role leaves User Management; an unconfigured account is denied, not allowed
 
@@ -7064,7 +7367,7 @@ Live state at the time of the decision: 6 users — 3 admins, 1 manager, 1 opera
 
 ### Context
 
-ADR-134 made Access Control the place where a person's rights are described — a tier per department, an Approve action, L6/L7 whole-account levels. It did not remove the *other* places the same question was being answered, and an audit of the Role field found four:
+ADR-134 made Access Control the place where a person's rights are described — a tier per department, an Approve action, L6/L7 whole-account levels. It did not remove the _other_ places the same question was being answered, and an audit of the Role field found four:
 
 - Access Control → list, inline role dropdown (`list.tsx:167`)
 - Access Control → Configure, role select (`configure-modal.tsx:296`)
@@ -7073,7 +7376,7 @@ ADR-134 made Access Control the place where a person's rights are described — 
 
 So role already had two homes in Access Control and two more in User Management. The **PO approval limit** — read by `purchase-orders/service.ts:1099` as the per-user approval ceiling — sat on the User Management forms as well, which meant "who can approve a PO, and up to how much?" was spread across three screens: the approvers list (System Settings → Approvals), the ceiling (User Management), and the Approve tier (Access Control).
 
-Removing the field from User Management exposed a second problem, and it is the more serious one. `createUserInputSchema.role` is required, so a create form without the field has to send something; `viewer` is the obvious answer — it is already the form default, the column default and what the Supabase signup trigger seeds. But a newly created user is **active immediately** and has **no `user_access` row**, and an empty matrix meant *unconfigured ⇒ allow everything* (docs/PARITY/access-control.md §10 DELTA #6). The person nobody had set up yet would therefore see **more** of the ERP than the person who had deliberately been given two departments. The rule had inverted itself.
+Removing the field from User Management exposed a second problem, and it is the more serious one. `createUserInputSchema.role` is required, so a create form without the field has to send something; `viewer` is the obvious answer — it is already the form default, the column default and what the Supabase signup trigger seeds. But a newly created user is **active immediately** and has **no `user_access` row**, and an empty matrix meant _unconfigured ⇒ allow everything_ (docs/PARITY/access-control.md §10 DELTA #6). The person nobody had set up yet would therefore see **more** of the ERP than the person who had deliberately been given two departments. The rule had inverted itself.
 
 That allow-all was a deliberate day-one rollout choice: the matrix shipped opt-in so the non-admins backfilled with empty rows kept working. That rollout is over — ADR-134 gave admins a real model to configure people with, and this change routes them into it at the moment of creation.
 
@@ -7095,12 +7398,12 @@ That allow-all was a deliberate day-one rollout choice: the matrix shipped opt-i
 - **Keep allow-all for unconfigured accounts and just remember to configure new users** — rejected. That is the behaviour that produced the inversion, and it fails in the unsafe direction: the forgotten account is the over-permissive one.
 - **Deny unconfigured accounts only for non-`viewer` roles** — rejected as a fudge. "Empty means nothing" is a rule anyone can hold in their head; "empty means nothing unless you are a viewer" is not.
 - **Keep the approval limit on User Management** — rejected. Approval is an Access Control action as of ADR-134, and the ceiling is the size of that right. Leaving it behind would have moved the split rather than closed it.
-- **Remove the Role column and filter from the users list too** — rejected. They are read-only and genuinely useful; the ask was to stop *setting* role there.
+- **Remove the Role column and filter from the users list too** — rejected. They are read-only and genuinely useful; the ask was to stop _setting_ role there.
 
 ### Consequences
 
 - **Positive:** one screen answers "what may this person do?" — role, tiers, form extras and approval ceiling in one box. User Management is identity and nothing else.
-- **Positive:** a created-and-forgotten account is now the *least* privileged thing in the system rather than the most.
+- **Positive:** a created-and-forgotten account is now the _least_ privileged thing in the system rather than the most.
 - **Positive:** the create → configure redirect makes the two-screen flow a single action.
 - **Negative / operational, and this one bites on deploy:** **every account with an empty matrix loses its UI on the next page load.** In production that is exactly two: `haresh.innovic@gmail.com` (manager, no access row) and `viewer@innovic.test` (viewer, empty maps). Both would see only the ungated Tasks and Reports sections until an admin gives them tiers. The three admin accounts are unaffected — two carry `full_access`, and the third bypasses as admin even with no row. **Configure those two before or immediately after the deploy.**
 - **Negative:** the dashboard's own `hasDept` still bypasses for managers (`dashboard/access.ts`), so a manager with no matrix would see a full dashboard beside an empty sidebar until configured. Pre-existing divergence, deliberately not changed here; noted as a follow-up.
@@ -7116,7 +7419,7 @@ That allow-all was a deliberate day-one rollout choice: the matrix shipped opt-i
 
 ADR-134 built the (Tier + Department) model; ADR-135 moved role out of User Management and into the Access Control Configure box. Role was still a **choice**, sitting next to the tiers, and the two could disagree — which is why ADR-134 shipped a `tierExceedsRole` warning: pick Sales L4 for an operator and the box told you it would not take effect.
 
-That warning was the symptom. The real problem is that the role dropdown asks a question nobody in the business can answer. *"Is Rajesh a manager?"* is an implementation detail about which `require*Role` guard passes. *"Is Rajesh in Design?"* is the fact the admin actually knows. Asking for the second and computing the first removes the contradiction rather than warning about it.
+That warning was the symptom. The real problem is that the role dropdown asks a question nobody in the business can answer. _"Is Rajesh a manager?"_ is an implementation detail about which `require*Role` guard passes. _"Is Rajesh in Design?"_ is the fact the admin actually knows. Asking for the second and computing the first removes the contradiction rather than warning about it.
 
 Two further facts made the old framing untenable:
 
@@ -7131,17 +7434,17 @@ Two further facts made the old framing untenable:
 
 **3. `main_dept` is stored, not derived** (migration 0101). A main department and a hand-added extra are indistinguishable in the `departments` map, so without the column, reopening the box could not tell "Design L3 because that is their department" from "Sales L1 because the admin granted it" — and changing the main department would clear the wrong row.
 
-**4. `users.role` is derived on save, in the same transaction as the matrix.** `roleForAccess()` returns the *narrowest* role that still covers what was granted:
+**4. `users.role` is derived on save, in the same transaction as the matrix.** `roleForAccess()` returns the _narrowest_ role that still covers what was granted:
 
-| Access granted | Derived role |
-|---|---|
-| Full Access (L6) | `admin` — the only path to admin |
-| Auditor (L7) | `viewer` |
-| nothing, or every department at L1 | `viewer` |
-| top tier L2, Quality only | `qc` |
-| top tier L2 otherwise | `operator` |
-| top tier L3+, Quality the only place they can write | `qc` |
-| top tier L3+ otherwise | `manager` |
+| Access granted                                      | Derived role                     |
+| --------------------------------------------------- | -------------------------------- |
+| Full Access (L6)                                    | `admin` — the only path to admin |
+| Auditor (L7)                                        | `viewer`                         |
+| nothing, or every department at L1                  | `viewer`                         |
+| top tier L2, Quality only                           | `qc`                             |
+| top tier L2 otherwise                               | `operator`                       |
+| top tier L3+, Quality the only place they can write | `qc`                             |
+| top tier L3+ otherwise                              | `manager`                        |
 
 Preferring `qc` and `operator` is not cosmetic — both are genuinely narrower than `manager`, so a Quality lead derived as `qc` cannot write Sales or Purchase records where `manager` could.
 
@@ -7149,7 +7452,7 @@ Preferring `qc` and `operator` is not cosmetic — both are genuinely narrower t
 
 **6. `tierExceedsRole` and `maxTierForRole` are deleted,** along with the `RoleCeilingHelp` component and the `recommendedRole` field. The contradiction they described can no longer occur.
 
-**7. The role is still shown**, small, on both list rows and in the Configure header — as *"saved as `manager`"*. It is no longer chosen, but it is still what the server checks on every save, so hiding it entirely would make a refusal impossible to explain.
+**7. The role is still shown**, small, on both list rows and in the Configure header — as _"saved as `manager`"_. It is no longer chosen, but it is still what the server checks on every save, so hiding it entirely would make a refusal impossible to explain.
 
 ### Alternatives Considered
 
@@ -7176,7 +7479,7 @@ Preferring `qc` and `operator` is not cosmetic — both are genuinely narrower t
 
 ### Context
 
-ADR-136 derived `users.role` from the access and printed it on every list row as *"saved as manager"*, so a refusal would stay explainable. Reading it back on the real screens, two problems:
+ADR-136 derived `users.role` from the access and printed it on every list row as _"saved as manager"_, so a refusal would stay explainable. Reading it back on the real screens, two problems:
 
 **It was confusing.** A row showing **Department: Design** and **saved as manager** reads as two answers to one question. The label also said the wrong thing — "saved as" sounds like the outcome of a save; it means "this is the word the server checks".
 
@@ -7188,9 +7491,9 @@ Auditing that turned up a worse thing. An admin with **no access row** loads an 
 
 **1. The derived role comes off both list rows.** It lives in the Configure box, relabelled **"System role"**, and on the user Edit page — the two screens where you are deciding or investigating. The lists answer "who is in which department?" and nothing else.
 
-**2. Silent when right, loud when wrong.** `userAccessListItem` now carries `derivedRole` beside the stored `role`. When they disagree the row shows an amber line — *"still enforced as manager — open Configure and Save to apply"*. Suppressed for admins, who bypass the matrix so the comparison is meaningless.
+**2. Silent when right, loud when wrong.** `userAccessListItem` now carries `derivedRole` beside the stored `role`. When they disagree the row shows an amber line — _"still enforced as manager — open Configure and Save to apply"_. Suppressed for admins, who bypass the matrix so the comparison is meaningless.
 
-**3. Demoting an admin requires explicit intent.** `saveUserAccessInput` gains `confirmAdminChange`. Demoting *yourself* stays refused outright — if it is wrong there is nobody left to reverse it. Demoting *someone else* is refused **once**, with the reason and the resulting role named; the modal turns that refusal into a question and resends with the flag if the admin confirms.
+**3. Demoting an admin requires explicit intent.** `saveUserAccessInput` gains `confirmAdminChange`. Demoting _yourself_ stays refused outright — if it is wrong there is nobody left to reverse it. Demoting _someone else_ is refused **once**, with the reason and the resulting role named; the modal turns that refusal into a question and resends with the flag if the admin confirms.
 
 **4. The "can see nothing" line is corrected for admins** — they bypass the matrix, so an admin with no departments is told exactly that instead of being described as locked out.
 
@@ -7210,82 +7513,103 @@ Auditing that turned up a worse thing. An admin with **no access row** loads an 
 - **No migration.** `derivedRole` is computed per request; `confirmAdminChange` is input-only.
 
 ## ADR-138: A Purchase Order is always raised against a Purchase Request ("+ New PO" is PR-first)
+
 **Date:** 2026-09-01
 **Status:** Accepted
 
 ### Context
+
 Two doors created a PO with different data integrity:
+
 - "+ New PO" (`/purchase-orders/new`) → the multi-line `PurchaseOrderForm` → `POST /purchase-orders` (`createPurchaseOrder`). This path could NOT truly link a PR — its header carries only `prCodeText` (free-text audit note), no `prId` FK. A PO raised here for a PR left the PR `open`/un-converted, so the same PR could be converted again (duplicate PO), `pr.poId` stayed null, and an OSP `jc_op` stayed stuck at `pr_raised`.
 - "PO from PR" (`/purchase-orders/from-pr?prId=`) → `createPurchaseOrderFromPr`, which correctly sets `pr_id`, flips the PR to `po_created`, stamps `poId`/`poCreatedAt`, advances the linked `jc_op`, emits `PR_CONVERT`, and re-resolves the item link.
 
 User rule: a PO cannot be created without a PR — the buyer must pick the PR first, then the PO number.
 
 ### Decision
+
 The "+ New PO" list button now routes into the PR-first conversion flow (`/purchase-orders/from-pr`, no `prId`). That one route serves both doors:
+
 - **From a PR page** (`?prId=<id>` supplied): the PR is fixed, the picker is hidden — unchanged classic behaviour.
 - **From "+ New PO"** (no `prId`): step 1 is a compulsory `<PrPicker>` (searchable, convertible PRs only — `poId===null && status not in {po_created, cancelled}`); once a PR is chosen the same conversion form renders (step 2) with the PR as a changeable first field, then PO No.
-Both submit through the single tested `createPurchaseOrderFromPr` backend, so every PO created through the UI is PR-linked and the PR is locked against a second PO. New component `PrPicker` mirrors `VendorPicker` (own search + list hook over `<SearchableSelect>`). `from-pr` route's `prId` search param is now optional; the form body is extracted into an inner `FromPrForm` (keyed by PR id so a PR change remounts it clean).
+  Both submit through the single tested `createPurchaseOrderFromPr` backend, so every PO created through the UI is PR-linked and the PR is locked against a second PO. New component `PrPicker` mirrors `VendorPicker` (own search + list hook over `<SearchableSelect>`). `from-pr` route's `prId` search param is now optional; the form body is extracted into an inner `FromPrForm` (keyed by PR id so a PR change remounts it clean).
 
 ### Alternatives Considered
+
 - Add required `prId` to the main `createPurchaseOrder` + a PR picker on the multi-line `PurchaseOrderForm` — rejected for now: larger blast radius (shared schema, backend service + shared linking helper, form prefill/reset, tests) and it duplicates the conversion logic the from-pr path already does correctly. The chosen option reuses tested code with zero backend change.
 - Two-screen wizard at `/purchase-orders/new` (pick PR → redirect to from-pr) — rejected: the user wants PR No. then PO No. on one form.
 
 ### Consequences
+
 - Positive: the UI can no longer raise a PR-less PO through "+ New PO"; duplicate-PO / orphaned-PR / stuck-OSP gap is closed for this door; one code path and one backend for both doors.
 - Negative / not covered: enforcement is UI-only. The `POST /purchase-orders` (`createPurchaseOrder`) endpoint still accepts a PR-less PO and is still reachable (a) by typing `/purchase-orders/new`, and (b) from SO-Status → "🛒 Create PO" (`so-status-detail.tsx`, which passes `soLineId` — a legitimately different, SO-line-driven purchase, not a shop PR). Making PR compulsory for EVERY PO server-side is a deliberate follow-up, not done here.
 - The from-pr form is single-line (qty/rate come from the PR estimate, not editable at conversion) — unchanged limitation; multi-PR→one-PO stays the batch flow.
 
 ## ADR-139: PR-compulsory PO is enforced server-side — the `POST /purchase-orders` door is removed
+
 **Date:** 2026-09-02
 **Status:** Accepted
 
 ### Context
-ADR-138 made "+ New PO" PR-first in the UI, but left enforcement UI-only: `POST /purchase-orders` (→ `createPurchaseOrder`) still accepted a PR-less PO, reachable by typing `/purchase-orders/new` or via SO-Status → "🛒 Create PO". Per Engineering Rule #1 (the browser is hostile; authorization/validation live server-side) a UI-only rule is not enforcement. User: *"I did not block the server. why u not fix it?"*
+
+ADR-138 made "+ New PO" PR-first in the UI, but left enforcement UI-only: `POST /purchase-orders` (→ `createPurchaseOrder`) still accepted a PR-less PO, reachable by typing `/purchase-orders/new` or via SO-Status → "🛒 Create PO". Per Engineering Rule #1 (the browser is hostile; authorization/validation live server-side) a UI-only rule is not enforcement. User: _"I did not block the server. why u not fix it?"_
 
 ### Decision
+
 Remove the client door, not the primitive.
+
 - **API:** deleted the `POST /purchase-orders` route. The only create doors are now `POST /purchase-orders/from-pr` (one PR) and `POST /purchase-orders/from-pr-batch` (many PRs), both of which link + lock the PR. `service.createPurchaseOrder` is KEPT but documented as internal/test-fixture only (it has no HTTP route) — ~20+ GRN/DC/approval tests call it directly to stand up a PO fixture in an arbitrary state, so removing it would gut unrelated suites for no gain; it is unreachable by any client.
 - **Route tests:** the four `POST /purchase-orders` tests (201 happy, two 400 validation, viewer 403) are replaced by one asserting the door is closed (404).
 - **Web:** deleted the dead `/purchase-orders/new` route (`PurchaseOrderNewPage` + `purchaseOrderNewRoute`), the now-unused `useCreatePurchaseOrder` hook, and the router registration; repointed SO-Status "Create PO" to `/purchase-orders/from-pr`.
 
 ### Alternatives Considered
+
 - Make `createPurchaseOrder` (the service) throw / require `prId` — rejected: it is the shared fixture primitive across purchase-orders, goods-receipt-notes and delivery-challans tests; changing its contract breaks ~20+ setups I cannot re-run here (they hit the shared prod DB), for no extra safety over closing the HTTP door.
 - Require `prId` only at the route while the service stays lenient — rejected: same outcome as deleting the route (no client can create a PR-less PO) but leaves a live endpoint whose sole purpose is to reject, plus the duplicate-of-from-pr question. Deleting is cleaner.
 
 ### Consequences
+
 - Positive: there is now NO API path to a PR-less PO; the rule is enforced where it must be. One create semantics (always PR-backed) across UI and API.
 - Positive: fresh multi-line POs come from `from-pr-batch` (multiple PRs); single from `from-pr`; multi-line editing on an existing PO is unchanged.
 - Negative: `createPurchaseOrder` survives as un-routed code — a latent temptation to re-expose. Guarded by an explicit "do NOT wire back to a route" comment.
 - Verification limited to typecheck + lint (agents + combined tree); the api suite must be run on a non-prod DB before deploy to confirm the 404 door-closed test and that fixtures still build POs.
 
 ## ADR-140: Sales Order lines carry an optional drawing revision + uploaded drawing document
+
 **Date:** 2026-09-03
 **Status:** Accepted
 
 ### Context
+
 An SO line already had `drawing_no` (a text reference) but no way to attach the actual drawing file or record its revision. Users wanted, per SO line: upload a drawing document, view it after upload, and an optional revision next to it.
 
 ### Decision
+
 Two nullable columns on `sales_order_lines` (migration 0104): `revision text` (optional free text) and `drawing_file_path text` (storage path). Reuse the existing file-upload machinery rather than build new: `@/lib/storage` `uploadFile`/`signedUrl` against the private `qc-docs` bucket, folder `so-line-drawings` — the identical pattern the item master already uses for its drawing (`item-drawings`) and QC docs use. The web form uploads direct to Storage and stores only the returned path; the drawing is viewed through a short-lived signed URL. A new compact `SoLineDrawingCell` fits the upload+view control into the line table; the SO detail page shows the revision and a 📎 view link per line. Revision is free text (mirrors item master `revision`), optional, blank by default — not a dropdown.
 
 ### Alternatives Considered
+
 - A separate `so_line_documents` table (like `so_documents` / `qc_documents`, many files per entity) — rejected: the ask is exactly one drawing per line, so a single path column matches the item-master precedent and needs no join.
 - A new dedicated Storage bucket + per-line RLS — rejected: the existing `qc-docs` bucket already serves item/JC drawings and QC docs via a company-prefixed path; adding a bucket is org-wide scope this feature does not need. (The known caveat — qc-docs read is granted to any authenticated user, path prefix is organisational not a security boundary, ADR-032 — is inherited, not introduced here.)
 
 ### Consequences
+
 - Positive: reuses tested upload/view code; no new infra; one migration, two nullable columns, inherits `sales_order_lines` RLS.
 - Positive: viewable both right after upload (form state) and later on the SO detail page.
 - Negative: inherits the qc-docs bucket's coarse read policy (ADR-032) — hardening remains a separate org-wide task.
 - Built via the erp-backend (api) + erp-frontend (web) agents in parallel; shared schema + migration + docs done directly. Migration 0104 applied to the shared DB and verified (both columns text, nullable).
 
 ## ADR-141: The +New PO screen must link the PO to its job card operation; the OSP register gains a "Ready to Send" column
+
 **Date:** 2026-09-05
 **Status:** Accepted
 
 ### Context
+
 IN-JC-26-00008 op 8 "Coating" sat at `pr_raised` with 0 sent and 0 done, while PO IN-PO-00004 existed, challan IN-DC-00002 had sent 30 pcs to the vendor, and GRN IN-GRN-00001 had received and QC-accepted 30. Op 9 (TPI) showed nothing to inspect. The user also reported that the OSP outward challan accepted any quantity.
 
 All of it traced to ONE empty column. `createPurchaseOrderFromPr` (the PR screen's "Create PO") stamps `purchase_order_lines.source_jc_op_id`, `jc_ops.outsource_po_line_id` and `outsource_status='po_created'`. The manual `createPurchaseOrder` (the +New PO screen) stamped only the source PR. That column is load-bearing in three places:
+
 - `delivery-challans/cascades.ts` finds the op BY `outsource_po_line_id`; not finding it, it returned `{ fired: false }` silently — so the ADR-078 "cannot send more than upstream cleared" guard never ran, and the only surviving cap was `challan qty <= PO line qty` (100).
 - `v_jc_op_status` reads an outsource op's OUTPUT through the same column, so nothing the vendor returned counted and the next op got `input_avail = 0`.
 - `incoming-qc` credits the return through `purchase_order_lines.source_jc_op_id`, so QC-accepted pieces never reached the op.
@@ -7293,6 +7617,7 @@ All of it traced to ONE empty column. `createPurchaseOrderFromPr` (the PR screen
 Separately, `v_osp_wip.not_sent_qty` is `job_cards.order_qty - outsource_sent_qty` — an ORDER-level figure. For op 8 it read 70 while op 7 had cleared only 30, all already at the vendor. The true "can I ship today" answer was 0. The register had no field carrying that number at all.
 
 ### Decision
+
 Three parts.
 
 1. **`createPurchaseOrder` now carries the PR's `sourceJcOpId` onto its PO line and stamps the op** (`outsourcePoLineId`, `outsourceStatus='po_created'`), mirroring the from-PR path. The op update is guarded `isNull(jcOps.outsourcePoLineId)` so an op already committed to a PO line is never silently re-pointed.
@@ -7302,12 +7627,14 @@ Three parts.
 Migration 0109 repairs rows written before (1) — data-only, idempotent, quantities recomputed from the challans and GRNs that already exist.
 
 ### Alternatives Considered
+
 - **Redefine `not_sent_qty` to mean the shop-floor figure** — rejected on the user's explicit choice. The two answer different questions: `not_sent_qty` plans the vendor's week ("70 of this order still to coat"), `ready_to_send_qty` says what may leave today ("0"). Losing the first to gain the second trades one blind spot for another.
 - **Fix only the view and leave the PO screen alone** — rejected: the register would then show correct availability for an op whose returns still never reach the job card. The missing link is the root cause; the column is a separate readability gap.
 - **Subtract the client-material gate (`loadMaterialCap`) inside the view** — rejected: it needs per-op party-material lookups that do not belong in a register view, and it only ever LOWERS the cap. The column is a planning indicator; the write path stays the authority, so the challan may still refuse a qty the column offered.
 - **Remove the +New PO screen's PR field entirely** so every OSP PO must come from the PR screen — rejected as bigger scope than the bug; ADR-139 already closed the PR-less PO door, and linking correctly is strictly better than forbidding.
 
 ### Consequences
+
 - Positive: one root-cause fix closes four reported symptoms (status frozen, unlimited challan qty, returns not reaching the JC, next op starved).
 - Positive: the outward-DC guard can no longer be disabled by a data gap — it now refuses rather than waving the send through.
 - Positive: the register shows the number the challan will actually accept.
@@ -7318,32 +7645,37 @@ Migration 0109 repairs rows written before (1) — data-only, idempotent, quanti
 - Verification: typecheck + lint only (the api suite hits the shared prod DB). 0109 and 0110 applied and verified against live data: op 8 now reads `received`, sent 30, returned 30; op 9 `input_avail` 30; `ready_to_send_qty` 0 for op 8 and 1 for IN-JC-26-00002 op 1.
 
 ## ADR-142: Stored files preview in-app; downloading is a separate, explicit action
+
 **Date:** 2026-09-05
 **Status:** Accepted
 
 ### Context
+
 Every 📎 button in the app did the same thing: mint a short-lived signed URL and `window.open(url, '_blank')`. Nine call sites, one behaviour — hand the file to the browser and let the browser decide what to do with it.
 
-That decision is not ours and not stable. Chrome's "Download PDFs instead of automatically opening them in Chrome" setting is on by default on many machines; with it on, a click meant as *look at this drawing* silently writes a file to the user's Downloads folder. And for anything the browser cannot render in-page there was never a choice at all — the JWSO Client-PO uploads are `message/rfc822` (verified: both objects in the `jw-docs` folder of the `qc-docs` bucket) and always downloaded, as did the one `.xlsx` in `so-docs`.
+That decision is not ours and not stable. Chrome's "Download PDFs instead of automatically opening them in Chrome" setting is on by default on many machines; with it on, a click meant as _look at this drawing_ silently writes a file to the user's Downloads folder. And for anything the browser cannot render in-page there was never a choice at all — the JWSO Client-PO uploads are `message/rfc822` (verified: both objects in the `jw-docs` folder of the `qc-docs` bucket) and always downloaded, as did the one `.xlsx` in `so-docs`.
 
 The comment on `openStoredFile` in the SO detail page asserted the opposite — "the signed URL carries no attachment disposition, so the browser views (not downloads) any type it can render". The disposition half is true; the conclusion is not, because the browser setting overrides it. Stored MIME types were checked and are correct (`application/pdf` ×4 in `so-line-drawings`, `application/pdf` ×3 in `qc-reports`, `image/jpeg` in `item-drawings`), so this was never a metadata problem — there was simply no in-app viewer.
 
 ### Decision
+
 Split the two intentions that were sharing one button.
 
 **Viewing** happens inside the app. A new shared `components/shared/file-preview-modal.tsx` renders the file in the existing `.overlay` / `.modal.modal-lg` theme: PDFs in an `<iframe>`, images in an `<img>`, and for anything else an explicit "this file type cannot be previewed in the browser — use Download" panel rather than a silent save or a blank frame. Its signed URL is minted with a 600s expiry, not the 120s default, because a PDF viewer re-requests byte ranges while the reader scrolls and an expired link mid-read shows an empty page.
 
-**Downloading** happens only from the modal's Download button, which mints a *second* signed URL with `download: <fileName>`. `@/lib/storage` `signedUrl()` gains an optional `download?: boolean | string` that passes straight through to `createSignedUrl`'s third argument; Supabase then answers with `Content-Disposition: attachment`. An in-page anchor click consumes it so the current page stays put.
+**Downloading** happens only from the modal's Download button, which mints a _second_ signed URL with `download: <fileName>`. `@/lib/storage` `signedUrl()` gains an optional `download?: boolean | string` that passes straight through to `createSignedUrl`'s third argument; Supabase then answers with `Content-Disposition: attachment`. An in-page anchor click consumes it so the current page stays put.
 
 Applied to the surfaces the user named: SO detail (per-line drawings + SO Documents), the SO line drawing cell on the SO form, and the JWSO detail Documents panel.
 
 ### Alternatives Considered
-- **Force the disposition at upload time** (store `contentDisposition: inline` on the object) — rejected: it does not survive the browser's own PDF setting, which is the actual cause, and it would make *download* the hard case instead.
+
+- **Force the disposition at upload time** (store `contentDisposition: inline` on the object) — rejected: it does not survive the browser's own PDF setting, which is the actual cause, and it would make _download_ the hard case instead.
 - **Two links per row — "Preview" and "Download"** — rejected: doubles every file row in already-dense tables, and preview is overwhelmingly the common action. One click previews; Download is one further click inside the viewer.
 - **A PDF.js viewer bundled into the app** — rejected: a large dependency to re-implement what every supported browser already renders in an iframe. Revisit only if in-iframe rendering proves unreliable.
 - **Leaving `window.open` and documenting the browser setting** — rejected: the user reported the download behaviour as a defect, and telling 24 staff to change a Chrome setting is not a fix.
 
 ### Consequences
+
 - Positive: one shared component; the remaining file-open sites (item drawings, item detail, QC report attachments) can adopt it later with a two-line change each.
 - Positive: unpreviewable types now say so instead of silently downloading.
 - Negative: previews are iframe-based, so they inherit whatever the browser's built-in PDF viewer does. No annotation, no page-link deep-linking.
@@ -7352,26 +7684,30 @@ Applied to the surfaces the user named: SO detail (per-line drawings + SO Docume
 - Verification: typecheck + lint only (the api suite hits the shared prod DB).
 
 ## ADR-143: The SO line's Rev is the drawing FILE's revision, server-owned, with an append-only history
+
 **Date:** 2026-09-06
 **Status:** Accepted
 
 ### Context
+
 A sales-order line carries a drawing file and a Rev. Since migration 0104 these two had nothing to do with each other: `sales_order_lines.revision` was `text`, optional, typed by hand, and `drawing_file_path` was a single slot that the next upload simply overwrote. Replacing a drawing left the number alone, and the drawing it replaced vanished from the record. Nobody could answer "which drawing did we actually ship IN-SO-00521 against in July".
 
-The user's requirement: *"rev field is compulsory. rev must start with 0. this field auto update as drawing file edits. i want drawing file revision wise history must maintain"*, and on being asked whose revision it is: *"this revision is of drawing file. we have to maintain drawing history of per so line wise drawing."*
+The user's requirement: _"rev field is compulsory. rev must start with 0. this field auto update as drawing file edits. i want drawing file revision wise history must maintain"_, and on being asked whose revision it is: _"this revision is of drawing file. we have to maintain drawing history of per so line wise drawing."_
 
 Three facts from the live database decided the shape:
+
 - Of 42 live SO lines, only 3 carried a Rev at all, and all three were the string `'1'`. The `text -> integer` cast is therefore lossless on real data, so a new parallel column was unnecessary.
 - 5 lines hold a drawing. Two of them have no Rev.
-- No drawing file has ever actually been deleted. `uploadFile` stamps `${Date.now()}-` on every name and passes `upsert: false`, so every superseded drawing is still sitting in the `qc-docs` bucket under `so-line-drawings/`. History was being lost at the *database* level only — the files were always there to point back at.
+- No drawing file has ever actually been deleted. `uploadFile` stamps `${Date.now()}-` on every name and passes `upsert: false`, so every superseded drawing is still sitting in the `qc-docs` bucket under `so-line-drawings/`. History was being lost at the _database_ level only — the files were always there to point back at.
 
 A fourth fact made per-line history safe to build: SO lines are updated in place by `id` and soft-deleted when absent from a payload (`mergeLines`). Route-card ops, by contrast, are hard-deleted and re-inserted, which is precisely why `route_card_revisions` has to carry a jsonb snapshot of the whole op list. A drawing revision can safely hold a plain FK to its line.
 
 ### Decision
+
 Rev belongs to the drawing file, and the server owns it.
 
 - `sales_order_lines.revision` becomes `integer NOT NULL DEFAULT 0` (migration 0112). A line is **born at Rev 0** — the same "born at zero, the first edit is what makes it Rev 1" rule already settled for route cards in ADR-0111/migration 0111.
-- The number climbs by exactly one when `drawing_file_path` *genuinely changes* between the stored value and the payload. An ordinary re-save that leaves the drawing alone bumps nothing and records nothing — the same `skipWhenUnchanged` discipline as `replaceRouteCardOps`, for the same reason: a revision log that counts saves instead of changes is noise.
+- The number climbs by exactly one when `drawing_file_path` _genuinely changes_ between the stored value and the payload. An ordinary re-save that leaves the drawing alone bumps nothing and records nothing — the same `skipWhenUnchanged` discipline as `replaceRouteCardOps`, for the same reason: a revision log that counts saves instead of changes is noise.
 - Clearing a drawing **is** a change and does bump, recorded as `action: 'removed'` with a null path. Losing the drawing is exactly the kind of event this log exists to capture.
 - `revision` is removed from `salesOrderLineInputSchema` entirely. A client that could send a number could rewrite history, so the client does not get to send one. The Rev cell on the SO form becomes a read-only display.
 - New append-only `so_line_drawing_revisions` — one row per revision, holding the path it pointed at plus `drawing_no` and `item_code_text` **snapshotted at the moment of the change**, so the trail still reads correctly after a line is re-pointed at another item. Written inside the same transaction as the SO save.
@@ -7380,13 +7716,15 @@ Rev belongs to the drawing file, and the server owns it.
 Seeding: every line that already holds a drawing gets ONE row, at the number it currently carries (0 for the two with no Rev, 1 for the three that had `'1'`), stamped with that line's own creator and creation time. The drawings that came before cannot be invented, so the trail starts where the record actually starts.
 
 ### Alternatives Considered
-- **Keep `revision` as free text and add a separate integer `drawing_rev`** — rejected: two Rev columns on one line, and the user asked for *the* Rev field to behave this way, not for a second one beside it.
+
+- **Keep `revision` as free text and add a separate integer `drawing_rev`** — rejected: two Rev columns on one line, and the user asked for _the_ Rev field to behave this way, not for a second one beside it.
 - **Letters, matching `items.revision` (`text NOT NULL DEFAULT 'A'`)** — rejected: the user said "rev must start with 0", and integers are what the two existing revision logs in this codebase use. Item Master's letters are left alone; that is a different revision of a different thing and was not in scope.
 - **A jsonb snapshot per revision, mirroring `route_card_revisions` exactly** — rejected as over-built here. That table snapshots because its children are hard-deleted; SO lines survive, so a FK plus the two snapshotted display fields is enough.
 - **Bump the Rev on any SO line save** — rejected: the number would then measure how often someone opened the form, not how many drawings there have been.
 - **Backfill a plausible history from the storage bucket's timestamped file names** — rejected: the bucket holds every old file, but nothing ties a superseded file back to the line it belonged to. Inventing that mapping would put fiction in an audit trail.
 
 ### Consequences
+
 - Positive: the drawing a line shipped against is now answerable for every future change, and the old file stays one click away.
 - Positive: `revision` being `NOT NULL DEFAULT 0` means the SO form's Rev column can never be blank again, which is what "compulsory" actually needed.
 - Negative: history before 2026-09-06 does not exist and cannot be reconstructed. The five lines with drawings each start with a single seeded row.
@@ -7423,7 +7761,7 @@ could go out.
 Ask the same question before the first keystroke.
 
 1. `applyOutwardToJcOp`'s arithmetic moved into `loadOutwardSendable(tx,
-   companyId, poLineId)` in `delivery-challans/cascades.ts`, plus
+companyId, poLineId)` in `delivery-challans/cascades.ts`, plus
    `outwardCapRefusal` / `jobWorkUnlinkedRefusal` for the wording. The guard
    now calls the helper instead of computing inline — the behaviour at Save is
    byte-for-byte what it was.
@@ -7504,12 +7842,12 @@ Two smaller gaps sat alongside it:
 
 **1. Each status names its own next step, and links to the screen that performs it.**
 
-| `outsource_status` | reference kept | action added | destination |
-| --- | --- | --- | --- |
-| `pr_raised` | PR: … | 🧾 Gen PO | `/purchase-orders/from-pr?prId=` |
-| `po_created` | PO: … | 🚚 Gen DC | `/delivery-challans/new?poId=` |
-| `sent` | Sent | 📥 Receive `<dc>` | `/delivery-challans/$id/receive` |
-| `received` | Received | 🔬 Incoming QC | `/incoming-qc` |
+| `outsource_status` | reference kept | action added      | destination                      |
+| ------------------ | -------------- | ----------------- | -------------------------------- |
+| `pr_raised`        | PR: …          | 🧾 Gen PO         | `/purchase-orders/from-pr?prId=` |
+| `po_created`       | PO: …          | 🚚 Gen DC         | `/delivery-challans/new?poId=`   |
+| `sent`             | Sent           | 📥 Receive `<dc>` | `/delivery-challans/$id/receive` |
+| `received`         | Received       | 🔬 Incoming QC    | `/incoming-qc`                   |
 
 Plus 📋 TPI on a QC op whose name contains "TPI" (→ `/qc-call-register?tab=tpi`)
 and ⚠ NC on every op (→ `/nc-register/new`), because a fault can be found
@@ -7529,15 +7867,15 @@ would be invisible to most of the people looking at it.
 **3. Every button is gated on the form key of the page it OPENS**, never on
 `jc_create`, the page it sits on:
 
-| button | form key | action |
-| --- | --- | --- |
-| ▶ Start, ✚ Log | `op_entry` | entry |
-| 🔬 QC | `qc_submit` | view |
-| 📋 TPI | `tpi_submit` **and** `qc_submit` | entry |
-| 🧾 Gen PO | `po_create` | entry |
-| 🚚 Gen DC, 📥 Receive | `ospdc_create` | entry |
-| 🔬 Incoming QC | `qc_incoming` | view |
-| ⚠ NC | `nc_dispose` | entry |
+| button                | form key                         | action |
+| --------------------- | -------------------------------- | ------ |
+| ▶ Start, ✚ Log        | `op_entry`                       | entry  |
+| 🔬 QC                 | `qc_submit`                      | view   |
+| 📋 TPI                | `tpi_submit` **and** `qc_submit` | entry  |
+| 🧾 Gen PO             | `po_create`                      | entry  |
+| 🚚 Gen DC, 📥 Receive | `ospdc_create`                   | entry  |
+| 🔬 Incoming QC        | `qc_incoming`                    | view   |
+| ⚠ NC                  | `nc_dispose`                     | entry  |
 
 Buttons hide, never disable — this codebase disables only for in-flight
 mutations. The reference text is not gated: it is information, and the route
@@ -7566,7 +7904,7 @@ cap. Oldest first because material returns in the order it went out.
   operation is being read, which is when the next step is wanted.
 - **Deep-link the TPI tab by changing the tab to URL state** — rejected. The
   comment at `qc-call-register/routes/index.tsx` records that the tab
-  deliberately stays local. `?tab=` now only *seeds* the initial value; clicking
+  deliberately stays local. `?tab=` now only _seeds_ the initial value; clicking
   a tab still writes nothing to the URL.
 - **Redefine the OSP status enum to add an explicit `at_vendor`** — not needed;
   `sent` already means exactly that, and `at_vendor` remains display-only.
@@ -7598,31 +7936,36 @@ cap. Oldest first because material returns in the order it went out.
   suite is not runnable here (it seeds and deletes on the shared prod DB).
 
 ## ADR-146: TPI Master — third-party inspectors become a picked list, but a TPI log still keeps its own name snapshot
+
 **Date:** 2026-09-06
 **Status:** Accepted
 
 ### Context
+
 The TPI screen (`tpi-view.tsx`, mirroring legacy `renderTPI` L21381) took **Inspector Name ★** and **Organization ★** as free text. Two consequences, both live in the data today: the same person arrives spelled several ways across job cards, and there is no way to ask "everything Mr Sharma signed off this quarter" because nothing ties those strings together.
 
-The user asked for it plainly: *"in quality. master - add tpi master. add names must be link to inspector field. when click on inspector must show dropdown."*
+The user asked for it plainly: _"in quality. master - add tpi master. add names must be link to inspector field. when click on inspector must show dropdown."_
 
 Two facts shaped the answer. First, there is already a QC master one screen away in the same menu — `qc_processes` / QC Process Master — with the exact shape this needs, including the rule that its name is permanent once created. Copying it costs nothing and keeps the Quality menu internally consistent. Second, `op_log.tpi_inspector` (migration 0037) is a text column on an **append-only** table, and the TPI Completed list reads it directly.
 
 ### Decision
+
 Add `tpi_masters` (migration 0114) as a deliberate sibling of `qc_processes`: `code` holds the inspector's **name** — what the user types, reads and picks — unique per company and **permanent once created** (`updateTpiMasterInputSchema` omits it, the service never writes it). An inspector is retired with `is_active`, not renamed. Alongside it: `organization`, `contact_no`, `email`, `remarks`.
 
 The Inspector field on the TPI screen becomes the shared `<SearchableSelect>`, offering **active inspectors only**, rendering "Mr. Sharma — L&T QA Department" so the person is identified by who they inspect for. Picking one also fills Organization, left editable because a one-off site visit can legitimately differ.
 
-**The saved value does not change type.** The TPI submit still sends the inspector's NAME as text, and `op_log.tpi_inspector` stays a text column, not a foreign key. A QC log is a record of what was true on the day it was signed: retiring an inspector, correcting a spelling, or deleting a master row must never rewrite an inspection someone already put their name to. The master governs what you can pick *going forward*; it has no authority over what was already signed.
+**The saved value does not change type.** The TPI submit still sends the inspector's NAME as text, and `op_log.tpi_inspector` stays a text column, not a foreign key. A QC log is a record of what was true on the day it was signed: retiring an inspector, correcting a spelling, or deleting a master row must never rewrite an inspection someone already put their name to. The master governs what you can pick _going forward_; it has no authority over what was already signed.
 
 ### Alternatives Considered
+
 - **Make `op_log.tpi_inspector` an FK to `tpi_masters`** — rejected, and this is the load-bearing rejection. It would make historical TPI records mutable by editing a master row, on an append-only table whose whole point is that entries stand. It would also need a backfill that guesses which spelling meant which person.
 - **A free-text `<datalist>` of past inspector names** — rejected: no organisation, no active/retired state, no way to correct a misspelling for future entries, and it perpetuates the spelling drift instead of ending it. The repo already has a `searchable-field` skill saying not to hand-roll these.
 - **Reuse the operators master** — rejected: operators are our own shop-floor people. A TPI inspector is a third party from a client or an inspection agency. Merging them would put outsiders in every operator dropdown in the app.
 - **A separate `organizations` master with inspectors hanging off it** — rejected as premature. One firm per inspector covers what the TPI screen records; if an inspector genuinely moves firms, a second master row is honest, because the logs they signed under the old firm should keep saying so.
-- **Give the master a generated code (TPI-001) separate from the name** — rejected: the user asked to add *names*, and QC Process Master already establishes name-as-code in this exact menu. A second identifier the user never sees is friction with no payoff.
+- **Give the master a generated code (TPI-001) separate from the name** — rejected: the user asked to add _names_, and QC Process Master already establishes name-as-code in this exact menu. A second identifier the user never sees is friction with no payoff.
 
 ### Consequences
+
 - Positive: TPI history becomes groupable by inspector going forward, and the spelling drift stops at the point of entry.
 - Positive: the module is a near-copy of QC Process Master, so it inherits its access-control shape (`tpimaster_create`), its permanent-code rule and its list/detail styling with no new patterns invented.
 - Negative: TPI logs written before this keep whatever text they were given. They are not retro-linked and deliberately never will be.
@@ -7631,24 +7974,28 @@ The Inspector field on the TPI screen becomes the shared `<SearchableSelect>`, o
 - Verification: typecheck + lint on all three packages, web build. The api suite hits the shared prod DB, so it is not runnable here. Migration 0114 applied 2026-09-06 and verified live: the table exists with RLS and all 3 indexes, 0 rows, and `op_log.tpi_inspector` is untouched and still `text` — the point of the decision above.
 
 ## ADR-147: "QC By" comes from Access Control, and an inspection links to the person — not just their name
+
 **Date:** 2026-09-06
 **Status:** Accepted
 
 ### Context
+
 Two QC screens ask who did the inspection, and both got it wrong in a different way.
 
 **Incoming QC** (`qc-call-rows.tsx`) took the inspector as free text. The service then wrote `goods_receipt_note_lines.qc_inspected_by = user.id` — **whoever pressed Submit** — alongside the typed name in `qc_inspected_by_text`. So the FK recorded the typist and the text recorded the inspector, and on a shop floor where a supervisor enters results for an inspector those are routinely two different people. The one column that could have linked an inspection to a person was pointing at someone else.
 
 **QC Call Register** offered a `<datalist>` of **operator** names (legacy `db.operators`, HTML L4164). Operators are shop-floor machinists. It was the wrong list, and being a datalist it was advisory anyway — anything typed was accepted.
 
-Meanwhile the user has already configured exactly who the QC people are, in Access Control, and said so: *"in access control qc entries to do. i already defined user. based on that."*
+Meanwhile the user has already configured exactly who the QC people are, in Access Control, and said so: _"in access control qc entries to do. i already defined user. based on that."_
 
 Three facts from the live database decided the shape:
+
 - The API connects as `postgres` with `rolbypassrls = true`, so `user_access`'s admin-only read policy is documentation, not an obstacle (consistent with ADR-035). The **service-level gate** is the real control, so it had to be chosen deliberately rather than inherited.
 - 24 active users, of whom **18** carry some QC grant — but 5 of those are **L1** people whose main department is Production, Design or Purchase.
 - `users.role` cannot be the filter even though it has a `'qc'` value. It is derived as "the narrowest role covering everything they were given" (`roleForAccess`), so `kiran` at QC **L4** derives `manager` and would vanish from the list, while a QC L1 derives `viewer`.
 
 ### Decision
+
 A new `GET /access-control/qc-users` returns the QC people as `{ id, name, email, tier, isQcDept, fullAccess }`, and every "QC By" field becomes the shared `<SearchableSelect>` over it.
 
 **Who qualifies:** Quality tier **L2 or above**, plus Full Access accounts. **L1 is excluded on purpose** — L1 is view-only, so an L1 grant means "may look at Quality screens", not "may sign off an inspection". Offering an L1 account would name someone who cannot do the job. The legacy `true` tier value counts as L1 and is excluded with them. Ordering puts people whose MAIN department is Quality first, so the actual QC team is at the top and not buried under admins.
@@ -7660,6 +8007,7 @@ A new `GET /access-control/qc-users` returns the QC people as `{ id, name, email
 **The NAME is still stored, and still stored as text.** `qc_inspected_by_text` keeps the snapshot taken on the day. A completed inspection is a record of who signed it off; it must not change when that person is renamed, moved between departments or removed. The FK says who it was; the text says what we recorded at the time, and they are allowed to diverge.
 
 ### Alternatives Considered
+
 - **Filter on `users.role = 'qc'`** — rejected, and it is the tempting wrong answer. The role is derived narrowest-first, so it silently drops Quality leads who also write another department and silently includes nobody at L1. Verified against live rows before rejecting it.
 - **Offer everyone with any QC tick, L1 included** — rejected: 18 of 24 accounts, most of them Production and Design people with read-only Quality access. A dropdown that lists three-quarters of the company is not a dropdown.
 - **Make `qcInspectedByUserId` required** — rejected: an inspector who is not a system account, or an import, would then be unable to record a name at all. Optional keeps the old fallback and loses nothing, because the UI always sends it.
@@ -7668,6 +8016,7 @@ A new `GET /access-control/qc-users` returns the QC people as `{ id, name, email
 - **Keep the operator list on QC Call Register** — rejected: operators are machinists. That list was wrong before this change and would still be wrong after it.
 
 ### Consequences
+
 - Positive: `qc_inspected_by` finally means what its name says, so "everything Shivani passed this month" becomes answerable.
 - Positive: one endpoint feeds both QC screens, so the two can no longer drift apart the way free text and a datalist did.
 - Positive: the user maintains the list where they already maintain it — granting someone Quality L2 in Access Control puts them in the dropdown, with nothing else to configure.
@@ -7713,12 +8062,12 @@ offering work that does not exist.
 Every button tests its OWN condition — quantities and ids, never
 `outsource_status` — and all that apply render together.
 
-| button | condition |
-| --- | --- |
-| 🧾 Gen PO | `outsourcePrId && !outsourcePoId` |
-| 🚚 Gen DC (n) | `outsourcePoId && readyToSendQty > 0` |
-| 📥 Receive `<dc>` | `outsourceOpenDcId` |
-| 🔬 Incoming QC | `inQcQty > 0` |
+| button            | condition                             |
+| ----------------- | ------------------------------------- |
+| 🧾 Gen PO         | `outsourcePrId && !outsourcePoId`     |
+| 🚚 Gen DC (n)     | `outsourcePoId && readyToSendQty > 0` |
+| 📥 Receive `<dc>` | `outsourceOpenDcId`                   |
+| 🔬 Incoming QC    | `inQcQty > 0`                         |
 
 `readyToSendQty` (ADR-141) and `inQcQty` were already on the enriched op; no
 contract or query changed. The first button rendered takes `btn-primary` and
@@ -7771,18 +8120,20 @@ mount.
 
 ## ADR-147a (amendment, 2026-09-06): the QC By list is "who was GRANTED QC entry", and Full Access counts
 
-ADR-147 shipped with the rule "Quality tier L2 or above, plus Full Access accounts". The user's correction was that the dropdown still read as everybody: *"currently qc by filed dropdown shows all qc person. show names who has qc rights to entry."*
+ADR-147 shipped with the rule "Quality tier L2 or above, plus Full Access accounts". The user's correction was that the dropdown still read as everybody: _"currently qc by filed dropdown shows all qc person. show names who has qc rights to entry."_
 
 **The rule is now: was this person GRANTED `entry` on a QC entry form** — `qc_submit` (QC Call Register) or `qc_incoming` (Incoming QC) — asked through the app's own `effectiveFormPerms` rather than re-derived from tiers. Deliberately not every qc-department form: entry on QC Process Master or TPI Master means "may maintain a lookup list", not "may inspect".
 
 Asking the real permission function fixes three things the tier comparison got wrong, and two of them were silent:
+
 - a **per-form grant** counts — someone given explicit entry on QC Call Register with no Quality tier was invisible before, and is a QC user;
 - a **per-page "No create"** switch now takes someone back off the list — before, an admin who had explicitly removed a person's QC entry rights was still offering them as an inspector;
 - **L1 falls out on its own**, because the L1 tier grants no entry. The old min-tier constant is subsumed rather than removed.
 
-**Full Access accounts stay on the list.** An intermediate version excluded them — of the 13 names offered, four were Super Admins (`dummy`, `japan`, `Jinal`, `Vinay N Makwana`), three with no QC tier at all and one at L1, present only because Full Access short-circuits every permission check. The user rejected that exclusion directly: *"but they have full access. they can do any entries."* That is correct, and it is the deciding argument — those accounts genuinely may record a QC entry, so a list of who may do it that omits them would be describing something untrue. Refusing them would also have meant an admin could not be recorded as the inspector on work they really did.
+**Full Access accounts stay on the list.** An intermediate version excluded them — of the 13 names offered, four were Super Admins (`dummy`, `japan`, `Jinal`, `Vinay N Makwana`), three with no QC tier at all and one at L1, present only because Full Access short-circuits every permission check. The user rejected that exclusion directly: _"but they have full access. they can do any entries."_ That is correct, and it is the deciding argument — those accounts genuinely may record a QC entry, so a list of who may do it that omits them would be describing something untrue. Refusing them would also have meant an admin could not be recorded as the inspector on work they really did.
 
 **Ordering carries the distinction instead of the filter.** Three bands, then by name inside each:
+
 1. the QC team — Quality is their MAIN department;
 2. granted QC entry — a Quality tier or a per-form grant says so;
 3. everyone else — Full Access accounts who merely may.
@@ -7791,33 +8142,37 @@ So the dropdown opens on the people whose job this is, and the admins are presen
 
 **The tiers are not a ladder, and that is why the old rule was wrong.** `ACCESS_TIERS` reads:
 
-| Tier | Label | view | entry | edit | approve |
-| --- | --- | --- | --- | --- | --- |
-| L1 | Viewer | ✓ | ✗ | ✗ | ✗ |
-| L2 | Data Entry | ✓ | **✓** | ✗ | ✗ |
-| L3 | Editor / Executor | ✓ | **✓** | ✓ | ✗ |
-| L4 | **Approver** | ✓ | **✗** | ✗ | ✓ |
-| L5 | Department Admin | ✓ | **✓** | ✓ | ✓ |
+| Tier | Label             | view | entry | edit | approve |
+| ---- | ----------------- | ---- | ----- | ---- | ------- |
+| L1   | Viewer            | ✓    | ✗     | ✗    | ✗       |
+| L2   | Data Entry        | ✓    | **✓** | ✗    | ✗       |
+| L3   | Editor / Executor | ✓    | **✓** | ✓    | ✗       |
+| L4   | **Approver**      | ✓    | **✗** | ✗    | ✓       |
+| L5   | Department Admin  | ✓    | **✓** | ✓    | ✓       |
 
-**L4 ranks above L3 but grants less** — it is a sign-off role with no data entry at all. Any rule of the form "tier index ≥ L2" therefore lets an Approver through, which is exactly what shipped in `1bfcaed`. `kiran` (Quality L4) is in the live dropdown today and should never have been: they may approve an inspection, not record one. The user caught it — *"this person has qc right to approve only. what about entry. does he have?"* — and they were right.
+**L4 ranks above L3 but grants less** — it is a sign-off role with no data entry at all. Any rule of the form "tier index ≥ L2" therefore lets an Approver through, which is exactly what shipped in `1bfcaed`. `kiran` (Quality L4) is in the live dropdown today and should never have been: they may approve an inspection, not record one. The user caught it — _"this person has qc right to approve only. what about entry. does he have?"_ — and they were right.
 
 Net effect on live data: **13 names become 12**, the one removed being the L4 Approver. All four Full Access accounts stay, sorted last. This is the case that makes the amendment worth shipping: the reordering is cosmetic, but asking the real permission table instead of comparing tier numbers is a correctness fix, and it will keep being one every time a new tier is added with a non-monotonic permission set.
 
 ## ADR-149: The QC log and the GRN screen link to the inspector too — finishing ADR-147
+
 **Date:** 2026-09-06
 **Status:** Accepted
 
 ### Context
-ADR-147 replaced the free-text and operator-list "QC By" fields with a dropdown of the people Access Control lets do QC work, and pointed `goods_receipt_note_lines.qc_inspected_by` at the person picked rather than whoever pressed Submit. It closed Incoming QC and left two paths open, both flagged at the time. The user's instruction was one line: *"go fix gaps."*
+
+ADR-147 replaced the free-text and operator-list "QC By" fields with a dropdown of the people Access Control lets do QC work, and pointed `goods_receipt_note_lines.qc_inspected_by` at the person picked rather than whoever pressed Submit. It closed Incoming QC and left two paths open, both flagged at the time. The user's instruction was one line: _"go fix gaps."_
 
 **The QC log.** The QC Call Register's process-QC entry got the dropdown but could still only save a NAME. `op_log` has `operator_id`, but it references the **operators** master — shop-floor machinists — and a QC inspector is a person with a login, configured in Access Control. There was literally nowhere to put them, so the entry named someone and linked to nobody.
 
-**The GRN screen.** `goods_receipt_note_lines` already had *both* columns (`qc_inspected_by` and `qc_inspected_by_text`) since long before this work. The form simply never asked who inspected, and three code paths stamped `user.id` on the completed transition. That records whoever SAVED the GRN — routinely a storekeeper booking in a delivery, not the person who inspected the goods. No schema was missing here; the question was never being asked.
+**The GRN screen.** `goods_receipt_note_lines` already had _both_ columns (`qc_inspected_by` and `qc_inspected_by_text`) since long before this work. The form simply never asked who inspected, and three code paths stamped `user.id` on the completed transition. That records whoever SAVED the GRN — routinely a storekeeper booking in a delivery, not the person who inspected the goods. No schema was missing here; the question was never being asked.
 
 ### Decision
-**`op_log` gains `qc_user_id uuid references users(id)`** (migration 0115), nullable, sitting *beside* `operator_id` rather than replacing it. The two answer different questions — which machinist ran the work, and which QC person signed it off — and an op can have both. A partial index on `(qc_user_id, log_date) where qc_user_id is not null` makes "every inspection this person signed" cheap without indexing the production rows that will never have the column set.
+
+**`op_log` gains `qc_user_id uuid references users(id)`** (migration 0115), nullable, sitting _beside_ `operator_id` rather than replacing it. The two answer different questions — which machinist ran the work, and which QC person signed it off — and an op can have both. A partial index on `(qc_user_id, log_date) where qc_user_id is not null` makes "every inspection this person signed" cheap without indexing the production rows that will never have the column set.
 
 **The GRN line input gains `qcInspectedByUserId` and `qcInspectedByName`**, and the form grows a 👤 QC By field in the per-line QC block, respecting the same lock that already freezes QC-completed lines. The service now follows a three-way rule:
+
 - a picked user is written as the inspector;
 - a supplied name is written to `qc_inspected_by_text`;
 - **neither supplied → the old behaviour stands**, stamping `user.id` on the completed transition. A GRN saved by someone who never opened the QC fields behaves exactly as it does today.
@@ -7827,6 +8182,7 @@ An **absent** key means "the payload does not mention QC, leave it alone"; an ex
 **The name is still stored as text in both places**, and is still not derived from the link. Third time this rule has decided a design (ADR-146 for TPI, ADR-147 for Incoming QC, here for the other two): a signed-off inspection is a record of what was true on the day, and must not change when a person is renamed, moved between departments, or removed.
 
 ### Alternatives Considered
+
 - **Reuse `op_log.operator_id` for the QC user** — rejected, and it is the change someone will propose later. It is an FK to the `operators` master; pointing it at `users` would need the constraint dropped, would break every operator-wise production report that joins it, and would conflate a machinist with an inspector in one column.
 - **Widen `operator_id` to a polymorphic "person id" with a type discriminator** — rejected: it buys nothing here and loses the foreign key on both sides. Two nullable FKs are honest about the two different things.
 - **Drop `operator_name` on QC entries now that the link exists** — rejected for the reason above. The link says who it was; the text says what we recorded at the time, and they are allowed to diverge.
@@ -7834,6 +8190,7 @@ An **absent** key means "the payload does not mention QC, leave it alone"; an ex
 - **Backfill `qc_user_id` from `operator_name` by matching text to logins** — rejected: the names were typed freely for years, and a fuzzy match that is right most of the time is worse than an empty column in an audit trail.
 
 ### Consequences
+
 - Positive: "every inspection signed by this person" is now answerable across all three QC paths — incoming inspection, process QC, and the GRN screen.
 - Positive: the GRN screen stops silently crediting the storekeeper who booked the delivery in.
 - Negative: entries written before today keep what they had — `op_log.qc_user_id` null, and old GRN lines still pointing at whoever saved them. Neither is backfilled, deliberately.
@@ -8299,11 +8656,11 @@ Service PO and the GRN.
 Browser header/footer is suppressed with `@page{margin:0}`, and the page
 margins are supplied by the document in ways that REPEAT per page:
 
-| edge | mechanism |
-| --- | --- |
-| left / right | `.sheet` side padding — a box's side edges repeat by nature |
-| top | `.lh-pad` inside the repeating `<thead>`, outside the border |
-| bottom | an empty `<tfoot>` spacer, repeated by `table-footer-group` |
+| edge         | mechanism                                                    |
+| ------------ | ------------------------------------------------------------ |
+| left / right | `.sheet` side padding — a box's side edges repeat by nature  |
+| top          | `.lh-pad` inside the repeating `<thead>`, outside the border |
+| bottom       | an empty `<tfoot>` spacer, repeated by `table-footer-group`  |
 
 The letterhead `<th>` gives up its border to an inner `.lh-in` div so the top
 pad can sit outside that border; otherwise the frame printed hard against the
@@ -8529,7 +8886,7 @@ One shared helper (`apps/web/src/lib/item-code.ts`) writes it as a single string
 
 ### Context
 
-ADR-159 put `CODE/REV` on the SO's own screens and the Job Card, and listed the remaining ~60 locations as waiting on the user to choose. The user chose all of them: *"downstream document must be 100% updated with itemcode/revision . all downstram document . not only this ... all doc"*.
+ADR-159 put `CODE/REV` on the SO's own screens and the Job Card, and listed the remaining ~60 locations as waiting on the user to choose. The user chose all of them: _"downstream document must be 100% updated with itemcode/revision . all downstram document . not only this ... all doc"_.
 
 Separately: a new SO line's Rev was pre-filled with '0'. That made a revision nobody had read off a drawing look like one somebody had confirmed, and a box already holding a plausible value is a box people tab straight past.
 
@@ -8795,10 +9152,12 @@ the DC receive call.
   longer be overridden on create.
 
 ## ADR-164: Start Operation asks for the ACTUAL machine; the planned machine is shown, never rewritten
+
 **Date:** 2026-09-14
 **Status:** Accepted
 
 ### Context
+
 User requirement: in Start Operation show the **Planned Machine** (from JC
 creation, read-only) and an **Actual Machine** (defaults to planned, changeable
 through Machine Group → Machine); changing Actual must never overwrite Planned;
@@ -8820,6 +9179,7 @@ board, JC print, SO Overview location and the JC list filter read `jc_ops`
 labels both.
 
 ### Decision
+
 - `startOpInputSchema.machineId` — **required on a process op, forbidden on a
   QC op**. `startOp` validates it (company, not deleted), writes it to
   `running_ops.machine_id` and the `'start'` op_log marker, and audits
@@ -8840,6 +9200,7 @@ labels both.
   satisfied by the columns 0095 already created.
 
 ### Alternatives Considered
+
 - A `planned_machine_id` snapshot on `running_ops` / `op_log` — rejected: the
   plan is `jc_ops.machine_id` and a later re-route is a deliberate routing
   change with its own audit line (ADR-125); a frozen copy would only disagree
@@ -8853,6 +9214,7 @@ labels both.
   now force a pick, closing that hole.
 
 ### Consequences
+
 - Positive: an operator who runs the job on a free machine records it in one
   click; every machine-wise report attributes the pieces correctly with no
   further edits; the plan stays the plan.
@@ -8886,8 +9248,7 @@ T3-12) found two defects on the job-work PO behind an outsource op:
    NC, which subtracts it once its own challan is issued; until then it counts
    as received, exactly as an in-house rejected piece on an ordinary GRN does.
    Walk-through: out 3 → 7; replacement 1 ok / 2 fail → 10 (NC-A open 0, NC-B
-   not yet out); NC-B out → 8; NC-B 1 ok / 1 fail → 10; NC-C out → 9; cleared →
-   10.
+   not yet out); NC-B out → 8; NC-B 1 ok / 1 fail → 10; NC-C out → 9; cleared → 10.
 2. Every site that recomputes the line on an RTV event also recomputes the
    header (`createNcDc`, `onNcReplacementQc`), and `onNcReplacementQc` recomputes
    when EITHER accepted or rejected changed — a failed replacement moves the
@@ -8962,6 +9323,7 @@ side was not:
 ### Addendum (2026-09-16, after `/code-review` of the batch)
 
 Three findings, all fixed before the batch went further:
+
 - The mirror's stock credit lacked op-entry's recovery-child guard (a rework child whose
   origin op is not the parent's terminal op would have booked every recovered piece twice).
   One helper, `recoveryChildCreditsStock`, now serves both `submitQcLog` and the mirror.
@@ -9014,14 +9376,16 @@ read complete there; a JW-only job card created directly left its OSP op with no
 - Negative: two more manual migrations (0129, 0130) per database.
 
 ## ADR-168: "Final Inspection" replaces DIR as the default terminal QC op; a QC op may not directly follow an OSP op
+
 **Date:** 2026-09-17
 **Status:** Accepted (supersedes the NAME in ADR-069 / ADR-133 / ADR-161; the Rule B logic is unchanged)
 
 ### Context
-User, 2026-09-17: *"DIR is no longer a special QC process. DIR must behave like a normal QC
+
+User, 2026-09-17: _"DIR is no longer a special QC process. DIR must behave like a normal QC
 process. Move the existing DIR-specific special logic/conditions to Final Inspection. Add Final
-Inspection to QC Process Master."* and *"OSP → QC = NOT ALLOWED. OSP → Operation → QC = ALLOWED.
-Reason: OSP → Inward → Incoming QC."*
+Inspection to QC Process Master."_ and _"OSP → QC = NOT ALLOWED. OSP → Operation → QC = ALLOWED.
+Reason: OSP → Inward → Incoming QC."_
 
 Traced: the only DIR-specific behaviour in the system is ADR-069 Rule B — the server appends a
 terminal QC op named `DEFAULT_FINAL_QC_OP` when a routing would otherwise never credit finished
@@ -9040,6 +9404,7 @@ same reasoning ("the vendor's work is inspected at Incoming QC") — so the pair
 up front and the mirror stays as a safety net for the two cases that still produce it.
 
 ### Decision
+
 1. `DEFAULT_FINAL_QC_OP = 'Final Inspection'`. `stripAutoTerminalQcOp` compares case-folded on
    BOTH sides (it uppercased one side only, which would silently never match a mixed-case name).
    The delete guard now protects "Final Inspection"; DIR is deletable when unused like any other
@@ -9050,9 +9415,9 @@ up front and the mirror stays as a safety net for the two cases that still produ
 3. New shared helper `packages/shared/src/lib/jc-op-sequence.ts` —
    `findQcDirectlyAfterOutsource` / `qcAfterOutsourceError` / `opPairKey`. Enforced on the JC
    form (existing red banner, `build-jc-write-input.ts`) and on the server in JC create/edit,
-   Plan save/execute and Route Card create/update, with one message: *"Op 30 (QC) cannot directly
+   Plan save/execute and Route Card create/update, with one message: _"Op 30 (QC) cannot directly
    follow Op 20 (OSP). Add a manufacturing operation between them — the vendor's work is
-   inspected at Incoming QC when it comes back."*
+   inspected at Incoming QC when it comes back."_
 4. Exemptions: rework/repair children (`recovery_kind`) are exempt — ADR-161 appends the terminal
    QC after ANY last op there, outsource included; pairs that already exist on a saved JC are
    grandfathered (`allowedPairs`) so an old JC stays editable without re-routing.
@@ -9067,6 +9432,7 @@ up front and the mirror stays as a safety net for the two cases that still produ
    gaps after a delete (1, 3, 4 …), so "Op 30" must be the number on the screen, not the index.
 
 ### Intentionally unchanged
+
 Existing `jc_ops` named DIR/dir (history not rewritten; recovery children keep copying the
 parent's rejecting-QC name). Known one-time consequence: a pre-ADR-168 JC ending in the old
 generated `DIR` op is, on its next routing edit, saved to the item's route card WITH that DIR op
@@ -9079,6 +9445,7 @@ migration 0067's `DIR-QC-BACKFILL` ledger marker; Playwright specs that assert t
 "DIR" (listed for the user; not edited without their say).
 
 ### Alternatives Considered
+
 - Alias DIR as a second "generated" name in `stripAutoTerminalQcOp` — rejected: that keeps DIR
   special, the opposite of the ask; a user-picked DIR now legitimately belongs on a route card.
 - Zod `superRefine` on `jobCardWriteInputSchema.ops` — rejected: the payload has no
@@ -9087,18 +9454,21 @@ migration 0067's `DIR-QC-BACKFILL` ledger marker; Playwright specs that assert t
   the user-picked `dir` are distinguishable only by case; on PROD they are not.
 
 ### Consequences
+
 - Positive: one rule, one message, on the form and every server door; the master and the
   server agree on the name the server writes.
 - Negative: historic FPY / QC-documents group DIR and Final Inspection as two stages; one more
   manual migration per database.
 
 ## ADR-169: QC Call Register becomes a single "ruled sheet" with a stage strip; rows know whether their QC op is the job card's last
+
 **Date:** 2026-09-17
 **Status:** Accepted
 
 ### Context
-User supplied a mockup (Word doc, one image, labelled *"2c Ruled sheet — no fills at all, hairline
-rules and a stage step strip; lightest of the three; closest to a QC register book"*) and asked
+
+User supplied a mockup (Word doc, one image, labelled _"2c Ruled sheet — no fills at all, hairline
+rules and a stage step strip; lightest of the three; closest to a QC register book"_) and asked
 for it to be applied to the QC Call Register, with the header carrying **Export, Search, Pending,
 Completed**. The page was the legacy two-pane split (pending calls + inline accept/reject form on
 the left, completed log on the right; renderQCDashboard L4126) with two separate search boxes,
@@ -9109,6 +9479,7 @@ process-QC row is the job card's terminal QC gate. The qc-history rows carried `
 "is this the last op", and the name alone cannot be trusted (old cards end in DIR, ADR-168).
 
 ### Decision
+
 1. `qcHistoryPendingRowSchema` / `qcHistoryLogRowSchema` gain `isLastOp: boolean` (default false
    so older API builds still parse); the qc-history service sets it from the same "last live op"
    criterion the stock cascade uses (ADR-069). Stage = Incoming (GRN-line rows) · Final Inspection
@@ -9122,11 +9493,13 @@ process-QC row is the job card's terminal QC gate. The qc-history rows carried `
    the access guard and all permission logic are untouched. /qc-history is untouched.
 
 ### Alternatives Considered
+
 - Classify "Final Inspection" by op NAME — rejected: DIR-ended legacy cards and user-named
   terminal QCs would be misfiled; the stock cascade's criterion is the truth.
 - Keep two panes and only recolour — rejected: the ask is the mockup, which is one sheet.
 
 ### Consequences
+
 - Positive: one place to look, counts per stage at a glance, export of exactly what is on screen.
 - Negative: the completed feed is still the client-side capped list; the strip's "done" counts
   are labelled from server stats where they exist.
@@ -9136,6 +9509,7 @@ process-QC row is the job card's terminal QC gate. The qc-history rows carried `
 **Date:** 2026-09-17 · **Status:** Accepted · **Migration:** 0133
 
 ### Context
+
 A plan carried its own operations (`plan_ops`, typed in the edit-plan modal, defaulted from the
 item's route card) and **Execute** copied them onto a Job Card. Stock for that JC was credited
 piecemeal, at whichever of three points fired first: the last op's QC accept (`qc_accept`,
@@ -9146,24 +9520,26 @@ wants (2026-09-17): a plan is quantity + dates + raw material + remark only; the
 the only source of operations ("no route card, no way forward"); a **Production Order**
 (IN-PRO-#####) = Plan + Route Card + Target Date builds the JC; the JC flow after that is
 untouched; and stock is credited **once**, when the user closes the Production Order, with the
-JC's *actually finished* qty (48 of a 50 plan credits 48). Old plans and old JCs must keep
+JC's _actually finished_ qty (48 of a 50 plan credits 48). Old plans and old JCs must keep
 behaving exactly as before.
 
 ### Source of truth and relationships
-| Fact | Lives in | Read by |
-|---|---|---|
-| Plan qty / dates / RM / remark | `plans` (existing columns) | Create Plan box, PO create |
-| Old flow vs new flow | `plans.ops_source` ('plan' \| 'route_card') — stored, never inferred | Execute guard, Planning screen, Plans list |
-| Item's operations | `route_cards` (unique active per item) + `route_card_ops` | PO create copies them to `jc_ops` |
-| Production Order | `production_orders` (plan_id unique → one PO per plan) | PO master, Close, Plans list, report |
-| PO ↔ JC | `production_orders.job_card_id` and `job_cards.production_order_id` | stock cascades (OFF switch), Close |
-| Plan → JC | `plans.jc_id` (kept; set on PO create) | every existing plan/JC screen |
-| JC complete? | `v_jc_status.computed_status IN ('complete','closed')` (0124/0125: all pieces accepted, no open rework child) | Close guard |
-| JC finished qty | last live op in `v_jc_op_status`: `qc_accepted_qty` for a QC / qc_required op, else `completed_qty` (= `JobCardListItem.lastOpCompletedQty`) | Close credits exactly this |
-| Stock ledger | `store_transactions` source `'production_order_close'`, ref = PO code | store inventory |
-| Plan progress (new flow) | derived in `listPlans`: route_card_pending → gen_production_order → in_production → production_complete | Plans list, PO pickers |
+
+| Fact                           | Lives in                                                                                                                                     | Read by                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Plan qty / dates / RM / remark | `plans` (existing columns)                                                                                                                   | Create Plan box, PO create                 |
+| Old flow vs new flow           | `plans.ops_source` ('plan' \| 'route_card') — stored, never inferred                                                                         | Execute guard, Planning screen, Plans list |
+| Item's operations              | `route_cards` (unique active per item) + `route_card_ops`                                                                                    | PO create copies them to `jc_ops`          |
+| Production Order               | `production_orders` (plan_id unique → one PO per plan)                                                                                       | PO master, Close, Plans list, report       |
+| PO ↔ JC                        | `production_orders.job_card_id` and `job_cards.production_order_id`                                                                          | stock cascades (OFF switch), Close         |
+| Plan → JC                      | `plans.jc_id` (kept; set on PO create)                                                                                                       | every existing plan/JC screen              |
+| JC complete?                   | `v_jc_status.computed_status IN ('complete','closed')` (0124/0125: all pieces accepted, no open rework child)                                | Close guard                                |
+| JC finished qty                | last live op in `v_jc_op_status`: `qc_accepted_qty` for a QC / qc_required op, else `completed_qty` (= `JobCardListItem.lastOpCompletedQty`) | Close credits exactly this                 |
+| Stock ledger                   | `store_transactions` source `'production_order_close'`, ref = PO code                                                                        | store inventory                            |
+| Plan progress (new flow)       | derived in `listPlans`: route_card_pending → gen_production_order → in_production → production_complete                                      | Plans list, PO pickers                     |
 
 ### Decision
+
 1. **Plan** — the Planning screen's Create Plan box posts `opsSource:'route_card'`; the server
    stores the plan as `planned` immediately (no ops, no finalize), `POST /plans/:id/execute`
    refuses such a plan ("create a Production Order instead"). Old plans (`ops_source='plan'`)
@@ -9187,6 +9563,7 @@ behaving exactly as before.
    Production → Plans (All / Pending, derived status); Reports → Production Orders (Pending / All).
 
 ### Alternatives considered
+
 - Infer "new flow" from `planned` + 0 ops — rejected: direct-purchase / full-outsource plans are
   legitimately ops-less; a stored column cannot be misread.
 - Key the GRN switch on `purchase_orders.po_type` — rejected: the credit path never looked at
@@ -9195,6 +9572,7 @@ behaving exactly as before.
   it would drift the moment a QC log is corrected.
 
 ### Consequences
+
 - Positive: one credit per JC, at a human-confirmed moment; operations have one master.
 - Negative: two flows coexist until old plans drain; the OFF switch adds one JC lookup to two
   cascades. Raw `job_cards.production_order_id` FK is declared in SQL only (table order in schema.ts).
@@ -9204,6 +9582,7 @@ behaving exactly as before.
 **Date:** 2026-09-17 · **Status:** Accepted · **Migration:** 0134 · **Builds on:** ADR-170
 
 ### Context
+
 With ADR-170 the plan type comes from the route card. For a bought-in item that is a detour: a
 route card exists only to say "Direct Purchase", and a Production Order has nothing to close.
 The user asked for the shortest path, grounded in standard ERP practice. SAP's Material Master
@@ -9212,6 +9591,7 @@ demand into a production order or a purchase requisition accordingly; Odoo's pro
 (Manufacture / Buy) do the same on a confirmed sales order.
 
 ### Decision
+
 1. `items.procurement_type` — `'make'` (default, every existing item) | `'buy'`. Shown on the
    Item Master form as **Source: Make / Buy**.
 2. Planning line whose item is **buy**: the Action cell offers **+ PR** (not + Plan). A small
@@ -9228,12 +9608,14 @@ demand into a production order or a purchase requisition accordingly; Odoo's pro
    for existing rows); Create Production Order still refuses such cards.
 
 ### Alternatives considered
+
 - Keep Direct Purchase on the route card and make the Production Order raise a PR — rejected:
   a route card for something we never route, and a "production" document with nothing to close.
 - Raise the PR automatically the moment a plan is created — rejected: planners create plans
   ahead of when Purchase should act; one deliberate click keeps that control.
 
 ### Consequences
+
 - Positive: one flag on the item, one click on the line; production and purchase paths are
   symmetrical (Gen production order / + PR) and both end in stock exactly once.
 - Negative: existing direct-purchase plans keep the old Execute path until they drain; an item
@@ -9244,6 +9626,7 @@ demand into a production order or a purchase requisition accordingly; Odoo's pro
 **Date:** 2026-09-18 · **Status:** Accepted · **Migration:** 0135
 
 ### Context
+
 In the 2026-09-17 Production Orders verification run two saves (Gen DC → IN-DC-00043/R1, GRN
 receive → IN-GRN-00044) took 14–20 s on the test API. The connection dropped, the browser
 resent the request, and the second copy failed with "already exists" although the first copy
@@ -9251,6 +9634,7 @@ had created the document within a second. The same shape was recorded on 2026-09
 Nothing was duplicated; the user saw an error for a save that had worked and stayed on the form.
 
 ### Decision
+
 1. `apps/web/src/lib/api.ts` sends `idempotency-key: <random uuid>` on every POST / PATCH / PUT
    / DELETE (one key per `apiFetch` call, so a deliberate second click is a new request).
 2. `apps/api/src/plugins/idempotency.ts` records `(user_id, key, method, path)` in
@@ -9262,27 +9646,32 @@ Nothing was duplicated; the user saw an error for a save that had worked and sta
    policies (the API connects as `postgres`, which bypasses RLS).
 
 ### Alternatives considered
+
 - Treat "code already exists" as success on the two affected screens — rejected: hides the
   symptom on two screens, every other create screen keeps it.
 - Fix only the slowness — still needed separately, but a dropped connection can happen on any
   slow network; the key makes the resend harmless wherever it happens.
 
 ### Consequences
+
 - Positive: one click = one document, whatever the network does; every write screen benefits.
 - Negative: one small insert + update per write; a table to purge; multipart uploads are
   outside the plugin.
 
 ## ADR-173: Header navigation replaces the left sidebar
+
 **Date:** 2026-09-21
 **Status:** Accepted
 
 ### Context
+
 User direction, with a visual template: move the 220px left sidebar into a
 compact horizontal header — logo, Dashboard, then every module as a dropdown
 of its pages — keep the recently-visited page tabs under it, keep all
 functionality, routing, permissions and theme, change nothing unrelated.
 
 ### Decision
+
 - `components/shared/top-nav.tsx` — one 54px band: small logo, Dashboard, the
   eleven modules (Sales & CRM, Design, Planning, Production, Purchase, Quality,
   Store, Finance, Tasks, Reports, Settings) as dropdown buttons, then search,
@@ -9306,6 +9695,7 @@ functionality, routing, permissions and theme, change nothing unrelated.
   left in place (dead, harmless) to keep this change to the navigation.
 
 ### Alternatives Considered
+
 - Icons on the module buttons (as the template) — rejected: ~250px too wide
   for 1366px with all twelve modules; icons stay on the pages inside.
 - A "More ▾" overflow menu for the last modules — rejected for now: hides
@@ -9316,6 +9706,7 @@ functionality, routing, permissions and theme, change nothing unrelated.
   and is usable on touch.
 
 ### Consequences
+
 - Positive: ~220px more page width on every screen; every module one click
   away; the tabs and breadcrumb keep working unchanged.
 - Negative: the page title no longer appears in the chrome (it was the old
@@ -9328,6 +9719,7 @@ functionality, routing, permissions and theme, change nothing unrelated.
 **Status:** Accepted
 
 ### Context
+
 User request (2026-09-21), built under the Rule Book's NEW FIELD — STANDARD
 FLOW: (1) the plan needs a **Customer Dispatch** field that "must reflect
 downstream"; (2) a parent job card's header must show its child job card(s);
@@ -9335,6 +9727,7 @@ downstream"; (2) a parent job card's header must show its child job card(s);
 "Target Date" is to read "Customer Dispatch Date".
 
 ### Decision
+
 - **Business need / source (rule step 1):** the date the goods must leave for
   the customer. Its source is the order: the SO line's due date, which the
   planner confirms or changes when the plan is created.
@@ -9356,12 +9749,14 @@ downstream"; (2) a parent job card's header must show its child job card(s);
   a parent. The recovery banner stays.
 
 ### Alternatives Considered
+
 - Storing the dispatch date on the Job Card as well — rejected: two copies of
   one fact drift; the card reads it through its plan.
 - Renaming the Production Order column `target_date` — rejected: a label
   change is what was asked; the column, API and history stay.
 
 ### Consequences
+
 - Positive: the dispatch team works to one date entered once, at planning.
 - Negative: plans made before 0137 carry no date (the Production Order still
   falls back to Planned End); JW-sourced plans have no SO due date to default
@@ -9443,7 +9838,7 @@ and asked that the rules be enforced on the server, not merely hidden on the web
 
 - **One `tasks` table, four filtered views.** Inbox = `assigned_to = me AND created_by <> me`;
   Outbox = `created_by = me AND assigned_to <> me`; My To-Do = `created_by = me AND
-  assigned_to = me`; All Tasks = every company task, **admin only** (`requireAdminRole`,
+assigned_to = me`; All Tasks = every company task, **admin only** (`requireAdminRole`,
   i.e. Access-Control Full Access). No Inbox/Outbox tables.
 - **Visibility (non-admin):** creator, assignee or assigner of the task; anything else is a
   404, the ERP's existing convention. Tab counters and KPI cards obey the same rule.
@@ -9532,6 +9927,7 @@ buttons ("View", "Edit", "Del"), some with no sticky band.
 **Date:** 2026-09-22 · **Status:** Accepted · **Migration:** none (column is text since 0119 / 0120)
 
 ### Context
+
 The per-line drawing revision (`sales_order_lines.revision`, `job_work_order_lines.revision`) is
 free text: any case, no rule on edit, and it already renders as `CODE/REV` on most screens but
 not on GRN list/detail/print, Production Orders, the JC traveller's "Part / Item No.", SO-list
@@ -9541,6 +9937,7 @@ can never be set back to "A" (same for numbers); the revision is per SO item and
 each and every document.
 
 ### Decision
+
 1. `packages/shared/src/lib/revision.ts` is the one place the rule lives: `normalizeRevision`
    (trim + upper-case), `REVISION_PATTERN` (letters, digits, `. - /`), `compareRevision`
    (letters as letters A<B<…<Z<AA, numbers as numbers 2<10, same-prefix numbers R1<R2; a change
@@ -9554,6 +9951,7 @@ each and every document.
    everywhere it was missing; every item code on those documents and prints renders `CODE/REV`.
 
 ### Consequences
+
 - Existing lowercase values are normalised the next time the line is saved; nothing is rewritten
   in bulk. Un-orderable pairs are not blocked — blocking them would forbid legitimate
   numbering-scheme changes.
@@ -9564,14 +9962,17 @@ each and every document.
 **Status:** Accepted
 
 ### Context
+
 Three related gaps surfaced while reviewing the route-card → Production Order → stock flow. The crediting engine itself is NOT changing — ADR-170 already makes a PO-linked Job Card credit finished stock ONLY at Production Order close (its qc_accept and grn_qc credits are suppressed), and ADR-092 already skips crediting a mid-route OSP return. The gaps are:
 
 1. **Close is one-shot.** `production_orders.status` is a binary `open|closed`; close credits the whole finished qty once. Users need to close **as pieces finish** — e.g. JC-001 (order 50): last op has cleared 11, credit those 11 now, close the rest later.
-2. **No QC may follow OSP — including TPI.** The shared rule `findQcDirectlyAfterOutsource` blocks any (outsource, qc) adjacency by opType alone. The business rule is: after OSP a user MAY add a manufacturing op, another OSP, or **TPI**; only a *non-TPI* QC is disallowed (the vendor's return is inspected at Incoming QC).
+2. **No QC may follow OSP — including TPI.** The shared rule `findQcDirectlyAfterOutsource` blocks any (outsource, qc) adjacency by opType alone. The business rule is: after OSP a user MAY add a manufacturing op, another OSP, or **TPI**; only a _non-TPI_ QC is disallowed (the vendor's return is inspected at Incoming QC).
 3. **Final Inspection is skipped whenever there is any OSP.** `needsDefaultQcOp` returns false if any op is outsource, so `Turning → OSP → Milling` gets no terminal QC and its milled output is never inspected/credited.
 
 ### Decision
+
 **Change A — Partial (progressive) Production Order close.**
+
 - Status ladder becomes `open → partially_closed → closed` (relax the CHECK constraint; add the enum value in packages/shared).
 - New append-only ledger table `production_order_closes`: `{ id, company_id, production_order_id, qty (>0), is_reversal bool, reverses_close_id nullable, store_txn_id, closed_by, closed_at, remarks }`. One row per partial close (and one per reversal).
 - `production_orders.credited_qty` becomes the RUNNING total = sum of the ledger's signed qty. `remaining_qty` is derived (order_qty − credited_qty), never stored.
@@ -9582,17 +9983,21 @@ Three related gaps surfaced while reviewing the route-card → Production Order 
 - UI: the close screen shows `Available to close`, a qty field defaulting to and capped at it, a running `Credited X of <order>`, and a `Close short` action with a reason.
 
 **Change B — Allow TPI directly after OSP.**
+
 - In `findQcDirectlyAfterOutsource` (packages/shared/src/lib/jc-op-sequence.ts), exempt a QC op that is TPI. TPI is identified by name (`operation` contains "TPI", case-insensitive) — consistent with how the whole system already detects TPI (tpi/service.ts, jc-op-actions.tsx, tpi.ts). Reword the message to "Only TPI may directly follow an outsource step; other QC is inspected at Incoming QC when it comes back." This one shared function is enforced server-side for Job Cards, Plans, Route Cards and Production Orders, so the rule lands everywhere at once. Add the immediate client-side hint to the Route Card and Plan forms (they have none today; the Job Card form already shows it).
 
 **Change C — Append Final Inspection when the last op is a machining op, even with an OSP earlier.**
+
 - In `needsDefaultQcOp` (apps/api/src/lib/jc-default-qc.ts), drop the "any op is outsource → return false" clause. Terminal QC is appended iff the last op is `process` (a last-op OSP still returns false via the existing `last !== 'process'` check; a last-op QC still returns false). Safe because: mid-route OSP returns are not credited (ADR-092), PO jobs credit only at close (ADR-170), so no double-credit. Keep the web-side `stripStaleGeneratedTerminalQc` in lockstep — strip a generated terminal Final Inspection only when the op immediately before it is a terminal OSP, not when any OSP exists.
 
 ### Alternatives Considered
+
 - **Add an `is_tpi` flag to the qc_processes master** — rejected: the entire codebase already identifies TPI by name; a new flag would be inconsistent and need extra schema + UI. Name-matching is the established convention.
 - **Store `remaining_qty` on the PO** — rejected: derivable from `order_qty − credited_qty`; a stored copy can drift. Running `credited_qty` + derived remaining is the single source of truth.
 - **Keep close one-shot and let users pre-split the plan qty** — rejected: forces artificial JC splitting; partial close matches how the floor actually finishes work.
 
 ### Consequences
+
 - Positive: pieces enter stock as they finish (less time invisible), the routing rules match the shop's real OSP/TPI process, and every finished op has an inspection gate — all without touching the crediting engine or risking double-credit.
 - Negative: one migration (status values + `production_order_closes` table) to run on BOTH Supabase DBs, test-first; the close service and its guard grow to handle qty, reversal, and short-close.
 - Risks: available-to-close must always be `live finished − credited` (never order_qty); close-short must record the loss (so `credited + lost = order`); a close whose pieces already shipped cannot be reversed. All three are handled in the decision above.
@@ -9602,6 +10007,7 @@ Three related gaps surfaced while reviewing the route-card → Production Order 
 **Date:** 2026-09-22 · **Status:** Accepted · **Migration:** 0141
 
 ### Context
+
 Stage 1 (migration 0099) modelled an SO stock reservation as a **hard move**: `reserveStock` posted a
 `store_transactions` `'out'` row with `source_type='reservation'`, and releasing posted the matching `'in'`.
 The shelf figure therefore fell the moment a planner promised stock to an order, although nothing had left
@@ -9620,12 +10026,15 @@ never been used in anger, so the semantics could be corrected with no data migra
 moving on either stack.
 
 ### Decision
+
 **1. Three figures, one definition, one place.**
+
 ```
 PHYSICAL  = item_stock_balances.on_hand_qty
 RESERVED  = Σ (qty − consumed_qty − released_qty) WHERE status IN ('active','partially_consumed')
 AVAILABLE = PHYSICAL − RESERVED
 ```
+
 `v_item_stock_availability` (0141) publishes all three per item, and
 `apps/api/src/lib/stock-reservation.ts` is the only module allowed to compute or change a booking. No
 service may re-derive reserved/available with its own SQL.
@@ -9664,6 +10073,7 @@ amend_release with qty and remaining-before/after. `activity_log` keeps its one-
 this is what the reconciliation queries read (`docs/sql/check-stock-reservation.sql`).
 
 ### Alternatives Considered
+
 - **A new `inventory_reservations` table** — rejected: `so_stock_reservations` already models exactly this
   and is wired into two screens; a parallel table would have to be kept in step with it for ever.
 - **Keep the hard move and show "physical = on-hand + reserved"** — rejected: it makes every stock screen
@@ -9673,6 +10083,7 @@ this is what the reconciliation queries read (`docs/sql/check-stock-reservation.
   holds the stock, which is the question the drill-down answers; the sum over live rows can.
 
 ### Consequences
+
 - Positive: the store can state what is on the shelf, planning can state what is free, and the two agree by
   construction. Freshly made pieces are promised to the order that paid for them without anyone typing it.
 - Negative: one migration to run on BOTH databases; `available`, not `physical`, is now the number planning
@@ -9681,10 +10092,12 @@ this is what the reconciliation queries read (`docs/sql/check-stock-reservation.
   reconciliation SQL exists to catch exactly that, and must read PASS on every row before this is called done.
 
 ## ADR-181: UI overhaul — the design system is a normalisation of this app, not a new skin
+
 **Date:** 2026-09-23
 **Status:** Accepted (branch `ui-overhaul`, not yet merged)
 
 ### Context
+
 The user commissioned a Claude Design export from the Job Cards table, the Job Card page and the
 Purchase Order list, then asked for a full element-level rebuild of `apps/web` against it
 ("go ahead as per design reference except for print").
@@ -9700,6 +10113,7 @@ canonical ruled sheet; 0 of 138 screens share a search input; 26 hand-rolled mod
 `window.confirm`/`alert`/`prompt` calls; 539 undifferentiated `.empty-state` usages.
 
 ### Decision
+
 1. Adopt the reference's tightened scale app-wide: `--fs-body` 14→13px, `--fs-heading` 17→16px,
    fixed `--control-h` 28px (sm 24px), page gutter 20→16px via `--content-pad`, `--topbar-height`
    54→48px. Where the reference's "Visual Foundations" prose contradicts its "Type, spacing and
@@ -9713,6 +10127,7 @@ canonical ruled sheet; 0 of 138 screens share a search input; 26 hand-rolled mod
 5. `DataTable` keeps a `footer` prop the reference does not declare.
 
 ### Alternatives Considered
+
 - **Replace `innovic-theme.css` with the reference file wholesale** — rejected, and proved unsafe:
   the reference is a condensed document that styles `.breadcrumbs`/`.pagetabs` as CLASSES where the
   app renders them as IDs, and omits `.tn-sync`, `.pgtab-icon`, `.jc-row-acts` and the entire
@@ -9727,6 +10142,7 @@ canonical ruled sheet; 0 of 138 screens share a search input; 26 hand-rolled mod
   no way to verify a rewrite. Phase 2 wraps it; restructuring waits for Phase 4.
 
 ### Consequences
+
 - Positive: one component per element instead of N; the ruled sheet everywhere; a real `Modal`,
   `ConfirmDialog`, `PageState` and `Toast` where the app had none. Two live inconsistencies get fixed
   on the way — a job-card `complete` badge that is green on one screen and cyan on another, and a
@@ -9743,6 +10159,7 @@ canonical ruled sheet; 0 of 138 screens share a search input; 26 hand-rolled mod
 **Date:** 2026-09-24 · **Status:** Accepted · **Migration:** 0143
 
 ### Context
+
 ADR-170 gave a plan exactly one Production Order, which silently took the whole plan qty
 (`order_qty = plans.plan_qty`, unique index `production_orders_plan_uniq`). Three gaps
 (user, 2026-09-24): the shop floor raises an order without confirming the material is on
@@ -9751,6 +10168,7 @@ left; and an order that must be abandoned mid-way has no stop — ADR-179's "clo
 finishes a COMPLETE job card and writes off its losses, it is not a stop.
 
 ### Decision
+
 1. **Raw material on Create.** `raw_material_available` (mandatory tick; Create is refused
    without it, message "No raw material — you cannot create the production order.") and
    `actual_size` (free text, the size really available / cut). Both snapshot on the order;
@@ -9771,6 +10189,7 @@ finishes a COMPLETE job card and writes off its losses, it is not a stop.
    covered; the UI hides the buttons as well, but the server is the rule.
 
 ### Consequences
+
 - Positive: material is confirmed before work is raised; a plan can be released in batches;
   an abandoned order stops dead and gives its qty back.
 - Negative: one more status for every reader (badges, report filter, list tiles, derived
@@ -9911,14 +10330,14 @@ compared every figure two screens both state. It found the same fact stated diff
 Each fact gets ONE SQL definition in `apps/api/src/lib`, and every screen that states it reads
 that definition:
 
-| Fact | Definition | Readers |
-| --- | --- | --- |
-| JC Qty | `jcEffectiveQtySql`: a stopped order's card counts what it credited | SO list, SO detail, JC source picker, JC line balance, JW list, SO backlog report |
-| Still owed to stock | `jcOutstandingQtySql`: Order Qty − credited | Item Tracker In Production |
-| Covered / to plan | `soLineCoveredRaw` / `soLineToPlanRaw`: plans + Buy PRs + direct cards | Needs Planning tile + table, SO Planning list (same lines as its detail) |
-| Direct card | no Production Order, not a plan's `jc_id` | SO Planning (all 5 queries) |
-| Plan status | `EFFECTIVE_STATUS_SQL`: derived for route-card plans, stored otherwise | Plans list filter, KPI tiles, plan detail |
-| Covered / Pending of a plan | `PLAN_COVERED_QTY_SQL` / `PLAN_PENDING_QTY_SQL` | Plans list, plan detail |
+| Fact                        | Definition                                                             | Readers                                                                           |
+| --------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| JC Qty                      | `jcEffectiveQtySql`: a stopped order's card counts what it credited    | SO list, SO detail, JC source picker, JC line balance, JW list, SO backlog report |
+| Still owed to stock         | `jcOutstandingQtySql`: Order Qty − credited                            | Item Tracker In Production                                                        |
+| Covered / to plan           | `soLineCoveredRaw` / `soLineToPlanRaw`: plans + Buy PRs + direct cards | Needs Planning tile + table, SO Planning list (same lines as its detail)          |
+| Direct card                 | no Production Order, not a plan's `jc_id`                              | SO Planning (all 5 queries)                                                       |
+| Plan status                 | `EFFECTIVE_STATUS_SQL`: derived for route-card plans, stored otherwise | Plans list filter, KPI tiles, plan detail                                         |
+| Covered / Pending of a plan | `PLAN_COVERED_QTY_SQL` / `PLAN_PENDING_QTY_SQL`                        | Plans list, plan detail                                                           |
 
 The Production Orders report gains Lost Qty and the missing 'partially_closed' filter.
 
@@ -10293,6 +10712,7 @@ List pages mixed filter dropdowns with rows of clickable status tiles / capsules
 **Status:** Accepted (phase 1a delivered; phases 1b–5 follow, see `docs/specs/STORE_REDESIGN_ADR-193.md`)
 
 ### Context
+
 The Store Department audit (22 findings) and the owner's decisions (Q1–Q6, 2026-09-28): the store
 issues parts against the assembly SO and "Complete" only checks them (Q3); item type is chosen at
 item creation (Q2); instruments by serial number (Q4); reorder with one-click PR (Q5). Eleven modules
@@ -10300,6 +10720,7 @@ each wrote ledger rows with their own lock / read / check code, and every stock 
 integer, so KGS / MTR material could not be issued as 12.5.
 
 ### Decision (phase 1a)
+
 1. **One writer.** `lib/stock-ledger.ts postStockMove` is the only code that inserts
    `store_transactions`: locks the item, reads In Stock / Booked / Available inside the lock, refuses a
    fractional qty for NOS / SET, applies the caller's guard, inserts. Guards: `available` (store issue,
@@ -10314,17 +10735,20 @@ integer, so KGS / MTR material could not be issued as 12.5.
 5. Dead ledger writers removed (`writeStoreTxnOnQcAccept`, `writeStoreTxnOnDcReceive`).
 
 ### Alternatives considered
+
 - Upgrade drizzle for numeric `mode: 'number'` — rejected for now: a framework upgrade across the repo for one type.
 - Keep integer and store grams / millimetres — rejected: every screen would convert units.
 - Patch each writer in place — rejected: the drift between eleven copies is what the audit found.
 
 ### Consequences
+
 - Verified on TEST: 11 scenario tests (NOS 2.5 refused, KGS 12.5 / 12.25 end to end, booked stock
   refused for adjust / tool issue, new ledger source types, balances = Σ ledger) and 529 + 923
   cross-screen figures, 0 mismatches.
 - PROD must run 0153 before test → main. Reservations stay whole numbers (finished goods).
 
 ### ADR-193 phase 1b — item types + small gaps (2026-09-28)
+
 - **Item Type chosen at creation** (Q2, 0154): raw_material | component | assembly | consumable | tool.
   No default — the form starts on "Choose Item Type…", the Excel import refuses a blank cell. One
   capability map `ITEM_TYPE_RULES` (shared) holds label + behaviour flags; screens read it.
@@ -10340,6 +10764,7 @@ integer, so KGS / MTR material could not be issued as 12.5.
   541 + 927 cross-screen figures, 0 mismatches. PROD must run 0154 before test → main.
 
 ### ADR-193 phase 2 — Stock Count (2026-09-28)
+
 - New document **Stock Count** `IN-SC-#####` (0155, ERPNext Stock Reconciliation) for opening stock and
   periodic counts: Draft → Submitted → Posted | Cancelled. Many items per count or an Excel upload
   (codes resolved by the server; unknown codes listed, never guessed).
@@ -10352,8 +10777,9 @@ integer, so KGS / MTR material could not be issued as 12.5.
 - Verified on TEST: 14 scenario tests (C1–C14) pass.
 
 ### ADR-193 phase 3a — raw-material item + qty per piece (2026-09-28)
+
 - Route Card (source of truth) → Plan → Production Order / Execute → Job Card carry `raw_material_item_id`
-  + `rm_qty_per_piece` (0156) beside grade / size. Required on a JC = qty per piece × JC qty.
+  - `rm_qty_per_piece` (0156) beside grade / size. Required on a JC = qty per piece × JC qty.
 - One check `lib/rm-item.ts resolveRmItem`: both or neither; the item must be Raw Material or Component
   (ITEM_TYPE_RULES.jobMaterial). On update an omitted field keeps the saved value; only null clears.
 - SO Planning "+ Plan" (sends nothing) defaults the pair from the item's Route Card. Supplementary JC
@@ -10366,6 +10792,7 @@ integer, so KGS / MTR material could not be issued as 12.5.
 **Status:** Accepted (schema 0173 on TEST; services + UI live on TEST on the `jwso-material` branch. Migrations renumbered to 0173 + 0174 after a collision with the store-redesign 0157/0158 on `test`.)
 
 ### Context
+
 The JWSO audit (Innovic vs ERPNext, `Job Work (JWSO) Audit - Innovic vs ERPNext.pdf`) found the
 customer-material side of the job-work chain thin: a Party GRN accepted material with no incoming QC,
 it linked to its JWSO line only by a typed line-number **text** (silently breaking the order-qty cap
@@ -10376,6 +10803,7 @@ permanent, and a JWSO line could not be closed while it still had an unmet balan
 Party GRN is COMPULSORY**; everything else "as suggested".
 
 ### Decision
+
 1. **Compulsory incoming QC (R2).** Every Party GRN line splits its received qty into
    `accepted_qty` + `rejected_qty` (must sum to received; a reject reason is required when any is
    rejected). Only the **accepted** qty enters the party store. Existing rows are grandfathered
@@ -10399,6 +10827,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
    key — no new permission keys.
 
 ### Alternatives considered
+
 - Widen the `so_status` enum with a `short_closed` value — rejected: it is a shared PG enum and would
   leak into every SO code path; flag columns keep the change on the JWSO side.
 - Put party material in `store_transactions` at zero value — rejected: it is not company stock
@@ -10406,6 +10835,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 - A new per-line "needed" table for R1 — rejected: the ADR-193 route-card RM already carries qty/piece.
 
 ### Consequences
+
 - All changes are additive (new columns + one table in 0173; jw_return cancel columns in 0174); safe to
   run as one batch, applied to TEST.
 - PROD must run 0173 then 0174 (after the store-redesign 0157/0158) before test → main.
@@ -10413,6 +10843,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
   invoice/line status).
 
 ### ADR-193 phase 3b — Item Issue slip with lines; issue against the job (2026-09-28)
+
 - An Item Issue is a slip (store_issues) with lines (store_issue_lines, 0157), issued against ONE of: a Job
   Card, an Assembly (Equipment) SO, or General / Consumable (Department required). Issued To = an Operator
   (preferred) or a typed name.
@@ -10434,6 +10865,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 - Verified on TEST: 25 scenarios pass; 695 + 1009 cross-screen figures, 0 mismatches.
 
 ### ADR-193 phase 3c — reserve parts for an assembly SO; Complete only checks and fits (2026-09-28)
+
 - Owner decision (Q3): the store issues parts against the assembly SO; Complete only checks the parts are
   out and adds the finished machine. Complete no longer takes component stock (0 assembly units existed on
   TEST and PROD, so no old unit needed converting).
@@ -10455,6 +10887,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
   PROD, so not run); a rare lock-order case when the finished item is itself issued in the same moment.
 
 ### ADR-193 phase 4 — instrument register + tool issue rewrite (2026-09-28)
+
 - Owner decision Q4: instruments tracked one by one by Instrument Serial No.; the Store In-charge (approve
   tier, never the person who recorded it) decides write-offs.
 - A Tool / Instrument item is bulk (qty) or `track_serial` (one `instruments` row per piece). Registering never
@@ -10474,6 +10907,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 - Verified on TEST: 31 scenarios pass; 3b 25/25 and 3c 27/27 again; 972 + 1369 cross-screen figures, 0 mismatches.
 
 ### ADR-193 phase 5 — reorder level, one-click PR, consumption report (2026-09-29)
+
 - Owner decision Q5: Reorder Level + Reorder Qty per item; alert + one-click PR, never automatic.
 - "Min Qty" is renamed **Reorder Level** (same column, now decimal). **Below Reorder** = reorderable item type, Reorder
   Level > 0 and Available + On PO < Reorder Level (Available leaves out reserved stock) — the same rule on Store
@@ -10497,6 +10931,7 @@ Party GRN is COMPULSORY**; everything else "as suggested".
 **Status:** Accepted (code on the `layout-fix` branch; migration `0177_so_line_short_close.sql` must be run on TEST, then on PROD before test → main)
 
 ### Context
+
 E2E findings on the Sales Order: an order dispatched 10 and billed 10 (IN-SO-00420) still read only
 "Open", and an order the customer will never take the rest of (IN-SO-00419: ordered 10, dispatched 8,
 billed 8) had no way to stop — its 2 kept showing as Pending on the SO, To Plan in Planning, Dispatchable
@@ -10509,6 +10944,7 @@ derive the Sales Order status from `per_delivered` / `per_billed` — **To Deliv
 which the remainder is neither delivered nor billed (Delivery Note / Sales Invoice refuse a closed order).
 
 ### Decision
+
 1. **Fulfilment status, read-time only.** `fulfilmentStatus` on the SO list and detail reads, worked out
    on the server by `deriveSoFulfilmentStatus` (packages/shared `enums/so-fulfilment-status.ts`; the list
    builds the same facts in SQL). The stored `so_status` enum is NOT changed. Per live (not cancelled) line:
@@ -10519,7 +10955,7 @@ which the remainder is neither delivered nor billed (Delivery Note / Sales Invoi
      can only bill what was dispatched (invoices/service.ts), so To Bill = dispatched not yet billed and
      unshipped qty is To Deliver only. IN-SO-00419 therefore reads **To Deliver**, not To Deliver and Bill.
 2. **Close, per SO line — ADR-194 R6 copied.** `sales_order_lines.short_closed_at / short_closed_by /
-   short_close_reason` (0177, all-or-none CHECK); the line's status becomes `'closed'` (enum not widened);
+short_close_reason` (0177, all-or-none CHECK); the line's status becomes `'closed'` (enum not widened);
    reason required. `POST /sales-order-lines/:lineId/short-close` closes one line;
    `POST /sales-orders/:id/close` (detail Actions ▾ → Close) closes every live line that still has qty
    undelivered, with one reason. When no live line of an Open order is left open, the header becomes
@@ -10541,6 +10977,7 @@ which the remainder is neither delivered nor billed (Delivery Note / Sales Invoi
 6. **Edit guard.** A closed-short line's Order Qty and status can no longer be changed through SO edit.
 
 ### Alternatives considered
+
 - Widen `so_status` with `short_closed` / `to_bill` … — rejected, as in ADR-194: the enum is shared by
   SO and JWSO and read by every SO code path; flag columns + a read-time status keep the change contained.
 - Store `fulfilment_status` — rejected: it would be one more figure to keep in step with dispatches and
@@ -10549,6 +10986,7 @@ which the remainder is neither delivered nor billed (Delivery Note / Sales Invoi
   short while the others ship; the header Close is the per-line close applied to every open line.
 
 ### Consequences
+
 - Migration 0177 is additive; run it on TEST, then PROD before this reaches main. The API reads the new
   columns, so it must not deploy to a database without them.
 - Not changed (follow-ups): the Job Card source picker (job-cards/service.ts `listJobCardSourceOptions`)
@@ -10566,6 +11004,7 @@ Accountability", section 3). Code on the `layout-fix` branch; migration
 Services adopt it module by module (steps 2+), following `docs/AUDIT-TRAIL.md`.
 
 ### Context
+
 The requirement (§2.5) found: no document has its own History; edits keep no before → after; no
 `deleted_by` anywhere; PR reject / OSP DC issue + receive / NC disposition record no user; ~200 log
 call sites use inconsistent action names (`EDIT` vs `UPDATE`, `SHORT_CLOSE` vs `BALANCE_CLOSE`) and
@@ -10573,6 +11012,7 @@ entity names (`JobCard` vs `Job Card` vs `JcOp`); the log shows the e-mail, not 
 document number on the global Activity Log could not always open the document (codes only, no id).
 
 ### Decision
+
 1. **One log, richer rows — no second audit table.** `activity_log` stays the single append-only
    trail. 0178 adds `entity_id` (the DOCUMENT's uuid), `line_ref`, `op_ref`, `qty`, `changes jsonb`
    (`[{field,label,before,after}]`), `reason`, `operator_name`, `user_full_name`, plus the index
@@ -10606,6 +11046,7 @@ document number on the global Activity Log could not always open the document (c
    global Activity Log shows the full name and opens the document by id when the row has one.
 
 ### Alternatives Considered
+
 - A separate `document_history` table written by triggers — rejected: triggers see columns, not
   intent (no reason, no operator, no "Close short" vs "Edit"), and the app already writes one row per
   action inside the same transaction.
@@ -10616,6 +11057,7 @@ document number on the global Activity Log could not always open the document (c
   that log DELETE without one; the reason is enforced at the service's Zod input instead.
 
 ### Consequences
+
 - Positive: every document can show who / what / qty / before → after / when / why from one query;
   new modules adopt it by passing four more fields.
 - Negative: legacy rows (before 0178) show only their `detail` line — no before → after — and are
@@ -10625,10 +11067,12 @@ document number on the global Activity Log could not always open the document (c
   0178 and on any delete path not yet moved to `softDeleteStamp`.
 
 ## ADR-198: Self-approval of Purchase Requests and Purchase Orders is now allowed
+
 **Date:** 2026-10-01
 **Status:** Accepted — supersedes ADR-134 §6 for PR and PO only
 
 ### Context
+
 ADR-134 §6 refused self-approval on both PR and PO (`assertNotSelfApproval`, applied to
 admins too): the raiser could never sign off their own document. In live operation the
 company often has one person who both raises and approves purchase paperwork, so that
@@ -10638,6 +11082,7 @@ rights MAY approve (and reject) their own PR/PO. This reverses only the self-app
 part of ADR-134; every other control in ADR-134 stays.
 
 ### Decision
+
 1. **Self-approval and self-rejection are allowed for PR and PO.** The
    `assertNotSelfApproval` guard is removed from all four paths (PR approve/reject, PO
    approve/reject) and the now-unused helper is deleted from `apps/api/src/lib/access.ts`.
@@ -10657,6 +11102,7 @@ part of ADR-134; every other control in ADR-134 stays.
    not a toggle).
 
 ### Alternatives Considered
+
 - **`allow_self_approval` flag on `approval_config`** — rejected by the owner: the rule is
   now always-on, a switch is dead weight and one more thing to get wrong. (ADR-134 had
   itself rejected this flag in the other direction.)
@@ -10667,6 +11113,7 @@ part of ADR-134; every other control in ADR-134 stays.
   the two documents the owner named.
 
 ### Consequences
+
 - Positive: a sole buyer/approver can complete the PR→PO flow without a second account.
 - Positive: self-approvals remain fully traceable — `approved_by` / `rejected_by` and the
   ADR-197 activity log still record who signed, so an auditor can still see a raiser
@@ -10817,10 +11264,12 @@ Tables inside a modal or a dashboard card keep their own capped `maxHeight` and 
   pattern is two lines, so the fix is to drop `fill` from that page.
 
 ## ADR-202: Edit-approval — every edit to a live document is staged for per-change approval
+
 **Date:** 2026-10-02
 **Status:** Accepted (Phase 1 — Purchase Order, header-level)
 
 ### Decision
+
 A generic edit-approval engine (`apps/api/src/modules/document-edits`): when a company's
 `approval_config.doc_edit_approval` gate is on, an edit to a LIVE document is STAGED in
 `document_edit_requests` (one open edit per doc via a partial-unique index) instead of applied.
@@ -10831,6 +11280,7 @@ fields through the document's real writer (`updatePurchaseOrderTx`) so every §2
 REQUEST/APPROVE/REJECT log to the document's History tab (ADR-197). Gate ships OFF.
 
 ### Phase 1 scope / decisions
+
 - Owner decisions: per-change approve/reject (1A); on everywhere via a central engine guard (2);
   Op Log left as-is (3A); always stage, no self-approval switch, no banner — inline cell chip only,
   Approved-By in History (4); the four no-edit docs get edit screens later (5A).
@@ -10840,15 +11290,18 @@ REQUEST/APPROVE/REJECT log to the document's History tab (ADR-197). Gate ships O
   PurchaseOrderDetail for internal callers and the engine's applyEdit.
 
 ### Consequences
+
 - Migration 0191 (document_edit_requests + enum + approval_config.doc_edit_approval). Applied to TEST.
 - Full line-level PO editing under approval still to come (1b); other documents + masters are Phase 2;
   the four no-edit docs (Invoice, Delivery Challan, Production Order, Party GRN) are Phase 3.
 
 ## ADR-204: Create Route Card — the form follows Create SO, the per-operation remark follows Create PO
+
 **Date:** 2026-10-03
 **Status:** Accepted (owner decisions 2026-10-02/03; mockup `Route-Card-Create-Mockup.html`)
 
 ### Context
+
 The live New Route Card screen put four stacked bands above the operations table — three of them
 spanning all 12 columns to hold a quarter of that width (Plan Type as two 196px picture cards, the
 raw material inside a bordered box with its own `auto-fit` grid, and a one-line Notes input at full
@@ -10862,6 +11315,7 @@ and tool details in second row doesn't look good") before the answer was found w
 existed: the app's own create screens.
 
 ### Decision
+
 1. **The form rows are Create SO's.** Header = three rows on `.form-grid-12`, each summing to 12:
    `RC No.`(sm) · `Item Code`★(sm) · `Item Name`(md) · `Plan Type`★(xs), then `RM Grade`(sm) ·
    `RM Size`(sm) · `RM Item`(md) · `RM Qty / pc`(xs), then `Remarks`(full). Both data rows carry the
@@ -10897,6 +11351,7 @@ existed: the app's own create screens.
    decision, which is what a Route Card is for.
 
 ### Consequences
+
 - Migration **0195** adds `route_card_ops.remarks text` (nullable, no backfill) and the field is
   carried in `route_card_revisions.ops_snapshot`; the contract reads it as optional there, so
   snapshots written before 0195 still load. A field left out of that snapshot would vanish the moment
@@ -10906,6 +11361,7 @@ existed: the app's own create screens.
 - The operation remark does NOT travel to `jc_ops`, so the operator does not yet see it on the Job
   Card. That needs its own column and migration — deliberately out of scope.
 - Header drops from ~300px to ~235px, about four more operation rows visible on a 900px screen.
+
 ## ADR-205: Route Card Master lives under Planning, and the Planning tier governs it
 
 **Date:** 2026-10-03
@@ -10944,11 +11400,11 @@ drop to view-only on route cards and must be re-granted in Access Control
 (either raise their Planning tier or tick Route Card Master as a per-form
 extra, which is additive on top of the tier):
 
-| Person | Design tier | Planning tier | Had | Gets |
-|---|---|---|---|---|
-| Dharmesh Patel | L5 | L1 | view + create + edit + approve | view only |
-| Haresh P. Prajapati | L4 | L1 | view + approve | view only |
-| Mayur J. Patel | L2 | L1 | view + create | view only |
+| Person              | Design tier | Planning tier | Had                            | Gets      |
+| ------------------- | ----------- | ------------- | ------------------------------ | --------- |
+| Dharmesh Patel      | L5          | L1            | view + create + edit + approve | view only |
+| Haresh P. Prajapati | L4          | L1            | view + approve                 | view only |
+| Mayur J. Patel      | L2          | L1            | view + create                  | view only |
 
 Everyone whose Planning tier is L2 or higher gains what that tier says, which
 is the point of the move — planners can now reach the page.
@@ -10968,6 +11424,7 @@ is the point of the move — planners can now reach the page.
 **Status:** Accepted
 
 ### Context
+
 On the Job Card "Op Qty Flow" table a QC op's Available always equalled its Input (= Passed On once
 everything passed): `v_jc_op_status.available` sent QC ops through the plain-op branch, which subtracts
 only `complete` op_log rows, and a QC op never has any. ~20 readers use `available` (dashboards' Ready
@@ -10976,18 +11433,21 @@ PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to
 "30 sent / 30 accepted / 5 rejected" with the 5 that went back and came back invisible.
 
 ### Decision
+
 - Migration 0196: QC ops get their own branch, `available = GREATEST(0, input − qc_accepted − qc_rejected)`
   (the existing `pending_qty` QC rule). Process and outsource ops unchanged; same columns/order/types,
   so CREATE OR REPLACE keeps v_jc_status, v_osp_wip and grants.
 - Op Qty Flow adds Returned to Vendor / Re-received / At Vendor on outsource rows.
 
 ### Alternatives Considered
+
 - Subtract vendor-scrapped pieces from outsource Available — rejected: Production Order close already
   subtracts op loss (production-orders/service.ts ~280) → double count, JC would look settled.
 - Subtract pieces still at the vendor — deferred: only display readers change; At Vendor column shows it.
 - Fix in-house+OSP lane RTV double subtraction — deferred: outsource-balance cap relies on that branch.
 
 ### Consequences
+
 - Verified on TEST: 63 ops, only 14 QC ops' Available changed, no other column or op moved, every QC
   op now has Available = Pending. QC entry caps (qc_pending) and production caps untouched.
 
@@ -10999,10 +11459,12 @@ PROD: 4 of 5 QC ops showed 180 phantom pieces. An outsource row with a return to
 Sales Orders get `internal_so_no` (migration 0197), the office's own number (e.g. SO-2401), typed by the user beside the system SO No. The SO No. (`code`, IN-SO-#####) is now system-only: no write input carries it and the server always numbers the order. The Internal SO No. is required on create; SOs made before 0197 stay NULL and are not forced to get one when edited. Format: "SO-" plus letters, digits, `/ - .`, at most 30 characters, trimmed, prefix upper-cased (shared `internalSoNoError`). Unique per company among live SOs, ignoring case (partial unique index; server pre-check and index clash both give the same 409). Editable with SO edit rights through the normal update path (stale check, History row, edit approval). Restore from Trash is refused if the number has since been taken. Shown everywhere as "IN-SO-00786 · SO-2401" (`soNoWithInternal`), always read live from sales_orders — never copied. JWSO is untouched.
 
 ## ADR-208: Customer material sent to an OSP vendor counts as used, and "At Vendor" says how much
+
 **Date:** 2026-10-03
 **Status:** Accepted (owner asked for OSP-on-JWSO to be traced, then said "go" on the fix)
 
 ### Context
+
 Outsourcing an operation on a customer job-work order is allowed, and nothing in the system treats
 a JWSO job differently from a sales-order job: Route Cards, Plans, Production Orders and Job Cards
 all accept `op_type = 'outsource'` with no JW branch. When the **first** operation is the outsourced
@@ -11023,6 +11485,7 @@ Customer Material Return of those "recovered" pieces would pass its own balance 
 as having returned to the customer material that was actually at a subcontractor.
 
 ### Decision
+
 1. **"Sent out from the first op" is material used.** `+ COALESCE(first_op.outsource_sent_qty, 0)`
    is added to all three copies of the figure: `jcMaterial.used`
    (`party-material-issues/register.ts`, which is what both limits read), `cmJcUsed`
@@ -11057,6 +11520,7 @@ as having returned to the customer material that was actually at a subcontractor
    decision.
 
 ### Why this is safe
+
 - **No migration, no schema change, no new ledger writer.** Every edit is read-side SQL inside
   queries that already existed. `postPartyStockMove` remains the only writer of the customer-material
   register (§20.1) and the diff contains no INSERT and no UPDATE.
@@ -11086,6 +11550,7 @@ as having returned to the customer material that was actually at a subcontractor
   outsourced.
 
 ### Consequences
+
 - `outsource_sent_qty` is cumulative and stays up after the pieces return and move down the route, so
   on a card whose first op was outsourced `used` stays at the sent qty and `On JC` stays
   correspondingly low. That is correct material accounting — the material WAS consumed by the job —
@@ -11238,17 +11703,20 @@ booked as an ordinary receipt so the NC never closes.
 - An NC logged at an outsource op without a GRN, or a repeat reject (tied to the return challan), has
   no "Sent on DC No." of the original DC — it is found by PO No.
 - Not covered: the store JW DC Outward (jw-dc module) has no such guard.
+
 ## ADR-212: Op Qty Flow — reconciled row per op (Deviated / Reworked / Rejected), Passed On removed
 
 **Date:** 2026-10-03
 **Status:** Accepted (owner approved mock-up JC-Detail-Mockup-v2, actual data of PROD IN-JC-26-00001)
 
 ### Context
+
 On IN-JC-26-00001 Op 40 the table read "Sent 30 · Accepted 30 · Rejected 5": the 5 pieces deviated at incoming
 QC were re-sent to the vendor (NC-00001, IN-DC-00002/R1) and came back good, but the re-sent lot was not in
 "Sent", the rework was invisible, and "Rejected" looked final while it was only the inspection result.
 
 ### Decision
+
 - Columns: Op · Operation · Input │ Done · Accepted │ Deviated (NC) · Reworked · Rejected │ Pending │ Sent ·
   Received · At Vendor │ Check · Op Status, with vertical separators and a group band ("At this operation",
   "With vendor (outsource)"). Passed On removed (Accepted is what moves on).
@@ -11265,12 +11733,14 @@ QC were re-sent to the vendor (NC-00001, IN-DC-00002/R1) and came back good, but
 **Status:** Accepted (owner: "modify UI of PR create, edit, view as per the planning screens")
 
 ### Context
+
 PR Create/Edit was a 12-column form in field order (PR Type · PR No. · PR Date / Item … ), and the PR view was
 two panels of wrapping fact strips (SO No., POL, Item Code … then a second "Request Detail" panel) with no
 grouping and no sum. The Plan screens method (plan-modals-mockup.html) settled how a create / edit / view
 screen is laid out.
 
 ### Decision
+
 - New primitive `ui/forms/ClusterGrid` (`DocIdent`, `Cluster`, `ClusterFact`): an identity line, then rows of
   FOUR equal cells, each row a named cluster with its name in a 104px left gutter, hairlines between facts,
   the row's result last with a 3px green rule. Form fields sit in the same grid as facts.
@@ -11291,6 +11761,7 @@ screen is laid out.
 wasted space, no structured layout. should be clustered logically"; then "build the plan screens")
 
 ### Context
+
 The three Plan screens were laid out three different ways. Create Plan spent 1320px on eight fields: a tinted
 `--bg3` summary box, a strip of five tiles (Plan Qty · To Plan · Available · Physical · Reserved) that never
 added up to anything, a 197 × 60px box holding one digit for Plan Qty, and a −/+/Max stepper for Reserve Qty.
@@ -11303,6 +11774,7 @@ ADR-213 had already settled the method on the Purchase Request screens and built
 (`ui/forms/ClusterGrid`). This applies the same method to the screens it was designed on.
 
 ### Decision
+
 - **Reuse the ADR-213 primitive**, extended by one thing: `Cluster`'s `name` is now optional. A nameless row
   (`.cl-nogut`) spends the 104px gutter on its four cells. A gutter name is worth its width when a screen has
   several fact rows to tell apart (the view page); inventing one per row of a single continuous form is words
@@ -11337,6 +11809,7 @@ ADR-213 had already settled the method on the Purchase Request screens and built
   "nothing left to do".
 
 ### Consequences
+
 - No API, schema, migration or field-id change. Every number the old screens showed is still shown; `physical`
   and `reserved` moved from tiles into the Reserve Qty help line, and `available` is the `n free` in it.
 - e2e selectors (`#create-plan-qty`, `#reserve-qty`, `#create-plan-start` …) are unchanged.
@@ -11361,8 +11834,8 @@ born and the plan is not among them; BOM-driven planning arrived later and the l
 
 So the BOM Planning modal creates one plan per child sending no RM at all, the server looks up the
 child item's Route Card, and when that card carries no material the plan is saved blank. Create
-Production Order reads the plan and refuses: *"This plan has no raw material — set the Grade and Size
-on the plan first."* On production BOM-0001's two children both hit it; one was patched by hand to a
+Production Order reads the plan and refuses: _"This plan has no raw material — set the Grade and Size
+on the plan first."_ On production BOM-0001's two children both hit it; one was patched by hand to a
 grade that **disagrees with the BOM** (EN24/DIA 36 against the line's MS/DIA 20) and that disagreement
 then reached IN-JC-26-00004.
 
@@ -11472,7 +11945,6 @@ then reached IN-JC-26-00004.
 - Still open: `ready_qty_override` is settable through the API, has no screen, and is ignored by
   `fitting.ts` — so it changes nothing. Either wire it or delete it.
 
-
 ## ADR-216: A BOM child plan names its part, and the row shows the per-part account
 
 **Date:** 2026-10-05
@@ -11480,6 +11952,7 @@ then reached IN-JC-26-00004.
 missing of child part")
 
 ### Context
+
 `IN-SO-00521` line 1 is **1 × `554117193000` WASHER DRG**. `BOM-0001 "lock elevation"` says one
 washer needs **10 × `01037541` WHEEL** and **10 × `01037543-RM` GEAR WHEEL**, so the line carries
 two plans — PLN-0008 (WHEEL, 10) and PLN-0009 (GEAR WHEEL, 10). Both rendered as
@@ -11497,6 +11970,7 @@ and on `IN-SO-00520` Order 5 against Plan 100. `remaining` then floors to zero, 
 **fully planned** while a child part has nothing planned against it.
 
 ### Decision
+
 **1. A plan names its part.** `planningPlanSummarySchema` gains `itemId`, `itemCode`,
 `itemCodeText`, `itemName`, `itemNameText` and `bomChildCode`, filled from an **aliased**
 `plan_item` left-join and mapped in all three places that build a plan summary. Read as
@@ -11532,13 +12006,14 @@ reviewed and **withdrawn**, because it was worse than the fault:
   left, and the Planning list would show 100 % beside a line reading 0 %.
 - Replacing the plan sum with covered sets discarded a sibling **assembly** plan's quantity
   (it carries `bom_master_id` but no `bom_child_code`), so adding a child plan made a line go
-  *backwards* from Fully Planned to Partly Planned.
+  _backwards_ from Fully Planned to Partly Planned.
 
 So the per-part account carries the truth instead: the planner sees `GEAR WHEEL 0 of 10` in the ▸
 panel even while the line's own figures still read the old way. **The number needs its own
 decision, taken across all five readers at once, including the write-path cap.**
 
 ### Alternatives considered
+
 - **Show the child code and nothing else** — rejected: it answers the complaint and leaves the
   "fully planned while a part is unplanned" state completely invisible.
 - **Correct `totalPlanned` on this screen only** — built and withdrawn; see above. Half a
@@ -11548,8 +12023,9 @@ decision, taken across all five readers at once, including the write-path cap.**
 - **A second field for "sets planned"** — rejected under §20.1 (one number, one writer).
 
 ### Consequences
+
 - No migration, no new table, no new endpoint. Read path only — nothing is written, so §20.1–20.4
-  have no surface. §20.5 (*a screen only offers an action whose data that screen already loads*) is
+  have no surface. §20.5 (_a screen only offers an action whose data that screen already loads_) is
   the rule satisfied: the fields go onto that screen's own response in the same change.
 - The plan-item join is **aliased** `plan_item`. The bare `items` name is already taken in that
   file by the parent LINE's item; an unaliased join would show "WASHER DRG" on every chip — the bug
@@ -11572,22 +12048,24 @@ default … then follow regular osp procedure with nc reference … when grn use
 nc/jwpo/jwdc show relative document auto", then "covers its fixed")
 
 ### Context
+
 A return to vendor runs on a private track beside normal outsourcing, and the cost of that shows in
 the data. Traced on live production rows:
 
-| Document | Purchase Order | its `po_code_text` holds |
-|---|---|---|
-| `IN-DC-00001/R1` (normal OSP) | `IN-JWPO-00002/R1` | `IN-JWPO-00002/R1` |
-| `IN-DC-00003/R1` (normal OSP) | `IN-JWPO-00001/R1` | `IN-JWPO-00001/R1` |
-| **`IN-DC-00002/R1` (the return)** | **none** | **`NC-00001`** |
-| **`IN-GRN-00002` (the return)** | **none** | **`NC-00001`** |
+| Document                          | Purchase Order     | its `po_code_text` holds |
+| --------------------------------- | ------------------ | ------------------------ |
+| `IN-DC-00001/R1` (normal OSP)     | `IN-JWPO-00002/R1` | `IN-JWPO-00002/R1`       |
+| `IN-DC-00003/R1` (normal OSP)     | `IN-JWPO-00001/R1` | `IN-JWPO-00001/R1`       |
+| **`IN-DC-00002/R1` (the return)** | **none**           | **`NC-00001`**           |
+| **`IN-GRN-00002` (the return)**   | **none**           | **`NC-00001`**           |
 
 The return is the only material movement in the system with no purchase order, and two documents
 compensate by writing the non-conformance number into a column named "PO code". `createNcDc` says so
-in its own comment: *"There is no purchase order behind this challan: po_code_text carries the NC
-code."* Any report that totals by PO, or reads that column as a PO number, is wrong for every return.
+in its own comment: _"There is no purchase order behind this challan: po_code_text carries the NC
+code."_ Any report that totals by PO, or reads that column as a PO number, is wrong for every return.
 
 Three further findings from the trace:
+
 - **Dispositioning an NC `return_to_vendor` creates nothing at all.** It writes four columns and
   returns. A person must remember to raise the challan.
 - **The GRN screen already has the three sources the owner asked for** — Against PO / Against JW PO
@@ -11599,6 +12077,7 @@ Three further findings from the trace:
   auto-raised PR with `estCost: 0`.
 
 ### Decision
+
 **1. The return gets a real order.** Choosing `return_to_vendor` creates, in the same transaction, a
 **zero-value job-work purchase order** to the source vendor for the rejected quantity, marked against
 the NC. The challan and the replacement GRN then hang off that order like every other OSP movement,
@@ -11611,7 +12090,7 @@ reason behind it, and **an NC is a stronger document than a system-raised PR nob
 has an inspector, a quantity, a reason and a vendor. The rule's intent stands; its list of acceptable
 reasons grows by one.
 
-*Rejected:* auto-raising a zero-value PR alongside the order to satisfy the rule literally. It was
+_Rejected:_ auto-raising a zero-value PR alongside the order to satisfy the rule literally. It was
 the first proposal and it is wrong: it files a purchase request for something nobody is buying into
 the buyer's queue, once per rejection, and the buyer spends the day rejecting paperwork for returns.
 
@@ -11628,7 +12107,7 @@ other: a return challan is listed on the JW PO / DC tab under its own label and 
 NC number, its challan number or the words "return to vendor", and the Against NC tab states the
 `Source PO No.` and `Source GRN No.` behind the rejection.
 
-*The shipped `jwpo-dc-rtv-picker.tsx` is NOT reused here, and it cannot be.* It is fed by
+_The shipped `jwpo-dc-rtv-picker.tsx` is NOT reused here, and it cannot be._ It is fed by
 `queryRtvCandidates`, whose predicate requires `nc.delivery_challan_id IS NULL`
 (`lib/rtv-predicates.ts`) — NCs still WAITING for a challan. The receiving screen handles the exact
 complement: NCs whose challan already exists and is issued. The two populations are disjoint, so
@@ -11665,8 +12144,9 @@ The code reads both shapes and will for a long time — phases 1 and 2 both carr
 deliberately, and it is covered by the regression tests, not by an edit to closed documents.
 
 ### Migration 0200 — three nullable columns, nothing rewritten
-*(Renumbered from 0199, which a parallel session took for the store-issue change on the same
-day. Check `git ls-tree origin/test apps/api/src/db/migrations/` before claiming a number.)*
+
+_(Renumbered from 0199, which a parallel session took for the store-issue change on the same
+day. Check `git ls-tree origin/test apps/api/src/db/migrations/` before claiming a number.)_
 | Column | References | Why |
 |---|---|---|
 | `nc_register.replacement_po_id` | `purchase_orders` | the order this return raised |
@@ -11677,6 +12157,7 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
 `source_so_line_id`). A partial unique index on `replacement_po_id` makes the auto-create idempotent.
 
 ### Consequences
+
 - **The special case disappears.** Once a return has an order behind it, the receiving tabs no longer
   need to hide each other, reports that total by purchase order stop having a blind spot, and a
   field named "PO code" stops holding something that is not one.
@@ -11694,7 +12175,6 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
   cross-reveal, which needs no migration at all; (2) the migration, the PO-rule change and the
   auto-order; (3) the source-challan capture; (4) the second route's guard; (5) the backfill.
 
-
 - **Known limit, and the first explanation of it was wrong.** `nc_register.source_delivery_challan_id`
   is a foreign key to `delivery_challans`, so pieces that left on a **JW DC Outward** (a different
   table) cannot be recorded as a source challan — the picker simply finds nothing and the field does
@@ -11711,8 +12191,8 @@ Named for the existing `source_*` convention (`source_pr_id`, `source_jc_op_id`,
 
 ### Context
 
-The owner's words: *"i have multiple rm details add option screen. every time its coflict when
-added furthrt."* Traced, and the count is **15 screens that can add raw material** — Route Card
+The owner's words: _"i have multiple rm details add option screen. every time its coflict when
+added furthrt."_ Traced, and the count is **15 screens that can add raw material** — Route Card
 create/edit, New Plan, Edit Plan page, the "+ Plan" box, Planning's Edit Plan modal, Create and
 Edit Job Card, BOM Master create/edit, the BOM Excel import, Create and Edit Production Order
 (`actual_size`), Item Master "Material", and Party Material "Grade". Each writes its own copy, so
@@ -11727,6 +12207,7 @@ does not merely disagree with the master — it rewrites it. That is the owner's
 
 Evidence from the production database (this is the whole population, not a sample — 8 route cards,
 2 BOMs / 4 BOM lines, 11 plans, 8 job cards, 8 production orders):
+
 - **2 of 4 BOM lines disagree with the same child's Route Card.** `01037541`: card EN24 / DIA 36 vs
   BOM-0001 L1 MS / DIA 20. `01037543-RM`: card C86200 (ASTM B 271) / DIA 10 vs L2 SS-304 / DIA 40 —
   a bronze and a stainless for one part.
@@ -11762,9 +12243,9 @@ Two rules, approved by the owner today.
    creating a card for an item that has none, so a hand-raised job-work Job Card still works.
 
 **Grade and size stay TEXT.** The owner explicitly rejected ERPNext's answer of making raw material
-a stock item: *"keep grade/size as text and only fix the precedence."* **`actual_size` stays free
+a stock item: _"keep grade/size as text and only fix the precedence."_ **`actual_size` stays free
 text** by the owner's decision, `75THK` and all. **Existing documents are left as they are** —
-*"leave old docs"* — so the six wrong rows above are not corrected by this change.
+_"leave old docs"_ — so the six wrong rows above are not corrected by this change.
 
 ### Alternatives considered
 
@@ -11885,10 +12366,10 @@ change until the next one.
 
 ### Context
 
-The owner hit the refusal and asked why: *"as per jobcard card logic edits. user can chhnage in
-operations. operation flow, edit , remove. why it is refusing??"* Then chose the shape:
-*"option a. user can chhnage in operations. operation flow, edit , remove. based on edit jc rights.
-there are logic exist for edit jc operations. within that logic edit can apply. and go for approval."*
+The owner hit the refusal and asked why: _"as per jobcard card logic edits. user can chhnage in
+operations. operation flow, edit , remove. why it is refusing??"_ Then chose the shape:
+_"option a. user can chhnage in operations. operation flow, edit , remove. based on edit jc rights.
+there are logic exist for edit jc operations. within that logic edit can apply. and go for approval."_
 
 With the Document Edit Approval gate ON, `updateJobCardOrStage` refuses ANY operations change
 (`jcOpsChanged` -> ConflictError, "...Turn the gate off to edit operations."). That refusal is
@@ -11940,7 +12421,7 @@ the gate. The approver's screen needs NO change - it renders change rows generic
 - **ONE box carrying the whole before/after operations list** - the owner's first description of
   option A, and **rejected after tracing**, for two mechanical reasons. (1) The approver's screen
   cannot render it: each change sits in a single cell that is `white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis`, the new value renders in an `uppercase` chip, and newlines collapse - a
+text-overflow: ellipsis`, the new value renders in an `uppercase` chip, and newlines collapse - a
   list would be clipped and unreadable. (2) At approval the engine recomputes and marks a change
   `superseded` when `valuesEqual(fresh.before, c.before)` fails; with the whole list in one value,
   **any** drift on **any** op - including an `op_seq` renumber nobody asked for - supersedes the
@@ -11959,7 +12440,7 @@ the gate. The approver's screen needs NO change - it renders change rows generic
 
 - Zero migrations, zero contract change, zero frontend change.
 - **The gate stays OFF.** PROD has no `approval_config` row at all; TEST has `doc_edit_approval =
-  false`; and there are ZERO rows in `document_edit_requests` on either database, ever. Nothing
+false`; and there are ZERO rows in `document_edit_requests` on either database, ever. Nothing
   changes for anyone until the owner switches it on.
 - The generated **Final Inspection** op has no durable identity - it is soft-deleted and re-inserted
   with a NEW id whenever the routing changes (proved on TEST: same op, same `op_seq`, deleted and
@@ -12025,7 +12506,7 @@ could not reach the other. Planning would have been the third copy.
   manager who cannot even open the Planning menu. The two sets only overlap; neither
   contains the other, so it is no use as a definition of "has Planning access".
 - **One parameterised helper, three thin wrappers.** `listDeptUserOptions({ deptKey,
-  entryForms })` owns the select, the `EffectiveAccess` rebuild, the permission test, the
+entryForms })` owns the select, the `EffectiveAccess` rebuild, the permission test, the
   `_direct` sort key and the three bands. `listQcUserOptions`, `listProductionUserOptions`
   and the new `listPlanningUserOptions` wrap it. Exported names, signatures and wire shapes
   are byte-identical to before — `isQcDept` / `isProductionDept` keep the spelling their two
@@ -12061,7 +12542,7 @@ could not reach the other. Planning would have been the third copy.
 ### Consequences
 
 - Migration **0201** adds `assembly_units.assembled_by_user_id` (nullable FK, `ON DELETE
-  SET NULL`) and a partial index, mirroring 0199. **Applied to TEST; PROD runs via the
+SET NULL`) and a partial index, mirroring 0199. **Applied to TEST; PROD runs via the
   release script.** `stopAssembly` reads the batch with a star-select, so until 0201 is
   applied the WHOLE Assembly Tracker 500s — list, detail, Start, Stop and Undo — not just
   the new field. Migration before API, on both databases.
@@ -12081,7 +12562,6 @@ could not reach the other. Planning would have been the third copy.
   hard-coded pixel widths, not on the owner's layout standard; converting it is a separate
   job and was not done here.
 
-
 ## ADR-222: A BOM Sales Order shows its child parts, and every order under it names its own item
 
 **Date:** 2026-10-07
@@ -12089,8 +12569,8 @@ could not reach the other. Planning would have been the third copy.
 
 ### Context
 
-The owner, in two sentences: *"on so detail page. bom so . not showing. child item parts."* and
-*"alos on level matrix. per pro, per jc show item code,name."* Traced, and the two turn out to be the
+The owner, in two sentences: _"on so detail page. bom so . not showing. child item parts."_ and
+_"alos on level matrix. per pro, per jc show item code,name."_ Traced, and the two turn out to be the
 same gap seen from two angles.
 
 **An equipment Sales Order carries its BOM on the HEADER** (`sales_orders.bom_master_id`), not on the
@@ -12172,6 +12652,7 @@ does exactly that join for its SO-line row.
 - `LevelSoLine.partName` renaming.
 - Assembly / with_material SOs' per-line BOM children, if the owner ever creates one.
 - The duplicated flow-views contract: it belongs in `packages/shared` like every other contract.
+
 ---
 
 ## ADR-223: A BOM is Active the moment it is saved, and BOM Status leaves the create and edit screens
@@ -12181,11 +12662,11 @@ does exactly that join for its SO-line row.
 
 ### Context
 
-The owner: *"in bom creation screen. there is field bom status. draft /active. i want every bom create
-must be active. remove it bom status selection draft/active."* Then, on the same change:
-*"no need in edit screen. bom sttaus picker."* Then, when offered a Retire action to keep Obsolete
-reachable: *"no need of obselete bom, reterive bom. no need to show filed on create , edit bom
-sttaus."* And, on the existing records: *"leave old docs."*
+The owner: _"in bom creation screen. there is field bom status. draft /active. i want every bom create
+must be active. remove it bom status selection draft/active."_ Then, on the same change:
+_"no need in edit screen. bom sttaus picker."_ Then, when offered a Retire action to keep Obsolete
+reachable: _"no need of obselete bom, reterive bom. no need to show filed on create , edit bom
+sttaus."_ And, on the existing records: _"leave old docs."_
 
 A BOM carried a three-value status (`draft` / `active` / `obsolete`, `packages/shared/src/enums/bom-status.ts`)
 and the create screen opened on **Draft**. Traced, Draft gated **exactly one thing**: an equipment
@@ -12196,7 +12677,7 @@ planning, not the BOM cascade, not assembly.
 So Draft was supposed to mean "half-built, not ready to use". It never could:
 
 - A BOM **cannot be saved at all** without a BOM Name, a parent item and **at least one child line** —
-  enforced in the form (Save is disabled, *"Add at least one child item."*) **and** on the server
+  enforced in the form (Save is disabled, _"Add at least one child item."_) **and** on the server
   (`createBomMasterInputSchema` → `lines.min(1)`). There was never a half-built BOM to protect.
 - The only thing Draft produced was an extra step: save the BOM, reopen it, switch it to Active —
   and until someone remembered, **every Sales Order that needed it was refused**.
@@ -12224,7 +12705,7 @@ carries. The edit screen still re-sends the status it read, so the server's stat
 (`canMoveStatus`, which allows `from === to`) sees no change.
 
 **2a. No Retire / Obsolete action, by decision.** Keeping Obsolete reachable was offered and
-**declined**: *"no need of obselete bom, reterive bom."* So nothing on any screen can set a BOM's
+**declined**: _"no need of obselete bom, reterive bom."_ So nothing on any screen can set a BOM's
 status, and a BOM that is finished with is deleted (admin-only `DELETE /bom-masters/:id`, to Trash).
 `obsolete` stays in the enum, in `BOM_STATUS_MOVES` and as a filter pill on the list — removing a
 Postgres enum value is a migration that would buy nothing, and there are **zero** Obsolete BOMs on
@@ -12236,8 +12717,8 @@ BOMs on TEST stay Draft, the list's **Draft** filter pill stays so they can stil
 
 ### Consequences
 
-- **A new BOM is usable the moment it is saved.** The Sales Order refusal *"BOM … is Draft — only an
-  Active BOM can be linked"* can no longer happen for a BOM created from today.
+- **A new BOM is usable the moment it is saved.** The Sales Order refusal _"BOM … is Draft — only an
+  Active BOM can be linked"_ can no longer happen for a BOM created from today.
 - **Nothing on a screen can change a BOM's status any more, and that is the decision, not a gap.**
   The move is still legal in `BOM_STATUS_MOVES` and `updateBomMasterInputSchema` still carries a
   status, so a future action or a direct API call could set one without a migration — but as shipped,
@@ -12247,7 +12728,7 @@ BOMs on TEST stay Draft, the list's **Draft** filter pill stays so they can stil
 - **An existing Draft BOM can no longer be promoted from a screen.** On PRODUCTION there are none, so
   nothing is stranded. On TEST the 15 are all e2e fixtures (`V3B-` / `V3C-`). If a real Draft BOM ever
   turns up, it is a one-line SQL update or a re-create, and that is the trade the owner accepted with
-  *"leave old docs."*
+  _"leave old docs."_
 - **The DB column keeps its `default 'draft'`** (`schema.ts:3183`). It is unreachable today — the one
   INSERT in the app always supplies a status, and every direct `insert(bomMasters)` in the test
   fixtures already passes `'active'` — so changing it would be a migration that alters nothing. Left
@@ -12260,7 +12741,7 @@ BOMs on TEST stay Draft, the list's **Draft** filter pill stays so they can stil
   they were linked on 28–29 Sep, before the only-Active check landed on the 30th). PRODUCTION has no
   BOMs at all, and the TEST 15 are e2e fixtures (`V3B-` / `V3C-`), so nothing real is stranded. The
   remedy if it ever bites is one statement — `UPDATE bom_masters SET status = 'active' WHERE status =
-  'draft'` — offered to the owner rather than run under *"leave old docs."*
+'draft'` — offered to the owner rather than run under _"leave old docs."_
 - `sales_orders.bom_status` is a **different field** — free text ('BOM Pending' / 'BOM Planned'),
   feeding alert AL-011 and the SO screens. Not touched, not related, and easy to confuse with this
   one.
@@ -12272,23 +12753,23 @@ BOMs on TEST stay Draft, the list's **Draft** filter pill stays so they can stil
 `jw-returns/bom-assembly.test.ts` dropped the field (29 call sites). Five `updateBomMaster` calls in
 `service.test.ts` had to be repointed from `'draft'` to `'active'`: the BOM they create is now Active,
 and `active → draft` is **not** an allowed move, so they would have thrown. `flow-bom-assembly.spec.ts`
-already asserted *"a new BOM opens as Active"* — it now reads the screen word from a read-only box and
+already asserted _"a new BOM opens as Active"_ — it now reads the screen word from a read-only box and
 also asserts the field offers no choice. **The api suite was not run: it writes to the production
 database.** Verified by typecheck (shared + api + web), eslint, prettier and both builds.
 
 ### Complex cases worth running by hand
 
-| Case | Expected |
-|---|---|
-| Create a BOM → open the equipment SO and link it | Links straight away; no Draft refusal |
-| Create a BOM, reopen it in Edit | No BOM Status field on either screen; BOM No. \| Name \| Rev fill the row |
-| BOM detail page and BOM list | Status still shown — badge, column and the three filter pills |
-| Edit an existing **Draft** BOM (change a line) and save | Saves; status stays Draft; no status-move refusal |
-| Edit an existing **Obsolete** BOM (none exist today) | Saves; stays Obsolete; still refused by the SO link |
-| Link an old Draft BOM to a new SO | Still refused — unchanged, and now unfixable from a screen |
-| BOM list → Draft / Active / Obsolete filter pills | All three still filter; the 15 old Drafts still appear |
-| Excel BOM import / direct `POST /bom-masters` with `"status":"draft"` | Saved as **Active** — the field is no longer part of the contract |
-| Double-click Save on a new BOM | One BOM (unchanged — the save key still idempotency-guards it) |
+| Case                                                                  | Expected                                                                  |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Create a BOM → open the equipment SO and link it                      | Links straight away; no Draft refusal                                     |
+| Create a BOM, reopen it in Edit                                       | No BOM Status field on either screen; BOM No. \| Name \| Rev fill the row |
+| BOM detail page and BOM list                                          | Status still shown — badge, column and the three filter pills             |
+| Edit an existing **Draft** BOM (change a line) and save               | Saves; status stays Draft; no status-move refusal                         |
+| Edit an existing **Obsolete** BOM (none exist today)                  | Saves; stays Obsolete; still refused by the SO link                       |
+| Link an old Draft BOM to a new SO                                     | Still refused — unchanged, and now unfixable from a screen                |
+| BOM list → Draft / Active / Obsolete filter pills                     | All three still filter; the 15 old Drafts still appear                    |
+| Excel BOM import / direct `POST /bom-masters` with `"status":"draft"` | Saved as **Active** — the field is no longer part of the contract         |
+| Double-click Save on a new BOM                                        | One BOM (unchanged — the save key still idempotency-guards it)            |
 
 ## ADR-224: A document number on a create screen is a preview, and the server is the only thing that assigns it
 
@@ -12383,7 +12864,7 @@ Route Card and BOM Master. Known still to fix, in order of harm, from the same t
   Job Work Order and Delivery Challan still let the user type one** (`docCodeToSend` survives at
   `po-form.tsx`, `job-work-order-form.tsx`, `delivery-challans/routes/create.tsx`). Those three use
   the shared `DocNumberInput`, which already degrades gracefully — it keeps a taken suggestion
-  savable and says *"Just used by someone else — the next free number is given on save."* Bringing
+  savable and says _"Just used by someone else — the next free number is given on save."_ Bringing
   every document onto one mechanism is the next phase, not this one.
 - **Two invalidation gaps remain, both cosmetic now.** `useRestoreFromTrash`
   (`modules/trash/api.ts`) invalidates neither list nor `nextCode()`, though restoring the newest
@@ -12398,3 +12879,156 @@ Route Card and BOM Master. Known still to fix, in order of harm, from the same t
   read-only input and diverging here would be the inconsistency, not the fix.
 - `useNextBomNo` gained `{ enabled }`. In **edit** mode the BOM No. request now does not fire at
   all — it used to fire twice and nothing read it.
+
+## ADR-225: An edit sends back only what it changed, and a clash is merged and announced — not silently applied
+
+**Date:** 2026-10-08 · **Status:** Accepted · **Amends ADR-004** · **Finishes CLAUDE.md §20.4**
+
+### Context
+
+§20.4 has described this fix since it was written, including its own example of the bug:
+
+> _"you change a line's qty to 60 while Jinal changes its Rev to C; your save wipes his Rev and
+> nobody is told."_
+
+It was never finished. The audit found:
+
+- **Twelve edit screens had no version check at all** — GRN, Job Card, Delivery Challan, Customer
+  Dispatch, NC Register, Users, Access Control, Saved Report, Machine, Operator, QC Process, TPI
+  Inspector, Cost Centre. (Purchase Order was wrongly listed as missing in the first sweep; its
+  guard lives in its shared form component, not its route.)
+- **Delivery Challan and Customer Dispatch were worse than unchecked.** DC _sent_ a token, so it
+  looked protected — but read it at SAVE time, not at open time, which `use-opened-version.ts`'s own
+  header says "silently defeats the check". And neither service read the token on the live path at
+  all; the only reader was the staging branch, and that gate ships off.
+- **Every screen sent its WHOLE record.** Forty fields, thirty-nine untouched. That is the actual
+  mechanism: saving pushed a photograph of the document as it looked when the screen opened back
+  over everything that had changed since.
+- **§20.4's per-line clause was unimplemented.** No line carried its own version; the header token
+  refused both editors or neither.
+- **Nothing on the browser read the error code.** All 31 save screens did
+  `setSubmitError(e.message)`. No reload affordance, no retry, no merge, and the message named
+  nobody — though §20.4 asks for "changed by <name> at <time>".
+- **Sign-out cleared the preferences cache only**, and never reloaded, so every document the
+  previous person opened survived in the tab on a shared PC.
+
+### Decision
+
+**An edit sends only the fields whose value differs from what the screen loaded.** Every service
+already writes only the keys it is given (`if (input.x !== undefined)`), so two people editing
+different fields of one record now both survive without anything being asked of either.
+
+**When the server still refuses, the browser merges rather than failing at the user.** It re-reads,
+retries the same narrow payload against the fresh row ONCE, and shows a 3-second notice. No button,
+no manual refresh, nothing retyped. One retry, never a loop — a second conflict means a real fight
+over one record and hiding it would be wrong.
+
+**A same-field clash is detected in the BROWSER, not the server** — only the browser holds both what
+the screen loaded and what is stored now. The user's value wins (they saved second, deliberately)
+and the orange notice names the value it replaced, because §20.4's complaint is "nobody is told".
+
+**The warning is instant, not polled.** Owner's decision, taken after being shown both costs.
+
+**ONE value-equality rule** (`packages/shared/lib/value-equal.ts`), lifted out of `audit-trail.ts`
+where it was private. The browser needs the identical test; two copies would let it call something a
+change that the server does not.
+
+**Three places REFUSE rather than merge, deliberately:**
+
+1. **Access Control.** `departments` and `forms` are single JSONB columns replaced wholesale.
+   Merging two admins' partial matrices could produce a permission set **neither of them approved** —
+   the one domain where that is unacceptable. The browser's `clearDeptForms` also deliberately wipes
+   a department's per-page overrides when its tier changes; a field-level diff would silently stop
+   doing that. The owner accepted that the second admin re-applies their change.
+2. **Job Card operations.** An operation's step number IS its index in the array
+   (`updateJobCardTx` parks kept ops at `op_seq + 100000` and renumbers from the position), so a
+   partial ops array cannot express a reorder. And `ops` carries `.default([])`, which makes an
+   ABSENT key indistinguishable from "delete every operation" — so making it optional would have
+   turned "I only changed the due date" into a wiped routing. Job Card _header_ fields merge.
+3. **Saved Report's `spec`** is one JSONB blob. It is one field to the diff; merging a name while
+   someone else rebuilt the canvas buys nothing worth having.
+
+### ADR-004 amended
+
+ADR-004 allowed Realtime only on Op Entry, the Live Operations Board, Machine Status and Task
+Allocation, on the arithmetic _"100 users x 5 tabs = 500 connections x ~50 KB"_. **That arithmetic
+was about Realtime on every screen.** Here a subscription exists only while one of a dozen EDIT
+forms is open, filtered to a single row by id. With ~23 logins that is a handful of sockets at a
+time. Migration 0202 publishes the twelve document tables.
+
+**And ADR-004 was moot anyway: the `supabase_realtime` publication was EMPTY.** Not one table,
+including `op_log` and `running_ops`, which `modules/op-entry` subscribes to. Those subscriptions
+have never delivered a single event — the "30s polling fallback alongside Realtime" beside them has
+been doing all the work since they were written. 0202 publishes those two as well, so Op Entry
+finally works as designed.
+
+### Rejected
+
+- **Refusing everywhere instead of merging.** The trace argued refuse is _better_ on the small
+  masters, since the realistic clash on a 3-field record is two people disagreeing about the SAME
+  field, and merging hides a disagreement. The notice is how the disagreement is shown, and one
+  behaviour across the app beats two.
+- **Pessimistic locking / a "who is editing this" presence indicator.** Not asked for, and it trades
+  a rare silent overwrite for a commonly blocked screen.
+- **Per-line version tokens** (§20.4's literal "compare per line"). Not built: sending only changed
+  fields already lets two people on different lines both succeed, which is the outcome that clause
+  wanted. A real per-line token is a schema change for a case this already covers.
+
+### Found along the way, each a bug in its own right
+
+- **`job_cards` has a `BEFORE UPDATE` trigger writing `now()` — microseconds.** The token a form
+  sends has been through a JS `Date` and carries milliseconds. A plain `WHERE updated_at = $token`
+  **would have refused every single Job Card save.** The conditional UPDATE truncates both sides to
+  milliseconds; anyone copying that shape must copy the `date_trunc` with it.
+- **Two forms re-seeded themselves from the LIVE record version**, so anyone else's save threw away
+  what the user was typing — silently, with no save involved. Plan edit (a `useMemo` keyed on
+  `plan?.updatedAt`) and Users edit (react-hook-form's reactive `values` option). Both now key on
+  the version the form opened with. The app-wide sweep found no third.
+- **Saved Report could lose an update with ONE user**: it re-read without a lock and rewrote all
+  five columns as `input.x ?? existing.x`.
+- **Renaming a Purchase Order rewrites that PO number onto every GRN and challan and did not stamp
+  `updated_at`**, so the guard was blind to it. It now stamps both columns, and the editor is told
+  the renamer's name — which is the truth.
+- **The Machine form invented a `0` for an empty number box** (`z.coerce.number()` on `''`), so a
+  machine with no Hour Rate reported a change nobody made — and had been silently writing 0 over the
+  null on every save long before this change. Blank now sends nothing.
+- **`ui/feedback/Toast.tsx` was fully built and mounted nowhere** outside `/__ui-kit` — a 3000 ms
+  auto-dismiss and a close X that `useToast()` threw on, so two places carried local copies. Mounted
+  once in the shell, outside `#content` so it cannot scroll away.
+- **The naming register listed the machine hours field as `hoursPerShift`**; the code has always
+  said `capacityPerShift`. Corrected, plus 23 master-field rows that had no row at all.
+
+### Consequences
+
+- **A visible behaviour change on the shop floor:** completing a Job Card's last operation closes
+  the card, so a planner with that JC's edit screen open across a completion is now refused and told
+  which operator did it. That is §20.4 working, but people will meet it.
+- **Sign-out now reloads the page.** The only prior precedent for a hard navigation is the error
+  boundary's recovery button; sign-out is the other place it is right, because `queryClient.clear()`
+  alone would still leave the open-pages tab bar (the last person's screen names), their starred
+  reports, the open nav menu and every table's sort and filter state.
+- **Clearing a field now actually clears it** on User Name, User Phone, QC Process Description and
+  Cost Centre Description. Blanking any of them used to do nothing at all; leaving it that way would
+  have made the new "Nothing changed" message a lie.
+- **An edit that changes nothing is refused on DC and Dispatch.** Both renumber themselves
+  (`/R2`, `/R3`) and re-post downstream quantities on every save, so an empty save churned the
+  document for no reason.
+
+### Deliberately NOT done
+
+- **No concurrency test exists, and none can be written here.** §20 requires every such fix to ship
+  with a test that fires two requests at once. The API suite's global setup DELETES from the
+  PRODUCTION database, so it is banned for this session and for every agent. The browser checks are
+  the only verification this will ever get. **A standing gap, not an oversight.**
+- **Access Control for a person with no `user_access` row yet.** Nothing to lock and nothing to
+  compare, so two admins configuring the same fresh account still race, and the second gets a raw
+  unique-index error rather than a readable 409. Pre-existing; out of scope.
+- **Making "no Hour Rate" expressible.** `updateMachineInputSchema` has those fields `.optional()`
+  and not `.nullable()`, and `z.coerce.number()` would turn an explicit null into 0 regardless. So
+  clearing a rate that has a value is now a no-op rather than writing 0. Both behaviours are wrong;
+  the new one does not change data without being asked. Fixing it properly is a contract decision.
+- **The boolean wording in a same-field clash** reads "Status is yes — Mehul had put no". Correct,
+  inelegant, and on a rare path. A per-screen value formatter is a signature change to a shared file
+  and should be its own decision.
+- **`Description` vs `Remarks` on masters** — the same fact under two names. Registered as-is and
+  raised as NAMING.md C-15 rather than silently blessed; picking one changes a visible label.
