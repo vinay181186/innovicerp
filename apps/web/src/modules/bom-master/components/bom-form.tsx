@@ -24,13 +24,10 @@
 //     user can never type in → read as values, not as empty boxes.
 
 import {
-  BOM_CREATE_STATUSES,
   BOM_LINE_TYPE_LABEL,
   BOM_LINE_TYPES,
-  BOM_STATUS_MOVES,
   type BomLineType,
   type BomMaster,
-  type BomStatus,
   type CreateBomMasterLineInput,
   type Item,
   type ListItemsResponse,
@@ -212,12 +209,6 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const { mode, initialHeader, initialLines, bom, onSubmit, submitting, submitError, onCancel } =
     props;
   const [header, setHeader] = useState<BomFormHeaderDraft>(initialHeader);
-  // S8: a new BOM is saved as Draft or Active; an existing one offers its
-  // saved status plus the moves BOM_STATUS_MOVES allows (the server enforces it).
-  const statusChoices: readonly BomStatus[] =
-    mode === 'create'
-      ? BOM_CREATE_STATUSES
-      : [initialHeader.status, ...BOM_STATUS_MOVES[initialHeader.status]];
   const [lines, setLines] = useState<BomFormLineDraft[]>(initialLines);
   const [revisionNote, setRevisionNote] = useState('');
   const [importErrors, setImportErrors] = useState<ExcelRowError[]>([]);
@@ -958,13 +949,18 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         title={mode === 'create' ? 'New BOM' : `Edit BOM — ${bom?.bomNo ?? ''}`}
         subtitle={
           <span style={{ display: 'inline-flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
-            <span className={`badge ${STATUS_BADGE[header.status]}`}>
-              {STATUS_LABEL[header.status]}
-            </span>
+            {/* ADR-223 — no status chip on create: the BOM does not exist yet,
+                and its status is no longer anybody's decision. On edit it stays,
+                the same state chip every other document screen carries. */}
             {mode === 'edit' ? (
-              <span className="badge b-grey">
-                BOM Rev {bom?.revision ?? 1} → {nextRevision}
-              </span>
+              <>
+                <span className={`badge ${STATUS_BADGE[header.status]}`}>
+                  {STATUS_LABEL[header.status]}
+                </span>
+                <span className="badge b-grey">
+                  BOM Rev {bom?.revision ?? 1} → {nextRevision}
+                </span>
+              </>
             ) : null}
           </span>
         }
@@ -1015,7 +1011,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
               />
             </div>
-            <div className="form-grp">
+            {/* ADR-223 — BOM Status left this cluster, so BOM Name takes the
+                freed cell (No. | Name Name | Rev = the row's four cells). A
+                three-field cluster would leave a hole at the right that reads
+                as a missing field, and the name is the one value here long
+                enough to want the room. */}
+            <div className="form-grp cl-span-2">
               <label className="form-label" htmlFor="bom-name">
                 BOM Name<span className="req">★</span>
               </label>
@@ -1026,26 +1027,6 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 onChange={(e) => setHeader({ ...header, bomName: e.target.value })}
                 placeholder="e.g. Hydraulic Press Assembly"
               />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="bom-status">
-                BOM Status
-              </label>
-              <select
-                id="bom-status"
-                className="innovic-select cl-cap-md"
-                title="Only Active BOMs attach to sales orders"
-                value={header.status}
-                onChange={(e) =>
-                  setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
-                }
-              >
-                {statusChoices.map((st) => (
-                  <option key={st} value={st}>
-                    {STATUS_LABEL[st]}
-                  </option>
-                ))}
-              </select>
             </div>
             <div className="form-grp">
               <label className="form-label" htmlFor="bom-rev">

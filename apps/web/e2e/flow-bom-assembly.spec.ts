@@ -16,7 +16,7 @@ import { bomParentItemName, bomPartItemName, bomPartQty } from './bom-form';
 //   * the item picker is the shared SearchableSelect (substring search,
 //     server-side, stores the id) — not the old <datalist>
 //   * Item Name auto-fills into its own read-only box beside the code
-//   * a new BOM opens as Active, not Draft
+//   * a new BOM is Active with no status field to set (ADR-223)
 //
 // WRITES TO PROD (authorized, same as the other flow-* specs).
 //
@@ -99,7 +99,7 @@ async function bannerText(page: Page): Promise<string> {
 
 // ───────────────────────────────────────────────────────────────────────────
 
-test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)', async ({
+test('@bom 01 — create the BOM (new picker, auto-filled name, no status field)', async ({
   page,
 }) => {
   if (state.bomNo) {
@@ -111,14 +111,11 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
 
   state.bomNo = await page.locator('input[value^="BOM-"]').first().inputValue().catch(() => '');
 
-  // ELEMENT: status must default to Active (was Draft). Taken from the field's
-  // own id — the header block's "only <select>" no longer identifies it, since
-  // every part row now carries three pickers of its own.
-  const statusSel = page.locator('#bom-status');
-  const status = await statusSel.inputValue();
-  // eslint-disable-next-line no-console
-  console.log(`>> BOM status default: "${status}"`);
-  expect(status, 'a new BOM opens as Active').toBe('active');
+  // ELEMENT: ADR-223 took BOM Status off this screen altogether — every new BOM
+  // is Active and the server decides it, so there is no field to read and
+  // nothing to choose. The proof that it really is Active is step 02: the SO
+  // links this BOM, and the server refuses to link one that is not Active.
+  await expect(page.locator('#bom-status'), 'create shows no BOM Status field').toHaveCount(0);
 
   await page.getByPlaceholder(/Hydraulic Press Assembly/i).fill(`${TAG} assembly`);
 

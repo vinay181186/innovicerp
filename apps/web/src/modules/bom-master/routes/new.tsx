@@ -39,7 +39,6 @@ function BomMasterNewPage(): React.JSX.Element {
         bomNo: docCodeToSend(header.bomNo, nextBomNo?.code ?? ''),
         bomName: header.bomName.trim(),
         parentItemId: header.parentItemId,
-        status: header.status,
         lines: linesToInput(lines),
       });
       exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: created.id } }));
@@ -59,8 +58,10 @@ function BomMasterNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      {/* A new BOM opens as Draft (S8): only an Active BOM links to a sales
-          order, so the user promotes it to Active once its parts are right. */}
+      {/* ADR-223 — a new BOM is Active from the start, so a sales order can
+          use it the moment it is saved. The status is NOT sent: the server sets
+          it, so an Excel import or a direct API call cannot make a Draft
+          either. This seed only drives the read-only box and the badge. */}
       <BomForm
         mode="create"
         initialHeader={{
@@ -68,7 +69,7 @@ function BomMasterNewPage(): React.JSX.Element {
           bomName: '',
           parentItemId: '',
           parentItemCodeText: '',
-          status: 'draft',
+          status: 'active',
         }}
         // Start with no part rows: the parent has to be chosen first, and an
         // empty row sitting under a locked list only invites confusion.

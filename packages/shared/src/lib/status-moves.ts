@@ -61,13 +61,19 @@ export const SO_STATUS_MOVES: StatusMoves<SoStatus> = {
 export const SO_CLOSABLE_STATUSES: readonly SoStatus[] = ['open', 'dispatched', 'closed'];
 
 // ─── BOM ───────────────────────────────────────────────────────────────────
-// ERPNext BOM: made as a draft, made active (usable), later retired. A new
-// BOM starts as Draft everywhere (web, API, database default). Only an Active
-// BOM may be linked to a Sales Order (checked on the server when the link is
-// set or changed).
+// ERPNext BOM: made active (usable), later retired. Only an Active BOM may be
+// linked to a Sales Order (checked on the server when the link is set or
+// changed).
+//
+// ADR-223 — a new BOM is ALWAYS Active. It used to start as Draft and be
+// promoted by hand, but Draft guarded nothing: a BOM cannot be saved at all
+// without a name, a parent item and at least one line (form AND server), so
+// there was never a half-built BOM to protect — only an extra step before the
+// BOM could be used. Draft and Obsolete remain as STORED statuses: existing
+// Draft BOMs are untouched, and Obsolete is still reached from the Edit screen.
 
-/** Statuses a BOM may be created in (the form's default is Draft). */
-export const BOM_CREATE_STATUSES: readonly BomStatus[] = ['draft', 'active'];
+/** The status every new BOM is created in (ADR-223) — not a caller's choice. */
+export const BOM_CREATE_STATUS: BomStatus = 'active';
 
 export const BOM_STATUS_MOVES: StatusMoves<BomStatus> = {
   draft: ['active', 'obsolete'],

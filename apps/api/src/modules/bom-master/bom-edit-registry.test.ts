@@ -127,7 +127,6 @@ describe('BOM Master — edit-approval (ADR-202)', () => {
         bomNo: `${TEST_PREFIX}${Date.now()}`,
         bomName: 'EA original name',
         parentItemId: parentId,
-        status: 'active',
         lines: [
           { childItemId: child1, qtyPerSet: 2, bomType: 'manufacture' },
           { childItemId: child2, qtyPerSet: 3, bomType: 'purchase' },
@@ -192,7 +191,6 @@ describe('BOM Master — edit-approval (ADR-202)', () => {
         bomNo: `${TEST_PREFIX}RM-${Date.now()}`,
         bomName: 'EA set-change',
         parentItemId: parentId,
-        status: 'active',
         lines: [
           { childItemId: child1, qtyPerSet: 1, bomType: 'manufacture' },
           { childItemId: child2, qtyPerSet: 1, bomType: 'purchase' },

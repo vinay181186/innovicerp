@@ -92,7 +92,6 @@ describe('bom-master routes', () => {
         bomNo: `${TEST_PREFIX}R1`,
         bomName: 'Routes test BOM',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 3, bomType: 'manufacture' }],
       },
     });
@@ -114,7 +113,6 @@ describe('bom-master routes', () => {
         bomNo: `${TEST_PREFIX}R-VIEWER`,
         bomName: 'should be denied',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 1, bomType: 'manufacture' }],
       },
     });
@@ -130,7 +128,6 @@ describe('bom-master routes', () => {
         bomNo: `${TEST_PREFIX}R-DEL`,
         bomName: 'del test',
         parentItemId: testParentId,
-        status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 1, bomType: 'manufacture' }],
       },
     });
