@@ -250,14 +250,19 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // header suffix, the revision-note indicator and the save-button label.
   const nextRevision = (bom?.revision ?? 0) + 1;
 
-  // Preview the auto-generated BOM No. on CREATE so it's visible before save.
-  // Prefill once while the field is still blank; keep it editable.
-  const { data: nextBomNo } = useNextBomNo();
+  // ADR-224: the create-mode BOM No. is a PREVIEW and nothing more — the
+  // server numbers the BOM inside the save transaction under its series lock
+  // (lib/doc-series-lock), the guarantee ERPNext's Naming Series gives. This
+  // follows whatever the backend last answered rather than stopping at the
+  // first value, so the number a previous save consumed cannot stay on screen.
+  // The box is read-only on create (see the BOM No. input), so following the
+  // server can never overwrite typing.
+  const { data: nextBomNo } = useNextBomNo({ enabled: mode === 'create' });
   useEffect(() => {
     if (mode !== 'create') return;
     const code = nextBomNo?.code;
     if (!code) return;
-    setHeader((prev) => (prev.bomNo.trim() ? prev : { ...prev, bomNo: code }));
+    setHeader((prev) => (prev.bomNo === code ? prev : { ...prev, bomNo: code }));
   }, [mode, nextBomNo]);
 
   // Item picker — server-side search, as the dropdown skill requires. One
@@ -1005,14 +1010,23 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           <Cluster name="BOM">
             <div className="form-grp">
               <label className="form-label" htmlFor="bom-no">
-                BOM No.<span className="req">★</span>
+                BOM No.
+                {/* Auto-numbered on create, so there is nothing for the user to
+                    supply; on edit it is a real required field they can change. */}
+                {mode === 'create' ? null : <span className="req">★</span>}
               </label>
               <input
                 id="bom-no"
                 className="innovic-input mono cl-cap-md"
                 value={header.bomNo}
+                // Create: a preview the server re-decides on save, so it is
+                // not typeable. Edit: the BOM No. IS renameable —
+                // updateBomMaster duplicate-checks a changed one — so it
+                // stays editable there.
+                readOnly={mode === 'create'}
+                title={mode === 'create' ? 'Numbered automatically when you save' : undefined}
                 onChange={(e) => setHeader({ ...header, bomNo: e.target.value })}
-                placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
+                placeholder={mode === 'create' ? 'BOM-NNNN' : 'BOM-0001'}
               />
             </div>
             <div className="form-grp">

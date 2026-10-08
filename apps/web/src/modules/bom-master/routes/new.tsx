@@ -4,8 +4,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { docCodeToSend } from '@/lib/use-doc-number';
-import { useCreateBomMaster, useNextBomNo } from '../api';
+import { useCreateBomMaster } from '../api';
 import {
   BomForm,
   type BomFormHeaderDraft,
@@ -23,9 +22,6 @@ function BomMasterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateBomMaster(saveKey);
-  // S2: the number the form pre-filled is only a preview; it is sent only when
-  // the user changed it (docCodeToSend), else the server numbers the record.
-  const { data: nextBomNo } = useNextBomNo();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
@@ -35,8 +31,12 @@ function BomMasterNewPage(): React.JSX.Element {
   const submit = async (header: BomFormHeaderDraft, lines: BomFormLineDraft[]): Promise<void> => {
     setSubmitError(null);
     try {
+      // ADR-224: no `bomNo` is sent. The BOM No. on screen is a preview; the
+      // server picks the number under its series lock, so a preview that went
+      // stale — someone else saved first, or this is the second BOM in a row
+      // from the same screen — costs the user nothing: this save takes the
+      // next free number instead of being refused as a duplicate.
       const created = await create.mutateAsync({
-        bomNo: docCodeToSend(header.bomNo, nextBomNo?.code ?? ''),
         bomName: header.bomName.trim(),
         parentItemId: header.parentItemId,
         status: header.status,

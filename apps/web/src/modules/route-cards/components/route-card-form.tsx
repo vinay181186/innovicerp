@@ -272,17 +272,21 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     [machineGroups],
   );
 
-  // Create-mode only: prefill the RC No with the previewed next code once,
-  // while the field is still blank. Keeps the field editable (user may
-  // override) and never clobbers a value they've already typed.
+  // ADR-224: the create-mode RC No. is a PREVIEW and nothing more — the server
+  // numbers the card inside the save transaction under its series lock
+  // (lib/doc-series-lock), which is the guarantee ERPNext's Naming Series
+  // gives. So this follows whatever the backend last answered instead of
+  // latching the first value it sees: the old `codePrefilled` ref consumed the
+  // CACHED answer on mount and then ignored the fresh one that arrived
+  // milliseconds later, which is how the number the previous save had already
+  // used stayed on screen. The box is read-only on create (see the RC No.
+  // input below), so following the server can never overwrite typing.
   const { data: nextCodeData } = useNextRouteCardCode({ enabled: mode === 'create' });
-  const codePrefilled = useRef(false);
   useEffect(() => {
-    if (mode !== 'create' || codePrefilled.current) return;
+    if (mode !== 'create') return;
     const next = nextCodeData?.code;
     if (!next) return;
-    codePrefilled.current = true;
-    setHeader((prev) => (prev.code.trim() ? prev : { ...prev, code: next }));
+    setHeader((prev) => (prev.code === next ? prev : { ...prev, code: next }));
   }, [mode, nextCodeData]);
 
   const machinesByCode = useMemo(() => {
@@ -667,8 +671,13 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             id="rc-code"
             className="innovic-input mono rc-id-code"
             value={header.code}
+            // Create: a preview the server re-decides on save, so it is not
+            // typeable. Edit: the code IS renameable — updateRouteCard checks
+            // the new one for duplicates (service.ts) — so it stays editable.
+            readOnly={mode === 'create'}
+            title={mode === 'create' ? 'Numbered automatically when you save' : undefined}
             onChange={(e) => setHeader({ ...header, code: e.target.value })}
-            placeholder={mode === 'create' ? 'IN-RC-NNNNN (auto if blank)' : ''}
+            placeholder={mode === 'create' ? 'IN-RC-NNNNN' : ''}
           />
           <IdentSep />
           <label className="rc-id-lb" htmlFor="rc-item">
