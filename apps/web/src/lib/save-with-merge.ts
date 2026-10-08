@@ -127,7 +127,7 @@ export async function saveWithMerge<TRecord extends object, TResult>(
     const theirFields = changedKeys(
       opts.loaded as Record<string, unknown>,
       fresh as Record<string, unknown>,
-      opts.comparableKeys as (keyof Record<string, unknown> & string)[] | undefined,
+      opts.comparableKeys,
     );
 
     // Retry the SAME narrow payload against their version. Because it carries

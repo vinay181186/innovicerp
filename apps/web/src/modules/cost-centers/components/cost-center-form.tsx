@@ -59,11 +59,19 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {
+      // ADR-225 — the trimmed Description is sent AS IT IS, blank included. The
+      // old `|| undefined` turned a box the user had CLEARED into "untouched",
+      // so clearing a description silently did nothing; the server already runs
+      // emptyToNull on it, so a blank now stores as no description. Same
+      // one-line fix as qc-process-form.tsx, same reason.
+      //
+      // Department and Cost Centre Type keep theirs: both are <select>s with no
+      // blank option, so neither can ever arrive empty.
       const payload: UpdateCostCenterInput = {
         name: values.name.trim(),
         department: values.department.trim() || undefined,
         type: values.type.trim() || undefined,
-        description: values.description.trim() || undefined,
+        description: values.description.trim(),
         isActive: values.isActive,
       };
       await props.onSubmit(payload);

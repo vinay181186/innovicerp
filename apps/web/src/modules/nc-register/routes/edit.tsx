@@ -7,10 +7,42 @@ import { useCallback, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
-import { useNcRegister, useUpdateNcRegister } from '../api';
+import { useFetchNcRegister, useNcRegister, useUpdateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
+
+// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+//
+// The list drives two things: the save sends only the ones whose value actually
+// changed, and a notice names the field another person moved. It is written out
+// rather than inferred because the NC record carries far more than this form
+// touches — a cascade changing `status` or a disposition must never be reported
+// to the user as "their edit", and a field this form shows read-only must never
+// be sent as one.
+//
+// `operatorText` is in the list on purpose even though its input only renders
+// in CREATE mode: the form still carries it through on edit, so if it ever
+// diverges this is where it shows up rather than being silently re-sent.
+//
+// Labels come from docs/NAMING.md, so the notice says "Defect Description",
+// never `reason`.
+const NC_EDITABLE = [
+  'ncDate',
+  'reasonCategory',
+  'reason',
+  'reportedByText',
+  'operatorText',
+] as const;
+
+const NC_LABELS: Record<string, string> = {
+  ncDate: 'NC Date',
+  reasonCategory: 'Reason Category',
+  reason: 'Defect Description',
+  reportedByText: 'Reported By',
+  operatorText: 'Operator',
+};
 
 export const ncRegisterEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,6 +55,20 @@ function NcRegisterEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
   const update = useUpdateNcRegister(id);
+  const fetchNc = useFetchNcRegister();
+  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes
+  // to this one NC, so the user is told the moment somebody else saves it
+  // rather than after they have typed into a stale form.
+  const conflict = useEditConflict({
+    table: 'nc_register',
+    id,
+    record: detail,
+    refetch: () => fetchNc(id),
+    editableKeys: NC_EDITABLE,
+    label: (f) => NC_LABELS[f] ?? f,
+    noun: 'NC',
+  });
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE NC is staged for approval instead of
   // applied; the neutral "Sent for approval" banner shows it.
@@ -125,7 +171,12 @@ function NcRegisterEditPage(): React.JSX.Element {
         onSubmit={async (values: UpdateNcRegisterInput) => {
           setSubmitError(null);
           try {
-            const saved = await update.mutateAsync(values);
+            const saved = await conflict.save(values, (payload, expectedUpdatedAt) =>
+              update.mutateAsync({ ...payload, expectedUpdatedAt }),
+            );
+            // null = nothing actually changed; the user has been told and
+            // nothing was written. Stay on the form.
+            if (saved === null) return;
             if (isStagedResult(saved)) {
               // Edit-approval gate is on and this NC is live: nothing changed on
               // the NC — the edit is waiting for approval. Say so, then return to

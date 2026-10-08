@@ -5,13 +5,37 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateOperator, useOperator, useUpdateOperator } from '../api';
+import { useCreateOperator, useFetchOperator, useOperator, useUpdateOperator } from '../api';
 import { OperatorForm } from '../components/operator-form';
+
+// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+//
+// The list drives two things: the save sends only the ones whose value actually
+// changed, and a notice names the field another person moved. It is written out
+// rather than inferred: `code` is read-only on the edit form (the help text says
+// so, and updateOperatorInputSchema omits it), and the operator record also
+// carries the audit columns, which are nobody's edit.
+//
+// The Excel bulk import writes the same columns but is not this screen; it has
+// its own whole-sheet request and no conflict notice.
+const OPERATOR_EDITABLE = ['name', 'department', 'skills', 'isActive', 'userId'] as const;
+
+// The screen's own labels, so a notice reads "Skills / Machines", never
+// `skills`. No row exists in docs/NAMING.md for any of the five; these are the
+// labels already on this form.
+const OPERATOR_LABELS: Record<string, string> = {
+  name: 'Name',
+  department: 'Department',
+  skills: 'Skills / Machines',
+  isActive: 'Active',
+  userId: 'Linked User',
+};
 
 export const operatorNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -109,6 +133,20 @@ function OperatorEditPage(): React.JSX.Element {
   const canEdit = effectiveFormPerms(eff, 'operator_create').edit;
   const { data: operator, isLoading, isError, error } = useOperator(canEdit ? id : undefined);
   const update = useUpdateOperator(id);
+  const fetchOperator = useFetchOperator();
+  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes
+  // to this one operator, so the user is told the moment somebody else saves it
+  // rather than after they have typed into a stale form.
+  const conflict = useEditConflict({
+    table: 'operators',
+    id,
+    record: operator,
+    refetch: () => fetchOperator(id),
+    editableKeys: OPERATOR_EDITABLE,
+    label: (f) => OPERATOR_LABELS[f] ?? f,
+    noun: 'operator',
+  });
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE operator is staged for approval instead
   // of applied; the neutral "Sent for approval" banner shows it.
@@ -123,7 +161,14 @@ function OperatorEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdateOperatorInput): Promise<void> => {
     setSubmitError(null);
     try {
-      const result = await update.mutateAsync(values);
+      // Only the fields that actually moved are sent; a 409 re-reads and retries
+      // onto the fresh row instead of overwriting someone else's change.
+      const result = await conflict.save(values, (payload, expectedUpdatedAt) =>
+        update.mutateAsync({ ...payload, expectedUpdatedAt }),
+      );
+      // null = nothing actually changed; the user has been told and nothing was
+      // written. Stay on the form.
+      if (result === null) return;
       if (isStagedResult(result)) {
         // The edit-approval gate is on and this operator is live: nothing was
         // changed on the operator — the edit is now waiting for approval. Say so,

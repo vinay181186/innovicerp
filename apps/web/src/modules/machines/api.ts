@@ -12,7 +12,7 @@ import type {
   UpdateMachineInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
@@ -52,6 +52,27 @@ export function useMachine(id: string | undefined) {
     queryFn: () => apiFetch<Machine>(`/machines/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/**
+ * ADR-225 — re-read ONE machine straight from the server, ignoring the cache.
+ *
+ * `useEditConflict` calls this after a 409 so its retry lands on the version
+ * that is actually stored. A cached read would defeat the whole thing: the
+ * cache is what went stale in the first place. Mirrors
+ * `useFetchNcRegister` in modules/nc-register/api.ts.
+ */
+export function useFetchMachine(): (id: string) => Promise<Machine> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<Machine>({
+        queryKey: machinesKeys.detail(id),
+        queryFn: () => apiFetch<Machine>(`/machines/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useCreateMachine(saveKey?: SaveKey) {

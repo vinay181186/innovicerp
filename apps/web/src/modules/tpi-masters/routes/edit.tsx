@@ -4,11 +4,35 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useTpiMaster, useUpdateTpiMaster } from '../api';
+import { useFetchTpiMaster, useTpiMaster, useUpdateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
+
+// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+//
+// The list drives two things: the save sends only the ones whose value actually
+// changed, and a notice names the field another person moved. It is written out
+// rather than inferred: `code` IS the Inspector Name and is permanent, because
+// every TPI log snapshots it as text — the box is read-only on edit and
+// updateTpiMasterInputSchema omits it outright — and the record also carries the
+// audit columns, which are nobody's edit.
+const TPI_EDITABLE = ['organization', 'contactNo', 'email', 'remarks', 'isActive'] as const;
+
+// The screen's own labels, so a notice reads "Contact No.", never `contactNo`.
+// No row exists in docs/NAMING.md for any of the five; these are the labels
+// already on this form, and they are the same four the API already serves as its
+// Sort & Filter column labels for this master — including "Organisation" with an
+// s, not the column's own spelling.
+const TPI_LABELS: Record<string, string> = {
+  organization: 'Organisation',
+  contactNo: 'Contact No.',
+  email: 'Email',
+  remarks: 'Remarks',
+  isActive: 'Active',
+};
 
 export const tpiMasterEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -21,6 +45,20 @@ function TpiMasterEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useTpiMaster(id);
   const update = useUpdateTpiMaster(id);
+  const fetchTpiMaster = useFetchTpiMaster();
+  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes
+  // to this one inspector, so the user is told the moment somebody else saves
+  // them rather than after they have typed into a stale form.
+  const conflict = useEditConflict({
+    table: 'tpi_masters',
+    id,
+    record: detail,
+    refetch: () => fetchTpiMaster(id),
+    editableKeys: TPI_EDITABLE,
+    label: (f) => TPI_LABELS[f] ?? f,
+    noun: 'TPI inspector',
+  });
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE inspector is staged for approval
   // instead of applied; the neutral "Sent for approval" banner shows it.
@@ -114,7 +152,15 @@ function TpiMasterEditPage(): React.JSX.Element {
             onSubmit={async (values: UpdateTpiMasterInput) => {
               setSubmitError(null);
               try {
-                const saved = await update.mutateAsync(values);
+                // Only the fields that actually moved are sent; a 409 re-reads
+                // and retries onto the fresh row instead of overwriting someone
+                // else's change.
+                const saved = await conflict.save(values, (payload, expectedUpdatedAt) =>
+                  update.mutateAsync({ ...payload, expectedUpdatedAt }),
+                );
+                // null = nothing actually changed; the user has been told and
+                // nothing was written. Stay on the form.
+                if (saved === null) return;
                 if (isStagedResult(saved)) {
                   // The edit-approval gate is on and this inspector is live:
                   // nothing was changed — the edit is now waiting for approval.

@@ -73,6 +73,32 @@ const CREATE_DEFAULTS: CreateMachineInput = {
   hourRate: 0,
 };
 
+// ADR-225 — an EMPTY number box must stay empty, not become 0.
+//
+// `register('hourRate')` hands back `''` for a blank input, and
+// `z.coerce.number()` turns `''` into 0 (`Number('') === 0`). So a machine with
+// no Hour Rate and no Hours per Shift — both nullable on the record — used to
+// submit 0 for each, and EVERY save quietly wrote 0 over the null. Nobody
+// noticed because the whole payload was sent every time.
+//
+// It surfaced when the edit screen started sending only CHANGED fields: the
+// stored null and the submitted 0 differ, so the save reported a change the
+// user never made, and a conflict notice could have named "Hour Rate" as their
+// edit when they had not touched the box. A notice that names the wrong field
+// is worse than no notice.
+//
+// `undefined` means "untouched" to both the diff and the server
+// (`if (input.x !== undefined)`), so a blank box now writes nothing at all.
+//
+// KNOWN LIMIT, deliberately left: clearing a rate that HAS a value is now a
+// no-op rather than writing 0. Setting it back to empty is not expressible in
+// this contract at all — `updateMachineInputSchema` has these as `.optional()`
+// and not `.nullable()`, and `z.coerce.number()` would turn an explicit null
+// into 0 anyway. Making "no rate" sendable is a contract change and its own
+// decision; silently writing 0 was never what the user asked for either.
+const blankToUndefined = (v: unknown): number | undefined =>
+  v === '' || v === null || v === undefined ? undefined : Number(v);
+
 function machineToUpdateDefaults(m: Machine): UpdateMachineInput {
   return {
     name: m.name,
@@ -140,14 +166,27 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="code">
             Code<span className="req">★</span>
           </label>
-          <input id="code" className="innovic-input" autoFocus autoComplete="off" placeholder="CNC-01" {...register('code')} />
+          <input
+            id="code"
+            className="innovic-input"
+            autoFocus
+            autoComplete="off"
+            placeholder="CNC-01"
+            {...register('code')}
+          />
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="name">
             Machine Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" placeholder="CNC Turning Centre" {...register('name')} />
+          <input
+            id="name"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="CNC Turning Centre"
+            {...register('name')}
+          />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -155,21 +194,39 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="productCode">
             Product Code
           </label>
-          <input id="productCode" className="innovic-input" autoComplete="off" {...register('productCode')} />
+          <input
+            id="productCode"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('productCode')}
+          />
         </div>
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="machineType">
             Machine Type
           </label>
-          <input id="machineType" className="innovic-input" autoComplete="off" placeholder="CNC Lathe, VMC, Grinding…" {...register('machineType')} />
+          <input
+            id="machineType"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="CNC Lathe, VMC, Grinding…"
+            {...register('machineType')}
+          />
         </div>
 
         <div className="form-grp">
           <label className="form-label" htmlFor="capacityPerShift">
             Hours per Shift
           </label>
-          <input id="capacityPerShift" className="innovic-input" type="number" min={0} autoComplete="off" {...register('capacityPerShift')} />
+          <input
+            id="capacityPerShift"
+            className="innovic-input"
+            type="number"
+            min={0}
+            autoComplete="off"
+            {...register('capacityPerShift', { setValueAs: blankToUndefined })}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="shiftsPerDay">
@@ -195,7 +252,7 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
             min={0}
             step="0.01"
             autoComplete="off"
-            {...register('hourRate')}
+            {...register('hourRate', { setValueAs: blankToUndefined })}
           />
         </div>
 
@@ -281,7 +338,13 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="name">
             Machine Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" placeholder="CNC Turning Centre" {...register('name')} />
+          <input
+            id="name"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="CNC Turning Centre"
+            {...register('name')}
+          />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -289,21 +352,39 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="productCode">
             Product Code
           </label>
-          <input id="productCode" className="innovic-input" autoComplete="off" {...register('productCode')} />
+          <input
+            id="productCode"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('productCode')}
+          />
         </div>
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="machineType">
             Machine Type
           </label>
-          <input id="machineType" className="innovic-input" autoComplete="off" placeholder="CNC Lathe, VMC, Grinding…" {...register('machineType')} />
+          <input
+            id="machineType"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="CNC Lathe, VMC, Grinding…"
+            {...register('machineType')}
+          />
         </div>
 
         <div className="form-grp">
           <label className="form-label" htmlFor="capacityPerShift">
             Hours per Shift
           </label>
-          <input id="capacityPerShift" className="innovic-input" type="number" min={0} autoComplete="off" {...register('capacityPerShift')} />
+          <input
+            id="capacityPerShift"
+            className="innovic-input"
+            type="number"
+            min={0}
+            autoComplete="off"
+            {...register('capacityPerShift', { setValueAs: blankToUndefined })}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="shiftsPerDay">
@@ -329,7 +410,7 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
             min={0}
             step="0.01"
             autoComplete="off"
-            {...register('hourRate')}
+            {...register('hourRate', { setValueAs: blankToUndefined })}
           />
         </div>
 

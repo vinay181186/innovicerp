@@ -9,6 +9,7 @@ import type {
   UpdateOperatorInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
@@ -56,6 +57,27 @@ export function useOperator(id: string | undefined) {
     queryFn: () => apiFetch<Operator>(`/operators/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/**
+ * ADR-225 — re-read ONE operator straight from the server, ignoring the cache.
+ *
+ * `useEditConflict` calls this after a 409 so its retry lands on the version
+ * that is actually stored. A cached read would defeat the whole thing: the
+ * cache is what went stale in the first place. Mirrors
+ * `useFetchNcRegister` in modules/nc-register/api.ts.
+ */
+export function useFetchOperator(): (id: string) => Promise<Operator> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<Operator>({
+        queryKey: operatorsKeys.detail(id),
+        queryFn: () => apiFetch<Operator>(`/operators/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useCreateOperator(saveKey?: SaveKey) {
