@@ -92,6 +92,20 @@ export function useCreateRouteCard(saveKey?: SaveKey) {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      // ADR-224: start re-asking for the next number while this screen is
+      // still mounted, so the next Create screen's FIRST PAINTED FRAME already
+      // shows the fresh one. nextCode() is a SIBLING of lists(), not a child,
+      // so invalidating the list does not reach it.
+      //
+      // This line is POLISH, not the fix. `refetchOnMount` is left at the
+      // TanStack default (main.tsx overrides only staleTime, focus refetch and
+      // retry), so the next mount re-asks anyway and self-corrects in
+      // milliseconds. What made the stale number STICK was the `codePrefilled`
+      // latch in route-card-form.tsx consuming the cached answer and then
+      // ignoring the fresh one, and routes/new.tsx sending the result. Keep
+      // those two fixed; deleting them and keeping this line brings the bug
+      // back.
+      void qc.invalidateQueries({ queryKey: routeCardsKeys.nextCode() });
       qc.setQueryData(routeCardsKeys.detail(created.id), created);
     },
   });
@@ -126,6 +140,9 @@ export function useDeleteRouteCard() {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: routeCardsKeys.detail(id) });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      // The next number is "highest code still live + 1", so deleting the
+      // newest card frees its number and the preview must be re-asked.
+      void qc.invalidateQueries({ queryKey: routeCardsKeys.nextCode() });
     },
   });
 }

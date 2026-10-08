@@ -64,11 +64,12 @@ export function useBomLinkedSoLines(id: string | undefined, enabled: boolean) {
   });
 }
 
-export function useNextBomNo() {
+export function useNextBomNo(options?: { enabled?: boolean }) {
   return useQuery<{ code: string }>({
     queryKey: bomMastersKeys.nextCode(),
     queryFn: () => apiFetch<{ code: string }>('/bom-masters/next-code'),
     staleTime: 0,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -86,6 +87,13 @@ export function useCreateBomMaster(saveKey?: SaveKey) {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      // ADR-224: start re-asking for the next number while this screen is
+      // still mounted, so the next Create screen's FIRST PAINTED FRAME already
+      // shows the fresh one. nextCode() is a SIBLING of lists(), not a child,
+      // so invalidating the list does not reach it. POLISH, not the fix — see
+      // the twin comment in route-cards/api.ts for what actually made the
+      // stale number stick.
+      void qc.invalidateQueries({ queryKey: bomMastersKeys.nextCode() });
       qc.setQueryData(bomMastersKeys.detail(created.id), created);
     },
   });
@@ -130,6 +138,9 @@ export function useDeleteBomMaster() {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: bomMastersKeys.detail(id) });
+      // The next number is "highest BOM No. still live + 1", so deleting the
+      // newest BOM frees its number and the preview must be re-asked.
+      void qc.invalidateQueries({ queryKey: bomMastersKeys.nextCode() });
     },
   });
 }
