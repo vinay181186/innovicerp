@@ -188,7 +188,12 @@ function AccessControlListPage(): React.JSX.Element {
       </div>
 
       {editing ? (
+        /* Keyed on the user: the box now remembers the matrix VERSION it opened
+           with (ADR-225 / §20.4), and that must never be carried over to another
+           person. Today the modal is always closed before another row can be
+           reached, so this only makes the guarantee structural. */
         <ConfigureAccessModal
+          key={editing.userId}
           userId={editing.userId}
           userName={editing.userName ?? editing.userEmail}
           onClose={closeModal}

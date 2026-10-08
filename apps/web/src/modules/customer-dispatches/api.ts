@@ -9,6 +9,7 @@ import type {
   ListCustomerDispatchesResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
@@ -21,12 +22,24 @@ import { activityLogKeys } from '@/modules/activity-log/api';
  *  items cannot change on an existing dispatch. `reason` rides along for the
  *  activity-log entry (ADR-197), as on the other edit screens. */
 export interface UpdateCustomerDispatchInput {
+  // ADR-225 / §20.4 — the version the form LOADED. The server has accepted it all
+  // along (`expectedUpdatedAt: z.string().optional()` in its own schema, checked
+  // under the dispatch's row lock) and this screen simply never sent one, so a
+  // save over somebody else's newer edit went through silently. That matters more
+  // here than on most documents: the save bumps the dispatch's revision and
+  // reverses then reposts the whole stock movement.
+  expectedUpdatedAt?: string | undefined;
+  // `null` clears the field — the server's schema is `.nullable().optional()` and
+  // writes `input.transport ?? null`. The screen used to send `undefined` for a
+  // cleared box, which JSON drops, so emptying one never saved.
   dispatchDate?: string | undefined;
-  transport?: string | undefined;
-  vehicleNo?: string | undefined;
-  remarks?: string | undefined;
+  transport?: string | null | undefined;
+  vehicleNo?: string | null | undefined;
+  remarks?: string | null | undefined;
   /** One entry per existing dispatch line, keyed by customer_dispatch_lines.id —
-   *  the same id the staged-edit diff uses in its `line:<id>:qty` change key. */
+   *  the same id the staged-edit diff uses in its `line:<id>:qty` change key. The
+   *  line SET is fixed (the server refuses an added / removed line) and `qty` is
+   *  required on every entry, so the whole array always travels. */
   lines: { id: string; qty: number }[];
   reason?: string | undefined;
 }
@@ -105,6 +118,25 @@ export function useFinanceSoOptions() {
     queryFn: () => apiFetch<{ options: FinanceSoOption[] }>('/customer-dispatches/so-options'),
     staleTime: 30_000,
   });
+}
+
+/** Re-read ONE dispatch from the server, bypassing the cache (ADR-225).
+ *
+ *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
+ *  the row AS IT IS NOW to work out which fields the other person changed and to
+ *  retry onto their version. `staleTime: 0` is the whole point — the cached copy
+ *  is the stale photograph we are trying to get past. */
+export function useFetchDispatchDetail(): (id: string) => Promise<CustomerDispatchDetail> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<CustomerDispatchDetail>({
+        queryKey: dispatchKeys.detail(id),
+        queryFn: () => apiFetch<CustomerDispatchDetail>(`/customer-dispatches/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useDispatchableSo(soId: string | undefined) {

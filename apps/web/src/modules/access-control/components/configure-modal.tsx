@@ -35,6 +35,19 @@
 //
 // On save: if the role changed, fire useUpdateUser FIRST (legacy L13996),
 // then save the access matrix. Both succeed or modal stays open with error.
+//
+// ADR-225 / §20.4 — THIS BOX REFUSES, IT DOES NOT MERGE, and that is an owner
+// decision, not a shortcut. `departments` and `forms` are single JSONB blocks
+// replaced wholesale; merging two admins' partial matrices could produce a
+// permission set NEITHER of them approved — the one domain where that is
+// unacceptable. `clearDeptForms` below also deliberately wipes a department's
+// per-page overrides when its tier changes, and a field-level diff would quietly
+// stop doing that. So the save carries the version the box OPENED with, and when
+// someone else got there first nothing is written: the orange notice names them,
+// the stored matrix is reloaded, and the admin re-applies their change. The
+// twelve other edit screens use `useEditConflict`, which retries; this one uses
+// the same two primitives underneath it (`useOpenedVersion` + `useRecordWatch`)
+// precisely so that it cannot.
 
 import {
   ACCESS_DEPTS,
@@ -42,6 +55,8 @@ import {
   ACCESS_TIERS,
   MAIN_DEPT_DEFAULT_TIER,
   emptyFormPerms,
+  isEditConflictCode,
+  parseEditConflictDetails,
   priceStartTier,
   roleForAccess,
   saveUserAccessInputSchema,
@@ -49,13 +64,16 @@ import {
   type AccessDeptKey,
   type AccessFormPerms,
   type AccessTierKey,
+  type UserAccess,
 } from '@innovic/shared';
 import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useOpenedVersion } from '@/lib/use-opened-version';
+import { useRecordWatch } from '@/lib/use-record-watch';
 import { useUpdateUser, useUser } from '@/modules/users/api';
-import { useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
+import { useFetchUserAccess, useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
 import { roleLabel } from '@/lib/role-label';
-import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
+import { Banner, ConfirmDialog, Modal, useToast } from '@/ui/feedback';
 
 interface Props {
   userId: string;
@@ -173,6 +191,28 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const { data: userDetail } = useUser(userId);
   const save = useSaveUserAccess();
   const updateUser = useUpdateUser(userId);
+  const toast = useToast();
+  const fetchAccess = useFetchUserAccess();
+  // §20.4 — the version the box OPENED with, captured once. Reading `data
+  // .updatedAt` at save time instead would be worthless: a background refetch
+  // (window focus, an invalidation) pulls in the other admin's newer stamp and
+  // silently defeats the check, exactly as lib/use-opened-version.ts warns.
+  const opened = useOpenedVersion(data?.updatedAt);
+  // The live doorbell on this one `user_access` row, so a second admin saving is
+  // announced while this box is open rather than discovered at Save.
+  const watch = useRecordWatch({ table: 'user_access', id: data?.id });
+  const announcedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!watch.changedByOther) {
+      announcedFor.current = null;
+      return;
+    }
+    if (announcedFor.current === userId) return; // once per user, not per event
+    announcedFor.current = userId;
+    toast.info(
+      `Someone else just changed ${userName}'s access. Save will ask you to redo your change.`,
+    );
+  }, [watch.changedByOther, userId, userName, toast]);
 
   const [mainDept, setMainDept] = useState('');
   const [approvalLimit, setApprovalLimit] = useState('');
@@ -215,24 +255,44 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
 
   // Only the approval limit comes from the user record now — the role is
   // derived on save, never read back into an input.
+  //
+  // ADR-225 — seeded ONCE, when the record arrives. It used to re-run on every
+  // change of `userDetail`, so a background refetch (window focus) that picked
+  // up somebody else's edit silently retyped this box under the admin's hands,
+  // with no save involved. That is the exact fault the ADR found on Plan edit and
+  // User edit.
+  const limitSeeded = useRef(false);
   useEffect(() => {
-    if (!userDetail) return;
+    if (!userDetail || limitSeeded.current) return;
+    limitSeeded.current = true;
     setApprovalLimit(userDetail.approvalLimit ?? '');
   }, [userDetail]);
 
   // Seed once when the matrix loads. The server already normalises pre-0100
   // boolean dept values to a tier key, so nothing legacy reaches this state.
-  useEffect(() => {
-    if (!data) return;
-    setFullAccess(data.fullAccess);
-    setAuditor(data.auditor);
-    setDrawingDownload(data.drawingDownload);
-    setMainDept(data.mainDept ?? '');
-    const tiers = loadDeptTiers(data.departments);
+  //
+  // ADR-225 — "once" is now enforced with a ref, for the same reason as the
+  // approval limit above: this effect re-ran whenever `data` changed, so another
+  // admin's save arriving on a background refetch wiped whatever tiers and boxes
+  // this admin had set, with nothing on screen to say why. The ONLY deliberate
+  // re-seed is the one in `onSave`'s conflict branch, which reloads the stored
+  // matrix after telling the admin their save was refused.
+  const matrixSeeded = useRef(false);
+  const applyMatrix = useCallback((m: UserAccess): void => {
+    setFullAccess(m.fullAccess);
+    setAuditor(m.auditor);
+    setDrawingDownload(m.drawingDownload);
+    setMainDept(m.mainDept ?? '');
+    const tiers = loadDeptTiers(m.departments);
     setDepartments(tiers);
-    setForms(fillForms(data.forms));
-    setExpanded(defaultExpanded(tiers, data.mainDept ?? ''));
-  }, [data]);
+    setForms(fillForms(m.forms));
+    setExpanded(defaultExpanded(tiers, m.mainDept ?? ''));
+  }, []);
+  useEffect(() => {
+    if (!data || matrixSeeded.current) return;
+    matrixSeeded.current = true;
+    applyMatrix(data);
+  }, [data, applyMatrix]);
 
   // Load the picked user's matrix into the form once it arrives, then clear
   // the picker so the same person can be picked again after further edits.
@@ -520,10 +580,39 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           confirmAdminChange,
           departments,
           forms,
+          // §20.4 — refuse rather than overwrite a matrix that moved since this
+          // box opened. Undefined only for a person who has no access row yet,
+          // and then there is nothing to overwrite.
+          ...(opened.expected() ? { expectedUpdatedAt: opened.expected() } : {}),
         },
       });
+      watch.acknowledge(); // our own save rang the doorbell; swallow it
       onClose();
     } catch (e) {
+      // ADR-225 — someone else saved this person's access first. NOTHING was
+      // written. Say who, reload the stored matrix (the seed effect above
+      // re-fills every box from it) and let this admin re-apply their change —
+      // the one screen where a merge could produce a permission set neither
+      // admin approved.
+      if (isEditConflictCode((e as { code?: unknown } | null)?.code)) {
+        const details = parseEditConflictDetails((e as { details?: unknown }).details);
+        const who = details?.changedByName ?? 'Another admin';
+        toast.show(
+          `${who} changed ${userName}'s access while this box was open. Nothing was saved — ` +
+            `the boxes below now show what is stored. Please make your change again.`,
+          { kind: 'warn' },
+        );
+        try {
+          const fresh = await fetchAccess(userId);
+          applyMatrix(fresh); // the boxes now show what is STORED
+          opened.saved(fresh.updatedAt);
+        } catch {
+          // The re-read failed (offline, or the row went). Leave the box as it
+          // is and let the next Save answer; nothing has been written either way.
+        }
+        watch.acknowledge();
+        return;
+      }
       const msg = e instanceof Error ? e.message : 'Could not save access settings. Try again.';
       // The server refuses an admin demotion once, with the reason. Surface it
       // as a question rather than an error — the admin may well have meant it.

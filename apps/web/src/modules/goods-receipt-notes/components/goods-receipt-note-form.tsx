@@ -417,17 +417,23 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         itemName: l.itemName.trim(),
         receivedQty: Number(String(l.receivedQty).trim() || '0'),
         dcRefNo: l.dcRefNo?.trim() || undefined,
+        // ADR-225 / §20.4 — QC Date, QC Remarks, the inspector and the QC report
+        // are NO LONGER SENT. They are rendered read-only here (ADR-189: a GRN
+        // receives, Incoming QC inspects) and `mergeLines` never writes them, so
+        // sending them was a photograph of someone else's work travelling back to
+        // the server for no reason.
+        //
+        // qcStatus / qcAcceptedQty / qcRejectedQty DO still travel, and that is
+        // not an oversight: the shared line schema gives all three a `.default()`
+        // ('pending' / 0 / 0), so OMITTING them is indistinguishable from
+        // SETTING them to pending-and-nothing-inspected. The server then reads
+        // `u.data.qcStatus !== u.prev.qcStatus` and refuses the whole save with
+        // "QC is Completed, so this line cannot be edited" on any GRN that has an
+        // inspected line. Dropping them needs the three to be made optional in
+        // packages/shared (frozen here) first.
         qcStatus: l.qcStatus,
         qcAcceptedQty: Number(l.qcAcceptedQty),
         qcRejectedQty: Number(l.qcRejectedQty),
-        qcDate: l.qcDate || undefined,
-        qcRemarks: l.qcRemarks?.trim() || undefined,
-        // Omitted entirely when nobody was picked, so a GRN saved without
-        // touching QC sends exactly what it sent before this field existed.
-        ...(l.qcInspectedByUserId ? { qcInspectedByUserId: l.qcInspectedByUserId } : {}),
-        ...(l.qcInspectedByName?.trim() ? { qcInspectedByName: l.qcInspectedByName.trim() } : {}),
-        qcReportPath: l.qcReportPath ?? undefined,
-        qcReportName: l.qcReportName ?? undefined,
         remarks: l.remarks?.trim() || undefined,
       };
     });

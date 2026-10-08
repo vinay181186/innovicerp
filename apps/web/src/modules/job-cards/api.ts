@@ -7,11 +7,13 @@ import type {
   JobCardSaveResult,
   JobCardSourceOption,
   JobCardStatusExtras,
+  JobCardUpdateInput,
   JobCardWriteInput,
   ListJobCardsQuery,
   ListJobCardsResponse,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export const jobCardsKeys = {
@@ -85,6 +87,26 @@ export function useJobCard(id: string | undefined) {
   });
 }
 
+/** Re-read ONE Job Card from the server, bypassing the cache (ADR-225).
+ *
+ *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
+ *  the card AS IT IS NOW to work out which header fields the other person
+ *  changed, to show their values in the notice, and to re-apply this user's own
+ *  fields on top of theirs. `staleTime: 0` is the whole point — the cached copy
+ *  is the stale photograph we are trying to get past. */
+export function useFetchJobCard(): (id: string) => Promise<JobCardListItem> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<JobCardListItem>({
+        queryKey: jobCardsKeys.detail(id),
+        queryFn: () => apiFetch<JobCardListItem>(`/job-cards/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
+}
+
 /** Full write-shaped JC (header + ops + qc docs) to repopulate the edit form. */
 export function useJobCardEditModel(id: string | undefined) {
   return useQuery<JobCardEditModel>({
@@ -94,6 +116,23 @@ export function useJobCardEditModel(id: string | undefined) {
     queryFn: () => apiFetch<JobCardEditModel>(`/job-cards/${id}/edit`),
     enabled: Boolean(id),
   });
+}
+
+/** Re-read ONE Job Card's write-shaped model (header + ops + QC docs), bypassing
+ *  the cache (ADR-225). Only used after a save was refused 409 `edit_conflict`:
+ *  the operations are what the edit screen needs from here, so the notice can say
+ *  whether the other person changed the ROUTING and not just a header field. */
+export function useFetchJobCardEditModel(): (id: string) => Promise<JobCardEditModel> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<JobCardEditModel>({
+        queryKey: [...jobCardsKeys.detail(id), 'edit'] as const,
+        queryFn: () => apiFetch<JobCardEditModel>(`/job-cards/${id}/edit`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 /** JC Status extras: QC docs, per-op machine name + tool details, and the
@@ -134,7 +173,14 @@ export function useUpdateJobCard(id: string) {
   // ADR-202 — when the edit-approval gate is on and the Job Card is live, the
   // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
   // instead of the saved card. Callers read the union to tell them apart.
-  return useMutation<JobCardSaveResult | DocumentEditStagedResult, Error, JobCardWriteInput>({
+  //
+  // ADR-225 — the input is `JobCardUpdateInput`, which is the write shape PLUS
+  // `expectedUpdatedAt`: the version the form loaded. The server has enforced it
+  // on this route all along (updateJobCardTx refuses with 409 `edit_conflict`,
+  // and repeats the test as a conditional UPDATE), and the screen simply never
+  // sent one — so a save silently overwrote whatever had changed since the form
+  // opened. Still optional, so every other caller is unaffected.
+  return useMutation<JobCardSaveResult | DocumentEditStagedResult, Error, JobCardUpdateInput>({
     mutationFn: (input) =>
       apiFetch<JobCardSaveResult | DocumentEditStagedResult>(`/job-cards/${id}`, {
         method: 'PATCH',

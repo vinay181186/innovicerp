@@ -7,6 +7,7 @@ import type {
   UpdateGoodsReceiptNoteInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
@@ -53,6 +54,26 @@ export function useGoodsReceiptNote(id: string | undefined) {
     queryFn: () => apiFetch<GoodsReceiptNoteDetail>(`/goods-receipt-notes/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/** Re-read ONE GRN from the server, bypassing the cache (ADR-225).
+ *
+ *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
+ *  the row AS IT IS NOW to work out which fields the other person changed and to
+ *  retry onto their version. `staleTime: 0` is the whole point — the cached copy
+ *  is the stale photograph we are trying to get past. Mirrors
+ *  `useFetchNcRegister` (modules/nc-register/api.ts). */
+export function useFetchGoodsReceiptNote(): (id: string) => Promise<GoodsReceiptNoteDetail> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<GoodsReceiptNoteDetail>({
+        queryKey: goodsReceiptNotesKeys.detail(id),
+        queryFn: () => apiFetch<GoodsReceiptNoteDetail>(`/goods-receipt-notes/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 /** All GRN write hooks invalidate the PO caches too — every GRN write fans

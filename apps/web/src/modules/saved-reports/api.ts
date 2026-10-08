@@ -11,6 +11,7 @@ import type {
   UpdateSavedReportInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export const savedReportsKeys = {
@@ -54,6 +55,30 @@ export function useSavedReport(id: string | undefined) {
     queryFn: () => apiFetch<SavedReport>(`/saved-reports/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/** Re-read ONE saved report from the server, bypassing the cache (ADR-225).
+ *
+ *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
+ *  the row AS IT IS NOW to work out which fields the other person changed and to
+ *  retry onto their version. `staleTime: 0` is the whole point — the cached copy
+ *  is the stale photograph we are trying to get past.
+ *
+ *  It does NOT touch the builder. `<Builder>` seeds every box and the whole
+ *  canvas from `initial` in `useState` initialisers and never re-reads the prop,
+ *  and this screen does not key or unmount it on a refetch — so a re-read can
+ *  never throw away what the user is halfway through building. */
+export function useFetchSavedReport(): (id: string) => Promise<SavedReport> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<SavedReport>({
+        queryKey: savedReportsKeys.detail(id),
+        queryFn: () => apiFetch<SavedReport>(`/saved-reports/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useSavedReportRun(id: string | undefined) {

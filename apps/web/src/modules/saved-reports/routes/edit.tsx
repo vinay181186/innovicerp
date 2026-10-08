@@ -3,9 +3,37 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { apiDownload } from '@/lib/api';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { usePreviewSpec, useSavedReport, useSourceCatalog, useUpdateSavedReport } from '../api';
+import {
+  useFetchSavedReport,
+  usePreviewSpec,
+  useSavedReport,
+  useSourceCatalog,
+  useUpdateSavedReport,
+} from '../api';
 import { Builder, type SaveInput } from '../components/builder';
+
+// ADR-225 — the fields THIS screen can edit, and what the user calls each one
+// (the builder's own labels; none of the four has a row in docs/NAMING.md).
+//
+// `spec` — the whole builder canvas (source, columns, filters, grouping, the
+// total) — is ONE JSONB column, so it is one field to the diff: either the
+// report definition changed or it did not. The owner's decision (ADR-225) is
+// that it is not merged any finer than that; merging a rename against somebody
+// else's rebuilt canvas buys nothing worth having.
+//
+// `sourceKey` is deliberately NOT in the list: it is a copy of `spec.sourceKey`,
+// so it is not a field of its own to the user. It rides along whenever `spec`
+// goes, which keeps the two columns from drifting apart.
+const REPORT_EDITABLE = ['name', 'description', 'isShared', 'spec'] as const;
+
+const REPORT_LABELS: Record<string, string> = {
+  name: 'Report Name',
+  description: 'Description',
+  isShared: 'Shared',
+  spec: 'The report itself',
+};
 
 export const savedReportEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -20,6 +48,24 @@ function SavedReportEditPage() {
   const reportQ = useSavedReport(id);
   const previewMutation = usePreviewSpec();
   const updateMutation = useUpdateSavedReport(id);
+  const fetchReport = useFetchSavedReport();
+  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes to
+  // this one report, so a shared report's other editor is announced the moment
+  // they save rather than after this user has rebuilt the canvas.
+  //
+  // It never re-seeds the builder: the hook deliberately does not touch form
+  // state, and `<Builder>` reads `initial` only in its `useState` initialisers,
+  // so a conflict re-read cannot discard work in progress.
+  const conflict = useEditConflict({
+    table: 'saved_reports',
+    id,
+    record: reportQ.data,
+    refetch: () => fetchReport(id),
+    editableKeys: REPORT_EDITABLE,
+    label: (f) => REPORT_LABELS[f] ?? f,
+    noun: 'report',
+  });
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [excelLoading, setExcelLoading] = useState(false);
   const exit = useExitConfirm();
@@ -35,21 +81,31 @@ function SavedReportEditPage() {
 
   const onSave = (input: SaveInput) => {
     setSaveError(undefined);
-    updateMutation.mutate(
-      {
-        name: input.name,
-        description: input.description,
-        sourceKey: input.spec.sourceKey,
-        spec: input.spec,
-        isShared: input.isShared,
-      },
-      {
-        onSuccess: () => {
-          exit.leave(() => void navigate({ to: '/saved-reports/$id', params: { id } }));
-        },
-        onError: (e) => setSaveError(e instanceof Error ? e.message : String(e)),
-      },
-    );
+    const current = {
+      name: input.name,
+      description: input.description,
+      isShared: input.isShared,
+      spec: input.spec,
+    };
+    void (async () => {
+      try {
+        const saved = await conflict.save(current, (payload, expectedUpdatedAt) =>
+          updateMutation.mutateAsync({
+            ...payload,
+            // `sourceKey` is a copy of the spec's own source, so it travels with
+            // the spec and never on its own.
+            ...(payload.spec ? { sourceKey: payload.spec.sourceKey } : {}),
+            ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+          }),
+        );
+        // null = nothing actually changed; the user has been told and nothing was
+        // written. Stay in the builder.
+        if (saved === null) return;
+        exit.leave(() => void navigate({ to: '/saved-reports/$id', params: { id } }));
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : String(e));
+      }
+    })();
   };
 
   const loading = sourcesQ.isLoading || reportQ.isLoading;
@@ -69,11 +125,7 @@ function SavedReportEditPage() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="section-hdr m-0">Edit Saved Report</div>
         <div className="flex items-center gap-2">
-          <Link
-            to="/saved-reports/$id"
-            params={{ id }}
-            className="btn btn-sm btn-ghost"
-          >
+          <Link to="/saved-reports/$id" params={{ id }} className="btn btn-sm btn-ghost">
             ← Back to Report
           </Link>
         </div>

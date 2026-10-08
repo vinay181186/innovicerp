@@ -27,6 +27,7 @@
 // is in jc-recovery-banner.tsx.
 import type {
   JcOpEnriched,
+  JcOpInput,
   JobCardEditModel,
   JobCardListItem,
   ListVendorsQuery,
@@ -43,6 +44,7 @@ import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/a
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useOpFlow } from '@/modules/flow-views/api';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
@@ -51,7 +53,15 @@ import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { Banner } from '@/ui/feedback';
 import { DetailHeader, useSaveShortcut } from '@/ui/layout';
-import { jobCardsKeys, useJobCard, useJobCardEditModel, useUpdateJobCard } from '../api';
+import {
+  jobCardsKeys,
+  useFetchJobCard,
+  useFetchJobCardEditModel,
+  useJobCard,
+  useJobCardEditModel,
+  useUpdateJobCard,
+} from '../api';
+import { jcOpsDigest } from '../lib/jc-ops-digest';
 import { useJcDrawing } from '../lib/jc-drawing';
 import { JcEditFactBlock, jcEditQtyRule } from './jc-edit-fact-block';
 import type { JcOpEditValues } from './jc-edit-op-row';
@@ -77,6 +87,34 @@ const PENDING_EDIT_MESSAGE = 'This document already has an edit waiting for appr
 // buildJcWriteInput maps the op fields one by one). A saved op's key is its id.
 let editOpRowSeq = 0;
 const nextEditOpRowKey = (): string => `new-${++editOpRowSeq}`;
+
+// ADR-225 — the five HEADER fields this screen can edit, plus the operations as
+// ONE value, and what the user calls each one (the labels on the fact block,
+// which come from docs/NAMING.md).
+//
+// THE OPERATIONS DO NOT MERGE, by owner decision (ADR-225): an operation's step
+// number IS its position in the `ops` array, and the shared schema keeps `ops` a
+// required whole array with `.default([])` — so an absent `ops` key means
+// "delete every operation", and a partial array cannot express a reorder. The
+// ops therefore go on every save in full; if two people edit the routing of one
+// card the second save wins outright, and the orange notice says so. Only the
+// five header fields merge per field.
+//
+// `ops` is nonetheless in this list, as a DIGEST string (jc-ops-digest.ts), for
+// two reasons: an ops-only edit (change a machine, add a step) would otherwise
+// be refused as "nothing changed", because the hook will not send an empty diff;
+// and it is what lets the notice say the other person changed the ROUTING rather
+// than a header field.
+const JC_EDITABLE = ['itemCode', 'orderQty', 'dueDate', 'priority', 'remarks', 'ops'] as const;
+
+const JC_LABELS: Record<string, string> = {
+  itemCode: 'Item Code',
+  orderQty: 'Order Qty',
+  dueDate: 'Due Date',
+  priority: 'Priority',
+  remarks: 'Remarks',
+  ops: 'The operations',
+};
 
 // Mode dispatcher. VIEW mode renders the read-only status body
 // (jc-status-view.tsx); EDIT mode renders the same page with inputs. No hooks
@@ -151,6 +189,62 @@ function JcStatusEditForm({
   const exit = useExitConfirm({ onExit: goBack });
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
+  const fetchJc = useFetchJobCard();
+  const fetchJcModel = useFetchJobCardEditModel();
+  // ADR-225 / §20.4 — the version the form loaded travels with the save, a
+  // conflict on a HEADER field is merged instead of overwriting the other
+  // person's field, and the 3-second notice says what happened. Also subscribes
+  // to this one card, so the user is told the moment somebody else saves it.
+  //
+  // `freshJc` is how the merge is actually honest here. The Job Card header is
+  // written by ONE unguarded UPDATE server-side (`.set({ itemId, orderQty,
+  // priority, dueDate, remarks, … })` — no `if (input.x !== undefined)`), and
+  // `itemCode` / `orderQty` are REQUIRED by the shared schema, so this screen
+  // cannot send a partial header the way the GRN and DC screens do: every field
+  // must be in the payload. Re-sending a photograph of the four fields we did not
+  // touch is exactly §20.4's bug. So on the retry the payload is rebuilt with the
+  // FRESH values for the fields this user did not change, and this user's own
+  // values only where they did. On the first attempt `freshJc` is null and the
+  // payload is what the form holds, unchanged from before.
+  //
+  // The record the hook compares against is the card plus an `ops` digest, and
+  // the re-read fetches the write model too so the digest on the fresh side is
+  // the real routing — see the note on JC_EDITABLE.
+  const freshJc = useRef<JobCardListItem | null>(null);
+  const freshOps = useRef<JcOpInput[] | null>(null);
+  const conflictRecord = useMemo(() => ({ ...jc, ops: jcOpsDigest(model.ops) }), [jc, model.ops]);
+  const conflict = useEditConflict({
+    table: 'job_cards',
+    id,
+    record: conflictRecord,
+    refetch: async () => {
+      const [latest, latestModel] = await Promise.all([fetchJc(id), fetchJcModel(id)]);
+      freshJc.current = latest;
+      // The routing as it stands NOW, in write shape. Used only when this user
+      // did not touch the operations: the whole array has to be sent on every
+      // save, so without this a "I only changed the due date" save would push
+      // the screen's old routing back over somebody else's change to it.
+      freshOps.current = latestModel.ops.map((o) => ({
+        id: o.id,
+        machineCode: o.machineCode,
+        operation: o.operation,
+        opType: o.opType,
+        cycleTimeMin: o.cycleTimeMin,
+        program: o.program,
+        toolNo: o.toolNo,
+        toolDetails: o.toolDetails,
+        qcRequired: o.qcRequired,
+        outsourceVendorCode: o.outsourceVendorCode,
+        // null = this login may not see the cost; the server's money-in rule
+        // then keeps the stored value instead of letting a blinded 0 write it.
+        outsourceCost: o.outsourceCost ?? 0,
+      }));
+      return { ...latest, ops: jcOpsDigest(latestModel.ops) };
+    },
+    editableKeys: JC_EDITABLE,
+    label: (f) => JC_LABELS[f] ?? f,
+    noun: 'Job Card',
+  });
 
   // Read-only context for the fact block — the same reads the detail page
   // makes (jc-status-view.tsx). ADR-182: the Production Order that built this
@@ -581,8 +675,45 @@ function JcStatusEditForm({
       setError(result.error);
       return;
     }
+    const payload = result.payload;
+    // What the five editable header cells hold now, plus the routing as one
+    // digest. The hook diffs this against the card as it was loaded and hands
+    // back only the keys that moved.
+    const current = {
+      itemCode: payload.itemCode,
+      orderQty: payload.orderQty,
+      dueDate: payload.dueDate ?? null,
+      priority: payload.priority,
+      remarks: payload.remarks ?? null,
+      ops: jcOpsDigest(payload.ops),
+    };
+    // Only a conflict on THIS save may fill these.
+    freshJc.current = null;
+    freshOps.current = null;
     try {
-      const saved = await update.mutateAsync(result.payload);
+      const saved = await conflict.save(current, (changed, expectedUpdatedAt) => {
+        // Only reached a second time after a 409. `base` is then the card as it
+        // is NOW, so a field this user did not touch is sent with the OTHER
+        // person's value rather than the photograph the form opened with — the
+        // merge, done here because the server writes the whole header in one
+        // unguarded UPDATE (see the note on `freshJc` above).
+        const base = freshJc.current;
+        const merged = { ...payload, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) };
+        if (base) {
+          if (!('itemCode' in changed)) merged.itemCode = base.itemCode;
+          if (!('orderQty' in changed)) merged.orderQty = base.orderQty;
+          if (!('dueDate' in changed)) merged.dueDate = base.dueDate;
+          if (!('priority' in changed)) merged.priority = base.priority;
+          if (!('remarks' in changed)) merged.remarks = base.remarks;
+          // The ops are NOT merged (ADR-225) — but if this user never touched
+          // them, the other person's routing is what should stand, not ours.
+          if (!('ops' in changed) && freshOps.current) merged.ops = freshOps.current;
+        }
+        return update.mutateAsync(merged);
+      });
+      // null = nothing on the header changed AND nothing else was sent; the user
+      // has been told and nothing was written. Stay on the page.
+      if (saved === null) return;
       if (isStagedResult(saved)) {
         // The edit-approval gate is on and this Job Card is live: nothing was
         // changed on the card — the edit is now waiting for approval. Say so,
