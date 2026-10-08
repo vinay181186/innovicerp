@@ -12289,3 +12289,112 @@ database.** Verified by typecheck (shared + api + web), eslint, prettier and bot
 | BOM list → Draft / Active / Obsolete filter pills | All three still filter; the 15 old Drafts still appear |
 | Excel BOM import / direct `POST /bom-masters` with `"status":"draft"` | Saved as **Active** — the field is no longer part of the contract |
 | Double-click Save on a new BOM | One BOM (unchanged — the save key still idempotency-guards it) |
+
+## ADR-224: A document number on a create screen is a preview, and the server is the only thing that assigns it
+
+**Date:** 2026-10-08 · **Status:** Accepted · **Supersedes nothing; narrows S2**
+
+### The defect
+
+Create a Route Card, go back to Plans, create the next one. The RC No. box still showed the
+number the first save had just taken. Save, and the server answered
+`Route Card No. "IN-RC-00018" already exists`. Pressing Save again repeated it for ever — the only
+way out was a page reload or clearing the box by hand. The owner reported hitting the same shape on
+several forms.
+
+Three client faults compounded, over a server that was already correct:
+
+1. `useCreateRouteCard.onSuccess` invalidated `routeCardsKeys.lists()` and the activity log, never
+   `routeCardsKeys.nextCode()`. **`nextCode()` is a SIBLING of `lists()`, not a child**, so a list
+   invalidation does not reach it and the consumed number stayed in cache for its full `gcTime`.
+2. The prefill effect was latched by `const codePrefilled = useRef(false)`. On the second mount it
+   consumed the **cached** answer synchronously and set the latch, then **discarded the fresh value**
+   that `staleTime: 0` fetched milliseconds later.
+3. `routes/new.tsx` sent `code: docCodeToSend(header.code, nextRc?.code ?? '')`. `docCodeToSend`
+   suppresses a number that still equals the suggestion — but it was handed the **live query value**,
+   not the value that had actually been filled. The two had diverged by then, so it concluded "the
+   user typed this" and sent the stale number.
+4. The server honours `input.code` when one is sent, and only then runs the duplicate check
+   (`route-cards/service.ts`, `bom-master/service.ts`). A client-supplied code bypasses its own
+   numbering.
+
+### The decision
+
+**On a create screen the document number is a preview. The browser never sends it.**
+
+- The box is `readOnly` on create, grey (`.innovic-input[readonly]`), with
+  `title="Numbered automatically when you save"`.
+- The create payload **omits the code key entirely**. `lockDocSeries` + "highest live code + 1"
+  inside the insert transaction is the only thing that assigns a number.
+- The prefill effect **follows** the backend's latest answer instead of latching the first one, so
+  the preview is right whenever the cache is. It cannot clobber typing, because there is none.
+- Every mutation that changes what the next number would be invalidates `nextCode()` explicitly:
+  create, and **delete** — the next number counts only rows with `deleted_at IS NULL`, so trashing
+  the newest record frees its number.
+
+**A preview that has gone stale now costs nothing.** The save takes the next free number and the
+user is told nothing, because nothing went wrong. The error is not made rarer; it is made
+impossible.
+
+### Why this shape
+
+This is **ERPNext's Naming Series model**, which the series lock already said it was copying
+(`apps/api/src/lib/doc-series-lock.ts:9`). ERPNext shows no number at all on a create form — only
+the series prefix — and stamps the number from a locked counter row at save. Odoo shows the word
+`New`; NetSuite shows `To Be Generated`. **No mainstream ERP shows a predicted number and then
+sends it.** Keeping the preview visible is a deliberate improvement on ERPNext: same guarantee,
+more information.
+
+**Rejected — reserve the number when the screen opens** (Dynamics 365 Business Central's model).
+It would make the previewed number certain, but our numbering is `MAX(code) + 1` over live rows and
+has no memory of a number handed out and abandoned, so it would need a new counter table — and
+every abandoned form would leave a permanent hole in the register. SAP forbids its own buffered
+number ranges for accounting documents on exactly that ground. IN-RC / BOM numbers travel onto
+challans, QC records and invoices, so gap-free wins.
+
+**Rejected — hold the number with an expiry.** A holding table plus a cleanup job, and a form left
+open past the hold falls back to this behaviour anyway.
+
+### Edit mode is deliberately untouched
+
+`updateRouteCard` and `updateBomMaster` both genuinely support **renaming** a saved document, with
+their own duplicate check. That is a real capability and the number box stays editable on edit, with
+the required `★` still on it. Create-mode BOM No. lost the `★`: it marked a box nobody can fill.
+
+### Scope
+
+Route Card and BOM Master. Known still to fix, in order of harm, from the same trace:
+
+- **Twelve edit screens have no opened-version check** and silently overwrite another user's save
+  (GRN, Delivery Challan, Dispatch, Machines, Operators, Cost Centres, QC Processes, TPI Masters,
+  Raw Material, Instruments, NC Register, Job Cards).
+- **Sign-out clears only `['me']`** — every cached document survives ~5 min on a shared PC.
+- **Six more numbered documents never invalidate their preview** (Job Card, Item, Customer, Vendor,
+  Operator, Sales Order) and four masters send the prefilled number **raw and unconditionally**.
+- There is **no written rule** for what a save must refresh: twelve private helpers, ~90 hand-rolled
+  `onSuccess` blocks, no shared helper, nothing in CLAUDE.md. That is why this recurs.
+- Five module-level date constants frozen at import (`sales-order-form.tsx`,
+  `job-work-order-form.tsx`, `nc-register-form.tsx`, `pr-form-values.ts`,
+  `machine-pending-panel.tsx`) — the same shape as the GRN one already fixed.
+
+### Found by review, accepted as-is
+
+- **The app is now inconsistent on purpose.** RC and BOM numbers are read-only; **Purchase Order,
+  Job Work Order and Delivery Challan still let the user type one** (`docCodeToSend` survives at
+  `po-form.tsx`, `job-work-order-form.tsx`, `delivery-challans/routes/create.tsx`). Those three use
+  the shared `DocNumberInput`, which already degrades gracefully — it keeps a taken suggestion
+  savable and says *"Just used by someone else — the next free number is given on save."* Bringing
+  every document onto one mechanism is the next phase, not this one.
+- **Two invalidation gaps remain, both cosmetic now.** `useRestoreFromTrash`
+  (`modules/trash/api.ts`) invalidates neither list nor `nextCode()`, though restoring the newest
+  soft-deleted record changes what the next number would be. And `saveRouteCardForItem` — called
+  from `plans/service.ts` and `job-cards/service.ts` on the Execute / Job Card RM write-back —
+  consumes an `IN-RC-` number server-side with **no** `routeCardsKeys` reference anywhere outside
+  `modules/route-cards/`, so after an Execute neither the RC list nor the preview refreshes. Neither
+  can cause an error any more; the preview just reads one behind.
+- **A read-only input still takes focus and still draws the focus ring**
+  (`.innovic-input:focus`, innovic-theme.css), so clicking it looks like it is about to accept
+  typing and only the hover title says otherwise. Left alone: it is the app-wide rule for every
+  read-only input and diverging here would be the inconsistency, not the fix.
+- `useNextBomNo` gained `{ enabled }`. In **edit** mode the BOM No. request now does not fire at
+  all — it used to fire twice and nothing read it.
