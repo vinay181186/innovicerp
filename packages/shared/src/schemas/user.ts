@@ -57,7 +57,7 @@ export type CreateUserInput = z.infer<typeof createUserInputSchema>;
 // Update only — no create (Supabase Auth owns the invite flow).
 export const updateUserInputSchema = z.object({
   /** §20.4 — the version this form loaded; a save over someone else's newer
-   *  edit is refused 409 `edit_conflict` (ADR-225). */
+   *  edit is refused 409 `edit_conflict` (ADR-226). */
   expectedUpdatedAt: expectedUpdatedAtSchema,
   fullName: z.string().max(255).optional(),
   role: userRoleSchema.optional(),

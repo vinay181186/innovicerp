@@ -1,4 +1,4 @@
-// ADR-225 / §20.4 — the ONE wiring an edit screen needs so that two people
+// ADR-226 / §20.4 — the ONE wiring an edit screen needs so that two people
 // editing one document both keep their work.
 //
 // Every edit screen used to send its WHOLE record on save: all forty fields,
@@ -22,7 +22,7 @@
 // Options` drifted before ADR-221 collapsed them. One hook, twelve callers.
 //
 // WHAT IT DELIBERATELY DOES NOT DO:
-//   • It never re-seeds the form. That was the Plan-edit bug (ADR-225): keying
+//   • It never re-seeds the form. That was the Plan-edit bug (ADR-226): keying
 //     a form's values on the LIVE record version meant anyone else's save threw
 //     away what the user was typing, silently, with no save involved.
 //   • It never decides what the other person changed from a Realtime payload.

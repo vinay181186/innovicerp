@@ -5,7 +5,7 @@
 // the approved subset through updateTpiMasterTx, so the edit runs exactly as a
 // direct edit.
 //
-// The edit screen's own `expectedUpdatedAt` (ADR-225) is checked twice before
+// The edit screen's own `expectedUpdatedAt` (ADR-226) is checked twice before
 // anything reaches here — when the edit is REQUESTED, and again inside
 // updateTpiMasterTx — but it is deliberately NOT forwarded on this replay: the
 // approver is applying someone else's older request, so the requester's token

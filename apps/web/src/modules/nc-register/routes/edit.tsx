@@ -13,7 +13,7 @@ import { Banner } from '@/ui/feedback';
 import { useFetchNcRegister, useNcRegister, useUpdateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
 
-// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
 // The list drives two things: the save sends only the ones whose value actually
 // changed, and a notice names the field another person moved. It is written out
@@ -56,7 +56,7 @@ function NcRegisterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
   const update = useUpdateNcRegister(id);
   const fetchNc = useFetchNcRegister();
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
   // to this one NC, so the user is told the moment somebody else saves it
   // rather than after they have typed into a stale form.

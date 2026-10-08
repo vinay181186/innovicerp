@@ -54,7 +54,7 @@ export type CreateMachineInput = z.infer<typeof createMachineInputSchema>;
 export const updateMachineInputSchema = createMachineInputSchema
   .partial()
   .omit({ code: true })
-  // §20.4 / ADR-225 — the version this form loaded.
+  // §20.4 / ADR-226 — the version this form loaded.
   .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateMachineInput = z.infer<typeof updateMachineInputSchema>;
 

@@ -5,7 +5,7 @@
 // the approved subset through updateMachineTx inside the engine's transaction,
 // which already holds the machine row locked FOR UPDATE.
 //
-// The edit screen's own `expectedUpdatedAt` (ADR-225) is checked twice before
+// The edit screen's own `expectedUpdatedAt` (ADR-226) is checked twice before
 // anything reaches here — when the edit is REQUESTED, and again inside
 // updateMachineTx — but it is deliberately NOT forwarded on this replay: the
 // approver is applying someone else's older request, so the requester's token

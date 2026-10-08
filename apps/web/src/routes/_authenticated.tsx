@@ -58,7 +58,7 @@ export const authenticatedRoute = createRoute({
 function AuthenticatedLayout(): React.JSX.Element {
   useEffect(() => installCellOverflowTitles(), []); // ADR-199: tooltip on ellipsised table cells
   useUiSettings(); // ADR-199: the user's Comfortable/Compact choice reaches EVERY table
-  // ADR-225 — ToastProvider belongs here, once, around the whole shell.
+  // ADR-226 — ToastProvider belongs here, once, around the whole shell.
   // ui/feedback/Toast.tsx has been written and token-styled since Phase 3, with
   // a 3000 ms auto-dismiss and a close X, but NOTHING mounted its provider
   // outside the /__ui-kit demo — so `useToast()` threw everywhere, and two

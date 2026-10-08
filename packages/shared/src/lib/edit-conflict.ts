@@ -7,7 +7,7 @@ import { z } from 'zod';
 // saved in between. Optional, so an older client (or a script) still works —
 // it just gets last-write-wins as before. Every form of ours sends it.
 //
-// ADR-225 — the refusal now carries WHO saved and WHEN, because §20.4 asks for
+// ADR-226 — the refusal now carries WHO saved and WHEN, because §20.4 asks for
 // "changed by <name> at <time>" and the bare message could not say either. The
 // screen uses them for its notice; it also auto-retries once onto the fresh row
 // (see apps/web/src/lib/save-with-merge.ts), so for a user who edited different

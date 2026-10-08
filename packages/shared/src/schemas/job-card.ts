@@ -321,7 +321,7 @@ export type JcDocInput = z.infer<typeof jcDocInputSchema>;
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
-// ADR-225 — the plain OBJECT, named, so the update schema can `.extend()` it
+// ADR-226 — the plain OBJECT, named, so the update schema can `.extend()` it
 // with the version token. `.refine()` returns a ZodEffects, which has no
 // `.extend`, and that is the ONLY reason create and update shared one schema.
 const jobCardWriteObject = z.object({
@@ -368,18 +368,18 @@ export type JobCardWriteInput = z.infer<typeof jobCardWriteInputSchema>;
 export const jobCardCreateInputSchema = jobCardWriteInputSchema;
 export type JobCardCreateInput = JobCardWriteInput;
 
-// ADR-225 — `ops` STAYS a required whole array here, deliberately. An
+// ADR-226 — `ops` STAYS a required whole array here, deliberately. An
 // operation's step number IS its position in this list (updateJobCardTx parks
 // kept ops at op_seq + 100000 and renumbers from the index), so a partial ops
 // array cannot express a reorder. And `ops` has `.default([])`, which makes an
 // ABSENT ops key indistinguishable from "delete every operation" — so making it
 // optional here would turn "I only changed the due date" into a wiped routing.
 // The header fields merge per field; the ops do not, and a conflict on them is
-// REFUSED with the notice instead (see docs/DECISIONS.md ADR-225).
+// REFUSED with the notice instead (see docs/DECISIONS.md ADR-226).
 export const jobCardUpdateInputSchema = jobCardWriteObject
   .extend({
     /** §20.4 — the version this form loaded; a save over someone else's newer
-     *  edit is refused 409 `edit_conflict` (ADR-225). */
+     *  edit is refused 409 `edit_conflict` (ADR-226). */
     expectedUpdatedAt: expectedUpdatedAtSchema,
   })
   .refine((d) => !(d.sourceSoLineId && d.sourceJwLineId), {
@@ -472,7 +472,7 @@ export type JobCardDoc = z.infer<typeof jobCardDocSchema>;
 export const jobCardEditModelSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
-  /** §20.4 / ADR-225 — the version this form loaded, sent straight back as
+  /** §20.4 / ADR-226 — the version this form loaded, sent straight back as
    *  `expectedUpdatedAt` so a save over someone else's newer edit is refused
    *  (409 `edit_conflict`) instead of silently overwriting it. The edit screen
    *  reads THIS shape, so without the field here its guard cannot fire at all. */

@@ -288,7 +288,7 @@ export async function updateSavedReport(
     const existing = rows[0];
     if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
     assertCanWrite(existing, user);
-    // ADR-225 / §20.4 — refuse the save if someone else changed this report after
+    // ADR-226 / §20.4 — refuse the save if someone else changed this report after
     // the form loaded it, and say who. Under the lock above, so check-then-write
     // is atomic. The name lookup runs only on the refusal path (see
     // lib/row-changed-by.ts), so a normal save pays nothing for it.

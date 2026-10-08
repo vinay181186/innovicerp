@@ -24,7 +24,7 @@ export interface DiffField {
   format?: ((value: unknown) => ActivityChangeValue) | undefined;
 }
 
-// ADR-225 — these three rules moved to packages/shared/src/lib/value-equal.ts,
+// ADR-226 — these three rules moved to packages/shared/src/lib/value-equal.ts,
 // because the BROWSER now needs the identical test to work out which fields a
 // user actually changed (§20.4: an edit sends back only what it changed). Two
 // copies would let the browser call something a change that the server does

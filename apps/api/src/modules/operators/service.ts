@@ -462,7 +462,7 @@ export async function createOperatorsBulk(
       }
       // Update Existing: one History row per operator, Before → After (ADR-197).
       //
-      // DELIBERATE EXCEPTION to ADR-225 / §20.4: these writes carry no
+      // DELIBERATE EXCEPTION to ADR-226 / §20.4: these writes carry no
       // `expectedUpdatedAt` version check, unlike updateOperatorTx. An Excel
       // import has no form and therefore no version token to send — there is
       // nothing a stale token could be compared against. Last write wins here
@@ -530,7 +530,7 @@ export async function updateOperatorTx(
   user: AuthContext,
 ): Promise<Operator> {
   requireCompany(user);
-  // ADR-225 / §20.4 — read under the row lock, so the version check below and
+  // ADR-226 / §20.4 — read under the row lock, so the version check below and
   // the UPDATE are one atomic step: a second editor WAITS here, then sees the
   // first editor's new updated_at and is refused instead of overwriting it.
   // Named columns, never SELECT * (§6 rule 6).
@@ -572,7 +572,7 @@ export async function updateOperatorTx(
  * editable while it is not in Trash), the edit is STAGED for approval; otherwise
  * it falls through to updateOperator. An operator is a single record with no
  * child lines, so there is no line guard. The form's `expectedUpdatedAt` is
- * forwarded to the engine (ADR-225), so staging an edit from a stale form is
+ * forwarded to the engine (ADR-226), so staging an edit from a stale form is
  * refused the same way saving one is.
  */
 export async function updateOperatorOrStage(

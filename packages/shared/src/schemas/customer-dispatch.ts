@@ -133,7 +133,7 @@ export const customerDispatchRowSchema = z.object({
 export type CustomerDispatchRow = z.infer<typeof customerDispatchRowSchema>;
 
 export const customerDispatchDetailSchema = customerDispatchRowSchema.extend({
-  /** §20.4 / ADR-225 — the version this form loaded, sent straight back as
+  /** §20.4 / ADR-226 — the version this form loaded, sent straight back as
    *  `expectedUpdatedAt` so a save over someone else's newer edit is refused
    *  (409 `edit_conflict`) instead of silently overwriting it. The edit screen
    *  reads THIS shape, so without the field here its guard cannot fire at all. */

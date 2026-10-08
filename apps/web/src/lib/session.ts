@@ -46,7 +46,7 @@ export function setupAuthListener(queryClient: QueryClient, router: AnyRouter): 
       // keyed ['me', …, userId]; drop them all, and the Compact class with them.
       queryClient.removeQueries({ queryKey: ['me'] });
       if (typeof document !== 'undefined') document.body.classList.remove('density-compact');
-      // ADR-225 — and then throw the page away. The line above cleared the
+      // ADR-226 — and then throw the page away. The line above cleared the
       // PREFERENCES only; everything else the last person loaded was still
       // sitting in this tab, because sign-out is a pure SPA transition
       // (router.invalidate() + the route's redirect) and the QueryClient, the
@@ -84,7 +84,7 @@ export function setupAuthListener(queryClient: QueryClient, router: AnyRouter): 
 }
 
 /**
- * ADR-225 — drop the per-person state this browser keeps OUTSIDE React Query,
+ * ADR-226 — drop the per-person state this browser keeps OUTSIDE React Query,
  * before the sign-out reload.
  *
  * The reload alone discards everything held in memory, so this exists for the

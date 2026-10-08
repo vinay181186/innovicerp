@@ -11,7 +11,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useFetchTpiMaster, useTpiMaster, useUpdateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
 
-// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
 // The list drives two things: the save sends only the ones whose value actually
 // changed, and a notice names the field another person moved. It is written out
@@ -46,7 +46,7 @@ function TpiMasterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useTpiMaster(id);
   const update = useUpdateTpiMaster(id);
   const fetchTpiMaster = useFetchTpiMaster();
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
   // to this one inspector, so the user is told the moment somebody else saves
   // them rather than after they have typed into a stale form.

@@ -14,12 +14,12 @@ import {
 } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
 
-// ADR-225 — the fields THIS screen can edit, and what the user calls each one
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one
 // (the builder's own labels; none of the four has a row in docs/NAMING.md).
 //
 // `spec` — the whole builder canvas (source, columns, filters, grouping, the
 // total) — is ONE JSONB column, so it is one field to the diff: either the
-// report definition changed or it did not. The owner's decision (ADR-225) is
+// report definition changed or it did not. The owner's decision (ADR-226) is
 // that it is not merged any finer than that; merging a rename against somebody
 // else's rebuilt canvas buys nothing worth having.
 //
@@ -49,7 +49,7 @@ function SavedReportEditPage() {
   const previewMutation = usePreviewSpec();
   const updateMutation = useUpdateSavedReport(id);
   const fetchReport = useFetchSavedReport();
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes to
   // this one report, so a shared report's other editor is announced the moment
   // they save rather than after this user has rebuilt the canvas.

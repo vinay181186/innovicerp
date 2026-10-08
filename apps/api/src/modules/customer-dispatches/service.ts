@@ -886,7 +886,7 @@ async function getDispatchInternal(
   const billedQty = (await loadBilledQtyByDispatch(tx, companyId, h.salesOrderId)).get(h.id) ?? 0;
   return {
     ...rowToHeader(h, lines.length, totalQty),
-    // §20.4 / ADR-225 — the version the edit screen loaded. It sends this back
+    // §20.4 / ADR-226 — the version the edit screen loaded. It sends this back
     // as `expectedUpdatedAt`, and updateCustomerDispatchTx refuses a save made
     // on top of someone else's newer edit. Every single-dispatch read comes
     // through this function, so putting it here covers the detail screen, the
@@ -1263,7 +1263,7 @@ export async function updateCustomerDispatchTx(
     .for('update');
   const h = rows[0];
   if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
-  // §20.4 / ADR-225 — refuse the save if someone else changed this dispatch after
+  // §20.4 / ADR-226 — refuse the save if someone else changed this dispatch after
   // the form loaded it, and say who. Checked under the lock above, so check-then-
   // write is atomic. The name lookup runs ONLY on the refusal path (see
   // lib/row-changed-by.ts), so a normal save pays nothing for it.

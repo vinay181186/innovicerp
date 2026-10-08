@@ -275,7 +275,7 @@ export async function updateUser(
   }
 
   return withUserContext(user, async (tx) => {
-    // ADR-225 / §20.4 — read under the row lock, so the version check below
+    // ADR-226 / §20.4 — read under the row lock, so the version check below
     // and the UPDATE are one atomic step: a second admin WAITS here, then sees
     // the first one's new updated_at and is refused instead of overwriting it.
     // Named columns, never SELECT * (§6 rule 6) — and this table in

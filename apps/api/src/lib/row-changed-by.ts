@@ -1,4 +1,4 @@
-// ADR-225 — who last changed this row, as a name a person can read.
+// ADR-226 — who last changed this row, as a name a person can read.
 //
 // §20.4 asks the edit-conflict refusal to say "changed by <name> at <time>".
 // `assertUnchangedSinceOpened` takes the name as an argument rather than

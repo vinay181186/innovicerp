@@ -1590,7 +1590,7 @@ input[type='radio'] {
   color: #fff;
   border: 1px solid var(--blue2);
 }
-/* ADR-225 — the one notice that reports something REPLACED: you and someone
+/* ADR-226 — the one notice that reports something REPLACED: you and someone
    else changed the same field, and yours is what is stored. Orange, and it
    stays twice as long as an `ok`, because it carries a number worth reading.
    --amber2 is the token for amber TEXT (it clears 4.5:1), so as a solid fill it

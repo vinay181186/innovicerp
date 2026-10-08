@@ -22,7 +22,7 @@ import { activityLogKeys } from '@/modules/activity-log/api';
  *  items cannot change on an existing dispatch. `reason` rides along for the
  *  activity-log entry (ADR-197), as on the other edit screens. */
 export interface UpdateCustomerDispatchInput {
-  // ADR-225 / §20.4 — the version the form LOADED. The server has accepted it all
+  // ADR-226 / §20.4 — the version the form LOADED. The server has accepted it all
   // along (`expectedUpdatedAt: z.string().optional()` in its own schema, checked
   // under the dispatch's row lock) and this screen simply never sent one, so a
   // save over somebody else's newer edit went through silently. That matters more
@@ -120,7 +120,7 @@ export function useFinanceSoOptions() {
   });
 }
 
-/** Re-read ONE dispatch from the server, bypassing the cache (ADR-225).
+/** Re-read ONE dispatch from the server, bypassing the cache (ADR-226).
  *
  *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
  *  the row AS IT IS NOW to work out which fields the other person changed and to

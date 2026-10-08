@@ -13,7 +13,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useFetchMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
 
-// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
 // The list drives two things: the save sends only the ones whose value actually
 // changed, and a notice names the field another person moved. It is written out
@@ -113,7 +113,7 @@ function MachineEditPage(): React.JSX.Element {
   const { data: machine, isLoading, isError, error } = useMachine(id);
   const update = useUpdateMachine(id);
   const fetchMachine = useFetchMachine();
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
   // to this one machine, so the user is told the moment somebody else saves it
   // rather than after they have typed into a stale form.

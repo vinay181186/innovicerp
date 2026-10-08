@@ -12880,7 +12880,7 @@ Route Card and BOM Master. Known still to fix, in order of harm, from the same t
 - `useNextBomNo` gained `{ enabled }`. In **edit** mode the BOM No. request now does not fire at
   all — it used to fire twice and nothing read it.
 
-## ADR-225: An edit sends back only what it changed, and a clash is merged and announced — not silently applied
+## ADR-226: An edit sends back only what it changed, and a clash is merged and announced — not silently applied
 
 **Date:** 2026-10-08 · **Status:** Accepted · **Amends ADR-004** · **Finishes CLAUDE.md §20.4**
 

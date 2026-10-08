@@ -189,7 +189,7 @@ export async function updateQcProcessTx(
   user: AuthContext,
 ): Promise<QcProcess> {
   requireCompany(user);
-  // ADR-225 / §20.4 — read under the row lock, so the version check below and
+  // ADR-226 / §20.4 — read under the row lock, so the version check below and
   // the UPDATE are one atomic step: a second editor WAITS here, then sees the
   // first editor's new updated_at and is refused instead of overwriting it.
   // Named columns, never SELECT * (§6 rule 6).
@@ -266,7 +266,7 @@ export async function updateQcProcessOrStage(
     return rows.length > 0;
   });
   if (shouldStage) {
-    // The form's own version token rides along (ADR-225), so staging an edit
+    // The form's own version token rides along (ADR-226), so staging an edit
     // from a stale form is refused the same way saving one is.
     const request = await requestDocumentEdit(
       'QcProcess',

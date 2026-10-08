@@ -62,7 +62,7 @@ export type CreateCostCenterInput = z.infer<typeof createCostCenterInputSchema>;
 export const updateCostCenterInputSchema = createCostCenterInputSchema
   .partial()
   .omit({ code: true })
-  // §20.4 / ADR-225 — the version this form loaded.
+  // §20.4 / ADR-226 — the version this form loaded.
   .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateCostCenterInput = z.infer<typeof updateCostCenterInputSchema>;
 

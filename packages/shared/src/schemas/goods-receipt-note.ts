@@ -296,7 +296,7 @@ export type CreateGoodsReceiptNoteInput = z.infer<typeof createGoodsReceiptNoteI
  *  by the service if the input attempts to change their QC fields. */
 export const updateGoodsReceiptNoteInputSchema = z.object({
   /** §20.4 — the version this form loaded; a save over someone else's newer
-   *  edit is refused 409 `edit_conflict` (ADR-225). */
+   *  edit is refused 409 `edit_conflict` (ADR-226). */
   expectedUpdatedAt: expectedUpdatedAtSchema,
   header: _grnHeaderInputBase.partial().omit({ code: true }),
   lines: z.array(goodsReceiptNoteLineInputSchema).optional(),

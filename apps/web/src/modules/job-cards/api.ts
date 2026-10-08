@@ -87,7 +87,7 @@ export function useJobCard(id: string | undefined) {
   });
 }
 
-/** Re-read ONE Job Card from the server, bypassing the cache (ADR-225).
+/** Re-read ONE Job Card from the server, bypassing the cache (ADR-226).
  *
  *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
  *  the card AS IT IS NOW to work out which header fields the other person
@@ -119,7 +119,7 @@ export function useJobCardEditModel(id: string | undefined) {
 }
 
 /** Re-read ONE Job Card's write-shaped model (header + ops + QC docs), bypassing
- *  the cache (ADR-225). Only used after a save was refused 409 `edit_conflict`:
+ *  the cache (ADR-226). Only used after a save was refused 409 `edit_conflict`:
  *  the operations are what the edit screen needs from here, so the notice can say
  *  whether the other person changed the ROUTING and not just a header field. */
 export function useFetchJobCardEditModel(): (id: string) => Promise<JobCardEditModel> {
@@ -174,7 +174,7 @@ export function useUpdateJobCard(id: string) {
   // PATCH returns a DocumentEditStagedResult (the edit was staged for approval)
   // instead of the saved card. Callers read the union to tell them apart.
   //
-  // ADR-225 — the input is `JobCardUpdateInput`, which is the write shape PLUS
+  // ADR-226 — the input is `JobCardUpdateInput`, which is the write shape PLUS
   // `expectedUpdatedAt`: the version the form loaded. The server has enforced it
   // on this route all along (updateJobCardTx refuses with 409 `edit_conflict`,
   // and repeats the test as a conditional UPDATE), and the screen simply never

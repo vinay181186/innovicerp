@@ -1,10 +1,10 @@
-// ADR-225 — tell the user THE MOMENT someone else saves the record their edit
+// ADR-226 — tell the user THE MOMENT someone else saves the record their edit
 // screen has open, instead of letting them find out after pressing Save.
 //
 // One subscription, filtered to one row by id, alive only while an edit form is
 // mounted. It does NOT touch the form: it reports, and the screen shows a
 // 3-second notice. Nothing the user has typed is re-seeded or cleared — that
-// was the Plan-edit bug (ADR-225, plans/routes/edit.tsx) and it is the whole
+// was the Plan-edit bug (ADR-226, plans/routes/edit.tsx) and it is the whole
 // reason this hook hands back a flag rather than invalidating the query.
 //
 // ADR-004 AMENDMENT, recorded in docs/DECISIONS.md: the original rule allowed

@@ -699,7 +699,7 @@ export async function saveUserAccess(
       // that follows it cannot be split by a second admin.
       .for('update');
     const existing = existingRows[0];
-    // ADR-225 / §20.4 — this screen REFUSES a clashing save; it does NOT merge
+    // ADR-226 / §20.4 — this screen REFUSES a clashing save; it does NOT merge
     // the two admins' work (owner decision, 2026-10-08). Two reasons, and both
     // are about ending up with permissions nobody approved:
     //

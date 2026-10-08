@@ -38,7 +38,7 @@ import {
   type DcEditLineCard,
 } from '../components/dc-edit-line-table';
 
-// ADR-225 — the fields THIS screen can edit, plus `lines` as one unit, and what
+// ADR-226 — the fields THIS screen can edit, plus `lines` as one unit, and what
 // the user calls each one (docs/NAMING.md, so the notice says "Vehicle No.",
 // never `vehicleNo`).
 //
@@ -173,7 +173,7 @@ function DeliveryChallanEditPage(): React.JSX.Element {
     () => (dc ? { ...dc, lines: dcLinesDigest(dc.lines, noEdits) } : undefined),
     [dc, noEdits],
   );
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes to
   // this one DC, so the user is told the moment somebody else saves it rather
   // than after typing into a stale form.

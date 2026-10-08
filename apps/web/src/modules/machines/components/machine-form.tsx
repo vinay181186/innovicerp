@@ -73,7 +73,7 @@ const CREATE_DEFAULTS: CreateMachineInput = {
   hourRate: 0,
 };
 
-// ADR-225 — an EMPTY number box must stay empty, not become 0.
+// ADR-226 — an EMPTY number box must stay empty, not become 0.
 //
 // `register('hourRate')` hands back `''` for a blank input, and
 // `z.coerce.number()` turns `''` into 0 (`Number('') === 0`). So a machine with

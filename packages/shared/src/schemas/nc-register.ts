@@ -229,7 +229,7 @@ export type CreateNcRegisterInput = z.infer<typeof createNcRegisterInputSchema>;
 // #7; T-040b owns that path via disposeNcInputSchema. `code` is immutable.
 export const updateNcRegisterInputSchema = z.object({
   /** §20.4 — the version this form loaded; a save over someone else's newer
-   *  edit is refused 409 `edit_conflict` (ADR-225). */
+   *  edit is refused 409 `edit_conflict` (ADR-226). */
   expectedUpdatedAt: expectedUpdatedAtSchema,
   ncDate: z
     .string()

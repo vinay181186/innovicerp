@@ -36,7 +36,7 @@
 // On save: if the role changed, fire useUpdateUser FIRST (legacy L13996),
 // then save the access matrix. Both succeed or modal stays open with error.
 //
-// ADR-225 / §20.4 — THIS BOX REFUSES, IT DOES NOT MERGE, and that is an owner
+// ADR-226 / §20.4 — THIS BOX REFUSES, IT DOES NOT MERGE, and that is an owner
 // decision, not a shortcut. `departments` and `forms` are single JSONB blocks
 // replaced wholesale; merging two admins' partial matrices could produce a
 // permission set NEITHER of them approved — the one domain where that is
@@ -256,7 +256,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // Only the approval limit comes from the user record now — the role is
   // derived on save, never read back into an input.
   //
-  // ADR-225 — seeded ONCE, when the record arrives. It used to re-run on every
+  // ADR-226 — seeded ONCE, when the record arrives. It used to re-run on every
   // change of `userDetail`, so a background refetch (window focus) that picked
   // up somebody else's edit silently retyped this box under the admin's hands,
   // with no save involved. That is the exact fault the ADR found on Plan edit and
@@ -271,7 +271,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // Seed once when the matrix loads. The server already normalises pre-0100
   // boolean dept values to a tier key, so nothing legacy reaches this state.
   //
-  // ADR-225 — "once" is now enforced with a ref, for the same reason as the
+  // ADR-226 — "once" is now enforced with a ref, for the same reason as the
   // approval limit above: this effect re-ran whenever `data` changed, so another
   // admin's save arriving on a background refetch wiped whatever tiers and boxes
   // this admin had set, with nothing on screen to say why. The ONLY deliberate
@@ -589,7 +589,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       watch.acknowledge(); // our own save rang the doorbell; swallow it
       onClose();
     } catch (e) {
-      // ADR-225 — someone else saved this person's access first. NOTHING was
+      // ADR-226 — someone else saved this person's access first. NOTHING was
       // written. Say who, reload the stored matrix (the seed effect above
       // re-fills every box from it) and let this admin re-apply their change —
       // the one screen where a merge could produce a permission set neither

@@ -47,7 +47,7 @@ export type CreateOperatorInput = z.infer<typeof createOperatorInputSchema>;
 export const updateOperatorInputSchema = createOperatorInputSchema
   .partial()
   .omit({ code: true })
-  // §20.4 / ADR-225 — the version this form loaded.
+  // §20.4 / ADR-226 — the version this form loaded.
   .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateOperatorInput = z.infer<typeof updateOperatorInputSchema>;
 

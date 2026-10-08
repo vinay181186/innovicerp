@@ -1517,7 +1517,7 @@ export async function updateDeliveryChallanTx(
     .for('update');
   const header = headerRows[0];
   if (!header) throw new NotFoundError('DC not found. Refresh the page.');
-  // §20.4 / ADR-225 — refuse the save if someone else changed this DC after the
+  // §20.4 / ADR-226 — refuse the save if someone else changed this DC after the
   // form loaded it, and say who. Checked under the lock above, so check-then-
   // write is atomic. The name lookup runs ONLY on the refusal path (see
   // lib/row-changed-by.ts), so a normal save pays nothing for it.

@@ -776,7 +776,7 @@ export async function getJobCardEditModel(
   return withUserContext(user, async (tx) => {
     const headRows = (await tx.execute(sql`
       SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
-        -- §20.4 / ADR-225 — the version this form is loading. The edit screen
+        -- §20.4 / ADR-226 — the version this form is loading. The edit screen
         -- sends it straight back as expectedUpdatedAt, and updateJobCardTx
         -- refuses a save made on top of someone else's newer edit. (No
         -- backquotes in here: this SQL lives inside a template literal.)
@@ -2317,7 +2317,7 @@ export async function updateJobCard(
  * (which already holds one, plus the job_cards row FOR UPDATE lock taken in
  * jobCardEditRegistryEntry.loadForDiff).
  *
- * ADR-225 / §20.4 — the direct path now has its own guard: the caller sends the
+ * ADR-226 / §20.4 — the direct path now has its own guard: the caller sends the
  * `updatedAt` its form loaded and a save over someone else's newer edit is
  * refused 409 `edit_conflict`. It is a CONDITIONAL UPDATE, not a row lock,
  * because this path must not take a `job_cards` lock (see the ADR-220 lock-order
@@ -2365,7 +2365,7 @@ export async function updateJobCardTx(
       dueDate: jobCards.dueDate,
       remarks: jobCards.remarks,
       drawingFilePath: jobCards.drawingFilePath,
-      // ADR-225 — the version this row is at now, and who put it there, for the
+      // ADR-226 — the version this row is at now, and who put it there, for the
       // edit-conflict refusal below.
       updatedAt: jobCards.updatedAt,
       updatedBy: jobCards.updatedBy,
@@ -2390,7 +2390,7 @@ export async function updateJobCardTx(
   // order, never by flipping this one.
   const head = headRows[0];
   if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
-  // ADR-225 / §20.4 — refuse the save if someone else changed this card after the
+  // ADR-226 / §20.4 — refuse the save if someone else changed this card after the
   // form loaded it, and say who. This read is NOT locked (see the note above), so
   // this check alone is not atomic: it is the EARLY refusal, which stops the
   // writes below from running at all and gives the user the readable notice. The
@@ -3144,7 +3144,7 @@ export async function updateJobCardOrStage(
     return true;
   });
   if (shouldStage) {
-    // ADR-225 — the staged route gets the same version check as the direct one
+    // ADR-226 — the staged route gets the same version check as the direct one
     // (the engine refuses to stage an edit raised against a stale version), which
     // is what Delivery Challan and Dispatch already pass here.
     const request = await requestDocumentEdit(

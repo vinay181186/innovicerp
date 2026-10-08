@@ -112,7 +112,7 @@ export function useDeliveryChallan(id: string | undefined) {
   });
 }
 
-/** Re-read ONE DC from the server, bypassing the cache (ADR-225).
+/** Re-read ONE DC from the server, bypassing the cache (ADR-226).
  *
  *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
  *  the row AS IT IS NOW to work out which fields the other person changed and to
@@ -161,7 +161,7 @@ export function useDcSendable(poId: string | undefined) {
  *  the DC was loaded with (rule 20.4). All optional string fields are typed
  *  `?: string | undefined` for exactOptionalPropertyTypes. */
 export interface UpdateDeliveryChallanInput {
-  // ADR-225 — `null` clears the field. The server's own schema has had these as
+  // ADR-226 — `null` clears the field. The server's own schema has had these as
   // `z.string().nullable().optional()` all along (apps/api/.../schema.ts) and
   // writes `input.transport ?? null`; the edit screen sent `undefined` for a
   // cleared box, which JSON drops, so emptying Transporter or Vehicle No. never

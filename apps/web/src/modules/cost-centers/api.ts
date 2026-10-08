@@ -52,7 +52,7 @@ export function useCostCenter(id: string | undefined) {
 }
 
 /**
- * ADR-225 — re-read ONE cost centre straight from the server, ignoring the
+ * ADR-226 — re-read ONE cost centre straight from the server, ignoring the
  * cache.
  *
  * `useEditConflict` calls this after a 409 so its retry lands on the version

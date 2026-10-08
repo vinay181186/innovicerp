@@ -1,7 +1,7 @@
-// ADR-225 / §20.4 — a Job Card's operations as ONE comparable value.
+// ADR-226 / §20.4 — a Job Card's operations as ONE comparable value.
 //
 // The operations are all-or-nothing on this document, by owner decision
-// (ADR-225, "Three places REFUSE rather than merge"): an operation's step number
+// (ADR-226, "Three places REFUSE rather than merge"): an operation's step number
 // IS its position in the array (`updateJobCardTx` parks kept ops at
 // `op_seq + 100000` and renumbers from the index), and `ops` carries
 // `.default([])`, so an ABSENT ops key means "delete every operation". The whole

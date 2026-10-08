@@ -1,4 +1,4 @@
-// ADR-225 / §20.4 — "an edit sends back what it loaded", and when someone else
+// ADR-226 / §20.4 — "an edit sends back what it loaded", and when someone else
 // got there first the save MERGES instead of failing at the user.
 //
 // THE BUG THIS EXISTS FOR, in the words of §20.4: "you change a line's qty to

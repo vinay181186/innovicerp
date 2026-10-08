@@ -1801,7 +1801,7 @@ async function poEditWouldChange(
  *     was called when that happened — and rewriting history is how an audit
  *     trail stops being one.
  *
- *  ADR-225 — it also STAMPS updated_at / updated_by on every row it touches,
+ *  ADR-226 — it also STAMPS updated_at / updated_by on every row it touches,
  *  and that is not bookkeeping. A GRN's PO No. is a field its edit screen shows
  *  and can write, so this routine is a SECOND writer of a column a user may
  *  have open in a form. Without the stamp, renaming a PO moved the number

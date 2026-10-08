@@ -1652,7 +1652,7 @@ export async function updateNcRegisterTx(
       `This NC is ${labelOf(NC_STATUS_LABELS, existing[0]!.status)}. Only NC Raised NCs can be edited.`,
     );
   }
-  // ADR-225 / §20.4 — refuse a save made over someone else's newer edit,
+  // ADR-226 / §20.4 — refuse a save made over someone else's newer edit,
   // naming who changed it. This sits ALONGSIDE the status-conditional UPDATE
   // below, not instead of it: the status check catches a disposition (and says
   // so, which is more useful than a bare version clash), this one catches an
@@ -1739,7 +1739,7 @@ export async function updateNcRegisterOrStage(
     return rows[0]?.status === 'pending';
   });
   if (shouldStage) {
-    // The form's own version token rides along (ADR-225), so staging an edit
+    // The form's own version token rides along (ADR-226), so staging an edit
     // from a stale form is refused the same way saving one is — on top of NC's
     // own status-conditional UPDATE under lockNcRow.
     const request = await requestDocumentEdit(

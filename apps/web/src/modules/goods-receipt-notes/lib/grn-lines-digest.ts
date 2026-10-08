@@ -1,4 +1,4 @@
-// ADR-225 / §20.4 — the GRN's received lines as ONE comparable value.
+// ADR-226 / §20.4 — the GRN's received lines as ONE comparable value.
 //
 // Why a single value and not a per-field diff: the GRN update treats an ABSENT
 // `lines` key as "leave the lines alone" (service.ts: `if (input.lines !==

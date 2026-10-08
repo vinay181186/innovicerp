@@ -1,4 +1,4 @@
--- ADR-225 / ADR-004 (amended) — switch live updates ON for the documents whose
+-- ADR-226 / ADR-004 (amended) — switch live updates ON for the documents whose
 -- edit screens warn you the moment someone else saves.
 --
 -- WHY THIS EXISTS AT ALL: the `supabase_realtime` publication was EMPTY. Not
@@ -6,8 +6,24 @@
 -- which modules/op-entry subscribes to. Those subscriptions have therefore
 -- never delivered a single event; what has actually been keeping Op Entry
 -- current is the 30-second poll sitting beside them, which the code itself
--- labels "30s polling fallback alongside Realtime". This migration makes the
--- mechanism real, and fixes Op Entry as a side effect.
+-- labels "30s polling fallback alongside Realtime".
+--
+-- OP ENTRY IS DELIBERATELY NOT FIXED HERE, and that is a reversal. An earlier
+-- draft of this migration published `op_log` and `running_ops` too, to repair a
+-- feature that has never worked. It was taken back out, because
+-- `useRealtimeRunningOps` (modules/op-entry/api.ts) subscribes with NO row
+-- filter — `{ event: '*', table: 'running_ops' }` — and invalidates two query
+-- prefixes on every event. Publishing that table means every start, stop and
+-- pause by any operator makes every open Op Entry page refetch the running list
+-- and the JC-ops list, and the page plus its "By Machine" view each hold a
+-- subscription. That is a brand-new load pattern on the busiest screen in the
+-- factory, introduced by a release about edit conflicts, on a screen this
+-- release does not otherwise touch — and it is the one effect that a code
+-- revert would NOT undo, because publication membership outlives the code.
+--
+-- Op Entry works today on its poll. Switching it to live updates is a real
+-- improvement and a one-line follow-up (add the two tables here), but it
+-- deserves its own change and its own watching.
 --
 -- ADR-004 AMENDMENT: the original rule allowed Realtime only on Op Entry, Live
 -- Operations Board, Machine Status and Task Allocation, on the arithmetic
@@ -35,7 +51,7 @@ DO $$
 DECLARE
   t text;
   tables text[] := ARRAY[
-    -- The 12 documents whose edit screens get the live warning (ADR-225).
+    -- The 12 documents whose edit screens get the live warning (ADR-226).
     'goods_receipt_notes',
     'job_cards',
     'delivery_challans',
@@ -48,10 +64,8 @@ DECLARE
     'qc_processes',
     'tpi_masters',
     'cost_centers',
-    'saved_reports',
-    -- Op Entry's two tables: already subscribed to in the app, never published.
-    'op_log',
-    'running_ops'
+    'saved_reports'
+    -- `op_log` and `running_ops` deliberately NOT here — see the header.
   ];
 BEGIN
   FOREACH t IN ARRAY tables LOOP

@@ -50,7 +50,7 @@ export function useUser(id: string | undefined) {
 }
 
 /**
- * ADR-225 — re-read ONE user straight from the server, ignoring the cache.
+ * ADR-226 — re-read ONE user straight from the server, ignoring the cache.
  *
  * `useEditConflict` calls this after a 409 so its retry lands on the version
  * that is actually stored. A cached read would defeat the whole thing: the

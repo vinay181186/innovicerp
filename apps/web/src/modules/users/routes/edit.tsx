@@ -44,7 +44,7 @@ interface FormValues {
   isActive: boolean;
 }
 
-// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
 // The list drives two things: the save sends only the ones whose value actually
 // changed, and a notice names the field another person moved. It is written out
@@ -79,7 +79,7 @@ function UserEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useUser(isAdmin ? id : undefined);
   const update = useUpdateUser(id);
   const fetchUser = useFetchUser();
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
   // to this one user row, so an admin is told the moment another admin saves it
   // rather than after typing into a stale form.
@@ -101,11 +101,11 @@ function UserEditPage(): React.JSX.Element {
   // Their department lives on the access row, not the user record.
   const { data: accessList } = useUserAccessList();
 
-  // ADR-225 — seed the form ONCE, from the user as this screen loaded them.
+  // ADR-226 — seed the form ONCE, from the user as this screen loaded them.
   //
   // react-hook-form's `values` option is REACTIVE: it re-seeds the form whenever
   // the value it is handed differs from what the form holds. That is the
-  // Plan-edit bug (ADR-225) — a background refetch, or the conflict hook's own
+  // Plan-edit bug (ADR-226) — a background refetch, or the conflict hook's own
   // cache-bypassing re-read after a 409, would throw away whatever the admin had
   // typed, silently, with no save involved. Capturing the first loaded record in
   // a ref keeps the "populate once the record arrives" behaviour (`detail` is
@@ -172,7 +172,7 @@ function UserEditPage(): React.JSX.Element {
     // copy from this form would let the identity screen silently overwrite an
     // access decision made elsewhere.
     //
-    // ADR-225 — the trimmed strings are sent AS THEY ARE, blank included. The
+    // ADR-226 — the trimmed strings are sent AS THEY ARE, blank included. The
     // old `|| undefined` turned a box the admin had CLEARED into "untouched",
     // so clearing a name or a phone number silently did nothing; now the server
     // (which already runs emptyToNull on both) stores the blank. The same

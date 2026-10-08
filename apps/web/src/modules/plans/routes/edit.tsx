@@ -45,7 +45,7 @@ function PlanEditPage(): React.JSX.Element {
   // Route Card: the exact opposite of what they asked for. Keyed on the
   // version, not on object identity.
   //
-  // ADR-225: keyed on the version this form OPENED with, not the live one.
+  // ADR-226: keyed on the version this form OPENED with, not the live one.
   // `plan?.updatedAt` moves the moment anyone else saves this plan and the
   // query refetches, which re-seeded the form and threw away what the planner
   // was typing — silently, and with no save involved. `opened.expected()` is

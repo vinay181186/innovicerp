@@ -57,7 +57,7 @@ export function useSavedReport(id: string | undefined) {
   });
 }
 
-/** Re-read ONE saved report from the server, bypassing the cache (ADR-225).
+/** Re-read ONE saved report from the server, bypassing the cache (ADR-226).
  *
  *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
  *  the row AS IT IS NOW to work out which fields the other person changed and to

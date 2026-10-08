@@ -51,7 +51,7 @@ export function useUserAccess(userId: string | null) {
 }
 
 /** Re-read ONE user's access matrix from the server, bypassing the cache
- *  (ADR-225).
+ *  (ADR-226).
  *
  *  Used only after a save was refused 409 `edit_conflict`. Access Control
  *  deliberately does NOT merge: `departments` and `forms` are single JSONB

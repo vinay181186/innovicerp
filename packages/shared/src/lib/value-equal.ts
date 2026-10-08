@@ -1,4 +1,4 @@
-// ADR-225 — ONE rule for "is this the same value", used by the browser and the
+// ADR-226 — ONE rule for "is this the same value", used by the browser and the
 // server alike.
 //
 // It was private to apps/api/src/lib/audit-trail.ts, where it decides what the

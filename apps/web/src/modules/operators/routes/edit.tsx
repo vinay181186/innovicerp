@@ -14,7 +14,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useFetchOperator, useOperator, useUpdateOperator } from '../api';
 import { OperatorForm } from '../components/operator-form';
 
-// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
 // The list drives two things: the save sends only the ones whose value actually
 // changed, and a notice names the field another person moved. It is written out
@@ -134,7 +134,7 @@ function OperatorEditPage(): React.JSX.Element {
   const { data: operator, isLoading, isError, error } = useOperator(canEdit ? id : undefined);
   const update = useUpdateOperator(id);
   const fetchOperator = useFetchOperator();
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
   // to this one operator, so the user is told the moment somebody else saves it
   // rather than after they have typed into a stale form.

@@ -88,11 +88,11 @@ const PENDING_EDIT_MESSAGE = 'This document already has an edit waiting for appr
 let editOpRowSeq = 0;
 const nextEditOpRowKey = (): string => `new-${++editOpRowSeq}`;
 
-// ADR-225 — the five HEADER fields this screen can edit, plus the operations as
+// ADR-226 — the five HEADER fields this screen can edit, plus the operations as
 // ONE value, and what the user calls each one (the labels on the fact block,
 // which come from docs/NAMING.md).
 //
-// THE OPERATIONS DO NOT MERGE, by owner decision (ADR-225): an operation's step
+// THE OPERATIONS DO NOT MERGE, by owner decision (ADR-226): an operation's step
 // number IS its position in the `ops` array, and the shared schema keeps `ops` a
 // required whole array with `.default([])` — so an absent `ops` key means
 // "delete every operation", and a partial array cannot express a reorder. The
@@ -191,7 +191,7 @@ function JcStatusEditForm({
   const update = useUpdateJobCard(id);
   const fetchJc = useFetchJobCard();
   const fetchJcModel = useFetchJobCardEditModel();
-  // ADR-225 / §20.4 — the version the form loaded travels with the save, a
+  // ADR-226 / §20.4 — the version the form loaded travels with the save, a
   // conflict on a HEADER field is merged instead of overwriting the other
   // person's field, and the 3-second notice says what happened. Also subscribes
   // to this one card, so the user is told the moment somebody else saves it.
@@ -705,7 +705,7 @@ function JcStatusEditForm({
           if (!('dueDate' in changed)) merged.dueDate = base.dueDate;
           if (!('priority' in changed)) merged.priority = base.priority;
           if (!('remarks' in changed)) merged.remarks = base.remarks;
-          // The ops are NOT merged (ADR-225) — but if this user never touched
+          // The ops are NOT merged (ADR-226) — but if this user never touched
           // them, the other person's routing is what should stand, not ours.
           if (!('ops' in changed) && freshOps.current) merged.ops = freshOps.current;
         }

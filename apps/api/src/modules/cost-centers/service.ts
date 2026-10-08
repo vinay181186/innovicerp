@@ -202,7 +202,7 @@ export async function updateCostCenterTx(
   user: AuthContext,
 ): Promise<CostCenter> {
   requireCompany(user);
-  // ADR-225 / §20.4 — read under the row lock, so the version check below and
+  // ADR-226 / §20.4 — read under the row lock, so the version check below and
   // the UPDATE are one atomic step: a second editor WAITS here, then sees the
   // first editor's new updated_at and is refused instead of overwriting it.
   // Named columns, never SELECT * (§6 rule 6).
@@ -257,7 +257,7 @@ export async function updateCostCenterTx(
  * editable while it is not in Trash), the edit is STAGED for approval; otherwise
  * it falls through to updateCostCenter. A cost centre is a single record with no
  * child lines, so there is no line guard. The form's `expectedUpdatedAt` is
- * forwarded to the engine (ADR-225), so staging an edit from a stale form is
+ * forwarded to the engine (ADR-226), so staging an edit from a stale form is
  * refused the same way saving one is.
  */
 export async function updateCostCenterOrStage(

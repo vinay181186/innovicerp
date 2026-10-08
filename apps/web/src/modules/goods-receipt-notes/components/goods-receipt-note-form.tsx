@@ -417,7 +417,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         itemName: l.itemName.trim(),
         receivedQty: Number(String(l.receivedQty).trim() || '0'),
         dcRefNo: l.dcRefNo?.trim() || undefined,
-        // ADR-225 / §20.4 — QC Date, QC Remarks, the inspector and the QC report
+        // ADR-226 / §20.4 — QC Date, QC Remarks, the inspector and the QC report
         // are NO LONGER SENT. They are rendered read-only here (ADR-189: a GRN
         // receives, Incoming QC inspects) and `mergeLines` never writes them, so
         // sending them was a photograph of someone else's work travelling back to

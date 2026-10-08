@@ -19,7 +19,7 @@ import { grnLinesDigest } from '../lib/grn-lines-digest';
 const GRN_EDIT_FORM_ID = 'grn-edit-form';
 import { UnifiedGrnForm } from '../components/unified-grn-form';
 
-// ADR-225 — the HEADER fields this screen can edit, plus `lines` as one unit.
+// ADR-226 — the HEADER fields this screen can edit, plus `lines` as one unit.
 //
 // The payload is `{ header, lines }`, so the diff runs against `values.header`
 // and these are keys of the GRN itself. Written out rather than inferred because
@@ -132,7 +132,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   const update = useUpdateGoodsReceiptNote(id);
   const fetchGrn = useFetchGoodsReceiptNote();
   const conflictRecord = useMemo(() => (detail ? toConflictRecord(detail) : undefined), [detail]);
-  // ADR-225 / §20.4 — sends only the header fields that changed, merges onto
+  // ADR-226 / §20.4 — sends only the header fields that changed, merges onto
   // someone else's save instead of overwriting it, and raises the 3-second
   // notice. Also subscribes to this one GRN, so the storekeeper is told the
   // moment Incoming QC or another clerk saves it rather than after typing into

@@ -1425,7 +1425,7 @@ export async function updateGoodsReceiptNoteTx(
       throw new NotFoundError('GRN not found. It may have been moved to Trash.');
     }
 
-    // §20.4 / ADR-225 — refuse the save if someone else changed this GRN after
+    // §20.4 / ADR-226 — refuse the save if someone else changed this GRN after
     // the form loaded it, and say who. The name lookup runs only on the refusal
     // path (see lib/row-changed-by.ts), so a normal save pays nothing for it.
     if (editConflicts(existingHdrRows[0]!.updatedAt, input.expectedUpdatedAt)) {
@@ -1624,7 +1624,7 @@ export async function updateGoodsReceiptNoteOrStage(
     return true;
   });
   if (shouldStage) {
-    // ADR-225 — the staged route gets the same version check as the direct one
+    // ADR-226 — the staged route gets the same version check as the direct one
     // (the engine refuses to stage an edit raised against a stale version), which
     // is what Delivery Challan and Dispatch already pass here.
     const request = await requestDocumentEdit(

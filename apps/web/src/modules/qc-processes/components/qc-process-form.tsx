@@ -66,7 +66,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {
-      // ADR-225 — the trimmed Description is sent AS IT IS, blank included. The
+      // ADR-226 — the trimmed Description is sent AS IT IS, blank included. The
       // old `|| undefined` turned a box the user had CLEARED into "untouched",
       // so clearing a description silently did nothing; the server already runs
       // emptyToNull on it, so a blank now stores as no description.

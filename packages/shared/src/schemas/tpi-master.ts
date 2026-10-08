@@ -69,7 +69,7 @@ export type CreateTpiMasterInput = z.infer<typeof createTpiMasterInputSchema>;
 export const updateTpiMasterInputSchema = createTpiMasterInputSchema
   .partial()
   .omit({ code: true })
-  // §20.4 / ADR-225 — the version this form loaded.
+  // §20.4 / ADR-226 — the version this form loaded.
   .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateTpiMasterInput = z.infer<typeof updateTpiMasterInputSchema>;
 

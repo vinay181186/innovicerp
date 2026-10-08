@@ -38,7 +38,7 @@ export function timestampMs(value: Date | string): number {
  * loaded it. No-op when the caller did not send `expectedUpdatedAt` (older
  * clients keep last-write-wins).
  *
- * ADR-225 — pass `changedByName` (and, if the caller has it, the row's current
+ * ADR-226 — pass `changedByName` (and, if the caller has it, the row's current
  * `updated_at` is already `current`) so the 409 can say WHO and WHEN, which is
  * what §20.4 asks for: "changed by <name> at <time>". Omit it and the refusal
  * still works, it just cannot name anyone — the screen then says

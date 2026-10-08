@@ -131,7 +131,7 @@ export type CreateSavedReportInput = z.infer<typeof createSavedReportInputSchema
 
 export const updateSavedReportInputSchema = z.object({
   /** §20.4 — the version this form loaded; a save over someone else's newer
-   *  edit is refused 409 `edit_conflict` (ADR-225). */
+   *  edit is refused 409 `edit_conflict` (ADR-226). */
   expectedUpdatedAt: expectedUpdatedAtSchema,
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(500).optional(),

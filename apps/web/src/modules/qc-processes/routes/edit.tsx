@@ -11,7 +11,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useFetchQcProcess, useQcProcess, useUpdateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
 
-// ADR-225 — the fields THIS screen can edit, and what the user calls each one.
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
 // The list drives two things: the save sends only the ones whose value actually
 // changed, and a notice names the field another person moved. It is written out
@@ -42,7 +42,7 @@ function QcProcessEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useQcProcess(id);
   const update = useUpdateQcProcess(id);
   const fetchQcProcess = useFetchQcProcess();
-  // ADR-225 / §20.4 — sends only what changed, merges onto someone else's save
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
   // to this one QC process, so the user is told the moment somebody else saves
   // it rather than after they have typed into a stale form.
