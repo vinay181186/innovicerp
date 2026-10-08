@@ -68,8 +68,6 @@ interface DcSavedLine {
   qty: string | number;
   materialText: string | null;
   dcRemarks: string | null;
-  itemCode?: string | null;
-  itemCodeText?: string | null;
 }
 
 /** What THIS user changed on a line — only the attributes they actually touched.
@@ -132,15 +130,20 @@ function dcPayloadLines(
 /** The lines as one comparable, readable value — what the diff tests and what
  *  the 3-second notice prints. It must move whenever anything the screen can
  *  edit moves, or an edit would be dropped as "nothing changed", so it carries
- *  the qty, the Material and the DC Remarks of every line in order. */
+ *  the qty, the Material and the DC Remarks of every line in order.
+ *
+ *  Each row is identified by the line's own immutable `id`, NOT by its item
+ *  code. The item code is read-only on this screen, and `itemCode` is joined
+ *  LIVE from the item master — so renaming an item between this screen's load
+ *  and the conflict re-read moved the digest on its own and the notice reported
+ *  a line clash nobody made. Same rule as jc-ops-digest's `o.id ?? 'new'`. */
 function dcLinesDigest(base: readonly DcSavedLine[], edits: Map<string, DcLineEdit>): string {
   const rows = base.map((l) => {
     const e = edits.get(l.id);
     const qty = e?.qty ?? Number(l.qty);
     const material = (e && 'materialText' in e ? e.materialText : l.materialText) ?? '';
     const remarks = (e && 'dcRemarks' in e ? e.dcRemarks : l.dcRemarks) ?? '';
-    const item = l.itemCode ?? l.itemCodeText ?? '—';
-    const parts = [`${qty} × ${item}`];
+    const parts = [`${qty} × line ${l.id}`];
     if (material.trim()) parts.push(`(${material.trim()})`);
     if (remarks.trim()) parts.push(remarks.trim());
     return parts.join(' ');

@@ -392,15 +392,29 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
       clearErrors('header.vendorId');
     }
 
+    // ADR-226 — an EMPTIED optional box sends `null`, never `undefined`.
+    //
+    // Now that an edit sends only what changed, the two mean different things:
+    // an absent key is "leave it alone", and null is "the user emptied it".
+    // Mapping an empty box to `undefined` meant deleting a wrongly-typed Vendor
+    // Invoice No. (or GRN Remarks, Vendor Challan No., the unlinked PO No., the
+    // unlinked Vendor Code) was indistinguishable from never touching it: the
+    // screen said "Nothing changed on this GRN" and the old value stayed. The
+    // five are `.nullable()` in packages/shared and the service has always
+    // written `?? null`, so nothing on the server changes. Delivery Challan and
+    // Customer Dispatch already did this.
+    //
+    // `purchaseOrderId` and `vendorId` stay `undefined`-only: they are id links,
+    // and clearing one would mean UNLINK, which this screen cannot do.
     const headerOut = {
       ...values.header,
       purchaseOrderId: values.header.purchaseOrderId || undefined,
-      poCodeText: values.header.poCodeText?.trim() || undefined,
+      poCodeText: values.header.poCodeText?.trim() || null,
       vendorId: values.header.vendorId || undefined,
-      vendorCodeText: values.header.vendorCodeText?.trim() || undefined,
-      dcNo: values.header.dcNo?.trim() || undefined,
-      invoiceNo: values.header.invoiceNo?.trim() || undefined,
-      remarks: values.header.remarks?.trim() || undefined,
+      vendorCodeText: values.header.vendorCodeText?.trim() || null,
+      dcNo: values.header.dcNo?.trim() || null,
+      invoiceNo: values.header.invoiceNo?.trim() || null,
+      remarks: values.header.remarks?.trim() || null,
     };
 
     const linesOut = values.lines.map((l) => {

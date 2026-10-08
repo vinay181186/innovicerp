@@ -51,7 +51,7 @@ DO $$
 DECLARE
   t text;
   tables text[] := ARRAY[
-    -- The 12 documents whose edit screens get the live warning (ADR-226).
+    -- The 13 documents whose edit screens get the live warning (ADR-226).
     'goods_receipt_notes',
     'job_cards',
     'delivery_challans',
@@ -68,6 +68,17 @@ DECLARE
     -- `op_log` and `running_ops` deliberately NOT here — see the header.
   ];
 BEGIN
+  -- ADR-226 review — guard the PUBLICATION, not just each table. The per-table
+  -- pg_class check below was written so "a migration must not be the thing that
+  -- breaks a restore of an older snapshot", but `ALTER PUBLICATION
+  -- supabase_realtime …` fails outright with `publication does not exist` on any
+  -- database that has no Supabase realtime set up — a plain Postgres restore, a
+  -- local dev database, a non-Supabase target. The stated goal was not met.
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    RAISE NOTICE 'realtime: no supabase_realtime publication on this database — nothing to do';
+    RETURN;
+  END IF;
+
   FOREACH t IN ARRAY tables LOOP
     -- Skip a table that does not exist on this database rather than failing the
     -- whole migration; every name above is in schema.ts today, but a migration

@@ -63,8 +63,6 @@ const DISPATCH_LABELS: Record<string, string> = {
 interface DispatchSavedLine {
   id: string;
   qty: number;
-  itemCode?: string | null;
-  itemCodeText?: string | null;
 }
 
 /** The Dispatch Qty THIS user changed, per line, by the SHARED equality rule
@@ -100,14 +98,18 @@ function dispatchPayloadLines(
 }
 
 /** The lines as one comparable, readable value — what the diff tests and what
- *  the 3-second notice prints. */
+ *  the 3-second notice prints.
+ *
+ *  Each row is identified by the line's own immutable `id`, NOT by its item
+ *  code. The item code is read-only on this screen, and `itemCode` is joined
+ *  LIVE from the item master — so renaming an item between this screen's load
+ *  and the conflict re-read moved the digest on its own and the notice reported
+ *  a line clash nobody made. Same rule as jc-ops-digest's `o.id ?? 'new'`. */
 function dispatchLinesDigest(
   base: readonly DispatchSavedLine[],
   edits: Map<string, number>,
 ): string {
-  const rows = base.map(
-    (l) => `${edits.get(l.id) ?? l.qty} × ${l.itemCode ?? l.itemCodeText ?? '—'}`,
-  );
+  const rows = base.map((l) => `${edits.get(l.id) ?? l.qty} × line ${l.id}`);
   return `${rows.length} line${rows.length === 1 ? '' : 's'} · ${rows.join(' · ')}`;
 }
 

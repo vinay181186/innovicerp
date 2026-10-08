@@ -714,7 +714,10 @@ function DetailGrid(props: {
           <Chip changes={pendingChanges} field="operatorText" />
         </InlinePair>
         <InlinePair label="Reported By:">
-          {detail.reportedByText ?? '—'}
+          {/* `||`, not `??`: a cleared Reported By can reach the column as a
+              blank string as well as NULL, and both mean "nobody named". Both
+              must read as the dash, not as an empty gap. */}
+          {detail.reportedByText || '—'}
           <Chip changes={pendingChanges} field="reportedByText" />
         </InlinePair>
         <InlinePair label="Reason Category:">

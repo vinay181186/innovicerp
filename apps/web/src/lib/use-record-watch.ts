@@ -27,7 +27,7 @@
 // ever sent rows their own login may read. This grants no new access — it only
 // lets a change the user could already have polled for arrive sooner.
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { supabase } from './supabase';
 
 /** A per-component-instance suffix for a Realtime channel topic.
@@ -80,23 +80,33 @@ export function useRecordWatch({ table, id, enabled = true }: UseRecordWatchOpti
   const topicId = useChannelTopicId();
   // Our OWN save fires this subscription too. The screen calls `acknowledge()`
   // right after its save, which clears the flag — so a self-inflicted event
-  // shows no notice. A `updated_by != me` filter is not available on a
-  // postgres_changes filter (one column, one operator), and doing it in the
-  // callback would need the payload's new row, which arrives only when REPLICA
-  // IDENTITY FULL is set. Acknowledge-after-save is simpler and needs no
-  // schema change.
-  const seenRef = useRef(false);
+  // shows no notice.
+  //
+  // ADR-226 review — the reason this comment used to give for not filtering it
+  // properly was WRONG. It said reading `updated_by` off the payload "arrives
+  // only when REPLICA IDENTITY FULL is set". The NEW row is always in the WAL;
+  // it is the OLD row that needs FULL. So `payload.new.updated_by !== me` IS
+  // available and would be the honest filter. Not built here, deliberately:
+  // this hook is inert until the browser's token carries a company claim (see
+  // the header), and writing a better filter for a stream that delivers nothing
+  // is work with no way to test it. When the token is fixed, filter on
+  // `payload.new` and the acknowledge-after-save dance can go.
+  //
+  // One consequence while it stays: `acknowledge()` runs when the save
+  // RESOLVES, but the event our own save caused arrives later (commit -> WAL ->
+  // socket is slower than the HTTP response). A screen still mounted could
+  // therefore tell the user somebody else changed the record right after their
+  // own successful save. Every screen using this navigates away on success, so
+  // it is unreachable today — and masked anyway while the stream is silent.
 
   useEffect(() => {
     if (!enabled || !id) return;
-    seenRef.current = false;
     const channel = supabase
       .channel(`record-watch:${table}:${id}:${topicId}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table, filter: `id=eq.${id}` },
         () => {
-          seenRef.current = true;
           setChangedByOther(true);
         },
       )
@@ -107,7 +117,6 @@ export function useRecordWatch({ table, id, enabled = true }: UseRecordWatchOpti
   }, [table, id, enabled, topicId]);
 
   const acknowledge = useCallback(() => {
-    seenRef.current = false;
     setChangedByOther(false);
   }, []);
 

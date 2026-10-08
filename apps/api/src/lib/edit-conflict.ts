@@ -9,9 +9,16 @@
 //
 // Holding the row lock makes the check-then-write atomic: a second editor
 // waits on the lock, then sees the first editor's new updated_at and is
-// refused. Every table checked here must bump updated_at on every UPDATE (the
-// set_updated_at trigger — plans and bom_masters get theirs in 0187; their
-// services also set it explicitly on edit).
+// refused. Every table checked here must bump updated_at on every UPDATE.
+//
+// ADR-226 review — and that is NOT all done by trigger, which an earlier
+// version of this comment claimed while naming only plans and bom_masters as
+// exceptions. FOUR of the guarded tables have no `set_updated_at` trigger at
+// all — `customer_dispatches`, `user_access`, `tpi_masters`, `cost_centers` —
+// and rest entirely on each service remembering `updatedAt: new Date()`. Every
+// update path does; migration 0204 adds the triggers so it stops being a thing
+// to remember. Until that is applied everywhere, a new writer of those four
+// that forgets the stamp silently disables this check for that row.
 
 import {
   EDIT_CONFLICT_CODE,

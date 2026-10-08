@@ -55,7 +55,6 @@ import { Banner } from '@/ui/feedback';
 import { DetailHeader, useSaveShortcut } from '@/ui/layout';
 import {
   jobCardsKeys,
-  useFetchJobCard,
   useFetchJobCardEditModel,
   useJobCard,
   useJobCardEditModel,
@@ -126,10 +125,16 @@ export function JcStatusContent({
   id: string;
   mode?: 'view' | 'edit';
 }): React.JSX.Element {
-  if (mode === 'edit') return <JcStatusEditContent id={id} />;
-  // Keyed on the id: the router reuses this component when only $id changes
-  // (parent-JC link on a rework child, Related Records rows), and the view's
-  // per-op open/collapsed set, Show All and tab choice must not carry over.
+  // BOTH branches are keyed on the id, for the same reason: the router reuses
+  // this component when only $id changes (the parent-JC link on a rework child,
+  // a Related Records row), so without the key the mounted instance — and every
+  // ref inside it — carries over to the next card. On VIEW that showed the
+  // previous card's open/collapsed ops, Show All and tab choice. On EDIT it was
+  // worse: `useOpenedVersion` captures the version ONCE per mount, so the second
+  // card's screen held the FIRST card's `updatedAt`. Every save on it was then
+  // refused as a clash, auto-merged, and reported "Someone else also changed
+  // this Job Card" with an empty field list — three requests and a lie.
+  if (mode === 'edit') return <JcStatusEditContent key={id} id={id} />;
   return <JcStatusViewContent key={id} id={id} />;
 }
 
@@ -189,14 +194,37 @@ function JcStatusEditForm({
   const exit = useExitConfirm({ onExit: goBack });
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
-  const fetchJc = useFetchJobCard();
   const fetchJcModel = useFetchJobCardEditModel();
   // ADR-226 / §20.4 — the version the form loaded travels with the save, a
   // conflict on a HEADER field is merged instead of overwriting the other
   // person's field, and the 3-second notice says what happened. Also subscribes
   // to this one card, so the user is told the moment somebody else saves it.
   //
-  // `freshJc` is how the merge is actually honest here. The Job Card header is
+  // THE VERSION TOKEN AND THE DIFF BASELINE BOTH COME FROM THE EDIT MODEL —
+  // `useJobCardEditModel`, the same read the form seeds its boxes from. Never
+  // from `useJobCard` (the detail/list row), and this is not a tidy-up:
+  //
+  //   • They disagree about Due Date. Detail and list return
+  //     `COALESCE(jc.due_date, sol.due_date, jwl.due_date)`; the edit model
+  //     returns the raw `jc.due_date`, which is what the box holds and what a
+  //     save writes. With the detail as baseline, a card whose own column is
+  //     NULL but whose SO line is due 05-Nov had a BLANK box and a baseline of
+  //     05-Nov, so every save reported `dueDate: null` as this user's change and
+  //     the notice blamed them for a box they never touched. Worse, the merge
+  //     below took `base.dueDate` from that COALESCED read: if the other person
+  //     had deliberately CLEARED the date so the card inherits the order's, our
+  //     retry wrote the ORDER's date into `job_cards.due_date` and turned their
+  //     inherit back into an own date.
+  //   • They are two parallel HTTP requests. The token off one and the form's
+  //     data off the other means a third party's save landing between them gives
+  //     a token NEWER than the data on screen — the server accepts the save, no
+  //     409, no notice, and the other person's work is gone. One source closes
+  //     that too.
+  //
+  // `jobCardEditModelSchema` carries `updatedAt` for exactly this, and its own
+  // comment says "the edit screen reads THIS shape".
+  //
+  // `freshModel` is how the merge is actually honest here. The Job Card header is
   // written by ONE unguarded UPDATE server-side (`.set({ itemId, orderQty,
   // priority, dueDate, remarks, … })` — no `if (input.x !== undefined)`), and
   // `itemCode` / `orderQty` are REQUIRED by the shared schema, so this screen
@@ -204,22 +232,21 @@ function JcStatusEditForm({
   // must be in the payload. Re-sending a photograph of the four fields we did not
   // touch is exactly §20.4's bug. So on the retry the payload is rebuilt with the
   // FRESH values for the fields this user did not change, and this user's own
-  // values only where they did. On the first attempt `freshJc` is null and the
+  // values only where they did. On the first attempt `freshModel` is null and the
   // payload is what the form holds, unchanged from before.
   //
-  // The record the hook compares against is the card plus an `ops` digest, and
-  // the re-read fetches the write model too so the digest on the fresh side is
-  // the real routing — see the note on JC_EDITABLE.
-  const freshJc = useRef<JobCardListItem | null>(null);
+  // The record the hook compares against is the edit model plus an `ops` digest
+  // — see the note on JC_EDITABLE.
+  const freshModel = useRef<JobCardEditModel | null>(null);
   const freshOps = useRef<JcOpInput[] | null>(null);
-  const conflictRecord = useMemo(() => ({ ...jc, ops: jcOpsDigest(model.ops) }), [jc, model.ops]);
+  const conflictRecord = useMemo(() => ({ ...model, ops: jcOpsDigest(model.ops) }), [model]);
   const conflict = useEditConflict({
     table: 'job_cards',
     id,
     record: conflictRecord,
     refetch: async () => {
-      const [latest, latestModel] = await Promise.all([fetchJc(id), fetchJcModel(id)]);
-      freshJc.current = latest;
+      const latestModel = await fetchJcModel(id);
+      freshModel.current = latestModel;
       // The routing as it stands NOW, in write shape. Used only when this user
       // did not touch the operations: the whole array has to be sent on every
       // save, so without this a "I only changed the due date" save would push
@@ -239,7 +266,7 @@ function JcStatusEditForm({
         // then keeps the stored value instead of letting a blinded 0 write it.
         outsourceCost: o.outsourceCost ?? 0,
       }));
-      return { ...latest, ops: jcOpsDigest(latestModel.ops) };
+      return { ...latestModel, ops: jcOpsDigest(latestModel.ops) };
     },
     editableKeys: JC_EDITABLE,
     label: (f) => JC_LABELS[f] ?? f,
@@ -677,8 +704,9 @@ function JcStatusEditForm({
     }
     const payload = result.payload;
     // What the five editable header cells hold now, plus the routing as one
-    // digest. The hook diffs this against the card as it was loaded and hands
-    // back only the keys that moved.
+    // digest. The hook diffs this against the EDIT MODEL as it was loaded — the
+    // same read these boxes were seeded from — and hands back only the keys that
+    // moved.
     const current = {
       itemCode: payload.itemCode,
       orderQty: payload.orderQty,
@@ -688,16 +716,20 @@ function JcStatusEditForm({
       ops: jcOpsDigest(payload.ops),
     };
     // Only a conflict on THIS save may fill these.
-    freshJc.current = null;
+    freshModel.current = null;
     freshOps.current = null;
     try {
       const saved = await conflict.save(current, (changed, expectedUpdatedAt) => {
-        // Only reached a second time after a 409. `base` is then the card as it
-        // is NOW, so a field this user did not touch is sent with the OTHER
-        // person's value rather than the photograph the form opened with — the
-        // merge, done here because the server writes the whole header in one
-        // unguarded UPDATE (see the note on `freshJc` above).
-        const base = freshJc.current;
+        // Only reached a second time after a 409. `base` is then the card's EDIT
+        // MODEL as it is NOW, so a field this user did not touch is sent with the
+        // OTHER person's value rather than the photograph the form opened with —
+        // the merge, done here because the server writes the whole header in one
+        // unguarded UPDATE (see the note on `freshModel` above). It must be the
+        // edit model and not the detail read: `dueDate` on the detail read is
+        // COALESCED with the SO / JW line's date, so merging from there would
+        // write the ORDER's date into this card's own column and undo a
+        // deliberate "clear it and inherit".
+        const base = freshModel.current;
         const merged = { ...payload, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) };
         if (base) {
           if (!('itemCode' in changed)) merged.itemCode = base.itemCode;

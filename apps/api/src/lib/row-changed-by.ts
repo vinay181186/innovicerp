@@ -45,7 +45,18 @@ export function editConflicts(
   if (expected === undefined || expected === null || expected === '') return false;
   if (current === null || current === undefined) return false;
   const sentMs = timestampMs(expected);
-  if (Number.isNaN(sentMs)) return false; // let the assert raise the 400
+  // ADR-226 review — TRUE, not false, for a token we cannot parse. The old line
+  // returned false with the comment "let the assert raise the 400", and that
+  // comment was wrong: `assertUnchangedSinceOpened` is only ever called INSIDE
+  // this predicate on all 13 call sites, so its ValidationError branch was
+  // unreachable and a non-timestamp token quietly bought last-write-wins —
+  // indistinguishable from a correct save. `expectedUpdatedAtSchema` is only
+  // `.min(1).max(64)`, so any short string passes validation and reaches here.
+  // Returning true sends it on to the assert, which raises the 400 it always
+  // meant to. On job_cards it mattered more: the raw token reaches
+  // `${token}::timestamptz`, and a string Postgres happens to accept
+  // ('yesterday', 'now') would have compared against the wrong instant.
+  if (Number.isNaN(sentMs)) return true;
   return timestampMs(current) !== sentMs;
 }
 

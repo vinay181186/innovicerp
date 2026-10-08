@@ -1668,12 +1668,33 @@ export async function updateNcRegisterTx(
     );
   }
 
+  /** A text box the user emptied is NULL, not an empty string. Mirrors the
+   *  `emptyToNull` every other master service defines for itself
+   *  (cost-centers/service.ts is the house copy); there is no shared one in
+   *  apps/api/src/lib, and adding one is a sweep this change is not. */
+  function blankToNull(v: string | null | undefined): string | null {
+    if (v === null || v === undefined) return null;
+    const t = v.trim();
+    return t.length === 0 ? null : t;
+  }
+
   const updates: Record<string, unknown> = { updatedBy: user.id };
   if (input.ncDate !== undefined) updates['ncDate'] = input.ncDate;
   if (input.reasonCategory !== undefined) updates['reasonCategory'] = input.reasonCategory;
-  if (input.reason !== undefined) updates['reason'] = input.reason ?? null;
-  if (input.reportedByText !== undefined) updates['reportedByText'] = input.reportedByText ?? null;
-  if (input.operatorText !== undefined) updates['operatorText'] = input.operatorText ?? null;
+  // ADR-226 — `blankToNull`, not `?? null`. The edit screen now sends only what
+  // the user changed, so an emptied box has to be sendable as a VALUE rather
+  // than an omission — and `updateNcRegisterInputSchema` types these as
+  // `string | undefined` with no `.nullable()`, so what arrives for a cleared
+  // box is `''`. `''` is not nullish, so `?? null` would have stored an empty
+  // string in the column instead of NULL: the screen would look right and the
+  // data would be subtly wrong. `operatorText` has the same hole and no screen
+  // can reach it today (its input renders on create only) — fixed together
+  // because leaving one of two identical lines right is how the next person
+  // reintroduces it.
+  if (input.reason !== undefined) updates['reason'] = blankToNull(input.reason);
+  if (input.reportedByText !== undefined)
+    updates['reportedByText'] = blankToNull(input.reportedByText);
+  if (input.operatorText !== undefined) updates['operatorText'] = blankToNull(input.operatorText);
 
   const edited = await tx
     .update(ncRegister)

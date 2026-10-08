@@ -559,18 +559,23 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     if (!confirmAdminChange) setAdminWarning(null);
     try {
       // The approval limit is a user-record field, so it still goes through
-      // updateUser; the matrix save follows and derives the role itself.
+      // updateUser — but it is written AFTER the matrix, never before.
+      //
+      // ADR-226 review finding. It used to go first, in its own transaction with
+      // no version token of its own. So when the matrix save was then refused
+      // (someone else had saved this person's access a second earlier), the 409
+      // branch below told the admin "Nothing was saved" while the Approval Limit
+      // had ALREADY COMMITTED: ₹50,000 → ₹2,00,000 stayed, the admin closed the
+      // box believing nothing happened, and nobody believed they had granted it.
+      // Ordering it last makes that message true — on a refused matrix save the
+      // limit is not touched at all. Nothing depends on the order: the role is
+      // derived server-side from the matrix, not from the limit.
       const trimmedLimit = approvalLimit.trim();
       const parsedLimit = trimmedLimit === '' ? null : Number(trimmedLimit);
       const limitChanged = userDetail ? trimmedLimit !== (userDetail.approvalLimit ?? '') : false;
-      if (limitChanged) {
-        await updateUser.mutateAsync({
-          approvalLimit: parsedLimit !== null && Number.isNaN(parsedLimit) ? null : parsedLimit,
-        });
-      }
       // The role is NOT sent — saveUserAccess derives it from this same
       // access, in one transaction, so the two can never drift apart.
-      await save.mutateAsync({
+      const savedAccess = await save.mutateAsync({
         userId,
         input: {
           fullAccess,
@@ -586,6 +591,29 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           ...(opened.expected() ? { expectedUpdatedAt: opened.expected() } : {}),
         },
       });
+      // The matrix is stored, so the version this box holds has moved on. Record
+      // it before anything else can fail: the box stays open on a failed limit
+      // write below, and without this the admin's next Save would be refused as
+      // a clash with their own save.
+      opened.saved(savedAccess.updatedAt);
+      if (limitChanged) {
+        try {
+          await updateUser.mutateAsync({
+            approvalLimit: parsedLimit !== null && Number.isNaN(parsedLimit) ? null : parsedLimit,
+          });
+        } catch (limitError) {
+          // The boxes ARE saved and the limit is not. Say exactly that and keep
+          // the box open — the opposite failure to the one above, and just as
+          // dishonest if reported as a plain "could not save".
+          watch.acknowledge();
+          setSubmitError(
+            `${userName}'s access boxes were saved, but the Approval Limit was not: ` +
+              `${limitError instanceof Error ? limitError.message : 'the save failed'}. ` +
+              `Set the limit again and press Save.`,
+          );
+          return;
+        }
+      }
       watch.acknowledge(); // our own save rang the doorbell; swallow it
       onClose();
     } catch (e) {

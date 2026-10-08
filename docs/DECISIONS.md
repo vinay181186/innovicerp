@@ -12957,10 +12957,13 @@ BOM-8 cascade must ignore new plans) · 5 reports & print · 6 cost (only if ask
 
 It was never finished. The audit found:
 
-- **Twelve edit screens had no version check at all** — GRN, Job Card, Delivery Challan, Customer
+- **THIRTEEN edit screens had no version check at all** — GRN, Job Card, Delivery Challan, Customer
   Dispatch, NC Register, Users, Access Control, Saved Report, Machine, Operator, QC Process, TPI
-  Inspector, Cost Centre. (Purchase Order was wrongly listed as missing in the first sweep; its
-  guard lives in its shared form component, not its route.)
+  Inspector, Cost Centre. (That list has always had thirteen names in it; "twelve" appeared in this
+  record, in two code comments and in a commit message, because I counted the list once and then
+  quoted the number instead of the list. Purchase Order was also wrongly called missing in the first
+  sweep — its guard lives in its shared form component, not its route — and it gained only the
+  `updated_at` stamp here.)
 - **Delivery Challan and Customer Dispatch were worse than unchecked.** DC _sent_ a token, so it
   looked protected — but read it at SAVE time, not at open time, which `use-opened-version.ts`'s own
   header says "silently defeats the check". And neither service read the token on the live path at
@@ -12983,15 +12986,53 @@ already writes only the keys it is given (`if (input.x !== undefined)`), so two 
 different fields of one record now both survive without anything being asked of either.
 
 **When the server still refuses, the browser merges rather than failing at the user.** It re-reads,
-retries the same narrow payload against the fresh row ONCE, and shows a 3-second notice. No button,
-no manual refresh, nothing retyped. One retry, never a loop — a second conflict means a real fight
-over one record and hiding it would be wrong.
+retries the same narrow payload against the fresh row ONCE, and shows a brief notice. No button, no
+manual refresh, nothing retyped. One retry, never a loop — a second conflict means a real fight over
+one record and hiding it would be wrong.
+
+(The owner asked for "a 3 second msg"; the merge notice is 3s, the clash notice 6s because it carries
+a number worth reading, and the doorbell 4s. `Toast.tsx`'s existing defaults, not new values. This
+record and several comments said "3-second" throughout, which was true of one of the three.)
 
 **A same-field clash is detected in the BROWSER, not the server** — only the browser holds both what
 the screen loaded and what is stored now. The user's value wins (they saved second, deliberately)
 and the orange notice names the value it replaced, because §20.4's complaint is "nobody is told".
 
-**The warning is instant, not polled.** Owner's decision, taken after being shown both costs.
+**The warning while you are typing DOES NOT WORK, and this is the most important thing in this
+record.** The owner chose "instant, not polled" after being shown both costs, and I told them it was
+one migration away. It is not, and it cannot work as built.
+
+Supabase Realtime evaluates RLS with the **browser's** access token. Every published table's SELECT
+policy is `USING (company_id = current_company_id())`, and `current_company_id()` reads
+`request.jwt.claims->>'company_id'` — a claim the **API synthesizes per request**
+(`with-user-context.ts`) and the browser's token does not carry. So `current_company_id()` is NULL,
+`company_id = NULL` is never true, and a subscriber receives **zero rows**. `changedByOther` stays
+false on all thirteen screens and the notice never appears.
+
+The repo already said so, months before this change — `0041_phase8_qc_docs_company_rls.sql`: _"The
+Supabase access token used for direct browser->Storage calls does NOT carry a company_id claim …
+so current_company_id() is NULL in the Storage context."_ Verified against the live TEST database:
+all thirteen tables carry exactly that predicate. I published the tables without checking whether
+anything could read them.
+
+It also means the "Op Entry has never worked" finding below is only half the story. The empty
+publication was one cause; this is the other, and it would have been enough on its own.
+
+**It degrades safely, which is why this shipped anyway:** the save-time version check is the real
+guard, it is server-side, and it is unaffected. The doorbell is built, wired and silent. The three
+ways to switch it on, for the owner to choose:
+
+1. **Add `company_id` to the access token** (a Supabase custom access token hook). The proper fix;
+   it would also retire the `current_auth_company_id()` workaround Storage needs. But it changes
+   every RLS evaluation in the system — its own change, its own review.
+2. **Point those tables' SELECT policies at `current_auth_company_id()`** — the SECURITY DEFINER
+   function that derives the company from `public.users` by `sub`, which already exists for
+   exactly this reason (ADR-033). Smaller blast radius, thirteen policy changes, a per-row lookup.
+3. **Accept a 60-second poll** — what was originally recommended and overruled. Zero new risk, and
+   up to a minute late.
+
+**Nothing in the code claims it works.** `use-record-watch.ts`'s header states the precondition and
+that the hook is inert until it is met.
 
 **ONE value-equality rule** (`packages/shared/lib/value-equal.ts`), lifted out of `audit-trail.ts`
 where it was private. The browser needs the identical test; two copies would let it call something a

@@ -149,17 +149,37 @@ export function useEditConflict<TRecord extends object>(
 
   const keys = useMemo(() => editableKeys, [editableKeys]);
 
+  // ADR-226 review — the baseline is the record AS THIS SCREEN LOADED IT, and
+  // now it really is. It used to diff against the live `record` prop, and only
+  // the VERSION was frozen, while the doc comments claimed otherwise.
+  //
+  // Safe today only by luck: focus refetching is off app-wide and the doorbell
+  // deliberately does not invalidate. But each screen's `refetch` writes into
+  // the SAME query key its detail hook reads, so after any 409 the on-screen
+  // baseline BECAME the other person's row. Reachable: a save 409s, the retry
+  // then fails for a different reason (a second 409, a line-cap 400, the
+  // QC-locked-line refusal), the screen stays open with its error banner, the
+  // user presses Save again — and now their own untouched values read as THEIR
+  // changes and get reverted, under a notice saying their changes were saved.
+  //
+  // Frozen on the first non-undefined record, like `useOpenedVersion` freezes
+  // the version it pairs with. The screen's own save is what resolves it, and
+  // every one of these screens navigates away on success.
+  const loadedRef = useRef<TRecord | undefined>(undefined);
+  if (loadedRef.current === undefined && record !== undefined) loadedRef.current = record;
+  const loaded = loadedRef.current;
+
   const save = useCallback(
     async <TInput extends object, R>(
       current: TInput,
       attempt: (payload: Partial<TInput>, expectedUpdatedAt: string | undefined) => Promise<R>,
     ): Promise<R | null> => {
-      if (!record) throw new Error('Cannot save before the record has loaded');
+      if (!loaded) throw new Error('Cannot save before the record has loaded');
 
       // ONLY what this user changed. Everything else is left out, so the other
       // person's fields are not even mentioned in the request — which is why
       // two people on different fields never collide in the first place.
-      const payload = changedFields(record as Record<string, unknown>, current, keys);
+      const payload = changedFields(loaded as Record<string, unknown>, current, keys);
       const ourKeys = Object.keys(payload);
       if (ourKeys.length === 0) {
         // Nothing to write. This is not a no-op everywhere: a Delivery Challan
@@ -173,7 +193,7 @@ export function useEditConflict<TRecord extends object>(
       const { result, outcome } = await saveWithMerge<TRecord, R>({
         attempt: (expectedUpdatedAt) => attempt(payload, expectedUpdatedAt),
         refetch,
-        loaded: record,
+        loaded,
         ourChanges: payload as Record<string, unknown>,
         openedVersion: opened.expected(),
         comparableKeys: keys,
@@ -185,7 +205,7 @@ export function useEditConflict<TRecord extends object>(
       announce(outcome, { toast, label, noun });
       return result;
     },
-    [record, keys, refetch, opened, watch, toast, label, noun],
+    [loaded, keys, refetch, opened, watch, toast, label, noun],
   );
 
   return { opened, save, changedByOther };
