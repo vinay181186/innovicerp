@@ -44,9 +44,19 @@ function PlanEditPage(): React.JSX.Element {
   // left out of the PATCH, and the server would refill it from the BOM line or
   // Route Card: the exact opposite of what they asked for. Keyed on the
   // version, not on object identity.
+  //
+  // ADR-225: keyed on the version this form OPENED with, not the live one.
+  // `plan?.updatedAt` moves the moment anyone else saves this plan and the
+  // query refetches, which re-seeded the form and threw away what the planner
+  // was typing — silently, and with no save involved. `opened.expected()` is
+  // captured once (lib/use-opened-version.ts) so it seeds the form on first
+  // load and never again; a newer version from someone else is answered by the
+  // 409 + notice on save instead of by wiping the screen. Our own save calls
+  // `opened.saved()`, which is the one legitimate re-seed.
+  const openedVersion = opened.expected();
   const initialValues = useMemo(
     () => (plan ? toFormValues(plan) : null),
-    [plan?.id, plan?.updatedAt],
+    [plan?.id, openedVersion],
   );
 
   if (eff && !perms.edit) {
