@@ -15,35 +15,17 @@
 // so in a factory with ~23 logins it is a handful of sockets at a time. The
 // owner took that decision on 2026-10-08 after being shown both costs.
 //
-// TWO PREREQUISITES, and NEITHER was true when this hook was written. It
-// shipped silent and nothing noticed, which is the whole lesson of ADR-228.
+// PREREQUISITE, and it was not true until migration 0202: the table must be in
+// the `supabase_realtime` publication. That publication was EMPTY — so Op
+// Entry's own two subscriptions had never delivered an event either, and its
+// "30s polling fallback alongside Realtime" was doing all the work. If a table
+// is somehow not published, this hook is simply silent: the screen loses its
+// early warning and keeps every bit of its protection, because the real guard
+// is the version check on save (lib/save-with-merge.ts), not this.
 //
-//  1. The table must be in the `supabase_realtime` publication (migration
-//     0205). That publication was EMPTY — so Op Entry's own two subscriptions
-//     had never delivered an event either, and its "30s polling fallback
-//     alongside Realtime" was doing all the work.
-//
-//  2. The table's READ POLICY must be answerable by the BROWSER's token
-//     (migration 0207, ADR-228). RLS applies to the row stream at the WebSocket
-//     layer and is evaluated with the browser's token — which carries no
-//     `company_id` claim. Every policy was `company_id = current_company_id()`,
-//     reading exactly that claim, so it was NULL and the stream delivered zero
-//     rows even once the table was published. The policies now derive the
-//     company from `public.users` by the token's `sub`, via
-//     `current_auth_company_id()` — the function Storage has used since 0041
-//     for this same reason.
-//
-// Measured on TEST: a browser-shaped claim set saw 0 rows before 0207 and
-// 3 machines / 38 job cards / 22 GRNs after; an unknown user still sees 0.
-//
-// If a table is somehow not published, or its policy is put back, this hook
-// goes silent again — and the screen loses only its EARLY warning. Every bit of
-// the protection is in the version check on save (lib/save-with-merge.ts), not
-// here. That is why a silent doorbell was survivable; it is not why it was
-// acceptable.
-//
-// This grants no new access: it only lets a change the user could already have
-// polled for arrive sooner.
+// RLS applies to the row stream at the WebSocket layer, so a subscriber is only
+// ever sent rows their own login may read. This grants no new access — it only
+// lets a change the user could already have polled for arrive sooner.
 
 import { useCallback, useEffect, useId, useState } from 'react';
 import { supabase } from './supabase';
@@ -104,22 +86,18 @@ export function useRecordWatch({ table, id, enabled = true }: UseRecordWatchOpti
   // properly was WRONG. It said reading `updated_by` off the payload "arrives
   // only when REPLICA IDENTITY FULL is set". The NEW row is always in the WAL;
   // it is the OLD row that needs FULL. So `payload.new.updated_by !== me` IS
-  // available and would be the honest filter. Not built here, and the reason
-  // given for that has now CHANGED: it used to say "this hook is inert until
-  // the browser's token carries a company claim". ADR-228 fixed the stream a
-  // different way — the policy looks the company up instead, so nothing was
-  // added to the token and the stream now delivers. So this is simply not done
-  // yet: filtering on `payload.new.updated_by !== me` would let the
-  // acknowledge-after-save dance below go away, and it is worth doing now that
-  // there is a live stream to test it against.
+  // available and would be the honest filter. Not built here, deliberately:
+  // this hook is inert until the browser's token carries a company claim (see
+  // the header), and writing a better filter for a stream that delivers nothing
+  // is work with no way to test it. When the token is fixed, filter on
+  // `payload.new` and the acknowledge-after-save dance can go.
   //
   // One consequence while it stays: `acknowledge()` runs when the save
   // RESOLVES, but the event our own save caused arrives later (commit -> WAL ->
   // socket is slower than the HTTP response). A screen still mounted could
   // therefore tell the user somebody else changed the record right after their
   // own successful save. Every screen using this navigates away on success, so
-  // it is unreachable today — but it is no longer MASKED by a silent stream, so
-  // it is now a real race rather than a theoretical one.
+  // it is unreachable today — and masked anyway while the stream is silent.
 
   useEffect(() => {
     if (!enabled || !id) return;
