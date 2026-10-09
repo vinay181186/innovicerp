@@ -50,7 +50,9 @@ export type DocSeries =
   | 'party_materials'
   | 'customer_material_returns'
   | 'route_cards'
-  | 'bom_masters';
+  | 'bom_masters'
+  | 'ml_boms'
+  | 'ml_plans';
 
 /** Serialise number picking for one series of one company until this
  *  transaction ends. See the file header. */

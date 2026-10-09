@@ -17,6 +17,7 @@ import { ActivityAction, type ActivityEntity } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import {
   bomMasters,
+  mlBoms,
   clients,
   costCenters,
   deliveryChallans,
@@ -44,7 +45,10 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { prCoverQtyRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
+import { assertTreeSound, lockMlBomTree, reresolveOwnLinks } from '../ml-bom/guards';
+import { assertMlNodeCapOnEdit } from '../ml-plan/edit-cap';
 import type {
   ListTrashQuery,
   ListTrashResponse,
@@ -96,6 +100,7 @@ const ENTITIES: readonly EntityMeta[] = [
   { type: 'Cost Center', table: 'cost_centers', labelSql: 'code', hasUpdatedBy: true },
   { type: 'QC Process', table: 'qc_processes', labelSql: 'code', hasUpdatedBy: true },
   { type: 'Production Order', table: 'production_orders', labelSql: 'code', hasUpdatedBy: true },
+  { type: 'Multi-Level BOM', table: 'ml_boms', labelSql: 'code', hasUpdatedBy: true },
 ];
 
 // Child rows a delete stamps together with their header (one softDeleteStamp
@@ -133,6 +138,7 @@ const TABLE_BY_TYPE = {
   'Cost Center': costCenters,
   'QC Process': qcProcesses,
   'Production Order': productionOrders,
+  'Multi-Level BOM': mlBoms,
 } as const satisfies Record<TrashEntityType, unknown>;
 
 // The document type each Trash type is logged under (ADR-197) — the same
@@ -158,6 +164,7 @@ const ACTIVITY_ENTITY_BY_TYPE: Record<TrashEntityType, ActivityEntity | (string 
   'Cost Center': 'CostCenter',
   'QC Process': 'QcProcess',
   'Production Order': 'ProductionOrder',
+  'Multi-Level BOM': 'MlBom',
 };
 
 // Screen words for the activity-log line. The type codes above stay as they
@@ -352,6 +359,54 @@ export async function restoreFromTrash(
       }
     }
 
+    // ADR-225 — a Multi-Level BOM comes back under the tree lock, not as
+    // Default (its delete cleared the flag), and only while its IN-MLB number
+    // is still free (numbers are never reused, so this is a backstop).
+    if (entity.type === 'Multi-Level BOM') {
+      await lockMlBomTree(tx, companyId);
+      const taken = (await tx.execute(sql`
+        SELECT live.code
+        FROM public.ml_boms gone
+        JOIN public.ml_boms live
+          ON live.company_id = gone.company_id
+         AND live.deleted_at IS NULL
+         AND live.id <> gone.id
+         AND live.code = gone.code
+        WHERE gone.id = ${input.id}::uuid
+          AND gone.company_id = ${companyId}::uuid
+        LIMIT 1
+      `)) as unknown as Array<{ code: string }>;
+      if (taken[0]) {
+        throw new ConflictError(
+          `Cannot restore: BOM No. ${taken[0].code} has been given to a newer Multi-Level BOM.`,
+        );
+      }
+    }
+
+    // ADR-225 phase 4 — a PR raised from a Multi-Level Plan row counts toward
+    // that row's Raised again once restored, so it comes back only while the
+    // row still has room (Net Need − everything else raised), checked under
+    // the Multi-Level Plan's lock (ml-plan/edit-cap.ts). A cancelled PR
+    // counts 0 and is not checked.
+    if (entity.type === 'Purchase Request') {
+      const pr = (await tx.execute(sql`
+        SELECT pr.ml_plan_node_id, (${sql.raw(prCoverQtyRaw('pr'))})::text AS cover
+        FROM public.purchase_requests pr
+        WHERE pr.id = ${input.id}::uuid AND pr.company_id = ${companyId}::uuid
+          AND pr.deleted_at IS NOT NULL AND pr.ml_plan_node_id IS NOT NULL
+          AND pr.status <> 'cancelled'
+        LIMIT 1
+      `)) as unknown as Array<{ ml_plan_node_id: string; cover: string | null }>;
+      if (pr[0]) {
+        await assertMlNodeCapOnEdit(tx, companyId, {
+          mlPlanNodeId: pr[0].ml_plan_node_id,
+          doc: { kind: 'pr', id: input.id },
+          oldQty: 0,
+          newQty: pr[0].cover ?? '0',
+        });
+      }
+    }
+
     // The header's delete instant, read before it is cleared — the key that
     // picks out the child rows deleted with it.
     const stampRows = (await tx.execute(
@@ -389,6 +444,15 @@ export async function restoreFromTrash(
              AND deleted_at = ${deletedAtText}::timestamptz
         `);
       }
+    }
+
+    // ADR-225 — the restored BOM's own lines re-link to each child item's
+    // CURRENT live Default (manufacture lines only), exactly as a save does,
+    // then its tree is re-checked for loop / depth. Same transaction, under
+    // the tree lock taken above.
+    if (entity.type === 'Multi-Level BOM') {
+      await reresolveOwnLinks(tx, companyId, input.id, user);
+      await assertTreeSound(tx, companyId, input.id);
     }
 
     const code = rows[0]?.label ?? null;

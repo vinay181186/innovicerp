@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
 
@@ -50,7 +51,11 @@ export const createMachineInputSchema = z.object({
 });
 export type CreateMachineInput = z.infer<typeof createMachineInputSchema>;
 
-export const updateMachineInputSchema = createMachineInputSchema.partial().omit({ code: true });
+export const updateMachineInputSchema = createMachineInputSchema
+  .partial()
+  .omit({ code: true })
+  // §20.4 / ADR-226 — the version this form loaded.
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateMachineInput = z.infer<typeof updateMachineInputSchema>;
 
 export const listMachinesQuerySchema = z.object({

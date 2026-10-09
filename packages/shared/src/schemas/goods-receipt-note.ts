@@ -33,6 +33,7 @@
 import { z } from 'zod';
 import { GRN_QC_STATUSES } from '../enums/grn-qc-status';
 import { sfRawParamSchema } from './list-query';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 export const grnQcStatusSchema = z.enum(GRN_QC_STATUSES);
 
@@ -267,13 +268,25 @@ const _grnHeaderInputBase = z.object({
     .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
     .optional(),
   grnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'grnDate must be YYYY-MM-DD'),
+  // ADR-226 — `.nullable()` as well as `.optional()`, so a CLEARED box can be
+  // told apart from an UNTOUCHED one. They mean different things now that an
+  // edit sends only what changed: an absent key is "leave it alone", and null
+  // is "the user emptied it". Without null there was no way to say the second,
+  // so deleting a wrongly-typed Vendor Invoice No. was silently discarded and
+  // the screen reported "Nothing changed on this GRN" while the number stayed.
+  // The service has always written `?? null` for these, so nothing on the
+  // server changes. Delivery Challan and Customer Dispatch got this in the same
+  // release; GRN was left behind.
+  poCodeText: z.string().max(64).nullable().optional(),
+  vendorCodeText: z.string().max(64).nullable().optional(),
+  dcNo: z.string().max(64).nullable().optional(),
+  invoiceNo: z.string().max(64).nullable().optional(),
+  remarks: z.string().max(2000).nullable().optional(),
+  // NOT nullable: these two are id links, and clearing one is "unlink", which
+  // this screen cannot do — the PO is a read-only fact on an Against-PO GRN and
+  // the vendor follows it.
   purchaseOrderId: z.string().uuid().optional(),
-  poCodeText: z.string().max(64).optional(),
   vendorId: z.string().uuid().optional(),
-  vendorCodeText: z.string().max(64).optional(),
-  dcNo: z.string().max(64).optional(),
-  invoiceNo: z.string().max(64).optional(),
-  remarks: z.string().max(2000).optional(),
 });
 
 /** CREATE — `{header, lines}`. ≥ 1 line; service runs both in tx. Header
@@ -294,6 +307,9 @@ export type CreateGoodsReceiptNoteInput = z.infer<typeof createGoodsReceiptNoteI
  *  Lines whose existing qc_status is already 'completed' will be rejected
  *  by the service if the input attempts to change their QC fields. */
 export const updateGoodsReceiptNoteInputSchema = z.object({
+  /** §20.4 — the version this form loaded; a save over someone else's newer
+   *  edit is refused 409 `edit_conflict` (ADR-226). */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
   header: _grnHeaderInputBase.partial().omit({ code: true }),
   lines: z.array(goodsReceiptNoteLineInputSchema).optional(),
 });

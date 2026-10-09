@@ -8,8 +8,10 @@ import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { dropBlankCells, rawRowText, zodRowReason } from '../../lib/master-rules';
 import { createOperatorInputSchema, updateOperatorImportRowSchema } from './schema';
 import type {
@@ -459,6 +461,13 @@ export async function createOperatorsBulk(
         );
       }
       // Update Existing: one History row per operator, Before → After (ADR-197).
+      //
+      // DELIBERATE EXCEPTION to ADR-226 / §20.4: these writes carry no
+      // `expectedUpdatedAt` version check, unlike updateOperatorTx. An Excel
+      // import has no form and therefore no version token to send — there is
+      // nothing a stale token could be compared against. Last write wins here
+      // on purpose; the import's own guard is the dry-run preview the user
+      // confirms. Do not "fix" this by adding a check — it was not missed.
       for (const u of updates) {
         await tx
           .update(operators)
@@ -510,9 +519,9 @@ export async function updateOperator(
 /**
  * The body of an Operator edit, inside a caller-supplied transaction. Called by
  * updateOperator (which opens the tx) and by the edit-approval engine's applyEdit
- * (which already holds one, with the row locked FOR UPDATE). Concurrency is the
- * engine's — this master carries no `expectedUpdatedAt` token. The caller
- * performs the edit / approve access check.
+ * (which already holds one, with the row locked FOR UPDATE). Every §20 guard
+ * lives here: the row's FOR UPDATE lock and assertUnchangedSinceOpened. The
+ * caller performs the edit / approve access check.
  */
 export async function updateOperatorTx(
   tx: DbTransaction,
@@ -521,12 +530,28 @@ export async function updateOperatorTx(
   user: AuthContext,
 ): Promise<Operator> {
   requireCompany(user);
+  // ADR-226 / §20.4 — read under the row lock, so the version check below and
+  // the UPDATE are one atomic step: a second editor WAITS here, then sees the
+  // first editor's new updated_at and is refused instead of overwriting it.
+  // Named columns, never SELECT * (§6 rule 6).
   const existing = await tx
-    .select({ id: operators.id })
+    .select({ id: operators.id, updatedAt: operators.updatedAt, updatedBy: operators.updatedBy })
     .from(operators)
     .where(and(eq(operators.id, id), isNull(operators.deletedAt)))
-    .limit(1);
+    .limit(1)
+    .for('update');
   if (existing.length === 0) throw new NotFoundError('Operator not found. Refresh the page.');
+  const cur = existing[0]!;
+  // Refuse a save made over someone else's newer edit, naming who changed it.
+  // The name lookup sits INSIDE the cheap predicate: the happy path must not
+  // pay for a query that only ever fills in an error message.
+  if (editConflicts(cur.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      cur.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, cur.updatedBy),
+    );
+  }
 
   const updates: Record<string, unknown> = { updatedBy: user.id };
   if (input.name !== undefined) updates.name = input.name;
@@ -546,8 +571,9 @@ export async function updateOperatorTx(
  * when the company gate is on and the operator is still editable (a master is
  * editable while it is not in Trash), the edit is STAGED for approval; otherwise
  * it falls through to updateOperator. An operator is a single record with no
- * child lines — there is no line guard, and no updatedAt token (the engine's row
- * lock guards concurrency).
+ * child lines, so there is no line guard. The form's `expectedUpdatedAt` is
+ * forwarded to the engine (ADR-226), so staging an edit from a stale form is
+ * refused the same way saving one is.
  */
 export async function updateOperatorOrStage(
   id: string,
@@ -573,7 +599,7 @@ export async function updateOperatorOrStage(
     return rows.length > 0;
   });
   if (shouldStage) {
-    const request = await requestDocumentEdit('Operator', id, input, undefined, user);
+    const request = await requestDocumentEdit('Operator', id, input, input.expectedUpdatedAt, user);
     return { staged: true, request };
   }
 

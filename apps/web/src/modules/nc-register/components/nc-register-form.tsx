@@ -214,7 +214,18 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         ncDate: values.ncDate,
         reasonCategory: values.reasonCategory,
         reason: values.reason?.trim() || undefined,
-        reportedByText: values.reportedByText?.trim() || undefined,
+        // ADR-226 — the trimmed Reported By is sent AS IT IS, blank included.
+        // The old `|| undefined` turned a box the user had CLEARED into
+        // "untouched", so deleting a wrongly-entered name did nothing at all and
+        // the screen still said "Nothing changed on this NC" while the stale
+        // name stayed on the record. Same one-line fix as the Users, QC Process
+        // and Cost Centre forms, same reason.
+        //
+        // A blank only reaches the server when the user actually cleared it: an
+        // NC whose Reported By is already NULL seeds the box empty, and
+        // `changedFields` treats NULL and '' as the same value, so an untouched
+        // empty box is still not sent.
+        reportedByText: values.reportedByText?.trim() ?? '',
         operatorText: values.operatorText?.trim() || undefined,
       };
       await props.onSubmit(payload);

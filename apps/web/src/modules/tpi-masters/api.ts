@@ -14,6 +14,7 @@ import type {
   UpdateTpiMasterInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
@@ -53,6 +54,27 @@ export function useTpiMaster(id: string | undefined) {
     queryFn: () => apiFetch<TpiMaster>(`/tpi-masters/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/**
+ * ADR-226 — re-read ONE inspector straight from the server, ignoring the cache.
+ *
+ * `useEditConflict` calls this after a 409 so its retry lands on the version
+ * that is actually stored. A cached read would defeat the whole thing: the
+ * cache is what went stale in the first place. Mirrors
+ * `useFetchNcRegister` in modules/nc-register/api.ts.
+ */
+export function useFetchTpiMaster(): (id: string) => Promise<TpiMaster> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<TpiMaster>({
+        queryKey: tpiMastersKeys.detail(id),
+        queryFn: () => apiFetch<TpiMaster>(`/tpi-masters/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useCreateTpiMaster(saveKey?: SaveKey) {

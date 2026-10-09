@@ -4,11 +4,32 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCostCenter, useUpdateCostCenter } from '../api';
+import { useCostCenter, useFetchCostCenter, useUpdateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
+
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
+//
+// The list drives two things: the save sends only the ones whose value actually
+// changed, and a notice names the field another person moved. It is written out
+// rather than inferred: the Cost Centre Code is read-only on edit and
+// updateCostCenterInputSchema omits it outright, and the record also carries the
+// audit columns, which are nobody's edit.
+const COST_CENTER_EDITABLE = ['name', 'department', 'type', 'description', 'isActive'] as const;
+
+// `Cost Centre Name` is the registered name (docs/NAMING.md, the 2026-09-30
+// naming audit row for `cost_centers.name`) — never a bare "Name". The other
+// four have no register row; these are the labels already on this form.
+const COST_CENTER_LABELS: Record<string, string> = {
+  name: 'Cost Centre Name',
+  department: 'Department',
+  type: 'Cost Centre Type',
+  description: 'Description',
+  isActive: 'Active',
+};
 
 export const costCenterEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -21,6 +42,20 @@ function CostCenterEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useCostCenter(id);
   const update = useUpdateCostCenter(id);
+  const fetchCostCenter = useFetchCostCenter();
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes
+  // to this one cost centre, so the user is told the moment somebody else saves
+  // it rather than after they have typed into a stale form.
+  const conflict = useEditConflict({
+    table: 'cost_centers',
+    id,
+    record: detail,
+    refetch: () => fetchCostCenter(id),
+    editableKeys: COST_CENTER_EDITABLE,
+    label: (f) => COST_CENTER_LABELS[f] ?? f,
+    noun: 'cost centre',
+  });
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE cost centre is staged for approval
   // instead of applied; the neutral "Sent for approval" banner shows it.
@@ -105,7 +140,15 @@ function CostCenterEditPage(): React.JSX.Element {
             onSubmit={async (values: UpdateCostCenterInput) => {
               setSubmitError(null);
               try {
-                const result = await update.mutateAsync(values);
+                // Only the fields that actually moved are sent; a 409 re-reads
+                // and retries onto the fresh row instead of overwriting someone
+                // else's change.
+                const result = await conflict.save(values, (payload, expectedUpdatedAt) =>
+                  update.mutateAsync({ ...payload, expectedUpdatedAt }),
+                );
+                // null = nothing actually changed; the user has been told and
+                // nothing was written. Stay on the form.
+                if (result === null) return;
                 if (isStagedResult(result)) {
                   // Gate on and this cost centre is live: nothing was changed —
                   // the edit is now waiting for approval. Say so, then return to

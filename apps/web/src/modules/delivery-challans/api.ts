@@ -12,6 +12,7 @@ import type {
   ReceiveDeliveryChallanResponse,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
@@ -111,6 +112,25 @@ export function useDeliveryChallan(id: string | undefined) {
   });
 }
 
+/** Re-read ONE DC from the server, bypassing the cache (ADR-226).
+ *
+ *  Only used after a save was refused 409 `edit_conflict`: the edit screen needs
+ *  the row AS IT IS NOW to work out which fields the other person changed and to
+ *  retry onto their version. `staleTime: 0` is the whole point — the cached copy
+ *  is the stale photograph we are trying to get past. */
+export function useFetchDeliveryChallan(): (id: string) => Promise<DeliveryChallanWithLines> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<DeliveryChallanWithLines>({
+        queryKey: deliveryChallansKeys.detail(id),
+        queryFn: () => apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
+}
+
 /** How many pieces each line of a PO may actually send right now.
  *
  *  The create form asks for this on open so the Send Now box can say what it
@@ -141,16 +161,27 @@ export function useDcSendable(poId: string | undefined) {
  *  the DC was loaded with (rule 20.4). All optional string fields are typed
  *  `?: string | undefined` for exactOptionalPropertyTypes. */
 export interface UpdateDeliveryChallanInput {
+  // ADR-226 — `null` clears the field. The server's own schema has had these as
+  // `z.string().nullable().optional()` all along (apps/api/.../schema.ts) and
+  // writes `input.transport ?? null`; the edit screen sent `undefined` for a
+  // cleared box, which JSON drops, so emptying Transporter or Vehicle No. never
+  // actually saved. With a real field diff an emptied box IS a change, so it has
+  // to be expressible.
   dcDate?: string | undefined;
-  transport?: string | undefined;
-  vehicleNo?: string | undefined;
+  transport?: string | null | undefined;
+  vehicleNo?: string | null | undefined;
   /** One entry per existing challan line, keyed by delivery_challan_lines.id —
-   *  the same id the staged-edit diff uses in its `line:<id>:qty` change key. */
+   *  the same id the staged-edit diff uses in its `line:<id>:qty` change key.
+   *
+   *  The line SET is fixed (the server refuses an added / removed line), so every
+   *  line's `id` is always sent. `qty` is always sent too — the server's schema
+   *  requires it on every entry — but `materialText` / `dcRemarks` travel only
+   *  when this user changed them, and `null` clears one. */
   lines: {
     id: string;
     qty: number;
-    materialText?: string | undefined;
-    dcRemarks?: string | undefined;
+    materialText?: string | null | undefined;
+    dcRemarks?: string | null | undefined;
   }[];
   reason?: string | undefined;
   expectedUpdatedAt?: string | undefined;

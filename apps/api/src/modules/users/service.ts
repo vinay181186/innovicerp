@@ -3,6 +3,7 @@ import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
   ConflictError,
@@ -10,7 +11,9 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { supabaseAdmin } from '../../lib/supabase-admin';
+import { syncTokenIdentity } from '../../lib/sync-token-identity';
 import type {
   CreateUserInput,
   ListUsersQuery,
@@ -234,6 +237,11 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
       .returning();
     row = inserted[0];
   }
+  // ADR-228 — a new login must not get a token with no company in it. Without
+  // this, the person could sign in and every direct-browser read (Realtime, QC
+  // document downloads) would be silently empty for them until somebody
+  // backfilled their metadata by hand.
+  await syncTokenIdentity(userId, { companyId, role: input.role });
   return row as unknown as User;
 }
 
@@ -273,16 +281,43 @@ export async function updateUser(
   }
 
   return withUserContext(user, async (tx) => {
+    // ADR-226 / §20.4 — read under the row lock, so the version check below
+    // and the UPDATE are one atomic step: a second admin WAITS here, then sees
+    // the first one's new updated_at and is refused instead of overwriting it.
+    // Named columns, never SELECT * (§6 rule 6) — and this table in
+    // particular is read narrowly on purpose.
     const existing = await tx
-      .select()
+      .select({
+        companyId: users.companyId,
+        updatedAt: users.updatedAt,
+        updatedBy: users.updatedBy,
+      })
       .from(users)
       .where(and(eq(users.id, id), isNull(users.deletedAt)))
-      .limit(1);
+      .limit(1)
+      .for('update');
     if (existing.length === 0) throw new NotFoundError('User not found. Refresh the page.');
-    if (existing[0]!.companyId !== user.companyId) {
+    const cur = existing[0]!;
+    if (cur.companyId !== user.companyId) {
       throw new NotFoundError('User not found. Refresh the page.');
     }
+    // Refuse a save made over someone else's newer edit, naming who changed it.
+    // This row has a SECOND writer: Access Control writes `users.role` (and
+    // stamps updated_at) when a tier is saved, so a role changed there while
+    // this form was open is caught here too. The name lookup sits INSIDE the
+    // cheap predicate: the happy path must not pay for a query that only ever
+    // fills in an error message.
+    if (editConflicts(cur.updatedAt, input.expectedUpdatedAt)) {
+      assertUnchangedSinceOpened(
+        cur.updatedAt,
+        input.expectedUpdatedAt,
+        await rowChangedByName(tx, cur.updatedBy),
+      );
+    }
 
+    // `updatedAt` is stamped by hand (public.users does have a
+    // users_set_updated_at trigger, 0001_post_init.sql — this is belt and
+    // braces). The version check above depends on it moving on every edit.
     const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
     if (input.fullName !== undefined) updates.fullName = emptyToNull(input.fullName);
     if (input.role !== undefined) updates.role = input.role;
@@ -294,7 +329,16 @@ export async function updateUser(
     }
 
     const updated = await tx.update(users).set(updates).where(eq(users.id, id)).returning();
-    return updated[0] as unknown as User;
+    // ADR-228 — a role change here must reach the person's TOKEN too, or their
+    // direct-browser reads keep the old role until they next sign in. The call
+    // sits inside this callback but after the write; it is an HTTP round trip to
+    // Supabase, and a failed sync only lags the copy — `public.users` is already
+    // correct and every route re-reads it.
+    const after = updated[0];
+    if (after) {
+      await syncTokenIdentity(id, { companyId: after.companyId, role: after.role });
+    }
+    return after as unknown as User;
   });
 }
 

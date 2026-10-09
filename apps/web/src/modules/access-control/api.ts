@@ -5,6 +5,7 @@ import type {
   UserAccess,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { myAccessKey } from '@/lib/access-control';
 
@@ -47,6 +48,28 @@ export function useUserAccess(userId: string | null) {
       apiFetch<UserAccess>(`/access-control/users/${encodeURIComponent(userId as string)}`),
     enabled: Boolean(userId),
   });
+}
+
+/** Re-read ONE user's access matrix from the server, bypassing the cache
+ *  (ADR-226).
+ *
+ *  Used only after a save was refused 409 `edit_conflict`. Access Control
+ *  deliberately does NOT merge: `departments` and `forms` are single JSONB
+ *  blocks replaced wholesale, so merging two admins' partial matrices could
+ *  produce a permission set neither of them approved. The box therefore reloads
+ *  the stored matrix — writing `staleTime: 0` so it is the real one, not the
+ *  cached photograph — and the admin re-applies their change. */
+export function useFetchUserAccess(): (userId: string) => Promise<UserAccess> {
+  const qc = useQueryClient();
+  return useCallback(
+    (userId: string) =>
+      qc.fetchQuery<UserAccess>({
+        queryKey: accessControlKeys.detail(userId),
+        queryFn: () => apiFetch<UserAccess>(`/access-control/users/${encodeURIComponent(userId)}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useSaveUserAccess() {

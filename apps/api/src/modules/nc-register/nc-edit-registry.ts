@@ -4,6 +4,12 @@
 // no line guard. applyEdit replays the approved subset through updateNcRegisterTx,
 // so every NC §20 guard (lockNcRow, the status-conditional `UPDATE … WHERE
 // status='pending'` and its 0-row check) runs exactly as a direct edit.
+//
+// The edit screen's `expectedUpdatedAt` (ADR-226) is checked twice before
+// anything reaches here — when the edit is REQUESTED, and again inside
+// updateNcRegisterTx — but it is deliberately NOT forwarded on this replay:
+// the approver is applying someone else's older request, so the requester's
+// token is not the approver's.
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { AccessFormKey, UpdateNcRegisterInput } from '@innovic/shared';
@@ -86,8 +92,9 @@ export const ncEditRegistryEntry: DocEditRegistryEntry = {
   },
 
   async applyEdit(tx, _companyId, id, filteredInput, _expectedUpdatedAt, user) {
-    // NC carries no optimistic-lock token — its writer guards with the
-    // status-conditional UPDATE under lockNcRow, so the token is not forwarded.
+    // The requester's token is not forwarded (see the file header): on this
+    // replay the status-conditional UPDATE under lockNcRow plus the engine's
+    // field-freshness recheck at approval are the guard.
     await updateNcRegisterTx(tx, id, filteredInput as UpdateNcRegisterInput, user);
   },
 

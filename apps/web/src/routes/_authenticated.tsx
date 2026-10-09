@@ -7,6 +7,7 @@ import { TopNav } from '@/components/shared/top-nav';
 import { supabase } from '@/lib/supabase';
 import { useUiSettings } from '@/lib/use-ui-settings';
 import { SortFilterScope } from '@/ui/data/sort-filter/scope';
+import { ToastProvider } from '@/ui/feedback';
 import { rootRoute } from './__root';
 
 export const authenticatedRoute = createRoute({
@@ -57,20 +58,32 @@ export const authenticatedRoute = createRoute({
 function AuthenticatedLayout(): React.JSX.Element {
   useEffect(() => installCellOverflowTitles(), []); // ADR-199: tooltip on ellipsised table cells
   useUiSettings(); // ADR-199: the user's Comfortable/Compact choice reaches EVERY table
+  // ADR-226 — ToastProvider belongs here, once, around the whole shell.
+  // ui/feedback/Toast.tsx has been written and token-styled since Phase 3, with
+  // a 3000 ms auto-dismiss and a close X, but NOTHING mounted its provider
+  // outside the /__ui-kit demo — so `useToast()` threw everywhere, and two
+  // places carried their own copy instead (so-status-detail.tsx wraps itself;
+  // TableToolbar hand-rolls a timer and therefore has no X). The edit-conflict
+  // notice needs it on every edit screen, and a toast is chrome rather than
+  // page content, so it belongs with TopNav / OpenTabsBar / Breadcrumbs. It is
+  // OUTSIDE #content because #content is the scroll container — a toast
+  // rendered inside it would scroll away with the rows.
   return (
-    <div id="app-shell">
-      <div id="main">
-        <header id="app-header">
-          <TopNav />
-          <OpenTabsBar />
-          <Breadcrumbs />
-        </header>
-        <div id="content">
-          <SortFilterScope>
-            <Outlet />
-          </SortFilterScope>
+    <ToastProvider>
+      <div id="app-shell">
+        <div id="main">
+          <header id="app-header">
+            <TopNav />
+            <OpenTabsBar />
+            <Breadcrumbs />
+          </header>
+          <div id="content">
+            <SortFilterScope>
+              <Outlet />
+            </SortFilterScope>
+          </div>
         </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }

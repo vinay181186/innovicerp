@@ -45,9 +45,12 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { labelOf, ROLE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { ACCESS_SF_COLUMNS } from './sf-columns';
+import { syncTokenIdentity } from '../../lib/sync-token-identity';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -627,7 +630,16 @@ export async function saveUserAccess(
     departments: cleanDepts,
   });
 
-  return withUserContext(user, async (tx) => {
+  // ADR-228 — this screen DERIVES and writes `users.role`, so it is the third
+  // writer that has to keep the person's TOKEN copy in step (the other two are
+  // createUser and updateUser). Carried OUT of the transaction rather than
+  // synced inside it: the sync is an HTTP round trip to Supabase, this
+  // transaction holds the `user_access` row lock, and holding a lock open
+  // across a call to another service is how a slow dependency becomes a
+  // database problem.
+  let roleChangedTo: string | null = null;
+
+  const result = await withUserContext(user, async (tx) => {
     // Confirm target user in caller's company.
     const target = await tx
       .select({
@@ -680,6 +692,10 @@ export async function saveUserAccess(
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
+      // ADR-228 — remember it for the token sync that runs after this
+      // transaction commits. Only on a real change: syncing on every save would
+      // be an HTTP round trip per matrix save for no reason.
+      roleChangedTo = derivedRole;
     }
 
     const existingRows = await tx
@@ -692,8 +708,35 @@ export async function saveUserAccess(
           isNull(userAccess.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      // Lock this person's access row, so the version check below and the write
+      // that follows it cannot be split by a second admin.
+      .for('update');
     const existing = existingRows[0];
+    // ADR-226 / §20.4 — this screen REFUSES a clashing save; it does NOT merge
+    // the two admins' work (owner decision, 2026-10-08). Two reasons, and both
+    // are about ending up with permissions nobody approved:
+    //
+    //  1. `departments` and `forms` are single JSONB columns, replaced whole on
+    //     every save. Merging two partial matrices field by field would produce
+    //     a third permission set that neither admin looked at and neither
+    //     approved — on the one screen in the app where "slightly wrong" means
+    //     someone can see or sign off work they should not.
+    //  2. The browser's clearDeptForms DELIBERATELY wipes a department's
+    //     per-page overrides when that department's tier changes — a group
+    //     reset, expressed as an absence. A field-level merge reads that
+    //     absence as "this admin did not touch these", quietly puts the
+    //     overrides back, and undoes the reset without telling anyone.
+    //
+    // So: whoever saved second reloads and redoes their change on top of the
+    // first one's, with the notice naming who got there first.
+    if (existing && editConflicts(existing.updatedAt, input.expectedUpdatedAt)) {
+      assertUnchangedSinceOpened(
+        existing.updatedAt,
+        input.expectedUpdatedAt,
+        await rowChangedByName(tx, existing.updatedBy),
+      );
+    }
 
     let saved;
     if (existing) {
@@ -765,4 +808,9 @@ export async function saveUserAccess(
 
     return rowToUserAccess(saved);
   });
+
+  if (roleChangedTo !== null) {
+    await syncTokenIdentity(userId, { companyId, role: roleChangedTo });
+  }
+  return result;
 }

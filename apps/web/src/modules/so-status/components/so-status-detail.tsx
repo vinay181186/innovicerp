@@ -24,7 +24,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn, ROW_TINT, type RowMenuItem } from '@/ui/data';
-import { ConfirmDialog, ToastProvider, useToast } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { useGenerateOspPr } from '@/modules/op-entry/api';
 import { usePlan } from '@/modules/plans/api';
 import { usePlanningSoDetail } from '@/modules/so-planning/api';
@@ -85,14 +85,20 @@ function todayStr(): string {
   return todayIst();
 }
 
+// ADR-226 — the local <ToastProvider> that used to wrap this view is gone. It
+// existed because nothing mounted an app-wide one ("No app-wide toast provider
+// is mounted, so this view carries its own for the Raise PR result"), which was
+// true until the shell took one on in routes/_authenticated.tsx. Left in place
+// it would have nested inside the shell's: `useToast()` takes the nearest, so
+// the PR toast still worked, but this page would have rendered TWO fixed
+// bottom-right toast stacks that overlap when both fire. One provider, one
+// stack; `useToast()` below now resolves to the shell's.
+//
+// The wrapper itself stays, because two routes import this name
+// (so-status/routes/detail.tsx and routes/index.tsx, which renders it as the
+// right-hand pane). It is now a pass-through.
 export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Element {
-  // No app-wide toast provider is mounted, so this view carries its own for
-  // the "Raise PR for Op n" result (PR code).
-  return (
-    <ToastProvider>
-      <SoStatusDetailBody soId={soId} />
-    </ToastProvider>
-  );
+  return <SoStatusDetailBody soId={soId} />;
 }
 
 function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {

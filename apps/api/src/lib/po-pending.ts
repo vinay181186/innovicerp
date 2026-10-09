@@ -55,13 +55,20 @@ export function poLinePendingSql(pol: string, po: string): SQL {
   return sql.raw(poLinePendingRaw(pol, po));
 }
 
-/** CTE body: item_id, qty = the item's On PO for one company.
- *  Same Pending rule as poLinePendingRaw (qty − ACCEPTED), read through a
- *  grouped LEFT JOIN rather than a correlated sum per line so it stays one
- *  pass over the company's PO lines. */
-export function onPoByItemSql(companyId: string): SQL {
+/** One PO line's still-to-come qty inside onPoLinesFromSql (aliases pol / acc). */
+export const ON_PO_LINE_PENDING_SQL: SQL = sql.raw(
+  'GREATEST(0, pol.qty - COALESCE(acc.accepted, 0))',
+);
+
+/**
+ * The ONE "On PO" line set, as `FROM … WHERE …` (aliases pol, po, acc):
+ * issued purchase POs (open / partial / qc_pending), not service, no
+ * job-card-op link. Read by onPoByItemSql below AND by callers that must
+ * narrow it further (ml-plan's free-supply pool) via `extraWhere` — a
+ * fragment starting with AND — so a rule change here reaches every reader.
+ */
+export function onPoLinesFromSql(companyId: string, extraWhere: SQL = sql``): SQL {
   return sql`
-    SELECT pol.item_id, SUM(GREATEST(0, pol.qty - COALESCE(acc.accepted, 0)))::numeric AS qty
     FROM public.purchase_order_lines pol
     JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
     LEFT JOIN ${poLineAcceptedGroupedSql(companyId)} acc
@@ -75,7 +82,16 @@ export function onPoByItemSql(companyId: string): SQL {
       AND po.po_type <> 'service'
       AND pol.source_jc_op_id IS NULL
       AND NOT EXISTS (SELECT 1 FROM public.jc_op_po_lines jl
-                      WHERE jl.purchase_order_line_id = pol.id AND jl.deleted_at IS NULL)
+                      WHERE jl.purchase_order_line_id = pol.id AND jl.deleted_at IS NULL)${extraWhere}`;
+}
+
+/** CTE body: item_id, qty = the item's On PO for one company.
+ *  Same Pending rule as poLinePendingRaw (qty − ACCEPTED), read through a
+ *  grouped LEFT JOIN rather than a correlated sum per line so it stays one
+ *  pass over the company's PO lines. */
+export function onPoByItemSql(companyId: string): SQL {
+  return sql`
+    SELECT pol.item_id, SUM(${ON_PO_LINE_PENDING_SQL})::numeric AS qty${onPoLinesFromSql(companyId)}
     GROUP BY pol.item_id
   `;
 }

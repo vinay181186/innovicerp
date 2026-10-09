@@ -4,9 +4,11 @@ import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-o
 import { qcProcesses } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { DEFAULT_FINAL_QC_OP } from '../../lib/jc-default-qc';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import type {
   CreateQcProcessInput,
   ListQcProcessesQuery,
@@ -176,8 +178,9 @@ export async function updateQcProcess(
 /**
  * The body of a QC Process edit, inside a caller-supplied transaction. Called by
  * updateQcProcess (which opens the tx) and by the edit-approval engine's
- * applyEdit (which already holds the target row lock). The caller performs the
- * edit / approve access check.
+ * applyEdit (which already holds the target row lock). Every §20 guard lives
+ * here: the row's FOR UPDATE lock and assertUnchangedSinceOpened. The caller
+ * performs the edit / approve access check.
  */
 export async function updateQcProcessTx(
   tx: DbTransaction,
@@ -186,12 +189,32 @@ export async function updateQcProcessTx(
   user: AuthContext,
 ): Promise<QcProcess> {
   requireCompany(user);
+  // ADR-226 / §20.4 — read under the row lock, so the version check below and
+  // the UPDATE are one atomic step: a second editor WAITS here, then sees the
+  // first editor's new updated_at and is refused instead of overwriting it.
+  // Named columns, never SELECT * (§6 rule 6).
   const existing = await tx
-    .select({ id: qcProcesses.id })
+    .select({
+      id: qcProcesses.id,
+      updatedAt: qcProcesses.updatedAt,
+      updatedBy: qcProcesses.updatedBy,
+    })
     .from(qcProcesses)
     .where(and(eq(qcProcesses.id, id), isNull(qcProcesses.deletedAt)))
-    .limit(1);
+    .limit(1)
+    .for('update');
   if (existing.length === 0) throw new NotFoundError('QC Process not found. Refresh the page.');
+  const cur = existing[0]!;
+  // Refuse a save made over someone else's newer edit, naming who changed it.
+  // The name lookup sits INSIDE the cheap predicate: the happy path must not
+  // pay for a query that only ever fills in an error message.
+  if (editConflicts(cur.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      cur.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, cur.updatedBy),
+    );
+  }
 
   const updates: Record<string, unknown> = { updatedBy: user.id, updatedAt: new Date() };
   if (input.description !== undefined) updates.description = emptyToNull(input.description);
@@ -243,9 +266,15 @@ export async function updateQcProcessOrStage(
     return rows.length > 0;
   });
   if (shouldStage) {
-    // No expectedUpdatedAt token — concurrency is the engine's (loadForDiff
-    // locks FOR UPDATE and rechecks field freshness).
-    const request = await requestDocumentEdit('QcProcess', id, input, undefined, user);
+    // The form's own version token rides along (ADR-226), so staging an edit
+    // from a stale form is refused the same way saving one is.
+    const request = await requestDocumentEdit(
+      'QcProcess',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+    );
     return { staged: true, request };
   }
 

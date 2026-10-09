@@ -66,8 +66,14 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {
+      // ADR-226 — the trimmed Description is sent AS IT IS, blank included. The
+      // old `|| undefined` turned a box the user had CLEARED into "untouched",
+      // so clearing a description silently did nothing; the server already runs
+      // emptyToNull on it, so a blank now stores as no description.
+      // tpi-master-form.tsx has always done it this way and says so in its own
+      // comment — the two forms now agree, field for field.
       const payload: UpdateQcProcessInput = {
-        description: values.description.trim() || undefined,
+        description: values.description.trim(),
         defaultCycleTimeMin: Number(values.defaultCycleTimeMin) || 0,
         isActive: values.isActive,
       };

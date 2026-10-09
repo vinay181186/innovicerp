@@ -1,8 +1,9 @@
 // Item Issue — what a slip is issued against, and the To Issue cap
 // (ADR-193 phase 3b, spec §11 paper tests M1–M3, M10).
 //
-//   job_card     the JC must exist; when it has an RM requirement, a line of
-//                the RM item over its To Issue needs confirmation
+//   job_card     the JC must exist; a line of any item the card requires (its
+//                RM item, and ADR-225 a Multi-Level Plan sub-assembly's child
+//                parts) over its To Issue needs confirmation
 //   assembly_so  an Equipment SO with a live BOM; only BOM parts; every part
 //                over its To Issue needs confirmation
 //   general      Department required
@@ -22,7 +23,7 @@ import {
 } from '../../lib/errors';
 import {
   balanceOf,
-  jcRequirement,
+  jcRequirements,
   readBomParts,
   readIssuedReturned,
   readJcHead,
@@ -69,15 +70,22 @@ export async function resolveTargetAndCap(
       throw new ValidationError(`${jc.code} is closed — it takes no more material issues`);
     }
     await assertProductionOrderNotShortClosed(tx, jc.id);
-    const req = jcRequirement(jc);
-    if (req) {
-      const line = input.lines.find((l) => l.itemId === req.itemId);
-      if (line) {
-        const got = await readIssuedReturned(tx, companyId, { jobCardId: jc.id });
-        const toIssueQty = balanceOf(req.required, got.get(req.itemId));
-        if (roundQty(line.qty) > toIssueQty) {
-          over.push({ itemCode: itemCodes.get(line.itemId) ?? '', toIssueQty, qty: line.qty });
-        }
+    // ADR-225 — every requirement line (RM, plus a Multi-Level Plan
+    // sub-assembly's child parts), the same list the Material view shows.
+    const reqs = await jcRequirements(tx, companyId, jc);
+    let got: Awaited<ReturnType<typeof readIssuedReturned>> | null = null;
+    for (const req of reqs) {
+      // Every slip line of the item counts — the same item on two lines
+      // (4 + 4 against a need of 4) must not slip past the cap.
+      const lines = input.lines.filter((l) => l.itemId === req.itemId);
+      if (lines.length === 0) continue;
+      const qty = lines.reduce((sum, l) => sum + l.qty, 0);
+      got ??= await readIssuedReturned(tx, companyId, { jobCardId: jc.id });
+      const toIssueQty = balanceOf(req.required, got.get(req.itemId));
+      if (roundQty(qty) > toIssueQty) {
+        // One line: its qty as sent (unchanged); several: the rounded total.
+        const shown = lines.length === 1 ? lines[0]!.qty : roundQty(qty);
+        over.push({ itemCode: itemCodes.get(req.itemId) ?? '', toIssueQty, qty: shown });
       }
     }
     return {
@@ -110,11 +118,22 @@ export async function resolveTargetAndCap(
       }
     }
     const got = await readIssuedReturned(tx, companyId, { salesOrderId: so.id });
+    // Every slip line of a part counts — the same part on two lines must not
+    // slip past the cap. Grouped in the order the items first appear.
+    const byItem = new Map<string, number[]>();
     for (const l of input.lines) {
-      const part = parts.get(l.itemId)!;
-      const toIssueQty = balanceOf(part.required, got.get(l.itemId));
-      if (roundQty(l.qty) > toIssueQty) {
-        over.push({ itemCode: itemCodes.get(l.itemId) ?? '', toIssueQty, qty: l.qty });
+      const qtys = byItem.get(l.itemId) ?? [];
+      qtys.push(l.qty);
+      byItem.set(l.itemId, qtys);
+    }
+    for (const [itemId, qtys] of byItem) {
+      const part = parts.get(itemId)!;
+      const qty = qtys.reduce((sum, q) => sum + q, 0);
+      const toIssueQty = balanceOf(part.required, got.get(itemId));
+      if (roundQty(qty) > toIssueQty) {
+        // One line: its qty as sent (unchanged); several: the rounded total.
+        const shown = qtys.length === 1 ? qtys[0]! : roundQty(qty);
+        over.push({ itemCode: itemCodes.get(itemId) ?? '', toIssueQty, qty: shown });
       }
     }
     return {

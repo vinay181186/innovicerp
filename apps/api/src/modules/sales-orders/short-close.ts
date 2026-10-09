@@ -38,6 +38,7 @@ import {
 } from '../../lib/errors';
 import { reconcileLineReservations } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoLiveMlPlan } from '../ml-plan/guards';
 import { lineLabel, readSoLineCommitments } from './line-commitments';
 import type {
   CloseSalesOrderInput,
@@ -211,6 +212,13 @@ async function shortCloseLinesTx(
       `${soLabel} has no line left to close — every line is fully dispatched, cancelled or already closed short.`,
     );
   }
+
+  // ADR-225 phase 3 — a live Multi-Level Plan holds its line (locked above).
+  await assertNoLiveMlPlan(
+    tx,
+    companyId,
+    eligible.map((l) => l.id),
+  );
 
   // Refuse while anything is still being made for these lines.
   const running = await readRunningWork(
