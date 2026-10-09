@@ -16,7 +16,7 @@
 // exceptions. FOUR of the guarded tables have no `set_updated_at` trigger at
 // all — `customer_dispatches`, `user_access`, `tpi_masters`, `cost_centers` —
 // and rest entirely on each service remembering `updatedAt: new Date()`. Every
-// update path does; migration 0204 adds the triggers so it stops being a thing
+// update path does; migration 0206 adds the triggers so it stops being a thing
 // to remember. Until that is applied everywhere, a new writer of those four
 // that forgets the stamp silently disables this check for that row.
 
