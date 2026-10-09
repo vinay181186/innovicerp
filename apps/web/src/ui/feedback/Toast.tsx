@@ -35,11 +35,11 @@ import { Icon } from '../core/Icon';
 import { Z_TOAST } from './Modal';
 
 /** ok = it worked · err = it did not · info = it happened. */
-export type ToastKind = 'ok' | 'err' | 'info';
+export type ToastKind = 'ok' | 'err' | 'info' | 'warn';
 
 /** How long a toast stays before it clears itself, in ms. Long enough to read
  *  a short past-tense line; an error gets longer because it is worth reading. */
-const DEFAULT_MS: Record<ToastKind, number> = { ok: 3000, err: 6000, info: 4000 };
+const DEFAULT_MS: Record<ToastKind, number> = { ok: 3000, err: 6000, info: 4000, warn: 6000 };
 
 export interface ToastProps {
   kind?: ToastKind;

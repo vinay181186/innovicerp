@@ -7,6 +7,7 @@ import type {
   User,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export const usersKeys = {
@@ -46,6 +47,27 @@ export function useUser(id: string | undefined) {
     queryFn: () => apiFetch<User>(`/users/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/**
+ * ADR-226 — re-read ONE user straight from the server, ignoring the cache.
+ *
+ * `useEditConflict` calls this after a 409 so its retry lands on the version
+ * that is actually stored. A cached read would defeat the whole thing: the
+ * cache is what went stale in the first place. Mirrors
+ * `useFetchNcRegister` in modules/nc-register/api.ts.
+ */
+export function useFetchUser(): (id: string) => Promise<User> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<User>({
+        queryKey: usersKeys.detail(id),
+        queryFn: () => apiFetch<User>(`/users/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useCreateUser() {

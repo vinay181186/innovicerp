@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 import { queryBoolean } from '../lib/query-boolean';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import {
   type MasterImportResult,
   type MasterImportRowResult,
@@ -43,7 +44,11 @@ export const createOperatorInputSchema = z.object({
 });
 export type CreateOperatorInput = z.infer<typeof createOperatorInputSchema>;
 
-export const updateOperatorInputSchema = createOperatorInputSchema.partial().omit({ code: true });
+export const updateOperatorInputSchema = createOperatorInputSchema
+  .partial()
+  .omit({ code: true })
+  // §20.4 / ADR-226 — the version this form loaded.
+  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
 export type UpdateOperatorInput = z.infer<typeof updateOperatorInputSchema>;
 
 /** BULK CREATE — the Excel importer's whole sheet in ONE request.

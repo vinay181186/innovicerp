@@ -9,24 +9,109 @@
 // the edit is waiting for approval. We show a neutral "Sent for approval" banner
 // and return to the detail page, whose fields now carry the amber pending chips.
 
+import type { CustomerDispatchDetail } from '@innovic/shared';
+import { valuesEqual } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, PageState, useSaveShortcut } from '@/ui/layout';
-import { useDispatchDetail, useDispatchableSo, useUpdateCustomerDispatch } from '../api';
+import {
+  useDispatchDetail,
+  useDispatchableSo,
+  useFetchDispatchDetail,
+  useUpdateCustomerDispatch,
+} from '../api';
 import {
   DispatchEditLineTable,
   editLineCap,
   type EditLineCard,
 } from '../components/dispatch-edit-line-table';
+
+// ADR-226 — the fields THIS screen can edit, plus `lines` as one unit, and what
+// the user calls each one (docs/NAMING.md, so the notice says "Vehicle No.",
+// never `vehicleNo`).
+//
+// Everything else on a saved dispatch — the SO, the Dispatch No., the set of
+// items — is a read-only fact, so none of it may be sent as an edit.
+//
+// `lines` IS in the list, as ONE value: the record the hook compares against
+// carries `lines` as a digest string instead of the array, because the server's
+// schema requires `lines` (min 1) on every dispatch edit — so there is no such
+// thing as a header-only request — and because the most ordinary dispatch edit
+// of all, a Dispatch Qty correction with no header change, would otherwise be
+// refused as "nothing changed".
+const DISPATCH_EDITABLE = ['dispatchDate', 'transport', 'vehicleNo', 'remarks', 'lines'] as const;
+
+const DISPATCH_LABELS: Record<string, string> = {
+  dispatchDate: 'Dispatch Date',
+  transport: 'Transporter',
+  vehicleNo: 'Vehicle No.',
+  remarks: 'Remarks',
+  lines: 'The Dispatch Qty',
+};
+
+/** A saved dispatch line, as much of it as the edit needs. */
+interface DispatchSavedLine {
+  id: string;
+  qty: number;
+}
+
+/** The Dispatch Qty THIS user changed, per line, by the SHARED equality rule
+ *  (`valuesEqual` in @innovic/shared — the same one the server's History diff
+ *  uses). Qty is the only editable fact on a dispatch line. */
+function dispatchQtyEdits(
+  cards: readonly EditLineCard[],
+  savedLines: readonly DispatchSavedLine[],
+): Map<string, number> {
+  const byId = new Map(savedLines.map((l) => [l.id, l]));
+  const edits = new Map<string, number>();
+  for (const c of cards) {
+    const saved = byId.get(c.id);
+    if (!saved) continue;
+    const qty = c.qty.trim() === '' ? 0 : Number(c.qty);
+    if (!valuesEqual(saved.qty, qty)) edits.set(c.id, qty);
+  }
+  return edits;
+}
+
+/** The request's line array: every saved line by `id` (the set is fixed — the
+ *  server refuses an added or removed line) with its qty.
+ *
+ *  `base` is the lines the payload is built ON. First attempt: the dispatch as
+ *  this screen loaded it. After a 409: the dispatch as it is NOW — so another
+ *  person's qty change on a line this user never touched survives, which is the
+ *  whole point of §20.4. */
+function dispatchPayloadLines(
+  base: readonly DispatchSavedLine[],
+  edits: Map<string, number>,
+): { id: string; qty: number }[] {
+  return base.map((l) => ({ id: l.id, qty: edits.get(l.id) ?? l.qty }));
+}
+
+/** The lines as one comparable, readable value — what the diff tests and what
+ *  the 3-second notice prints.
+ *
+ *  Each row is identified by the line's own immutable `id`, NOT by its item
+ *  code. The item code is read-only on this screen, and `itemCode` is joined
+ *  LIVE from the item master — so renaming an item between this screen's load
+ *  and the conflict re-read moved the digest on its own and the notice reported
+ *  a line clash nobody made. Same rule as jc-ops-digest's `o.id ?? 'new'`. */
+function dispatchLinesDigest(
+  base: readonly DispatchSavedLine[],
+  edits: Map<string, number>,
+): string {
+  const rows = base.map((l) => `${edits.get(l.id) ?? l.qty} × line ${l.id}`);
+  return `${rows.length} line${rows.length === 1 ? '' : 's'} · ${rows.join(' · ')}`;
+}
 
 export const customerDispatchEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -42,6 +127,41 @@ function CustomerDispatchEditPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const saveKey = useSaveKey();
   const update = useUpdateCustomerDispatch(id, saveKey);
+  const fetchDispatch = useFetchDispatchDetail();
+  // The dispatch as the conflict hook compares it: the same record with the line
+  // ARRAY replaced by one digest string, plus `freshDispatch` — the dispatch as
+  // it is NOW, filled only when a save was refused, so the retry's line array can
+  // be built on the other person's version instead of on the photograph this
+  // screen opened with.
+  const freshDispatch = useRef<CustomerDispatchDetail | null>(null);
+  const noQtyEdits = useMemo(() => new Map<string, number>(), []);
+  const conflictRecord = useMemo(
+    () => (d ? { ...d, lines: dispatchLinesDigest(d.lines, noQtyEdits) } : undefined),
+    [d, noQtyEdits],
+  );
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes to
+  // this one dispatch, so the user is told the moment somebody else saves it
+  // rather than after typing into a stale form.
+  //
+  // This screen sent NO version token at all before, so a save simply overwrote
+  // whatever had changed since it opened — and a dispatch save renumbers the
+  // document and re-books the goods out, so it is not just a lost field. It also
+  // had a per-field `dirty` comparison written in this file; that is now the
+  // shared rule instead of a second copy of it.
+  const conflict = useEditConflict({
+    table: 'customer_dispatches',
+    id,
+    record: conflictRecord,
+    refetch: async () => {
+      const latest = await fetchDispatch(id);
+      freshDispatch.current = latest;
+      return { ...latest, lines: dispatchLinesDigest(latest.lines, noQtyEdits) };
+    },
+    editableKeys: DISPATCH_EDITABLE,
+    label: (f) => DISPATCH_LABELS[f] ?? f,
+    noun: 'dispatch',
+  });
 
   const goBack = useCallback(
     () => void navigate({ to: '/customer-dispatches/$id', params: { id } }),
@@ -104,17 +224,36 @@ function CustomerDispatchEditPage(): React.JSX.Element {
     setCards((cs) => cs.map((c) => (c.id === lineId ? { ...c, qty } : c)));
   }
 
+  // The Dispatch Qty this user changed, per line. The array itself is built at
+  // save time, on the dispatch as it is then — see the save below.
+  const qtyEdits = useMemo(() => dispatchQtyEdits(cards, d?.lines ?? []), [cards, d]);
+
+  // What this user changed, by the SHARED rule (`valuesEqual` / `changedKeys` in
+  // @innovic/shared — the one the server's own History diff uses). The old
+  // hand-rolled comparison in this file is gone: it compared `c.qty.trim()`
+  // against `String(saved.qty)` and `''` against `null`, which is the same
+  // question answered a second, slightly different way.
+  const header = useMemo(
+    () => ({
+      dispatchDate,
+      transport: transport.trim() || null,
+      vehicleNo: vehicleNo.trim() || null,
+      remarks: remarks.trim() || null,
+    }),
+    [dispatchDate, transport, vehicleNo, remarks],
+  );
   const dirty = useMemo(() => {
     if (!d) return false;
-    if (dispatchDate !== d.dispatchDate) return true;
-    if (transport !== (d.transport ?? '')) return true;
-    if (vehicleNo !== (d.vehicleNo ?? '')) return true;
-    if (remarks !== (d.remarks ?? '')) return true;
-    return cards.some((c) => {
-      const saved = savedById.get(c.id);
-      return saved ? c.qty.trim() !== String(saved.qty) : false;
-    });
-  }, [d, dispatchDate, transport, vehicleNo, remarks, cards, savedById]);
+    if (qtyEdits.size > 0) return true;
+    return (
+      !valuesEqual(d.dispatchDate, header.dispatchDate) ||
+      !valuesEqual(d.transport, header.transport) ||
+      !valuesEqual(d.vehicleNo, header.vehicleNo) ||
+      !valuesEqual(d.remarks, header.remarks)
+    );
+    // `qtyEdits`, not a `linesChanged` flag: the map IS the per-line answer,
+    // and its size is what this memo reads.
+  }, [d, header, qtyEdits]);
 
   const canSave =
     Boolean(d) &&
@@ -129,31 +268,40 @@ function CustomerDispatchEditPage(): React.JSX.Element {
     if (!d) return;
     if (lineErrors.size > 0) return setErr('Fix the highlighted lines before saving.');
 
-    const payloadLines = cards.map((c) => ({
-      id: c.id,
-      qty: c.qty.trim() === '' ? 0 : Number(c.qty),
-    }));
-    if (!payloadLines.some((l) => l.qty > 0)) {
+    if (!dispatchPayloadLines(d.lines, qtyEdits).some((l) => l.qty > 0)) {
       return setErr('Enter a Dispatch Qty on at least one line.');
     }
 
+    // `current` is what the form holds; the hook reduces it to the changed keys.
+    // `lines` is the DIGEST, so a qty change with no header change is still a
+    // change (the hook refuses an empty save).
+    const current = { ...header, lines: dispatchLinesDigest(d.lines, qtyEdits) };
+    freshDispatch.current = null; // only a conflict on THIS save may fill it
     try {
-      const saved = await update.mutateAsync({
-        dispatchDate,
-        transport: transport || undefined,
-        vehicleNo: vehicleNo || undefined,
-        remarks: remarks || undefined,
-        lines: payloadLines,
+      const saved = await conflict.save(current, (payload, expectedUpdatedAt) => {
+        // Only the header boxes this user changed. `payload.lines` is the digest,
+        // never the array — it is not sent; the real array is rebuilt below.
+        return update.mutateAsync({
+          ...(payload.dispatchDate !== undefined ? { dispatchDate: payload.dispatchDate } : {}),
+          ...(payload.transport !== undefined ? { transport: payload.transport } : {}),
+          ...(payload.vehicleNo !== undefined ? { vehicleNo: payload.vehicleNo } : {}),
+          ...(payload.remarks !== undefined ? { remarks: payload.remarks } : {}),
+          // The lines are built fresh on each attempt: on the retry
+          // `freshDispatch` holds the dispatch as it is NOW, so another person's
+          // qty change on a line this user never touched survives.
+          lines: dispatchPayloadLines((freshDispatch.current ?? d).lines, qtyEdits),
+          ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+        });
       });
+      // null = nothing actually changed; the user has been told and nothing was
+      // written. Stay on the form.
+      if (saved === null) return;
       if (isStagedResult(saved)) {
         // The gate is on and this dispatch is live: nothing changed — the edit is
         // waiting for approval. Say so, then return to the detail (pending chips).
-        setStagedNotice(
-          'Sent for approval — your changes will apply once an approver signs off.',
-        );
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
         exit.leave(
-          () =>
-            void navigate({ to: '/customer-dispatches/$id', params: { id }, replace: true }),
+          () => void navigate({ to: '/customer-dispatches/$id', params: { id }, replace: true }),
         );
         return;
       }

@@ -1,7 +1,24 @@
-// Vitest globalSetup — wipes test-prefixed cruft from the dev DB before any
-// test runs. Keeps the suite reliably runnable on the shared dev Supabase
-// project (Phase 2 carry-over flagged a dedicated CI/staging DB as the
-// proper fix; until then this is the workaround).
+// Vitest globalSetup — REFUSES to run against production, then wipes
+// test-prefixed cruft before any test runs.
+//
+// THE GUARD IS THE POINT OF THIS FILE NOW. This suite deletes rows, and the
+// only `.env.local` in the repo points at PRODUCTION — so `pnpm --filter api
+// test` with the default environment pointed a DELETE at live data. That is why
+// the suite has been unrunnable: nobody, human or agent, was allowed to invoke
+// it, so §20's "ship a test that fires two requests at once" could not be
+// honoured and six existing test files went unverified for months.
+//
+// The repo already had the answer and this file never used it: `db-target.ts`
+// (finding S7) refuses a script whose DATABASE_URL is not the project it was
+// told to expect, and `apply-sql`, `check-drift` and `data-quality` all call it.
+// The fix was never a third database — it was this check, in the one place that
+// skipped it.
+//
+// DELIBERATELY STRICTER than `resolveDbTarget`: that helper will proceed against
+// PRODUCTION if a caller asks for it, which is correct for a migration and
+// never correct for a test suite. Here production is refused unconditionally,
+// whatever DB_TARGET says. An unrecognised remote host is refused too — a
+// database we cannot identify is not a database we may delete from.
 //
 // Why this exists: tests use `T<phase>R?-` code prefixes (e.g. `T018-A1`,
 // `T036C-LST`) and rely on `afterAll` hooks to delete by prefix. When a
@@ -18,13 +35,56 @@
 // positives — real seed/migrated codes don't start with T0/T1/T2/T3/T4.
 
 import postgres from 'postgres';
+import { PROJECT_REFS } from '../src/db/db-target';
+
+/** Refuse any database this suite must not delete from. Throws — vitest aborts
+ *  the whole run and prints the reason, which is what we want: a test run that
+ *  silently pointed somewhere else is worse than no test run. */
+function assertSafeTestDatabase(url: string): void {
+  const refuse = (why: string): never => {
+    throw new Error(
+      `[test] REFUSED TO RUN: ${why}
+` +
+        `  This suite DELETES rows (every code matching 'T%-%'), so it may only ever
+` +
+        `  touch the TEST project (${PROJECT_REFS.TEST}) or a database on this machine.
+` +
+        `  The repo's only .env.local points at PRODUCTION, so pass the test one explicitly:
+` +
+        `    pnpm --filter @innovic/api exec dotenv -e <test.env> -- vitest run
+` +
+        `  Build <test.env> from the TEST_* variables in erp/.env.local.`,
+    );
+  };
+
+  if (url.includes(PROJECT_REFS.PROD)) {
+    // Unconditional, and NOT overridable by DB_TARGET: there is no legitimate
+    // reason for a suite that deletes rows to be aimed at live data.
+    refuse('DATABASE_URL is the PRODUCTION project.');
+  }
+  if (url.includes(PROJECT_REFS.TEST)) return;
+
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    refuse('DATABASE_URL is not a valid URL.');
+  }
+  if (['localhost', '127.0.0.1', '::1', '[::1]'].includes(host)) return;
+  refuse(`DATABASE_URL host "${host}" is neither the TEST project nor this machine.`);
+}
 
 export default async function setup(): Promise<void> {
   const url = process.env['DATABASE_URL'];
   if (!url) {
-    // Tests will fail in their own beforeAll; nothing useful to do here.
-    return;
+    // Refuse rather than return. Returning let the run continue and fail later
+    // inside each test's own beforeAll, which read as a broken test rather than
+    // a missing environment.
+    throw new Error(
+      '[test] REFUSED TO RUN: DATABASE_URL is not set. This suite will not guess which database to use.',
+    );
   }
+  assertSafeTestDatabase(url);
   // ADR-185 — named so the stock-ledger write-lock (0149) lets teardown through.
   const sql = postgres(url, {
     prepare: false,
@@ -63,7 +123,34 @@ export default async function setup(): Promise<void> {
     // pointing at non-existent grn codes via source_ref text — clean those
     // by source_ref pattern + by remarks pattern (T036C tests write a
     // marker remark).
-    await sql`DELETE FROM public.store_transactions WHERE source_ref LIKE 'T%-%' OR source_ref LIKE 'RCPT-T%-%' OR remarks LIKE '%T036%'`;
+    // The stock ledger is append-only (ADR-185, trigger
+    // store_transactions_refuse_change). It offers the harness two exits, and
+    // the one this file used to rely on DOES NOT WORK against the TEST project:
+    // the connection carries `application_name: 'innovic-test-harness'`, but
+    // TEST goes through Supabase's pooler, which OVERWRITES application_name
+    // with its own value ("Supavisor"). The trigger therefore never saw the
+    // name, refused the DELETE with 23001, and the whole suite died in
+    // globalSetup — the real reason these tests could not be run on TEST, on
+    // top of the production guard above.
+    //
+    // Use the trigger's other exit instead, in the same transaction as the
+    // DELETE: `set_config(..., true)` is transaction-local, so it survives a
+    // transaction-mode pooler where a bare `SET` would not, and it cannot leak
+    // the exemption to another session. Same device `withUserContext` uses for
+    // the JWT claims.
+    await sql.begin(async (tx) => {
+      await tx`select set_config('innovic.ledger_maintenance', 'on', true)`;
+      // Children first. `tool_writeoffs.store_transaction_id` is a plain FK with
+      // no ON DELETE, so a write-off left behind by an aborted run pins its
+      // ledger row and the DELETE below fails 23503. Scoped to exactly the rows
+      // we are about to remove — never a blanket delete of the table.
+      await tx`
+        DELETE FROM public.tool_writeoffs
+        WHERE store_transaction_id IN (
+          SELECT id FROM public.store_transactions
+          WHERE source_ref LIKE 'T%-%' OR source_ref LIKE 'RCPT-T%-%' OR remarks LIKE '%T036%')`;
+      await tx`DELETE FROM public.store_transactions WHERE source_ref LIKE 'T%-%' OR source_ref LIKE 'RCPT-T%-%' OR remarks LIKE '%T036%'`;
+    });
     // PL-4 ordering: plans MUST go before JCs/PRs they reference. The schema's
     // ON DELETE SET NULL on plans.jc_id / dp_pr_id / fo_pr_id would null those
     // out on JC/PR delete, then the CHECK `plans_status_fk_check` would trip

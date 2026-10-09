@@ -24,6 +24,7 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 import { reportColumnTypeSchema } from './report';
+import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 // ─── Filter / aggregation primitives ──────────────────────────────────────
 
@@ -129,6 +130,9 @@ export const createSavedReportInputSchema = z.object({
 export type CreateSavedReportInput = z.infer<typeof createSavedReportInputSchema>;
 
 export const updateSavedReportInputSchema = z.object({
+  /** §20.4 — the version this form loaded; a save over someone else's newer
+   *  edit is refused 409 `edit_conflict` (ADR-226). */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().max(500).optional(),
   sourceKey: z.string().min(1).max(64).optional(),

@@ -7,6 +7,7 @@ import type {
   UpdateQcProcessInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 
 export const qcProcessesKeys = {
@@ -45,6 +46,27 @@ export function useQcProcess(id: string | undefined) {
     queryFn: () => apiFetch<QcProcess>(`/qc-processes/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/**
+ * ADR-226 — re-read ONE QC process straight from the server, ignoring the cache.
+ *
+ * `useEditConflict` calls this after a 409 so its retry lands on the version
+ * that is actually stored. A cached read would defeat the whole thing: the
+ * cache is what went stale in the first place. Mirrors
+ * `useFetchNcRegister` in modules/nc-register/api.ts.
+ */
+export function useFetchQcProcess(): (id: string) => Promise<QcProcess> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<QcProcess>({
+        queryKey: qcProcessesKeys.detail(id),
+        queryFn: () => apiFetch<QcProcess>(`/qc-processes/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useCreateQcProcess() {

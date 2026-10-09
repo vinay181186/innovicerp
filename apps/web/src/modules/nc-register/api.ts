@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import type {
   CloseNcReworkInput,
   CreateNcDcInput,
@@ -119,6 +120,28 @@ export function useNcRegister(id: string | undefined) {
     queryFn: () => apiFetch<NcRegister>(`/nc-register/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/**
+ * ADR-226 — re-read ONE NC straight from the server, ignoring the cache.
+ *
+ * `useEditConflict` calls this after a 409 so its retry lands on the version
+ * that is actually stored. A cached read would defeat the whole thing: the
+ * cache is what went stale in the first place. `staleTime: 0` on a `fetchQuery`
+ * is the house way to force a read (route-cards/api.ts does the same for its
+ * copy-from picker).
+ */
+export function useFetchNcRegister(): (id: string) => Promise<NcRegister> {
+  const qc = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      qc.fetchQuery<NcRegister>({
+        queryKey: ncRegisterKeys.detail(id),
+        queryFn: () => apiFetch<NcRegister>(`/nc-register/${id}`),
+        staleTime: 0,
+      }),
+    [qc],
+  );
 }
 
 export function useCreateNcRegister(saveKey?: SaveKey) {

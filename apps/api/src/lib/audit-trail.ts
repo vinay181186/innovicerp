@@ -6,7 +6,14 @@
 //   softDeleteStamp(user)              → { deletedAt, deletedBy } for a delete
 //   restoreStamp()                     → { deletedAt: null, deletedBy: null }
 
-import type { ActivityChange, ActivityChangeValue } from '@innovic/shared';
+import {
+  type ActivityChange,
+  type ActivityChangeValue,
+  isNumericValue,
+  normalizeValue,
+  sameNormalizedValue,
+  valuesEqual as sharedValuesEqual,
+} from '@innovic/shared';
 
 /** One field a service wants compared on Edit. `label` is the screen label
  *  from docs/NAMING.md; `format` turns the raw value into what a person reads
@@ -17,33 +24,14 @@ export interface DiffField {
   format?: ((value: unknown) => ActivityChangeValue) | undefined;
 }
 
-const NUMERIC_RE = /^-?\d+(\.\d+)?$/;
-
-function isNumericLike(v: unknown): boolean {
-  return (
-    (typeof v === 'number' && Number.isFinite(v)) ||
-    (typeof v === 'string' && NUMERIC_RE.test(v.trim()))
-  );
-}
-
-/** undefined / '' / null all mean "empty"; a Date becomes its ISO string. */
-function normalize(v: unknown): unknown {
-  if (v === undefined || v === null) return null;
-  if (typeof v === 'string' && v.trim() === '') return null;
-  if (v instanceof Date) return v.toISOString();
-  return v;
-}
-
-function sameValue(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a === null || b === null) return false;
-  // Drizzle numerics arrive as strings ("10.000"), inputs as numbers (10).
-  if (isNumericLike(a) && isNumericLike(b)) return Number(a) === Number(b);
-  if (typeof a === 'object' || typeof b === 'object') {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
-  return false;
-}
+// ADR-226 — these three rules moved to packages/shared/src/lib/value-equal.ts,
+// because the BROWSER now needs the identical test to work out which fields a
+// user actually changed (§20.4: an edit sends back only what it changed). Two
+// copies would let the browser call something a change that the server does
+// not. Local aliases keep the rest of this file reading as it did.
+const isNumericLike = isNumericValue;
+const normalize = normalizeValue;
+const sameValue = sameNormalizedValue;
 
 function toChangeValue(v: unknown): ActivityChangeValue {
   if (v === null) return null;
@@ -106,9 +94,7 @@ export function diffFields(
  * this to decide, at approval time, whether a document's current value has
  * drifted from the `before` captured when the edit was requested.
  */
-export function valuesEqual(a: unknown, b: unknown): boolean {
-  return sameValue(normalize(a), normalize(b));
-}
+export const valuesEqual = sharedValuesEqual;
 
 /** The two columns a soft delete sets. Spread into the UPDATE:
  *  `.set({ ...softDeleteStamp(user), updatedBy: user.id })`. */

@@ -5,12 +5,49 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { Banner } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateMachine, useMachine, useUpdateMachine } from '../api';
+import { useCreateMachine, useFetchMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
+
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
+//
+// The list drives two things: the save sends only the ones whose value actually
+// changed, and a notice names the field another person moved. It is written out
+// rather than inferred: `code` is read-only on the edit form (and omitted from
+// updateMachineInputSchema outright), and the machine record also carries the
+// audit columns, which are nobody's edit.
+//
+// The Machine Group tab is a SEPARATE master with its own rows — nothing from it
+// belongs in this list.
+const MACHINE_EDITABLE = [
+  'machineGroupId',
+  'name',
+  'productCode',
+  'machineType',
+  'capacityPerShift',
+  'shiftsPerDay',
+  'hourRate',
+  'status',
+] as const;
+
+// `Hours per Shift` and `Hour Rate` are the registered names (docs/NAMING.md,
+// the 2026-09-30 naming audit rows for `machines` shift config and
+// `machines.hour_rate`) — NOT "Capacity / Shift" and NOT "Machine Rate". The
+// other five have no register row; these are the labels already on the form.
+const MACHINE_LABELS: Record<string, string> = {
+  machineGroupId: 'Machine Group',
+  name: 'Machine Name',
+  productCode: 'Product Code',
+  machineType: 'Machine Type',
+  capacityPerShift: 'Hours per Shift',
+  shiftsPerDay: 'Shifts / Day',
+  hourRate: 'Hour Rate',
+  status: 'Machine Status',
+};
 
 export const machineNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -75,6 +112,20 @@ function MachineEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: machine, isLoading, isError, error } = useMachine(id);
   const update = useUpdateMachine(id);
+  const fetchMachine = useFetchMachine();
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes
+  // to this one machine, so the user is told the moment somebody else saves it
+  // rather than after they have typed into a stale form.
+  const conflict = useEditConflict({
+    table: 'machines',
+    id,
+    record: machine,
+    refetch: () => fetchMachine(id),
+    editableKeys: MACHINE_EDITABLE,
+    label: (f) => MACHINE_LABELS[f] ?? f,
+    noun: 'machine',
+  });
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE machine is staged for approval instead
   // of applied; the neutral "Sent for approval" banner shows it.
@@ -89,7 +140,14 @@ function MachineEditPage(): React.JSX.Element {
   const onSubmit = async (values: UpdateMachineInput): Promise<void> => {
     setSubmitError(null);
     try {
-      const result = await update.mutateAsync(values);
+      // Only the fields that actually moved are sent; a 409 re-reads and retries
+      // onto the fresh row instead of overwriting someone else's change.
+      const result = await conflict.save(values, (payload, expectedUpdatedAt) =>
+        update.mutateAsync({ ...payload, expectedUpdatedAt }),
+      );
+      // null = nothing actually changed; the user has been told and nothing was
+      // written. Stay on the form.
+      if (result === null) return;
       if (isStagedResult(result)) {
         // The edit-approval gate is on and this machine is live: nothing was
         // changed on the machine — the edit is now waiting for approval. Say so,

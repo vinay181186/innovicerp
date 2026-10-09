@@ -59,11 +59,25 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {
+      // ADR-226 — the trimmed Description is sent AS IT IS, blank included. The
+      // old `|| undefined` turned a box the user had CLEARED into "untouched",
+      // so clearing a description silently did nothing; the server already runs
+      // emptyToNull on it, so a blank now stores as no description. Same
+      // one-line fix as qc-process-form.tsx, same reason.
+      //
+      // Department and Cost Centre Type are sent the same way, and for the same
+      // reason. Both columns allow NULL and both <select>s now carry a blank
+      // option, so "no department" is a value the user can choose — with
+      // `|| undefined` choosing it would have read as "untouched" and clearing a
+      // department would silently do nothing. The service runs emptyToNull on
+      // both (cost-centers/service.ts), so a blank stores as NULL, and
+      // `changedFields` treats a NULL column and a blank box as the same value,
+      // so a cost centre whose department is already NULL sends nothing.
       const payload: UpdateCostCenterInput = {
         name: values.name.trim(),
-        department: values.department.trim() || undefined,
-        type: values.type.trim() || undefined,
-        description: values.description.trim() || undefined,
+        department: values.department.trim(),
+        type: values.type.trim(),
+        description: values.description.trim(),
         isActive: values.isActive,
       };
       await props.onSubmit(payload);
@@ -123,11 +137,20 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             Department
           </label>
           <select id="department" className="innovic-select" {...register('department')}>
-            {COST_CENTER_DEPARTMENTS.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
+            {/* ADR-226 — a cost centre with no department stays that way. The
+                blank is offered on EDIT only: the box must be able to SHOW "no
+                department" for a row whose column is NULL, otherwise the form
+                invents one and every save carries it. Create keeps its
+                Production default and always sends a department, exactly as
+                before. */}
+            {isEdit ? <option value="">— None —</option> : null}
+            {optionsWith(COST_CENTER_DEPARTMENTS, isEdit ? props.detail.department : null).map(
+              (d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ),
+            )}
           </select>
         </div>
 
@@ -136,7 +159,9 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             Cost Centre Type
           </label>
           <select id="type" className="innovic-select" {...register('type')}>
-            {COST_CENTER_TYPES.map((t) => (
+            {/* Same as Department above: blank on EDIT only. */}
+            {isEdit ? <option value="">— None —</option> : null}
+            {optionsWith(COST_CENTER_TYPES, isEdit ? props.detail.type : null).map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
@@ -211,12 +236,32 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
   );
 }
 
+/**
+ * The master list, plus the row's OWN stored value when the list does not carry
+ * it. `cost_centers.department` and `.type` are plain text columns (migration
+ * 0023 — "so adding a department doesn't need a migration"), so a row can hold
+ * a value this list has since dropped, or one set straight through the API.
+ * Without its own option the browser shows the FIRST option instead, and the
+ * save then rewrites a value nobody touched — the same ADR-226 fault, by a
+ * different door.
+ */
+function optionsWith(options: readonly string[], stored: string | null): string[] {
+  return stored && !options.includes(stored) ? [...options, stored] : [...options];
+}
+
+// ADR-226 — NULL seeds BLANK, never an invented default. `?? 'Production'` /
+// `?? 'Manufacturing'` meant that for a cost centre whose column is NULL the
+// form held a value nobody had chosen, so EVERY save carried it: a
+// Description-only edit overwrote another admin's deliberate Department and the
+// clash notice named a field the user never touched. Seeding blank keeps an
+// untouched NULL out of the payload, because `changedFields` reads NULL and ''
+// as the same value.
 function detailToFormValues(detail: CostCenter): FormValues {
   return {
     code: detail.code,
     name: detail.name,
-    department: detail.department ?? 'Production',
-    type: detail.type ?? 'Manufacturing',
+    department: detail.department ?? '',
+    type: detail.type ?? '',
     description: detail.description ?? '',
     isActive: detail.isActive,
   };

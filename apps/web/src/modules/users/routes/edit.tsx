@@ -12,14 +12,15 @@
 import type { UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, KeyRound, Loader2, Lock, Trash2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ACCESS_DEPTS } from '@innovic/shared';
 import { useUserAccessList } from '@/modules/access-control/api';
-import { useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
+import { useFetchUser, useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
 import { roleLabel } from '@/lib/role-label';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 
@@ -43,6 +44,33 @@ interface FormValues {
   isActive: boolean;
 }
 
+// ADR-226 — the fields THIS screen can edit, and what the user calls each one.
+//
+// The list drives two things: the save sends only the ones whose value actually
+// changed, and a notice names the field another person moved. It is written out
+// rather than inferred because the user record carries far more than this form
+// touches.
+//
+// `role` and `approvalLimit` are deliberately NOT here. Access Control owns
+// both (see the file header and the payload comment below), so this screen must
+// never report them as its own edit and must never send a stale copy of them.
+// `email` is read-only here and `code`-like permanent, so it is out too.
+const USER_EDITABLE = ['fullName', 'phone', 'isActive'] as const;
+
+// The screen's own labels, so a notice reads "Name", never `fullName`. No row
+// exists in docs/NAMING.md for any of the three; these are the labels already
+// on this form and on users/routes/create.tsx.
+const USER_LABELS: Record<string, string> = {
+  fullName: 'Name',
+  phone: 'Phone',
+  isActive: 'Status',
+};
+
+/** What the form holds before the user has loaded. One module-level object, so
+ *  the `values` react-hook-form is handed is identical on every render until the
+ *  real seed arrives. */
+const BLANK_FORM: FormValues = { fullName: '', phone: '', isActive: true };
+
 function UserEditPage(): React.JSX.Element {
   const { id } = userEditRoute.useParams();
   const navigate = useNavigate();
@@ -50,6 +78,20 @@ function UserEditPage(): React.JSX.Element {
   const isAdmin = me?.role === 'admin';
   const { data: detail, isLoading, isError, error } = useUser(isAdmin ? id : undefined);
   const update = useUpdateUser(id);
+  const fetchUser = useFetchUser();
+  // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
+  // instead of overwriting it, and raises the 3-second notice. Also subscribes
+  // to this one user row, so an admin is told the moment another admin saves it
+  // rather than after typing into a stale form.
+  const conflict = useEditConflict({
+    table: 'users',
+    id,
+    record: detail,
+    refetch: () => fetchUser(id),
+    editableKeys: USER_EDITABLE,
+    label: (f) => USER_LABELS[f] ?? f,
+    noun: 'user',
+  });
   const softDelete = useSoftDeleteUser();
   const setPassword = useSetUserPassword(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -59,14 +101,27 @@ function UserEditPage(): React.JSX.Element {
   // Their department lives on the access row, not the user record.
   const { data: accessList } = useUserAccessList();
 
+  // ADR-226 — seed the form ONCE, from the user as this screen loaded them.
+  //
+  // react-hook-form's `values` option is REACTIVE: it re-seeds the form whenever
+  // the value it is handed differs from what the form holds. That is the
+  // Plan-edit bug (ADR-226) — a background refetch, or the conflict hook's own
+  // cache-bypassing re-read after a 409, would throw away whatever the admin had
+  // typed, silently, with no save involved. Capturing the first loaded record in
+  // a ref keeps the "populate once the record arrives" behaviour (`detail` is
+  // undefined on the first render, so plain `defaultValues` would stay blank)
+  // without ever re-seeding. Every other edit screen in this batch uses
+  // `defaultValues`, which is not reactive and needs no ref.
+  const seed = useRef<FormValues | null>(null);
+  if (seed.current === null && detail) {
+    seed.current = {
+      fullName: detail.fullName ?? '',
+      phone: detail.phone ?? '',
+      isActive: detail.isActive,
+    };
+  }
   const { register, handleSubmit, formState } = useForm<FormValues>({
-    values: detail
-      ? {
-          fullName: detail.fullName ?? '',
-          phone: detail.phone ?? '',
-          isActive: detail.isActive,
-        }
-      : { fullName: '', phone: '', isActive: true },
+    values: seed.current ?? BLANK_FORM,
   });
   const goBack = useCallback(() => void navigate({ to: '/users' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -116,13 +171,27 @@ function UserEditPage(): React.JSX.Element {
     // omitting them leaves whatever Access Control last set. Sending a stale
     // copy from this form would let the identity screen silently overwrite an
     // access decision made elsewhere.
+    //
+    // ADR-226 — the trimmed strings are sent AS THEY ARE, blank included. The
+    // old `|| undefined` turned a box the admin had CLEARED into "untouched",
+    // so clearing a name or a phone number silently did nothing; now the server
+    // (which already runs emptyToNull on both) stores the blank. The same
+    // one-line fault was fixed in the same way on the QC Process and Cost Centre
+    // forms, and tpi-master-form.tsx had already solved it this way.
     const payload: UpdateUserInput = {
-      fullName: values.fullName.trim() || undefined,
-      phone: values.phone.trim() || undefined,
+      fullName: values.fullName.trim(),
+      phone: values.phone.trim(),
       isActive: values.isActive,
     };
     try {
-      await update.mutateAsync(payload);
+      // Only the fields that actually moved are sent; a 409 re-reads and retries
+      // onto the fresh row instead of overwriting another admin's change.
+      const saved = await conflict.save(payload, (narrow, expectedUpdatedAt) =>
+        update.mutateAsync({ ...narrow, expectedUpdatedAt }),
+      );
+      // null = nothing actually changed; the user has been told and nothing was
+      // written. Stay on the form.
+      if (saved === null) return;
       exit.leave(goBack);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save user. Try again.');
