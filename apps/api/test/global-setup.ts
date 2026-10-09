@@ -238,7 +238,23 @@ export default async function setup(): Promise<void> {
       DELETE FROM public.party_material_issues WHERE party_material_id IN (
         SELECT id FROM public.party_materials WHERE item_id IN (${testItems}))`);
     await sql.unsafe(`DELETE FROM public.party_materials WHERE item_id IN (${testItems})`);
-    await sql.unsafe(`DELETE FROM public.store_transactions WHERE item_id IN (${testItems})`);
+    // The SECOND ledger delete, and it needs the same ADR-185 exemption as the
+    // one above — flagged by the ADR-227 session. It survived the first run of
+    // the fixed harness only because it matched ZERO rows: a BEFORE DELETE
+    // trigger fires per row, so a DELETE that hits nothing never trips it. The
+    // moment a test leaves a ledger row against a T-prefixed item, this line
+    // throws 23001 inside globalSetup, vitest collects zero files, and every
+    // later run reports "no tests" — which reads as nothing to run rather than
+    // as the harness dying in setup. Exactly the shape the first one had.
+    //
+    // `tool_writeoffs` first for the same FK reason as above.
+    await sql.begin(async (tx) => {
+      await tx`select set_config('innovic.ledger_maintenance', 'on', true)`;
+      await tx.unsafe(`
+        DELETE FROM public.tool_writeoffs WHERE store_transaction_id IN (
+          SELECT id FROM public.store_transactions WHERE item_id IN (${testItems}))`);
+      await tx.unsafe(`DELETE FROM public.store_transactions WHERE item_id IN (${testItems})`);
+    });
     await sql.unsafe(`DELETE FROM public.item_stock_balances WHERE item_id IN (${testItems})`);
 
     // 2. Master tables — referenced by transactional tables, so wipe last.
