@@ -13167,3 +13167,168 @@ finally works as designed.
   decision.
 - **`Description` vs `Remarks` on masters** — the same fact under two names. Registered as-is and
   raised as NAMING.md C-15 rather than silently blessed; picking one changes a visible label.
+
+---
+
+## ADR-227: One rule for every document number — the server states it, the browser never sends it
+
+**Date:** 2026-10-09
+**Status:** Accepted (phases 1, 2, 3a, 4a, 5 built; 3b and 4b blocked on another session's claim)
+
+### Context
+
+The owner, pointing at the work another terminal had just shipped for two
+documents: *"i have work for rc no preview , bom no preview. at save time of doc
+doc got final no. trace it work by other terminal. apply to other doc. where
+system no. gen exist. plan"*
+
+That work is **ADR-224**, and its own Scope section names the rest as "the next
+phase". This is that phase. The trace went wider than the create screens, so the
+plan was built from three parallel reads — the standard itself, every create
+screen, every server-side numberer — and then every headline finding was
+re-verified by hand before it was allowed into the plan. Two of them did not
+survive that check (below).
+
+**This is the third rebuild of the same idea.** ADR-054 made document numbers
+editable with a live duplicate check; ADR-060 and ADR-064 made the auto-assigned
+number visible on create screens (Class A with a box, Class B without); ADR-224
+fixed the send rule for Route Card and BOM. ADR-060's own Consequences wrote the
+bug down and accepted it: *"editable fields submit the shown code, so a rare
+concurrent create can surface a ConflictError."* It kept coming back because
+**nothing was ever written down** — `CLAUDE.md` and `docs/CONVENTIONS.md` said
+nothing about numbering at all.
+
+**What the trace actually found.** 43 numberers across the API. The lock was
+centralised long ago (`lockDocSeries`, 20 series) and the number-*picking* never
+was: ~43 hand-written "find the highest and add one" copies differing in padding
+(2, 3, 4 or 5 digits), in computation (five distinct strategies), in prefix
+anchoring (six variants), in whether a year segment exists (one of 43), in
+company scoping (two gaps) and in whether deleted rows count (nine gaps). Against
+that, the create screens were the smaller half of the problem.
+
+**Live evidence** (TEST; PRODUCTION's transactional tables were cleared by the
+owner on 2026-10-07, so TEST is the only real data): **no duplicate numbers
+anywhere today**, and `PLN-0001…0031` with no gaps. This is prevention, not
+repair. But: five hand-typed Route Card codes (`ZZ-RMTEST-RC-NORM`) sort *above*
+`IN-RC-00018`; Purchase Orders run two series in one table plus `/R1` tails; Job
+Cards carry a year segment taken from **UTC**, so the series rolls over 5½ hours
+early on 1 January; and NC numbers are two different shapes, nine `NC-9` and five
+`NC-AUTO-IN-JC-26-00013-Op20-144843734`.
+
+### Decision
+
+**One rule, written into `docs/CONVENTIONS.md` so this is the last rebuild.** A
+document number is a fact the server states. On a create screen it is a preview,
+read-only, never sent. On the server the series lock is taken **first**, the
+highest number is read **counting deleted rows**, and the insert happens in the
+same transaction. The full rule, with the four ways to get the scan wrong, is in
+CONVENTIONS.md; it is not duplicated here.
+
+`CLAUDE.md` was deliberately **not** touched: Section 2 says the master spec
+changes "only when the user explicitly approves a change to project-wide rules",
+and the owner declined the pointer (*"not getting"* — it was my housekeeping, not
+their decision).
+
+**The owner's four decisions, in their words:**
+
+1. *"donot touch item cretion"* — **Item Master is out of scope**, and it is the
+   worst of the five create screens.
+2. *"Burn the number … 00022 is gone forever … One number only ever means one
+   paper. yes."* — a deleted document's number is never re-issued.
+3. *"dcno , pono ,jwso i never type by hand. it i already system generated"* — so
+   those three become read-only previews.
+4. A Retire/Obsolete action and the 45-generator refactor were both **declined**
+   or deliberately deferred.
+
+### What shipped
+
+| Phase | Change |
+|---|---|
+| 1 | **Three creates stopped trusting a caller-supplied number.** JW Invoice (a *tax invoice number*), JW Return Challan and Party Material Issue each did `input.code ?? next…` beside a comment claiming the typed number "is checked under the same series lock". No check existed. `code` is gone from all three create schemas. |
+| 2 | **Six series gained the lock they never had.** Tasks (`TSK-`/`TODO-`, one table one lock), CAPA, Design Tracker, Design Project, DCR, DCN. Tasks matters most: every non-viewer can raise one, per job-card operation, from two paths. The three design series share one `nextSequence(table, prefix)`, so the lock is keyed on the caller's table via an explicit map — an unknown table is now an error rather than an unlocked insert. |
+| 3a | **Four numberers stopped re-issuing a deleted number**: BOM, Route Card, and `nextSeriesCode` which serves both the PR and PO series. |
+| 4a | **Customer, Vendor and Operator stopped sending the suggestion.** Browser-side only; the server already numbered them correctly when nothing arrived. `code` stays optional in those contracts on purpose — the Excel import matches by Code and `VND-ACME` is legitimate. |
+| 5 | **PO, JWSO and DC numbers became read-only previews.** `DocNumberInput` gained a `preview` mode, as a discriminated union so passing `value`/`onChange` in preview mode is a type error rather than a no-op. The PO form's own inline copy — two refs tracking whose number was in the box, the "Already used"/"Number not used" wording, the ✓/✗ class, the blur padding, two blocking rules and `docNo.checking` in `disabled` — is gone. |
+| 6 | **The rule written into `docs/CONVENTIONS.md`.** |
+
+### Two audit findings that did NOT survive verification
+
+Recorded because both were about to be "fixed":
+
+1. **Assembly was reported as having three unprotected numbering paths. It has
+   none.** `lockSoRow` precedes the `MAX(unit_no)` read in `markUnitAssembled`
+   and `startAssembly`, and `lockSoOfUnit` (which resolves the unit's SO and
+   calls `lockSoRow`) precedes it in `stopAssembly`. That is `SELECT … FROM
+   sales_orders … FOR NO KEY UPDATE` — the same guarantee at a better grain,
+   per-order rather than per-company. What misled the audit was a **stale
+   comment** saying the unique index was all there was, true before ADR-193 M15
+   and not since. I had already added an `assembly_units` series and a `scope`
+   parameter to `lockDocSeries` for it; both were reverted and the comment
+   corrected. An unused knob on a lock helper is worse than no knob.
+2. **The Invoice numberer's digit bug is latent, not live.** `replace(/\D/g,'')`
+   over the whole code would read `INV-0001/R2` as `12` and jump the counter —
+   but only Purchase Orders, Delivery Challans and Dispatches bump a `/R`
+   revision, so every `INV-` code is clean today. Left alone, named here.
+
+### Consequences
+
+- **The ERP now has ONE numbering mechanism instead of two.** `docCodeToSend` has
+  no callers left, and with it the older half of `useDocNumber` (duplicate and
+  format checks), `GET /doc-numbers/check`, `DOC_NUMBER_TYPES`,
+  `DOC_NUMBER_FORMATS` and the ✓/✗ UI are reachable only as the preview's source
+  of `nextCode`. **Flagged, not deleted** — that is a separate change with its
+  own blast radius, and the endpoint still serves the preview.
+- **A deleted document's number is gone for ever**, so registers now have gaps
+  where something was deleted. Intended.
+- **Item Master is unchanged and still collides**: its box is editable *and*
+  autofocused *and* the suggestion is always sent, so two people on New Item both
+  get `ITM-0042` and the second save is refused. By the owner's instruction.
+- **Nothing about a document number can disable Save** on any converted screen.
+
+### Blocked, not forgotten
+
+Both sit inside another session's active claim (ADR-226 edit-conflict holds
+`delivery-challans`, `nc-register` and `cost-centers`) and were left untouched by
+the cross-session coordination protocol, not by oversight:
+
+- **3b — five numberers still re-issue a deleted number**: `nextDcCode`,
+  `generateReceiptCode`, `nextNcDcCode`, `nextSplitNcCode`,
+  `nextSupplementaryJcCode`, `nextRecoveryJcCode`.
+- **4b — Cost Centre still builds its number in the browser.**
+  `CC-${(count ?? 0) + 1}` from a `limit: 1` list query, in an editable and
+  `required` box: any deleted cost centre makes the next one collide, and the
+  form shows `CC-001` until the count arrives. It needs a real server numberer,
+  a `/next-code` endpoint and `code` made optional — the only part of this ADR
+  with server work still outstanding.
+
+### Testing
+
+**The api suite could not be run.** The guard shipped in `7d5979ec` works, but
+the sweep beneath it `DELETE`s from `store_transactions`, which an ADR-185
+trigger refuses by design — so `globalSetup` throws, vitest collects zero files
+and reports "no tests". It passed once on an empty ledger; the assembly tests
+then wrote ledger rows and it has been self-disabled since. Reported to the
+session that owns it; not fixed here. **§20's "two saves at once" test for the six
+newly-locked series is therefore written as a hand case, not as code** — the
+first thing to add once that harness runs.
+
+Verified: typecheck (shared + api + web), eslint, prettier on own lines, and the
+**web unit suite — 13 files, 99 tests, all passing**, including
+`doc-number-input.test.tsx` and `use-doc-number.test.tsx`.
+
+### Complex cases worth running by hand
+
+| Case | Expected |
+|---|---|
+| Two tabs on New Vendor, save both within a second | `VND-041` and `VND-042`, no refusal |
+| Two users raise a Task in the same second | two numbers, neither save lost |
+| Raise a Task, delete it, raise another | the second gets a **new** number, never the deleted one |
+| Delete the newest Route Card, then create one | a **gap** in the series — the deleted number is not reused |
+| New PO: switch PO Type between Material and Job Work | the previewed number follows the series (`IN-MPO-` ↔ `IN-JWPO-`) and stays read-only |
+| New PO / JWSO / DC | no `★` on the number, no ✓/✗, Save never blocked by it |
+| Edit an existing PO | number still shown read-only, "permanent once the PO exists" |
+| Edit an existing JWSO | number read-only, save unaffected |
+| `POST /jw-invoices` with `"code":"lol"` | stored number is `IN-JWINV-…`; the field is no longer in the contract |
+| Excel-import 50 vendors while someone saves one by hand | no collision, no whole-sheet rollback |
+| A Job Card raised at 00:30 IST on 1 January | **known defect, not fixed**: the year segment comes from UTC, so it is still last year's |
+| New Item, two tabs | **still collides** — out of scope by instruction |

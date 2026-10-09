@@ -120,3 +120,61 @@ Examples:
 - All `timestamptz` stored UTC.
 - All UI shows IST (`Asia/Kolkata`) via `date-fns-tz`.
 - Server-side date math uses `date-fns` UTC primitives only.
+
+## Document numbers (ADR-227 — the rule that keeps getting re-learned)
+
+A document number is a **fact the server states**, never a value the browser
+decides. This has been rebuilt three times (ADR-054, ADR-060/064, ADR-224)
+because it was never written down. It is written down here.
+
+**On a create screen the number is a PREVIEW. The browser never sends it.**
+
+- The box is `readOnly`, with `title="Numbered automatically when you save"` and
+  the help line "Numbered automatically when you save."
+- No `★` on create — it marks a box nobody can fill.
+- The create payload **omits the key entirely**. Not `''`, not the suggestion.
+- The prefill **follows** the server's latest answer. Never latch it behind a
+  `useRef` or an "only while blank" guard: a latch is what makes a stale number
+  stick, and there is no typing to protect because the box is read-only.
+- Nothing about the number may disable Save. It is not the user's to get wrong.
+- A preview that goes stale costs nothing. The save takes the next free number
+  and says nothing, because nothing went wrong.
+
+**On the server, in this order, inside the SAME transaction as the insert:**
+
+1. `await lockDocSeries(tx, companyId, '<table>')` — **first**, before reading
+   anything. The series key is the TABLE the code lives in, not the prefix: two
+   prefixes in one table share one unique index, so they must share one lock.
+   Add the table to the `DocSeries` union in `apps/api/src/lib/doc-series-lock.ts`.
+2. Read the highest number **counting deleted rows**. Every unique index on a
+   code column is partial (`WHERE deleted_at IS NULL`), so excluding them does
+   not fail loudly — Postgres accepts the duplicate and the register quietly
+   holds two papers with one number, one of them in Trash. **One number, one
+   document, for ever**; a deleted document leaves a permanent gap, and that is
+   the intended trade (owner, 2026-10-09).
+3. Anchor the scan on the prefix and parse the digits — never `replace(/\D/g,'')`
+   over the whole code (`INV-0001/R2` reads as `12`), and never a text `MAX`
+   (`ORDER BY length(code) DESC, code DESC` resets the series the first time
+   someone hand-types a differently padded code).
+4. A per-document series that is **not** company-wide may use a row lock at the
+   right grain instead — `assembly_units` serialises on its sales order via
+   `lockSoRow`, and is deliberately not in `DocSeries`.
+
+**A number that is a pure system series must not be accepted from a caller at
+all** — leave it out of the create schema, so an Excel import or a direct `POST`
+cannot supply one either. A **master's** code may stay optional (the Excel import
+matches rows by Code and a user may legitimately want `VND-ACME`); the screen
+still must not send the preview.
+
+**If a caller may supply one, check it under the same lock.** Three creates once
+carried the comment "a typed number is checked under the same series lock" and
+the next line did no check at all. A comment is not a check.
+
+**Never build a document number in the browser.** Cost Centre derived `CC-NNN`
+from a row count in a `limit: 1` list query — so any deleted cost centre made the
+next one collide, and the box showed `CC-001` until the count arrived.
+
+**Reserving a number when the screen opens is REJECTED** (ADR-224): it needs a
+counter table, and every abandoned form then leaves a permanent hole in the
+register. Numbers travel onto challans, QC records and invoices, so gap-free
+wins. Do not re-propose it.

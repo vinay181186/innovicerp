@@ -25,9 +25,12 @@ interface DocNumberInputBase {
    *  series (IN-MPO- / IN-JWPO- / IN-SPO- / IN-OPO-) the suggestion and the
    *  placeholder are built from. */
   poType?: PoType;
-  /** Told the number this field auto-filled, every time it fills one. The form
-   *  keeps it and passes it to `docCodeToSend` on save, so an untouched
-   *  suggestion is NOT sent and the server numbers the document itself (S2). */
+  /** Told the number this field auto-filled, every time it fills one.
+   *
+   *  ADR-227 left this with NO callers: the three screens that passed it (PO,
+   *  JWSO, Delivery Challan) now use `preview`, which sends nothing at all, so
+   *  there is no longer a "did the user change it?" question to answer. Kept
+   *  only for the typeable branch, which nothing uses today either. */
   onSuggestedChange?: (suggested: string) => void;
 }
 
