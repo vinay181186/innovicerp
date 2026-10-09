@@ -13,6 +13,7 @@ import {
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { supabaseAdmin } from '../../lib/supabase-admin';
+import { syncTokenIdentity } from '../../lib/sync-token-identity';
 import type {
   CreateUserInput,
   ListUsersQuery,
@@ -236,6 +237,11 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
       .returning();
     row = inserted[0];
   }
+  // ADR-228 — a new login must not get a token with no company in it. Without
+  // this, the person could sign in and every direct-browser read (Realtime, QC
+  // document downloads) would be silently empty for them until somebody
+  // backfilled their metadata by hand.
+  await syncTokenIdentity(userId, { companyId, role: input.role });
   return row as unknown as User;
 }
 
@@ -323,7 +329,16 @@ export async function updateUser(
     }
 
     const updated = await tx.update(users).set(updates).where(eq(users.id, id)).returning();
-    return updated[0] as unknown as User;
+    // ADR-228 — a role change here must reach the person's TOKEN too, or their
+    // direct-browser reads keep the old role until they next sign in. The call
+    // sits inside this callback but after the write; it is an HTTP round trip to
+    // Supabase, and a failed sync only lags the copy — `public.users` is already
+    // correct and every route re-reads it.
+    const after = updated[0];
+    if (after) {
+      await syncTokenIdentity(id, { companyId: after.companyId, role: after.role });
+    }
+    return after as unknown as User;
   });
 }
 
