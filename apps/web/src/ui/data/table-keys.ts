@@ -20,6 +20,8 @@ export const TABLE_KEYS = {
   usersList: 'users-list',
   /** Multi-Level BOM list (ADR-225). */
   mlBomList: 'ml-bom-list',
+  /** Multi-Level Plan list (ADR-225 phase 3). */
+  mlPlanList: 'ml-plan-list',
 
   // Transactions
   jobCardsList: 'job-cards-list',

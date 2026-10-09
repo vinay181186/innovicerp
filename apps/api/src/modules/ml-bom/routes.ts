@@ -6,9 +6,11 @@ import {
   deleteMlBomInputSchema,
   listMlBomsQuerySchema,
   makeDefaultMlBomInputSchema,
+  mlBomImportInputSchema,
   mlBomTreeQuerySchema,
   updateMlBomInputSchema,
 } from './schema';
+import { importMlBoms } from './import';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -46,6 +48,14 @@ export async function mlBomRoutes(app: FastifyInstance): Promise<void> {
     const detail = await service.createMlBom(input, req.user);
     reply.code(201);
     return detail;
+  });
+
+  // Excel import (ADR-225 phase 2): dryRun true = Preview, false = save the
+  // whole file in one transaction. Same rules either way (import.ts).
+  app.post('/ml-boms/import', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = mlBomImportInputSchema.parse(req.body);
+    return importMlBoms(input, req.user);
   });
 
   app.put('/ml-boms/:id', async (req) => {

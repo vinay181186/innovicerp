@@ -3488,6 +3488,149 @@ export const mlBomRevisions = pgTable(
   ],
 ).enableRLS();
 
+// ─── Multi-Level Plan (ADR-225 phase 3, migration 0203) ────────────────────
+// ERPNext Production Plan for ONE SO line whose item has a Default
+// Multi-Level BOM. Creating it COPIES the BOM tree into ml_plan_nodes with the
+// figures worked out once (snapshot); the copy pins ml_bom_revision. One live
+// plan per SO line (partial unique index — the double-submit backstop).
+
+export const mlPlans = pgTable(
+  'ml_plans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    /** IN-MLP-00001 */
+    code: text('code').notNull(),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id),
+    soLineId: uuid('so_line_id')
+      .notNull()
+      .references(() => salesOrderLines.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    mlBomId: uuid('ml_bom_id')
+      .notNull()
+      .references(() => mlBoms.id),
+    mlBomRevision: integer('ml_bom_revision').notNull(),
+    planQty: integer('plan_qty').notNull(),
+    /** draft | released | cancelled (CHECK) */
+    status: text('status').notNull().default('draft'),
+    remarks: text('remarks'),
+    snapshotAt: timestamp('snapshot_at', { withTimezone: true }).notNull().defaultNow(),
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('ml_plans_plan_qty_positive', sql`${t.planQty} > 0`),
+    check('ml_plans_status_check', sql`${t.status} IN ('draft', 'released', 'cancelled')`),
+    check(
+      'ml_plans_cancelled_stamp',
+      sql`${t.status} <> 'cancelled' OR ${t.cancelledAt} IS NOT NULL`,
+    ),
+    uniqueIndex('ml_plans_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('ml_plans_one_live_per_so_line_uniq')
+      .on(t.soLineId)
+      .where(sql`${t.status} <> 'cancelled' and ${t.deletedAt} is null`),
+    index('ml_plans_sales_order_idx').on(t.salesOrderId),
+    index('ml_plans_ml_bom_idx').on(t.mlBomId),
+    pgPolicy('ml_plans_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('ml_plans_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const mlPlanNodes = pgTable(
+  'ml_plan_nodes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    mlPlanId: uuid('ml_plan_id')
+      .notNull()
+      .references(() => mlPlans.id, { onDelete: 'cascade' }),
+    parentNodeId: uuid('parent_node_id').references((): AnyPgColumn => mlPlanNodes.id),
+    /** Level — top row 0. */
+    depth: integer('depth').notNull(),
+    /** Display order (depth-first by BOM line no.). */
+    seq: integer('seq').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    /** null on the top row. */
+    bomType: bomLineTypeEnum('bom_type'),
+    isSubAssembly: boolean('is_sub_assembly').notNull().default(false),
+    mlBomId: uuid('ml_bom_id').references(() => mlBoms.id),
+    mlBomRevision: integer('ml_bom_revision'),
+    qtyPerSet: numeric('qty_per_set', { precision: 14, scale: 3 }),
+    grossNeedQty: numeric('gross_need_qty', { precision: 14, scale: 3 }).notNull(),
+    fromStockQty: numeric('from_stock_qty', { precision: 14, scale: 3 }).notNull(),
+    onPoPrQty: numeric('on_po_pr_qty', { precision: 14, scale: 3 }).notNull(),
+    netNeedQty: numeric('net_need_qty', { precision: 14, scale: 3 }).notNull(),
+    rawMaterialGradeText: text('raw_material_grade_text'),
+    rawMaterialSizeText: text('raw_material_size_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('ml_plan_nodes_depth_nonneg', sql`${t.depth} >= 0`),
+    check('ml_plan_nodes_seq_nonneg', sql`${t.seq} >= 0`),
+    check('ml_plan_nodes_gross_nonneg', sql`${t.grossNeedQty} >= 0`),
+    check('ml_plan_nodes_from_stock_nonneg', sql`${t.fromStockQty} >= 0`),
+    check('ml_plan_nodes_on_po_pr_nonneg', sql`${t.onPoPrQty} >= 0`),
+    check('ml_plan_nodes_net_nonneg', sql`${t.netNeedQty} >= 0`),
+    uniqueIndex('ml_plan_nodes_plan_seq_uniq')
+      .on(t.mlPlanId, t.seq)
+      .where(sql`${t.deletedAt} is null`),
+    index('ml_plan_nodes_plan_idx').on(t.mlPlanId),
+    index('ml_plan_nodes_item_idx').on(t.itemId),
+    pgPolicy('ml_plan_nodes_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('ml_plan_nodes_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Phase 7: saved (ad-hoc) reports (T-041b) ─────────────────────────────
 // User-composed report definitions. The `spec` jsonb stores the AdHocSpec
 // (sourceKey + columns + filters + groupBy + sumCol + sumFn + sort) — see
