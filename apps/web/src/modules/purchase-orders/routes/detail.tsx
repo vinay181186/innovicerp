@@ -123,6 +123,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   // one, but an older request can still be open alongside a new one).
   const pendingEdit = usePendingEditForDoc('PurchaseOrder', detail?.id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 
   if (isLoading) {
     return (
@@ -178,6 +180,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
       company,
       templates: templates?.items ?? [],
       currentUser: me?.email,
+      draft: isDraft,
     });
     if (!ok) window.alert('Allow popups to print.');
   };
@@ -297,7 +300,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             >
               {detail.code}
             </div>
-            <PoStatusBadge status={detail.status} />
+            <PoStatusBadge status={detail.status} draft={isDraft} />
             {detail.shortClosedAt ? (
               <span
                 className="text3"

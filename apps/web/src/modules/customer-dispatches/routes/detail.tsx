@@ -47,6 +47,10 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
   // decision. Their per-field changes drive the inline amber chips below.
   const pendingEdit = usePendingEditForDoc('Dispatch', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — a pending edit shows a grey "Draft" chip on the header. The
+  // dispatch header carries no status badge of its own (status is plain text),
+  // so the chip is added beside the title rather than replacing a badge.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const [previewHeight, setPreviewHeight] = useState(1123);
 
   const docHtml = useMemo(
@@ -88,6 +92,17 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
             </Link>{' '}
             · {fmtDate(d.dispatchDate)} · {d.totalQty} pcs
             {cancelled ? ' · Cancelled' : ''}
+            {isDraft ? (
+              <>
+                {' '}
+                <span
+                  className="badge b-grey"
+                  title="An edit to this document is waiting for approval"
+                >
+                  Draft
+                </span>
+              </>
+            ) : null}
           </>
         }
         backLabel="Back to Customer Dispatch"

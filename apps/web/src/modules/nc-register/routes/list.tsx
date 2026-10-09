@@ -19,6 +19,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -152,7 +153,9 @@ function NcRegisterListPage(): React.JSX.Element {
     [navigate],
   );
 
-  const columns = useMemo(() => ncListColumns(), []);
+  // ADR-202 — NC ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('NonConformance');
+  const columns = useMemo(() => ncListColumns(draftIds), [draftIds]);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`

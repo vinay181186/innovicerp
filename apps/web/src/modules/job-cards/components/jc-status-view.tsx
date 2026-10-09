@@ -93,6 +93,8 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // decision. Their per-field changes drive the amber chips on the facts.
   const pendingEdit = usePendingEditForDoc('JobCard', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 
   const [tab, setTab] = useState<TabKey>('ops');
   const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
@@ -155,7 +157,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         badges={
           <>
             <span className="panel-title">Job Card</span>
-            <JcStatusBadge status={jc.computedStatus} />
+            <JcStatusBadge status={jc.computedStatus} draft={isDraft} />
           </>
         }
         actions={
@@ -172,6 +174,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                     ops,
                     company,
                     actualSize: productionOrder?.actualSize ?? null,
+                    draft: isDraft,
                   })
                 )
                   window.alert('Allow popups to print.');

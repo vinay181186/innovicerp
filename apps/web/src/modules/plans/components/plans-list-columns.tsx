@@ -94,7 +94,10 @@ export function planRowTint(row: PlanRow): string | undefined {
   return undefined;
 }
 
-export function plansListColumns(): DataTableColumn<PlanRow>[] {
+export function plansListColumns(
+  /** ADR-202 — plan ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
+): DataTableColumn<PlanRow>[] {
   return [
     {
       id: 'plan_no',
@@ -197,6 +200,13 @@ export function plansListColumns(): DataTableColumn<PlanRow>[] {
       header: 'Plan Status',
       nowrap: true,
       render: (row) => {
+        // ADR-202 — a pending edit overlays grey "Draft" in place of the status.
+        if (draftIds?.has(row.id))
+          return (
+            <span className="badge b-grey" title="An edit to this document is waiting for approval">
+              Draft
+            </span>
+          );
         const badge = planBadge(row);
         return <span className={`badge ${badge.cls}`}>{badge.label}</span>;
       },

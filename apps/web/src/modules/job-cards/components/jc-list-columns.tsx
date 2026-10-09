@@ -62,6 +62,8 @@ export function sourceRoute(link: NonNullable<JobCardListItem['sourceLink']>): {
 export function jobCardListColumns(
   firstRowNo: number,
   today: string,
+  /** ADR-202 — JC ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
 ): DataTableColumn<JobCardListItem>[] {
   return [
     {
@@ -262,7 +264,7 @@ export function jobCardListColumns(
       kind: 'badge',
       header: 'JC Status',
       nowrap: true,
-      render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} />,
+      render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} draft={draftIds?.has(jc.id)} />,
     },
     {
       id: 'jc_date',

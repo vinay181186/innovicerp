@@ -30,6 +30,20 @@ const LABELS: Record<ProductionOrderStatus, string> = {
   short_closed: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
 };
 
-export function PoStatusBadge({ status }: { status: ProductionOrderStatus }): React.JSX.Element {
+export function PoStatusBadge({
+  status,
+  draft,
+}: {
+  status: ProductionOrderStatus;
+  draft?: boolean | undefined;
+}): React.JSX.Element {
+  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
+  if (draft) {
+    return (
+      <span className="badge b-grey" title="An edit to this document is waiting for approval">
+        Draft
+      </span>
+    );
+  }
   return <span className={`badge ${CLASSES[status]}`}>{LABELS[status]}</span>;
 }

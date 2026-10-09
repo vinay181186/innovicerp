@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -135,7 +136,9 @@ function ProductionOrdersListPage(): React.JSX.Element {
   };
   const filtersActive = sf.filtering || searchInput.trim() !== '' || search.status != null;
 
-  const columns = useMemo(() => poListColumns(), []);
+  // ADR-202 — Production Order ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('ProductionOrder');
+  const columns = useMemo(() => poListColumns(draftIds), [draftIds]);
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose

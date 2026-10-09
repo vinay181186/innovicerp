@@ -54,6 +54,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // record fields in the header grid. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('GoodsReceiptNote', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   // Tier-driven, per department (Store). Was role admin/manager for Edit and
   // role admin for Delete.
   const { data: eff } = useMyAccess();
@@ -125,6 +127,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       company,
       templates: templates?.items ?? [],
       currentUser: me?.email,
+      draft: isDraft,
     });
     if (!ok) window.alert('Allow popups to print.');
   };
@@ -198,7 +201,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               stays. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="panel-title">Receipt</span>
-            <QcStatusBadge status={headerQcStatus} />
+            <QcStatusBadge status={headerQcStatus} draft={isDraft} />
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <AssignTaskButton

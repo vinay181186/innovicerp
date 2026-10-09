@@ -41,6 +41,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, renderRowMenuLink } from '@/ui/data';
@@ -168,9 +169,11 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     });
   }, []);
 
+  // ADR-202 — PO ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('PurchaseOrder');
   const columns = useMemo(
-    () => purchaseOrderListColumns({ canSeePrice: perms.price }),
-    [perms.price],
+    () => purchaseOrderListColumns({ canSeePrice: perms.price, draftIds }),
+    [perms.price, draftIds],
   );
 
   // Row ⋯ menu — Edit · Create DC · Assign Task. No View: the row click opens

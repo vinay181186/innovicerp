@@ -24,14 +24,17 @@ export function JcRowMenu({
   canEdit,
   onDelete,
   deleteDisabled,
+  draft,
 }: {
   jc: JobCardListItem;
   canEdit: boolean;
   /** Undefined when the user may not delete — the item is then left out. */
   onDelete: (() => Promise<void>) | undefined;
   deleteDisabled: boolean;
+  /** ADR-202 — the JC has a pending edit; its printout shows "Draft". */
+  draft?: boolean | undefined;
 }): React.JSX.Element {
-  const print = usePrintJc(jc);
+  const print = usePrintJc(jc, draft);
   const excel = useExcelJc(jc);
   const { data: me } = useSession();
   const [assigning, setAssigning] = useState(false);

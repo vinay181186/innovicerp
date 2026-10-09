@@ -55,6 +55,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -274,7 +275,12 @@ function JobCardsListPage(): React.JSX.Element {
     });
   };
 
-  const columns = useMemo(() => jobCardListColumns(offset + 1, today), [offset, today]);
+  // ADR-202 — JC ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('JobCard');
+  const columns = useMemo(
+    () => jobCardListColumns(offset + 1, today, draftIds),
+    [offset, today, draftIds],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -380,6 +386,7 @@ function JobCardsListPage(): React.JSX.Element {
                 canEdit={canEditJc}
                 onDelete={canDeleteJc ? (): Promise<void> => del.mutateAsync(jc.id) : undefined}
                 deleteDisabled={del.isPending}
+                draft={draftIds.has(jc.id)}
               />
             )}
           />

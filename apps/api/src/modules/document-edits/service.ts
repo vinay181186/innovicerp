@@ -159,10 +159,27 @@ export async function decideDocumentEdit(
     }
 
     const storedChanges = (req.changes as DocumentEditChange[] | null) ?? [];
+    // Outcomes recorded by EARLIER decide calls on this same request. Per-field
+    // immediate decide (1A): each call resolves only the changes it names, so a
+    // request can be decided across several calls by one or more approvers.
+    const priorOutcomes = (req.decisions as DocumentEditDecision[] | null) ?? [];
+    const decidedIds = new Set(priorOutcomes.map((o) => o.changeId));
     const decisionByChange = new Map(input.decisions.map((d) => [d.changeId, d]));
-    for (const c of storedChanges) {
-      if (!decisionByChange.has(c.id)) {
-        throw new ValidationError(`Decide every change — "${c.label}" has no decision.`);
+
+    // Validate every change this call names: it must be a real change on this
+    // request, and it must NOT already carry an outcome. A rival approver who
+    // decided the same change first (and committed before our FOR UPDATE lock was
+    // granted) is already reflected in priorOutcomes, so this is where exactly one
+    // of two concurrent deciders of the same change wins and the other is refused.
+    for (const d of input.decisions) {
+      const change = storedChanges.find((c) => c.id === d.changeId);
+      if (!change) {
+        throw new ValidationError(`Unknown change "${d.changeId}" for this edit request.`);
+      }
+      if (decidedIds.has(d.changeId)) {
+        throw new ConflictError(
+          `"${change.label}" was already decided by someone else — reload the page.`,
+        );
       }
     }
 
@@ -179,48 +196,64 @@ export async function decideDocumentEdit(
       ]),
     );
 
-    const outcomes: DocumentEditDecision[] = [];
+    // Resolve ONLY the changes named in this call; untouched changes stay pending.
+    const newOutcomes: DocumentEditDecision[] = [];
     const approvedFields = new Set<string>();
     for (const c of storedChanges) {
-      const d = decisionByChange.get(c.id)!;
+      const d = decisionByChange.get(c.id);
+      if (!d) continue; // not decided in this call — leave it pending
       if (d.decision === 'reject') {
-        outcomes.push({ changeId: c.id, outcome: 'rejected', reason: d.reason?.trim() || null });
+        newOutcomes.push({ changeId: c.id, outcome: 'rejected', reason: d.reason?.trim() || null });
         continue;
       }
       const fresh = freshByField.get(c.field);
       // Fresh = the document's current value still equals the value captured when
       // the edit was requested (same comparison diffFields uses).
       if (fresh && valuesEqual(fresh.before, c.before)) {
-        outcomes.push({ changeId: c.id, outcome: 'approved', reason: null });
+        newOutcomes.push({ changeId: c.id, outcome: 'approved', reason: null });
         approvedFields.add(c.field);
       } else {
-        outcomes.push({ changeId: c.id, outcome: 'superseded', reason: null });
+        newOutcomes.push({ changeId: c.id, outcome: 'superseded', reason: null });
       }
     }
 
+    // Apply ONLY the fields approved in THIS call. buildFilteredInput narrows the
+    // proposed payload to those keys, so still-pending and rejected fields — and
+    // fields approved by an earlier call (already written then) — are not touched.
     const currentToken = target.updatedAt ? new Date(target.updatedAt).toISOString() : null;
     if (approvedFields.size > 0) {
       const filtered = entry.buildFilteredInput(req.proposedPayload, approvedFields);
       if (filtered) await entry.applyEdit(tx, companyId, req.entityId, filtered, currentToken, user);
     }
 
+    // Merge this call's outcomes with the earlier ones, then decide the request's
+    // own status. It stays 'pending' until EVERY change has an outcome; only the
+    // last decide finalizes it — approved if any change was applied, rejected if
+    // every change was rejected, superseded otherwise (none applied, at least one
+    // drifted). Reuses DOCUMENT_EDIT_STATUSES values; no new status invented.
+    const outcomes = [...priorOutcomes, ...newOutcomes];
+    const outcomeIds = new Set(outcomes.map((o) => o.changeId));
+    const allDecided = storedChanges.every((c) => outcomeIds.has(c.id));
     const anyApproved = outcomes.some((o) => o.outcome === 'approved');
     const allRejected = outcomes.every((o) => o.outcome === 'rejected');
-    const status: DocumentEditStatus = anyApproved
-      ? 'approved'
-      : allRejected
-        ? 'rejected'
-        : 'superseded';
+    const status: DocumentEditStatus = !allDecided
+      ? 'pending'
+      : anyApproved
+        ? 'approved'
+        : allRejected
+          ? 'rejected'
+          : 'superseded';
 
-    // Guarded write: only a still-pending request moves. 0 rows = someone else
-    // decided first; throwing rolls back the applyEdit above (same tx).
+    // Guarded write (§20.2): only a still-pending request moves. We hold the row
+    // FOR UPDATE, so a rival decide blocked on the lock and re-read our merged
+    // outcomes above; 0 rows here still rolls back the applyEdit above (same tx).
+    // decidedBy/decidedAt are stamped only when the request is finally resolved.
     const decided = await tx
       .update(documentEditRequests)
       .set({
         decisions: outcomes,
         status,
-        decidedBy: user.id,
-        decidedAt: new Date(),
+        ...(allDecided ? { decidedBy: user.id, decidedAt: new Date() } : {}),
         updatedBy: user.id,
       })
       .where(and(eq(documentEditRequests.id, req.id), eq(documentEditRequests.status, 'pending')))
@@ -230,9 +263,10 @@ export async function decideDocumentEdit(
     }
 
     // ADR-197 — APPROVE / REJECT on the document itself, so both show on its
-    // History tab. The applied EDIT rows are emitted by the document's own writer.
+    // History tab. Logged for the changes resolved in THIS call only; the applied
+    // EDIT rows are emitted by the document's own writer.
     const outcomeOf = (id: string): DocumentEditDecision['outcome'] | undefined =>
-      outcomes.find((o) => o.changeId === id)?.outcome;
+      newOutcomes.find((o) => o.changeId === id)?.outcome;
     const appliedChanges = storedChanges.filter((c) => outcomeOf(c.id) === 'approved');
     const rejectedChanges = storedChanges.filter((c) => outcomeOf(c.id) === 'rejected');
     if (appliedChanges.length > 0) {

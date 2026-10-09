@@ -25,6 +25,8 @@ const BILLED_BADGE: Record<
 
 export function dispatchListColumns(
   billedOf: (dispatchId: string) => CustomerDispatchRow['billedStatus'],
+  /** ADR-202 — dispatch ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
 ): DataTableColumn<DispatchGroup>[] {
   return [
     {
@@ -113,6 +115,13 @@ export function dispatchListColumns(
       header: 'Billed Status',
       nowrap: true,
       render: (g) => {
+        // ADR-202 — a pending edit overlays grey "Draft" in place of the status.
+        if (draftIds?.has(g.dispatchId))
+          return (
+            <span className="badge b-grey" title="An edit to this document is waiting for approval">
+              Draft
+            </span>
+          );
         if (g.status === 'cancelled') return <span className="badge b-grey">Cancelled</span>;
         const billed = billedOf(g.dispatchId);
         return billed ? (

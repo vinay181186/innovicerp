@@ -12,6 +12,14 @@ const CLASSES: Record<SoStatus, string> = {
   cancelled: 'b-grey',
 };
 
-export function SoStatusBadge(props: { status: SoStatus }) {
+export function SoStatusBadge(props: { status: SoStatus; draft?: boolean | undefined }) {
+  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
+  if (props.draft) {
+    return (
+      <span className="badge b-grey" title="An edit to this document is waiting for approval">
+        Draft
+      </span>
+    );
+  }
   return <span className={`badge ${CLASSES[props.status]}`}>{SO_STATUS_LABEL[props.status]}</span>;
 }

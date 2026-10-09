@@ -68,6 +68,8 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   // Their per-field changes drive the "Changes awaiting approval" panel below.
   const pendingEdit = usePendingEditForDoc('DeliveryChallan', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // ADR-197: a cancel must say why — the reason lands on the DC's History.
@@ -192,6 +194,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       company,
       templates: templates?.items ?? [],
       currentUser: me?.email,
+      draft: isDraft,
     });
     if (!ok) window.alert('Allow popups to print.');
   };
@@ -220,7 +223,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
               {dc.vendorName ?? dc.vendorCodeText}
-              <DcStatusBadge status={dc.status} />
+              <DcStatusBadge status={dc.status} draft={isDraft} />
             </div>
             {/* Return-to-vendor challan raised from an NC (design §5): say so
                 in the header, with the NC and the job card one click away —

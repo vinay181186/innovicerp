@@ -26,6 +26,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -157,7 +158,12 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     [search.qcStatus, inProgressIds],
   );
 
-  const columns = useMemo(() => goodsReceiptNoteListColumns(qcStatusFor), [qcStatusFor]);
+  // ADR-202 — GRN ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('GoodsReceiptNote');
+  const columns = useMemo(
+    () => goodsReceiptNoteListColumns(qcStatusFor, draftIds),
+    [qcStatusFor, draftIds],
+  );
 
   // ⋯ row menu — Assign Task (link a task to this GRN), the same gate the
   // retired card used: shown only while a line still awaits QC

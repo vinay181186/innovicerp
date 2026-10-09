@@ -14,7 +14,7 @@ import {
 } from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
 import { decideDocumentEdit, withdrawDocumentEdit } from './service';
-import { listDocumentEdits } from './list';
+import { documentEditCounts, listDocumentEdits } from './list';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -23,6 +23,11 @@ export async function documentEditsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listDocumentEditsQuerySchema.parse(req.query);
     return listDocumentEdits(query, req.user);
+  });
+
+  app.get('/document-edits/counts', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return documentEditCounts(req.user);
   });
 
   app.post('/document-edits/:id/decide', async (req) => {
