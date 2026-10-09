@@ -94,9 +94,12 @@ async function nextSequence(
   prefix: string,
   companyId: string,
 ): Promise<string> {
-  const series = DESIGN_SERIES[table];
-  if (!series) throw new Error(`nextSequence: ${table} is not a numbered design series`);
-  await lockDocSeries(tx, companyId, series);
+  if (!DESIGN_SERIES[table]) {
+    throw new Error(`nextSequence: ${table} is not a numbered design series`);
+  }
+  // ADR-227: the series lock is taken by the CREATE callers, NOT here — this
+  // function is also the body of the read-only /next-code preview, and a GET
+  // must not hold a write lock to commit. See docs/CONVENTIONS.md.
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^' || ${prefix}, ''), '')::int),
@@ -527,6 +530,7 @@ export async function createDesignProject(
       if (cRows[0] && !clientText) clientText = cRows[0].name;
     }
 
+    await lockDocSeries(tx, companyId, 'design_projects'); // ADR-227
     const code = await nextSequence(tx, 'design_projects', 'DP-', companyId);
     const inserted = await tx
       .insert(designProjects)
@@ -1032,6 +1036,7 @@ export async function createDesignDcr(
       .limit(1);
     if (!projRows[0]) throw new NotFoundError('Design Project not found. Refresh the page.');
 
+    await lockDocSeries(tx, companyId, 'design_dcrs'); // ADR-227
     const code = await nextSequence(tx, 'design_dcrs', 'DCR-', companyId);
     const inserted = await tx
       .insert(designDcrs)
@@ -1136,6 +1141,7 @@ export async function createDesignDcn(
       if (!dcrRows[0]) throw new NotFoundError('DCR not found in this project. Refresh the page.');
     }
 
+    await lockDocSeries(tx, companyId, 'design_dcns'); // ADR-227
     const code = await nextSequence(tx, 'design_dcns', 'DCN-', companyId);
     const inserted = await tx
       .insert(designDcns)

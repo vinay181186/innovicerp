@@ -138,8 +138,9 @@ async function nextDesignCode(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
-  // ADR-227: queue behind any other save numbering this series.
-  await lockDocSeries(tx, companyId, 'design_tracker');
+  // ADR-227: the series lock is taken by the CREATE callers, NOT here — this
+  // function is also the body of the read-only /next-code preview, and a GET
+  // must not hold a write lock to commit. See docs/CONVENTIONS.md.
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^${sql.raw(CODE_PREFIX)}', ''), '')::int),
@@ -515,6 +516,7 @@ export async function createDesignTracker(
       );
     }
 
+    await lockDocSeries(tx, companyId, 'design_tracker'); // ADR-227
     const code = await nextDesignCode(tx, companyId);
     const inserted = await tx
       .insert(designTracker)

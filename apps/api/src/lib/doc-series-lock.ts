@@ -52,7 +52,7 @@ export type DocSeries =
   | 'route_cards'
   | 'bom_masters'
   | 'ml_boms'
-  // ADR-227 — these seven had no protection at all: no lock and no retry, so
+  // ADR-227 — these six had no protection at all: no lock and no retry, so
   // two saves in the same second both read the same highest number and the
   // loser's whole transaction was thrown away with a bare "already exists".
   | 'tasks'

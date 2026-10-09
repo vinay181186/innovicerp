@@ -713,11 +713,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // Built field by field — never a spread of the form header, which also holds
     // UI-only values (the Due Date helper, the read-only status).
     const headerOut = {
-      // ADR-227: no `code` on create. The number on screen is a preview and the
-      // server numbers the JWSO under its series lock, so a preview that went
+      // ADR-227: no `code`, on create OR on edit. The number on screen is a
+      // preview; the server numbers the JWSO itself, so a preview that went
       // stale while this screen was open costs nothing — the save takes the next
-      // free number instead of being refused as a duplicate.
-      ...(isEdit ? { code: h.code } : {}),
+      // free number instead of being refused as a duplicate. (`nextJwCode` is
+      // guarded by withUniqueRetry, not by lockDocSeries: `job_work_orders` is
+      // not in the DocSeries union. Same guarantee, different mechanism — and
+      // the one phase-5 screen whose server side does not yet follow the rule in
+      // docs/CONVENTIONS.md.) An earlier cut added the code back on edit here;
+      // the edit path strips it again a few lines down, so it never travelled.
       jwDate: h.jwDate,
       clientId: h.clientId || undefined,
       // customerName is snapshotted server-side from the client master.
@@ -761,9 +765,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     });
 
     if (isEdit) {
-      const { code: _drop, ...headerNoCode } = headerOut;
-      void _drop;
-      await props.onSubmit({ header: headerNoCode, lines: linesOut });
+      // ADR-227: headerOut carries no `code` in either mode now, so there is
+      // nothing to strip here. This used to destructure one out.
+      await props.onSubmit({ header: headerOut, lines: linesOut });
     } else {
       await props.onSubmit({ header: headerOut, lines: linesOut } as CreateJobWorkOrderInput);
     }

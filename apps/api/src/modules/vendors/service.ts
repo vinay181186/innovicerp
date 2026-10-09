@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   ActivityAction,
   checkPartyGst,
@@ -178,16 +178,26 @@ export async function getVendor(id: string, user: AuthContext): Promise<Vendor> 
 
 /** Next VND-### code in the company series (legacy _nextVendorCode, 3-digit). */
 async function nextVendorCode(tx: DbTransaction, companyId: string): Promise<string> {
-  const rows = await tx
-    .select({ code: vendors.code })
-    .from(vendors)
-    .where(and(eq(vendors.companyId, companyId), like(vendors.code, 'VND-%')))
-    .orderBy(sql`length(${vendors.code}) desc`, sql`${vendors.code} desc`)
-    .limit(1);
+  // ADR-227: ordered NUMERICALLY, over codes that are actually in the series.
+  // It used to be `ORDER BY length(code) DESC, code DESC` — a TEXT comparison,
+  // correct only while every code is padded to exactly 3 digits. One
+  // hand-typed or imported `VND-ACME` is longer than `VND-041`, so it won
+  // the LIMIT 1, the digit match then failed, `next` reset to 1 and every later
+  // create was refused for ever. The screen can no longer supply a code to work
+  // around it (phase 4a), so the series must be right on its own.
+  //
+  // Deleted rows are counted on purpose: a used number is never re-issued.
+  const rows = (await tx.execute(sql`
+    SELECT code FROM public.vendors
+    WHERE company_id = ${companyId}::uuid
+      AND code ~ '^VND-[0-9]+$'
+    ORDER BY (SUBSTRING(code FROM 5))::int DESC
+    LIMIT 1
+  `)) as unknown as Array<{ code: string }>;
   const last = rows[0]?.code ?? null;
   let next = 1;
   if (last) {
-    const m = last.match(/^VND-(\d+)$/i);
+    const m = last.match(/^VND-(\d+)$/);
     if (m) next = Number(m[1]) + 1;
   }
   return `VND-${String(next).padStart(3, '0')}`;

@@ -130,8 +130,10 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
       onSubmit={form.handleSubmit(async (values) => {
         // ADR-227: `code` is dropped — the OP-### on screen is a preview, and
         // sending it is what made two people saving at once collide. The server
-        // picks the number under its series lock, so a stale preview costs
-        // nothing.
+        // numbers it instead, so a stale preview costs nothing. (This series is
+        // guarded by withUniqueRetry rather than by lockDocSeries — a master is
+        // not on the document-series lock. Same guarantee for the user, by a
+        // different mechanism.)
         const { code: _preview, ...rest } = values;
         void _preview;
         await props.onSubmit(rest);

@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   ActivityAction,
   checkPartyGst,
@@ -176,16 +176,26 @@ export async function getClient(id: string, user: AuthContext): Promise<Client> 
 /** Next CLI-### code in the company series. Server-authoritative so client
  *  codes auto-generate instead of being typed manually (bug 5.1). */
 async function nextClientCode(tx: DbTransaction, companyId: string): Promise<string> {
-  const rows = await tx
-    .select({ code: clients.code })
-    .from(clients)
-    .where(and(eq(clients.companyId, companyId), like(clients.code, 'CLI-%')))
-    .orderBy(sql`length(${clients.code}) desc`, sql`${clients.code} desc`)
-    .limit(1);
+  // ADR-227: ordered NUMERICALLY, over codes that are actually in the series.
+  // It used to be `ORDER BY length(code) DESC, code DESC` — a TEXT comparison,
+  // correct only while every code is padded to exactly 3 digits. One
+  // hand-typed or imported `CLI-ACME` is longer than `CLI-041`, so it won
+  // the LIMIT 1, the digit match then failed, `next` reset to 1 and every later
+  // create was refused for ever. The screen can no longer supply a code to work
+  // around it (phase 4a), so the series must be right on its own.
+  //
+  // Deleted rows are counted on purpose: a used number is never re-issued.
+  const rows = (await tx.execute(sql`
+    SELECT code FROM public.clients
+    WHERE company_id = ${companyId}::uuid
+      AND code ~ '^CLI-[0-9]+$'
+    ORDER BY (SUBSTRING(code FROM 5))::int DESC
+    LIMIT 1
+  `)) as unknown as Array<{ code: string }>;
   const last = rows[0]?.code ?? null;
   let next = 1;
   if (last) {
-    const m = last.match(/^CLI-(\d+)$/i);
+    const m = last.match(/^CLI-(\d+)$/);
     if (m) next = Number(m[1]) + 1;
   }
   return `CLI-${String(next).padStart(3, '0')}`;

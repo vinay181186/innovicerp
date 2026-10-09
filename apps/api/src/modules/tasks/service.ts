@@ -264,11 +264,9 @@ const PREFIX: Record<TaskType, string> = { assigned: 'TSK', personal: 'TODO' };
 
 async function nextCode(tx: DbTransaction, companyId: string, type: TaskType): Promise<string> {
   const prefix = PREFIX[type];
-  // ADR-227: queue behind any other save numbering this series. Both prefixes
-  // share one table and one unique index, so they share one lock — a TSK- and a
-  // TODO- save cannot collide with each other, but two of either could, and this
-  // is the series every user can add to, one row per job-card operation.
-  await lockDocSeries(tx, companyId, 'tasks');
+  // ADR-227: the series lock is taken by the CREATE callers, NOT here — this
+  // function is also the body of the read-only /next-code preview, and a GET
+  // must not hold a write lock to commit. See docs/CONVENTIONS.md.
   const rows = await tx
     .select({ code: tasks.code })
     .from(tasks)
@@ -304,6 +302,10 @@ export async function createTask(input: CreateTaskInput, user: AuthContext): Pro
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const assignee = await loadAssignee(tx, companyId, input.assignedTo);
+    // ADR-227: both prefixes share one table and one unique index, so they
+    // share one lock. Tasks is the series every user can add to, one row per
+    // job-card operation, and it had no protection at all until now.
+    await lockDocSeries(tx, companyId, 'tasks');
     const code = await nextCode(tx, companyId, 'assigned');
     const lr = input.linkedRef ?? null;
     const inserted = await tx
@@ -369,6 +371,7 @@ export async function createPersonalTodo(
   requireNotViewer(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    await lockDocSeries(tx, companyId, 'tasks'); // ADR-227
     const code = await nextCode(tx, companyId, 'personal');
     const inserted = await tx
       .insert(tasks)

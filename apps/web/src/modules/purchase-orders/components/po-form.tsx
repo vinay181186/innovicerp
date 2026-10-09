@@ -673,8 +673,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // button is disabled, so a held key can neither double-post nor bypass a block.
   useSaveShortcut(() => void handleSubmit(onValid)(), !disabled);
 
-  // ADR-227: no ✓/✗ state on the PO No. — it is not the buyer's to get wrong.
-  const codeState: string | undefined = undefined;
 
   return (
     <form onSubmit={handleSubmit(onValid)} style={{ maxWidth: 1280, margin: '0 auto' }}>
@@ -795,16 +793,18 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             />
           </FormField>
 
+          {/* ADR-227: no ★ in either mode. On create nobody can fill it; on edit
+              the number is permanent, so it is just as unfillable. */}
           <FormField
             label="PO No."
-            required={isEdit}
             size="sm"
             htmlFor="pof-code"
             help={isEdit ? undefined : 'Numbered automatically when you save.'}
           >
             <input
               id="pof-code"
-              className={['innovic-input mono', codeState].filter(Boolean).join(' ')}
+              // ADR-227: plain. The ✓/✗ state class went with the duplicate check.
+              className="innovic-input mono"
               autoComplete="off"
               readOnly
               // The shape shown while the preview loads follows the TYPE chosen

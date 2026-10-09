@@ -145,8 +145,10 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
         // A blank pick-list is simply not sent on a new vendor.
         // ADR-227: `code` is dropped — the VND-### on screen is a preview, and
         // sending it is what made two people saving at once collide. The server
-        // picks the number under its series lock, so a stale preview costs
-        // nothing.
+        // numbers it instead, so a stale preview costs nothing. (This series is
+        // guarded by withUniqueRetry rather than by lockDocSeries — a master is
+        // not on the document-series lock. Same guarantee for the user, by a
+        // different mechanism.)
         // (`stateCode` was destructured into a local called `code`, which is how
         // the real code slipped through in `...rest` unnoticed.)
         const { code: _preview, stateCode, gstCategory, ...rest } = values;

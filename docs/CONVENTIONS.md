@@ -175,6 +175,8 @@ from a row count in a `limit: 1` list query — so any deleted cost centre made 
 next one collide, and the box showed `CC-001` until the count arrived.
 
 **Reserving a number when the screen opens is REJECTED** (ADR-224): it needs a
-counter table, and every abandoned form then leaves a permanent hole in the
-register. Numbers travel onto challans, QC records and invoices, so gap-free
-wins. Do not re-propose it.
+counter table, and then **every abandoned form** leaves a hole — someone who
+opens New GRN and walks away has burnt a number. That is a different trade from
+step 2, which burns a number only when a saved document is **deleted**: a rare,
+deliberate act with an audit row behind it. Holes on deletion are accepted; holes
+on browsing are not. Do not re-propose reservation.

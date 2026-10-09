@@ -281,10 +281,17 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     expect(dcCode, 'the auto-filled DC number matches the IN-DC-##### format').toMatch(
       /^IN-DC-\d{5}$/,
     );
-    // The Save button only enables once the async duplicate check has cleared.
+    // ADR-227: there is no duplicate check to wait for any more, and no
+    // "✓ Available" to look for — the DC number is a read-only preview and the
+    // server assigns the real one on save. What matters now is that it cannot be
+    // typed into and that it never holds Save up.
+    await expect(codeInput, 'the DC number is a preview, not an input').toHaveAttribute(
+      'readonly',
+      '',
+    );
     await expect(
-      page.getByText('✓ Available'),
-      'the DC number passed its duplicate check',
+      page.getByText('Numbered automatically when you save.'),
+      'the field says who numbers it',
     ).toBeVisible({ timeout: 30_000 });
 
     // ── Step 4: fill the header. Two clearly different strings — this is the
