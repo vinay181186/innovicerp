@@ -81,6 +81,7 @@ export function OrderDetail({
   const { data: eff } = useMyAccess();
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
   const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
+  const canMlPlan = effectiveFormPerms(eff, 'mlplan_create').entry;
 
   const backBtn = (
     <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
@@ -150,6 +151,7 @@ export function OrderDetail({
     perms,
     canProductionOrder,
     canCreateRouteCard,
+    canMlPlan,
     setModal,
     onExecutePlan: runExecutePlan,
   });

@@ -62,6 +62,8 @@ export const ACCESS_FORMS = [
   { key: 'dispatch_create', dept: 'sales', label: 'Customer Dispatch' },
   // Planning
   { key: 'plan_create', dept: 'planning', label: 'SO/JWSO Planning' },
+  // ADR-225 phase 3 — its own switch, like Multi-Level BOM.
+  { key: 'mlplan_create', dept: 'planning', label: 'Multi-Level Plan' },
   // ADR-205: a route card is planning work, not drawing-office work — it is
   // what turns a plan into a Job Card. It lives under Planning > Master and
   // the PLANNING tier governs it (owner, 2026-10-03). Moved from `design`.

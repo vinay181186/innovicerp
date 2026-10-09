@@ -50,6 +50,7 @@ import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { labelOf, ROLE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { ACCESS_SF_COLUMNS } from './sf-columns';
+import { syncTokenIdentity } from '../../lib/sync-token-identity';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -629,7 +630,16 @@ export async function saveUserAccess(
     departments: cleanDepts,
   });
 
-  return withUserContext(user, async (tx) => {
+  // ADR-228 — this screen DERIVES and writes `users.role`, so it is the third
+  // writer that has to keep the person's TOKEN copy in step (the other two are
+  // createUser and updateUser). Carried OUT of the transaction rather than
+  // synced inside it: the sync is an HTTP round trip to Supabase, this
+  // transaction holds the `user_access` row lock, and holding a lock open
+  // across a call to another service is how a slow dependency becomes a
+  // database problem.
+  let roleChangedTo: string | null = null;
+
+  const result = await withUserContext(user, async (tx) => {
     // Confirm target user in caller's company.
     const target = await tx
       .select({
@@ -682,6 +692,10 @@ export async function saveUserAccess(
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
+      // ADR-228 — remember it for the token sync that runs after this
+      // transaction commits. Only on a real change: syncing on every save would
+      // be an HTTP round trip per matrix save for no reason.
+      roleChangedTo = derivedRole;
     }
 
     const existingRows = await tx
@@ -794,4 +808,9 @@ export async function saveUserAccess(
 
     return rowToUserAccess(saved);
   });
+
+  if (roleChangedTo !== null) {
+    await syncTokenIdentity(userId, { companyId, role: roleChangedTo });
+  }
+  return result;
 }

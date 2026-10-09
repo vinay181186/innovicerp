@@ -4,6 +4,7 @@ export {
   deleteMlBomInputSchema,
   listMlBomsQuerySchema,
   makeDefaultMlBomInputSchema,
+  mlBomImportInputSchema,
   mlBomTreeQuerySchema,
   updateMlBomInputSchema,
 } from '@innovic/shared';

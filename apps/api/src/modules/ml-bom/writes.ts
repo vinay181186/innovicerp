@@ -54,6 +54,41 @@ export async function createMlBomTx(
   user: AuthContext,
 ): Promise<MlBomDetail> {
   await lockMlBomTree(tx, companyId);
+  const { header, lookup, isDefault, relinked } = await insertMlBomCore(tx, companyId, input, user);
+  await guardAll(tx, companyId, [header.id, ...relinked]);
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Create,
+      entity: ENTITY,
+      entityId: header.id,
+      refId: header.code,
+      detail:
+        `${header.code} — ${lookup.get(input.itemId)?.code ?? ''}` +
+        (isDefault ? ' (Default)' : '') +
+        (relinked.length > 0 ? ` · linked into ${relinked.length} BOM(s)` : ''),
+    },
+    companyId,
+    user,
+  );
+  return loadMlBomDetail(tx, header.id, companyId);
+}
+
+/**
+ * The create itself, WITHOUT the tree lock, the loop / depth guard, the
+ * History row or the detail read — the caller (createMlBomTx, or the Excel
+ * import, ADR-225 phase 2) holds the lock and does those. Returns the new
+ * header and the parent BOM ids whose lines were relinked to it (the caller
+ * must guard them too).
+ */
+export async function insertMlBomCore(
+  tx: DbTransaction,
+  companyId: string,
+  input: CreateMlBomInput,
+  user: AuthContext,
+  initialNote = 'Initial creation',
+) {
   const lookup = await validateItemAndLines(tx, companyId, input.itemId, input.lines);
   const defaults = await resolveDefaultBoms(tx, companyId, [
     input.itemId,
@@ -102,35 +137,18 @@ export async function createMlBomTx(
     mlBomId: header.id,
     revision: 1,
     changedByText: user.email ?? user.id,
-    notes: 'Initial creation',
+    notes: initialNote,
     linesSnapshot: buildLinesSnapshot(values, lookup),
     createdBy: user.id,
     updatedBy: user.id,
   });
 
   // A new Default: other BOMs' manufacture lines of this item that had no
-  // sub-assembly link now link it — same transaction, then each is guarded.
+  // sub-assembly link now link it — same transaction; the caller guards each.
   const relinked = isDefault
     ? await relinkLinesToDefault(tx, companyId, header.id, input.itemId, user)
     : [];
-  await guardAll(tx, companyId, [header.id, ...relinked]);
-
-  await emitActivityLog(
-    tx,
-    {
-      action: ActivityAction.Create,
-      entity: ENTITY,
-      entityId: header.id,
-      refId: header.code,
-      detail:
-        `${header.code} — ${lookup.get(input.itemId)?.code ?? ''}` +
-        (isDefault ? ' (Default)' : '') +
-        (relinked.length > 0 ? ` · linked into ${relinked.length} BOM(s)` : ''),
-    },
-    companyId,
-    user,
-  );
-  return loadMlBomDetail(tx, header.id, companyId);
+  return { header, lookup, isDefault, relinked };
 }
 
 // ─── Update ──────────────────────────────────────────────────────────────
@@ -145,6 +163,34 @@ export async function updateMlBomTx(
   // Edit-approval gate (ADR-202) NOT wired in ADR-225 Phase 1 — the gate ships
   // OFF; the registry entry for MlBom comes in a later phase.
   await lockMlBomTree(tx, companyId);
+  const revised = await reviseMlBomCore(tx, companyId, id, input, user);
+  const { header } = revised;
+
+  await guardAll(tx, companyId, [id]);
+
+  await emitReviseAudit(
+    tx,
+    companyId,
+    user,
+    revised,
+    `Edited ${header.code}${input.revisionNote?.trim() ? ` — ${input.revisionNote.trim()}` : ''}`,
+  );
+  return loadMlBomDetail(tx, id, companyId);
+}
+
+/**
+ * The edit itself — header row lock, the R5 updatedAt check, the line
+ * replace, the BOM Rev bump and its snapshot — WITHOUT the tree lock, the
+ * loop / depth guard, the History rows or the detail read (updateMlBomTx and
+ * the Excel import, ADR-225 phase 2, do those).
+ */
+export async function reviseMlBomCore(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  input: UpdateMlBomInput,
+  user: AuthContext,
+) {
   const header = await lockHeader(tx, companyId, id);
   // R5 (§20.4): refuse if someone else saved this BOM after the form opened it.
   assertUnchangedSinceOpened(header.updatedAt, input.expectedUpdatedAt);
@@ -213,8 +259,24 @@ export async function updateMlBomTx(
     updatedBy: user.id,
   });
 
-  await guardAll(tx, companyId, [id]);
+  return { header, values, oldLines, oldCodes, remarks, newRevision };
+}
 
+export type RevisedMlBom = Awaited<ReturnType<typeof reviseMlBomCore>>;
+
+/**
+ * The History rows of an edit (ADR-197): one header row (Remarks + BOM Rev,
+ * with `detail`), then one before → after row per changed line. Shared by
+ * updateMlBomTx and the Excel import's revise, so both write the same rows.
+ */
+export async function emitReviseAudit(
+  tx: DbTransaction,
+  companyId: string,
+  user: AuthContext,
+  revised: RevisedMlBom,
+  detail: string,
+): Promise<void> {
+  const { header, values, oldLines, oldCodes, remarks, newRevision } = revised;
   // Audit (ADR-197): header row (Remarks + BOM Rev), then one row per line.
   const toAudit = (l: {
     lineNo: number;
@@ -242,10 +304,10 @@ export async function updateMlBomTx(
     {
       action: ActivityAction.Edit,
       entity: ENTITY,
-      entityId: id,
+      entityId: header.id,
       refId: header.code,
       changes: headerChanges,
-      detail: `Edited ${header.code}${input.revisionNote?.trim() ? ` — ${input.revisionNote.trim()}` : ''}`,
+      detail,
     },
     companyId,
     user,
@@ -256,7 +318,7 @@ export async function updateMlBomTx(
       {
         action: row.action,
         entity: ENTITY,
-        entityId: id,
+        entityId: header.id,
         refId: header.code,
         lineRef: row.lineRef,
         changes: row.changes,
@@ -266,7 +328,6 @@ export async function updateMlBomTx(
       user,
     );
   }
-  return loadMlBomDetail(tx, id, companyId);
 }
 
 /** item id → code for the old AND new lines (the audit names both). */

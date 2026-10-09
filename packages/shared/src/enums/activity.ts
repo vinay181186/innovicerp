@@ -249,6 +249,7 @@ export const ACTIVITY_ENTITIES = [
   'Item',
   'BOM',
   'MlBom',
+  'MlPlan',
   'RouteCard',
   'Vendor',
   'Client',
@@ -406,6 +407,12 @@ export const ACTIVITY_ENTITY_META: Record<ActivityEntity, ActivityEntityMeta> = 
     aliases: ['Multi-Level BOM'],
     searchKind: null,
     viewForm: 'mlbom_create',
+  },
+  MlPlan: {
+    label: 'Multi-Level Plan',
+    aliases: ['Multi-Level Plan'],
+    searchKind: null,
+    viewForm: 'mlplan_create',
   },
   RouteCard: {
     label: 'Route Card',

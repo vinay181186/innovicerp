@@ -63,6 +63,7 @@ export const SECTIONS: readonly NavSection[] = [
       {
         items: [
           { to: '/planning', label: 'SO/JWSO Planning', icon: '📋', formKey: 'plan_create' },
+          { to: '/ml-plans', label: 'Multi-Level Plan', icon: '🧩', formKey: 'mlplan_create' },
           { to: '/so-overview', label: 'SO Overview', icon: '📊' },
           { to: '/so-status', label: 'SO Status Detail', icon: '📊' },
           { to: '/assemblies', label: 'Assembly Tracker', icon: '📦' },

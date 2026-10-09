@@ -12944,6 +12944,27 @@ BOM-8 cascade must ignore new plans) · 5 reports & print · 6 cost (only if ask
 - Phase 1 and 2 cannot affect any existing figure — new tables only.
 - No edit-approval gate on Multi-Level BOM yet (the gate ships OFF); registry entry is a follow-up.
 
+### ADR-225 update — phases 2 and 3 (2026-10-09)
+
+- **Excel import** (`POST /ml-boms/import`): one parent → child row per sheet row; Preview (dry run) and
+  Import run ONE rule set; the whole file saves in one transaction or nothing does, bottom-up so each
+  parent links its child's new Default; a revise writes the same per-line History as a screen edit.
+  Template built by the app (Text code columns, Line Type list, Qty > 0).
+- **Multi-Level Plan** (`IN-MLP-#####`, Planning, `mlplan_create`): copies the tree and works out
+  Gross Need / From Stock / On PO / PR / Net Need ONCE (ERPNext "Get Sub Assembly Items"); a
+  sub-assembly's children are worked from ITS Net Need. Refresh (Draft only) re-copies from the item's
+  live Default BOM. Live netting was rejected: it re-opens Net Need every time issued stock leaves.
+- **One SO line = Multi-Level Plan OR ordinary plans, never both** (decision 6 widened after review:
+  an ML plan beside a route-card plan double-planned the line). Guards: SO cancel / back-to-draft /
+  delete / type change / line close-short / line qty below Plan Qty all refused while a live
+  Multi-Level Plan exists.
+- **Supply pools exclude PRs already bound to demand** (`source_so_line_id`) and PO lines raised from
+  them (also the legacy `pr.po_id` path) — they are someone else's supply. The base filters are now one
+  shared SQL builder in `lib/po-pending.ts` / `reorder-rule.ts` (existing callers render byte-identical).
+- Names: `On Order` and `Ordered` are banned in NAMING.md, so the plan uses `On PO / PR`, `Raised`,
+  `To Raise`. Known limit: free stock is not reserved by a plan — two plans see the same stock (as
+  ERPNext's projected qty).
+
 ## ADR-226: An edit sends back only what it changed, and a clash is merged and announced — not silently applied
 
 **Date:** 2026-10-08 · **Status:** Accepted · **Amends ADR-004** · **Finishes CLAUDE.md §20.4**
@@ -13168,6 +13189,24 @@ finally works as designed.
 - **`Description` vs `Remarks` on masters** — the same fact under two names. Registered as-is and
   raised as NAMING.md C-15 rather than silently blessed; picking one changes a visible label.
 
+### ADR-225 update — phase 4, raising orders (2026-10-09)
+
+- `POST /ml-plans/:id/orders` raises, per chosen row, the existing document: Manufacture → route-card
+  Plan; Buy → PR (vendor TBD, like a Planning PR); Outsource → full-outsource Plan (Vendor + Process).
+  Only the TOP row's plan carries the SO line; every other doc carries `ml_plan_node_id` and no SO
+  line, so SO-line coverage never moves. One transaction; the first order Releases the plan.
+- **The To Raise cap is enforced by EVERY writer** (§20.3): raise (under the ml_plans row lock), plan
+  qty edit, PR qty edit, and Trash restore of a raised PR. A raised PR's item cannot change.
+- Raising needs Multi-Level Plan entry **and** Plan create (Manufacture / Outsource rows) **and** PR
+  create (Buy rows) rights — per-page OFF switches hold.
+- Lock order: the ml_plans row first, then the creators' own series / line locks (no up-front SO line
+  lock — the SO guards and createPlanInTx already refuse anything else on that line).
+- A plan raised from a row that has child rows (`mlIsAssembly`) needs no raw material: the Production
+  Order check skips it (server `planIsMlAssembly`, screen `plan.mlIsAssembly`); a leaf part still
+  needs RM. Its Job Card's material = its child rows × JC qty (`jcRequirements`, one function for the
+  Material view and the Item Issue cap). The issue cap now sums every slip line of an item (Job Card
+  and Assembly SO) — before, a part on two lines passed.
+- DI-001 no longer reports Job Cards whose plan came from a Multi-Level Plan.
 ---
 
 ## ADR-227: One rule for every document number — the server states it, the browser never sends it

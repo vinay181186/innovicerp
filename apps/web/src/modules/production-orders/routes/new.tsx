@@ -202,7 +202,12 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const planHasRmSize = Boolean(
     plan && (plan.rawMaterialSizeText?.trim() || plan.rawMaterialSizeId),
   );
-  const planHasNoRawMaterial = Boolean(plan) && !planHasRmGrade && !planHasRmSize;
+  const planHasNoRawMaterialRaw = Boolean(plan) && !planHasRmGrade && !planHasRmSize;
+  // ADR-225 phase 4: a plan raised from a Multi-Level Plan row that has child
+  // rows (a sub-assembly or the top assembly) needs no raw material — the
+  // server decides and says so in `mlIsAssembly`. A leaf part raised from a
+  // Multi-Level Plan still needs RM, so it keeps the block like every plan.
+  const planHasNoRawMaterial = planHasNoRawMaterialRaw && !plan?.mlIsAssembly;
   const NO_PLAN_RAW_MATERIAL =
     // ADR-218 — must match the server's wording in production-orders/service.ts.
     "This plan has no raw material — fill RM Grade and RM Size on the item's Route Card (or on its BOM line), then open the plan and save it again.";

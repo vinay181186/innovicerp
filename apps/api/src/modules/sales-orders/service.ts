@@ -61,6 +61,11 @@ import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { assertActiveParty } from '../../lib/active-party';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  assertNoLiveMlPlanOnSo,
+  assertSoLineEditsKeepMlPlans,
+  assertSoTypeChangeKeepsMlPlans,
+} from '../ml-plan/guards';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
 import {
   describeCommitments,
@@ -1860,7 +1865,11 @@ export async function updateSalesOrderTx(
         updates['internalSoNo'] = nextInternal;
       }
     }
-    if (h.type !== undefined) updates['type'] = h.type;
+    if (h.type !== undefined) {
+      // ADR-225 phase 3 — the SO Type decides Multi-Level Plan eligibility.
+      if (h.type !== existingHdr.type) await assertSoTypeChangeKeepsMlPlans(tx, companyId, id);
+      updates['type'] = h.type;
+    }
     // ADR-184 — 'closed' and 'dispatched' are set by the system (dispatch
     // roll-up), never by hand. S8: a manual change must be one the shared
     // SO_STATUS_MOVES map allows (Draft ↔ Open, either → Cancelled; Cancelled
@@ -1880,6 +1889,8 @@ export async function updateSalesOrderTx(
             `${existingHdr.code} cannot be set to ${h.status === 'draft' ? 'draft' : 'cancelled'} — it is used by ${blocking}. Remove or cancel those first.`,
           );
         }
+        // ADR-225 phase 3 — a live Multi-Level Plan holds its SO (lines locked above).
+        await assertNoLiveMlPlanOnSo(tx, companyId, id);
       }
       updates['status'] = h.status;
     }
@@ -2478,6 +2489,31 @@ async function mergeLines(
     }
   }
 
+  // ADR-225 phase 3 — a live Multi-Level Plan holds its line: no remove,
+  // cancel / close, item swap, or Order Qty below its Plan Qty (lines are
+  // locked by readSoLineCommitments above).
+  await assertSoLineEditsKeepMlPlans(tx, companyId, {
+    removedLineIds: absentIds,
+    updates: toUpdate.map((u) => {
+      const was = existingById.get(u.id)!;
+      const itemTouched = u.data.itemId !== undefined || u.data.itemCodeText !== undefined;
+      const nextItemId = itemTouched
+        ? (resolveLineItemRefs(u.data, resolved).itemId ?? null)
+        : was.itemId;
+      return {
+        lineId: u.id,
+        wasStatus: was.status,
+        status: u.data.status,
+        orderQty: u.data.orderQty,
+        itemChanged: nextItemId !== was.itemId,
+        bomMasterLinked:
+          u.data.sourceBomMasterId !== undefined &&
+          normBomId(u.data.sourceBomMasterId) !== null &&
+          normBomId(u.data.sourceBomMasterId) !== was.sourceBomMasterId,
+      };
+    }),
+  });
+
   // Soft-delete absentees.
   if (absentIds.length > 0) {
     await tx
@@ -2655,6 +2691,8 @@ export async function softDeleteSalesOrder(
         `${row.code} cannot be deleted — it is used by ${blocking}. Remove or cancel those first.`,
       );
     }
+    // ADR-225 phase 3 — a live Multi-Level Plan holds its SO (lines locked above).
+    await assertNoLiveMlPlanOnSo(tx, companyId, id);
 
     // Hand back whatever these lines are holding BEFORE they are soft-deleted
     // (ADR-180) — reconcileLineReservations reads the line, so it must still
