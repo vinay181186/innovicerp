@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -118,7 +119,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
   const rows = data?.items ?? [];
-  const columns = useMemo(() => dcListColumns(), []);
+  // ADR-202 — DC ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('DeliveryChallan');
+  const columns = useMemo(() => dcListColumns(draftIds), [draftIds]);
 
   function onPrintRegister(): void {
     if (!data) return;

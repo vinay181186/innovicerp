@@ -31,6 +31,7 @@ import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -139,7 +140,9 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   // The JWSO the Move-to-Trash dialog is asking about, or null when closed.
   const [trashTarget, setTrashTarget] = useState<{ id: string; code: string } | null>(null);
 
-  const columns = useMemo(() => jwsoListColumns(today), [today]);
+  // ADR-202 — JWSO ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('JobWorkOrder');
+  const columns = useMemo(() => jwsoListColumns(today, draftIds), [today, draftIds]);
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];

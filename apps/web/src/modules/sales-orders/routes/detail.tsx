@@ -111,6 +111,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('SalesOrder', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197 — why the SO goes to Trash (required; lands on its History).
@@ -189,7 +191,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
         badges={
           <>
-            <StatusBadge kind="so" status={detail.status} label={SO_STATUS_LABEL[detail.status]} />
+            <StatusBadge
+              kind="so"
+              status={detail.status}
+              label={SO_STATUS_LABEL[detail.status]}
+              draft={isDraft}
+            />
             {/* ADR-196 — ERPNext's To Deliver / To Bill / Completed / Closed. */}
             <SoFulfilmentBadge status={detail.fulfilmentStatus} />
           </>

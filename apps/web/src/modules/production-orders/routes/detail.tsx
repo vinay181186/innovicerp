@@ -98,6 +98,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // changes drive the inline amber chips next to each editable fact below.
   const pendingEdit = usePendingEditForDoc('ProductionOrder', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 
   // The History tab's count. Same arguments as <DocumentHistory> below, so it
   // is the same query — one request, not two.
@@ -266,7 +268,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         badges={
           <>
             <span className="panel-title">Production Order</span>
-            <PoStatusBadge status={data.status} />
+            <PoStatusBadge status={data.status} draft={isDraft} />
           </>
         }
         actions={

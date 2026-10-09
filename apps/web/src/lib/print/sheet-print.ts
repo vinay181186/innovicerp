@@ -145,6 +145,9 @@ export interface SheetPrintModel {
    *  name their raiser in a field (PO / Service PO: "Our Contact Person"; the
    *  JW invoice). The Tax Invoice and the challans keep it. */
   hidePreparedBy?: boolean;
+  /** Edit-approval (ADR-202): the document has an edit awaiting approval — print
+   *  the "Draft — awaiting approval" mark on every page. Off by default. */
+  draft?: boolean | undefined;
   opts?: { testBanner?: boolean };
 }
 
@@ -242,6 +245,12 @@ export const SHEET_STYLE = `
   .lh-rule{height:1.1mm;background:var(--brand);margin:.9mm 0 1mm}
   .doc-title{font-family:var(--f-label);font-weight:700;font-size:13pt;letter-spacing:.12em;
              line-height:1.05;text-transform:uppercase;margin:0;text-align:center}
+  /* Edit-approval (ADR-202): an unmistakable mark that the document has an edit
+     waiting for approval, so a printed copy is read as not-yet-final. Prints on
+     every page (it lives in the repeating letterhead). Absent unless draft is
+     passed, so every other document is byte-identical. */
+  .doc-draft{font-family:var(--f-label);font-weight:700;font-size:9pt;letter-spacing:.16em;
+             text-transform:uppercase;color:#B00020;text-align:center;margin:.7mm 0 0}
 
   .colh{font-family:var(--f-label);font-weight:700;font-size:9pt;letter-spacing:.08em;
         text-transform:uppercase;background:var(--paper-band);padding:1.3mm 2.5mm!important;
@@ -536,7 +545,15 @@ function itemCellHtml(l: SheetLine): string {
  *  printed under the name (address, contact, GSTIN/PAN); a document that wants
  *  the name alone — the Job Card, which is an internal shop-floor sheet — passes
  *  none. Same markup either way, so the two never drift apart. */
-export function sheetLetterheadHtml(args: { name: string; title: string; lines?: string[] }): string {
+export function sheetLetterheadHtml(args: {
+  name: string;
+  title: string;
+  lines?: string[];
+  /** Edit-approval (ADR-202): print the "Draft — awaiting approval" mark under
+   *  the title. Omitted/false → nothing printed, identical to before. */
+  draft?: boolean | undefined;
+}): string {
+  const draftMark = args.draft ? '<p class="doc-draft">Draft &mdash; awaiting approval</p>' : '';
   return `<div class="lh-pad"><div class="lh-in">
     <div class="lh-top">
       <img class="lh-logo" src="${INNOVIC_LOGO_DATA_URI}" alt="INNOVIC">
@@ -547,6 +564,7 @@ export function sheetLetterheadHtml(args: { name: string; title: string; lines?:
     </div>
     <div class="lh-rule"></div>
     <p class="doc-title">${esc(args.title)}</p>
+    ${draftMark}
   </div></div>`;
 }
 
@@ -593,6 +611,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
     name: company.name,
     title: model.title,
     lines: [addressHtml, contactHtml, `<p class="co-ids">${idsHtml}</p>`],
+    draft: model.draft,
   });
 
   // The customer's own PO line number. It earns a column only on a document

@@ -75,6 +75,8 @@ function PlanDetailPage(): React.JSX.Element {
   // fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('Plan', plan?.id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const finalize = useFinalizePlan();
   const execute = useExecutePlan();
   const { data: eff } = useMyAccess();
@@ -172,7 +174,14 @@ function PlanDetailPage(): React.JSX.Element {
               {/* ADR-185 — a route-card plan states its DERIVED status, the
                   same word and colour the Plans list shows for it; only old
                   plans keep their stored status label. */}
-              {plan.derivedStatus ? (
+              {isDraft ? (
+                <span
+                  className="badge b-grey"
+                  title="An edit to this document is waiting for approval"
+                >
+                  Draft
+                </span>
+              ) : plan.derivedStatus ? (
                 <span className={`badge ${DERIVED_BADGE[plan.derivedStatus]}`}>
                   {DERIVED_LABEL[plan.derivedStatus]}
                 </span>

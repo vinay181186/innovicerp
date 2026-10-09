@@ -144,6 +144,8 @@ export function printJobCard(args: {
    *  order and passes it. Absent / null prints an empty line, which on a
    *  traveller is where a hand writes it. */
   actualSize?: string | null;
+  /** ADR-202 — the JC has a pending edit; print "Draft — awaiting approval". */
+  draft?: boolean | undefined;
 }): boolean {
   const { jc } = args;
   const company = buildDocCompany(args.company);
@@ -219,7 +221,11 @@ export function printJobCard(args: {
       <span>Page <span data-pgof>1</span></span>
     </div>`;
 
-  const letterhead = sheetLetterheadHtml({ name: company.name, title: 'Job Card' });
+  const letterhead = sheetLetterheadHtml({
+    name: company.name,
+    title: 'Job Card',
+    draft: args.draft,
+  });
 
   const html = `
   <div class="no-print toolbar">

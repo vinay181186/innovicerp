@@ -62,6 +62,8 @@ export function printPurchaseOrder(args: {
   company: Company | null | undefined;
   templates: EffectivePrintTemplate[];
   currentUser?: string | undefined;
+  /** ADR-202 — the PO has a pending edit; the sheet prints "Draft — awaiting approval". */
+  draft?: boolean | undefined;
 }): boolean {
   const { po, vendor, company, templates } = args;
   const lines = po.lines;
@@ -206,6 +208,8 @@ export function printPurchaseOrder(args: {
     title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
     columns: 'po',
+    // ADR-202 — overlay "Draft — awaiting approval" when an edit is pending.
+    draft: args.draft,
     // "Our Contact Person" already names who raised it.
     hidePreparedBy: true,
     blocks: templatesToBlocks(doc, templates),

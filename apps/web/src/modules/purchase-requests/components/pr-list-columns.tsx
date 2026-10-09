@@ -25,7 +25,11 @@ const PR_STATUS_OPTIONS = Object.entries(PR_STATUS_LABELS).map(([value, label]) 
 
 /** @param firstRowNo the Sr No of the page's first row (offset + 1), so Sr No
  *  runs on across pages (page 2 starts at 26). */
-export function prListColumns(firstRowNo = 1): DataTableColumn<PurchaseRequestListItem>[] {
+export function prListColumns(
+  firstRowNo = 1,
+  /** ADR-202 — PR ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
+): DataTableColumn<PurchaseRequestListItem>[] {
   return [
     {
       id: 'pr_no',
@@ -149,7 +153,7 @@ export function prListColumns(firstRowNo = 1): DataTableColumn<PurchaseRequestLi
       header: 'PR Status',
       kind: 'badge',
       nowrap: true,
-      render: (pr) => <PrStatusBadge status={pr.status} />,
+      render: (pr) => <PrStatusBadge status={pr.status} draft={draftIds?.has(pr.id)} />,
     },
     {
       // When the PR record was entered (IST day) — Sort & Filter can pick a

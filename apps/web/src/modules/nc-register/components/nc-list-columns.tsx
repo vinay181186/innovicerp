@@ -86,7 +86,10 @@ function ncOpText(nc: NcRegisterListItem): string | null {
   return `${seq != null ? `Op ${opSrNo(seq)}` : ''}${seq != null && op ? ': ' : ''}${op ?? ''}`;
 }
 
-export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
+export function ncListColumns(
+  /** ADR-202 — NC ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
+): DataTableColumn<NcRegisterListItem>[] {
   return [
     {
       // First column — pinned by the table standard (ADR-199).
@@ -114,7 +117,7 @@ export function ncListColumns(): DataTableColumn<NcRegisterListItem>[] {
       kind: 'badge',
       header: 'NC Status',
       nowrap: true,
-      render: (nc) => <NcStatusBadge status={nc.status} />,
+      render: (nc) => <NcStatusBadge status={nc.status} draft={draftIds?.has(nc.id)} />,
     },
     {
       id: 'disposition',

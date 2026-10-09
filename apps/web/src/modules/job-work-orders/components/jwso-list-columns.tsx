@@ -45,7 +45,11 @@ function MaterialCell({
 
 /** `today` (IST) drives the overdue colour on the Due column — a JWSO still open
  *  past its earliest due date is late. */
-export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderListItem>[] {
+export function jwsoListColumns(
+  today: string,
+  /** ADR-202 — JWSO ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
+): DataTableColumn<JobWorkOrderListItem>[] {
   return [
     {
       // First column — pinned by the table standard (ADR-199).
@@ -207,7 +211,7 @@ export function jwsoListColumns(today: string): DataTableColumn<JobWorkOrderList
       kind: 'badge',
       header: 'JWSO Status',
       nowrap: true,
-      render: (jw) => <SoStatusBadge status={jw.status} />,
+      render: (jw) => <SoStatusBadge status={jw.status} draft={draftIds?.has(jw.jwId)} />,
     },
   ];
 }

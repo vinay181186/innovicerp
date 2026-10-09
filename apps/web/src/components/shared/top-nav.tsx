@@ -37,6 +37,7 @@ import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { roleLabel } from '@/lib/role-label';
 import { signOut, useSession } from '@/lib/session';
 import { useApprovalInboxTotal } from '@/modules/approvals/api';
+import { useDocumentEditPendingTotal } from '@/modules/document-edits/api';
 import { Icon } from '@/ui/core';
 import {
   initials,
@@ -73,10 +74,12 @@ export function TopNav(): React.JSX.Element {
   const isOn = makeIsOn(pathname, search as Record<string, unknown>);
   const { data: eff } = useMyAccess();
   const isAdmin = me?.role === 'admin';
-  // Badge on System Settings → Approvals: everything waiting for THIS user
-  // (ADR-190 inbox — PR + PO + Log Entry). The server lists only rows the
-  // caller may approve, so someone who approves nothing sees no badge.
-  const pendingApprovals = useApprovalInboxTotal(!!me);
+  // Badge on System Settings → Approvals: everything waiting for THIS user —
+  // the ADR-190 inbox (PR + PO + Log Entry) plus the ADR-202 edits waiting for
+  // approval. The server lists only rows the caller may approve, so someone who
+  // approves nothing sees no badge.
+  const pendingApprovals =
+    useApprovalInboxTotal(!!me) + useDocumentEditPendingTotal(!!me);
 
   // Which module's menu is open. Remembered in sessionStorage so it survives
   // a page reload (user, 2026-09-21: pick a page, then pick "Create SO" from

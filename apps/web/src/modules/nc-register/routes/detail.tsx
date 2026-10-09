@@ -78,6 +78,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('NonConformance', detail?.id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const softDelete = useSoftDeleteNcRegister();
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
@@ -280,7 +282,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              <NcStatusBadge status={detail.status} />
+              <NcStatusBadge status={detail.status} draft={isDraft} />
               {detail.linkedCapaCode ? (
                 <Link
                   to="/nc-register"
