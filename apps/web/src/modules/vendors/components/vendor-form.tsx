@@ -128,23 +128,32 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
   });
   const oldState = null;
 
-  // Prefill the read-only code with the next server-assigned VND-### so it is
-  // visible before save. Only seed while still blank (don't clobber edits).
+  // Show the next server-assigned VND-### before save.
+  // ADR-227 — the box is a PREVIEW and is never sent, so this follows the
+  // server's latest answer instead of latching the first one. It cannot clobber
+  // anything: the input is read-only, there is no typing to lose. (CREATE
+  // component only — in edit mode the real code must never be overwritten.)
   const { data: nextCode } = useNextVendorCode();
   useEffect(() => {
-    if (nextCode?.code && !form.getValues('code')) {
-      form.setValue('code', nextCode.code);
-    }
+    const next = nextCode?.code;
+    if (next && form.getValues('code') !== next) form.setValue('code', next);
   }, [nextCode, form]);
 
   return (
     <form
       onSubmit={form.handleSubmit(async (values) => {
         // A blank pick-list is simply not sent on a new vendor.
-        const { stateCode: code, gstCategory, ...rest } = values;
+        // ADR-227: `code` is dropped — the VND-### on screen is a preview, and
+        // sending it is what made two people saving at once collide. The server
+        // picks the number under its series lock, so a stale preview costs
+        // nothing.
+        // (`stateCode` was destructured into a local called `code`, which is how
+        // the real code slipped through in `...rest` unnoticed.)
+        const { code: _preview, stateCode, gstCategory, ...rest } = values;
+        void _preview;
         await props.onSubmit({
           ...rest,
-          ...(code ? { stateCode: code } : {}),
+          ...(stateCode ? { stateCode } : {}),
           ...(gstCategory ? { gstCategory } : {}),
         });
       })}
