@@ -6,10 +6,12 @@ import {
   deleteMlBomInputSchema,
   listMlBomsQuerySchema,
   makeDefaultMlBomInputSchema,
+  mlBomCostQuerySchema,
   mlBomImportInputSchema,
   mlBomTreeQuerySchema,
   updateMlBomInputSchema,
 } from './schema';
+import { getMlBomCost } from './cost';
 import { importMlBoms } from './import';
 import * as service from './service';
 
@@ -40,6 +42,14 @@ export async function mlBomRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(req.params);
     const query = mlBomTreeQuerySchema.parse(req.query);
     return service.getMlBomTree(id, query, req.user);
+  });
+
+  // Cost estimate (ADR-225 phase 6) — price right on mlbom_create, see cost.ts.
+  app.get('/ml-boms/:id/cost', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const query = mlBomCostQuerySchema.parse(req.query);
+    return getMlBomCost(id, query, req.user);
   });
 
   app.post('/ml-boms', async (req, reply) => {

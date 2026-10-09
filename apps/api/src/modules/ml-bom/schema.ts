@@ -4,6 +4,7 @@ export {
   deleteMlBomInputSchema,
   listMlBomsQuerySchema,
   makeDefaultMlBomInputSchema,
+  mlBomCostQuerySchema,
   mlBomImportInputSchema,
   mlBomTreeQuerySchema,
   updateMlBomInputSchema,
