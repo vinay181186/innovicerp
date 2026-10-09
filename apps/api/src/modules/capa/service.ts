@@ -15,6 +15,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { CAPA_NC_REFS_TEXT, CAPA_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
@@ -225,6 +226,8 @@ async function nextCapaNo(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
+  // ADR-227: queue behind any other save numbering this series.
+  await lockDocSeries(tx, companyId, 'capa_records');
   const rows = await tx
     .select({ code: capaRecords.code })
     .from(capaRecords)

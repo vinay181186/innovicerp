@@ -39,6 +39,7 @@ import type {
 import { and, asc, count, eq, inArray, isNull, like } from 'drizzle-orm';
 import { fileRegistry, taskComments, tasks, userAccess, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import {
   AuthorizationError,
   ConflictError,
@@ -263,6 +264,11 @@ const PREFIX: Record<TaskType, string> = { assigned: 'TSK', personal: 'TODO' };
 
 async function nextCode(tx: DbTransaction, companyId: string, type: TaskType): Promise<string> {
   const prefix = PREFIX[type];
+  // ADR-227: queue behind any other save numbering this series. Both prefixes
+  // share one table and one unique index, so they share one lock — a TSK- and a
+  // TODO- save cannot collide with each other, but two of either could, and this
+  // is the series every user can add to, one row per job-card operation.
+  await lockDocSeries(tx, companyId, 'tasks');
   const rows = await tx
     .select({ code: tasks.code })
     .from(tasks)

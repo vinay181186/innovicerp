@@ -32,6 +32,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { DESIGN_TRACKER_SF_COLUMNS, TRACKER_HOURS_SQL } from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
 import {
@@ -137,6 +138,8 @@ async function nextDesignCode(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
+  // ADR-227: queue behind any other save numbering this series.
+  await lockDocSeries(tx, companyId, 'design_tracker');
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^${sql.raw(CODE_PREFIX)}', ''), '')::int),

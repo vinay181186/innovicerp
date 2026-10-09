@@ -66,8 +66,9 @@ export const partyMaterialIssueListItemSchema = partyMaterialIssueSchema.extend(
 });
 export type PartyMaterialIssueListItem = z.infer<typeof partyMaterialIssueListItemSchema>;
 
+// ADR-227 — NO `code`: the server assigns IN-PMI-#####, under its series lock.
+// It used to be optional free text the create trusted verbatim.
 export const createPartyMaterialIssueInputSchema = z.object({
-  code: z.string().trim().max(40).optional(),
   issueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   jobWorkOrderId: z.string().uuid(),
   /** ADR-103: REQUIRED. The issue carries no JWSO-line column, so the job card

@@ -394,9 +394,11 @@ export async function createJwReturnChallan(
     // 4) Insert return challan — with its legal copy of the customer (plan D7,
     // 0186): the print reads this copy, not the live master.
     const copy = clientCopyValues(await loadClientForCopy(tx, jw.clientId, companyId));
-    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
-    await lockDocSeries(tx, companyId, 'jw_return_challans');
-    const code = input.code ?? (await nextReturnCode(tx, companyId));
+    // ADR-227: the number is the server's — the create input carries none, so
+    // there is nothing to check. The old comment claimed a typed number was
+    // checked under the series lock; the next line took it verbatim.
+    // nextReturnCode takes the lock itself before reading the highest.
+    const code = await nextReturnCode(tx, companyId);
     const inserted = await tx
       .insert(jwReturnChallans)
       .values({

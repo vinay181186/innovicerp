@@ -299,9 +299,11 @@ export async function createPartyMaterialIssue(
     }
 
     // 7) Insert the issue.
-    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
-    await lockDocSeries(tx, companyId, 'party_material_issues');
-    const code = input.code ?? (await nextIssueCode(tx, companyId));
+    // ADR-227: the number is the server's — the create input carries none, so
+    // there is nothing to check. The old comment claimed a typed number was
+    // checked under the series lock; the next line took it verbatim.
+    // nextIssueCode takes the lock itself before reading the highest.
+    const code = await nextIssueCode(tx, companyId);
     const inserted = await tx
       .insert(partyMaterialIssues)
       .values({

@@ -79,8 +79,12 @@ export const jwInvoiceListItemSchema = jwInvoiceSchema.extend({
 });
 export type JwInvoiceListItem = z.infer<typeof jwInvoiceListItemSchema>;
 
+// ADR-227 — NO `code`. A JW Invoice number is a tax invoice number and the
+// server is the only thing that assigns it, under its series lock. It used to be
+// optional free text (40 chars, no prefix, no format check) that the create
+// trusted verbatim, beside a comment claiming it was checked. No screen ever
+// sent one; the field was a door nobody used and nothing guarded.
 export const createJwInvoiceInputSchema = z.object({
-  code: z.string().trim().max(40).optional(),
   invoiceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   jobWorkOrderLineId: z.string().uuid(),
   qty: z.number().int().positive(),

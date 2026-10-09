@@ -54,8 +54,9 @@ export const jwReturnChallanListItemSchema = jwReturnChallanSchema.extend({
 });
 export type JwReturnChallanListItem = z.infer<typeof jwReturnChallanListItemSchema>;
 
+// ADR-227 — NO `code`: the server assigns IN-JWRC-#####, under its series lock.
+// It used to be optional free text the create trusted verbatim.
 export const createJwReturnChallanInputSchema = z.object({
-  code: z.string().trim().max(40).optional(),
   returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   jobWorkOrderLineId: z.string().uuid(),
   jobCardId: z.string().uuid().optional(),
