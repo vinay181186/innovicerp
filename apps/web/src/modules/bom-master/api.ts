@@ -138,8 +138,11 @@ export function useDeleteBomMaster() {
       void qc.invalidateQueries({ queryKey: bomMastersKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: bomMastersKeys.detail(id) });
-      // The next number is "highest BOM No. still live + 1", so deleting the
-      // newest BOM frees its number and the preview must be re-asked.
+      // ADR-227 made the next number "highest BOM No. EVER used + 1" — a
+      // deleted BOM keeps its number for ever, so a delete can no longer change
+      // what the preview should say. Kept anyway, cheap and harmless: one
+      // refetch of a tiny endpoint, and the preview stays correct if the rule
+      // is ever revisited.
       void qc.invalidateQueries({ queryKey: bomMastersKeys.nextCode() });
     },
   });

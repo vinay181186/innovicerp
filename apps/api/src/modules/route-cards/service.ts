@@ -316,10 +316,16 @@ async function resolveRcRawMaterial(
 async function nextRouteCardCode(tx: DbTransaction, companyId: string): Promise<string> {
   // S2: queue behind any other save numbering this series (lib/doc-series-lock).
   await lockDocSeries(tx, companyId, 'route_cards');
+  // ADR-227 — the scan counts DELETED rows too, so a number that has been used
+  // once is never handed out again (owner's decision, 2026-10-09). The unique
+  // index is partial (WHERE deleted_at IS NULL), so excluding them here did not
+  // fail loudly: Postgres ACCEPTED the duplicate and the register quietly held
+  // two papers with one number, one of them in Trash. Deleting the newest
+  // document now leaves a permanent gap in the series, which is the trade — one
+  // number, one document, for ever.
   const rows = (await tx.execute(sql`
     SELECT code FROM public.route_cards
     WHERE company_id = ${companyId}::uuid
-      AND deleted_at IS NULL
       AND code ~ '^IN-RC-\\d+$'
     ORDER BY (SUBSTRING(code FROM 7))::int DESC
     LIMIT 1

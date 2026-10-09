@@ -93,6 +93,13 @@ export async function nextSeriesCode(
 ): Promise<string> {
   // S2: queue behind any other save numbering this series (see doc-series-lock).
   await lockDocSeries(tx, companyId, kind === 'pr' ? 'purchase_requests' : 'purchase_orders');
+  // ADR-227 — the scan counts DELETED rows too, so a number that has been used
+  // once is never handed out again (owner's decision, 2026-10-09). The unique
+  // index is partial (WHERE deleted_at IS NULL), so excluding them here did not
+  // fail loudly: Postgres ACCEPTED the duplicate and the register quietly held
+  // two papers with one number, one of them in Trash. Deleting the newest
+  // document now leaves a permanent gap in the series, which is the trade — one
+  // number, one document, for ever.
   const rows =
     kind === 'pr'
       ? await tx
@@ -101,7 +108,6 @@ export async function nextSeriesCode(
           .where(
             and(
               eq(purchaseRequests.companyId, companyId),
-              isNull(purchaseRequests.deletedAt),
               like(purchaseRequests.code, `${prefix}%`),
             ),
           )
@@ -109,11 +115,7 @@ export async function nextSeriesCode(
           .select({ code: purchaseOrders.code })
           .from(purchaseOrders)
           .where(
-            and(
-              eq(purchaseOrders.companyId, companyId),
-              isNull(purchaseOrders.deletedAt),
-              like(purchaseOrders.code, `${prefix}%`),
-            ),
+            and(eq(purchaseOrders.companyId, companyId), like(purchaseOrders.code, `${prefix}%`)),
           );
   let max = 0;
   for (const r of rows) {
