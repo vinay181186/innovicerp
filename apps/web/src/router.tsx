@@ -11,6 +11,10 @@ import { mlBomsListRoute } from './modules/ml-bom/routes/list';
 import { mlBomDetailRoute } from './modules/ml-bom/routes/detail';
 import { mlBomNewRoute } from './modules/ml-bom/routes/new';
 import { mlBomEditRoute } from './modules/ml-bom/routes/edit';
+import { mlPlansListRoute } from './modules/ml-plan/routes/list';
+import { mlPlanDetailRoute } from './modules/ml-plan/routes/detail';
+import { mlPlanNewRoute } from './modules/ml-plan/routes/new';
+import { mlPlanEditRoute } from './modules/ml-plan/routes/edit';
 import { routeCardsListRoute } from './modules/route-cards/routes/list';
 import { routeCardDetailRoute } from './modules/route-cards/routes/detail';
 import { routeCardNewRoute } from './modules/route-cards/routes/new';
@@ -312,6 +316,11 @@ const routeTree = rootRoute.addChildren([
     mlBomNewRoute,
     mlBomDetailRoute,
     mlBomEditRoute,
+    // Multi-Level Plan (ADR-225 phase 3) — same ordering rule.
+    mlPlansListRoute,
+    mlPlanNewRoute,
+    mlPlanDetailRoute,
+    mlPlanEditRoute,
     // Route Cards — same ordering rule.
     routeCardsListRoute,
     routeCardNewRoute,

@@ -8,6 +8,8 @@ import type {
   ListMlBomsResponse,
   MakeDefaultMlBomInput,
   MlBomDetail,
+  MlBomImportInput,
+  MlBomImportResult,
   MlBomTreeResponse,
   UpdateMlBomInput,
 } from '@innovic/shared';
@@ -145,6 +147,32 @@ export function useDeleteMlBom() {
     onSuccess: () => {
       invalidateAll(qc);
       // "Highest live number + 1" — deleting the newest frees its number.
+      void qc.invalidateQueries({ queryKey: mlBomsKeys.nextCode() });
+    },
+  });
+}
+
+/** ADR-225 phase 2 — POST /ml-boms/import. The Preview (dryRun true) carries no
+ *  save key: a preview is not a save. The Import carries the dialog's ONE key,
+ *  reused on a retry after a timeout, so the file is never imported twice. */
+export function useImportMlBoms() {
+  const qc = useQueryClient();
+  return useMutation<
+    MlBomImportResult,
+    Error,
+    { input: MlBomImportInput; saveKey?: SaveKey | undefined }
+  >({
+    mutationFn: ({ input, saveKey }) =>
+      withSaveKey(input.dryRun ? undefined : saveKey, (headers) =>
+        apiFetch<MlBomImportResult>('/ml-boms/import', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (res) => {
+      if (!res.saved) return;
+      invalidateAll(qc);
       void qc.invalidateQueries({ queryKey: mlBomsKeys.nextCode() });
     },
   });

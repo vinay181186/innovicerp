@@ -32,6 +32,8 @@ export interface PlanningLineMenuArgs {
   canProductionOrder: boolean;
   /** routecard_create entry — may this user create a Route Card? */
   canCreateRouteCard: boolean;
+  /** mlplan_create entry — may this user create a Multi-Level Plan? */
+  canMlPlan: boolean;
   setModal: (m: ModalState) => void;
   /**
    * Run the plan (create its Job Card / raise its PR). MUST return the
@@ -134,7 +136,7 @@ function planItems(
 }
 
 export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
-  const { so, line, perms, setModal } = args;
+  const { so, line, perms, setModal, canMlPlan } = args;
   const cap = line.itemId ? allocateCap(lineFacts(so.soCode, line, so.soInternalNo)) : 0;
   // The line's own six — every item opens its modal (each modal guards its own
   // save). Copied unchanged from the row this table replaced.
@@ -180,6 +182,23 @@ export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
       group: 'workflow',
       hidden: !perms.entry || !line.hasEquipmentBom,
       onSelect: () => setModal({ kind: 'equip-bom', soLineId: line.soLineId }),
+    },
+    {
+      // ADR-225 phase 3. This screen does not load the line item's type or
+      // whether it has a Default Multi-Level BOM, so it is offered on every
+      // open, non-equipment SO line with an item, and the create screen's
+      // eligible-lines list decides (CLAUDE.md §20.5).
+      key: 'ml-plan',
+      label: 'Multi-Level Plan',
+      icon: 'package',
+      group: 'workflow',
+      hidden:
+        !canMlPlan ||
+        so.source !== 'so' ||
+        line.hasEquipmentBom ||
+        !line.itemId ||
+        line.shortClosed,
+      to: `/ml-plans/new?soLineId=${line.soLineId}&salesOrderId=${so.soId}`,
     },
     {
       // ADR-180: book free stock to this line. Does not move Physical stock.

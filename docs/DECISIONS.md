@@ -12944,6 +12944,27 @@ BOM-8 cascade must ignore new plans) · 5 reports & print · 6 cost (only if ask
 - Phase 1 and 2 cannot affect any existing figure — new tables only.
 - No edit-approval gate on Multi-Level BOM yet (the gate ships OFF); registry entry is a follow-up.
 
+### ADR-225 update — phases 2 and 3 (2026-10-09)
+
+- **Excel import** (`POST /ml-boms/import`): one parent → child row per sheet row; Preview (dry run) and
+  Import run ONE rule set; the whole file saves in one transaction or nothing does, bottom-up so each
+  parent links its child's new Default; a revise writes the same per-line History as a screen edit.
+  Template built by the app (Text code columns, Line Type list, Qty > 0).
+- **Multi-Level Plan** (`IN-MLP-#####`, Planning, `mlplan_create`): copies the tree and works out
+  Gross Need / From Stock / On PO / PR / Net Need ONCE (ERPNext "Get Sub Assembly Items"); a
+  sub-assembly's children are worked from ITS Net Need. Refresh (Draft only) re-copies from the item's
+  live Default BOM. Live netting was rejected: it re-opens Net Need every time issued stock leaves.
+- **One SO line = Multi-Level Plan OR ordinary plans, never both** (decision 6 widened after review:
+  an ML plan beside a route-card plan double-planned the line). Guards: SO cancel / back-to-draft /
+  delete / type change / line close-short / line qty below Plan Qty all refused while a live
+  Multi-Level Plan exists.
+- **Supply pools exclude PRs already bound to demand** (`source_so_line_id`) and PO lines raised from
+  them (also the legacy `pr.po_id` path) — they are someone else's supply. The base filters are now one
+  shared SQL builder in `lib/po-pending.ts` / `reorder-rule.ts` (existing callers render byte-identical).
+- Names: `On Order` and `Ordered` are banned in NAMING.md, so the plan uses `On PO / PR`, `Raised`,
+  `To Raise`. Known limit: free stock is not reserved by a plan — two plans see the same stock (as
+  ERPNext's projected qty).
+
 ## ADR-226: An edit sends back only what it changed, and a clash is merged and announced — not silently applied
 
 **Date:** 2026-10-08 · **Status:** Accepted · **Amends ADR-004** · **Finishes CLAUDE.md §20.4**

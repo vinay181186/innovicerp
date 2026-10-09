@@ -155,6 +155,34 @@ export interface OpenPr {
 }
 
 /**
+ * The ONE open-PR set (P18), as `FROM ( … ) x WHERE …` over alias `x`
+ * (item_id, id, code, qty, ordered): a standard PR, not cancelled, not
+ * deleted, balance not short-closed, qty still more than what is on live
+ * POs. Read by readOpenPrsByItem below AND by callers that must narrow it
+ * (ml-plan's free-supply pool) via `extraWhere` — a fragment starting with
+ * AND, over alias `pr` — so a rule change here reaches every reader.
+ */
+export function openPrBalancesFromSql(
+  companyId: string,
+  itemIds: readonly string[],
+  extraWhere: SQL = sql``,
+): SQL {
+  const ordered = orderedQtySql({ id: sql`pr.id`, poId: sql`pr.po_id`, qty: sql`pr.qty` });
+  return sql`
+    FROM (
+      SELECT pr.item_id, pr.id, pr.code, pr.qty, ${ordered} AS ordered
+      FROM public.purchase_requests pr
+      WHERE pr.company_id = ${companyId}::uuid
+        AND pr.deleted_at IS NULL
+        AND pr.item_id = ANY(${sql.param(itemIds as string[])}::uuid[])
+        AND pr.pr_type = 'standard'
+        AND pr.status <> 'cancelled'
+        AND pr.balance_closed_at IS NULL${extraWhere}
+    ) x
+    WHERE x.qty > x.ordered`;
+}
+
+/**
  * Open PRs per item (P18): a standard (not Job Work OSP) PR, not cancelled,
  * not deleted, balance not short-closed, and qty still more than what is on
  * live POs — exactly the PR list's "convertible" filter
@@ -168,20 +196,8 @@ export async function readOpenPrsByItem(
 ): Promise<Map<string, OpenPr[]>> {
   const out = new Map<string, OpenPr[]>();
   if (itemIds.length === 0) return out;
-  const ordered = orderedQtySql({ id: sql`pr.id`, poId: sql`pr.po_id`, qty: sql`pr.qty` });
   const rows = (await tx.execute(sql`
-    SELECT x.item_id, x.id, x.code, (x.qty - x.ordered)::float8 AS qty
-    FROM (
-      SELECT pr.item_id, pr.id, pr.code, pr.qty, ${ordered} AS ordered
-      FROM public.purchase_requests pr
-      WHERE pr.company_id = ${companyId}::uuid
-        AND pr.deleted_at IS NULL
-        AND pr.item_id = ANY(${sql.param(itemIds as string[])}::uuid[])
-        AND pr.pr_type = 'standard'
-        AND pr.status <> 'cancelled'
-        AND pr.balance_closed_at IS NULL
-    ) x
-    WHERE x.qty > x.ordered
+    SELECT x.item_id, x.id, x.code, (x.qty - x.ordered)::float8 AS qty${openPrBalancesFromSql(companyId, itemIds)}
     ORDER BY x.code
   `)) as unknown as Array<Record<string, unknown>>;
   for (const r of rows) {

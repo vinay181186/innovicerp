@@ -237,6 +237,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     closed: 'green',
     paid: 'green',
     approved: 'blue',
+    released: 'blue',
     received: 'green',
     dispatched: 'green',
     accepted: 'green',

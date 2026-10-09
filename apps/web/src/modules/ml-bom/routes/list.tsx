@@ -5,20 +5,27 @@
 
 import type { MlBomListItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Icon } from '@/ui/core';
+import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteMlBom, useMakeDefaultMlBom, useMlBomsList } from '../api';
+import { downloadMlBomTemplate } from '../components/ml-bom-import-template';
 import { mlBomListColumns } from '../components/ml-bom-list-columns';
+
+// ADR-225 phase 2: the import dialog (and the Excel reader it pulls in) loads
+// only when Import is pressed.
+const MlBomImportDialog = lazy(() =>
+  import('../components/ml-bom-import-dialog').then((m) => ({ default: m.MlBomImportDialog })),
+);
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -82,6 +89,8 @@ function MlBomsListPage(): React.JSX.Element {
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
   const [deleteReason, setDeleteReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [templateBusy, setTemplateBusy] = useState(false);
 
   const columns = useMemo(() => mlBomListColumns(offset), [offset]);
 
@@ -95,6 +104,18 @@ function MlBomsListPage(): React.JSX.Element {
       await makeDefault.mutateAsync({ id: b.id, expectedUpdatedAt: b.updatedAt });
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Could not make this BOM the Default.');
+    }
+  };
+
+  const onDownloadTemplate = async (): Promise<void> => {
+    setActionError(null);
+    setTemplateBusy(true);
+    try {
+      await downloadMlBomTemplate();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not download the template.');
+    } finally {
+      setTemplateBusy(false);
     }
   };
 
@@ -123,6 +144,29 @@ function MlBomsListPage(): React.JSX.Element {
           void navigate({ to: '/ml-boms', search: { page: 1 }, replace: true });
         }}
         filtersActive={searchInput.trim() !== '' || sf.filtering}
+        tools={
+          perms.entry ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="download" size={12} />}
+                disabled={templateBusy}
+                onClick={() => void onDownloadTemplate()}
+              >
+                {templateBusy ? 'Preparing…' : 'Template'}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Icon name="upload" size={12} />}
+                onClick={() => setImportOpen(true)}
+              >
+                Import
+              </Button>
+            </>
+          ) : null
+        }
         primary={
           perms.entry ? (
             <Link to="/ml-boms/new" className="btn btn-primary">
@@ -194,6 +238,12 @@ function MlBomsListPage(): React.JSX.Element {
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
       />
+
+      {importOpen ? (
+        <Suspense fallback={null}>
+          <MlBomImportDialog onClose={() => setImportOpen(false)} />
+        </Suspense>
+      ) : null}
 
       {toDelete ? (
         <ConfirmDialog

@@ -101,6 +101,7 @@ import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { assertLineFreeForPlan } from '../ml-plan/guards';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
 import { nextJcCode } from '../job-cards/service';
@@ -909,6 +910,10 @@ async function createPlanInTx(
   companyId: string,
   input: CreatePlanInput,
   user: AuthContext,
+  /** Internal only — never on the shared input schema. ADR-225 phase 4: set
+   *  when a Multi-Level Plan node raises this plan, so the "line already has
+   *  a Multi-Level Plan" guard lets its own plans through. */
+  opts: { mlPlanNodeId?: string } = {},
 ): Promise<PlanDetail> {
   // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
   // is still honoured (and dup-checked).
@@ -937,6 +942,13 @@ async function createPlanInTx(
     (input.soLineId || input.jwLineId)
   ) {
     throw new ValidationError('A Buy item is not planned — use + PR on SO Planning.');
+  }
+
+  // ADR-225 decision 6 (extended) — an SO line uses a Multi-Level Plan OR
+  // plans, never both; only the Multi-Level Plan's own plans pass. Locks the
+  // SO line (as ml-plan create does) before checking.
+  if (input.soLineId) {
+    await assertLineFreeForPlan(tx, companyId, input.soLineId, Boolean(opts.mlPlanNodeId));
   }
 
   // ADR-170 — a route-card-driven plan holds qty / dates / raw material /
