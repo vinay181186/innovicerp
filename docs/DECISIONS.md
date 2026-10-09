@@ -13034,6 +13034,11 @@ ways to switch it on, for the owner to choose:
 **Nothing in the code claims it works.** `use-record-watch.ts`'s header states the precondition and
 that the hook is inert until it is met.
 
+**RESOLVED by ADR-228 (2026-10-09), option 2 of the three above.** The twelve read policies now
+derive the company from the person instead of the token, using the function Storage has used since 0041. Measured on TEST: a browser-shaped token saw 0 rows before and 3 machines / 38 job cards /
+22 GRNs after, with an unknown user still seeing 0 and empty claims still failing closed. The
+doorbell's database gate is open; the end-to-end still wants one two-window browser check.
+
 **ONE value-equality rule** (`packages/shared/lib/value-equal.ts`), lifted out of `audit-trail.ts`
 where it was private. The browser needs the identical test; two copies would let it call something a
 change that the server does not.
@@ -13167,3 +13172,133 @@ finally works as designed.
   decision.
 - **`Description` vs `Remarks` on masters** — the same fact under two names. Registered as-is and
   raised as NAMING.md C-15 rather than silently blessed; picking one changes a visible label.
+
+## ADR-228: A read policy asks WHO you are, not what your token claims
+
+**Date:** 2026-10-09 · **Status:** Accepted · **Fixes the root cause behind ADR-226's dead doorbell**
+
+### Context
+
+ADR-226 built an "someone else is editing this" warning, published thirteen tables to
+`supabase_realtime`, and shipped it **silent**. The review found why, and it is one sentence:
+
+> **The browser's access token does not carry a `company_id` claim, and every one of these tables'
+> read policies is `company_id = current_company_id()`, which reads exactly that claim.**
+
+Two paths reach these tables and only one has ever worked:
+
+| path                    | how the company is supplied                                                                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| screen → API → database | the API synthesizes the claim per request (`with-user-context.ts`) **and** connects as `postgres`, which has `rolbypassrls` — so RLS is not even evaluated |
+| browser → database      | Realtime and Storage. Nobody supplies it. `current_company_id()` is NULL, `company_id = NULL` is never true, **zero rows**                                 |
+
+Measured on TEST with a browser-shaped claim set (`{sub, role}`, no `company_id`) as role
+`authenticated`, before the change:
+
+```
+machines visible ............ 0
+job_cards visible ........... 0
+current_company_id() ........ NULL
+current_auth_company_id() ... f77042c6-…   (correct)
+```
+
+**Three features failed on this one missing fact**, and each was handled differently:
+
+1. ADR-226's live warning — built, wired, delivered nothing.
+2. **Op Entry's live updates — have never delivered a single event in their life.** Its
+   `useRealtimeOpLog` / `useRealtimeRunningOps` subscribe and receive nothing; the 30-second poll
+   beside them, labelled in the code as a "fallback", has been doing all the work. ADR-226 found the
+   publication was empty and thought that was the cause. It was half of it.
+3. **QC document downloads — somebody already hit this and worked around it**, in
+   `0041_phase8_qc_docs_company_rls.sql`, whose header says it outright: _"The Supabase access token
+   … does NOT carry a company_id claim … so current_company_id() is NULL in the Storage context."_
+   That workaround is `current_auth_company_id()`, and it has been in production since 0041.
+
+So the answer was already in the repo, written down, with a working implementation, and ADR-226
+published thirteen tables without checking whether anything could read them.
+
+### Decision
+
+**The twelve `<table>_company_read` policies now use `current_auth_company_id()`** — ADR-033's
+`STABLE SECURITY DEFINER` function with a pinned `search_path`, which derives the company from
+`public.users` by the token's `sub` (which the browser DOES carry) and skips soft-deleted users.
+
+Nothing is added to anybody's token. **Nobody is logged out. No login flow changes.** The database
+stops relying on a field one of its two callers never fills in.
+
+### Why this was chosen over adding the claim to the token
+
+A Supabase custom access token hook would put `company_id` in the token itself, which is the
+textbook answer and would retire the Storage workaround as well. It was rejected **for now**:
+
+- it changes **every** RLS evaluation in the system at once, and a mistake locks every user out;
+- it needs a re-login before anyone's token carries the claim, so there is a transition window;
+- `current_auth_company_id()` already exists, is already trusted in production, and gets the same
+  result for a fraction of the blast radius.
+
+Worth revisiting if the system ever has more than one company. **It has one** (`companies` = 1 row,
+and all users share its id), so the lookup cannot resolve the wrong answer.
+
+### Why the blast radius is near zero, stated plainly
+
+"An RLS change" sounds alarming. **The API bypasses RLS entirely** — role `postgres`,
+`rolbypassrls = true` — so no existing screen evaluates these policies at all. The only readers
+affected are the direct-browser paths that currently get nothing. **This can turn a zero into rows;
+it cannot turn working rows into nothing.**
+
+The WRITE policies are deliberately untouched: writing goes through the API, which bypasses RLS
+anyway, and a browser has no business writing to these tables directly.
+
+### Proven, both directions
+
+After the change, the same browser-shaped token:
+
+```
+machines ............ 3
+job_cards ........... 38
+goods_receipt_notes . 22
+cost_centers ........ 0     (that table is genuinely empty on TEST)
+```
+
+and the two ways it must NOT open up:
+
+```
+token whose sub is not a real user .... 0 rows
+claims set to the empty string ........ ERROR (fails closed, not open)
+```
+
+The empty-claims error is **pre-existing and identical** on both functions — verified by running
+`current_company_id()` and `current_auth_company_id()` side by side with `request.jwt.claims = ''`.
+Both raise `invalid input syntax for type json`. Not a regression, and it fails closed.
+
+**What is still unproven:** that Supabase Realtime's own RLS evaluation matches what was simulated
+here. It runs `realtime.apply_rls`, which sets the claims and checks SELECT as `authenticated` —
+exactly what was simulated — so confidence is high, but **the end-to-end needs one browser check**:
+two windows on the same GRN edit screen, save in one, watch the other.
+
+### Deliberately NOT done
+
+- **`user_access_admin_read` keeps the claim-based predicate.** It needs `current_user_role()` as
+  well, and the role claim is missing from the browser token for the same reason the company one is.
+  Fixing it means inventing a second lookup function for the role, and Access Control is the one
+  screen that REFUSES rather than merges (ADR-226), so its live warning is worth least.
+  `user_access_self_read` is `user_id = current_user_id()` and `sub` IS in the browser token, so an
+  admin editing their OWN access row already gets events.
+- **`current_auth_company_id()` is left exactly as it is**, including that it checks `deleted_at IS
+NULL` but **not `is_active`**. A deactivated user whose token has not expired could therefore
+  receive row events for up to that token's lifetime. Tightening it would be strictly safer and
+  would improve Storage too — but it is a live function with three existing dependents, and changing
+  its semantics in the same migration that changes its reach is how you cannot tell which one broke
+  something. **Its own change, and worth doing.**
+- **Op Entry's two tables are still not published** (ADR-226 took them back out on purpose).
+  `useRealtimeRunningOps` subscribes with no row filter and invalidates two query prefixes per
+  event, so publishing it means every start/stop by any operator refetches on every open Op Entry
+  page. Now that the policy half is fixed, switching it on is one line — and it should be its own
+  change, with somebody watching the network tab.
+
+### The lesson, recorded because it cost three features
+
+**A feature that cannot be observed to work has not been built.** All three of these shipped green:
+the code was correct, the wiring was correct, and nothing ever asked "did an event actually arrive".
+The cheap guard is one assertion per feature that the thing fires at all — which is exactly what the
+measurement in this ADR is, and it took one query.
