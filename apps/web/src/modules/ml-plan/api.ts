@@ -9,6 +9,7 @@ import type {
   MlPlanDetail,
   MlPlanEligibleLinesQuery,
   MlPlanEligibleLinesResponse,
+  RaiseMlPlanOrdersInput,
   RefreshMlPlanInput,
   UpdateMlPlanInput,
 } from '@innovic/shared';
@@ -16,6 +17,8 @@ import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@ta
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { plansKeys } from '@/modules/plans/api';
+import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 
 type EligibleQuery = Partial<Pick<MlPlanEligibleLinesQuery, 'search' | 'salesOrderId'>> & {
   limit?: number;
@@ -160,5 +163,28 @@ export function useCancelMlPlan() {
         json: { reason, expectedUpdatedAt },
       }),
     onSuccess: () => invalidateAll(qc),
+  });
+}
+
+/** ADR-225 phase 4 — raise Plans / PRs from the chosen rows. One request is one
+ *  transaction on the server; the save key makes a retry replay, not repeat. */
+export function useRaiseMlPlanOrders(id: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<MlPlanDetail, Error, RaiseMlPlanOrdersInput>({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<MlPlanDetail>(`/ml-plans/${id}/orders`, {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (updated) => {
+      invalidateAll(qc);
+      // The new Plans / PRs show on their own lists.
+      void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.all });
+      qc.setQueryData(mlPlansKeys.detail(updated.id), updated);
+    },
   });
 }

@@ -3,6 +3,8 @@
 // The work lives in
 //   reads.ts          list / detail / next code / eligible SO lines
 //   writes.ts         create / update / refresh / cancel
+//   orders.ts         raise orders (plans / PRs) from the rows (phase 4)
+//   order-reads.ts    Raised per row, the orders list, live orders
 //   snapshot.ts       tree copy + pools + node replace (the one writer of
 //                     ml_plan_nodes)
 //   snapshot-math.ts  the figures, pure
@@ -16,6 +18,7 @@ import { requireWriteRole } from '../../lib/auth';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireCompany } from '../ml-bom/helpers';
 import { listEligibleLinesTx, listMlPlansTx, loadMlPlanDetail, peekNextMlPlanCode } from './reads';
+import { raiseMlPlanOrdersTx } from './orders';
 import { cancelMlPlanTx, createMlPlanTx, refreshMlPlanTx, updateMlPlanTx } from './writes';
 import type {
   CancelMlPlanInput,
@@ -25,6 +28,7 @@ import type {
   MlPlanDetail,
   MlPlanEligibleLinesQuery,
   MlPlanEligibleLinesResponse,
+  RaiseMlPlanOrdersInput,
   RefreshMlPlanInput,
   UpdateMlPlanInput,
 } from './schema';
@@ -109,4 +113,17 @@ export async function cancelMlPlan(
   await requireFormAccess(user, FORM, 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => cancelMlPlanTx(tx, companyId, id, input, user));
+}
+
+/** ADR-225 phase 4 — raise plans / PRs from the chosen rows (one
+ *  transaction; the first order releases the plan). */
+export async function raiseMlPlanOrders(
+  id: string,
+  input: RaiseMlPlanOrdersInput,
+  user: AuthContext,
+): Promise<MlPlanDetail> {
+  requireWriteRole(user);
+  await requireFormAccess(user, FORM, 'entry');
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => raiseMlPlanOrdersTx(tx, companyId, id, input, user));
 }

@@ -2116,6 +2116,9 @@ export const purchaseRequests = pgTable(
     sourceSoLineId: uuid('source_so_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
     }),
+    // ADR-225 phase 4 (0204) — the Multi-Level Plan row this PR was raised
+    // from (a Buy row). Bound to demand exactly like source_so_line_id.
+    mlPlanNodeId: uuid('ml_plan_node_id').references((): AnyPgColumn => mlPlanNodes.id),
     operation: text('operation'),
     remarks: text('remarks'),
     approvedBy: uuid('approved_by').references(() => users.id),
@@ -2160,6 +2163,9 @@ export const purchaseRequests = pgTable(
     index('purchase_requests_source_jc_op_idx')
       .on(t.sourceJcOpId)
       .where(sql`${t.sourceJcOpId} is not null AND ${t.deletedAt} is null`),
+    index('purchase_requests_ml_plan_node_idx')
+      .on(t.mlPlanNodeId)
+      .where(sql`${t.mlPlanNodeId} is not null`),
     // Drives the "still to order" list (migration 0117): a short-closed PR must
     // drop out of the PO form's picker even though its arithmetic balance is
     // still positive.
@@ -3924,6 +3930,10 @@ export const plans = pgTable(
     jwLineId: uuid('jw_line_id').references(() => jobWorkOrderLines.id, {
       onDelete: 'set null',
     }),
+    // ADR-225 phase 4 (0204) — the Multi-Level Plan row this plan was raised
+    // from. Set only by ml-plan "Raise orders"; a child row's plan has no SO
+    // line and carries this instead, so it never moves SO line coverage.
+    mlPlanNodeId: uuid('ml_plan_node_id').references((): AnyPgColumn => mlPlanNodes.id),
     soCodeText: text('so_code_text'),
     lineNo: integer('line_no'),
 
@@ -4027,6 +4037,9 @@ export const plans = pgTable(
     index('plans_jw_line_idx')
       .on(t.jwLineId)
       .where(sql`${t.jwLineId} is not null`),
+    index('plans_ml_plan_node_idx')
+      .on(t.mlPlanNodeId)
+      .where(sql`${t.mlPlanNodeId} is not null`),
     index('plans_jc_id_idx')
       .on(t.jcId)
       .where(sql`${t.jcId} is not null`),

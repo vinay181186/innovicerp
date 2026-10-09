@@ -25,11 +25,11 @@
 //               SAME set as readOpenPrsByItem (open standard PR, balance =
 //               qty − what is already on live PO lines from it), MINUS PRs
 //               bound to demand
-//   "Bound to demand" = purchase_requests.source_so_line_id IS NOT NULL: that
-//   PR (and any PO line made from it) is someone else's supply, not free.
+//   "Bound to demand" = purchase_requests.source_so_line_id IS NOT NULL, or
+//   (phase 4) purchase_requests.ml_plan_node_id IS NOT NULL: that PR (and any
+//   PO line made from it) is someone else's supply, not free.
 //   A PR converted to a PO counts once — its converted part is taken off the
-//   PR balance and appears on the PO side. Phase 4 adds the plan-node binding
-//   (ml_plan_node_id) to the same exclusion.
+//   PR balance and appears on the PO side.
 
 import { randomUUID } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -164,15 +164,18 @@ export async function walkFromStoredNodes(
  *   (b) the legacy way: the PR's po_id is this PO, the PR has NO PO line
  *       pointing back at it (pre-line-link conversion), and this line is for
  *       the same item and carries no source_pr_id of its own.
- * Phase 4 adds the ml_plan_node_id binding here.
+ * Phase 4: a PR raised from a Multi-Level Plan row (ml_plan_node_id set) is
+ * bound the same way.
  */
 const BOUND_PO_LINE_SQL = sql`(
       EXISTS (SELECT 1 FROM public.purchase_requests bpr
-              WHERE bpr.id = pol.source_pr_id AND bpr.source_so_line_id IS NOT NULL)
+              WHERE bpr.id = pol.source_pr_id
+                AND (bpr.source_so_line_id IS NOT NULL OR bpr.ml_plan_node_id IS NOT NULL))
       OR (pol.source_pr_id IS NULL AND EXISTS (
             SELECT 1 FROM public.purchase_requests lpr
             WHERE lpr.po_id = po.id AND lpr.item_id = pol.item_id
-              AND lpr.source_so_line_id IS NOT NULL AND lpr.deleted_at IS NULL
+              AND (lpr.source_so_line_id IS NOT NULL OR lpr.ml_plan_node_id IS NOT NULL)
+              AND lpr.deleted_at IS NULL
               AND NOT EXISTS (SELECT 1 FROM public.purchase_order_lines lpl
                               WHERE lpl.source_pr_id = lpr.id AND lpl.deleted_at IS NULL)))
     )`;
@@ -214,13 +217,13 @@ export async function readPools(
   `)) as unknown as Array<{ item_id: string; qty: string }>;
 
   // PR part: the ONE open-PR set (reorder-rule.ts openPrBalancesFromSql),
-  // minus PRs bound to demand.
+  // minus PRs bound to demand (an SO line or a Multi-Level Plan row).
   const prRows = (await tx.execute(sql`
     SELECT x.item_id, round(SUM(x.qty - x.ordered), 3)::text AS qty${openPrBalancesFromSql(
       companyId,
       ids,
       sql`
-        AND pr.source_so_line_id IS NULL`,
+        AND pr.source_so_line_id IS NULL AND pr.ml_plan_node_id IS NULL`,
     )}
     GROUP BY x.item_id
   `)) as unknown as Array<{ item_id: string; qty: string }>;

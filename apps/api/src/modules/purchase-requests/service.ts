@@ -45,6 +45,7 @@ import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { assertMlNodeCapOnEdit, assertMlNodeItemUnchanged } from '../ml-plan/edit-cap';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { prSfColumns } from './sf-columns';
@@ -1033,7 +1034,9 @@ export async function insertPurchaseRequestTx(
   input: CreatePurchaseRequestInput,
   user: AuthContext,
   companyId: string,
-  opts: { systemRaised?: boolean } = {},
+  /** Internal only — never on the shared input. `mlPlanNodeId`: ADR-225
+   *  phase 4, the Multi-Level Plan row (a Buy row) that raised this PR. */
+  opts: { systemRaised?: boolean; mlPlanNodeId?: string } = {},
 ): Promise<PurchaseRequest> {
   // T23: blank code → auto-generate the next IN-PR-#####. OSP callers pass an
   // explicit IN-JWPR- code, which is honoured; only the standalone PR form
@@ -1111,6 +1114,7 @@ export async function insertPurchaseRequestTx(
       requiredDate: input.requiredDate ?? null,
       sourceJcOpId: input.sourceJcOpId ?? null,
       sourceSoLineId: input.sourceSoLineId ?? null,
+      mlPlanNodeId: opts.mlPlanNodeId ?? null,
       operation: input.operation ?? null,
       remarks: input.remarks ?? null,
       createdBy: user.id,
@@ -1253,9 +1257,28 @@ export async function updatePurchaseRequestTx(
   if ('itemId' in updates && updates['itemId'] !== existing[0]!.itemId) {
     await assertItemNotPartyOwned(tx, updates['itemId'] as string | null, companyId);
   }
+  // ADR-225 phase 4 — a PR raised from a Multi-Level Plan row keeps its item.
+  await assertMlNodeItemUnchanged(tx, companyId, {
+    mlPlanNodeId: existing[0]!.mlPlanNodeId,
+    docCode: existing[0]!.code,
+    oldItemId: existing[0]!.itemId,
+    newItemId: 'itemId' in updates ? (updates['itemId'] as string | null) : existing[0]!.itemId,
+    oldItemCodeText: existing[0]!.itemCodeText,
+    newItemCodeText: input.itemCodeText,
+  });
   if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
   if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;
   if (input.qty !== undefined) updates['qty'] = input.qty;
+  // ADR-225 phase 4 — a PR raised from a Multi-Level Plan row is capped at
+  // that row's To Raise (under the Multi-Level Plan's lock).
+  if (input.qty !== undefined) {
+    await assertMlNodeCapOnEdit(tx, companyId, {
+      mlPlanNodeId: existing[0]!.mlPlanNodeId,
+      doc: { kind: 'pr', id },
+      oldQty: existing[0]!.qty,
+      newQty: input.qty,
+    });
+  }
   // Decimal PR Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
   await assertLineQtysFitUom(
     tx,

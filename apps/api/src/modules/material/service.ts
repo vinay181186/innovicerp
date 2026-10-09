@@ -15,7 +15,7 @@ import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import {
   balanceOf,
   type BomPart,
-  jcRequirement,
+  jcRequirements,
   readBomParts,
   readBookedForOthers,
   readIssuedReturned,
@@ -45,10 +45,12 @@ export async function getJcMaterial(jobCardId: string, user: AuthContext): Promi
   return withUserContext(user, async (tx) => {
     const jc = await readJcHead(tx, companyId, jobCardId);
     if (!jc) throw new NotFoundError('Job Card not found.');
-    const req = jcRequirement(jc);
+    // ADR-225 — RM line plus a Multi-Level Plan sub-assembly's child parts;
+    // the same list the Item Issue guard caps against.
+    const reqs = await jcRequirements(tx, companyId, jc);
     const got = await readIssuedReturned(tx, companyId, { jobCardId: jc.id });
 
-    const itemIds = [...new Set([...(req ? [req.itemId] : []), ...got.keys()])];
+    const itemIds = [...new Set([...reqs.map((r) => r.itemId), ...got.keys()])];
     // Sequential on purpose — one transaction, one connection.
     const info = await readItemInfo(tx, companyId, itemIds);
     const pos = await readStockPositions(tx, companyId, itemIds);
@@ -70,9 +72,10 @@ export async function getJcMaterial(jobCardId: string, user: AuthContext): Promi
     };
 
     const lines: JcMaterialLine[] = [];
-    if (req) lines.push(lineFor(req.itemId, req.required));
+    for (const r of reqs) lines.push(lineFor(r.itemId, r.required));
+    const required = new Set(reqs.map((r) => r.itemId));
     const others = [...got.keys()]
-      .filter((id) => id !== req?.itemId)
+      .filter((id) => !required.has(id))
       .map((id) => lineFor(id, null))
       .sort((a, b) => a.itemCode.localeCompare(b.itemCode));
     lines.push(...others);
@@ -81,7 +84,7 @@ export async function getJcMaterial(jobCardId: string, user: AuthContext): Promi
       jobCardId: jc.id,
       jcCode: jc.code,
       orderQty: jc.orderQty,
-      planned: req != null,
+      planned: reqs.length > 0,
       lines,
       issues: await readSlipsFor(tx, companyId, { jobCardId: jc.id }),
     };

@@ -8,6 +8,7 @@ import { NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { tsLike } from '../ml-bom/helpers';
 import { lineFactsFromSql, refusalSql } from './guards';
+import { raisesOf, readMlPlanOrders, readRaisedByNode } from './order-reads';
 import type {
   ListMlPlansQuery,
   ListMlPlansResponse,
@@ -20,6 +21,7 @@ import type {
   MlPlanStatus,
 } from './schema';
 import { ML_PLAN_SF_COLUMNS } from './sf-columns';
+import { milliToText, toMilli } from './snapshot-math';
 
 export const ML_PLAN_NOT_FOUND = 'Multi-Level Plan not found. It may have been moved to Trash.';
 
@@ -211,8 +213,13 @@ export async function loadMlPlanDetail(
     ORDER BY n.seq
   `)) as unknown as Array<Record<string, unknown>>;
 
-  const nodes = nodeRows.map(
-    (r): MlPlanNode => ({
+  // Phase 4 — Raised = live orders made from the row; To Raise = Net Need −
+  // Raised, never below 0 (thousandths, no float drift).
+  const raisedByNode = await readRaisedByNode(tx, companyId, id);
+  const nodes = nodeRows.map((r): MlPlanNode => {
+    const raised = toMilli(raisedByNode.get(String(r['id'])) ?? '0');
+    const toRaise = toMilli(String(r['netNeedQty'])) - raised;
+    return {
       id: String(r['id']),
       parentNodeId: (r['parentNodeId'] as string | null) ?? null,
       depth: Number(r['depth']),
@@ -222,6 +229,10 @@ export async function loadMlPlanDetail(
       itemName: (r['itemName'] as string | null) ?? null,
       uom: (r['uom'] as string | null) ?? null,
       bomType: (r['bomType'] as MlPlanNode['bomType']) ?? null,
+      raises: raisesOf({
+        depth: Number(r['depth']),
+        bomType: (r['bomType'] as string | null) ?? null,
+      }),
       isSubAssembly: Boolean(r['isSubAssembly']),
       mlBomId: (r['mlBomId'] as string | null) ?? null,
       mlBomCode: (r['mlBomCode'] as string | null) ?? null,
@@ -231,14 +242,14 @@ export async function loadMlPlanDetail(
       fromStockQty: String(r['fromStockQty']),
       onPoPrQty: String(r['onPoPrQty']),
       netNeedQty: String(r['netNeedQty']),
-      // Phase 4 fills these from the orders made from the row.
-      raisedQty: '0.000',
-      toRaiseQty: String(r['netNeedQty']),
+      raisedQty: milliToText(raised),
+      toRaiseQty: milliToText(toRaise > 0n ? toRaise : 0n),
       rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
       rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
-    }),
-  );
-  return { ...toMlPlan(h), nodes };
+    };
+  });
+  const orders = await readMlPlanOrders(tx, companyId, id);
+  return { ...toMlPlan(h), nodes, orders };
 }
 
 // ─── Eligible SO lines ───────────────────────────────────────────────────

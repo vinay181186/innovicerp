@@ -33,6 +33,7 @@ import { sfRawParamSchema } from './list-query';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { activityReasonSchema } from '../enums/activity';
 import { mlBomLineTypeSchema } from './ml-bom';
+import { mlPlanOrderSchema } from './ml-plan-orders';
 
 export const ML_PLAN_STATUSES = ['draft', 'released', 'cancelled'] as const;
 export type MlPlanStatus = (typeof ML_PLAN_STATUSES)[number];
@@ -96,6 +97,8 @@ export const mlPlanNodeSchema = z.object({
   uom: z.string().nullable(),
   /** null on the top row. */
   bomType: mlBomLineTypeSchema.nullable(),
+  /** What Raise Orders makes from this row — decided by the server. */
+  raises: z.enum(['plan', 'pr', 'outsource_plan']),
   /** Built from its own Multi-Level BOM (top row and sub-assemblies). */
   isSubAssembly: z.boolean(),
   mlBomId: z.string().uuid().nullable(),
@@ -118,6 +121,8 @@ export type MlPlanNode = z.infer<typeof mlPlanNodeSchema>;
 
 export const mlPlanDetailSchema = mlPlanSchema.extend({
   nodes: z.array(mlPlanNodeSchema),
+  /** Phase 4 — every plan / PR raised from this plan's rows, newest first. */
+  orders: z.array(mlPlanOrderSchema).default([]),
 });
 export type MlPlanDetail = z.infer<typeof mlPlanDetailSchema>;
 

@@ -101,6 +101,7 @@ import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { assertMlNodeCapOnEdit } from '../ml-plan/edit-cap';
 import { assertLineFreeForPlan } from '../ml-plan/guards';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
@@ -371,6 +372,19 @@ const PLAN_RM_ITEM_CODE_SQL = sql<string | null>`(
   WHERE rmi.id = ${plans.rawMaterialItemId} AND rmi.company_id = ${plans.companyId}
 )`;
 
+/** ADR-225 phase 4 — the plan sits on a Multi-Level Plan row that has live
+ *  child rows (a sub-assembly or the top assembly). Mirrors
+ *  lib/ml-assembly.ts planIsMlAssembly (that file exports a function, not a
+ *  fragment) as one scalar EXISTS in the same select — no per-row query. */
+const PLAN_ML_IS_ASSEMBLY_SQL = sql<boolean>`(
+  ${plans.mlPlanNodeId} IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.ml_plan_nodes mlc
+    WHERE mlc.parent_node_id = ${plans.mlPlanNodeId}
+      AND mlc.company_id = ${plans.companyId}
+      AND mlc.deleted_at IS NULL
+  )
+)`;
+
 /** ADR-207 — the plan's SO's Internal SO No., read live through the SO line
  *  (never copied onto the plan). A scalar so it cannot multiply the row. */
 const PLAN_SO_INTERNAL_NO_SQL = sql<string | null>`(
@@ -459,6 +473,7 @@ export async function listPlans(
         jcStatus: sql<string | null>`jcs.computed_status`,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+        mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
         soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
       })
       .from(plans)
@@ -522,7 +537,7 @@ export async function listPlans(
       items: rows.map((r) => {
         const hasRouteCard = Boolean(r.hasRouteCard);
         return {
-          ...toPlan(r.plan, r.rmItemCode),
+          ...toPlan(r.plan, r.rmItemCode, r.mlIsAssembly),
           soInternalNo: r.soInternalNo ?? null,
           itemCode: r.itemCode ?? null,
           // Null passed through, not coerced to a blank string: the UI has to be
@@ -593,6 +608,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+        mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
         soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
       })
       .from(plans)
@@ -619,7 +635,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .orderBy(asc(planOps.opSeq));
 
     const detail: PlanDetail = {
-      ...toPlan(row.plan, row.rmItemCode),
+      ...toPlan(row.plan, row.rmItemCode, row.mlIsAssembly),
       soInternalNo: row.soInternalNo ?? null,
       itemCode: row.itemCode ?? null,
       // Null passed through, not coerced to a blank string: the UI has to be
@@ -905,7 +921,7 @@ export async function createPlansBatch(
   });
 }
 
-async function createPlanInTx(
+export async function createPlanInTx(
   tx: DbTransaction,
   companyId: string,
   input: CreatePlanInput,
@@ -1120,6 +1136,8 @@ async function createPlanInTx(
       opsSource: isRouteCardPlan ? 'route_card' : 'plan',
       soLineId: input.soLineId ?? null,
       jwLineId: input.jwLineId ?? null,
+      // ADR-225 phase 4 — the Multi-Level Plan row that raised it (internal).
+      mlPlanNodeId: opts.mlPlanNodeId ?? null,
       soCodeText: input.soCodeText ?? null,
       lineNo: input.lineNo ?? null,
       itemId: input.itemId ?? null,
@@ -1339,6 +1357,14 @@ export async function updatePlanTx(
       // create path uses, or the edit would re-impose the parent-line limit.
       bomMasterId: row.bomMasterId,
       bomChildCode: row.bomChildCode,
+    });
+    // ADR-225 phase 4 — a plan raised from a Multi-Level Plan row is ALSO
+    // capped at that row's To Raise (under the Multi-Level Plan's lock).
+    await assertMlNodeCapOnEdit(tx, companyId, {
+      mlPlanNodeId: row.mlPlanNodeId,
+      doc: { kind: 'plan', id },
+      oldQty: row.planQty,
+      newQty: input.planQty,
     });
   }
 
@@ -2605,6 +2631,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           itemRevision: SO_LINE_REVISION,
           clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
           rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+          mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
           soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
         })
         .from(plans)
@@ -2670,7 +2697,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         complete: byStatus.get('complete') ?? 0,
       },
       recentPlans: recentRows.map((r) => ({
-        ...toPlan(r.plan, r.rmItemCode),
+        ...toPlan(r.plan, r.rmItemCode, r.mlIsAssembly),
         soInternalNo: r.soInternalNo ?? null,
         itemCode: r.itemCode ?? null,
         // Null passed through, not coerced to a blank string: the UI has to be
@@ -2750,6 +2777,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
       hasRouteCard: HAS_ROUTE_CARD_SQL,
       rmItemCode: PLAN_RM_ITEM_CODE_SQL,
+      mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
       soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
     })
     .from(plans)
@@ -2774,7 +2802,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)))
     .orderBy(asc(planOps.opSeq));
   return {
-    ...toPlan(row.plan, row.rmItemCode),
+    ...toPlan(row.plan, row.rmItemCode, row.mlIsAssembly),
     soInternalNo: row.soInternalNo ?? null,
     itemCode: row.itemCode ?? null,
     // Null passed through, not coerced to a blank string: the UI has to be able
@@ -2800,7 +2828,12 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
   };
 }
 
-function toPlan(row: typeof plans.$inferSelect, rmItemCode: string | null): Plan {
+function toPlan(
+  row: typeof plans.$inferSelect,
+  rmItemCode: string | null,
+  /** PLAN_ML_IS_ASSEMBLY_SQL from the same select. */
+  mlIsAssembly: boolean | null = false,
+): Plan {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -2833,6 +2866,8 @@ function toPlan(row: typeof plans.$inferSelect, rmItemCode: string | null): Plan
     bomMasterId: row.bomMasterId,
     bomParentCode: row.bomParentCode,
     bomChildCode: row.bomChildCode,
+    mlPlanNodeId: row.mlPlanNodeId ?? null,
+    mlIsAssembly: mlIsAssembly === true,
     jcId: row.jcId,
     dpVendorId: row.dpVendorId,
     dpVendorCodeText: row.dpVendorCodeText,
