@@ -71,7 +71,21 @@ export function setupAuthListener(queryClient: QueryClient, router: AnyRouter): 
       // navigation never reloads the SPA. Sign-out is the other place it is
       // right: the session is over, and a one-second load costs nothing.
       clearLocalIdentityState();
-      if (typeof window !== 'undefined') {
+      // ADR-228 HOTFIX — only navigate when we are NOT already on /login.
+      //
+      // Without this guard the reload is a LOOP, and it presents as "I cannot
+      // log in". Supabase fires SIGNED_OUT not only when someone presses Sign
+      // out, but whenever a stored refresh token fails to refresh — which
+      // happens on the login page itself if an expired session is still in the
+      // cookie. The listener then reloaded /login, the refresh failed again,
+      // SIGNED_OUT fired again, and the page reloaded for ever. Nothing on
+      // screen said why.
+      //
+      // The reload still does its job: a real sign-out always happens from
+      // inside the app, so the path is never /login and the navigation runs.
+      // On /login there is nothing to shed anyway — the storage sweep above has
+      // already run, and the router redirect below handles the rest.
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign('/login');
         return;
       }
