@@ -32,6 +32,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { DESIGN_TRACKER_SF_COLUMNS, TRACKER_HOURS_SQL } from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
 import {
@@ -137,6 +138,9 @@ async function nextDesignCode(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
+  // ADR-227: the series lock is taken by the CREATE callers, NOT here — this
+  // function is also the body of the read-only /next-code preview, and a GET
+  // must not hold a write lock to commit. See docs/CONVENTIONS.md.
   const rows = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(NULLIF(regexp_replace(code, '^${sql.raw(CODE_PREFIX)}', ''), '')::int),
@@ -512,6 +516,7 @@ export async function createDesignTracker(
       );
     }
 
+    await lockDocSeries(tx, companyId, 'design_tracker'); // ADR-227
     const code = await nextDesignCode(tx, companyId);
     const inserted = await tx
       .insert(designTracker)

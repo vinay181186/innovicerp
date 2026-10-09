@@ -53,6 +53,8 @@ import { dispatchedNotInvoicedReport } from './definitions/dispatched-not-invoic
 import { gstSalesRegisterReport } from './definitions/gst-sales-register';
 import { hsnOutwardSummaryReport } from './definitions/hsn-outward-summary';
 import { masterCompletenessReport } from './definitions/master-completeness';
+import { mlBomExplodedReport } from './definitions/ml-bom-exploded';
+import { mlPlanToRaiseReport } from './definitions/ml-plan-to-raise';
 import type { ReportColumn, ReportDefinition, ReportRow } from './schema';
 
 export interface ReportRunContext {
@@ -121,6 +123,9 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [vendorRejectionReport.definition.slug]: vendorRejectionReport,
   // Plan v3 Phase E — the Phase F gate (Master Rules Mode → Enforce).
   [masterCompletenessReport.definition.slug]: masterCompletenessReport,
+  // ADR-225 phase 5 — Multi-Level BOM / Plan.
+  [mlBomExplodedReport.definition.slug]: mlBomExplodedReport,
+  [mlPlanToRaiseReport.definition.slug]: mlPlanToRaiseReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {

@@ -683,8 +683,12 @@ export async function markUnitAssembled(
     const requestedQty = Math.max(1, Math.round(input.qty ?? 1));
 
     // Already assembled (SUM qty across batch records) + the next batch number
-    // (MAX unit_no + 1). Uniqueness on unit_no is enforced by a partial unique
-    // index so a race surfaces as ConflictError on the insert.
+    // (MAX unit_no + 1). Safe under the lockSoRow above (M15): the second save
+    // waits there and re-reads both figures, so it picks the next batch number
+    // AND re-checks the order's balance. The partial unique index on
+    // (sales_order_id, unit_no) is the backstop, not the mechanism — this
+    // comment used to say the index was all there was, which was true before
+    // M15 and misread as a live race long after it stopped being one.
     const aggRows = await tx
       .select({
         assembled: sql<number>`COALESCE(SUM(${assemblyUnits.qty}), 0)::int`,

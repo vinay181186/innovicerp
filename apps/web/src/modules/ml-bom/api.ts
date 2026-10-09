@@ -9,12 +9,19 @@ import type {
   MakeDefaultMlBomInput,
   MlBomDetail,
   MlBomImportInput,
+  MlBomCostResponse,
   MlBomImportResult,
   MlBomTreeResponse,
   UpdateMlBomInput,
 } from '@innovic/shared';
-import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
+import {
+  type QueryClient,
+  type UseQueryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { ApiError, apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
@@ -25,6 +32,7 @@ export const mlBomsKeys = {
   details: () => [...mlBomsKeys.all, 'detail'] as const,
   detail: (id: string) => [...mlBomsKeys.details(), id] as const,
   tree: (id: string, qty: number) => [...mlBomsKeys.detail(id), 'tree', qty] as const,
+  cost: (id: string, qty: number) => [...mlBomsKeys.detail(id), 'cost', qty] as const,
   nextCode: () => [...mlBomsKeys.all, 'next-code'] as const,
 };
 
@@ -64,6 +72,33 @@ export function useMlBomTree(id: string | undefined, qty: number, enabled = true
     queryFn: () => apiFetch<MlBomTreeResponse>(`/ml-boms/${id}/tree?qty=${qty}`),
     enabled: Boolean(id) && enabled && Number.isFinite(qty) && qty > 0,
     placeholderData: (prev) => prev,
+  });
+}
+
+/** Print: the tree for exactly `qty`, always asked fresh (never a cached
+ *  error or an old figure). Shares the Tree tab's cache key. */
+export function fetchMlBomTree(
+  qc: QueryClient,
+  id: string,
+  qty: number,
+): Promise<MlBomTreeResponse> {
+  return qc.fetchQuery<MlBomTreeResponse>({
+    queryKey: mlBomsKeys.tree(id, qty),
+    queryFn: () => apiFetch<MlBomTreeResponse>(`/ml-boms/${id}/tree?qty=${qty}`),
+    staleTime: 0,
+  });
+}
+
+/** ADR-225 phase 6 — the cost estimate for `qty` top units. 403 when the
+ *  user may not see prices; not retried. */
+export function useMlBomCost(id: string | undefined, qty: number, enabled = true) {
+  return useQuery<MlBomCostResponse>({
+    queryKey: mlBomsKeys.cost(id ?? '__missing__', qty),
+    queryFn: () => apiFetch<MlBomCostResponse>(`/ml-boms/${id}/cost?qty=${qty}`),
+    enabled: Boolean(id) && enabled && Number.isFinite(qty) && qty > 0,
+    // No placeholderData: a new Qty / BOM shows the loading state, never the
+    // old figures beside the new Qty.
+    retry: (count, err) => !(err instanceof ApiError && err.status === 403) && count < 2,
   });
 }
 

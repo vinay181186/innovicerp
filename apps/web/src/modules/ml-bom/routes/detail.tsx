@@ -1,29 +1,43 @@
 // Multi-Level BOM detail (ADR-225): DetailHeader (BOM No. · Default · Edit +
 // Actions) with the header facts, then ONE tab strip — Lines · Tree ·
-// Exploded Items · Used In · History.
+// Exploded Items · Cost · Used In · History. Cost (phase 6) shows only to a
+// user who may see prices on mlbom_create (the web twin of canSeeFormPrice);
+// Actions → Print (phase 5) prints the tree for the Qty on the Tree tab.
 //
 // The tabs use <TabStrip> directly, not RelatedDocsTabs: that wrapper reads
 // GET /<module>/:id/related, which this document does not have, and hides
 // itself entirely when the request fails.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDocumentHistory } from '@/modules/activity-log/api';
+import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { Panel } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { TabStrip, type TabStripTab } from '@/ui/navigation';
-import { useDeleteMlBom, useMakeDefaultMlBom, useMlBom, useMlBomTree } from '../api';
+import {
+  fetchMlBomTree,
+  useDeleteMlBom,
+  useMakeDefaultMlBom,
+  useMlBom,
+  useMlBomCost,
+  useMlBomTree,
+} from '../api';
+import { MlBomCostTab } from '../components/ml-bom-cost-tab';
 import {
   MlBomExplodedTab,
   MlBomLinesTab,
   MlBomTreeTab,
   MlBomUsedInTab,
 } from '../components/ml-bom-detail-tabs';
+import { openMlPrintWindow } from '../lib/ml-sheet-print';
+import { printMlBom } from '../lib/print-ml-bom';
 
 export const mlBomDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -31,7 +45,7 @@ export const mlBomDetailRoute = createRoute({
   component: MlBomDetailPage,
 });
 
-type TabKey = 'lines' | 'tree' | 'exploded' | 'used-in' | 'history';
+type TabKey = 'lines' | 'tree' | 'exploded' | 'cost' | 'used-in' | 'history';
 const MAX_TREE_QTY = 1_000_000;
 
 function MlBomDetailPage(): React.JSX.Element {
@@ -62,8 +76,14 @@ function MlBomDetailPage(): React.JSX.Element {
     return !Number.isFinite(n) || n <= 0 || n > MAX_TREE_QTY;
   })();
 
+  const canSeePrice = perms.price;
+  const costOpen = tab === 'cost' && canSeePrice;
   const treeOpen = tab === 'tree' || tab === 'exploded';
+  const [printing, setPrinting] = useState(false);
   const tree = useMlBomTree(detail?.id, qty, treeOpen);
+  const cost = useMlBomCost(detail?.id, qty, costOpen);
+  const { data: company } = useMyCompany();
+  const queryClient = useQueryClient();
   const history = useDocumentHistory({
     entity: 'MlBom',
     entityId: detail?.id,
@@ -102,6 +122,36 @@ function MlBomDetailPage(): React.JSX.Element {
     );
   };
 
+  // Print the Qty shown in the box, exactly. The window opens here, inside
+  // the click, so no pop-up blocker stops it; the tree is then asked fresh
+  // and written into it. A failure closes it and shows in the Banner.
+  const onPrint = (): void => {
+    setActionError(null);
+    if (qtyBad) {
+      setActionError('Fix Qty first.');
+      return;
+    }
+    const printQty = Number(qtyInput);
+    const w = openMlPrintWindow();
+    if (!w) {
+      setActionError('Allow popups to print.');
+      return;
+    }
+    setPrinting(true);
+    fetchMlBomTree(queryClient, detail.id, printQty)
+      .then((data) => {
+        if (!printMlBom({ detail, tree: data, company, target: w })) {
+          w.close();
+          setActionError('Allow popups to print.');
+        }
+      })
+      .catch((e: unknown) => {
+        w.close();
+        setActionError(e instanceof Error ? e.message : 'Could not load the BOM tree.');
+      })
+      .finally(() => setPrinting(false));
+  };
+
   const onDelete = async (): Promise<void> => {
     const reason = deleteReason.trim();
     // Thrown, so ConfirmDialog shows it inside the dialog and stays open.
@@ -115,6 +165,7 @@ function MlBomDetailPage(): React.JSX.Element {
     { key: 'lines', label: 'Lines', count: detail.lines.length },
     { key: 'tree', label: 'Tree', count: null },
     { key: 'exploded', label: 'Exploded Items', count: tree.data?.exploded.length ?? null },
+    ...(canSeePrice ? [{ key: 'cost', label: 'Cost', count: null }] : []),
     { key: 'used-in', label: 'Used In', count: detail.usedIn.length },
     { key: 'history', label: 'History', count: history.data?.rows.length ?? null },
   ];
@@ -150,6 +201,11 @@ function MlBomDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
+                {
+                  label: 'Print',
+                  disabled: printing,
+                  onClick: onPrint,
+                },
                 {
                   label: 'Make Default',
                   hidden: !perms.edit || detail.isDefault,
@@ -207,7 +263,7 @@ function MlBomDetailPage(): React.JSX.Element {
       />
       <Panel
         bodyPadding="none"
-        {...(treeOpen
+        {...(treeOpen || costOpen
           ? {
               actions: (
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
@@ -233,6 +289,9 @@ function MlBomDetailPage(): React.JSX.Element {
         {tab === 'lines' ? <MlBomLinesTab detail={detail} /> : null}
         {tab === 'tree' ? <MlBomTreeTab {...treeProps} /> : null}
         {tab === 'exploded' ? <MlBomExplodedTab {...treeProps} /> : null}
+        {costOpen ? (
+          <MlBomCostTab cost={cost.data} loading={cost.isLoading} error={cost.error} />
+        ) : null}
         {tab === 'used-in' ? <MlBomUsedInTab detail={detail} /> : null}
         {tab === 'history' ? (
           <DocumentHistory entity="MlBom" entityId={detail.id} refId={detail.code} />

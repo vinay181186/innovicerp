@@ -15,6 +15,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { lockDocSeries } from '../../lib/doc-series-lock';
 import { CAPA_NC_REFS_TEXT, CAPA_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
@@ -225,6 +226,9 @@ async function nextCapaNo(
   tx: Parameters<Parameters<typeof withUserContext>[1]>[0],
   companyId: string,
 ): Promise<string> {
+  // ADR-227: the series lock is taken by the CREATE callers, NOT here — this
+  // function is also the body of the read-only /next-code preview, and a GET
+  // must not hold a write lock to commit. See docs/CONVENTIONS.md.
   const rows = await tx
     .select({ code: capaRecords.code })
     .from(capaRecords)
@@ -253,6 +257,7 @@ export async function createCapa(input: CreateCapaInput, user: AuthContext): Pro
   await requireFormAccess(user, 'capa_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    await lockDocSeries(tx, companyId, 'capa_records'); // ADR-227
     const code = await nextCapaNo(tx, companyId);
     const inserted = await tx
       .insert(capaRecords)

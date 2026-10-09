@@ -37,6 +37,33 @@ const nodesOfPlan = (companyId: string, planId: string): SQL => sql`
   WHERE n.ml_plan_id = ${planId}::uuid AND n.company_id = ${companyId}::uuid`;
 
 /**
+ * Raised qty per node (thousandths as numeric(…,3) text), live orders only,
+ * for the nodes `nodeIds` selects (a one-uuid-column SELECT). Nodes with
+ * nothing raised are absent. ONE grouped statement — the plan detail reads it
+ * for one plan (readRaisedByNode), the To Raise report (ADR-225 phase 5) for
+ * every open plan at once, so the two cannot disagree.
+ */
+export function raisedByNodeSql(companyId: string, nodeIds: SQL): SQL {
+  return sql`
+    SELECT x.node_id, round(SUM(x.qty), 3)::text AS raised
+    FROM (
+      SELECT p.ml_plan_node_id AS node_id, p.plan_qty::numeric AS qty
+      FROM public.plans p
+      WHERE p.company_id = ${companyId}::uuid
+        AND p.ml_plan_node_id IN (${nodeIds})
+        AND ${LIVE_PLAN}
+      UNION ALL
+      SELECT pr.ml_plan_node_id AS node_id, (${sql.raw(prCoverQtyRaw('pr'))})::numeric AS qty
+      FROM public.purchase_requests pr
+      WHERE pr.company_id = ${companyId}::uuid
+        AND pr.ml_plan_node_id IN (${nodeIds})
+        AND ${LIVE_PR}
+    ) x
+    GROUP BY x.node_id
+  `;
+}
+
+/**
  * Raised qty per node of the plan (thousandths as numeric(…,3) text), live
  * orders only. Nodes with nothing raised are absent. One grouped query.
  */
@@ -45,23 +72,9 @@ export async function readRaisedByNode(
   companyId: string,
   planId: string,
 ): Promise<Map<string, string>> {
-  const rows = (await tx.execute(sql`
-    SELECT x.node_id, round(SUM(x.qty), 3)::text AS raised
-    FROM (
-      SELECT p.ml_plan_node_id AS node_id, p.plan_qty::numeric AS qty
-      FROM public.plans p
-      WHERE p.company_id = ${companyId}::uuid
-        AND p.ml_plan_node_id IN (${nodesOfPlan(companyId, planId)})
-        AND ${LIVE_PLAN}
-      UNION ALL
-      SELECT pr.ml_plan_node_id AS node_id, (${sql.raw(prCoverQtyRaw('pr'))})::numeric AS qty
-      FROM public.purchase_requests pr
-      WHERE pr.company_id = ${companyId}::uuid
-        AND pr.ml_plan_node_id IN (${nodesOfPlan(companyId, planId)})
-        AND ${LIVE_PR}
-    ) x
-    GROUP BY x.node_id
-  `)) as unknown as Array<{ node_id: string; raised: string }>;
+  const rows = (await tx.execute(
+    raisedByNodeSql(companyId, nodesOfPlan(companyId, planId)),
+  )) as unknown as Array<{ node_id: string; raised: string }>;
   return new Map(rows.map((r) => [String(r.node_id), String(r.raised)]));
 }
 

@@ -195,9 +195,12 @@ export async function createJwInvoice(
     // Legal copy of the customer (plan D7) — the print reads it.
     const copy = clientCopyValues(client);
 
-    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
-    await lockDocSeries(tx, companyId, 'jw_invoices');
-    const code = input.code ?? (await nextInvoiceCode(tx, companyId));
+    // ADR-227: the number is the server's, full stop — the create input carries
+    // none, so there is nothing to check. The comment here used to say a typed
+    // number was "checked under the same series lock" and the next line did no
+    // check at all: `input.code ?? next…` took it verbatim. On a TAX INVOICE
+    // number. nextInvoiceCode takes the lock itself before reading the highest.
+    const code = await nextInvoiceCode(tx, companyId);
     const inserted = await tx
       .insert(jwInvoices)
       .values({

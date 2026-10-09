@@ -30,7 +30,6 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
-import { docCodeToSend } from '@/lib/use-doc-number';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiDownload, apiFetch } from '@/lib/api';
@@ -333,11 +332,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   });
   const lineItems = lineItemsData?.items ?? [];
 
-  // ── JWSO No.: live duplicate/format check (parity with the SO form). ──
-  const [docNoValid, setDocNoValid] = useState(true);
-  // S2: the number the field auto-filled. It is only a preview — the form
-  // sends a number only when the user changed it (docCodeToSend).
-  const [suggestedCode, setSuggestedCode] = useState('');
+  // ADR-227 — the JWSO No. is not typed here any more (the owner: "dcno, pono,
+  // jwso i never type by hand. it i already system generated"), so there is no
+  // duplicate check to run, no suggestion to remember and nothing that can stop
+  // a save. The field shows the server's next number read-only; the server
+  // assigns the real one under its series lock.
 
   // ── Client select label + inline quick-add ──
   const selectedClientId = watch('header.clientId') ?? null;
@@ -714,9 +713,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     // Built field by field — never a spread of the form header, which also holds
     // UI-only values (the Due Date helper, the read-only status).
     const headerOut = {
-      // Code is generated server-side in series; never send a client value on
-      // create (an empty string would fail the schema's min-length check).
-      code: docCodeToSend(h.code, suggestedCode),
+      // ADR-227: no `code`, on create OR on edit. The number on screen is a
+      // preview; the server numbers the JWSO itself, so a preview that went
+      // stale while this screen was open costs nothing — the save takes the next
+      // free number instead of being refused as a duplicate. (`nextJwCode` is
+      // guarded by withUniqueRetry, not by lockDocSeries: `job_work_orders` is
+      // not in the DocSeries union. Same guarantee, different mechanism — and
+      // the one phase-5 screen whose server side does not yet follow the rule in
+      // docs/CONVENTIONS.md.) An earlier cut added the code back on edit here;
+      // the edit path strips it again a few lines down, so it never travelled.
       jwDate: h.jwDate,
       clientId: h.clientId || undefined,
       // customerName is snapshotted server-side from the client master.
@@ -760,9 +765,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     });
 
     if (isEdit) {
-      const { code: _drop, ...headerNoCode } = headerOut;
-      void _drop;
-      await props.onSubmit({ header: headerNoCode, lines: linesOut });
+      // ADR-227: headerOut carries no `code` in either mode now, so there is
+      // nothing to strip here. This used to destructure one out.
+      await props.onSubmit({ header: headerOut, lines: linesOut });
     } else {
       await props.onSubmit({ header: headerOut, lines: linesOut } as CreateJobWorkOrderInput);
     }
@@ -772,7 +777,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // Rev, UOM, Order Qty, [Rate, Amount], Due Date, More, Remove.
   const colCount = priceVisible ? 12 : 10;
   const standalone = Boolean(props.pageTitle);
-  const saveDisabled = formState.isSubmitting || (isCreate && !docNoValid);
+  // ADR-227: the number can no longer make a save invalid — it is not sent.
+  const saveDisabled = formState.isSubmitting;
   const submitForm = handleSubmit(onValid);
   // Ctrl+S runs the same Save as the header button.
   useSaveShortcut(() => void submitForm(), !saveDisabled);
@@ -1031,15 +1037,17 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             "leave blank to auto-generate on save", and useDocNumber treats empty
             as valid, so nothing enforces a star here. Matches the PO form. */}
           <div className="f-sm">
-            <DocNumberInput
-              type="job_work_order"
-              label="JWSO No."
-              readOnly={isEdit}
-              value={watch('header.code') ?? ''}
-              onChange={(v) => setValue('header.code', v)}
-              onValidityChange={setDocNoValid}
-              onSuggestedChange={setSuggestedCode}
-            />
+            {isEdit ? (
+              <DocNumberInput
+                type="job_work_order"
+                label="JWSO No."
+                readOnly
+                value={watch('header.code') ?? ''}
+                onChange={(v) => setValue('header.code', v)}
+              />
+            ) : (
+              <DocNumberInput type="job_work_order" label="JWSO No." preview />
+            )}
           </div>
           <div className="form-grp f-sm">
             <label className="form-label" htmlFor="jwDate">

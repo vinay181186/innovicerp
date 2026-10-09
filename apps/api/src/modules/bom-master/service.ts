@@ -214,10 +214,16 @@ function assertQtyPerSetFitsUom(
 async function nextBomNo(tx: DbTransaction, companyId: string): Promise<string> {
   // S2: queue behind any other save numbering this series (lib/doc-series-lock).
   await lockDocSeries(tx, companyId, 'bom_masters');
+  // ADR-227 — the scan counts DELETED rows too, so a number that has been used
+  // once is never handed out again (owner's decision, 2026-10-09). The unique
+  // index is partial (WHERE deleted_at IS NULL), so excluding them here did not
+  // fail loudly: Postgres ACCEPTED the duplicate and the register quietly held
+  // two papers with one number, one of them in Trash. Deleting the newest
+  // document now leaves a permanent gap in the series, which is the trade — one
+  // number, one document, for ever.
   const rows = (await tx.execute(sql`
     SELECT bom_no FROM public.bom_masters
     WHERE company_id = ${companyId}::uuid
-      AND deleted_at IS NULL
       AND bom_no ~ '^BOM-\\d+$'
     ORDER BY (SUBSTRING(bom_no FROM 5))::int DESC
     LIMIT 1

@@ -52,10 +52,27 @@ export type DocSeries =
   | 'route_cards'
   | 'bom_masters'
   | 'ml_boms'
-  | 'ml_plans';
+  | 'ml_plans'
+  // ADR-227 — these six had no protection at all: no lock and no retry, so
+  // two saves in the same second both read the same highest number and the
+  // loser's whole transaction was thrown away with a bare "already exists".
+  | 'tasks'
+  | 'capa_records'
+  | 'design_tracker'
+  | 'design_projects'
+  | 'design_dcrs'
+  | 'design_dcns';
 
 /** Serialise number picking for one series of one company until this
- *  transaction ends. See the file header. */
+ *  transaction ends. See the file header.
+ *
+ *  NOT the only way to be safe. `assembly_units` numbers a batch WITHIN one
+ *  sales order and is serialised instead by `lockSoRow` — `SELECT … FROM
+ *  sales_orders … FOR NO KEY UPDATE` — taken at the top of every path that
+ *  reads `MAX(unit_no)` (ADR-193 M15). That gives the same guarantee at the
+ *  right grain, so two different orders never wait on each other, and it is not
+ *  listed above. A series belongs here when its register is company-wide, which
+ *  a document number's is. */
 export async function lockDocSeries(
   tx: DbTransaction,
   companyId: string,

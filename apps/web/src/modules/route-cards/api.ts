@@ -140,8 +140,11 @@ export function useDeleteRouteCard() {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: routeCardsKeys.detail(id) });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      // The next number is "highest code still live + 1", so deleting the
-      // newest card frees its number and the preview must be re-asked.
+      // ADR-227 made the next number "highest code EVER used + 1" — a deleted
+      // card keeps its number for ever, so a delete can no longer change what
+      // the preview should say. Kept anyway, cheap and harmless: it is one
+      // refetch of a tiny endpoint, and if the rule is ever revisited the
+      // preview stays correct without anyone remembering this line.
       void qc.invalidateQueries({ queryKey: routeCardsKeys.nextCode() });
     },
   });

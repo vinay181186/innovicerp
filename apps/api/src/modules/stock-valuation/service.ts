@@ -15,6 +15,7 @@ import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { readBelowReorder } from '../store-inventory/reorder-rule';
+import { itemRateCtes } from './rate-rule';
 
 export type StockValuationQueryParsed = z.output<typeof stockValuationQuerySchema>;
 
@@ -89,28 +90,7 @@ export async function getStockValuation(
 
   return withUserContext(user, async (tx) => {
     const res = (await tx.execute(sql`
-        WITH last_grn_rate AS (
-          SELECT DISTINCT ON (gl.item_id)
-            gl.item_id, pol.rate, g.grn_date
-          FROM goods_receipt_note_lines gl
-          JOIN goods_receipt_notes g ON g.id = gl.goods_receipt_note_id
-          JOIN purchase_order_lines pol ON pol.id = gl.purchase_order_line_id
-          JOIN purchase_orders gpo ON gpo.id = pol.purchase_order_id
-          WHERE g.company_id = ${cid} AND g.deleted_at IS NULL AND gl.deleted_at IS NULL
-            AND gl.item_id IS NOT NULL AND pol.rate > 0
-            AND gpo.status NOT IN ('draft', 'cancelled')
-          ORDER BY gl.item_id, g.grn_date DESC, g.created_at DESC
-        ),
-        last_po_rate AS (
-          SELECT DISTINCT ON (pol.item_id) pol.item_id, pol.rate
-          FROM purchase_order_lines pol
-          JOIN purchase_orders po ON po.id = pol.purchase_order_id
-          WHERE po.company_id = ${cid} AND po.deleted_at IS NULL
-            AND pol.item_id IS NOT NULL AND pol.rate > 0
-            -- ADR-189 — a draft or cancelled PO is not a price anybody paid.
-            AND po.status NOT IN ('draft', 'cancelled')
-          ORDER BY pol.item_id, po.po_date DESC
-        ),
+        WITH ${itemRateCtes(cid)},
         base AS (
           SELECT
             i.id AS item_id, i.code, i.name, i.uom::text AS uom,
