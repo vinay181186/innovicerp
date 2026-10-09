@@ -6,6 +6,7 @@ import {
   createMlPlanInputSchema,
   listMlPlansQuerySchema,
   mlPlanEligibleLinesQuerySchema,
+  raiseMlPlanOrdersInputSchema,
   refreshMlPlanInputSchema,
   updateMlPlanInputSchema,
 } from './schema';
@@ -59,6 +60,14 @@ export async function mlPlanRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(req.params);
     const input = refreshMlPlanInputSchema.parse(req.body ?? {});
     return service.refreshMlPlan(id, input, req.user);
+  });
+
+  // ADR-225 phase 4 — raise plans / PRs from the plan's rows.
+  app.post('/ml-plans/:id/orders', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const input = raiseMlPlanOrdersInputSchema.parse(req.body);
+    return service.raiseMlPlanOrders(id, input, req.user);
   });
 
   app.post('/ml-plans/:id/cancel', async (req) => {

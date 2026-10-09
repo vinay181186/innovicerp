@@ -13188,3 +13188,22 @@ finally works as designed.
   decision.
 - **`Description` vs `Remarks` on masters** — the same fact under two names. Registered as-is and
   raised as NAMING.md C-15 rather than silently blessed; picking one changes a visible label.
+
+### ADR-225 update — phase 4, raising orders (2026-10-09)
+
+- `POST /ml-plans/:id/orders` raises, per chosen row, the existing document: Manufacture → route-card
+  Plan; Buy → PR (vendor TBD, like a Planning PR); Outsource → full-outsource Plan (Vendor + Process).
+  Only the TOP row's plan carries the SO line; every other doc carries `ml_plan_node_id` and no SO
+  line, so SO-line coverage never moves. One transaction; the first order Releases the plan.
+- **The To Raise cap is enforced by EVERY writer** (§20.3): raise (under the ml_plans row lock), plan
+  qty edit, PR qty edit, and Trash restore of a raised PR. A raised PR's item cannot change.
+- Raising needs Multi-Level Plan entry **and** Plan create (Manufacture / Outsource rows) **and** PR
+  create (Buy rows) rights — per-page OFF switches hold.
+- Lock order: the ml_plans row first, then the creators' own series / line locks (no up-front SO line
+  lock — the SO guards and createPlanInTx already refuse anything else on that line).
+- A plan raised from a row that has child rows (`mlIsAssembly`) needs no raw material: the Production
+  Order check skips it (server `planIsMlAssembly`, screen `plan.mlIsAssembly`); a leaf part still
+  needs RM. Its Job Card's material = its child rows × JC qty (`jcRequirements`, one function for the
+  Material view and the Item Issue cap). The issue cap now sums every slip line of an item (Job Card
+  and Assembly SO) — before, a part on two lines passed.
+- DI-001 no longer reports Job Cards whose plan came from a Multi-Level Plan.

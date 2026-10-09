@@ -45,8 +45,10 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { prCoverQtyRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
 import { assertTreeSound, lockMlBomTree, reresolveOwnLinks } from '../ml-bom/guards';
+import { assertMlNodeCapOnEdit } from '../ml-plan/edit-cap';
 import type {
   ListTrashQuery,
   ListTrashResponse,
@@ -378,6 +380,30 @@ export async function restoreFromTrash(
         throw new ConflictError(
           `Cannot restore: BOM No. ${taken[0].code} has been given to a newer Multi-Level BOM.`,
         );
+      }
+    }
+
+    // ADR-225 phase 4 — a PR raised from a Multi-Level Plan row counts toward
+    // that row's Raised again once restored, so it comes back only while the
+    // row still has room (Net Need − everything else raised), checked under
+    // the Multi-Level Plan's lock (ml-plan/edit-cap.ts). A cancelled PR
+    // counts 0 and is not checked.
+    if (entity.type === 'Purchase Request') {
+      const pr = (await tx.execute(sql`
+        SELECT pr.ml_plan_node_id, (${sql.raw(prCoverQtyRaw('pr'))})::text AS cover
+        FROM public.purchase_requests pr
+        WHERE pr.id = ${input.id}::uuid AND pr.company_id = ${companyId}::uuid
+          AND pr.deleted_at IS NOT NULL AND pr.ml_plan_node_id IS NOT NULL
+          AND pr.status <> 'cancelled'
+        LIMIT 1
+      `)) as unknown as Array<{ ml_plan_node_id: string; cover: string | null }>;
+      if (pr[0]) {
+        await assertMlNodeCapOnEdit(tx, companyId, {
+          mlPlanNodeId: pr[0].ml_plan_node_id,
+          doc: { kind: 'pr', id: input.id },
+          oldQty: 0,
+          newQty: pr[0].cover ?? '0',
+        });
       }
     }
 

@@ -6,6 +6,9 @@
 //
 //   Job Card     planned when the card has an RM item + qty per piece:
 //                Required = rm_qty_per_piece × order_qty
+//                ADR-225 — plus, for a Multi-Level Plan sub-assembly, one
+//                line per child part: Required = qty_per_set × order_qty
+//                (jcRequirements; ml-assembly.ts)
 //                Balance  = Required − Issued + Returned
 //   Assembly SO  per BOM part: Required = qty_per_set × units (Σ SO line qty)
 //                Balance to issue = Required − Issued + Returned
@@ -16,6 +19,7 @@
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../db/with-user-context';
 import { roundQty } from './stock-ledger';
+import { childPartRequirements, readMlChildParts, type Requirement } from './ml-assembly';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -207,6 +211,25 @@ export async function readJcHead(
 export function jcRequirement(jc: JcHead): { itemId: string; required: number } | null {
   if (!jc.rmItemId || jc.rmQtyPerPiece == null) return null;
   return { itemId: jc.rmItemId, required: roundQty(jc.rmQtyPerPiece * jc.orderQty) };
+}
+
+/**
+ * ADR-225 phase 4 — EVERY requirement line of the card: the RM line above
+ * (unchanged, first) plus, when the card's Production Order → Plan sits on a
+ * Multi-Level Plan node with live children, one line per child part
+ * (Required = qty_per_set × order_qty, 3 decimals). A card without that chain
+ * gets exactly [jcRequirement(jc)] or []. The ONE list both the Item Issue
+ * guard and the Material view read.
+ */
+export async function jcRequirements(
+  tx: DbTransaction,
+  companyId: string,
+  jc: JcHead,
+): Promise<Requirement[]> {
+  const rm = jcRequirement(jc);
+  if (!jc.productionOrderId) return rm ? [rm] : [];
+  const children = await readMlChildParts(tx, companyId, jc.id);
+  return childPartRequirements(rm, children, jc.orderQty);
 }
 
 export function balanceOf(required: number, got: IssuedReturned | undefined): number {

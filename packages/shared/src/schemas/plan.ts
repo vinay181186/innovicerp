@@ -107,6 +107,11 @@ export const planSchema = z.object({
   bomMasterId: z.string().uuid().nullable(),
   bomParentCode: z.string().nullable(),
   bomChildCode: z.string().nullable(),
+  /** ADR-225 — the Multi-Level Plan row this plan was raised from (null for every other plan). */
+  mlPlanNodeId: z.string().uuid().nullable().default(null),
+  /** ADR-225 — raised from a Multi-Level Plan row that has child rows (a
+   *  sub-assembly or the top assembly): it needs no raw material. */
+  mlIsAssembly: z.boolean().default(false),
 
   jcId: z.string().uuid().nullable(),
 

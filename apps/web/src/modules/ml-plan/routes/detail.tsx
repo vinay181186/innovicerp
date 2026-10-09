@@ -1,6 +1,7 @@
 // Multi-Level Plan detail (ADR-225 phase 3): DetailHeader (MLP No. · status ·
-// Edit + Actions) with the header facts, then ONE tab strip — Plan · History.
-// Same composition as the Multi-Level BOM detail page.
+// Edit + Actions) with the header facts, then ONE tab strip — Plan · Orders ·
+// History. Same composition as the Multi-Level BOM detail page. Phase 4 adds
+// Raise Orders (Draft / Released, mlplan_create entry) and the Orders tab.
 
 import { ML_PLAN_STATUS_LABEL } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -10,7 +11,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Icon, StatusBadge } from '@/ui/core';
+import { Button, Icon, StatusBadge } from '@/ui/core';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
@@ -19,6 +20,8 @@ import { useMlBom } from '@/modules/ml-bom/api';
 import { useMlPlan, useRefreshMlPlan } from '../api';
 import { CancelMlPlanDialog } from '../components/cancel-ml-plan-dialog';
 import { MlPlanNodesTable } from '../components/ml-plan-nodes-table';
+import { MlPlanOrdersTable } from '../components/ml-plan-orders-table';
+import { RaiseOrdersModal } from '../components/raise-orders-modal';
 
 export const mlPlanDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -26,7 +29,7 @@ export const mlPlanDetailRoute = createRoute({
   component: MlPlanDetailPage,
 });
 
-type TabKey = 'plan' | 'history';
+type TabKey = 'plan' | 'orders' | 'history';
 
 function MlPlanDetailPage(): React.JSX.Element {
   const { id } = mlPlanDetailRoute.useParams();
@@ -36,6 +39,7 @@ function MlPlanDetailPage(): React.JSX.Element {
   const refresh = useRefreshMlPlan();
   const [tab, setTab] = useState<TabKey>('plan');
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [raiseOpen, setRaiseOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   // The BOM's current BOM Rev, read only when the copy is out of date.
   const currentBom = useMlBom(detail?.bomChanged ? detail.mlBomId : undefined);
@@ -70,6 +74,11 @@ function MlPlanDetailPage(): React.JSX.Element {
   }
 
   const isDraft = detail.status === 'draft';
+  // Raise Orders: Draft or Released, Planning entry, and a row left to raise.
+  const canRaise =
+    perms.entry &&
+    (detail.status === 'draft' || detail.status === 'released') &&
+    detail.nodes.some((n) => Number(n.toRaiseQty) > 0);
   const onRefresh = (): void => {
     setActionError(null);
     refresh.mutate(
@@ -80,6 +89,7 @@ function MlPlanDetailPage(): React.JSX.Element {
 
   const tabs: TabStripTab[] = [
     { key: 'plan', label: 'Plan', count: detail.nodes.length },
+    { key: 'orders', label: 'Orders', count: detail.orders.length },
     { key: 'history', label: 'History', count: history.data?.rows.length ?? null },
   ];
 
@@ -110,6 +120,11 @@ function MlPlanDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
+                {
+                  label: 'Raise Orders',
+                  hidden: !canRaise,
+                  onClick: () => setRaiseOpen(true),
+                },
                 {
                   label: 'Refresh',
                   hidden: !perms.edit || !isDraft,
@@ -199,12 +214,33 @@ function MlPlanDetailPage(): React.JSX.Element {
         label="Multi-Level Plan"
       />
       <Panel bodyPadding="none">
-        {tab === 'plan' ? <MlPlanNodesTable nodes={detail.nodes} /> : null}
+        {tab === 'plan' ? (
+          <>
+            {canRaise ? (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  padding: 'var(--sp-2) var(--sp-3)',
+                }}
+              >
+                <Button variant="primary" size="sm" onClick={() => setRaiseOpen(true)}>
+                  Raise Orders
+                </Button>
+              </div>
+            ) : null}
+            <MlPlanNodesTable nodes={detail.nodes} />
+          </>
+        ) : null}
+        {tab === 'orders' ? (
+          <MlPlanOrdersTable orders={detail.orders} nodes={detail.nodes} />
+        ) : null}
         {tab === 'history' ? (
           <DocumentHistory entity="MlPlan" entityId={detail.id} refId={detail.code} />
         ) : null}
       </Panel>
 
+      {raiseOpen ? <RaiseOrdersModal detail={detail} onClose={() => setRaiseOpen(false)} /> : null}
       {confirmCancel ? (
         <CancelMlPlanDialog
           plan={detail}

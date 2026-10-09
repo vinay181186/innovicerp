@@ -53,7 +53,11 @@ function assertPlanQtyFits(planQty: number, orderQty: number, lineRef: string): 
 
 /** The plan's SO line id — read WITHOUT a lock, only to know which line to
  *  lock first (lock order above). */
-async function planLineId(tx: DbTransaction, companyId: string, id: string): Promise<string> {
+export async function planLineId(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<string> {
   const rows = await tx
     .select({ soLineId: mlPlans.soLineId })
     .from(mlPlans)
@@ -65,7 +69,7 @@ async function planLineId(tx: DbTransaction, companyId: string, id: string): Pro
 }
 
 /** The live plan row, FOR UPDATE. */
-async function lockPlan(tx: DbTransaction, companyId: string, id: string) {
+export async function lockPlan(tx: DbTransaction, companyId: string, id: string) {
   const rows = await tx
     .select()
     .from(mlPlans)
@@ -77,7 +81,7 @@ async function lockPlan(tx: DbTransaction, companyId: string, id: string) {
   return r;
 }
 
-async function userName(tx: DbTransaction, userId: string | null): Promise<string> {
+export async function userName(tx: DbTransaction, userId: string | null): Promise<string> {
   if (!userId) return 'someone';
   const rows = (await tx.execute(sql`
     SELECT COALESCE(NULLIF(btrim(full_name), ''), email) AS name
@@ -103,9 +107,10 @@ function assertDraft(row: { code: string; status: string }): void {
 /**
  * Update / Refresh: the line must STILL be plannable — re-read under the
  * line lock, the plan's own row not counting against itself (it is the
- * `already_planned` it would otherwise hit). Phase 4: also its own plans.
+ * `already_planned` it would otherwise hit), nor the plans raised from its
+ * own rows (phase 4 — guards.ts lineFactsFromSql).
  */
-async function readFactsStillEligible(
+export async function readFactsStillEligible(
   tx: DbTransaction,
   companyId: string,
   soLineId: string,
@@ -340,11 +345,13 @@ export async function cancelMlPlanTx(
   const soLineId = await planLineId(tx, companyId, id);
   await lockSoLine(tx, companyId, soLineId);
   const row = await lockPlan(tx, companyId, id);
-  // Phase 4: refuse while orders made from the plan are live.
+  // Phase 4: refuse while orders made from the plan are live (read under
+  // the plan's lock, which Raise orders also takes — so a raise and a
+  // cancel queue, and the second sees the first).
   const live = await liveOrdersFromMlPlan(tx, companyId, id);
   if (live.length > 0) {
     throw new ConflictError(
-      `Cannot cancel — orders made from this plan are still live: ${live.join(', ')}. Cancel those first.`,
+      `${row.code} has live orders: ${live.join(', ')} — delete / cancel them first.`,
     );
   }
 

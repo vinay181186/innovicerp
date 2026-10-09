@@ -4,6 +4,7 @@ export {
   createMlPlanInputSchema,
   listMlPlansQuerySchema,
   mlPlanEligibleLinesQuerySchema,
+  raiseMlPlanOrdersInputSchema,
   refreshMlPlanInputSchema,
   updateMlPlanInputSchema,
 } from '@innovic/shared';
@@ -19,7 +20,10 @@ export type {
   MlPlanEligibleLinesResponse,
   MlPlanListItem,
   MlPlanNode,
+  MlPlanOrder,
   MlPlanStatus,
+  RaiseMlPlanOrderLine,
+  RaiseMlPlanOrdersInput,
   RefreshMlPlanInput,
   UpdateMlPlanInput,
 } from '@innovic/shared';

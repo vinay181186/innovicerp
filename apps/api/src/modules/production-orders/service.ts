@@ -100,6 +100,7 @@ import { readPlanOrderCoverage } from '../../lib/plan-order-coverage';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { PRODUCTION_ORDER_LINK_MAX_DEPTH } from '../../lib/production-order-link';
 import { labelOf, PLAN_STATUS_LABEL } from '../../lib/status-labels';
+import { planIsMlAssembly } from '../../lib/ml-assembly';
 import { emitActivityLog } from '../activity-log/service';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
 import type {
@@ -1147,7 +1148,11 @@ export async function createProductionOrder(
       // sentence both sides so the two can never disagree.
       const planHasRmGrade = Boolean(plan.rawMaterialGradeText?.trim() || plan.rawMaterialGradeId);
       const planHasRmSize = Boolean(plan.rawMaterialSizeText?.trim() || plan.rawMaterialSizeId);
-      if (!planHasRmGrade && !planHasRmSize) {
+      // ADR-225 phase 4 — a plan raised from a Multi-Level Plan node that has
+      // live children is a SUB-ASSEMBLY (or the top assembly): its material is
+      // its child parts, issued against its Job Card, not a raw-material bar.
+      // Only asked when the plan has no RM, so every other plan is untouched.
+      if (!planHasRmGrade && !planHasRmSize && !(await planIsMlAssembly(tx, companyId, plan.id))) {
         throw new ValidationError(
           // ADR-218: the plan screens no longer set material, so name the two
           // places that do and the re-save that pulls it through.

@@ -15,6 +15,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ConflictError } from '../../lib/errors';
+import { readLiveOrderCodes } from './order-reads';
 
 /** SO types a Multi-Level Plan is for (decision 3). */
 export const ML_PLAN_SO_TYPES = ['component_manufacturing', 'with_material'] as const;
@@ -52,6 +53,13 @@ const inList = (vals: readonly string[]): SQL =>
  */
 export function lineFactsFromSql(companyId: string, excludeMlPlanId: string | null = null): SQL {
   const notSelf = excludeMlPlanId ? sql`AND mp.id <> ${excludeMlPlanId}::uuid` : sql``;
+  // Phase 4 — the excluded Multi-Level Plan's OWN plans (raised from its
+  // rows; the top row's plan sits on this very line) do not count either.
+  const notOwnPlans = excludeMlPlanId
+    ? sql`AND (p.ml_plan_node_id IS NULL OR p.ml_plan_node_id NOT IN (
+          SELECT xn.id FROM public.ml_plan_nodes xn
+          WHERE xn.ml_plan_id = ${excludeMlPlanId}::uuid))`
+    : sql``;
   return sql`
     FROM public.sales_order_lines sol
     JOIN public.sales_orders so
@@ -72,6 +80,7 @@ export function lineFactsFromSql(companyId: string, excludeMlPlanId: string | nu
       SELECT p.code FROM public.plans p
       WHERE p.so_line_id = sol.id AND p.company_id = ${companyId}::uuid
         AND p.deleted_at IS NULL AND p.plan_status <> 'cancelled'
+        ${notOwnPlans}
       ORDER BY p.code LIMIT 1
     ) bp ON TRUE
     WHERE sol.company_id = ${companyId}::uuid AND sol.deleted_at IS NULL`;
@@ -175,6 +184,16 @@ export async function readLineFacts(
     linePlanCode: (r['line_plan_code'] as string | null) ?? null,
     refusal: (r['refusal'] as LineRefusal | null) ?? null,
   };
+}
+
+/** A RELEASED plan's re-check (its rows are frozen): only the SO and the
+ *  line still being open — not cancelled / closed / dispatched / closed
+ *  short. Null = still open. */
+export function closedLineRefusal(f: LineFacts): LineRefusal | null {
+  const done: readonly string[] = DONE_STATUSES;
+  if (done.includes(f.soStatus)) return 'so_status';
+  if (done.includes(f.lineStatus) || f.shortClosed) return 'line_status';
+  return null;
 }
 
 /** "IN-SO-00012 · SO-2401" — what messages call the SO (ADR-207). */
@@ -403,14 +422,14 @@ export async function assertSoTypeChangeKeepsMlPlans(
 }
 
 /**
- * PHASE 4 HOOK — the live orders (plans / PRs) made from this Multi-Level
- * Plan's nodes, as readable codes. Cancel refuses while this is non-empty.
- * Phase 3 makes no orders from a plan, so it is always empty.
+ * The live orders (plans / PRs) made from this Multi-Level Plan's rows, as
+ * readable codes (order-reads.ts — the same definition Raised uses). Cancel
+ * refuses while this is non-empty.
  */
 export async function liveOrdersFromMlPlan(
-  _tx: DbTransaction,
-  _companyId: string,
-  _planId: string,
+  tx: DbTransaction,
+  companyId: string,
+  planId: string,
 ): Promise<string[]> {
-  return [];
+  return readLiveOrderCodes(tx, companyId, planId);
 }

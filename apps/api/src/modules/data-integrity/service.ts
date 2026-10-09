@@ -27,14 +27,22 @@ const CHECKS: readonly CheckSpec[] = [
     code: 'DI-001',
     label: 'Job Cards with no linked SO or JW',
     buildQuery: (cid) => `
-      SELECT code AS sample
-      FROM job_cards
-      WHERE company_id = '${cid}'::uuid
-        AND deleted_at IS NULL
-        AND source_so_line_id IS NULL
-        AND source_jw_line_id IS NULL
-        AND source_legacy_ref IS NULL
-      ORDER BY code DESC LIMIT 5`,
+      SELECT jc.code AS sample
+      FROM job_cards jc
+      WHERE jc.company_id = '${cid}'::uuid
+        AND jc.deleted_at IS NULL
+        AND jc.source_so_line_id IS NULL
+        AND jc.source_jw_line_id IS NULL
+        AND jc.source_legacy_ref IS NULL
+        -- ADR-225 phase 4: a card whose Production Order's plan was raised
+        -- from a Multi-Level Plan row is linked through that plan (and so to
+        -- its SO line) — not an orphan.
+        AND NOT EXISTS (
+          SELECT 1 FROM production_orders po
+          JOIN plans p ON p.id = po.plan_id
+          WHERE po.id = jc.production_order_id
+            AND p.ml_plan_node_id IS NOT NULL)
+      ORDER BY jc.code DESC LIMIT 5`,
   },
   {
     code: 'DI-002',
