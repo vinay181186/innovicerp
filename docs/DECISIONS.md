@@ -13207,6 +13207,24 @@ finally works as designed.
   Material view and the Item Issue cap). The issue cap now sums every slip line of an item (Job Card
   and Assembly SO) — before, a part on two lines passed.
 - DI-001 no longer reports Job Cards whose plan came from a Multi-Level Plan.
+
+### ADR-225 update — phases 5 and 6, reports, prints, cost (2026-10-09)
+
+- Reports: `ml-bom-exploded` (Design) and `ml-plan-to-raise` (Planning, one statement, same Raised
+  rule as the plan detail via `raisedByNodeSql`). Prints: Multi-Level BOM tree and Multi-Level Plan
+  rows on the Innovic Sheet; the print window opens inside the click (`openSheetHtmlWindow` gained an
+  optional target window — every existing caller unchanged).
+- **Cost is an ESTIMATE**, price-gated (`canSeeFormPrice(user,'mlbom_create')`, Cost tab hidden
+  otherwise). Bought rate = the Stock Valuation rule (last GRN's PO rate, else last PO), now one shared
+  SQL builder (`stock-valuation/rate-rule.ts`, Stock Valuation's query proven byte-identical). Made
+  leaf = Route Card RM item rate × RM Qty per Piece + operations (cycle time × machine Hour Rate);
+  Outsource row's rate is a processing charge → Operations; sub-assemblies roll up. A row that needed
+  a rate and had none (no RM rate, an OSP step, a timed step on a machine with no Hour Rate) counts in
+  No Rate and adds 0 — the screen says the total is a floor. Route Card OSP steps have no rate column
+  today; costing them needs a schema change (not done).
+- End-to-end check: phases 1-6 server code run against the TEST database inside one rolled-back
+  transaction (BOMs, links, loop refusal, tree, cost, import preview, eligibility, plan snapshot, raise,
+  To Raise cap, SO guard, both reports) — all as designed; nothing left on TEST.
 ---
 
 ## ADR-227: One rule for every document number — the server states it, the browser never sends it

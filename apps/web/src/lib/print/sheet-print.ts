@@ -781,8 +781,15 @@ export function openSheetPrintWindow(model: SheetPrintModel): boolean {
  *  body is an operation traveller rather than a goods table, prints through
  *  this so it wears the same paper as the PO without pretending to be one.
  *  Returns false if the popup was blocked. */
-export function openSheetHtmlWindow(title: string, html: string, extraStyle = ''): boolean {
-  const w = window.open('', '_blank', 'width=900,height=920');
+export function openSheetHtmlWindow(
+  title: string,
+  html: string,
+  extraStyle = '',
+  /** A window the click already opened (so a print that loads data first is
+   *  not blocked as a popup). Omitted → a new window, as before. */
+  target?: Window,
+): boolean {
+  const w = target ?? window.open('', '_blank', 'width=900,height=920');
   if (!w) return false;
   // The closing tag is split so the bundler never emits the character sequence
   // that would end THIS module early if it were ever inlined into a page.

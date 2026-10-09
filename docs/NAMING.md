@@ -269,6 +269,13 @@
 | Gross Need − From Stock − On PO / PR, rounded up for whole-number units (ADR-225) | `Net Need` | `netNeedQty` | `ml_plan_nodes.net_need_qty` (snapshot) | `Short`, `To Make` |
 | Live qty of plans / PRs raised from a Multi-Level Plan row (ADR-225 phase 4) | `Raised` | `raisedQty` | computed from `plans` / `purchase_requests` `.ml_plan_node_id` | `Ordered` (banned), `Covered` |
 | Net Need − Raised (ADR-225 phase 4) | `To Raise` | `toRaiseQty` | computed | `To Order`, `Pending` |
+| Estimated cost of `qty` sets of a Multi-Level BOM — the top row's Amount (ADR-225 phase 6) | `Total Cost` | `totalCost` | computed — `GET /ml-boms/:id/cost` | `Cost`, `BOM Cost`, `Value` |
+| Bought / raw-material rate of one piece on a Multi-Level BOM cost row (ADR-225) | `Material Rate` | `materialRate` | computed (last GRN, else last PO rate) | `Rate`, `Price` |
+| Route Card operations (or an Outsource row's processing charge) for one piece (ADR-225) | `Operation Rate` | `operationRate` | computed (cycle time × machine Hour Rate) | `Labour`, `Conversion` |
+| Cost of one of a Multi-Level BOM cost row (ADR-225) | `Unit Cost` | `unitCost` | computed | `Rate` |
+| Unit Cost × Exploded Qty (ADR-225) | `Amount` | `amount` | computed | `Value`, `Total` |
+| Where a Multi-Level BOM cost row's rate came from (ADR-225) | `Rate Source` / `Rate Ref` | `rateSource` / `rateRef` | computed | `Source` |
+| Multi-Level BOM cost rows that needed a rate and had none — the total is a floor (ADR-225) | `No Rate` | `noRateCount` | computed | `Missing` |
 | When a Multi-Level Plan copied its tree and worked out the figures (ADR-225) | `Snapshot At` | `snapshotAt` | `ml_plans.snapshot_at` | `Refreshed`, `Updated` |
 
 **Snapshot rule.** `xxxText` means "the value as it was, when the live row may be gone".
