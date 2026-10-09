@@ -37,14 +37,14 @@ import {
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
-import { Check, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
-import { docCodeToSend, useDocNumber } from '@/lib/use-doc-number';
+import { useDocNumber } from '@/lib/use-doc-number';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useMyCompany } from '@/modules/settings/api';
@@ -152,44 +152,25 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const { register, control, handleSubmit, formState, setValue, watch, getValues } = form;
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
-  // ── PO number. Built inline rather than via the shared <DocNumberInput>: the
-  //    "Already used" / "Number not used" wording and the type-driven refill
-  //    below are local to this screen.
+  // ── PO number. ADR-227: a PREVIEW on create — never typed, never sent (the
+  //    owner: "dcno, pono, jwso i never type by hand. it i already system
+  //    generated"). The server picks the number under its series lock, so none
+  //    of the old machinery survives: no duplicate check, no "Already used"
+  //    wording, no format check, no blur padding, and nothing about the number
+  //    can block Save. A preview that goes stale while this screen is open costs
+  //    the buyer nothing — the save takes the next free number.
   //
-  //    The number depends on the PO TYPE (user, 2026-09-11): a material buy is
-  //    IN-MPO-, job work IN-JWPO-, a service IN-SPO-, outsourcing IN-OPO-, and
-  //    each series counts on its own. So the type goes to the backend with the
-  //    request for the next number, and changing the dropdown asks again.
+  //    The number still depends on the PO TYPE (user, 2026-09-11): a material
+  //    buy is IN-MPO-, job work IN-JWPO-, a service IN-SPO-, outsourcing
+  //    IN-OPO-, and each series counts on its own. So the type still goes to the
+  //    backend with the request for the next number and changing the dropdown
+  //    still asks again — but the answer is DISPLAYED now instead of written
+  //    into the form, which is what retired the two refs that used to track
+  //    whose number was in the box.
   const code = watch('header.code') ?? '';
   const poType = watch('header.poType');
-  const docNo = useDocNumber('purchase_order', isEdit ? '' : code, poType);
-  // `suggestedFor` is the type we last filled the box for; `suggested` is what
-  // we put in it. Switching the type re-fills the box ONLY while it still holds
-  // our suggestion — a number the buyer typed is theirs and is never replaced,
-  // and an old series' number is never left sitting under a new type.
-  const suggestedFor = useRef<string | null>(null);
-  const suggested = useRef('');
-  useEffect(() => {
-    // Edit never renumbers: the PO number is permanent once the PO exists.
-    if (isEdit) return;
-    const next = docNo.nextCode;
-    if (!next) return;
-    const current = getValues('header.code').trim();
-    const firstFill = suggestedFor.current === null && current === '';
-    const typeChanged =
-      suggestedFor.current !== null &&
-      suggestedFor.current !== poType &&
-      (current === '' || current === suggested.current);
-    if (!firstFill && !typeChanged) return;
-    suggestedFor.current = poType;
-    suggested.current = next;
-    if (current !== next) setValue('header.code', next);
-  }, [isEdit, docNo.nextCode, poType, getValues, setValue]);
-  // S2: the box still holds OUR suggestion and someone else has just saved
-  // that number. Not an error for the buyer — an untouched suggestion is not
-  // sent (docCodeToSend), so the server gives this PO the next free number.
-  const suggestionTaken =
-    !isEdit && code.trim() !== '' && code.trim() === suggested.current && docNo.duplicate;
+  const docNo = useDocNumber('purchase_order', '', poType);
+  const shownCode = isEdit ? code : (docNo.nextCode ?? '');
 
   // ── Item Master: each line's Item Code box searches the server itself
   // (PoFormLine → useItemCodeSearch), so an item past any first page can be
@@ -525,11 +506,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // ── The ONE blocking message, shown under the header in amber. First problem wins,
   //    so the buyer is told what to do next rather than handed a list.
   const blocking = useMemo((): string | null => {
-    if (!isEdit) {
-      if (code.trim() === '') return 'PO No. is required';
-      if (docNo.duplicate && !suggestionTaken) return 'That PO number is already used';
-      if (docNo.formatInvalid) return docNo.error ?? 'PO number format is wrong';
-    }
+    // ADR-227: nothing about the PO No. can block a save — it is not sent.
     if (poDate.trim() === '') return 'PO Date is required';
     // 0 days (same-day delivery) is fine; earlier than the PO date is not.
     if (poDate && deliveryDate && deliveryDate < poDate) {
@@ -562,9 +539,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     // exactly when this must recompute.
   }, [
     isEdit,
-    code,
-    docNo,
-    suggestionTaken,
     poDate,
     deliveryDate,
     vendorId,
@@ -574,7 +548,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   ]);
 
   const submitting = formState.isSubmitting || createPo.isPending || updatePo.isPending;
-  const disabled = submitting || blocking !== null || (!isEdit && docNo.checking);
+  const disabled = submitting || blocking !== null;
 
   const onValid = async (values: PoFormValues): Promise<void> => {
     setSubmitError(null);
@@ -662,15 +636,11 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         // branch. The cast is only because the schema gives `status` a default,
         // which makes it required in the INFERRED (output) type even though the
         // request may legitimately omit it.
-        const sendCode = docCodeToSend(values.header.code, suggested.current);
         const payload = {
           header: {
             ...header,
-            // Blank → omitted so the server auto-generates IN-PO-#####; sending
-            // '' fails the schema's code.min(1) → "request validation failed".
-            // S2: the untouched suggestion is omitted too — the server numbers
-            // the PO under its series lock; only a number the buyer typed goes.
-            ...(sendCode ? { code: sendCode } : {}),
+            // ADR-227: no `code` on create — the server numbers the PO under its
+            // series lock, in the series its TYPE belongs to.
           },
           lines: outLines,
         } as CreatePurchaseOrderInput;
@@ -703,13 +673,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // button is disabled, so a held key can neither double-post nor bypass a block.
   useSaveShortcut(() => void handleSubmit(onValid)(), !disabled);
 
-  const codeState = isEdit
-    ? undefined
-    : code.trim() === '' || (docNo.error && !suggestionTaken)
-      ? 'is-bad'
-      : docNo.valid
-        ? 'is-ok'
-        : undefined;
+  // ADR-227: no ✓/✗ state on the PO No. — it is not the buyer's to get wrong.
+  const codeState: string | undefined = undefined;
 
   return (
     <form onSubmit={handleSubmit(onValid)} style={{ maxWidth: 1280, margin: '0 auto' }}>
@@ -832,47 +797,26 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
           <FormField
             label="PO No."
-            required
+            required={isEdit}
             size="sm"
             htmlFor="pof-code"
-            error={
-              isEdit
-                ? undefined
-                : code.trim() === ''
-                  ? 'PO No. is required'
-                  : docNo.checking || suggestionTaken
-                    ? undefined
-                    : docNo.duplicate
-                      ? 'Already used'
-                      : (docNo.error ?? undefined)
-            }
-            help={
-              isEdit ? undefined : docNo.checking ? (
-                'Checking…'
-              ) : suggestionTaken ? (
-                'Just used by someone else — the next free number is given on save.'
-              ) : (
-                <span style={{ color: 'var(--green2)' }}>
-                  <Check size={11} style={{ verticalAlign: -1 }} /> Number not used
-                </span>
-              )
-            }
+            help={isEdit ? undefined : 'Numbered automatically when you save.'}
           >
             <input
               id="pof-code"
               className={['innovic-input mono', codeState].filter(Boolean).join(' ')}
               autoComplete="off"
-              readOnly={isEdit}
-              // The shape the box expects follows the TYPE chosen beside it, so
-              // an emptied box says "IN-JWPO-00000" on a job-work PO rather than
-              // the retired single IN-PO- series.
+              readOnly
+              // The shape shown while the preview loads follows the TYPE chosen
+              // beside it, so a job-work PO reads "IN-JWPO-00000" rather than the
+              // retired single IN-PO- series.
               placeholder={isEdit ? undefined : `${poCodePrefix(poType)}00000`}
-              title={isEdit ? 'The PO number is permanent once the PO exists' : undefined}
-              value={code}
-              onChange={(e) => setValue('header.code', e.target.value)}
-              onBlur={() => {
-                if (!isEdit && code.trim()) setValue('header.code', docNo.padded);
-              }}
+              title={
+                isEdit
+                  ? 'The PO number is permanent once the PO exists'
+                  : 'Numbered automatically when you save'
+              }
+              value={shownCode}
             />
           </FormField>
 

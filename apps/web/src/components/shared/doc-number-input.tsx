@@ -12,10 +12,8 @@ import { Check, Loader2, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useDocNumber } from '@/lib/use-doc-number';
 
-export interface DocNumberInputProps {
+interface DocNumberInputBase {
   type: DocNumberType;
-  value: string;
-  onChange: (value: string) => void;
   label?: string;
   required?: boolean;
   /** Edit mode — show the value read-only, no prefill/checks (code is immutable). */
@@ -33,9 +31,32 @@ export interface DocNumberInputProps {
   onSuggestedChange?: (suggested: string) => void;
 }
 
+/** ADR-227 — `preview` is CREATE mode on a document nobody numbers by hand
+ *  (Purchase Order, JWSO, Delivery Challan; the owner: "dcno, pono, jwso i never
+ *  type by hand. it i already system generated"). The field shows the server's
+ *  suggested next number read-only and the form sends NOTHING, so a suggestion
+ *  that went stale while the screen was open costs the user nothing: the save
+ *  takes the next free number instead of being refused as a duplicate.
+ *
+ *  It is a union, not a flag beside `value`, on purpose: in preview mode there
+ *  is no value to hold and no change to report, so passing either is a type
+ *  error rather than a line that quietly does nothing. The typeable branch
+ *  stays for `readOnly` (an existing document's immutable code). */
+export type DocNumberInputProps = DocNumberInputBase &
+  (
+    | {
+        preview: true;
+        value?: never;
+        onChange?: never;
+        readOnly?: never;
+        onSuggestedChange?: never;
+      }
+    | { preview?: false; value: string; onChange: (value: string) => void }
+  );
+
 export function DocNumberInput({
   type,
-  value,
+  value = '',
   onChange,
   label,
   required,
@@ -44,9 +65,16 @@ export function DocNumberInput({
   onValidityChange,
   poType,
   onSuggestedChange,
+  preview,
 }: DocNumberInputProps): React.JSX.Element {
   const fmt = DOC_NUMBER_FORMATS[type];
-  const state = useDocNumber(type, readOnly ? '' : value, poType);
+  // In preview mode the box holds nothing of the user's, so there is nothing to
+  // duplicate-check — the hook is asked only for the suggestion.
+  const state = useDocNumber(type, readOnly || preview ? '' : value, poType);
+  // The suggestion IS the displayed value in preview mode. It follows the
+  // server's latest answer (a PO's series changes with its type), and no ref
+  // latch is needed because nothing can be typed over it.
+  const shown = preview ? (state.nextCode ?? '') : value;
   // A PO's prefix is the one its TYPE is numbered with; every other document
   // has the single prefix its format declares.
   const prefix = type === 'purchase_order' && poType ? poCodePrefix(poType) : fmt.prefix;
@@ -64,7 +92,7 @@ export function DocNumberInput({
   const filledFor = useRef<string | null>(null);
   const autoFilled = useRef('');
   useEffect(() => {
-    if (readOnly) return;
+    if (readOnly || preview) return;
     const next = state.nextCode;
     if (!next) return;
     const current = value.trim();
@@ -78,23 +106,24 @@ export function DocNumberInput({
     autoFilled.current = next;
     onSuggestedChange?.(next);
     if (current !== next) onChange(next);
-  }, [readOnly, state.nextCode, value, onChange, seriesKey, onSuggestedChange]);
+  }, [readOnly, preview, state.nextCode, value, onChange, seriesKey, onSuggestedChange]);
 
   // S2: the box still holds our own suggestion. It is not sent on save (the
   // server numbers the document), so it can never be a duplicate for the
   // user — if someone else saved that number meanwhile, this save just gets
   // the next one. Only a number the user typed is held to the check.
   const isSuggestion =
-    !readOnly && value.trim() !== '' && value.trim() === autoFilled.current;
+    !readOnly && !preview && value.trim() !== '' && value.trim() === autoFilled.current;
   const suggestionTaken = isSuggestion && state.duplicate;
 
   // Edit mode is always "valid" (immutable existing code); create defers to the hook.
-  const effectiveValid = readOnly ? true : suggestionTaken ? true : state.valid;
+  // Preview can never block Save: the number is not the user's to get wrong.
+  const effectiveValid = readOnly || preview ? true : suggestionTaken ? true : state.valid;
   useEffect(() => {
     onValidityChange?.(effectiveValid);
   }, [effectiveValid, onValidityChange]);
 
-  const showStatus = !readOnly && value.trim().length > 0;
+  const showStatus = !readOnly && !preview && value.trim().length > 0;
   const error = suggestionTaken ? null : state.error;
 
   return (
@@ -108,12 +137,13 @@ export function DocNumberInput({
           id={id ?? `docno-${type}`}
           className="innovic-input"
           autoComplete="off"
-          readOnly={readOnly}
+          readOnly={readOnly || preview}
+          title={preview ? 'Numbered automatically when you save' : undefined}
           placeholder={readOnly ? undefined : `${prefix}${'0'.repeat(fmt.digits)}`}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={shown}
+          onChange={(e) => onChange?.(e.target.value)}
           onBlur={() => {
-            if (!readOnly && value.trim()) onChange(state.padded);
+            if (!readOnly && !preview && value.trim()) onChange?.(state.padded);
           }}
           style={
             showStatus && error
@@ -138,7 +168,9 @@ export function DocNumberInput({
           </span>
         ) : null}
       </div>
-      {readOnly ? (
+      {preview ? (
+        <div className="form-help">Numbered automatically when you save.</div>
+      ) : readOnly ? (
         <div className="form-help">Code cannot be changed after creation.</div>
       ) : state.checking ? (
         <div className="form-help">Checking…</div>

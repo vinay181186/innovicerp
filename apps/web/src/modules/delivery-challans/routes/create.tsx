@@ -69,7 +69,6 @@ import { ArrowLeft, Loader2, Truck } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
-import { docCodeToSend } from '@/lib/use-doc-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
@@ -612,11 +611,6 @@ function PoDcFormBody({
   // for the exact set it was given on.
   const [rtvConfirmedKey, setRtvConfirmedKey] = useState<string | null>(null);
 
-  const [code, setCode] = useState('');
-  const [codeValid, setCodeValid] = useState(false);
-  // S2: the number the field auto-filled. It is only a preview — the form
-  // sends a number only when the user changed it (docCodeToSend).
-  const [suggestedCode, setSuggestedCode] = useState('');
   const [dcDate, setDcDate] = useState(todayIst());
   const [transport, setTransport] = useState('');
   // Vehicle number is kept apart from the transporter NAME (`transport`) — the
@@ -732,7 +726,6 @@ function PoDcFormBody({
       // T13: a blank DC date sends dcDate:'' which fails the server's YYYY-MM-DD
       // regex → opaque "Request validation failed". Require it up front.
       Boolean(dcDate) &&
-      codeValid &&
       lineDrafts.some((l) => Number(l.shipQty) > 0) &&
       // Every line must be both a sensible number AND within what may actually
       // be sent — the same check that writes the message under the row, so the
@@ -745,13 +738,10 @@ function PoDcFormBody({
           sendNowIssue(l.shipQty, capByLine.get(l.purchaseOrderLineId), l.poLineQty, l.uom) === null
         );
       }),
-    // codeValid flips asynchronously (the doc-number duplicate check); it MUST be
-    // a dependency or the Save button's enabled state lags the real validity.
-    [po, dcDate, codeValid, lineDrafts, capByLine],
+    [po, dcDate, lineDrafts, capByLine],
   );
 
   const dirty =
-    code !== '' ||
     transport !== '' ||
     vehicleNo !== '' ||
     lineDrafts.some((l) => l.shipQty !== '' || l.materialText !== '' || l.dcRemarks !== '');
@@ -825,7 +815,7 @@ function PoDcFormBody({
       }
       const input: CreateDeliveryChallanInput = {
         header: {
-          code: docCodeToSend(code, suggestedCode),
+          // ADR-227: no `code`. See the note beside the DC No. field.
           dcDate,
           purchaseOrderId: po.id,
           poCodeText: po.code,
@@ -878,7 +868,6 @@ function PoDcFormBody({
   saveCtl.submitRef.current = () => void onSubmit();
 
   const editedForSwitch =
-    (code !== '' && code !== suggestedCode) ||
     transport !== '' ||
     vehicleNo !== '' ||
     lineDrafts.some((l) => l.shipQty !== '' || l.materialText !== '' || l.dcRemarks !== '');
@@ -964,15 +953,7 @@ function PoDcFormBody({
       {/* 12-column grid: DC No. · DC Date · Transporter · Vehicle No. (3 + 3 + 4 + 2). */}
       <FormGrid>
         <div className="f-sm">
-          <DocNumberInput
-            type="delivery_challan"
-            value={code}
-            onChange={setCode}
-            required
-            id="dc-code"
-            onValidityChange={setCodeValid}
-            onSuggestedChange={setSuggestedCode}
-          />
+          <DocNumberInput type="delivery_challan" id="dc-code" preview />
         </div>
         <FormField label="DC Date" required size="sm" htmlFor="dc-date">
           <input
