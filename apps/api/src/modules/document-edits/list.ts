@@ -1,7 +1,7 @@
 // Edit-approval engine (ADR-202) — the reads: the inbox list + per-document
 // lookup, plus the isStale flag. Writers live in ./service.ts.
 
-import { type SQL, and, count, eq, isNull } from 'drizzle-orm';
+import { type SQL, and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   DocumentEditCountsResponse,
   DocumentEditEntity,
@@ -48,20 +48,28 @@ export async function listDocumentEdits(
   });
 }
 
-/** GET /document-edits/counts — pending edit-request count per document type.
- *  ONE grouped query, company-scoped, active rows only. Grouping the pending rows
- *  means only entities that actually have something pending appear, so every row
- *  returned has pending > 0 (no HAVING, no N+1). Drives the Approvals page tabs. */
+/** GET /document-edits/counts — per-document-type edit-request counts split by
+ *  status (pending / approved / rejected). ONE grouped query with conditional
+ *  (FILTER) aggregates, company-scoped, active rows only. The WHERE keeps only
+ *  the three reported statuses, so grouping by entity returns a row only for
+ *  entities that have at least one request in one of them (withdrawn / superseded
+ *  alone never appear). No HAVING, no N+1. An entity with none is simply absent —
+ *  the frontend shows 0. Drives the Approvals page tabs and per-tab filter counts. */
 export async function documentEditCounts(user: AuthContext): Promise<DocumentEditCountsResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx
-      .select({ entity: documentEditRequests.entity, pending: count() })
+      .select({
+        entity: documentEditRequests.entity,
+        pending: sql<number>`count(*) filter (where ${documentEditRequests.status} = 'pending')`,
+        approved: sql<number>`count(*) filter (where ${documentEditRequests.status} = 'approved')`,
+        rejected: sql<number>`count(*) filter (where ${documentEditRequests.status} = 'rejected')`,
+      })
       .from(documentEditRequests)
       .where(
         and(
           eq(documentEditRequests.companyId, companyId),
-          eq(documentEditRequests.status, 'pending'),
+          inArray(documentEditRequests.status, ['pending', 'approved', 'rejected']),
           isNull(documentEditRequests.deletedAt),
         ),
       )
@@ -71,6 +79,8 @@ export async function documentEditCounts(user: AuthContext): Promise<DocumentEdi
       counts: rows.map((r) => ({
         entity: r.entity as DocumentEditEntity,
         pending: Number(r.pending),
+        approved: Number(r.approved),
+        rejected: Number(r.rejected),
       })),
     };
   });

@@ -1,50 +1,49 @@
-// Edit Approvals — ONE document type (ADR-202).
+// Edit Approvals — ONE document type, on the uniform approval shell (ADR-202).
 //
-// The Approvals page draws one of these per document type that has edits
-// waiting (page.tsx builds the tab row from GET /document-edits/counts). This
-// component owns a single type's queue, split Pending / Approved / Rejected by a
-// Status dropdown — mirroring the Op Entry tab — so a decision does not vanish
-// the instant it is made; the decided tabs keep the full trail.
+// The Approvals page draws one of these per enrolled document type (SO, GRN, Job
+// Card, Delivery Challan, NC, JWSO, Plan, Production Order). It owns a single
+// type's staged-edit queue, split Pending / Approved / Rejected by the shell's
+// status filter, and feeds the shell:
+//   • rows        — useDocumentEdits({ entity, status })
+//   • view counts — useDocumentEditCounts (per-status, per entity)
+//   • row ✓ / ✗   — approveRow approves ALL the request's still-pending changes,
+//                    rejectRow rejects them all with one reason (bug 1 + bug 2
+//                    instant-lock live in the shell).
+//   • ▸ detail    — the before → after of every change, with per-field ✓ / ✗ for
+//                    a multi-field edit so an approver can still split a request.
 //
-// Per-change, immediate (design 1A): each ✓ / ✗ sends ONE decision straight
-// away (useDecideDocumentEdit), no "Submit decisions" step. ✓ approves; ✗ opens
-// the reason dialog, then rejects. A change already decided shows its outcome
-// read-only. The server (service.ts) resolves only the named change and leaves
-// the rest of the request pending, so a row can be decided a change at a time.
-//
-// On the shipped table standard: ListHeader (search) + Panel(bodyPadding="none")
-// + DataTable(tableKey). Reuses .badge / .tag chip classes and tokens — no
-// invented design.
+// Reuses the shipped look: .badge / .tag chip classes and tokens, no invented
+// design.
 
 import {
   type ActivityChangeValue,
   type DocumentEditChange,
   type DocumentEditEntity,
   type DocumentEditRow,
-  type DocumentEditStatus,
 } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDateTime } from '@/lib/date';
 import { Icon } from '@/ui/core';
-import { type DataTableColumn, DataTable, Panel } from '@/ui/data';
+import { type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader, PageState } from '@/ui/layout';
-import { useDecideDocumentEdit, useDocumentEdits } from '../api';
+import { useDecideDocumentEdit, useDocumentEditCounts, useDocumentEdits } from '../api';
 import { EditRejectDialog } from './edit-reject-dialog';
-
-/** The three views a document type's queue is split into. Keeps the decided
- *  trail on screen (Pending / Approved / Rejected), like the Op Entry tab. */
-const SUB_TABS: Array<{ key: DocumentEditStatus; label: string; empty: string }> = [
-  { key: 'pending', label: 'Pending', empty: 'No edits waiting for approval.' },
-  { key: 'approved', label: 'Approved', empty: 'No approved edits yet.' },
-  { key: 'rejected', label: 'Rejected', empty: 'No rejected edits yet.' },
-];
+import {
+  ApprovalTab,
+  type ApprovalView,
+} from '@/modules/approvals/components/approval-tab';
 
 /** before / after value → readable text (already formatted by the API). */
 function fmtVal(v: ActivityChangeValue): string {
   if (v === null || v === '') return '—';
   return String(v);
+}
+
+/** Changes on a request that have not yet been decided individually. */
+function stillPending(r: DocumentEditRow): DocumentEditChange[] {
+  const decided = new Set(r.decisions.map((d) => d.changeId));
+  return r.changes.filter((c) => !decided.has(c.id));
 }
 
 function columns(): DataTableColumn<DocumentEditRow>[] {
@@ -96,35 +95,41 @@ function columns(): DataTableColumn<DocumentEditRow>[] {
   ];
 }
 
-export function DocTypeApprovals({
+export function EditApprovalTab({
   entity,
   tabs,
 }: {
   /** The document type this queue is for (the active page tab). */
   entity: DocumentEditEntity;
-  /** The Approvals page's per-document tab row, shown under the header. */
+  /** The Approvals page's fixed tab row, shown under the header. */
   tabs: React.ReactNode;
 }): React.JSX.Element {
-  const [sub, setSub] = useState<DocumentEditStatus>('pending');
-  // The queue loads whole (few at a time) and search runs in the browser across
-  // the columns on screen — the universal-search rule for a list that is not
-  // server-paged. A new entity tab remounts this (page.tsx keys it), so the view
-  // resets to Pending.
-  const list = useDocumentEdits({ entity, status: sub });
-  const decide = useDecideDocumentEdit();
-
+  const [view, setView] = useState<ApprovalView>('pending');
   const [term, setTerm] = useState('');
   // Which request rows are expanded (the fit engine's ▸ drives this through
   // onToggleExpanded). renderExpanded returns null for a collapsed row.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // The change whose Reject reason dialog is open.
-  const [rejecting, setRejecting] = useState<{
+  // The one per-field change whose Reject reason dialog is open (expander split).
+  const [rejectingChange, setRejectingChange] = useState<{
     requestId: string;
     change: DocumentEditChange;
     docCode: string;
   } | null>(null);
-  // The one change currently being decided, so only its two buttons go busy.
+  // The one change currently being decided from the expander, so only its two
+  // buttons go busy.
   const [decidingChangeId, setDecidingChangeId] = useState<string | null>(null);
+
+  // The queue loads whole (few at a time) and search runs in the browser across
+  // the columns on screen. A new entity tab remounts this (page.tsx keys it), so
+  // the view resets to Pending.
+  const list = useDocumentEdits({ entity, status: view });
+  const decide = useDecideDocumentEdit();
+  const counts = useDocumentEditCounts();
+
+  const viewCounts = useMemo(() => {
+    const c = counts.data?.counts.find((x) => x.entity === entity);
+    return c ? { pending: c.pending, approved: c.approved, rejected: c.rejected } : undefined;
+  }, [counts.data?.counts, entity]);
 
   const allRows = useMemo(() => list.data?.rows ?? [], [list.data?.rows]);
   const q = normalizeSearchTerm(term).toLowerCase();
@@ -138,9 +143,8 @@ export function DocTypeApprovals({
   }, [allRows, q]);
 
   const cols = useMemo(() => columns(), []);
-  const active = SUB_TABS.find((t) => t.key === sub);
 
-  /** Send ONE decision immediately (per-change, 1A). No Submit step. */
+  /** Send ONE per-field decision immediately (expander split). */
   async function decideChange(
     requestId: string,
     changeId: string,
@@ -176,6 +180,7 @@ export function DocTypeApprovals({
     // Outcomes already recorded on this request (by an earlier ✓/✗, possibly by
     // someone else). A change with an outcome is read-only.
     const outcomeByChange = new Map(row.decisions.map((d) => [d.changeId, d]));
+    const pendingHere = view === 'pending';
     return (
       <div style={{ padding: 'var(--sp-2) var(--sp-3)' }}>
         <table className="innovic-table tbl-compact tbl-ctr" style={{ width: '100%' }}>
@@ -206,7 +211,7 @@ export function DocTypeApprovals({
                         who={row.decidedByName}
                         when={row.decidedAt}
                       />
-                    ) : (
+                    ) : pendingHere ? (
                       <div
                         style={{ display: 'inline-flex', gap: 'var(--sp-1)' }}
                         onClick={(e) => e.stopPropagation()}
@@ -214,7 +219,7 @@ export function DocTypeApprovals({
                         <button
                           type="button"
                           className="btn btn-sm btn-success"
-                          title="Approve"
+                          title="Approve this field"
                           aria-label={`Approve ${c.label}`}
                           disabled={busy}
                           onClick={() => void decideChange(row.id, c.id, 'approve')}
@@ -224,16 +229,18 @@ export function DocTypeApprovals({
                         <button
                           type="button"
                           className="btn btn-sm btn-danger"
-                          title="Reject"
+                          title="Reject this field"
                           aria-label={`Reject ${c.label}`}
                           disabled={busy}
                           onClick={() =>
-                            setRejecting({ requestId: row.id, change: c, docCode: row.docCode })
+                            setRejectingChange({ requestId: row.id, change: c, docCode: row.docCode })
                           }
                         >
                           <Icon name="x" size={14} />
                         </button>
                       </div>
+                    ) : (
+                      <span className="text3">—</span>
                     )}
                   </td>
                 </tr>
@@ -241,94 +248,73 @@ export function DocTypeApprovals({
             })}
           </tbody>
         </table>
-        {decide.isError ? (
-          <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 'var(--sp-1)' }}>
-            {decide.error.message}
-          </div>
-        ) : null}
       </div>
     );
   };
 
   return (
-    <div className="page-fill">
-      <ListHeader
+    <>
+      <ApprovalTab<DocumentEditRow>
+        tabs={tabs}
         title="Edit Approvals"
-        icon="✅"
-        count={list.data ? rows.length : undefined}
         noun="request"
-        filterNote={active?.label}
-        search={term}
-        onSearch={setTerm}
+        count={list.data ? rows.length : undefined}
         searchPlaceholder="Search doc no., requested by, field…"
+        term={term}
+        onSearch={setTerm}
+        searching={term.trim() !== ''}
         updating={list.isFetching && !list.isLoading}
-        filters={
-          <select
-            className="innovic-select"
-            aria-label="Request status"
-            title="Request status"
-            value={sub}
-            onChange={(e) => {
-              setSub(e.target.value as DocumentEditStatus);
-              setRejecting(null);
-            }}
-          >
-            {SUB_TABS.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+        view={view}
+        onView={setView}
+        viewCounts={viewCounts}
+        filtersActive={view !== 'pending' || term.trim() !== ''}
+        tableKey={TABLE_KEYS.editApprovalsInbox}
+        columns={cols}
+        rows={rows}
+        rowKey={(r) => r.id}
+        loading={list.isLoading}
+        isError={list.isError}
+        errorMessage={
+          list.error instanceof Error ? list.error.message : 'Could not load edit requests.'
         }
-        onClearFilters={() => {
-          setSub('pending');
-          setRejecting(null);
-          setTerm('');
+        emptyPending="No edits waiting for approval."
+        emptyDecided={view === 'approved' ? 'No approved edits yet.' : 'No rejected edits yet.'}
+        emptyNoMatch="No edit requests match."
+        renderExpanded={renderExpanded}
+        onToggleExpanded={toggleExpanded}
+        approveRow={async (r) => {
+          await decide.mutateAsync({
+            id: r.id,
+            decisions: stillPending(r).map((c) => ({ changeId: c.id, decision: 'approve' as const })),
+          });
         }}
-        filtersActive={sub !== 'pending' || term.trim() !== ''}
-      >
-        {tabs}
-      </ListHeader>
+        rejectRow={async (r, reason) => {
+          await decide.mutateAsync({
+            id: r.id,
+            decisions: stillPending(r).map((c) => ({
+              changeId: c.id,
+              decision: 'reject' as const,
+              reason,
+            })),
+          });
+        }}
+        rejectTitle={(r) => `Reject all changes — ${r.docCode}`}
+        rejectPrompt="Why are these changes rejected?"
+      />
 
-      {list.isError ? (
-        <PageState
-          state="error"
-          message={
-            list.error instanceof Error ? list.error.message : 'Could not load edit requests.'
-          }
-        />
-      ) : (
-        <Panel fill bodyPadding="none">
-          <DataTable
-            tableKey={TABLE_KEYS.editApprovalsInbox}
-            columns={cols}
-            rows={rows}
-            rowKey={(r) => r.id}
-            loading={list.isLoading}
-            empty={
-              term.trim() !== ''
-                ? 'No edit requests match.'
-                : (active?.empty ?? 'Nothing here yet.')
-            }
-            renderExpanded={renderExpanded}
-            onToggleExpanded={(row) => toggleExpanded(row)}
-          />
-        </Panel>
-      )}
-
-      {rejecting ? (
+      {rejectingChange ? (
         <EditRejectDialog
-          docCode={rejecting.docCode}
-          fieldLabel={rejecting.change.label}
-          onCancel={() => setRejecting(null)}
+          docCode={rejectingChange.docCode}
+          fieldLabel={rejectingChange.change.label}
+          onCancel={() => setRejectingChange(null)}
           onReject={(reason) => {
-            const target = rejecting;
-            setRejecting(null);
+            const target = rejectingChange;
+            setRejectingChange(null);
             void decideChange(target.requestId, target.change.id, 'reject', reason);
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
