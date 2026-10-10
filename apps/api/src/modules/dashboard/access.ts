@@ -1,15 +1,15 @@
 // Dashboard dept-access helper. Mirror of legacy _hasDeptAccess / _getUserAccess.
 // Admin/manager see everything; otherwise fullAccess or the per-dept flag.
 
-import { type EffectiveAccess, normalizeDeptsMap } from '@innovic/shared';
-import type { AuthContext } from '../../db/with-user-context';
+import { normalizeDeptsMap } from '@innovic/shared';
+import type { AuthContext, FrozenAccess } from '../../db/with-user-context';
 import { getMyAccess } from '../access-control/service';
 
 export interface DashAccess {
   role: string;
   isAdmin: boolean;
   isManager: boolean;
-  eff: EffectiveAccess;
+  eff: FrozenAccess;
 }
 
 export async function loadAccess(user: AuthContext): Promise<DashAccess> {

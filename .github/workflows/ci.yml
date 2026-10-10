@@ -97,6 +97,10 @@ jobs:
             echo "SUPABASE_JWT_SECRET=$SUPABASE_JWT_SECRET"
           } > .env.local
 
+      # ADR-229: database-free unit tests — no secrets needed, so always run.
+      - name: Unit tests (no database)
+        run: pnpm --filter @innovic/api test:unit
+
       - name: Test
         if: steps.secrets.outputs.ready == 'true'
         run: pnpm test

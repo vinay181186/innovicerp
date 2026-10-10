@@ -8,7 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, userAccess, users } from '../../db/schema';
-import type { AuthContext } from '../../db/with-user-context';
+import { type AuthContext, openRequestScope } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import * as service from './service';
 
@@ -362,6 +362,37 @@ describe('access-control service', () => {
     expect(my.fullAccess).toBe(false);
     expect(my.departments.sales).toBe('L3');
     expect(my.forms.po_create).toEqual(perms({ view: true, entry: true, edit: true }));
+  });
+
+  it('ADR-229: one request reuses its read; the next request sees a right switched OFF', async () => {
+    const grant = (departments: Record<string, AccessTierKey>) =>
+      service.saveUserAccess(
+        viewer.id,
+        {
+          fullAccess: false,
+          auditor: false,
+          drawingDownload: false,
+          mainDept: null,
+          confirmAdminChange: false,
+          departments,
+          forms: {},
+        },
+        admin,
+      );
+    await grant({ sales: 'L3' });
+
+    // A request, as the auth plugin builds it.
+    const request1 = openRequestScope({ ...viewer });
+    const first = await service.getMyAccess(request1);
+    expect(first.departments.sales).toBe('L3');
+
+    // The admin switches Sales OFF while request 1 is still running.
+    await grant({});
+    // Request 1 keeps the answer it read (accepted in ADR-229) ...
+    expect(await service.getMyAccess(request1)).toBe(first);
+    // ... and the very next request sees the change.
+    const request2 = openRequestScope({ ...viewer });
+    expect((await service.getMyAccess(request2)).departments.sales).toBeUndefined();
   });
 
   it('getMyAccess fails closed (deny everything) when no row exists', async () => {

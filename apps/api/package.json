@@ -12,6 +12,7 @@
     "start:production": "tsx src/server.ts",
     "test": "dotenv -e ../../.env.local -- vitest run",
     "test:watch": "dotenv -e ../../.env.local -- vitest",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "db:generate": "dotenv -e ../../.env.local -- drizzle-kit generate",

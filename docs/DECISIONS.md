@@ -13389,3 +13389,84 @@ Verified: typecheck (shared + api + web), eslint, prettier on own lines, and the
 | Excel-import 50 vendors while someone saves one by hand | no collision, no whole-sheet rollback |
 | A Job Card raised at 00:30 IST on 1 January | **known defect, not fixed**: the year segment comes from UTC, so it is still last year's |
 | New Item, two tabs | **still collides** — out of scope by instruction |
+
+## ADR-229: A request reads the caller's access once, however many guards ask
+
+**Date:** 2026-10-09
+**Status:** Accepted (owner approved the plan; TEST release pending)
+
+### Context
+
+The 09-Oct performance audit (finding F-03) measured `/access-control/me` at
+2.4 s on TEST. Every guard — `requireFormAccess`, `canSeeFormPrice`,
+`hasFormAccess`, the dashboard's `loadAccess` — called `getMyAccess`, and each
+call opened its own transaction (BEGIN, set_config, SELECT, COMMIT). The
+Approvals badge asked four times per request; about 16 guards run while a save
+already holds a connection, so each of those held a second one.
+
+### Decision
+
+The auth plugin opens a non-enumerable request scope on the request's own user
+object (`openRequestScope`, in `db/with-user-context.ts`, so the plugin depends
+on no module); the scope has one typed field, `myAccess`. `getMyAccess` (now in
+`access-control/my-access.ts`, re-exported by the service) remembers its answer
+there, so one request reads `user_access` once. The answer is frozen on every
+path and typed `FrozenAccess` (read-only all the way down, defined once in
+`db/with-user-context.ts`; the dashboard and reports hold it as that type),
+shared or not, so no guard can change what another sees. `toEffectiveAccess` is the one mapping
+from a stored access row to an EffectiveAccess (every field required — the
+pickers state `drawingDownload: false`), with `asJsonMap` the one jsonb
+coercion; the department pickers and Assembly's Assembled By check use it
+too, instead of their own copies. A failed read is not remembered;
+guards already waiting on it fail with it, as the request would have anyway.
+A context without a scope — the alerts worker, tests, a spread copy — reads
+every time; opening a scope twice keeps the first. The read itself is
+unchanged: its own transaction with the caller's claims set, so it keeps
+working if the API ever stops bypassing RLS.
+
+The database-free tests live in `my-access.unit.test.ts` and
+`plugins/auth.unit.test.ts` (the second goes through the real auth plugin), not
+`service.test.ts` (CLAUDE.md §9): they replace the db module for the whole
+file, which the real-database suite cannot share. `vitest.unit.config.ts` runs
+every `*.unit.test.ts` without a database (`pnpm --filter @innovic/api
+test:unit`), with one shared fake database, `test/unit/fake-db.ts`. The main
+config excludes them, and CI runs `test:unit` on every run (it needs no
+secrets).
+`service.test.ts` has one real-database case for the same rule.
+
+### Alternatives Considered
+
+- A single plain query without `withUserContext` — rejected in code review: it
+  works only while the API role bypasses RLS (`user_access_self_read`, 0045);
+  the trip saving belongs to F-08, for every query at once.
+- A module-level WeakMap with a global save counter — rejected: the counter
+  only works inside one process, and a copied user object silently missed.
+- A cache across requests — rejected: a right switched OFF must bite on the
+  next click.
+
+### Consequences
+
+- Positive: four guards in one request make one read (Approvals badge: 16
+  database steps → 4). A guard inside a save takes a second connection only if
+  it is the request's first guard; later ones reuse the answer.
+- Negative: a right switched OFF part-way through one request is seen from that
+  user's next request, not by later guards in the same request. Nothing clears
+  the answer mid-request: the only writer of `user_access` is
+  `saveUserAccess`, an admin-only route that runs no access guard after the
+  save (code review round 4 removed a clear-after-own-save path that no
+  request could reach). The backup module has no restore.
+- Risks: a code path that rebuilds `req.user` loses the scope and simply reads
+  every time — slower, never wrong. The scope relies on the auth plugin getting
+  a FRESH users row object per request, which the driver gives; a cached row
+  object reused across requests would carry one request's answer into the
+  next (the shared test fake copies the row for exactly this reason). Work that outlives its request and runs a
+  guard later would reuse that request's answer; none exists today (checked:
+  the only fire-and-forget path, the password-reset email, runs no guard).
+  Server code could write a forged answer into the scope; it is not a trust
+  boundary — server code can already skip any guard.
+- Follow-up (F-07/F-08): the FIRST guard inside an open save transaction still
+  takes a second pooled connection. Reading access before the save opens its
+  transaction would remove that.
+- Follow-up (cleanup): the "User is not assigned to a company" check is copied
+  in 128 API files; my-access keeps its own copy rather than adding a 129th
+  "shared" one. One helper for all of them is a separate API-wide cleanup.

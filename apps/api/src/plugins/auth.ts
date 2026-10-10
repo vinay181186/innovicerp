@@ -4,6 +4,7 @@ import fp from 'fastify-plugin';
 import { db } from '../db/client';
 import { users } from '../db/schema';
 import { supabaseAdmin } from '../lib/supabase-admin';
+import { openRequestScope } from '../db/with-user-context';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -64,6 +65,7 @@ export const authPlugin = fp(async (app) => {
       req.authRejectedReason = 'inactive';
       return;
     }
-    req.user = row;
+    // ADR-229 — this request's own place to remember things (its access).
+    req.user = openRequestScope(row);
   });
 });
