@@ -21,8 +21,8 @@
 // SQL runs unchanged; grid.ts then column-filters, sorts and totals ALL its
 // rows and returns only the page. No `_limit` = every row (the exports).
 
-import { canSeeReport, type EffectiveAccess } from '@innovic/shared';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { canSeeReport } from '@innovic/shared';
+import { type AuthContext, type FrozenAccess, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { getMyAccess } from '../access-control/service';
 import { REPORT_ROW_CAP } from './definitions/report-helpers';
@@ -36,7 +36,7 @@ const requireCompany = (user: AuthContext): string => {
 };
 
 // Admins bypass the matrix (same as requireFormAccess), so skip the read.
-const loadAccess = (user: AuthContext): Promise<EffectiveAccess | null> =>
+const loadAccess = (user: AuthContext): Promise<FrozenAccess | null> =>
   user.role === 'admin' ? Promise.resolve(null) : getMyAccess(user);
 
 export async function listReports(user: AuthContext): Promise<ListReportsResponse> {

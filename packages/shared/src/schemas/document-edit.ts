@@ -108,13 +108,16 @@ export const listDocumentEditsResponseSchema = z.object({
 });
 export type ListDocumentEditsResponse = z.infer<typeof listDocumentEditsResponseSchema>;
 
-/** GET /document-edits/counts — pending edit-request count per document type.
- *  Drives the Approvals page's dynamic tab row (one tab per document that has
- *  something pending) and each tab's badge. Only entities with pending > 0 are
- *  returned, so the tab row shows exactly the documents that need attention. */
+/** GET /document-edits/counts — edit-request counts per document type, split by
+ *  status. The Approvals tab row is FIXED (every document type always shown), so
+ *  these only feed the badges: the tab's pending badge, and the per-tab
+ *  Pending / Approved / Rejected filter counts. An entity with no requests at all
+ *  is simply absent (the frontend shows 0). `pending` is the headline badge. */
 export const documentEditCountSchema = z.object({
   entity: z.enum(DOCUMENT_EDIT_ENTITIES),
   pending: z.number().int().nonnegative(),
+  approved: z.number().int().nonnegative(),
+  rejected: z.number().int().nonnegative(),
 });
 export type DocumentEditCount = z.infer<typeof documentEditCountSchema>;
 

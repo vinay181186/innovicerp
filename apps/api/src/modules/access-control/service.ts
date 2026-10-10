@@ -2,8 +2,9 @@
 //
 // Mirror of legacy db.userAccess CRUD (renderAccessControl L13861 list +
 // _editAccess L13917 save handler). All writes admin-only. Reads:
-// - `getMyAccess` returns the caller's own EffectiveAccess (any role; web
-//   shell uses it to gate buttons + sidebar)
+// - `getMyAccess` (in ./my-access, re-exported here) returns the caller's own
+//   access — read once per request, frozen and shared by every guard in that
+//   request (ADR-229); the web shell uses it to gate buttons + sidebar
 // - `listUserAccess` / `getUserAccess` are admin-only
 //
 // ADR-035 option A was "matrix is UI-only enforcement". 0100 starts
@@ -49,6 +50,7 @@ import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { labelOf, ROLE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { asJsonMap, toEffectiveAccess } from './my-access';
 import { ACCESS_SF_COLUMNS } from './sf-columns';
 import { syncTokenIdentity } from '../../lib/sync-token-identity';
 
@@ -56,15 +58,6 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
-
-// Coerce a raw jsonb cell into a typed map. jsonb is `unknown` from the
-// driver; defensive cast keeps the service free of `any`.
-function asDeptsMap(v: unknown): AccessDeptsMap {
-  return (v && typeof v === 'object' ? (v as AccessDeptsMap) : {}) ?? {};
-}
-function asFormsMap(v: unknown): AccessFormsMap {
-  return (v && typeof v === 'object' ? (v as AccessFormsMap) : {}) ?? {};
-}
 
 function rowToUserAccess(r: {
   id: string;
@@ -91,8 +84,8 @@ function rowToUserAccess(r: {
     drawingDownload: r.drawingDownload,
     mainDept: r.mainDept,
     fullAccess: r.fullAccess,
-    departments: asDeptsMap(r.departments),
-    forms: asFormsMap(r.forms),
+    departments: asJsonMap<AccessDeptsMap>(r.departments),
+    forms: asJsonMap<AccessFormsMap>(r.forms),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
@@ -141,46 +134,9 @@ function tierSummary(m: AccessDeptsMap): string {
   return parts.join(' · ');
 }
 
-// Caller's own effective access — fail-closed: if no row exists, deny
-// everything (admin can still grant themselves via the matrix UI).
-export async function getMyAccess(user: AuthContext): Promise<EffectiveAccess> {
-  const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select()
-      .from(userAccess)
-      .where(
-        and(
-          eq(userAccess.userId, user.id),
-          eq(userAccess.companyId, companyId),
-          isNull(userAccess.deletedAt),
-        ),
-      )
-      .limit(1);
-    const row = rows[0];
-    if (!row) {
-      return {
-        fullAccess: false,
-        auditor: false,
-        // Fail closed, like every other flag here: nobody set this person up,
-        // so they may look at a drawing but not take a copy away.
-        drawingDownload: false,
-        departments: {},
-        forms: {},
-      };
-    }
-    return {
-      fullAccess: row.fullAccess,
-      auditor: row.auditor,
-      // Carried on /access-control/me so the screens can decide whether to
-      // render a Download button. The button is only the courtesy half — the
-      // refusal that holds is on the drawing-link route (drawing-files).
-      drawingDownload: row.drawingDownload,
-      departments: normalizeDeptsMap(asDeptsMap(row.departments)),
-      forms: cascadeFormsMap(asFormsMap(row.forms)),
-    };
-  });
-}
+// ADR-229 — the caller's own access, read once per request, lives in
+// ./my-access; re-exported here so every existing import keeps working.
+export { getMyAccess } from './my-access';
 
 // Admin list: every user in the company + matrix summary. Self-join so
 // users without an access row still appear (deptCount=0, formCount=0).
@@ -246,8 +202,8 @@ export async function listUserAccess(
     const items: UserAccessListItem[] = rows.map((r) => {
       const fullAccess = r.acFullAccess ?? false;
       const auditor = r.acAuditor ?? false;
-      const depts = asDeptsMap(r.acDepartments);
-      const forms = asFormsMap(r.acForms);
+      const depts = asJsonMap<AccessDeptsMap>(r.acDepartments);
+      const forms = asJsonMap<AccessFormsMap>(r.acForms);
       const totalDepts = ACCESS_DEPT_KEYS.length;
       const totalForms = ACCESS_FORM_KEYS.length;
       return {
@@ -393,18 +349,17 @@ async function listDeptUserOptions(
     // so the shape handed to the wrappers is exactly DeptUserOption.
     const options: Array<DeptUserOption & { _direct: boolean }> = rows.flatMap((r) => {
       const fullAccess = r.acFullAccess ?? false;
-      // Built exactly as getMyAccess builds it, so this asks the same question
-      // of the same shape the department's screens ask of themselves.
-      const eff: EffectiveAccess = {
+      // Built by the same toEffectiveAccess getMyAccess uses, so this asks the
+      // same question of the same shape the department's screens ask of
+      // themselves.
+      const eff = toEffectiveAccess({
         fullAccess,
-        auditor: r.acAuditor ?? false,
-        // Irrelevant to who may make an entry, but the shape is the shape —
-        // leaving it out would make this a different object from the one
-        // getMyAccess builds, which is the whole point of building it here.
+        auditor: r.acAuditor,
+        // Irrelevant to who may make an entry; stated, not defaulted.
         drawingDownload: false,
-        departments: normalizeDeptsMap(asDeptsMap(r.acDepartments)),
-        forms: cascadeFormsMap(asFormsMap(r.acForms)),
-      };
+        departments: r.acDepartments,
+        forms: r.acForms,
+      });
       if (!wasGranted(eff)) return [];
       return [
         {
@@ -417,8 +372,10 @@ async function listDeptUserOptions(
           // included. The tier no longer decides who is on the list, so it is
           // reported rather than filtered on: someone can qualify through a
           // per-form grant with a low tier, or none at all.
-          // `normalizeDeptsMap` reads the pre-0100 literal `true` as L1.
-          tier: normalizeDeptsMap(asDeptsMap(r.acDepartments))[dept.deptKey] ?? null,
+          // From the same converted rights. Normalised again only because
+          // EffectiveAccess types a department as `boolean | tier`; the value
+          // is already a tier (pre-0100 `true` reads as L1), so this is a no-op.
+          tier: normalizeDeptsMap(eff.departments)[dept.deptKey] ?? null,
           isDept: r.acMainDept === dept.deptKey,
           fullAccess,
           // Did THIS DEPARTMENT's access grant the entry, as opposed to Full

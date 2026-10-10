@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
@@ -28,5 +28,8 @@ export default defineConfig({
     // notes a dedicated CI Supabase project as the real fix; until then this
     // sweep keeps the dev-DB tests reliably runnable.
     globalSetup: ['./test/global-setup.ts'],
+    // ADR-229: database-free `*.unit.test.ts` files run on their own, via
+    // vitest.unit.config.ts (`test:unit`), never under this database setup.
+    exclude: [...configDefaults.exclude, 'src/**/*.unit.test.ts'],
   },
 });

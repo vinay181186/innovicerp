@@ -1,41 +1,31 @@
 // Settings → Approvals — the things WAITING for a decision.
 //
-// Distinct from Approval Rules next to it in the menu, which holds the
-// rules (which approvals are on, who may approve, the PO limit). This screen
-// holds the queue.
+// Distinct from Approval Rules next to it in the menu, which holds the rules
+// (which approvals are on, who may approve, the PO limit). This screen holds the
+// queue.
 //
-// ADR-190: the page is an INBOX — GET /approvals/inbox lists what is waiting
-// for the signed-in user, in three sections: PR · PO · Op Entry, each with its
-// count. PR and PO rows open the document, where the Approve button lives. The
-// Op Entry section is the existing decide-here screen (ADR-130: Pending /
-// Approved / Rejected), shown only to managers and admins, who alone decide it.
+// ONE UNIFORM structure for every document (owner decision). A FIXED tab row —
+// PR · PO · SO · GRN · Job Card · Delivery Challan · NC · JWSO · Plan ·
+// Production Order · Op Entry — is ALWAYS shown, whatever each has waiting (the
+// old row vanished a tab the moment its count hit 0). Every tab renders through
+// the one shared shell (components/approval-tab.tsx): ListHeader(search) + a
+// Pending / Approved / Rejected filter + DataTable + a VISIBLE row ✓ / ✗ + a ▸
+// read-only detail. So PR, PO, the edit tabs and Op Entry all look identical.
 //
-// ADR-201: the PR and PO sections show 25 rows a page (Prev / Next); search
-// and Sort & Filter run on the server (GET /approvals/inbox/list) over every
-// waiting document. The tab counts are the inbox's whole-queue counts.
-//
-// ADR-202: after the fixed PR · PO · Op Entry tabs, one tab is added PER
-// DOCUMENT TYPE that has edits waiting — driven by GET /document-edits/counts
-// (only types with pending > 0 come back). Each such tab renders
-// <DocTypeApprovals> (its own Pending / Approved / Rejected views, per-change
-// ✓/✗ that apply immediately). There is no combined "Edit Approvals" tab.
+// Each tab's badge is its pending count (omitted at 0): PR / PO / Op Entry from
+// the approval inbox (ADR-190), the edit tabs from GET /document-edits/counts
+// (ADR-202, now per-status so the in-tab filter carries counts too).
 
 import type { DocumentEditEntity } from '@innovic/shared';
-import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
-import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { createRoute } from '@tanstack/react-router';
+import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel } from '@/ui/data';
-import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
-import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDocumentEditCounts } from '@/modules/document-edits/api';
-import { DocTypeApprovals } from '@/modules/document-edits/components/doc-type-approvals';
-import { useApprovalInbox, useApprovalInboxList } from '../api';
+import { EditApprovalTab } from '@/modules/document-edits/components/doc-type-approvals';
+import { useApprovalInbox } from '../api';
+import { InboxApprovalTab } from '../components/inbox-approval-tab';
 import { LogEntryApprovals } from '../components/log-entry-approvals';
-import { prPoColumns } from '../components/pr-po-columns';
 
 export const approvalsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -43,130 +33,92 @@ export const approvalsRoute = createRoute({
   component: ApprovalsPage,
 });
 
-// The three fixed tabs. Edit-approval tabs are added dynamically, one per
-// document type that has edits waiting (see DOC_TAB_PREFIX below).
-type BaseSection = 'pr' | 'po' | 'logEntry';
-/** A dynamic edit-approval tab, keyed `doc:<entity>`. */
-const DOC_TAB_PREFIX = 'doc:';
-type Section = BaseSection | `doc:${DocumentEditEntity}`;
+// The fixed tab set. Each tab is PR/PO (the approval inbox), Op Entry (op-log
+// time corrections), or one enrolled edit document type. Labels per docs/NAMING.md
+// (JWSO is the registered name for Job Work Order; Client → Customer, etc.).
+type TabDef =
+  | { key: 'pr' | 'po'; kind: 'inbox'; section: 'pr' | 'po'; label: string }
+  | { key: 'logEntry'; kind: 'opEntry'; label: string }
+  | { key: `doc:${DocumentEditEntity}`; kind: 'edit'; entity: DocumentEditEntity; label: string };
 
-const BASE_LABEL: Record<BaseSection, string> = {
-  pr: 'PR',
-  po: 'PO',
-  logEntry: 'Op Entry',
-};
+const EDIT_TAB = (entity: DocumentEditEntity, label: string): TabDef => ({
+  key: `doc:${entity}`,
+  kind: 'edit',
+  entity,
+  label,
+});
 
-// entity → the document's name on screen. Canonical names per docs/NAMING.md
-// (section B documents + A-7: the buyer reads "Customer", field stays `client*`).
-// Mirrors the server's HISTORY_ENTITY_LABEL, with the NAMING.md overrides.
-const ENTITY_LABEL: Record<DocumentEditEntity, string> = {
-  PurchaseOrder: 'Purchase Order',
-  PurchaseRequest: 'Purchase Request',
-  NonConformance: 'Non-Conformance',
-  Plan: 'Plan',
-  SalesOrder: 'Sales Order',
-  JobWorkOrder: 'Job Work Order',
-  GoodsReceiptNote: 'Goods Receipt Note',
-  JobCard: 'Job Card',
-  Dispatch: 'Dispatch',
-  DeliveryChallan: 'Delivery Challan',
-  PartyGrn: 'Party GRN',
-  ProductionOrder: 'Production Order',
-  Item: 'Item',
-  Vendor: 'Vendor',
-  Client: 'Customer',
-  Machine: 'Machine',
-  MachineGroup: 'Machine Group',
-  Operator: 'Operator',
-  CostCenter: 'Cost Center',
-  TpiInspector: 'TPI Inspector',
-  QcProcess: 'QC Process',
-  MaterialGrade: 'Material Grade',
-  MaterialSize: 'Material Size',
-  Instrument: 'Instrument',
-  BOM: 'BOM',
-};
+// PR · PO · (edit documents) · Op Entry — the order the owner named. PR is the
+// stable default (always present), so the page never has to index an array.
+const PR_TAB: TabDef = { key: 'pr', kind: 'inbox', section: 'pr', label: 'PR' };
 
-const SECTION_TITLE: Record<Exclude<BaseSection, 'logEntry'>, string> = {
-  pr: 'PR Approvals',
-  po: 'PO Approvals',
-};
-
-const SECTION_EMPTY: Record<Exclude<BaseSection, 'logEntry'>, string> = {
-  pr: 'No Purchase Requests waiting for your approval.',
-  po: 'No Purchase Orders waiting for your approval.',
-};
-
-const SECTION_NO_MATCH: Record<Exclude<BaseSection, 'logEntry'>, string> = {
-  pr: 'No Purchase Requests match.',
-  po: 'No Purchase Orders match.',
-};
-
-/** The document type behind a `doc:<entity>` section key. */
-function docEntityOf(s: Section): DocumentEditEntity | null {
-  return s.startsWith(DOC_TAB_PREFIX) ? (s.slice(DOC_TAB_PREFIX.length) as DocumentEditEntity) : null;
-}
+const FIXED_TABS: TabDef[] = [
+  PR_TAB,
+  { key: 'po', kind: 'inbox', section: 'po', label: 'PO' },
+  EDIT_TAB('SalesOrder', 'SO'),
+  EDIT_TAB('GoodsReceiptNote', 'GRN'),
+  EDIT_TAB('JobCard', 'Job Card'),
+  EDIT_TAB('DeliveryChallan', 'Delivery Challan'),
+  EDIT_TAB('NonConformance', 'NC'),
+  EDIT_TAB('JobWorkOrder', 'JWSO'),
+  EDIT_TAB('Plan', 'Plan'),
+  EDIT_TAB('ProductionOrder', 'Production Order'),
+  { key: 'logEntry', kind: 'opEntry', label: 'Op Entry' },
+];
 
 function ApprovalsPage(): React.JSX.Element {
   const { data: me } = useSession();
+  // Op Entry corrections are decided by managers / admins only — the existing
+  // permission gate is preserved (the inbox only counts them for those users).
   const canDecideLogEntry = me?.role === 'admin' || me?.role === 'manager';
   const inbox = useApprovalInbox({ refetchOnMount: 'always' });
   const counts = inbox.data?.counts;
-  // Edit Approvals (ADR-202) — one tab per document type that has edits waiting,
-  // with its pending count. The server returns only entities with pending > 0.
   const editCounts = useDocumentEditCounts();
   const editPendingByEntity = useMemo(() => {
     const m = new Map<DocumentEditEntity, number>();
-    for (const c of editCounts.data?.counts ?? []) {
-      if (c.pending > 0) m.set(c.entity, c.pending);
-    }
+    for (const c of editCounts.data?.counts ?? []) m.set(c.entity, c.pending);
     return m;
   }, [editCounts.data?.counts]);
 
-  const baseSections: BaseSection[] = canDecideLogEntry ? ['pr', 'po', 'logEntry'] : ['pr', 'po'];
-  // PR · PO · Op Entry, then one tab per document type with edits waiting.
-  const sections: Section[] = useMemo(
-    () => [
-      ...baseSections,
-      ...[...editPendingByEntity.keys()].map((e): Section => `${DOC_TAB_PREFIX}${e}`),
-    ],
-    [baseSections, editPendingByEntity],
+  // The Op Entry tab is shown only to the users who may decide it; every other
+  // tab is always present regardless of its count.
+  const tabDefs = useMemo(
+    () => FIXED_TABS.filter((t) => t.kind !== 'opEntry' || canDecideLogEntry),
+    [canDecideLogEntry],
   );
-  // Count for one tab — PR / PO / Op Entry from the approval inbox, a doc-type
-  // tab from the edit counts.
-  const countFor = (s: Section): number | undefined => {
-    const entity = docEntityOf(s);
-    if (entity) return editPendingByEntity.get(entity);
-    return counts?.[s as BaseSection];
+
+  const pendingFor = (t: TabDef): number | undefined => {
+    if (t.kind === 'edit') return editPendingByEntity.get(t.entity);
+    if (t.kind === 'opEntry') return counts?.logEntry;
+    return counts?.[t.section];
   };
-  // Until the user picks one, open the first section that has something
-  // waiting (PR first), so the page lands on work rather than an empty list.
-  const [picked, setPicked] = useState<Section | null>(null);
-  const pickedStillShown = picked != null && sections.includes(picked);
-  const section: Section = pickedStillShown
-    ? picked
-    : counts
-      ? (sections.find((s) => (countFor(s) ?? 0) > 0) ?? 'pr')
-      : 'pr';
+
+  // Until the user picks one, open the first tab that has something waiting (PR
+  // first), so the page lands on work rather than an empty list.
+  const [picked, setPicked] = useState<string | null>(null);
+  const pickedTab = tabDefs.find((t) => t.key === picked);
+  const active: TabDef =
+    pickedTab ??
+    (counts ? tabDefs.find((t) => (pendingFor(t) ?? 0) > 0) : undefined) ??
+    PR_TAB;
 
   const tabs = (
-    <div role="tablist" aria-label="Approval type" style={{ display: 'flex', gap: 'var(--sp-1)' }}>
-      {sections.map((s) => {
-        const on = s === section;
-        const n = countFor(s);
-        const entity = docEntityOf(s);
+    <div role="tablist" aria-label="Approval type" style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
+      {tabDefs.map((t) => {
+        const on = t.key === active.key;
+        const n = pendingFor(t);
         return (
           <button
-            key={s}
+            key={t.key}
             type="button"
             role="tab"
             aria-selected={on}
             className={`btn btn-sm ${on ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setPicked(s)}
+            onClick={() => setPicked(t.key)}
           >
-            {entity ? ENTITY_LABEL[entity] : BASE_LABEL[s as BaseSection]}
-            {n != null ? (
-              <span className={`badge ${n > 0 ? 'b-amber' : 'b-grey'}`} style={{ marginLeft: 6 }}>
+            {t.label}
+            {n != null && n > 0 ? (
+              <span className="badge b-amber" style={{ marginLeft: 6 }}>
                 {n}
               </span>
             ) : null}
@@ -176,104 +128,18 @@ function ApprovalsPage(): React.JSX.Element {
     </div>
   );
 
-  if (section === 'logEntry') {
-    return <LogEntryApprovals pendingCount={counts?.logEntry} tabs={tabs} />;
+  if (active.kind === 'opEntry') {
+    return <LogEntryApprovals key="logEntry" pendingCount={counts?.logEntry} tabs={tabs} />;
   }
-
-  const entity = docEntityOf(section);
-  if (entity) {
-    return <DocTypeApprovals key={section} entity={entity} tabs={tabs} />;
+  if (active.kind === 'edit') {
+    return <EditApprovalTab key={active.key} entity={active.entity} tabs={tabs} />;
   }
-
-  return <InboxSection key={section} section={section as Exclude<BaseSection, 'logEntry'>} tabs={tabs} />;
-}
-
-function InboxSection({
-  section,
-  tabs,
-}: {
-  section: Exclude<BaseSection, 'logEntry'>;
-  tabs: React.ReactNode;
-}): React.JSX.Element {
-  const navigate = useNavigate();
-  // Page + search live in component state: the PR / PO switch is a tab of one
-  // route, and switching it (a new key) starts the section on page 1.
-  const [page, setPage] = useState(1);
-  const [term, setTerm] = useState('');
-  const [q, setQ] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    const t = normalizeSearchTerm(term);
-    const next = t === '' ? undefined : t;
-    if (next === q) return;
-    const id = window.setTimeout(() => {
-      setQ(next);
-      setPage(1);
-    }, 300);
-    return () => window.clearTimeout(id);
-  }, [term, q]);
-  const sf = useServerSortFilter(TABLE_KEYS.approvalsPrPo, () => setPage(1));
-
-  const list = useApprovalInboxList({
-    section,
-    search: q,
-    sf: sf.param,
-    limit: LIST_PAGE_SIZE,
-    offset: pageOffset(page),
-  });
-  const rows = useMemo(() => list.data?.items ?? [], [list.data?.items]);
-  const total = list.data?.total ?? 0;
-  useClampPage(page, list.data?.total, setPage);
-  // Amount is null when the caller's access hides prices — then the column goes.
-  const showAmount = rows.some((r) => r.docAmount != null);
-  const columns = useMemo(() => prPoColumns(section, showAmount), [section, showAmount]);
-  const filtering = q !== undefined || sf.filtering;
-
   return (
-    // `page-fill` (ADR-202): the inbox fills the content area and the TABLE is
-    // the only thing that scrolls, so the column header and the section tabs
-    // stay on screen down to the last row.
-    <div className="page-fill">
-      <ListHeader
-        title={SECTION_TITLE[section]}
-        icon="✅"
-        count={list.isLoading ? undefined : total}
-        noun={section === 'pr' ? 'request' : 'order'}
-        search={term}
-        onSearch={setTerm}
-        searchPlaceholder="Search number, vendor, item, raised by…"
-        updating={list.isFetching && !list.isLoading}
-        onClearFilters={() => {
-          sf.clearFilters();
-          setTerm('');
-        }}
-        filtersActive={term !== '' || sf.filtering}
-      >
-        {tabs}
-      </ListHeader>
-
-      {list.isError ? (
-        <PageState state="error" message={list.error.message} />
-      ) : (
-        <Panel fill bodyPadding="none">
-          <DataTable
-            tableKey={TABLE_KEYS.approvalsPrPo}
-            columns={columns}
-            rows={rows}
-            rowKey={(r) => r.id}
-            loading={list.isLoading}
-            sortFilterServer={sf}
-            empty={filtering ? SECTION_NO_MATCH[section] : SECTION_EMPTY[section]}
-            onRowClick={(r) => void navigate({ to: r.navPage })}
-          />
-        </Panel>
-      )}
-      <ListFooter
-        total={total}
-        noun={section === 'pr' ? 'request' : 'order'}
-        page={page}
-        pageSize={LIST_PAGE_SIZE}
-        onPage={setPage}
-      />
-    </div>
+    <InboxApprovalTab
+      key={active.key}
+      section={active.section}
+      pendingCount={counts?.[active.section]}
+      tabs={tabs}
+    />
   );
 }

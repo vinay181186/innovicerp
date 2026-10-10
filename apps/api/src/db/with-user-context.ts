@@ -1,4 +1,4 @@
-import type { UserRole } from '@innovic/shared';
+import type { EffectiveAccess, UserRole } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { db } from './client';
 
@@ -10,6 +10,38 @@ export interface AuthContext {
   companyId: string | null;
   role: UserRole;
   isActive: boolean;
+}
+
+// ADR-229 — a place to remember things for ONE request, opened by the auth
+// plugin on that request's own user object. Non-enumerable, so a spread copy
+// (`{ ...user }`) never carries it; a context built anywhere else (the alerts
+// worker, tests) has none, and whoever reads it must then work it out afresh.
+const REQUEST_SCOPE = Symbol('innovic.requestScope');
+/** The caller's access as getMyAccess hands it out: frozen at runtime, and
+ *  read-only all the way down here, so a write that would throw at runtime is
+ *  refused at compile time wherever the value is held as FrozenAccess. */
+export type FrozenAccess = Readonly<{
+  fullAccess: boolean;
+  auditor: boolean;
+  drawingDownload: boolean;
+  departments: Readonly<EffectiveAccess['departments']>;
+  forms: Readonly<{
+    [K in keyof EffectiveAccess['forms']]: Readonly<EffectiveAccess['forms'][K]>;
+  }>;
+}>;
+// One typed field per thing remembered, so nothing else can be stored there.
+export type RequestScope = { myAccess?: Promise<FrozenAccess> | undefined };
+
+export function openRequestScope<T extends AuthContext>(user: T): T {
+  // Opening twice is harmless — the first scope is kept.
+  if (!Object.prototype.hasOwnProperty.call(user, REQUEST_SCOPE)) {
+    Object.defineProperty(user, REQUEST_SCOPE, { value: {}, enumerable: false });
+  }
+  return user;
+}
+
+export function requestScope(user: AuthContext): RequestScope | undefined {
+  return (user as AuthContext & { [REQUEST_SCOPE]?: RequestScope })[REQUEST_SCOPE];
 }
 
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];

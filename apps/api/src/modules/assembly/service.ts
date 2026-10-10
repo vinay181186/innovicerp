@@ -28,18 +28,9 @@
 //                 | waiting (otherwise)
 
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import {
-  ActivityAction,
-  cascadeFormsMap,
-  effectiveFormPerms,
-  normalizeDeptsMap,
-  roundQty,
-  shortName,
-} from '@innovic/shared';
+import { ActivityAction, effectiveFormPerms, roundQty, shortName } from '@innovic/shared';
 import type {
-  AccessDeptsMap,
   AccessFormKey,
-  AccessFormsMap,
   AssemblyComponentRow,
   AssemblyComponentStatus,
   AssemblyListResponse,
@@ -47,7 +38,6 @@ import type {
   AssemblyUnitRow,
   AssemblyUnitStatus,
   DocumentTraceability,
-  EffectiveAccess,
   ListAssembliesQuery,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
@@ -80,6 +70,7 @@ import {
 } from '../../lib/errors';
 import { lockSoRow, readPartsOutMany } from '../../lib/assembly-parts';
 import { restoreStamp } from '../../lib/audit-trail';
+import { toEffectiveAccess } from '../access-control/my-access';
 import { emitActivityLog } from '../activity-log/service';
 import { fitParts, fitSummary, lockSoOfUnit, unfitUnit } from './fitting';
 import { loadAssemblySoRows } from './list-rows';
@@ -106,13 +97,6 @@ function todayIso(): string {
 // and the whole `planning` department per ACCESS_FORMS). Named here so the
 // re-assertion below and the list can never drift into asking two questions.
 const PLANNING_ENTRY_FORMS: readonly AccessFormKey[] = ['plan_create', 'routecard_create'];
-
-// jsonb arrives as `unknown` from the driver; same defensive coercion the
-// access-control service makes before handing a stored matrix to the shared
-// helpers.
-function asJsonMap<T>(v: unknown): T {
-  return (v && typeof v === 'object' ? (v as T) : ({} as T)) ?? ({} as T);
-}
 
 /** Who assembled it: a Planning login's SHORT name snapshot, else the typed
  *  name, else nothing.
@@ -168,18 +152,18 @@ async function resolveAssembledBy(
     if (!u) {
       throw new ValidationError('Pick an active Planning person (the one chosen was not found).');
     }
-    // Built exactly as `getMyAccess` / `listDeptUserOptions` build it, and asked
-    // through the app's own `effectiveFormPerms` — so this refuses precisely the
-    // people the dropdown refuses, per-form grants and per-page "No create"
-    // switches included.
-    const eff: EffectiveAccess = {
-      fullAccess: u.full_access ?? false,
-      auditor: u.auditor ?? false,
-      // Irrelevant to who may make a Planning entry, but the shape is the shape.
+    // Built by the same `toEffectiveAccess` that `getMyAccess` and
+    // `listDeptUserOptions` use, and asked through the app's own
+    // `effectiveFormPerms` — so this refuses precisely the people the dropdown
+    // refuses, per-form grants and per-page "No create" switches included.
+    const eff = toEffectiveAccess({
+      fullAccess: u.full_access,
+      auditor: u.auditor,
+      // Irrelevant to who may make a Planning entry; stated, not defaulted.
       drawingDownload: false,
-      departments: normalizeDeptsMap(asJsonMap<AccessDeptsMap>(u.departments)),
-      forms: cascadeFormsMap(asJsonMap<AccessFormsMap>(u.forms)),
-    };
+      departments: u.departments,
+      forms: u.forms,
+    });
     if (!PLANNING_ENTRY_FORMS.some((f) => effectiveFormPerms(eff, f).entry)) {
       // A DIFFERENT failure from "not found" above, and it reads differently:
       // the person exists, they are simply not Planning any more.
