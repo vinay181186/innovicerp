@@ -65,6 +65,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('JobWorkOrder', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197: the JWSO's own History tab (hooks run before any early return).
   const historyTab = useHistoryTab({ entity: 'JobWorkOrder', entityId: id, refId: detail?.code });
@@ -189,7 +191,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         }
         badges={
           <>
-            <SoStatusBadge status={detail.status} />
+            <SoStatusBadge status={detail.status} draft={isDraft} />
             <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={rmRequiredTotal} />
           </>
         }

@@ -29,6 +29,7 @@ import {
   pageSearchParam,
   useClampPage,
 } from '@/lib/list-paging';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -139,7 +140,12 @@ function CustomerDispatchListPage(): React.JSX.Element {
   );
 
   const groups = useMemo(() => groupByDispatch(rows), [rows]);
-  const columns = useMemo(() => dispatchListColumns((id) => billedById.get(id)), [billedById]);
+  // ADR-202 — dispatch ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('Dispatch');
+  const columns = useMemo(
+    () => dispatchListColumns((id) => billedById.get(id), draftIds),
+    [billedById, draftIds],
+  );
 
   // KPIs over ACTIVE rows only (cancelled were reversed) — from the server,
   // over every matching row, never just this page.

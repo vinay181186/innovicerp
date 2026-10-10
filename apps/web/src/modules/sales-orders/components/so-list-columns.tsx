@@ -66,8 +66,10 @@ export function soListColumns(opts: {
   today: string;
   /** The 📎 — previews the client-PO document in-app (ADR-142). */
   onPreviewClientPo: (storagePath: string) => void;
+  /** ADR-202 — SO ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>;
 }): DataTableColumn<SalesOrderListItem>[] {
-  const { today, onPreviewClientPo } = opts;
+  const { today, onPreviewClientPo, draftIds } = opts;
   return [
     {
       id: 'so_no',
@@ -274,7 +276,7 @@ export function soListColumns(opts: {
       kind: 'badge',
       header: 'SO Status',
       nowrap: true,
-      render: (so) => <SoStatusBadge status={so.status} />,
+      render: (so) => <SoStatusBadge status={so.status} draft={draftIds?.has(so.id)} />,
     },
     {
       id: 'fulfilment',

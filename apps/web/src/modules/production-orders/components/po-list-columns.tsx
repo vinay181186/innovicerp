@@ -60,7 +60,10 @@ function completedColor(po: ProductionOrderListItem): string {
   return 'var(--text3)';
 }
 
-export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
+export function poListColumns(
+  /** ADR-202 — Production Order ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
+): DataTableColumn<ProductionOrderListItem>[] {
   return [
     {
       id: 'pro_no',
@@ -145,7 +148,7 @@ export function poListColumns(): DataTableColumn<ProductionOrderListItem>[] {
       sortFilterField: 'status',
       filterOptions: STATUS_OPTIONS,
       nowrap: true,
-      render: (po) => <PoStatusBadge status={po.status} />,
+      render: (po) => <PoStatusBadge status={po.status} draft={draftIds?.has(po.id)} />,
     },
     {
       id: 'pro_target_date',

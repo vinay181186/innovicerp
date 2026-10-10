@@ -10,7 +10,15 @@ const CLASSES: Record<GrnQcStatus, string> = {
   completed: 'b-green',
 };
 
-export function QcStatusBadge(props: { status: GrnQcStatus }) {
+export function QcStatusBadge(props: { status: GrnQcStatus; draft?: boolean | undefined }) {
+  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
+  if (props.draft) {
+    return (
+      <span className="badge b-grey" title="An edit to this document is waiting for approval">
+        Draft
+      </span>
+    );
+  }
   return (
     <span className={`badge ${CLASSES[props.status]}`}>{GRN_QC_STATUS_LABELS[props.status]}</span>
   );

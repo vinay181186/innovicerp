@@ -37,8 +37,11 @@ const PO_TYPE_OPTIONS = toOptions(PO_TYPE_LABELS);
  *  PO prices (the API refuses it otherwise; ADR-200). */
 export function purchaseOrderListColumns({
   canSeePrice,
+  draftIds,
 }: {
   canSeePrice: boolean;
+  /** ADR-202 — PO ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>;
 }): DataTableColumn<PurchaseOrderListItem>[] {
   return [
     {
@@ -191,7 +194,7 @@ export function purchaseOrderListColumns({
       kind: 'badge',
       header: 'PO Status',
       nowrap: true,
-      render: (po) => <PoStatusBadge status={po.status} />,
+      render: (po) => <PoStatusBadge status={po.status} draft={draftIds?.has(po.id)} />,
     },
     {
       // When the PO record was entered (IST day) — Sort & Filter can pick a

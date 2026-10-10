@@ -108,6 +108,21 @@ export const listDocumentEditsResponseSchema = z.object({
 });
 export type ListDocumentEditsResponse = z.infer<typeof listDocumentEditsResponseSchema>;
 
+/** GET /document-edits/counts — pending edit-request count per document type.
+ *  Drives the Approvals page's dynamic tab row (one tab per document that has
+ *  something pending) and each tab's badge. Only entities with pending > 0 are
+ *  returned, so the tab row shows exactly the documents that need attention. */
+export const documentEditCountSchema = z.object({
+  entity: z.enum(DOCUMENT_EDIT_ENTITIES),
+  pending: z.number().int().nonnegative(),
+});
+export type DocumentEditCount = z.infer<typeof documentEditCountSchema>;
+
+export const documentEditCountsResponseSchema = z.object({
+  counts: z.array(documentEditCountSchema),
+});
+export type DocumentEditCountsResponse = z.infer<typeof documentEditCountsResponseSchema>;
+
 /** When the gate is on and a LIVE document's edit is held for approval instead
  *  of applied, the document's edit route returns this in place of the
  *  document, so the UI shows "Sent for approval" rather than a saved record. */

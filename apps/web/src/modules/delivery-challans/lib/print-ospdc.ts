@@ -39,6 +39,8 @@ export function printOspDc(args: {
   company: Company | null | undefined;
   templates: EffectivePrintTemplate[];
   currentUser?: string | undefined;
+  /** ADR-202 — the DC has a pending edit; the sheet prints "Draft — awaiting approval". */
+  draft?: boolean | undefined;
 }): boolean {
   const { dc, vendor, company, templates } = args;
 
@@ -120,6 +122,8 @@ export function printOspDc(args: {
   const model: SheetPrintModel = {
     title: 'Delivery Challan',
     windowTitle: 'OSP Delivery Challan',
+    // ADR-202 — overlay "Draft — awaiting approval" when an edit is pending.
+    draft: args.draft,
     blocks,
     data,
     company: buildDocCompany(company),

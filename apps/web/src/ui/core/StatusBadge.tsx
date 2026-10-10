@@ -332,9 +332,34 @@ export interface StatusBadgeProps {
   label?: string;
   title?: string;
   className?: string;
+  /**
+   * Edit-approval (ADR-202): the document has an edit waiting for approval. When
+   * true the chip shows a grey "Draft" IN PLACE OF the real status — a display
+   * overlay only; the stored status is untouched. It reverts automatically once
+   * every pending change on the document is decided. Used on detail pages and
+   * list status cells; the printout shows the same word via its own flag.
+   */
+  draft?: boolean | undefined;
 }
 
-export function StatusBadge({ kind = 'so', status, label, title, className }: StatusBadgeProps) {
+export function StatusBadge({
+  kind = 'so',
+  status,
+  label,
+  title,
+  className,
+  draft,
+}: StatusBadgeProps) {
+  // A pending edit overlays "Draft" over whatever the real status is, so an
+  // approver/reader sees at a glance the document has an unapproved change.
+  if (draft) {
+    const cls = ['badge', 'b-grey', className].filter(Boolean).join(' ');
+    return (
+      <span className={cls} title={title ?? 'An edit to this document is waiting for approval'}>
+        Draft
+      </span>
+    );
+  }
   // A nullable status column has no chip. modules/nc-register/components/
   // nc-disposition-badge.tsx renders `<span className="text3">—</span>` for a
   // null disposition today; without this branch String(null) would paint a

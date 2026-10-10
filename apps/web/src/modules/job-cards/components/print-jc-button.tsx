@@ -22,7 +22,11 @@ import { printJobCard } from '../lib/print-job-card';
  * returns a Promise that settles when the print has fired (or failed), so the
  * ⋯ menu shows busy and cannot fire a second print meanwhile.
  */
-export function usePrintJc(jc: JobCardListItem): {
+export function usePrintJc(
+  jc: JobCardListItem,
+  /** ADR-202 — the JC has a pending edit; print "Draft — awaiting approval". */
+  draft?: boolean | undefined,
+): {
   start: () => Promise<void>;
   loading: boolean;
 } {
@@ -66,9 +70,10 @@ export function usePrintJc(jc: JobCardListItem): {
       ops: opsQuery.data,
       company,
       actualSize: order?.actualSize ?? null,
+      draft,
     });
     if (!ok) window.alert('Allow popups to print.');
-  }, [pending, opsQuery.data, opsQuery.isError, jc, company, order, orderLoading, settle]);
+  }, [pending, opsQuery.data, opsQuery.isError, jc, company, order, orderLoading, settle, draft]);
 
   const start = useCallback((): Promise<void> => {
     if (waitRef.current) return waitRef.current.promise;

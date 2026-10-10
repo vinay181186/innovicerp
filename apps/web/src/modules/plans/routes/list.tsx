@@ -22,6 +22,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -125,7 +126,9 @@ function PlansListPage(): React.JSX.Element {
       return next;
     });
 
-  const columns = useMemo(() => plansListColumns(), []);
+  // ADR-202 — plan ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('Plan');
+  const columns = useMemo(() => plansListColumns(draftIds), [draftIds]);
 
   // Status dropdown → URL filter. A status sets `status`; "Needs Planning"
   // flips the body to the unplanned-SO-lines table. Each clears the other so
