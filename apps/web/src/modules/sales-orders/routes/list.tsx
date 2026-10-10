@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, renderRowMenuLink } from '@/ui/data';
@@ -177,9 +178,11 @@ function SalesOrdersListPage(): React.JSX.Element {
   const today = todayIst();
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
+  // ADR-202 — SO ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('SalesOrder');
   const columns = useMemo(
-    () => soListColumns({ today, onPreviewClientPo: setPreviewPath }),
-    [today],
+    () => soListColumns({ today, onPreviewClientPo: setPreviewPath, draftIds }),
+    [today, draftIds],
   );
 
   // Hide-page: no VIEW → the no-access panel (not while access still loads).

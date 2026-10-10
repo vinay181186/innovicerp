@@ -13,6 +13,14 @@ const CLASSES: Record<PrStatus, string> = {
   cancelled: 'b-grey',
 };
 
-export function PrStatusBadge(props: { status: PrStatus }) {
+export function PrStatusBadge(props: { status: PrStatus; draft?: boolean | undefined }) {
+  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
+  if (props.draft) {
+    return (
+      <span className="badge b-grey" title="An edit to this document is waiting for approval">
+        Draft
+      </span>
+    );
+  }
   return <span className={`badge ${CLASSES[props.status]}`}>{PR_STATUS_LABELS[props.status]}</span>;
 }

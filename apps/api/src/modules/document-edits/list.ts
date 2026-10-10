@@ -3,6 +3,7 @@
 
 import { type SQL, and, count, eq, isNull } from 'drizzle-orm';
 import type {
+  DocumentEditCountsResponse,
   DocumentEditEntity,
   DocumentEditRow,
   ListDocumentEditsQuery,
@@ -44,6 +45,34 @@ export async function listDocumentEdits(
 
     await markStale(tx, companyId, rows);
     return { rows, total: totals[0]?.value ?? 0 };
+  });
+}
+
+/** GET /document-edits/counts — pending edit-request count per document type.
+ *  ONE grouped query, company-scoped, active rows only. Grouping the pending rows
+ *  means only entities that actually have something pending appear, so every row
+ *  returned has pending > 0 (no HAVING, no N+1). Drives the Approvals page tabs. */
+export async function documentEditCounts(user: AuthContext): Promise<DocumentEditCountsResponse> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({ entity: documentEditRequests.entity, pending: count() })
+      .from(documentEditRequests)
+      .where(
+        and(
+          eq(documentEditRequests.companyId, companyId),
+          eq(documentEditRequests.status, 'pending'),
+          isNull(documentEditRequests.deletedAt),
+        ),
+      )
+      .groupBy(documentEditRequests.entity);
+
+    return {
+      counts: rows.map((r) => ({
+        entity: r.entity as DocumentEditEntity,
+        pending: Number(r.pending),
+      })),
+    };
   });
 }
 

@@ -109,6 +109,8 @@ export function printGrnDoc(args: {
   company: Company | null | undefined;
   templates: EffectivePrintTemplate[];
   testBanner?: boolean;
+  /** ADR-202 — the GRN has a pending edit; the sheet prints "Draft — awaiting approval". */
+  draft?: boolean | undefined;
 }): boolean {
   const { model, data, company, templates } = args;
 
@@ -165,6 +167,8 @@ export function printGrnDoc(args: {
     title: 'Goods Receipt Note',
     windowTitle: 'Goods Receipt Note',
     columns: 'grn',
+    // ADR-202 — overlay "Draft — awaiting approval" when an edit is pending.
+    draft: args.draft,
     blocks,
     data,
     company: buildDocCompany(company),
@@ -204,6 +208,8 @@ export function printGrn(args: {
   company: Company | null | undefined;
   templates: EffectivePrintTemplate[];
   currentUser?: string | undefined;
+  /** ADR-202 — the GRN has a pending edit; the sheet prints "Draft — awaiting approval". */
+  draft?: boolean | undefined;
 }): boolean {
   const { grn, vendor, company, templates } = args;
   const lines = [...grn.lines].sort((a, b) => a.lineNo - b.lineNo);
@@ -260,5 +266,5 @@ export function printGrn(args: {
     totalRejected: String(model.lines.reduce((s, l) => s + l.qcRejectedQty, 0)),
   };
 
-  return printGrnDoc({ model, data, company, templates });
+  return printGrnDoc({ model, data, company, templates, draft: args.draft });
 }

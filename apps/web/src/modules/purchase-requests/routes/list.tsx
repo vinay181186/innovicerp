@@ -25,6 +25,7 @@ import { todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
+import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -187,7 +188,12 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
   const today = todayIst();
-  const columns = useMemo(() => prListColumns((currentPage - 1) * PAGE_SIZE + 1), [currentPage]);
+  // ADR-202 — PR ids with a pending edit; their status cell reads "Draft".
+  const draftIds = usePendingEditIds('PurchaseRequest');
+  const columns = useMemo(
+    () => prListColumns((currentPage - 1) * PAGE_SIZE + 1, draftIds),
+    [currentPage, draftIds],
+  );
 
   // Selection: one vendor per PO (sel.isRowSelectable locks to the first vendor).
   const sel = usePrSelection(rows, canCreatePo);

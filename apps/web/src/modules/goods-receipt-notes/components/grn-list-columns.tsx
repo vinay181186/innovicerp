@@ -45,6 +45,8 @@ export function grnTypeLabel(grn: {
  *  card rule that preceded them. */
 export function goodsReceiptNoteListColumns(
   qcStatusFor: (grn: GoodsReceiptNoteListItem) => GrnQcStatus,
+  /** ADR-202 — GRN ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
 ): DataTableColumn<GoodsReceiptNoteListItem>[] {
   return [
     {
@@ -176,7 +178,7 @@ export function goodsReceiptNoteListColumns(
       kind: 'badge',
       header: 'QC Status',
       nowrap: true,
-      render: (grn) => <QcStatusBadge status={qcStatusFor(grn)} />,
+      render: (grn) => <QcStatusBadge status={qcStatusFor(grn)} draft={draftIds?.has(grn.id)} />,
     },
     {
       id: 'accepted',

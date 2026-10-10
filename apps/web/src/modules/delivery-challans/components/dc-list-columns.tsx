@@ -58,7 +58,10 @@ function PoCell({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Element {
   return <span className="text3">—</span>;
 }
 
-export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
+export function dcListColumns(
+  /** ADR-202 — DC ids with a pending edit; their status cell shows "Draft". */
+  draftIds?: Set<string>,
+): DataTableColumn<DeliveryChallanListItem>[] {
   return [
     {
       id: 'dc_code',
@@ -159,7 +162,7 @@ export function dcListColumns(): DataTableColumn<DeliveryChallanListItem>[] {
       kind: 'badge',
       header: 'DC Status',
       nowrap: true,
-      render: (dc) => <DcStatusBadge status={dc.status} />,
+      render: (dc) => <DcStatusBadge status={dc.status} draft={draftIds?.has(dc.id)} />,
     },
     // ── ▸ detail row (defaultHidden) ──────────────────────────────────────
     {

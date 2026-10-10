@@ -13,7 +13,14 @@
 // ADR-201: the PR and PO sections show 25 rows a page (Prev / Next); search
 // and Sort & Filter run on the server (GET /approvals/inbox/list) over every
 // waiting document. The tab counts are the inbox's whole-queue counts.
+//
+// ADR-202: after the fixed PR · PO · Op Entry tabs, one tab is added PER
+// DOCUMENT TYPE that has edits waiting — driven by GET /document-edits/counts
+// (only types with pending > 0 come back). Each such tab renders
+// <DocTypeApprovals> (its own Pending / Approved / Rejected views, per-change
+// ✓/✗ that apply immediately). There is no combined "Edit Approvals" tab.
 
+import type { DocumentEditEntity } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -24,8 +31,8 @@ import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { useDocumentEdits } from '@/modules/document-edits/api';
-import { EditApprovalsInbox } from '@/modules/document-edits/components/edit-approvals-inbox';
+import { useDocumentEditCounts } from '@/modules/document-edits/api';
+import { DocTypeApprovals } from '@/modules/document-edits/components/doc-type-approvals';
 import { useApprovalInbox, useApprovalInboxList } from '../api';
 import { LogEntryApprovals } from '../components/log-entry-approvals';
 import { prPoColumns } from '../components/pr-po-columns';
@@ -36,60 +43,118 @@ export const approvalsRoute = createRoute({
   component: ApprovalsPage,
 });
 
-type Section = 'pr' | 'po' | 'logEntry' | 'editApproval';
+// The three fixed tabs. Edit-approval tabs are added dynamically, one per
+// document type that has edits waiting (see DOC_TAB_PREFIX below).
+type BaseSection = 'pr' | 'po' | 'logEntry';
+/** A dynamic edit-approval tab, keyed `doc:<entity>`. */
+const DOC_TAB_PREFIX = 'doc:';
+type Section = BaseSection | `doc:${DocumentEditEntity}`;
 
-const SECTION_LABEL: Record<Section, string> = {
+const BASE_LABEL: Record<BaseSection, string> = {
   pr: 'PR',
   po: 'PO',
   logEntry: 'Op Entry',
-  editApproval: 'Edit Approvals',
 };
 
-const SECTION_TITLE: Record<Exclude<Section, 'editApproval'>, string> = {
+// entity → the document's name on screen. Canonical names per docs/NAMING.md
+// (section B documents + A-7: the buyer reads "Customer", field stays `client*`).
+// Mirrors the server's HISTORY_ENTITY_LABEL, with the NAMING.md overrides.
+const ENTITY_LABEL: Record<DocumentEditEntity, string> = {
+  PurchaseOrder: 'Purchase Order',
+  PurchaseRequest: 'Purchase Request',
+  NonConformance: 'Non-Conformance',
+  Plan: 'Plan',
+  SalesOrder: 'Sales Order',
+  JobWorkOrder: 'Job Work Order',
+  GoodsReceiptNote: 'Goods Receipt Note',
+  JobCard: 'Job Card',
+  Dispatch: 'Dispatch',
+  DeliveryChallan: 'Delivery Challan',
+  PartyGrn: 'Party GRN',
+  ProductionOrder: 'Production Order',
+  Item: 'Item',
+  Vendor: 'Vendor',
+  Client: 'Customer',
+  Machine: 'Machine',
+  MachineGroup: 'Machine Group',
+  Operator: 'Operator',
+  CostCenter: 'Cost Center',
+  TpiInspector: 'TPI Inspector',
+  QcProcess: 'QC Process',
+  MaterialGrade: 'Material Grade',
+  MaterialSize: 'Material Size',
+  Instrument: 'Instrument',
+  BOM: 'BOM',
+};
+
+const SECTION_TITLE: Record<Exclude<BaseSection, 'logEntry'>, string> = {
   pr: 'PR Approvals',
   po: 'PO Approvals',
-  logEntry: 'Op Entry Approvals',
 };
 
-const SECTION_EMPTY: Record<Exclude<Section, 'editApproval'>, string> = {
+const SECTION_EMPTY: Record<Exclude<BaseSection, 'logEntry'>, string> = {
   pr: 'No Purchase Requests waiting for your approval.',
   po: 'No Purchase Orders waiting for your approval.',
-  logEntry: 'Nothing pending approval.',
 };
 
-const SECTION_NO_MATCH: Record<Exclude<Section, 'logEntry' | 'editApproval'>, string> = {
+const SECTION_NO_MATCH: Record<Exclude<BaseSection, 'logEntry'>, string> = {
   pr: 'No Purchase Requests match.',
   po: 'No Purchase Orders match.',
 };
+
+/** The document type behind a `doc:<entity>` section key. */
+function docEntityOf(s: Section): DocumentEditEntity | null {
+  return s.startsWith(DOC_TAB_PREFIX) ? (s.slice(DOC_TAB_PREFIX.length) as DocumentEditEntity) : null;
+}
 
 function ApprovalsPage(): React.JSX.Element {
   const { data: me } = useSession();
   const canDecideLogEntry = me?.role === 'admin' || me?.role === 'manager';
   const inbox = useApprovalInbox({ refetchOnMount: 'always' });
   const counts = inbox.data?.counts;
-  // Edit Approvals (ADR-202) — its own query; `total` is the whole pending
-  // queue, which is what the tab badge shows.
-  const editInbox = useDocumentEdits({ status: 'pending' });
-  const editCount = editInbox.data?.total;
+  // Edit Approvals (ADR-202) — one tab per document type that has edits waiting,
+  // with its pending count. The server returns only entities with pending > 0.
+  const editCounts = useDocumentEditCounts();
+  const editPendingByEntity = useMemo(() => {
+    const m = new Map<DocumentEditEntity, number>();
+    for (const c of editCounts.data?.counts ?? []) {
+      if (c.pending > 0) m.set(c.entity, c.pending);
+    }
+    return m;
+  }, [editCounts.data?.counts]);
 
-  const sections: Section[] = canDecideLogEntry
-    ? ['pr', 'po', 'logEntry', 'editApproval']
-    : ['pr', 'po', 'editApproval'];
-  // Count for one tab — PR / PO / Op Entry from the approval inbox, Edit
-  // Approvals from its own query.
-  const countFor = (s: Section): number | undefined =>
-    s === 'editApproval' ? editCount : counts?.[s];
+  const baseSections: BaseSection[] = canDecideLogEntry ? ['pr', 'po', 'logEntry'] : ['pr', 'po'];
+  // PR · PO · Op Entry, then one tab per document type with edits waiting.
+  const sections: Section[] = useMemo(
+    () => [
+      ...baseSections,
+      ...[...editPendingByEntity.keys()].map((e): Section => `${DOC_TAB_PREFIX}${e}`),
+    ],
+    [baseSections, editPendingByEntity],
+  );
+  // Count for one tab — PR / PO / Op Entry from the approval inbox, a doc-type
+  // tab from the edit counts.
+  const countFor = (s: Section): number | undefined => {
+    const entity = docEntityOf(s);
+    if (entity) return editPendingByEntity.get(entity);
+    return counts?.[s as BaseSection];
+  };
   // Until the user picks one, open the first section that has something
   // waiting (PR first), so the page lands on work rather than an empty list.
   const [picked, setPicked] = useState<Section | null>(null);
-  const section: Section =
-    picked ?? (counts ? (sections.find((s) => (countFor(s) ?? 0) > 0) ?? 'pr') : 'pr');
+  const pickedStillShown = picked != null && sections.includes(picked);
+  const section: Section = pickedStillShown
+    ? picked
+    : counts
+      ? (sections.find((s) => (countFor(s) ?? 0) > 0) ?? 'pr')
+      : 'pr';
 
   const tabs = (
     <div role="tablist" aria-label="Approval type" style={{ display: 'flex', gap: 'var(--sp-1)' }}>
       {sections.map((s) => {
         const on = s === section;
         const n = countFor(s);
+        const entity = docEntityOf(s);
         return (
           <button
             key={s}
@@ -99,7 +164,7 @@ function ApprovalsPage(): React.JSX.Element {
             className={`btn btn-sm ${on ? 'btn-primary' : 'btn-ghost'}`}
             onClick={() => setPicked(s)}
           >
-            {SECTION_LABEL[s]}
+            {entity ? ENTITY_LABEL[entity] : BASE_LABEL[s as BaseSection]}
             {n != null ? (
               <span className={`badge ${n > 0 ? 'b-amber' : 'b-grey'}`} style={{ marginLeft: 6 }}>
                 {n}
@@ -115,23 +180,19 @@ function ApprovalsPage(): React.JSX.Element {
     return <LogEntryApprovals pendingCount={counts?.logEntry} tabs={tabs} />;
   }
 
-  if (section === 'editApproval') {
-    return (
-      <div className="page-fill">
-        <div style={{ marginBottom: 'var(--sp-2)' }}>{tabs}</div>
-        <EditApprovalsInbox />
-      </div>
-    );
+  const entity = docEntityOf(section);
+  if (entity) {
+    return <DocTypeApprovals key={section} entity={entity} tabs={tabs} />;
   }
 
-  return <InboxSection key={section} section={section} tabs={tabs} />;
+  return <InboxSection key={section} section={section as Exclude<BaseSection, 'logEntry'>} tabs={tabs} />;
 }
 
 function InboxSection({
   section,
   tabs,
 }: {
-  section: Exclude<Section, 'logEntry' | 'editApproval'>;
+  section: Exclude<BaseSection, 'logEntry'>;
   tabs: React.ReactNode;
 }): React.JSX.Element {
   const navigate = useNavigate();

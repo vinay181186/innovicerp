@@ -73,6 +73,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('PurchaseRequest', detail?.id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
+  const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   // Create PO is a PURCHASE ORDER action that merely starts from this PR, so it
   // follows po_create — not pr_create. The page it opens
   // (/purchase-orders/from-pr) guards on po_create.entry, and a button gated on
@@ -208,7 +210,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                   detail.itemRevision,
                   'Untitled item',
                 )}
-              <PrStatusBadge status={detail.status} />
+              <PrStatusBadge status={detail.status} draft={isDraft} />
               {detail.prType ? (
                 <span className="badge b-grey">{PR_TYPE_LABELS[detail.prType]}</span>
               ) : null}
