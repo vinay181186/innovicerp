@@ -26,6 +26,14 @@
 //   - started in-house op with available > 0: 🏭 Outsource Available opens the
 //     Outsource balance modal instead of the tick (ADR-081)
 //   - QC op: no machine, no program / tool fields, no outsource
+// Added by ADR-227:
+//   - the trailing system-added Final Inspection: the WHOLE row is read-only —
+//     name, Cycle Time and type — and Remove plus the swaps that would displace
+//     it are greyed with the reason. The server re-derives that op on every save
+//     and strips it out of the edit comparison altogether, so ANY box left
+//     writable on it is a box whose typing is thrown away: with the approval
+//     gate ON the save dies as "Nothing changed to approve", with the gate OFF
+//     the same keystroke saves. Nothing on this row may be editable.
 //   - OSP op: no machine; vendor + cost; cost hidden when the server masks
 //     money for this viewer (outsourceCost === null)
 //   - group narrows the machine list
@@ -51,6 +59,16 @@ export interface JcOpEditValues {
    *  of staying at the position (as Create's JcCreateOp.rowKey). */
   rowKey: string;
   id?: string;
+  /** DISPLAY-ONLY, never saved: the op's STORED `jc_ops.op_seq`, as loaded.
+   *  Absent on a row added on this screen (it has no stored number yet). This
+   *  is what the Op No. cell shows, because every refusal the server sends back
+   *  quotes the STORED number — "Cannot move Op 20 — it already has logged
+   *  work." — and a number worked out from the row's position on screen would
+   *  point the person at a different row than the message means. Save renumbers
+   *  the routing from the on-screen order, so this value can go stale the moment
+   *  a row is removed; that is accepted, because it is the number the server
+   *  will name until the save succeeds. */
+  opSeq?: number;
   // DISPLAY-ONLY, never saved: the Machine GROUP that narrows this row's machine
   // list, exactly as SO Planning / Route Card do. jc_ops has no group column —
   // the machine carries its group in the master, so the group is re-read from the
@@ -78,8 +96,18 @@ export const EDIT_COLS = 10;
 export interface JcEditOpRowProps {
   op: JcOpEditValues;
   index: number;
-  /** Stored op seq (server opSeq, or position for a new op); shown in tens. */
-  seqLabel: number;
+  /** The op's STORED sequence (`jc_ops.op_seq`), shown in tens (ADR-227), or
+   *  null for a row added on this screen — which shows no number at all.
+   *
+   *  It is deliberately NOT the row's position. Every refusal the server sends
+   *  back names the STORED op ("Cannot move Op 20 — it already has logged
+   *  work."), so a position-derived number can point at the wrong row: remove
+   *  the first of [Turning 10, Milling 20 (started), Final Inspection 30] and
+   *  positions renumber Milling to 10 and the inspection to 20 — the refusal
+   *  about Milling then reads as if it were about the inspection. A misleading
+   *  number on an error is worse than a repeated one on a label. A brand-new row
+   *  has no stored number, so it shows none rather than borrowing a position. */
+  seqLabel: number | null;
   enriched: JcOpEnriched | undefined;
   /** Latest first, already cut to 3 (as the card showed). */
   logs: OpLog[];
@@ -92,6 +120,15 @@ export interface JcEditOpRowProps {
   vendorsLoading: boolean;
   isFirst: boolean;
   isLast: boolean;
+  /** ADR-227: this row IS the trailing system-added Final Inspection. The system
+   *  appends it, re-derives it on save and needs it last, so this one flag turns
+   *  off everything the server would refuse on it: Move up (it would come off the
+   *  end of the routing), Remove, and editing its Operation / type. The rest of
+   *  the row (cycle time, the started-op rules) behaves as any other row. */
+  isPinnedFinalQc: boolean;
+  /** ADR-227: the row directly BELOW this one is that Final Inspection — so Move
+   *  down would push this operation past the inspection. */
+  isAbovePinnedFinalQc: boolean;
   open: boolean;
   flash: boolean;
   rowRef: ((el: HTMLTableRowElement | null) => void) | undefined;
@@ -103,6 +140,12 @@ export interface JcEditOpRowProps {
   onRemove: () => void;
   onOutsourceBalance: () => void;
 }
+
+/** ADR-227: the ONE reason the pinned Final Inspection row gives for the three
+ *  things it will not let the person do — rename it, change its type, remove it.
+ *  The server's own words for all three are "Final Inspection is added by the
+ *  system and cannot be renamed / removed here." */
+const PINNED_FINAL_QC_REASON = 'Final Inspection is added by the system';
 
 /** "CODE — Name", the picker's own row format, so a row stays one line high. */
 function codeAndName(code: string, name: string | null | undefined): string {
@@ -124,6 +167,8 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
     vendorsLoading,
     isFirst,
     isLast,
+    isPinnedFinalQc,
+    isAbovePinnedFinalQc,
     open,
     flash,
     rowRef,
@@ -144,7 +189,13 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
     : null;
   const machine = machines.find((m) => m.code === op.machineCode);
   const vendor = vendorOptions.find((v) => v.code === op.outsourceVendorCode);
-  const opNo = fmtOpSrNo(seqLabel);
+  // The Op No. shown in the cell: the stored number in tens, or an em dash on a
+  // row that has never been saved (it gets its number when Save renumbers the
+  // routing). `opRef` is how the row is NAMED in hover text, field labels and
+  // the ⋯ menu, so a numberless row still reads as a sentence.
+  const opNo = seqLabel == null ? '—' : fmtOpSrNo(seqLabel);
+  const opRef = seqLabel == null ? 'the new operation' : `operation ${opNo}`;
+  const menuLabel = seqLabel == null ? 'New operation actions' : `Op ${opNo} actions`;
 
   return (
     <>
@@ -156,7 +207,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
           <button
             type="button"
             aria-expanded={open}
-            aria-label={`${open ? 'Hide' : 'Show'} more for operation ${opNo}`}
+            aria-label={`${open ? 'Hide' : 'Show'} more for ${opRef}`}
             title={
               open ? 'Hide detail' : 'Tool No., tool details, cost, quantities and recent logs'
             }
@@ -165,29 +216,64 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
             {open ? '▾' : '▸'}
           </button>
         </td>
-        <td className={`mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>{opNo}</td>
+        <td className={`mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>
+          {seqLabel == null ? (
+            <span className="text3" title="This operation is numbered when you Save">
+              —
+            </span>
+          ) : (
+            opNo
+          )}
+        </td>
         <td>
           {/* A QC step's name comes from the QC Process master; an in-house
-              or outsource operation name is free text (no master for it). */}
+              or outsource operation name is free text (no master for it).
+              ADR-227: the system's own trailing Final Inspection is the one
+              exception — the server appends it and re-derives its name on every
+              save, so a rename is refused ("Final Inspection is added by the
+              system and cannot be renamed here."). It is therefore shown the way
+              every other value the person may not change is shown: the app's
+              read-only field (grey fill, full-strength text), not a picker that
+              could only fail at Save. */}
           {isQc ? (
-            <QcProcessPicker
-              id={`jc-edit-qcproc-${key}`}
-              value={op.operation}
-              onChange={(code) => onChange({ operation: code })}
-            />
+            isPinnedFinalQc ? (
+              <input
+                className="innovic-input"
+                readOnly
+                value={op.operation}
+                aria-label={`Operation name, ${opRef}`}
+                title={PINNED_FINAL_QC_REASON}
+              />
+            ) : (
+              <QcProcessPicker
+                id={`jc-edit-qcproc-${key}`}
+                value={op.operation}
+                onChange={(code) => onChange({ operation: code })}
+              />
+            )
           ) : (
             <input
               className="innovic-input"
               value={op.operation}
               placeholder="Operation name ★"
-              aria-label={`Operation name, operation ${opNo}`}
+              aria-label={`Operation name, ${opRef}`}
               onChange={(e) => onChange({ operation: e.target.value })}
             />
           )}
         </td>
         <td>
           {isQc ? (
-            <span className="badge b-green">QC</span>
+            // The op's TYPE. A QC step already shows it as a fixed badge (only a
+            // machining op can be retyped, via the Outsource tick, and that tick
+            // is not drawn on a QC row) — on the pinned Final Inspection the
+            // hover text says WHY it is fixed (ADR-227: retyping it is refused
+            // by the same server check as renaming it).
+            <span
+              className="badge b-green"
+              title={isPinnedFinalQc ? PINNED_FINAL_QC_REASON : undefined}
+            >
+              QC
+            </span>
           ) : isOut ? (
             <span className="badge b-purple">Outsource</span>
           ) : (
@@ -251,13 +337,23 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
           )}
         </td>
         <td className="td-num">
+          {/* ADR-227: read-only on the pinned Final Inspection, like its
+              Operation box. The server strips that op out of the edit
+              comparison by id, so with the approval gate ON a cycle time typed
+              here is thrown away and the save dies as "Nothing changed to
+              approve", while the same keystroke with the gate OFF just saves —
+              the gate-on / gate-off split this change exists to remove.
+              `readOnly` (grey fill, full-strength text) rather than `disabled`,
+              which would half-fade the value. */}
           <input
             type="number"
             min={0}
             step="0.01"
             className="innovic-input"
-            aria-label={`Cycle Time (min), operation ${opNo}`}
+            aria-label={`Cycle Time (min), ${opRef}`}
             value={op.cycleTimeMin || ''}
+            readOnly={isPinnedFinalQc}
+            title={isPinnedFinalQc ? PINNED_FINAL_QC_REASON : undefined}
             onChange={(e) => onChange({ cycleTimeMin: Number(e.target.value) })}
           />
         </td>
@@ -271,7 +367,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
               className="innovic-input"
               value={op.program}
               placeholder="CNC program"
-              aria-label={`Program, operation ${opNo}`}
+              aria-label={`Program, ${opRef}`}
               onChange={(e) => onChange({ program: e.target.value })}
             />
           )}
@@ -314,7 +410,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
         </td>
         <td>
           <RowMenu
-            label={`Op ${opNo} actions`}
+            label={menuLabel}
             items={[
               {
                 key: 'up',
@@ -324,7 +420,9 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
                   ? 'Started op — cannot re-sequence'
                   : isFirst
                     ? 'Already first'
-                    : undefined,
+                    : isPinnedFinalQc
+                      ? 'Final Inspection stays last'
+                      : undefined,
               },
               {
                 key: 'down',
@@ -334,7 +432,9 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
                   ? 'Started op — cannot re-sequence'
                   : isLast
                     ? 'Already last'
-                    : undefined,
+                    : isAbovePinnedFinalQc
+                      ? 'Final Inspection stays last'
+                      : undefined,
               },
               {
                 key: 'remove',
@@ -342,7 +442,14 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
                 icon: 'trash-2',
                 group: 'danger',
                 onSelect: onRemove,
-                disabledReason: op.hasStarted ? 'Started op — cannot remove' : undefined,
+                // ADR-227: the system's own Final Inspection is re-derived by
+                // the writer, so taking it out is refused ("…cannot be removed
+                // here") — greyed with the reason, as Move up / Move down are.
+                disabledReason: op.hasStarted
+                  ? 'Started op — cannot remove'
+                  : isPinnedFinalQc
+                    ? PINNED_FINAL_QC_REASON
+                    : undefined,
               },
             ]}
           />
@@ -351,7 +458,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
       {open ? (
         <tr className="jc-ops-det">
           <td colSpan={EDIT_COLS}>
-            <JcEditOpDetail {...props} opNo={opNo} />
+            <JcEditOpDetail {...props} opRef={opRef} />
           </td>
         </tr>
       ) : null}
@@ -367,8 +474,8 @@ function JcEditOpDetail({
   enriched: en,
   logs,
   onChange,
-  opNo,
-}: JcEditOpRowProps & { opNo: string }): React.JSX.Element {
+  opRef,
+}: JcEditOpRowProps & { opRef: string }): React.JSX.Element {
   const isQc = op.opType === 'qc';
   const isOut = op.opType === 'outsource';
   const key = op.id ?? index;
@@ -464,7 +571,7 @@ function JcEditOpDetail({
           <div />
         )}
       </div>
-      <div className="jc-ops-logs" aria-label={`Recent logs, operation ${opNo}`}>
+      <div className="jc-ops-logs" aria-label={`Recent logs, ${opRef}`}>
         <span className="jc-ops-lk">Recent Logs</span>
         {logs.length === 0 ? (
           <span className="text3">No entries</span>

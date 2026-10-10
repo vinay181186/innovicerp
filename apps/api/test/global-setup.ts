@@ -33,6 +33,25 @@
 //
 // Pattern: `code LIKE 'T%-%'` matches every test prefix without false
 // positives — real seed/migrated codes don't start with T0/T1/T2/T3/T4.
+//
+// ---------------------------------------------------------------------------
+// RUNNING ONLY THE PURE (NO-DATABASE) TEST FILES
+//
+// Some test files here touch no database at all (e.g.
+// src/modules/job-cards/jc-ops-stageable.test.ts, jc-op-edit.test.ts). To run
+// just those without this file deleting anything, point vitest at a throwaway
+// config that sets `globalSetup: []` and give it a dummy environment aimed at
+// 127.0.0.1 — never a real host.
+//
+// THE TRAP, measured 2026-10-09: `src/lib/env.ts` validates the environment at
+// import time and calls `process.exit(1)` when it fails, which vitest reports
+// as "Failed Suites / 0 test" with the real reason buried in stderr. The usual
+// cause is a placeholder that is too SHORT: SUPABASE_ANON_KEY and
+// SUPABASE_SERVICE_ROLE_KEY must each be at least 20 characters. So the stub
+// needs NODE_ENV=test, DATABASE_URL, DATABASE_URL_POOLED, SUPABASE_URL and both
+// SUPABASE keys padded past 20 characters. A run that says "0 test" is an
+// environment problem, not an empty file.
+// ---------------------------------------------------------------------------
 
 import postgres from 'postgres';
 import { PROJECT_REFS } from '../src/db/db-target';

@@ -40,7 +40,12 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
@@ -61,13 +66,16 @@ import {
   jcLockedOpSubject,
   jcOpAttrApplies,
   jcOpAttrSnapshot,
-  withoutTerminalQcOp,
+  terminalQcOp,
+  withoutOpId,
+  withStagedTerminalQcOpId,
 } from './jc-op-edit';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
 import {
   ActivityAction,
   type ActivityChange,
+  isGeneratedTerminalQcOp,
   opSrNo,
   stripStaleGeneratedTerminalQc,
 } from '@innovic/shared';
@@ -2205,6 +2213,243 @@ export async function loadJcOpsForEdit(
   }));
 }
 
+/** The one wording for a routing that has moved the system's own Final
+ *  Inspection out of last place. Thrown from exactly one place —
+ *  assertTerminalQcUnchanged — which BOTH save paths call: the writer
+ *  (updateJobCardTx, every save) and the staging pre-check
+ *  (updateJobCardOrStage, a save that is going for approval). Exported because
+ *  the unit tests assert on it. */
+export const TERMINAL_QC_DISPLACED_MESSAGE =
+  'Final Inspection must stay the last operation. Move it back to the end, or remove the operation after it.';
+
+/** Its sibling, for the routing that DROPS the card's own Final Inspection row
+ *  and sends a brand-new Final Inspection in its place. Separate wording because
+ *  "cannot be removed" would read as untrue to whoever sent it — there IS a
+ *  Final Inspection in their payload; it is simply not the card's one, and
+ *  swapping it loses everything that inspection has already logged. Thrown from
+ *  assertTerminalQcUnchanged, so both save paths refuse it. Exported because the
+ *  unit tests assert on it. */
+export const TERMINAL_QC_REPLACED_MESSAGE =
+  'Final Inspection is added by the system and cannot be replaced with a new one. Send the Job Card’s own Final Inspection back with it.';
+
+/** THE TWO WORDINGS for a routing that cannot be saved, used by BOTH paths —
+ *  the staging pre-check (assertJcOpsStageable, gate on) and the writer
+ *  (updateJobCardTx, every save). Single-sourced on purpose: they used to be two
+ *  separate strings written at two different places, so the SAME action was
+ *  refused in different words depending on whether the company's Document Edit
+ *  Approval gate was on, and a person who had deleted every operation was told
+ *  about a Final Inspection their card never had.
+ *
+ *  Which one applies:
+ *   - the payload has NO operations at all → the empty-routing wording;
+ *   - the payload HAS operations but the edit would take the card's last
+ *     work-doing operation away → the production-operation wording (grandfathered:
+ *     see jcEditRemovesLastProductionOp). */
+export const jcEmptyRoutingMessage = (code: string): string =>
+  `${code} must keep at least one operation — it cannot be saved with an empty routing.`;
+export const jcNoProductionOpMessage = (code: string): string =>
+  `${code} must keep at least one production operation — a routing of only inspection steps cannot be saved.`;
+
+/** An operation that actually DOES the work: machining in house (`process`) or
+ *  at a vendor (`outsource`). A QC step inspects work, it does not perform it.
+ *
+ *  ADR-227 — this is the real meaning of "the card still has a routing". The
+ *  check it feeds used to count "operations that are not the generated Final
+ *  Inspection", which a person could satisfy by deleting every real operation
+ *  and adding any OTHER QC step (DIR, MIR, TPI): the card saved as DIR + Final
+ *  Inspection with nothing producing anything, and a QC accept on the last op
+ *  then credits finished stock for work that was never logged.
+ *
+ *  A routing that is entirely OUTSOURCE (send out, receive back) is production —
+ *  the vendor does the work — and stays legal, as does any mix of production and
+ *  QC steps. Exported for its unit tests. */
+export const jcHasProductionOp = (ops: readonly { opType: string }[]): boolean =>
+  ops.some((o) => o.opType === 'process' || o.opType === 'outsource');
+
+/**
+ * ADR-227 — THE GRANDFATHERED FORM of the rule above, and the ONLY form either
+ * save path may use. True when this edit would CREATE the harmful state: the
+ * STORED routing has an operation that does work and the SUBMITTED routing has
+ * none.
+ *
+ * Why it is conditional, not absolute. Job Cards already exist whose whole
+ * routing is a single QC step (measured 2026-10-09: IN-JC-26-00029 and
+ * IN-JC-26-00030 on the test stack, neither a rework child; none on production).
+ * An absolute "a routing must contain production" refuses EVERY save on those
+ * cards — including a Remarks or Due Date change, because the Job Card form always
+ * posts the whole routing back. That blocks someone's work and protects nothing:
+ * the state is already saved, and refusing the edit does not undo it.
+ *
+ * So the rule reads: do not let an edit TAKE the last production operation out.
+ * Exactly the shape the OSP → QC rule already uses (grandfatheredOspQcPairs) —
+ * an adjacency already saved on the card stays editable, a new one is refused.
+ *
+ * ONE helper, called by BOTH the writer (updateJobCardTx) and the staging
+ * pre-check (assertJcOpsStageable), so the gate being on or off can never change
+ * the answer. The generated Final Inspection is a QC step, so it makes no
+ * difference to either side whether it is still in the list when this is asked.
+ */
+export const jcEditRemovesLastProductionOp = (
+  storedOps: readonly { opType: string }[],
+  proposedOps: readonly { opType: string }[],
+): boolean => jcHasProductionOp(storedOps) && !jcHasProductionOp(proposedOps);
+
+/**
+ * ADR-227 — THE WORST ROUTING THE APPROVER CAN BUILD OUT OF THIS PROPOSAL: the
+ * submitted routing with every ADDED operation stripped out, and everything else
+ * — removals, retypes, attribute edits — left applied.
+ *
+ * WHY STAGING MUST JUDGE THIS AND NOT THE PROPOSAL. Approval is BOX BY BOX: the
+ * approver may approve the removal of an operation and reject the addition that
+ * was meant to replace it. So the contract a staged edit has to satisfy is not
+ * "the whole proposal is a saveable routing" — it is "EVERY approvable subset of
+ * it is". A proposal must therefore never DEPEND on an added operation to satisfy
+ * a routing rule, because that one box can be rejected on its own while the
+ * removal or retype beside it is approved.
+ *
+ * Rejecting every add and approving everything else is the worst such subset for
+ * the three rules that use this helper, and it is a decision the approver can
+ * really take:
+ *   - an add can only ADD a production operation, so dropping the adds is the
+ *     emptiest, least-production routing available;
+ *   - an op in the payload that is NOT in this subset is, by definition, one the
+ *     approver may leave out.
+ * Rejecting a removal or a retype instead only puts a STORED operation back as it
+ * is stored — an adjacency the card already has, which the OSP → QC rule
+ * grandfathers anyway.
+ *
+ * HOW: an added operation has no id (the browser posts a new row without one),
+ * and a kept one always carries the stored row's id. So "strip the adds" is
+ * exactly "keep only the ops that carry an id" — no diffing against the stored
+ * routing, nothing to keep in step with it. The generated Final Inspection comes
+ * back from the Edit page WITH its id, so it survives into the subset and the
+ * callers strip it with the same withoutOpId / stripStaleGeneratedTerminalQc they
+ * use on the full payload.
+ *
+ * ONE helper, THREE call sites in assertJcOpsStageable (empty routing, the
+ * production-operation rule, OSP → QC), so the three cannot drift apart on what
+ * "the worst case" means. STAGING ONLY — the writer judges the routing it is
+ * actually about to write, which with the gate off IS the whole proposal.
+ */
+export const worstApprovableSubset = <T extends { id?: string | null | undefined }>(
+  proposedAll: readonly T[],
+): T[] => proposedAll.filter((p) => Boolean(p.id));
+
+/** The one wording for a routing that would RE-NUMBER a Final Inspection that
+ *  has already inspected pieces. Thrown from the staging pre-check
+ *  (assertJcOpsStageable) so the change never becomes an approval box the
+ *  approver cannot clear — see the note there. It now covers ANY added or
+ *  removed operation, even when one add and one removal balance the count,
+ *  because approval is box by box and the approver may take only one of them;
+ *  the words "added or removed before it" say exactly that. Exported because the
+ *  unit tests assert on it. */
+export const TERMINAL_QC_STARTED_RESEQUENCED_MESSAGE =
+  'Final Inspection has already inspected some pieces, so an operation can no longer be added or removed before it — that would move Final Inspection. Raise a rework Job Card for the extra work instead.';
+
+/** Its sibling: the same inspection, this time DROPPED from the routing
+ *  altogether. A separate wording because nothing is being re-numbered — the
+ *  inspection itself is going, and "added or removed before it" would read as
+ *  nonsense. Also from the staging pre-check only. */
+export const TERMINAL_QC_STARTED_REMOVED_MESSAGE =
+  'Final Inspection has already inspected some pieces, so it can no longer be removed from this Job Card. Undo the change to the last operation, or raise a rework Job Card for the extra work instead.';
+
+/**
+ * ADR-227 — the three things that may NOT happen to the system's own terminal
+ * "Final Inspection" (ADR-069 Rule B), decided on the raw proposed routing.
+ *
+ * Pure: no database, no ids invented. `storedTerminal` is the op the STORED
+ * routing ends with when it is the generated one (terminalQcOp on rows ordered
+ * by op_seq) — the ONLY handle that tells the system's own Final Inspection
+ * apart from one a person placed mid-route, since the two are identical by name
+ * and by type. A null `storedTerminal` means this card has no generated op to
+ * protect and nothing here applies.
+ *
+ * It must be asked BEFORE the routing is stripped for comparison and OUTSIDE
+ * any "did the operations change?" gate. That gate strips this very op from both
+ * lists, so an edit that touches ONLY the Final Inspection compares equal — the
+ * person was told "Nothing changed to approve" and the change was dropped. The
+ * order is therefore: decide the Final Inspection first, then strip it, then
+ * compare the rest.
+ *
+ * The three refusals:
+ *   - present, same id, RENAMED or RETYPED → it gets no approval box of its own
+ *     (the writer re-derives it), so without this the change was silently
+ *     thrown away;
+ *   - present, same id, but NOT LAST → the displaced routing. This is the state
+ *     that produced TWO Final Inspections on IN-JC-26-00025: an op added after
+ *     the generated one made the routing end in `process` again and the writer
+ *     appended a second one. Refusing the state is the fix; suppressing the
+ *     append would stop a card that really does end on machining from ever
+ *     crediting its finished pieces to stock;
+ *   - ABSENT while Rule B would still put one there → the person deleted the row
+ *     by hand. Refuse.
+ *
+ * ABSENT and not needed is LEGITIMATE and returns cleanly: the routing now ends
+ * at an outsource step (credited when the work comes back — ADR-179) or at
+ * another QC step, so the browser stops sending the stale op
+ * (stripStaleGeneratedTerminalQc) and the writer soft-deletes it.
+ *
+ * `recoveryKind` is threaded straight into Rule B, so a rework / repair child —
+ * which ALWAYS ends with an inspection (interlock 3) — refuses the removal
+ * whatever its last op is.
+ *
+ * TWO CALL SITES, ONE RULE — and both are required:
+ *   - `updateJobCardTx` (the writer) — reached by EVERY save: a direct edit with
+ *     the approval gate off, and the approval apply path
+ *     (jobcard-edit-registry.applyEdit) too. It passes `userOps`, the list after
+ *     stripStaleGeneratedTerminalQc, i.e. exactly what it is about to write.
+ *   - `updateJobCardOrStage` (the staging pre-check) — must refuse BEFORE the
+ *     edit is staged, so a change the writer would reject at approval time never
+ *     becomes an approval box the approver cannot act on.
+ * Living in only one of them is the hole this closed: with the gate off a rename
+ * was accepted and a hand-deletion was silently undone, so the same user action
+ * errored for one company and persisted for another. The function is pure and
+ * idempotent — being called on both paths costs nothing.
+ */
+export function assertTerminalQcUnchanged(
+  storedTerminal: { id: string } | null | undefined,
+  proposedAll: readonly JcOpInput[],
+  opts: { recoveryKind?: string | null } = {},
+): void {
+  const terminalId = storedTerminal?.id ?? null;
+  if (!terminalId) return;
+  const at = proposedAll.findIndex((p) => p.id === terminalId);
+  if (at === -1) {
+    // Gone from the payload. `proposedAll` IS the routing without it, so Rule B
+    // is asked exactly the question the writer would ask on save: would it put a
+    // Final Inspection here? Yes = the row was deleted by hand.
+    if (needsDefaultQcOp(proposedAll, opts)) {
+      throw new ValidationError(
+        'Final Inspection is added by the system and cannot be removed here.',
+      );
+    }
+    // ADR-227 — THE SAME HAND-REMOVAL, DRESSED UP AS A REPLACEMENT. Rule B above
+    // only sees "would the writer put a Final Inspection here?", and a payload
+    // that drops the stored row's id but keeps a Final-Inspection-named `qc` op
+    // answers NO: the routing already ends in `qc`, so needsDefaultQcOp returns
+    // false and the check passed. The writer then inserted the id-less row and
+    // soft-deleted the stored one — the stored inspection, with whatever it has
+    // already logged, replaced by a brand-new row with a NEW id. That is exactly
+    // the hole the note above says is closed, so close it: an id-less Final
+    // Inspection in a payload that no longer carries the stored one is a removal,
+    // whatever else is in the payload.
+    //
+    // The Edit screen cannot produce this (its rows always carry their ids), so
+    // nothing a person does in the browser is refused by it. Any other API client
+    // can, which is the only reason it is worth a guard.
+    if (proposedAll.some((p) => !p.id && isGeneratedTerminalQcOp(p))) {
+      throw new ValidationError(TERMINAL_QC_REPLACED_MESSAGE);
+    }
+    return;
+  }
+  if (!isGeneratedTerminalQcOp(proposedAll[at]!)) {
+    throw new ValidationError(
+      'Final Inspection is added by the system and cannot be renamed here.',
+    );
+  }
+  if (at !== proposedAll.length - 1) throw new ValidationError(TERMINAL_QC_DISPLACED_MESSAGE);
+}
+
 /**
  * ADR-220 — the staging pre-check. Called by updateJobCardOrStage when the
  * gate is on and the operations differ from what is stored. It throws for every
@@ -2214,20 +2459,159 @@ export async function loadJcOpsForEdit(
  * approval and shows the approver an error they cannot act on.
  *
  * Both lists are compared WITHOUT the generated terminal QC op (it has no
- * durable id and is re-derived by the writer — see withoutTerminalQcOp).
+ * durable id and is re-derived by the writer — see withoutOpId).
+ *
+ * ADR-227 — WHICH op that is, is decided by IDENTITY: the id is read once from
+ * the STORED routing (where the generated Final Inspection really is last) and
+ * both lists are stripped with that one id. Stripping each list by position took
+ * different operations out of each as soon as the person added an operation
+ * after the Final Inspection, and the comparison then reported "the operations
+ * changed while you were editing" on a perfectly ordinary edit.
  */
-function assertJcOpsStageable(
+/* Exported for its unit tests (service.jc-ops-stageable.test.ts) — the refusals
+ * below are the only thing standing between a silently-dropped operation change
+ * and the person being told their edit went for approval. */
+export function assertJcOpsStageable(
   code: string,
   currentAll: readonly JcOpEditRow[],
   proposedAll: readonly JcOpInput[],
   showMoney: boolean,
+  opts: { recoveryKind?: string | null } = {},
 ): void {
-  const current = withoutTerminalQcOp(currentAll);
-  const proposed = withoutTerminalQcOp(proposedAll);
-  if (proposed.length === 0) {
-    throw new ValidationError(
-      `${code} must keep at least one operation — it cannot be saved with an empty routing.`,
-    );
+  // The system's own Final Inspection, by id, from the STORED routing.
+  const terminal = terminalQcOp(currentAll) ?? null;
+  const terminalId = terminal?.id ?? null;
+  // Decided FIRST, before either list is stripped. updateJobCardOrStage also
+  // asks this directly (outside its "did the operations change?" gate, which
+  // strips this very op and so cannot see a change that touches only it); the
+  // call here keeps a direct call to this function just as safe, and means there
+  // is only ever ONE copy of the rule.
+  assertTerminalQcUnchanged(terminal, proposedAll, opts);
+  const current = withoutOpId(currentAll, terminalId);
+  const proposed = withoutOpId(proposedAll, terminalId);
+  // ADR-227 — the routing the approver is left with if every ADDED operation is
+  // rejected and everything else approved. Three rules below are asked of THIS
+  // list as well as of the proposal — see worstApprovableSubset for why one box
+  // being rejectable on its own makes that the only honest question.
+  const worstAll = worstApprovableSubset(proposedAll);
+  const worst = withoutOpId(worstAll, terminalId);
+  // ADR-227 — the SAME two refusals the writer runs, in the SAME words and
+  // through the SAME helper (both messages live in one place above), so the gate
+  // being on or off never changes what a person is told.
+  //
+  // The production rule is GRANDFATHERED: it refuses the edit that TAKES the last
+  // work-doing operation out, not every routing that happens to lack one. A card
+  // that is already saved as a single QC step stays editable (header included) —
+  // see jcEditRemovesLastProductionOp.
+  //
+  // Decided on the RAW payload for "empty", because `proposed` cannot tell
+  // "nothing was submitted" from "only the Final Inspection was submitted" — and
+  // those are two different messages: a person who deleted everything on a card
+  // that has no generated inspection must not be told about an inspection that
+  // was never there.
+  //
+  // Asked of the PROPOSAL here, and again of the worst approvable subset further
+  // down (after the started-inspection rules, which name a more specific reason
+  // for the same refusal and must keep their wording).
+  if (proposedAll.length === 0) throw new ValidationError(jcEmptyRoutingMessage(code));
+  if (jcEditRemovesLastProductionOp(current, proposed)) {
+    throw new ValidationError(jcNoProductionOpMessage(code));
+  }
+  // ADR-227 — THE GENERATED FINAL INSPECTION MOVES WHEN THE COUNT IN FRONT OF IT
+  // CHANGES. Its op_seq is always "(number of operations before it) + 1" (the
+  // writer renumbers every kept op to its position in the payload), so ADDING or
+  // REMOVING any operation ahead of it re-sequences it — and once it has logged
+  // work the writer refuses that outright ("Cannot move Op N — it already has
+  // logged work"). A business error thrown inside applyEdit rolls back the WHOLE
+  // approval, so the approver is left with an error they cannot act on: exactly
+  // what the contract above forbids. Refused HERE instead, so it never becomes
+  // a box.
+  //
+  // ASKED PER-CHANGE, NOT PER-PROPOSAL — the point the count test missed.
+  // Approval is BOX BY BOX: the approver may approve the removal and reject the
+  // addition, and applyEdit then builds a routing one operation SHORTER than the
+  // proposal. So it is not enough for the whole proposal to keep the count; EVERY
+  // APPROVABLE SUBSET of it must. Any single add, and any single removal, changes
+  // the count of operations in front of the inspection in some subset — which is
+  // why the rule is now simply "no add and no removal", regardless of whether the
+  // counts happen to balance. The count test passed a remove-one-and-add-one edit,
+  // the approver approved only the removal, and the writer threw
+  // "Cannot move Op N — it already has logged work" INSIDE applyEdit: the whole
+  // decision rolled back, the request stayed pending, and the only way out was to
+  // reject everything.
+  //
+  // Both lists are the already-stripped ones: `current` IS the stored routing
+  // without the Final Inspection (which is stored LAST, by definition of
+  // terminalQcOp), i.e. the operations before it; `proposed` is the same for the
+  // submitted routing. An op with NO id is an addition. An op in `current` that
+  // the payload no longer carries is a removal. An op posted with an id that is
+  // not in the stored routing is neither — that is a stale Edit page, diagnosed
+  // by the ConflictError just below, and it is deliberately not called an add.
+  //
+  // ATTRIBUTE EDITS IN FRONT OF IT STAY LEGAL — machine, cycle time, program,
+  // tool, QC flag, vendor, cost. They are the case people actually need, they get
+  // one box each, and no subset of them moves anything.
+  //
+  // Only when it has STARTED — an un-started Final Inspection (the normal case)
+  // is simply re-numbered on save, which is why adding an operation stayed legal
+  // before any QC log existed. The browser also hides "+ Add Op" for a started
+  // inspection, but an Edit page opened BEFORE the QC log was entered carries a
+  // stale answer, so the server is the only guard that can be trusted.
+  //
+  // ASKED FIRST, the absence: a Final Inspection that has already passed pieces
+  // cannot be DROPPED either. assertTerminalQcUnchanged above lets it go when
+  // Rule B would no longer put one there (the last real op was retyped to
+  // outsource — ADR-179), and that IS legitimate while the inspection is
+  // un-started. Once it has logged work the writer refuses the very same payload
+  // ("Cannot remove Op N — it already has logged work"), so staging it would
+  // again hand the approver an error they cannot clear. Decided on `proposedAll`,
+  // before the strip, because `proposed` cannot tell "absent" from "stripped".
+  if (terminal?.started && !proposedAll.some((p) => p.id === terminalId)) {
+    throw new ValidationError(TERMINAL_QC_STARTED_REMOVED_MESSAGE);
+  }
+  if (terminal?.started) {
+    const keptIds = new Set(proposed.map((p) => p.id).filter((x): x is string => Boolean(x)));
+    const addsAnOp = proposed.some((p) => !p.id);
+    const removesAnOp = current.some((c) => !keptIds.has(c.id));
+    if (addsAnOp || removesAnOp) {
+      throw new ValidationError(TERMINAL_QC_STARTED_RESEQUENCED_MESSAGE);
+    }
+  }
+  // ADR-227 — THE SAME TWO REFUSALS, NOW ASKED OF THE WORST APPROVABLE SUBSET:
+  // the proposal with every ADDED operation rejected and every removal, retype
+  // and attribute change approved (worstApprovableSubset). The proposal passing
+  // is not enough, because the approver takes the boxes ONE AT A TIME.
+  //
+  // THE DEFECT THIS CLOSES. Stored routing: Turning (process, not started) +
+  // Final Inspection. The edit removes Turning and adds a new process op in its
+  // place. The whole proposal still does work, so both boxes were staged — and
+  // the approver, within their rights, approved the REMOVAL and rejected the ADD.
+  // applyEdit then built a routing of Final Inspection alone, the writer threw
+  // "must keep at least one production operation" INSIDE applyEdit, the whole
+  // decision rolled back, the request stayed pending, and the only way out was to
+  // reject everything. Refused here instead, so it never becomes a box. Same
+  // shape for the empty routing: approve two removals out of a
+  // remove-remove-add proposal and nothing is left at all.
+  //
+  // IN THE WRITER'S OWN ORDER — empty first, then production — so the person is
+  // told exactly what the approver would have been told, and the two questions
+  // stay SEPARATE (a genuinely empty payload keeps its own message above).
+  //
+  // Only when the card HAS stored operations, mirroring the writer's
+  // `existing.length > 0` guard: adding the FIRST operation to a card saved with
+  // an empty routing is legitimate (createJobCard allows one and v_jc_status
+  // reports 'no_ops'), and such an edit is ALL adds, so its subset is empty by
+  // definition. The production rule needs no such guard — a stored routing with
+  // no production operation can never "lose" one.
+  //
+  // Asked AFTER the started-inspection rules above on purpose: for a started
+  // Final Inspection those name the real reason (it has already inspected pieces,
+  // raise a rework Job Card) and that is the more useful thing to read.
+  if (currentAll.length > 0 && worstAll.length === 0) {
+    throw new ValidationError(jcEmptyRoutingMessage(code));
+  }
+  if (jcEditRemovesLastProductionOp(current, worst)) {
+    throw new ValidationError(jcNoProductionOpMessage(code));
   }
   const curById = new Map(current.map((c) => [c.id, c]));
   for (const p of proposed) {
@@ -2240,6 +2624,52 @@ function assertJcOpsStageable(
   // The same routing rules a direct save runs (Machine / QC Process / Vendor
   // required), so the approver is never asked about a routing that cannot save.
   validateOps(proposed as JcOpInput[]);
+  // ... and the OSP → QC rule, which the writer runs and this check did not: a
+  // non-TPI QC op directly after an outsource step would be refused at approval
+  // (assertNoQcDirectlyAfterOutsource in updateJobCardTx), rolling back the whole
+  // approval and leaving the approver an error they cannot clear — the same class
+  // as the refusals above.
+  //
+  // THE SAME HELPER, THE SAME INPUTS, so the two can never drift:
+  //  - the list: the FULL submitted routing after stripStaleGeneratedTerminalQc,
+  //    exactly what the writer feeds it (`userOps` there). It must NOT be the
+  //    terminal-stripped `proposed`, and it must NOT be the raw payload either:
+  //    when the last real op has just been retyped to outsource, the writer DROPS
+  //    the now-stale generated Final Inspection, so the pair it would judge never
+  //    exists. Checking the raw payload would refuse a save the writer accepts —
+  //    stricter than the writer, which blocks legitimate work;
+  //  - the grandfathered pairs: grandfatheredOspQcPairs over the STORED routing,
+  //    the same rows the writer passes (`existing`). It sorts by op_seq itself, so
+  //    `currentAll` — the loader's rows, which carry id / opSeq / opType — is the
+  //    same input. This is what keeps an old Job Card that already has an
+  //    OSP → QC pair editable;
+  //  - the exemption: a rework / repair child, where the server appends the
+  //    terminal QC after an outsource-last routing itself (ADR-069 / ADR-161).
+  //
+  // ASKED TWICE, OF TWO ROUTINGS, because either one can be what the approver
+  // ends up applying and the writer refuses both:
+  //  - the FULL proposal — an ADDED qc op straight after an outsource step is
+  //    only visible here, and the approver may well approve that add;
+  //  - the WORST APPROVABLE SUBSET — every add rejected, every removal and retype
+  //    approved. This is the case the full proposal hides: retype an op to
+  //    outsource AND add a machining op between it and the QC step that follows,
+  //    and the proposal reads clean while approving the retype alone leaves
+  //    OSP → QC. See worstApprovableSubset.
+  // Same helper, same grandfathered pairs, same strip for both, so they cannot
+  // answer differently about the same adjacency.
+  if (!opts.recoveryKind) {
+    const startedIds = new Set(currentAll.filter((c) => c.started).map((c) => c.id));
+    const grandfathered = grandfatheredOspQcPairs(currentAll);
+    const assertOspQcOk = (list: readonly JcOpInput[]): void => {
+      const userOps = stripStaleGeneratedTerminalQc(list, {
+        recoveryKind: opts.recoveryKind ?? null,
+        isStarted: (o) => !!o.id && startedIds.has(o.id),
+      });
+      assertNoQcDirectlyAfterOutsource(userOps, grandfathered);
+    };
+    assertOspQcOk(proposedAll);
+    assertOspQcOk(worstAll);
+  }
 
   const proposedIds = new Set(proposed.map((p) => p.id).filter((x): x is string => Boolean(x)));
   // Re-ordering has no box of its own; refuse it rather than drop it.
@@ -2374,9 +2804,7 @@ export async function updateJobCardTx(
       >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
     })
     .from(jobCards)
-    .where(
-      and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
-    )
+    .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
     .limit(1);
   // ADR-220 LOCK ORDER — deliberately NO `job_cards` FOR UPDATE here. ADR-220
   // first added one so this path matched the approval entry (loadForDiff takes
@@ -2510,26 +2938,12 @@ export async function updateJobCardTx(
     recoveryKind: head.recoveryKind,
     isStarted: (o) => !!o.id && started.has(o.id),
   });
-  const ops = withTerminalQcOp(userOps, { recoveryKind: head.recoveryKind });
-  const types = validateOps(ops);
-  const machineMap = await resolveCodeMap(
-    tx,
-    machines,
-    ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
-    companyId,
-    'Machine',
-  );
-  const vendorMap = await resolveCodeMap(
-    tx,
-    vendors,
-    ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
-    companyId,
-    'Vendor',
-  );
 
   // Existing ops + which are locked. An op is locked when it has started (any
   // op_log/running session) OR — for an outsource op — it is already committed
   // to a PR/PO/DC. A locked op can't be removed, retyped, or re-sequenced.
+  // Read HERE, before the ADR-227 check below, because that check needs the SAME
+  // stored jc_ops rows: one read of this table per save, not two.
   const existing = await tx
     .select({
       id: jcOps.id,
@@ -2554,20 +2968,104 @@ export async function updateJobCardTx(
     })
     .from(jcOps)
     .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
-    .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
+    .where(and(eq(jcOps.jobCardId, id), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)));
+  // ADR-227 — the system's own Final Inspection may not be renamed/retyped,
+  // removed by hand, or moved out of last place. Nothing else is a routing this
+  // system can save.
+  //
+  // THE DEFECT THIS CLOSES (live, JC IN-JC-26-00025): a payload put the
+  // generated Final Inspection mid-route with a machining op after it, so the
+  // routing ended in `process` again and withTerminalQcOp below appended a
+  // SECOND Final Inspection, stranding the first one in the middle. The state is
+  // refused here rather than the append being suppressed: a card that genuinely
+  // ends on a machining step MUST still get its terminal QC, or qc_accept never
+  // fires on the last op and the finished pieces are never credited to stock.
+  //
+  // ONE FUNCTION, BOTH SAVE PATHS. assertTerminalQcUnchanged is called here —
+  // the writer, which every save reaches (gate off, and the approval apply path
+  // too) — and again in updateJobCardOrStage, which must refuse BEFORE staging so
+  // an un-approvable edit never becomes an approval box. It used to live only in
+  // the staging pre-check, which returns early when the gate is off, so with the
+  // gate off a RENAME was accepted (still last, still 'qc', so the displacement
+  // check passed) and the card lost its ADR-227 protection for good, and a
+  // hand-DELETE was silently undone by re-appending a row with a NEW id. The
+  // function is pure and idempotent, so being asked twice is free.
+  //
+  // Identity, never name: the op is matched on the id the STORED routing ends
+  // with, so a "Final Inspection" a person deliberately placed mid-route (same
+  // name, same type, different row) is an ordinary operation and is not caught.
+  // `userOps` — the list that actually feeds the writer, AFTER
+  // stripStaleGeneratedTerminalQc — is what gets checked, so an op legitimately
+  // dropped because the routing now ends at an outsource step reads as "absent
+  // and not needed" (allowed), not as a hand-removal.
+  //
+  // ORDER MATTERS: terminalQcOp() reads the LAST element, so it must be given the
+  // stored routing in op_seq order. `existing` above is read WITHOUT an ORDER BY
+  // (the ADR-220 note below depends on that), so sort a COPY here — explicitly,
+  // because leaning on whatever order Postgres happened to return would be a
+  // latent bug the day the plan changes. `existing` itself is left untouched.
+  const storedOpsBySeq = [...existing].sort((a, b) => a.opSeq - b.opSeq);
+  const storedTerminalQc = terminalQcOp(storedOpsBySeq) ?? null;
+  assertTerminalQcUnchanged(storedTerminalQc, userOps, {
+    recoveryKind: head.recoveryKind,
+  });
+  const ops = withTerminalQcOp(userOps, { recoveryKind: head.recoveryKind });
+  const types = validateOps(ops);
+  const machineMap = await resolveCodeMap(
+    tx,
+    machines,
+    ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
+    companyId,
+    'Machine',
+  );
+  const vendorMap = await resolveCodeMap(
+    tx,
+    vendors,
+    ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
+    companyId,
+    'Vendor',
+  );
+
   const existingById = new Map(existing.map((o) => [o.id, o]));
   // ADR-220 — a save must not EMPTY a routing that had operations (an approved
   // edit that removed every box could otherwise leave a card with none). Only
   // when the card HAS operations: a card created with an empty routing is legal
   // (createJobCard allows it and v_jc_status reports 'no_ops'), and refusing
   // here blocked header-only edits on those cards — the regression this fixes.
-  // Known and left open: a payload carrying ONLY the system-generated terminal
-  // QC op still passes, because `existing` is unordered here so the generated
-  // op cannot be told from a real one without an ORDER BY.
-  if (existing.length > 0 && userOps.length === 0) {
-    throw new ValidationError(
-      `${head.code} must keep at least one operation — it cannot be saved with an empty routing.`,
-    );
+  // ADR-227 — TWO QUESTIONS, TWO WORDINGS, and the same two the staging
+  // pre-check asks (jcEmptyRoutingMessage / jcNoProductionOpMessage are declared
+  // once and used by both, so the gate being on or off never changes what the
+  // person is told).
+  //
+  // 1. NOTHING SUBMITTED → the empty-routing wording. Asked on `userOps`, which
+  //    is empty only when the payload itself was: stripStaleGeneratedTerminalQc
+  //    drops the trailing Final Inspection only when an OUTSOURCE op sits in
+  //    front of it, so it can never empty a non-empty payload.
+  //
+  // 2. THE EDIT TAKES THE LAST WORK-DOING OPERATION OUT → the production-operation
+  //    wording. It used to be "at least one op that is not the generated Final
+  //    Inspection", which is not the same thing: deleting every real operation and
+  //    adding any OTHER QC step (DIR, MIR…) passed, and the card saved as DIR +
+  //    Final Inspection with nothing producing anything — then a QC accept on the
+  //    last op credits finished stock for work that was never logged.
+  //    jcEditRemovesLastProductionOp asks the real question of BOTH routings: did
+  //    the stored one do work, and does the submitted one still? An all-outsource
+  //    routing (send out, receive back) is production and stays legal — and a card
+  //    whose stored routing ALREADY had no production operation stays editable,
+  //    header included, because refusing its every save protects nothing (see the
+  //    helper's note; two such cards exist on the test stack).
+  //
+  // Both only when the card HAS operations (see the ADR-220 note above). The
+  // generated Final Inspection is a QC step, so it cannot satisfy (2) whether it
+  // is counted or not; `realUserOps` is kept as the honest "the person's real
+  // operations" list. `storedTerminalQc` above is read from the rows sorted by
+  // op_seq, which is what makes telling the generated op from a real one cheap.
+  const realUserOps = withoutOpId(userOps, storedTerminalQc?.id ?? null);
+  if (existing.length > 0) {
+    if (userOps.length === 0) throw new ValidationError(jcEmptyRoutingMessage(head.code));
+    if (jcEditRemovesLastProductionOp(existing, realUserOps)) {
+      throw new ValidationError(jcNoProductionOpMessage(head.code));
+    }
   }
   // Routing rule: a QC op may not sit directly after an OSP op. Checked on
   // the USER's ops (input.ops, never the list with the appended terminal QC).
@@ -2759,8 +3257,7 @@ export async function updateJobCardTx(
         (ex.toolNo ?? '') !== (o.toolNo ?? '') ||
         (ex.toolDetails ?? '') !== (o.toolDetails ?? '') ||
         Boolean(ex.qcRequired) !== (t === 'qc' ? true : Boolean(o.qcRequired)) ||
-        (ex.outsourceVendorText ?? '') !==
-          (t === 'outsource' ? (o.outsourceVendorCode ?? '') : '')
+        (ex.outsourceVendorText ?? '') !== (t === 'outsource' ? (o.outsourceVendorCode ?? '') : '')
       );
     });
 
@@ -3022,7 +3519,8 @@ export async function updateJobCardTx(
  * process ops and vendor only for outsource ops (the stored *_text columns carry
  * a value only for that type), matching updateJobCardTx's own opsChanged check.
  */
-function jcOpsChanged(
+/* Exported for its unit tests (service.jc-ops-stageable.test.ts). */
+export function jcOpsChanged(
   current: ReadonlyArray<{
     id: string;
     operation: string | null;
@@ -3097,17 +3595,24 @@ export async function updateJobCardOrStage(
   // Engine imported dynamically to avoid a static import cycle with
   // jobcard-edit-registry (which imports updateJobCardTx from this file).
   const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
+  // ADR-227 — the generated Final Inspection's id AS IT IS NOW, frozen into the
+  // payload below so the approval strips the payload with the id the payload
+  // actually carries (see JC_STAGED_TERMINAL_QC_KEY). Stays `undefined` when no
+  // routing was submitted (a header-only edit stages no operation box, so there
+  // is nothing to index) — and `undefined` is exactly what means "not carried".
+  let stagedTerminalQcOpId: string | null | undefined;
   const shouldStage = await withUserContext(user, async (tx) => {
     if (!(await isDocEditApprovalOn(tx, companyId))) return false;
     // "Live" mirrors jobCardEditRegistryEntry.isLive: editable while not
     // complete / closed. A completed/closed card edits directly (today's rule).
     const headRows = (await tx.execute(sql`
-      SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt"
+      SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt",
+             jc.recovery_kind AS "recoveryKind"
       FROM public.job_cards jc
       LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
       WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
       LIMIT 1
-    `)) as unknown as Array<{ status: string; closedAt: unknown }>;
+    `)) as unknown as Array<{ status: string; closedAt: unknown; recoveryKind: string | null }>;
     const head = headRows[0];
     if (!head) return false;
     const live = head.closedAt == null && head.status !== 'complete' && head.status !== 'closed';
@@ -3119,8 +3624,21 @@ export async function updateJobCardOrStage(
     if (input.ops !== undefined) {
       const currentAll = await loadJcOpsForEdit(tx, companyId, id);
       const showMoney = await canSeeFormPrice(user, 'jc_create');
-      const current = withoutTerminalQcOp(currentAll);
-      const proposed = withoutTerminalQcOp(input.ops);
+      // ADR-227 — ONE id, read from the STORED routing, strips both lists, so
+      // "did the operations change?" and the pre-check below can never disagree
+      // about which operation the generated Final Inspection is.
+      const terminal = terminalQcOp(currentAll) ?? null;
+      // DECIDED FIRST, and deliberately OUTSIDE the jcOpsChanged gate below.
+      // That gate compares both lists with this very op stripped out, so an edit
+      // that touches ONLY the Final Inspection (renamed it, retyped it, deleted
+      // its row, dragged an op after it) compares EQUAL — the person was told
+      // "Nothing changed to approve" and the change was silently dropped. The
+      // refusals must therefore run whenever a routing was submitted at all.
+      assertTerminalQcUnchanged(terminal, input.ops, { recoveryKind: head.recoveryKind });
+      const terminalId = terminal?.id ?? null;
+      stagedTerminalQcOpId = terminalId;
+      const current = withoutOpId(currentAll, terminalId);
+      const proposed = withoutOpId(input.ops, terminalId);
       const asComparable = current.map((c) => ({
         id: c.id,
         operation: c.operation,
@@ -3138,7 +3656,15 @@ export async function updateJobCardOrStage(
         const codeRow = (await tx.execute(
           sql`SELECT code FROM public.job_cards WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid LIMIT 1`,
         )) as unknown as Array<{ code: string }>;
-        assertJcOpsStageable(codeRow[0]?.code ?? 'This Job Card', currentAll, input.ops, showMoney);
+        assertJcOpsStageable(
+          codeRow[0]?.code ?? 'This Job Card',
+          currentAll,
+          input.ops,
+          showMoney,
+          {
+            recoveryKind: head.recoveryKind,
+          },
+        );
       }
     }
     return true;
@@ -3150,7 +3676,12 @@ export async function updateJobCardOrStage(
     const request = await requestDocumentEdit(
       'JobCard',
       id,
-      input,
+      // ADR-227 — the Final Inspection id rides WITH the frozen payload (jsonb,
+      // so no schema change). Only when a routing was submitted; a header-only
+      // edit keeps the payload exactly as it is today.
+      stagedTerminalQcOpId === undefined
+        ? input
+        : withStagedTerminalQcOpId(input, stagedTerminalQcOpId),
       input.expectedUpdatedAt ?? null,
       user,
     );
