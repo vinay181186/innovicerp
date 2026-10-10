@@ -15,10 +15,12 @@ import {
   machines,
   opLog,
   purchaseRequests,
+  runningOps,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { DEFAULT_FINAL_QC_OP } from '../../lib/jc-default-qc';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -322,6 +324,9 @@ describe('job-cards service — writes (ADR-051)', () => {
       admin,
     );
     createdIds.push(jc.id);
+    // Rule B (ADR-069) already appended the Final Inspection on create; the
+    // edit resubmits it LAST with its stored id, exactly as the form does.
+    const fi = await finalQcOpOf(jc.id);
     const updated = await service.updateJobCard(
       jc.id,
       {
@@ -331,6 +336,7 @@ describe('job-cards service — writes (ADR-051)', () => {
         priority: 'high',
         ops: [
           { operation: 'Op A only', opType: 'process', machineCode, cycleTimeMin: 3, qcRequired: false, outsourceCost: 0 },
+          fi,
         ],
         qcDocs: [],
       },
@@ -338,10 +344,15 @@ describe('job-cards service — writes (ADR-051)', () => {
     );
     expect(updated.orderQty).toBe(9);
     expect(updated.priority).toBe('high');
-    // Rule B (ADR-069): a pure-process routing with no QC gate gets a default
-    // Final Inspection QC op appended, so the single submitted op becomes 2
-    // (process + Final Inspection).
+    // Op A and Op B are gone, replaced by the one new op, and the Final
+    // Inspection still closes the routing — 2 ops.
     expect(updated.totalOps).toBe(2);
+    const after = await opsOf(jc.id);
+    expect(after.map((o) => o.operation)).toEqual(['Op A only', DEFAULT_FINAL_QC_OP]);
+    // ADR-227 — the SAME row, renumbered from 3 to 2. A new id here would mean
+    // the writer had quietly deleted and re-created the system's own op.
+    expect(after[1]!.id).toBe(fi.id);
+    expect(after[1]!.opSeq).toBe(2);
   });
 
   // Helper: current (non-deleted) ops of a JC, ordered by op_seq.
@@ -351,6 +362,72 @@ describe('job-cards service — writes (ADR-051)', () => {
       .from(jcOps)
       .where(and(eq(jcOps.jobCardId, jcId), isNull(jcOps.deletedAt)))
       .orderBy(jcOps.opSeq);
+  }
+
+  // ===================================================================
+  // WRITING A updateJobCard FIXTURE? READ THIS FIRST (ADR-227).
+  //
+  // A Job Card whose routing ends on a machining step gets a terminal
+  // "Final Inspection" QC op appended by the SYSTEM (ADR-069 Rule B, see
+  // withTerminalQcOp). That row is part of the routing from then on, and an
+  // update payload MUST send it back, LAST, carrying its STORED id — which is
+  // exactly what the edit form does: it pins that row (name read-only, cannot
+  // be deleted, cannot be moved) and posts it with the rest.
+  //
+  // Leave it out and the save is REFUSED — "Final Inspection is added by the
+  // system and cannot be removed here." — because omitting it is
+  // indistinguishable from a person deleting the row by hand, and the writer
+  // used to silently undo that by re-appending a NEW row with a NEW id, which
+  // broke every ADR-227 protection on the card from then on.
+  //
+  // So: `finalQcOpOf(jc.id)` and put the result last in `ops`. Omitting it does
+  // not just fail the test you are writing — it makes a test that asserts only
+  // `rejects.toBeInstanceOf(ValidationError)` pass on the WRONG refusal, which
+  // is why the refusals below are asserted by MESSAGE as well as by type.
+  //
+  // NOT YET EXECUTED (2026-10-09). The updateJobCard fixtures in this file were
+  // corrected for the rule above by TRACING the writer's guards in order — the
+  // ADR-227 check, validateOps, machine/vendor code resolution, the
+  // started/committed lock loop, then the closed-JC freeze — and have not been
+  // run since, because this suite is database-backed and was not runnable here.
+  // Reviewed is not passed: the next authorised run of this suite is their first
+  // real test. Treat a failure in one of them as a fixture bug first.
+  // ===================================================================
+
+  /** The generated terminal Final Inspection op of `jcId`, shaped the way the
+   *  edit form posts it back: its STORED id, its system-owned name, type qc.
+   *  Throws when the card has no such op, so a fixture can never quietly stop
+   *  exercising the guard it was written for. */
+  async function finalQcOpOf(jcId: string) {
+    const all = await opsOf(jcId);
+    const last = all[all.length - 1];
+    if (!last || last.opType !== 'qc' || last.operation !== DEFAULT_FINAL_QC_OP) {
+      throw new Error(
+        `Fixture expects ${jcId} to end with the system's ${DEFAULT_FINAL_QC_OP} op, found: ` +
+          all.map((o) => `${o.operation} (${o.opType})`).join(' → '),
+      );
+    }
+    return {
+      id: last.id,
+      operation: last.operation,
+      opType: 'qc' as const,
+      cycleTimeMin: 0,
+      qcRequired: true,
+      outsourceCost: 0,
+    };
+  }
+
+  /** The error a write threw, so a test can assert BOTH its type AND its
+   *  wording. A type-only assertion silently accepts any OTHER refusal — that
+   *  is how three fixtures here kept passing while the guard they were written
+   *  to prove was never reached. */
+  async function refusal(p: Promise<unknown>): Promise<Error> {
+    const e = await p.then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+    if (e === null) throw new Error('Expected this write to be refused, but it succeeded.');
+    return e;
   }
 
   const proc = (operation: string, machine: string) => ({
@@ -384,7 +461,10 @@ describe('job-cards service — writes (ADR-051)', () => {
       createdBy: admin.id,
     });
     // Swap Op A (started) below Op B → re-sequence of a started op → blocked.
-    await expect(
+    // The Final Inspection stays last, so the ADR-227 refusals cannot fire and
+    // the error below can only be the re-sequence guard.
+    const fi = await finalQcOpOf(jc.id);
+    const e = await refusal(
       service.updateJobCard(
         jc.id,
         {
@@ -395,12 +475,15 @@ describe('job-cards service — writes (ADR-051)', () => {
           ops: [
             { id: opB.id, ...proc('Op B', machineCode) },
             { id: opA.id, ...proc('Op A', machineCode) },
+            fi,
           ],
           qcDocs: [],
         },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ValidationError);
+    );
+    expect(e).toBeInstanceOf(ValidationError);
+    expect(e.message).toMatch(/^Cannot move Op .+ it already has logged work\.$/);
   });
 
   /** Stamp an existing op as a committed OSP op backed by a real PR row, the
@@ -449,14 +532,19 @@ describe('job-cards service — writes (ADR-051)', () => {
     const opB = ops.find((o) => o.operation === 'Op B')!;
     // OSP commitment on Op A, backed by a LIVE PR, and no op_log.
     await stampOspPr(opA.id, 'open');
-    // Drop Op A from the payload → remove of a committed op → blocked.
-    await expect(
+    // Drop Op A from the payload → remove of a committed op → blocked. The
+    // Final Inspection is still sent (last, with its id), so this can only be
+    // the committed-op guard and not an ADR-227 refusal.
+    const fi = await finalQcOpOf(jc.id);
+    const e = await refusal(
       service.updateJobCard(
         jc.id,
-        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opB.id, ...proc('Op B', machineCode) }], qcDocs: [] },
+        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opB.id, ...proc('Op B', machineCode) }, fi], qcDocs: [] },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ValidationError);
+    );
+    expect(e).toBeInstanceOf(ValidationError);
+    expect(e.message).toMatch(/^Cannot remove Op .+ its PR \/ PO exists\. Cancel it first\.$/);
   });
 
   // ADR-101 — the bug this fixes: cancelling the PR left the op frozen, so the
@@ -475,6 +563,7 @@ describe('job-cards service — writes (ADR-051)', () => {
     // row (pre-fix rows look exactly like this), but it commits nothing.
     await stampOspPr(opA.id, 'cancelled');
 
+    const fi = await finalQcOpOf(jc.id);
     await service.updateJobCard(
       jc.id,
       {
@@ -482,7 +571,7 @@ describe('job-cards service — writes (ADR-051)', () => {
         itemCode,
         orderQty: 5,
         priority: 'normal',
-        ops: [{ id: opA.id, ...proc('Op A', machineCode) }, { id: opB.id, ...proc('Op B', machineCode) }],
+        ops: [{ id: opA.id, ...proc('Op A', machineCode) }, { id: opB.id, ...proc('Op B', machineCode) }, fi],
         qcDocs: [],
       },
       admin,
@@ -490,6 +579,8 @@ describe('job-cards service — writes (ADR-051)', () => {
 
     const after = await opsOf(jc.id);
     expect(after.find((o) => o.operation === 'Op A')!.opType).toBe('process');
+    // The system's own op is untouched by the retype — same row, still last.
+    expect(after[after.length - 1]!.id).toBe(fi.id);
   });
 
   it('updateJobCard freezes operations once the JC is closed', async () => {
@@ -501,10 +592,13 @@ describe('job-cards service — writes (ADR-051)', () => {
     createdIds.push(jc.id);
     const ops = await opsOf(jc.id);
     const opA = ops.find((o) => o.operation === 'Op A')!;
+    const fi = await finalQcOpOf(jc.id);
     // Mark the JC closed.
     await db.update(jobCards).set({ closedAt: new Date() }).where(eq(jobCards.id, jc.id));
-    // Any structural change (here: add an op) is frozen.
-    await expect(
+    // Any structural change (here: add an op) is frozen. The new op goes in
+    // BEFORE the Final Inspection, which is resubmitted last with its id — so
+    // the error can only be the freeze guard.
+    const e = await refusal(
       service.updateJobCard(
         jc.id,
         {
@@ -512,50 +606,135 @@ describe('job-cards service — writes (ADR-051)', () => {
           itemCode,
           orderQty: 5,
           priority: 'normal',
-          ops: [{ id: opA.id, ...proc('Op A', machineCode) }, proc('Op C', machineCode)],
+          ops: [{ id: opA.id, ...proc('Op A', machineCode) }, proc('Op C', machineCode), fi],
           qcDocs: [],
         },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ValidationError);
+    );
+    expect(e).toBeInstanceOf(ValidationError);
+    expect(e.message).toBe(
+      'This JC is Completed, so its operations cannot change. Reopen it first.',
+    );
   });
 
-  it('updateJobCard blocks changing the machine of an op that has logged work', async () => {
-    if (!itemCode || !machineCode || !jwLineId) return;
-    // Need a second real machine to change to (resolveCodeMap validates it
-    // exists before the guard runs, so a bogus code would throw the wrong error).
+  // ===================================================================
+  // CHANGING AN OP'S MACHINE — what the rule actually is (ADR-125 / ADR-084).
+  //
+  // Migration 0095 made every op_log row permanently carry the machine that
+  // produced ITS qty. From then on `jc_ops.machine_id` no longer owns the
+  // history — it only says which machine runs the REMAINING qty (50 pcs made on
+  // CNC-01, the balance on CNC-02, and both facts survive). So moving a started
+  // op to another machine is SAFE and is deliberately ALLOWED.
+  //
+  // The one case still refused is an OPEN session (ADR-084): a `running_ops` row
+  // with status 'running' and is_osp false. Its pieces reach op_log — with their
+  // machine stamped — only when the session is STOPPED, so until then the
+  // machine must not move out from under it.
+  //
+  // The two tests below are identical apart from that `running_ops` row. They
+  // replace one earlier test that asserted the rule 0095 REMOVED ("blocks
+  // changing the machine of an op that has logged work"), which could not fire
+  // and had been silently failing.
+  // ===================================================================
+
+  /** A second real machine code to move an op to. `resolveCodeMap` validates
+   *  the code exists before the guards run, so a made-up one would throw the
+   *  wrong error. Null when this database has only one machine. */
+  async function otherMachineCode(): Promise<string | null> {
     const machs = await db
       .select({ code: machines.code })
       .from(machines)
       .where(and(eq(machines.companyId, admin.companyId!), isNull(machines.deletedAt)))
       .limit(5);
-    const machine2 = machs.map((m) => m.code).find((c) => c !== machineCode);
-    if (!machine2) return; // only one machine on this DB — can't exercise the guard
+    return machs.map((m) => m.code).find((c) => c !== machineCode) ?? null;
+  }
+
+  /** A JC with one started process op ('Op A', one op_log row) plus the
+   *  system's Final Inspection. Returns the op and that Final Inspection. */
+  async function jcWithStartedOpA(logNo: string) {
     const jc = await service.createJobCard(
-      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode)], qcDocs: [] },
+      { jcDate: '2026-06-13', itemCode: itemCode!, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId!, ops: [proc('Op A', machineCode!)], qcDocs: [] },
       admin,
     );
     createdIds.push(jc.id);
     const ops = await opsOf(jc.id);
     const opA = ops.find((o) => o.operation === 'Op A')!;
+    // One completed log → the op counts as "started" (startedOpIds reads op_log).
     await db.insert(opLog).values({
       companyId: admin.companyId!,
       jcOpId: opA.id,
-      logNo: 'L1',
+      logNo,
       logType: 'complete',
       logDate: '2026-06-13',
       shift: 'day',
       qty: 1,
       createdBy: admin.id,
     });
-    // Change Op A's machine after it has logged work → blocked.
-    await expect(
+    return { jcId: jc.id, opA, fi: await finalQcOpOf(jc.id) };
+  }
+
+  /** The machine code stored on an op right now. */
+  async function machineCodeOf(opId: string): Promise<string | null> {
+    const rows = await db
+      .select({ machineCodeText: jcOps.machineCodeText })
+      .from(jcOps)
+      .where(eq(jcOps.id, opId))
+      .limit(1);
+    return rows[0]?.machineCodeText ?? null;
+  }
+
+  it('updateJobCard ALLOWS changing the machine of a started op with no open session (ADR-125)', async () => {
+    if (!itemCode || !machineCode || !jwLineId) return;
+    const machine2 = await otherMachineCode();
+    if (!machine2) return; // only one machine on this DB — nothing to move to
+    const { jcId, opA, fi } = await jcWithStartedOpA('L1');
+    // Op A has logged work but NO running_ops row → the move is allowed,
+    // because the pieces already made keep their own machine in op_log.
+    await service.updateJobCard(
+      jcId,
+      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opA.id, ...proc('Op A', machine2) }, fi], qcDocs: [] },
+      admin,
+    );
+    // It really moved — and it is still the same op row, not a replacement.
+    expect(await machineCodeOf(opA.id)).toBe(machine2);
+    const after = await opsOf(jcId);
+    expect(after.map((o) => o.id)).toEqual([opA.id, fi.id]);
+  });
+
+  it('updateJobCard REFUSES changing the machine of an op with an OPEN session (ADR-084)', async () => {
+    if (!itemCode || !machineCode || !jwLineId) return;
+    const machine2 = await otherMachineCode();
+    if (!machine2) return;
+    const { jcId, opA, fi } = await jcWithStartedOpA('L2');
+    // The one state that still blocks a machine change: an OPEN in-house
+    // session. machine_id is left null on purpose — the guard reads only
+    // (jc_op_id, status, is_osp), and a null keeps this row clear of the
+    // `running_ops_machine_running_uniq` index, so it cannot collide with a
+    // genuinely running session on either machine. Cleaned up with the JC:
+    // running_ops.jc_op_id cascades when afterAll deletes jc_ops.
+    await db.insert(runningOps).values({
+      companyId: admin.companyId!,
+      jcOpId: opA.id,
+      isOsp: false,
+      startDate: '2026-06-13',
+      startTime: '08:00:00',
+      shift: 'day',
+      status: 'running',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+    const e = await refusal(
       service.updateJobCard(
-        jc.id,
-        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opA.id, ...proc('Op A', machine2) }], qcDocs: [] },
+        jcId,
+        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opA.id, ...proc('Op A', machine2) }, fi], qcDocs: [] },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ValidationError);
+    );
+    expect(e).toBeInstanceOf(ValidationError);
+    expect(e.message).toBe('Stop Operation first, then change the machine.');
+    // And nothing moved.
+    expect(await machineCodeOf(opA.id)).toBe(machineCode);
   });
 
   it('updateJobCard keeps the JC source immutable — a different or omitted source is ignored', async () => {
@@ -606,6 +785,12 @@ describe('job-cards service — writes (ADR-051)', () => {
         .returning()
     )[0]!;
 
+    // The system's own Final Inspection, resubmitted last in BOTH edits below
+    // with its stored id — the form never leaves it out, and the writer refuses
+    // a payload that does (ADR-227). Its id survives both saves, so one read is
+    // enough.
+    const fi = await finalQcOpOf(jc.id);
+
     // 1) Edit that re-points at a DIFFERENT JW line — header edits apply, but the
     //    source must NOT move off the original line.
     const relinked = await service.updateJobCard(
@@ -618,6 +803,7 @@ describe('job-cards service — writes (ADR-051)', () => {
         sourceJwLineId: otherLine.id,
         ops: [
           { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+          fi,
         ],
         qcDocs: [],
       },
@@ -637,6 +823,7 @@ describe('job-cards service — writes (ADR-051)', () => {
         priority: 'normal',
         ops: [
           { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+          fi,
         ],
         qcDocs: [],
       },

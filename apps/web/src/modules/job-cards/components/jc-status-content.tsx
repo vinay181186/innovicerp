@@ -61,6 +61,7 @@ import {
   useUpdateJobCard,
 } from '../api';
 import { jcOpsDigest } from '../lib/jc-ops-digest';
+import { endsWithPinnedFinalQc, isPinnedFinalQcOp } from '../lib/jc-pinned-final-qc';
 import { useJcDrawing } from '../lib/jc-drawing';
 import { JcEditFactBlock, jcEditQtyRule } from './jc-edit-fact-block';
 import type { JcOpEditValues } from './jc-edit-op-row';
@@ -379,6 +380,9 @@ function JcStatusEditForm({
     model.ops.map((o) => ({
       rowKey: o.id,
       id: o.id,
+      // DISPLAY-ONLY, never saved: the stored op_seq, so the Op No. cell shows
+      // the number the SERVER will name if it refuses the save.
+      opSeq: o.opSeq,
       // Group is display-only and not stored on the op — back-filled from the
       // machine master once the machine list loads (effect below).
       machineGroupId: null,
@@ -490,10 +494,18 @@ function JcStatusEditForm({
     });
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
   const [balanceNote, setBalanceNote] = useState<string | null>(null);
-  // Friendly "op line added — fill it in" feedback. addNote is the green
-  // banner text; flashKey briefly rings the freshly-added row; the row's ref
-  // scrolls it into view inside the table's own scroll box.
-  const [addNote, setAddNote] = useState<string | null>(null);
+  // Friendly "op line added — fill it in" feedback. addNote identifies the row
+  // that was added (by its rowKey) and what it still needs. The banner names NO
+  // Op number: a row added here has no stored op_seq, the Op No. cell shows an
+  // em dash until Save, and a number worked out from the row's position would be
+  // a number neither the cell nor the server's error messages use. flashKey
+  // briefly rings the freshly-added row; the row's ref scrolls it into view
+  // inside the table's own scroll box.
+  const [addNote, setAddNote] = useState<{
+    rowKey: string;
+    kindLabel: string;
+    need: string;
+  } | null>(null);
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const scrollToNewOp = useRef(false);
   const newRowRef = useCallback((el: HTMLTableRowElement | null) => {
@@ -511,6 +523,16 @@ function JcStatusEditForm({
       clearTimeout(t2);
     };
   }, [addNote]);
+  // The banner's words. The row is still looked up by its rowKey, so the banner
+  // disappears if the row was removed before it timed out — but it names the row
+  // by WHAT IT IS (Machining / QC / Outsource), not by a number, because an
+  // unsaved row has none.
+  const addNoteText = useMemo(() => {
+    if (!addNote) return null;
+    const idx = ops.findIndex((o) => o.rowKey === addNote.rowKey);
+    if (idx < 0) return null;
+    return `New ${addNote.kindLabel} operation added — ${addNote.need}, then Save.`;
+  }, [addNote, ops]);
 
   // Read-only enriched columns + recent logs keyed by op id, so each editable
   // row shows the SAME live progress the view shows.
@@ -576,38 +598,101 @@ function JcStatusEditForm({
     });
   }, [machines]);
 
+  // A swap must never displace a trailing system-added Final Inspection
+  // (ADR-227): inspection is the end of the routing. The server strips that op
+  // by id before comparing, so a routing posted with it out of last place is
+  // either silently dropped ("Nothing changed to approve", approval gate ON) or
+  // written as a card that ends on a machining step with no inspection (gate
+  // OFF). The ⋯ menu does not offer the two swaps that would do it
+  // (jc-edit-op-row.tsx); this is the same rule at the source, so a stale menu
+  // cannot post one either. "Pinned" is the ONE predicate in
+  // ../lib/jc-pinned-final-qc.ts, the same one the menu uses, so the menu and
+  // the swap can no longer disagree: a QC op the person named themselves, and a
+  // Final Inspection row they have only just typed (no id yet, so the server
+  // would not treat it as its own), both still move freely.
   const moveOp = (i: number, dir: -1 | 1): void => {
     setOps((prev) => {
       const next = [...prev];
       const j = i + dir;
       if (j < 0 || j >= next.length) return prev;
+      const lastIdx = next.length - 1;
+      if (isPinnedFinalQcOp(next[lastIdx]!) && (i === lastIdx || j === lastIdx)) return prev;
       [next[i], next[j]] = [next[j]!, next[i]!];
       return next;
     });
   };
+  // Taking a row OUT, with the same guard the swap has (ADR-227). The ⋯ menu
+  // greys Remove on the trailing system-added Final Inspection, but the handler
+  // used to filter out whatever index it was handed, so a stale menu or a forced
+  // click built a routing the server only refuses at Save ("…cannot be removed
+  // here") — leaving the form stuck on an error the person cannot undo without
+  // reloading and losing their other edits. Same shared predicate as the menu
+  // and the swap (../lib/jc-pinned-final-qc), applied to the committed list, so
+  // there is one test of "is this the pinned inspection", not three.
+  const removeOp = (i: number): void => {
+    setOps((prev) => {
+      if (endsWithPinnedFinalQc(prev) && i === prev.length - 1) return prev;
+      return prev.filter((_, idx) => idx !== i);
+    });
+  };
+  // Where a freshly added op belongs (ADR-227). A trailing system-added Final
+  // Inspection must STAY last — inspection is the end of the routing, and
+  // appending after it also tripped the "operations changed while you were
+  // editing" error on Save. So the new row goes BEFORE it. Two exceptions, both
+  // append at the end as before: a last op the shared predicate does not call
+  // pinned (a QC op the person named themselves, or an unsaved row they typed —
+  // otherwise the next add would go ABOVE their own new row), and a Final
+  // Inspection that has already STARTED —
+  // inserting above a started op renumbers it, which the server refuses
+  // ("Cannot move Op N — it already has logged work."), and with the approval
+  // gate ON that refusal lands on the approver, who cannot clear the request.
+  // That second exception is now unreachable: `addOp` refuses outright when the
+  // trailing inspection has started (the three Add buttons are off for the same
+  // case), so no routing is ever built that appends after it. The branch stays
+  // as the honest answer to "where would it go", not as a working path.
+  const addOpInsertIndex = (
+    list: ReadonlyArray<{ id?: string; opType: string; operation: string; hasStarted: boolean }>,
+  ): number => {
+    const last = list[list.length - 1];
+    return endsWithPinnedFinalQc(list) && last && !last.hasStarted ? list.length - 1 : list.length;
+  };
   const addOp = (kind: 'process' | 'qc' | 'outsource' = 'process'): void => {
-    const newIdx = ops.length;
+    // ADR-227: a routing whose trailing Final Inspection has LOGGED WORK has
+    // nowhere left to put a new operation — before it renumbers a started op
+    // ("Cannot move Op N — it already has logged work.") and after it displaces
+    // the inspection, and both are hard server refusals the person cannot clear.
+    // The three Add buttons are already off for exactly this case
+    // (jc-edit-ops-table.tsx), which is what the person sees; this is the same
+    // rule at the source, so a stale or forced click cannot build a routing that
+    // can never be saved. Same condition, same shared predicate — the two cannot
+    // drift apart.
+    const last = ops[ops.length - 1];
+    if (endsWithPinnedFinalQc(ops) && last?.hasStarted) return;
     const rowKey = nextEditOpRowKey();
-    setOps((prev) => [
-      ...prev,
-      {
-        rowKey,
-        // OSP ops carry no machine (T32b); QC parks on the QC lane.
-        machineGroupId: null,
-        machineCode: '',
-        operation: '',
-        opType: kind,
-        cycleTimeMin: 0,
-        program: '',
-        toolNo: '',
-        toolDetails: '',
-        qcRequired: kind === 'qc',
-        outsourceVendorCode: '',
-        outsourceCost: 0,
-        hasStarted: false,
-        available: 0,
-      },
-    ]);
+    setOps((prev) => {
+      const at = addOpInsertIndex(prev);
+      return [
+        ...prev.slice(0, at),
+        {
+          rowKey,
+          // OSP ops carry no machine (T32b); QC parks on the QC lane.
+          machineGroupId: null,
+          machineCode: '',
+          operation: '',
+          opType: kind,
+          cycleTimeMin: 0,
+          program: '',
+          toolNo: '',
+          toolDetails: '',
+          qcRequired: kind === 'qc',
+          outsourceVendorCode: '',
+          outsourceCost: 0,
+          hasStarted: false,
+          available: 0,
+        },
+        ...prev.slice(at),
+      ];
+    });
     // The new row opens, so nothing it needs is hidden behind ▸.
     setOpenKeys((prev) => new Set(prev).add(rowKey));
     const kindLabel = kind === 'qc' ? 'QC' : kind === 'outsource' ? 'Outsource' : 'Machining';
@@ -619,7 +704,12 @@ function JcStatusEditForm({
           : 'pick a machine and operation name';
     setFlashKey(rowKey);
     scrollToNewOp.current = true;
-    setAddNote(`Op ${fmtOpSrNo(newIdx + 1)} (${kindLabel}) added — ${need}, then Save.`);
+    // The note names the row by its rowKey, not by a position worked out here:
+    // the insert point is computed inside the setOps updater (off `prev`), so a
+    // number taken from the render-time `ops` goes stale the moment two adds
+    // land in one tick (a double-click) — the second note repeated the first
+    // one's Op number. The Op number is read off the committed list below.
+    setAddNote({ rowKey, kindLabel, need });
   };
 
   const submitting = update.isPending;
@@ -930,7 +1020,7 @@ function JcStatusEditForm({
 
       {error ? <Banner tone="error">{error}</Banner> : null}
       {balanceNote ? <Banner tone="success">{balanceNote}</Banner> : null}
-      {addNote ? <Banner tone="success">{addNote}</Banner> : null}
+      {addNoteText ? <Banner tone="success">{addNoteText}</Banner> : null}
       {/* The live "no QC directly after OSP" hint — the same message Save and
           the API raise. */}
       {opsSequenceHint ? (
@@ -961,7 +1051,7 @@ function JcStatusEditForm({
         onMachineChange={onOpMachineChange}
         onGroupChange={onOpGroupChange}
         onMove={moveOp}
-        onRemove={(i) => setOps((prev) => prev.filter((_, idx) => idx !== i))}
+        onRemove={removeOp}
         onOutsourceBalance={(i) => {
           setBalanceNote(null);
           setBalanceOpIdx(i);

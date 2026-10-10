@@ -14,7 +14,10 @@ coverage/
 .idea/
 *.tsbuildinfo
 # Playwright e2e artefacts (reports, traces, results — regenerated per run).
+# `test-results/` alone does NOT match a suffixed run directory, so a
+# `test-results-c1/` sat untracked at 85 MB waiting for someone's `git add -A`.
 test-results/
+test-results-*/
 playwright-report/
 blob-report/
 .playwright/

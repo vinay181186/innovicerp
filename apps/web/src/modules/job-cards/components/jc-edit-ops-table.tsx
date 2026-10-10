@@ -12,6 +12,7 @@
 // "Operations Detail" bar had, with the same words.
 import type { JcOpEnriched, OpLog } from '@innovic/shared';
 import { Panel } from '@/ui/data';
+import { endsWithPinnedFinalQc } from '../lib/jc-pinned-final-qc';
 import {
   EDIT_COLS,
   JcEditOpRow,
@@ -70,6 +71,34 @@ export function JcEditOpsTable({
 }): React.JSX.Element {
   const opCount = ops.filter((o) => o.opType !== 'qc').length;
   const qcCount = ops.filter((o) => o.opType === 'qc').length;
+  // ADR-227: a routing that ends in the system-added Final Inspection keeps it
+  // last, so the ⋯ menu does not offer the two swaps that would displace it —
+  // Move up on the inspection itself, and Move down on the op directly above
+  // it. A QC op the user named themselves is not matched by the predicate and
+  // still moves freely.
+  const lastIdx = ops.length - 1;
+  // ADR-227 — pinned means "the Final Inspection the SERVER added", and the
+  // server decides that by the stored row's identity, not by its name. So a row
+  // the person has only just typed (no id yet) must NOT be pinned, even if they
+  // typed the words "Final Inspection": locking the field someone is still
+  // filling in, when the server would have let them rename it, is the screen and
+  // the server disagreeing — the exact fault this change exists to remove. The
+  // test is the ONE predicate in ../lib/jc-pinned-final-qc.ts, shared with the
+  // swap and the add-position in jc-status-content.tsx, so the menu it greys out
+  // and the code that refuses the move always say the same thing.
+  const pinnedFinalQcLast = endsWithPinnedFinalQc(ops);
+  // ADR-227: once that inspection has LOGGED WORK there is nowhere left to put
+  // a new operation. Above it would renumber a started op (the server refuses
+  // "Cannot move Op N — it already has logged work."), and after it displaces
+  // the inspection (TERMINAL_QC_DISPLACED_MESSAGE) — and the inspection cannot
+  // be moved back, so the person could never clear either refusal. So the three
+  // Add buttons say it up front instead of failing on Save, in the same clipped
+  // voice as the ⋯ menu's greyed reasons.
+  const addBlockedReason =
+    pinnedFinalQcLast && ops[lastIdx]!.hasStarted
+      ? 'Final Inspection already has logged work — no operation can be added after it'
+      : undefined;
+  const addOff = Boolean(addBlockedReason);
 
   return (
     <Panel
@@ -87,19 +116,41 @@ export function JcEditOpsTable({
       }
       actions={
         <>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => onAdd('process')}>
-            + Add Op
-          </button>
-          <button type="button" className="btn btn-sm jc-edit-add-qc" onClick={() => onAdd('qc')}>
-            + Add QC Op
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm jc-edit-add-osp"
-            onClick={() => onAdd('outsource')}
-          >
-            + Add Outsource Op
-          </button>
+          {/* Each wrapper carries the hover text: a disabled button gets none
+              (the same pattern as this page's Save Changes). */}
+          <span title={addBlockedReason}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={addOff}
+              title={addBlockedReason}
+              onClick={() => onAdd('process')}
+            >
+              + Add Op
+            </button>
+          </span>
+          <span title={addBlockedReason}>
+            <button
+              type="button"
+              className="btn btn-sm jc-edit-add-qc"
+              disabled={addOff}
+              title={addBlockedReason}
+              onClick={() => onAdd('qc')}
+            >
+              + Add QC Op
+            </button>
+          </span>
+          <span title={addBlockedReason}>
+            <button
+              type="button"
+              className="btn btn-sm jc-edit-add-osp"
+              disabled={addOff}
+              title={addBlockedReason}
+              onClick={() => onAdd('outsource')}
+            >
+              + Add Outsource Op
+            </button>
+          </span>
         </>
       }
     >
@@ -149,17 +200,28 @@ export function JcEditOpsTable({
                 // op) — ▸ open state and the row itself follow the op on Move.
                 const key = o.rowKey;
                 const en = o.id ? enrichedById.get(o.id) : undefined;
+                // Op No. = the op's STORED op_seq, never its position on screen.
+                // The server quotes the stored number in every refusal it sends
+                // back ("Cannot move Op 20 — it already has logged work."), so a
+                // position-derived number would point the person at a different
+                // row than the message is about — remove the first of three ops
+                // and the one the server is complaining about has silently
+                // renumbered. A row added on this screen has no stored number,
+                // so it shows none (an em dash) rather than borrowing a position
+                // the server has never heard of.
                 return (
                   <JcEditOpRow
                     key={key}
                     {...shared}
                     op={o}
                     index={i}
-                    seqLabel={en ? en.opSeq : i + 1}
+                    seqLabel={o.opSeq ?? null}
                     enriched={en}
                     logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
                     isFirst={i === 0}
-                    isLast={i === ops.length - 1}
+                    isLast={i === lastIdx}
+                    isPinnedFinalQc={pinnedFinalQcLast && i === lastIdx}
+                    isAbovePinnedFinalQc={pinnedFinalQcLast && i === lastIdx - 1}
                     open={openKeys.has(key)}
                     flash={flashKey === key}
                     rowRef={flashKey === key ? newRowRef : undefined}
