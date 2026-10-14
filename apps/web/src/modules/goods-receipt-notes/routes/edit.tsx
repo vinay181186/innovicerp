@@ -128,7 +128,7 @@ function GoodsReceiptNoteNewPage(): React.JSX.Element {
 function GoodsReceiptNoteEditPage(): React.JSX.Element {
   const { id } = goodsReceiptNoteEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useGoodsReceiptNote(id);
+  const { data: detail, isLoading, error } = useGoodsReceiptNote(id);
   const update = useUpdateGoodsReceiptNote(id);
   const fetchGrn = useFetchGoodsReceiptNote();
   const conflictRecord = useMemo(() => (detail ? toConflictRecord(detail) : undefined), [detail]);
@@ -250,7 +250,11 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !detail) {
+  // ADR-230 — a failed BACKGROUND re-read keeps the data it had (TanStack v5
+  // sets isError while data stays). Only a load with nothing to show is an
+  // error; otherwise a network blip during a live refresh would unmount the
+  // form and throw away what is being typed.
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">

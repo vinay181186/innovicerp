@@ -120,6 +120,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     'purchase_orders',
     props.mode === 'edit' ? props.detail.id : undefined,
     'Purchase Order',
+    updatePo.isPending,
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE PO is staged for approval instead of

@@ -38,7 +38,6 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
@@ -74,7 +73,6 @@ export function useJcOpsEnriched(
     queryFn: () => apiFetch<JcOpEnriched[]>(`/op-entry/jc-ops?${params.toString()}`),
     enabled: Boolean(query.jobCardId || query.jobCardCode || query.machineId),
     placeholderData: (prev) => prev,
-    refetchInterval: LIVE_FALLBACK_POLL_MS,
     ...options,
   });
 }
@@ -91,7 +89,6 @@ export function useOpLog(
     queryKey: opEntryKeys.opLog(query),
     queryFn: () => apiFetch<OpLog[]>(`/op-entry/op-log?${params.toString()}`),
     enabled: Boolean(query.jcOpId || query.jobCardId),
-    refetchInterval: LIVE_FALLBACK_POLL_MS,
     ...options,
   });
 }

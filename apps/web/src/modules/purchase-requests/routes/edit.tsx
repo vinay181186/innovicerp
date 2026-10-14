@@ -170,7 +170,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
 function PurchaseRequestEditPage(): React.JSX.Element {
   const { id } = purchaseRequestEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = usePurchaseRequest(id);
+  const { data: detail, isLoading, error } = usePurchaseRequest(id);
   const saveKey = useSaveKey();
   const update = useUpdatePurchaseRequest(id, saveKey);
   // R5 — the PR's version as it was when this edit form opened.
@@ -242,7 +242,11 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !detail) {
+  // ADR-230 — a failed BACKGROUND re-read keeps the data it had (TanStack v5
+  // sets isError while data stays). Only a load with nothing to show is an
+  // error; otherwise a network blip during a live refresh would unmount the
+  // form and throw away what is being typed.
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">

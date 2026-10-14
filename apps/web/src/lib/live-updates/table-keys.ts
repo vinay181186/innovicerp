@@ -57,11 +57,15 @@ const SALES_ORDER_VIEWS: readonly QueryKey[] = [
 ];
 
 /** A PO's approval state shows in the Approvals inbox; its received qty shows
- *  on GRN create. */
+ *  on GRN create. An incoming QC decision updates GRN lines (not published) and
+ *  then re-totals the PO lines — so a PO change is also how Incoming QC and the
+ *  QC Call Register hear that an incoming call was cleared. */
 const PURCHASE_ORDER_VIEWS: readonly QueryKey[] = [
   purchaseOrdersKeys.all,
   goodsReceiptNotesKeys.all,
   approvalsKeys.all,
+  incomingQcKeys.all,
+  qcHistoryKeys.all,
 ];
 
 export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> = {
@@ -73,6 +77,12 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   purchase_orders: PURCHASE_ORDER_VIEWS,
   purchase_order_lines: PURCHASE_ORDER_VIEWS,
   purchase_requests: [purchaseRequestsKeys.all, approvalsKeys.all],
-  goods_receipt_notes: [goodsReceiptNotesKeys.all, incomingQcKeys.all, purchaseOrdersKeys.all],
+  // A new GRN raises an incoming QC call on the QC Call Register.
+  goods_receipt_notes: [
+    goodsReceiptNotesKeys.all,
+    incomingQcKeys.all,
+    qcHistoryKeys.all,
+    purchaseOrdersKeys.all,
+  ],
   document_edit_requests: [documentEditsKeys.all, approvalsKeys.all],
 };

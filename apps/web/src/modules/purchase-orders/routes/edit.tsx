@@ -26,7 +26,7 @@ function PurchaseOrderEditPage(): React.JSX.Element {
   // list hides the Edit link for them; this stops the typed URL too.
   const { data: eff, isPending: accessPending } = useMyAccess();
   const canEdit = effectiveFormPerms(eff, 'po_create').edit;
-  const { data: detail, isLoading, isError, error } = usePurchaseOrder(id);
+  const { data: detail, isLoading, error } = usePurchaseOrder(id);
 
   if (isLoading || accessPending) {
     return (
@@ -46,7 +46,11 @@ function PurchaseOrderEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !detail) {
+  // ADR-230 — a failed BACKGROUND re-read keeps the data it had (TanStack v5
+  // sets isError while data stays). Only a load with nothing to show is an
+  // error; otherwise a network blip during a live refresh would unmount the
+  // form and throw away what is being typed.
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">

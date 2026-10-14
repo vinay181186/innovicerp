@@ -147,7 +147,7 @@ function SalesOrderEditPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
-  const { data: detail, isLoading, isError, error } = useSalesOrder(id);
+  const { data: detail, isLoading, error } = useSalesOrder(id);
   const saveKey = useSaveKey();
   const update = useUpdateSalesOrder(id, saveKey);
   // R5 — the version this form opened with; a save over someone else's newer
@@ -155,7 +155,7 @@ function SalesOrderEditPage(): React.JSX.Element {
   const opened = useOpenedVersion(detail?.updatedAt);
   // ADR-230 — the 3-second "someone else just changed this" notice. Never
   // touches the form; the 409 above is still the guard.
-  const liveWatch = useLiveChangeNotice('sales_orders', id, 'Sales Order');
+  const liveWatch = useLiveChangeNotice('sales_orders', id, 'Sales Order', update.isPending);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE SO is staged for approval instead of
   // applied; the neutral "Sent for approval" banner shows it.
@@ -222,7 +222,11 @@ function SalesOrderEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !detail) {
+  // ADR-230 — a failed BACKGROUND re-read keeps the data it had (TanStack v5
+  // sets isError while data stays). Only a load with nothing to show is an
+  // error; otherwise a network blip during a live refresh would unmount the
+  // form and throw away what is being typed.
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">

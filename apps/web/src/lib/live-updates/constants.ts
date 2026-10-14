@@ -10,6 +10,11 @@ export const LIVE_BATCH_WAIT_MS = 750;
  *  A steady stream of changes must not starve the screen. */
 export const LIVE_BATCH_MAX_WAIT_MS = 2_000;
 
+/** After the screen's OWN save, ignore the change message that save causes.
+ *  The message can arrive before the save's HTTP answer (slow API) or up to the
+ *  batch ceiling after it, so the grace covers the save plus the ceiling. */
+export const LIVE_OWN_SAVE_GRACE_MS = LIVE_BATCH_MAX_WAIT_MS + 1_000;
+
 /** A transport that has not reported "connected" this long after starting is
  *  treated as down, so a connection that hangs silently still shows the marker
  *  instead of leaving the user trusting a screen nothing is updating. */
