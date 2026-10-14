@@ -5,5 +5,7 @@
 // variant (v1 Realtime / v2 server push / v3 change poll) sets this one line.
 
 import type { LiveTransport } from './transport';
+import { realtimeTransport } from './transports/realtime-transport';
 
-export const activeTransport: LiveTransport | null = null;
+// v1 — Supabase Realtime (needs migration 0208).
+export const activeTransport: LiveTransport | null = realtimeTransport;
