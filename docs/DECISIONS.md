@@ -13549,9 +13549,13 @@ message "You do not have permission to record Op Entry".
   Dispose / Close NC and Assign QC; Planning L2/L4 operators and managers gain
   Mark Planned / Create Job Card; Store L4 gains tool returns; Design L2/L4 gain
   submit-for-review and comments. SO / JWSO close still need Approve.
-- Deploy order: the server must understand `advance` before a screen can set
-  it — a new screen saving through an old server would have the box stripped.
-  Shipped in two pushes (contract + server, then screens).
+- Shipped as ONE push (contract + server + screens). A two-push split was
+  planned and dropped on review: the server push alone grants Advance by tier
+  while the screen has no "No advance" box to take it back, and production gets
+  everything in one release anyway. Residual: for the few minutes while the
+  server and the web deploy, saving a person's access from a new screen through
+  the old server drops the Advance boxes — do not edit Access Control during a
+  release.
 - An Access Control tab opened before the release can drop an Advance tick on
   "Paste Access" or a tier change; it can never grant one.
 - Not in scope, listed for later: 16 links that ask a different right from the

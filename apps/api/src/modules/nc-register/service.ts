@@ -2444,7 +2444,7 @@ export async function softDeleteNcRegister(
   reason?: string | null,
 ): Promise<{ ok: true }> {
   requireOpEntryRole(user);
-  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // Delete is not one of the five tier actions, so it is expressed as the pair
   // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
   // has edit but not approve; L4 Approver has approve but not edit.
   await requireFormAccess(user, 'nc_dispose', 'edit');

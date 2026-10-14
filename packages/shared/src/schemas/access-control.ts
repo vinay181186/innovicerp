@@ -260,7 +260,7 @@ export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
   const advance = p.advance;
   // `price` / `priceOff` (can-see-money) are independent — they neither imply
   // nor are implied by any write action, so they pass straight through the
-  // cascade untouched. The four OFF switches are subtractions applied AFTER the
+  // cascade untouched. The five OFF switches are subtractions applied AFTER the
   // cascade (in effectiveFormPerms), so they too pass through here unchanged.
   const price = p.price;
   const off = {

@@ -17,9 +17,10 @@
 // Refused while work is still running for the line — an open Job Card or an
 // open / partly closed Production Order — with the documents named, so the
 // user stops those first (ERPNext likewise will not close over a running Work
-// Order's delivery). Permission is ADR-194's choice: closing with qty unmet is
-// a department-admin decision, so it takes the edit AND approve pair on the
-// SO's own form key (so_create); no new permission key.
+// Order's delivery). Permission: the advance AND approve pair on the SO's own
+// form key (so_create). Since ADR-231 that is held by L4 Approver and L5
+// Department Admin (ADR-194 had edit AND approve plus a manager role, i.e. L5
+// only); the matrix alone decides.
 //
 // The header "Close" (closeSalesOrder) short-closes every live line that still
 // has qty undelivered, with one reason, in one transaction.

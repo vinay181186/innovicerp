@@ -806,9 +806,10 @@ export async function getJobWorkOrderRelated(
 // closed with the balance (order qty − returned qty) left unmet. The shared
 // so_status enum is NOT widened: status becomes 'closed' exactly like a normal
 // close, and three flag columns record that the close was short and why.
-// Closing a line with a shortfall is a department-admin decision, so it takes
-// the advance AND approve pair on jw_create (ADR-231; no new permission key).
-// The matrix alone decides: no role guard in front of it.
+// Closing a line with a shortfall needs the advance AND approve pair on
+// jw_create. Since ADR-231 that is held by L4 Approver and L5 Department Admin
+// (it used to be edit AND approve plus a manager role, i.e. L5 only). The matrix
+// alone decides: no role guard in front of it.
 //
 // ADR-203 rule 7: the line is read under its row lock (lockJwLine), a line
 // that is already closed / short-closed / fully returned is refused, the write
