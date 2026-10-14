@@ -47,7 +47,7 @@ vi.mock('@/lib/supabase', () => ({
 const { realtimeTransport, REOPEN_BACKOFF_MS } = await import('./realtime-transport');
 
 function fakeSink(): LiveSink & { [K in keyof LiveSink]: ReturnType<typeof vi.fn> } {
-  return { changes: vi.fn(), connected: vi.fn(), disconnected: vi.fn() };
+  return { changes: vi.fn(), connected: vi.fn(), resync: vi.fn(), disconnected: vi.fn() };
 }
 
 const last = (): FakeChannel => {
