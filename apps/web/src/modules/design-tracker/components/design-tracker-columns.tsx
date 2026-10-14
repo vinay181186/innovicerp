@@ -209,13 +209,15 @@ export function DesignTrackerExpanded({ row }: { row: DesignTrackerListItem }): 
 
 /**
  * The design's ⋯ menu — same actions and gates as before: Log Time (anyone who
- * can see the page), Edit (edit perm, not Approved), Submit (manager/admin, In
- * Progress), Approve (admin, Review), Revise (admin, Review).
+ * can see the page), Edit (edit perm, not Approved), Submit (design_create
+ * Advance, In Progress — ADR-231, was a manager/admin role check), Approve
+ * (admin, Review), Revise (admin, Review).
  */
 export function designTrackerRowMenu(
   row: DesignTrackerListItem,
   opts: {
-    canWrite: boolean;
+    /** design_create advance — submit for review moves the design on (ADR-231). */
+    canSubmit: boolean;
     isAdmin: boolean;
     canEdit: boolean;
     onLogTime: (row: DesignTrackerListItem) => void;
@@ -225,7 +227,7 @@ export function designTrackerRowMenu(
     onRevise: (row: DesignTrackerListItem) => void;
   },
 ): RowMenuItem[] {
-  const { canWrite, isAdmin, canEdit, onLogTime, onEdit, onSubmit, onApprove, onRevise } = opts;
+  const { canSubmit, isAdmin, canEdit, onLogTime, onEdit, onSubmit, onApprove, onRevise } = opts;
   return [
     { key: 'log', label: 'Log Time', icon: 'plus', onSelect: () => onLogTime(row) },
     {
@@ -240,7 +242,7 @@ export function designTrackerRowMenu(
       label: 'Submit',
       icon: 'check',
       group: 'workflow',
-      hidden: !canWrite || row.status !== 'In Progress',
+      hidden: !canSubmit || row.status !== 'In Progress',
       onSelect: () => onSubmit(row),
     },
     {

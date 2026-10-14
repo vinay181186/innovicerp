@@ -114,11 +114,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
   // R6 (ADR-194) #4: short-close hits requireFormAccess(...,'approve') on the
-  // server, so the UI must require edit AND approve — same pair as delete —
-  // otherwise an edit-only user sees the button and gets a 403.
-  const canShortCloseAction = perms.edit && perms.approve;
+  // server, so the UI must require approve as well — otherwise a user without
+  // it sees the button and gets a 403. ADR-231: the other half of the pair is
+  // now `advance` (short close moves the line to its end), not `edit`.
+  const canShortCloseAction = perms.advance && perms.approve;
   // The line ⋯ column exists when any line has something in it: Short Close
-  // (edit + approve) or a drawing file to preview.
+  // (advance + approve) or a drawing file to preview.
   const showLineMenu =
     canShortCloseAction || (detail?.lines ?? []).some((l) => Boolean(l.drawingFilePath));
 

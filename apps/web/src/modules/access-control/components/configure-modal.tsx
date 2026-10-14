@@ -83,11 +83,12 @@ interface Props {
 
 type FormPerms = AccessFormPerms;
 type DeptTiers = Record<string, AccessTierKey>;
-type Action = 'view' | 'entry' | 'edit' | 'approve' | 'price';
+type Action = 'view' | 'entry' | 'advance' | 'edit' | 'approve' | 'price';
 
-// The five checkbox columns, in display order. `price` (can-see-money) is the
-// new column that sits after Approve.
-const ACTIONS: readonly Action[] = ['view', 'entry', 'edit', 'approve', 'price'];
+// The six checkbox columns, in display order. `advance` (ADR-231 — move a
+// saved record to its next step) sits between Entry and Edit; `price`
+// (can-see-money) sits after Approve.
+const ACTIONS: readonly Action[] = ['view', 'entry', 'advance', 'edit', 'approve', 'price'];
 
 const NO_PERMS: FormPerms = {
   view: false,
@@ -110,6 +111,7 @@ const NO_PERMS: FormPerms = {
 const OFF_FIELD: Record<Action, keyof FormPerms> = {
   view: 'viewOff',
   entry: 'entryOff',
+  advance: 'advanceOff',
   edit: 'editOff',
   approve: 'approveOff',
   price: 'priceOff',
@@ -145,9 +147,10 @@ const TIER_SHORT: Record<string, string> = {
 };
 
 // Column template shared by the form checklist head and its rows so the
-// View / Entry / Edit / Approve / See-Price columns line up under one another.
-// Six columns are sized to fit the modal width with NO horizontal scrollbar.
-const FORM_GRID = '1fr 48px 48px 48px 58px 62px';
+// View / Entry / Advance / Edit / Approve / See-Price columns line up under one
+// another. Seven columns are sized to fit the modal width with NO horizontal
+// scrollbar — the short-caption columns were trimmed to make room for Advance.
+const FORM_GRID = '1fr 44px 44px 58px 44px 58px 58px';
 
 function roleBadgeClass(role: string): string {
   if (role === 'admin') return 'b-red';
@@ -160,6 +163,7 @@ function roleBadgeClass(role: string): string {
 const ACTION_COLOR: Record<Action, string> = {
   view: 'var(--blue)',
   entry: 'var(--amber)',
+  advance: 'var(--amber2)',
   edit: 'var(--green)',
   approve: 'var(--purple)',
   price: 'var(--orange)',
@@ -170,6 +174,7 @@ const ACTION_COLOR: Record<Action, string> = {
 const ACTION_LABEL: Record<Action, string> = {
   view: 'View',
   entry: 'Entry',
+  advance: 'Advance',
   edit: 'Edit',
   approve: 'Approve',
   price: 'See ₹',
@@ -178,7 +183,9 @@ const ACTION_LABEL: Record<Action, string> = {
 const ACTION_HINT: Record<Action, string> = {
   view: 'View = see data',
   entry: 'Entry = create new records',
-  edit: 'Edit = change existing records',
+  advance:
+    'Advance = move a saved record to its next step — close, short close, dispose, mark planned',
+  edit: 'Edit = correct a saved record, or undo it (reverse, cancel)',
   approve: 'Approve = sign off / reject (never your own record)',
   price:
     'Can See Price = see rates, amounts, totals & costs on this form. ' +
@@ -439,7 +446,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   //    "allowed here?", and the resolver works out it is a removal.
   //
   // 2. The tier does NOT grant it. Then the click is the classic ADDITIVE grant,
-  //    with the stored cascade: Entry ⇒ View, Edit ⇒ View+Entry, Approve ⇒ View.
+  //    with the stored cascade: Entry ⇒ View, Advance ⇒ View,
+  //    Edit ⇒ View+Entry+Advance, Approve ⇒ View. Entry does NOT give Advance
+  //    (ADR-231): creating a paper is not the same right as finishing one.
   //    Approve never implies Edit — an approver who can also rewrite the document
   //    is not a separate pair of eyes.
   function toggleAction(key: string, action: Action, tierGrants: boolean): void {
@@ -467,11 +476,15 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       } else if (action === 'entry') {
         next.entry = !cur.entry;
         if (next.entry) next.view = true;
+      } else if (action === 'advance') {
+        next.advance = !cur.advance;
+        if (next.advance) next.view = true;
       } else if (action === 'edit') {
         next.edit = !cur.edit;
         if (next.edit) {
           next.view = true;
           next.entry = true;
+          next.advance = true;
         }
       } else if (action === 'approve') {
         next.approve = !cur.approve;
@@ -1147,7 +1160,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             title={
                               `Prices show from ${priceStartTier(d.key)} upwards. Click a ticked ₹ box to hide money on that one form.` +
                               (OFF_SWITCH_DEPTS.includes(d.key)
-                                ? ' Untick any box to remove that action for one page; untick View to hide the whole page. Changing the tier resets this department’s pages to the new level.'
+                                ? ' Untick any box (View, Entry, Advance, Edit, Approve) to remove that action for one page; untick View to hide the whole page. Advance = move a saved record to its next step (close, short close, dispose, mark planned). Changing the tier resets this department’s pages to the new level.'
                                 : '')
                             }
                           >
@@ -1209,8 +1222,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           // Displayed state = own ticks after cascade, unioned
                           // with whatever the department tier already gives.
                           const own: FormPerms = {
-                            view:
-                              cur.view || cur.entry || cur.advance || cur.edit || cur.approve,
+                            view: cur.view || cur.entry || cur.advance || cur.edit || cur.approve,
                             entry: cur.entry || cur.edit,
                             advance: cur.advance || cur.edit,
                             edit: cur.edit,
@@ -1227,7 +1239,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           // toggle against the tier; elsewhere only money is.
                           const offDept = OFF_SWITCH_DEPTS.includes(f.dept);
                           // "Hide page" cascades in the UI too: with View removed,
-                          // the other four boxes read as off and are not clickable.
+                          // the other boxes read as off and are not clickable.
                           const pageHidden = offDept && cur.viewOff === true;
                           return (
                             <div

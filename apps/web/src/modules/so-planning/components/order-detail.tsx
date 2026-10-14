@@ -55,7 +55,7 @@ export function OrderDetail({
   onChanged,
 }: {
   soId: string;
-  perms: { view: boolean; entry: boolean; edit: boolean };
+  perms: { view: boolean; entry: boolean; advance: boolean; edit: boolean };
   modal: ModalState;
   setModal: (m: ModalState) => void;
   onBack: () => void;

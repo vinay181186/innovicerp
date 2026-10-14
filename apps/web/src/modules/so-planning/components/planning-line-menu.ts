@@ -27,7 +27,7 @@ import type { ModalState } from './planning-shared';
 export interface PlanningLineMenuArgs {
   so: PlanningDetailResponse;
   line: PlanningLine;
-  perms: { view: boolean; entry: boolean; edit: boolean };
+  perms: { view: boolean; entry: boolean; advance: boolean; edit: boolean };
   /** prodorder_create entry — may this user raise a Production Order? */
   canProductionOrder: boolean;
   /** routecard_create entry — may this user create a Route Card? */
@@ -112,12 +112,13 @@ function planItems(
     },
     {
       // Old-flow plan: let the work out. A buy / full-outsource plan raises a
-      // purchase request, everything else creates the Job Card.
+      // purchase request, everything else creates the Job Card. Letting the
+      // work out moves the plan to its next step — Advance (ADR-231).
       key: `execute-${plan.id}`,
       label: `${p}${isDP || isFO ? 'Raise PR' : 'Create JC'}`,
       icon: 'play',
       group: 'workflow',
-      hidden: !(!isRouteCard && plan.planStatus === 'planned' && perms.edit),
+      hidden: !(!isRouteCard && plan.planStatus === 'planned' && perms.advance),
       onSelect: () => onExecutePlan(plan),
     },
     {

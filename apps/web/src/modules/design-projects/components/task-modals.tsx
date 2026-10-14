@@ -283,7 +283,8 @@ export function ViewTaskModal({
             </div>
           </div>
         ))}
-        {perms.edit ? (
+        {/* ADR-231 — adding to the discussion moves the work on: dsnproj_create Advance. */}
+        {perms.advance ? (
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <input
               className="innovic-input"

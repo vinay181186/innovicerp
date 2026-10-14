@@ -50,7 +50,8 @@ function ProductionOrderClosePage(): React.JSX.Element {
   const search = productionOrderCloseRoute.useSearch();
   const preselected = usePreselectedPlan(search.planId, search.planCode, 'close');
 
-  // Tier-driven (Production). Close is an EDIT on the order.
+  // Tier-driven (Production). Close is an ADVANCE on the order (ADR-231) —
+  // moving it to its next step. Reversing a close stays an Edit (an undo).
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
 
@@ -195,7 +196,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
     );
   }
 
-  if (!perms.edit) {
+  if (!perms.advance) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -205,7 +206,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            You do not have permission to close Production Orders. Ask an admin.
+            Closing a Production Order needs Advance on Production Orders. Ask an admin.
           </div>
         </div>
       </div>

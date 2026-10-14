@@ -26,10 +26,14 @@ const CONDITION_LABELS: Record<InstrumentReturnCondition, string> = {
 export function ToolIssueViewModal({
   id,
   canReturn,
+  canCancelIssue,
   onClose,
 }: {
   id: string;
+  /** toolissue_create advance — Record Return moves the issue on (ADR-231). */
   canReturn: boolean;
+  /** toolissue_create edit — Cancel Issue is an undo, so it stays Edit. */
+  canCancelIssue: boolean;
   onClose: () => void;
 }): React.JSX.Element {
   const { data: t, isLoading, isError, error } = useToolIssue(id);
@@ -111,7 +115,7 @@ export function ToolIssueViewModal({
               <button type="button" className="btn btn-ghost" onClick={onClose}>
                 Close
               </button>
-              {canReturn && canCancel ? (
+              {canCancelIssue && canCancel ? (
                 <button
                   type="button"
                   className="btn btn-ghost"

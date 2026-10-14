@@ -238,7 +238,7 @@ function DesignTrackerListPage(): React.JSX.Element {
             onToggleExpanded={(d) => toggleExpand(d.id)}
             rowMenu={(d) =>
               designTrackerRowMenu(d, {
-                canWrite,
+                canSubmit: perms.advance,
                 isAdmin: canWrite,
                 canEdit: perms.edit,
                 onLogTime: setLogTimeRow,

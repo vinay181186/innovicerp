@@ -115,6 +115,8 @@ function PlansListPage(): React.JSX.Element {
   // the state it shows, offered only to someone allowed to take it.
   const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
+  // Closing an order moves it to its next step — Advance, not Entry (ADR-231).
+  const canCloseProductionOrder = effectiveFormPerms(eff, 'prodorder_create').advance;
 
   // The row's ▸ opens its detail reveal; a Set — many can be open.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -326,7 +328,13 @@ function PlansListPage(): React.JSX.Element {
                 expandedIds.has(row.id) ? <PlanExpanded row={row} /> : null
               }
               onToggleExpanded={(row) => toggleExpand(row.id)}
-              rowMenu={(row) => planRowMenu(row, { canCreateRouteCard, canProductionOrder })}
+              rowMenu={(row) =>
+                planRowMenu(row, {
+                  canCreateRouteCard,
+                  canProductionOrder,
+                  canCloseProductionOrder,
+                })
+              }
               renderLink={renderPlanLink}
             />
           </Panel>
