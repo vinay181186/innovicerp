@@ -807,7 +807,8 @@ export async function getJobWorkOrderRelated(
 // so_status enum is NOT widened: status becomes 'closed' exactly like a normal
 // close, and three flag columns record that the close was short and why.
 // Closing a line with a shortfall is a department-admin decision, so it takes
-// the edit AND approve pair on jw_create (no new permission key).
+// the advance AND approve pair on jw_create (ADR-231; no new permission key).
+// The matrix alone decides: no role guard in front of it.
 //
 // ADR-203 rule 7: the line is read under its row lock (lockJwLine), a line
 // that is already closed / short-closed / fully returned is refused, the write
@@ -818,8 +819,7 @@ export async function shortCloseJobWorkOrderLine(
   input: ShortCloseJobWorkOrderLineInput,
   user: AuthContext,
 ): Promise<JobWorkOrderDetail> {
-  requireWriteRole(user);
-  await requireFormAccess(user, 'jw_create', 'edit');
+  await requireFormAccess(user, 'jw_create', 'advance');
   await requireFormAccess(user, 'jw_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;

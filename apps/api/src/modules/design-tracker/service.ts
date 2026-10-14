@@ -664,7 +664,8 @@ export async function logDesignTime(
 }
 
 export async function submitDesignForReview(id: string, user: AuthContext): Promise<DesignTracker> {
-  await requireFormAccess(user, 'design_create', 'edit');
+  // ADR-231 — submitting moves the design to its next step: Advance, not Edit.
+  await requireFormAccess(user, 'design_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {

@@ -86,7 +86,8 @@ export async function moveQueueOp(
   input: MoveJobQueueOpInput,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  await requireFormAccess(user, 'jc_create', 'edit');
+  // ADR-231 — moving an op in the queue moves work forward: Advance, not Edit.
+  await requireFormAccess(user, 'jc_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -128,9 +129,10 @@ export async function reorderMachineQueue(
   input: ReorderJobQueueInput,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  // Reordering the queue rewrites saved jc_ops (queue_position) — an edit on the
-  // Job Card (jc_create). Previously this write had NO matrix guard at all.
-  await requireFormAccess(user, 'jc_create', 'edit');
+  // Reordering the queue rewrites saved jc_ops (queue_position) — moving work
+  // forward on the Job Card (jc_create `advance`, ADR-231). Previously this
+  // write had NO matrix guard at all.
+  await requireFormAccess(user, 'jc_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {

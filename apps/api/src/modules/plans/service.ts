@@ -1700,9 +1700,9 @@ export async function updatePlanOrStage(
  *  PL-3; the bigger executePlan() that lands jc_created / pr_created comes
  *  with PL-4. Idempotent: planned → planned is a no-op. */
 export async function finalizePlan(id: string, user: AuthContext): Promise<PlanDetail> {
-  requireWriteRole(user);
-  // Finalising a saved plan is a change to it → edit.
-  await requireFormAccess(user, 'plan_create', 'edit');
+  // Finalising moves a saved plan to its next step → advance (ADR-231). The
+  // matrix alone decides: no role guard in front of it.
+  await requireFormAccess(user, 'plan_create', 'advance');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1960,10 +1960,14 @@ export interface ExecutePlanResult {
  *   - full_outsource          → create 1 JW PR (+ optional material PR), set plan.fo_pr_id (+ fo_mat_pr_id), status=pr_created
  *  Wraps all writes in a single transaction so rollback unwinds JC/PR atomically. */
 export async function executePlan(id: string, user: AuthContext): Promise<ExecutePlanResult> {
-  requireWriteRole(user);
-  // Executing a saved plan (spawns the Job Cards) is an edit on the plan. The JC
-  // creation it triggers is separately gated on jc_create inside job-cards.
-  await requireFormAccess(user, 'plan_create', 'edit');
+  // Executing moves a saved plan to its next step (it spawns the Job Card or
+  // the PRs) → advance (ADR-231). The matrix alone decides: no role guard in
+  // front of it. This is the ONLY gate: the Job Card / PR rows it creates are
+  // written directly in this transaction (buildJobCardFromOps, executeDirect-
+  // Purchase, executeFullOutsource) with no jc_create or pr_create check of
+  // their own. The one inner check is non-throwing: the route-card write-back
+  // fills blanks only for a caller with routecard_create edit.
+  await requireFormAccess(user, 'plan_create', 'advance');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

@@ -203,14 +203,14 @@ export async function assertSourceDeliveryChallan(
 
 /** GET /nc-register/:id/source-challan-candidates — feeds the Sent on DC No.
  *  field on the disposition screen. Same form key as the dispose action it
- *  serves (`nc_dispose`, edit tier): the shortlist exists only to be answered,
+ *  serves (`nc_dispose`, advance — ADR-231): the shortlist exists only to be answered,
  *  and nobody who cannot dispose can answer it. Returns an empty list — never
  *  an error — when the NC resolves to no purchase-order line. */
 export async function getNcSourceChallanCandidates(
   ncId: string,
   user: AuthContext,
 ): Promise<NcSourceChallanCandidatesResponse> {
-  await requireFormAccess(user, 'nc_dispose', 'edit');
+  await requireFormAccess(user, 'nc_dispose', 'advance');
   const companyId = user.companyId;
   if (!companyId) throw new AuthorizationError('User is not assigned to a company');
   return withUserContext(user, async (tx) => {

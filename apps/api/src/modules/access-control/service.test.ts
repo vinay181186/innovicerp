@@ -19,12 +19,14 @@ const VIEWER_EMAIL = 'viewer@innovic.test';
 const perms = (p: Partial<AccessFormPerms>): AccessFormPerms => ({
   view: false,
   entry: false,
+  advance: false,
   edit: false,
   approve: false,
   price: false,
   priceOff: false,
   viewOff: false,
   entryOff: false,
+  advanceOff: false,
   editOff: false,
   approveOff: false,
   ...p,
@@ -151,8 +153,8 @@ describe('access-control service', () => {
         confirmAdminChange: false,
         departments: { sales: 'L3', qc: 'L2' },
         forms: {
-          so_create: perms({ edit: true }), // edit ⇒ view+entry+edit
-          qc_submit: perms({ entry: true }), // entry ⇒ view+entry
+          so_create: perms({ edit: true }), // edit ⇒ view+entry+advance+edit
+          qc_submit: perms({ entry: true }), // entry ⇒ view+entry, NOT advance (ADR-231)
           item_create: perms({ view: true }), // view only
           po_create: perms({ approve: true }), // approve ⇒ view+approve, NOT edit
         },
@@ -163,12 +165,31 @@ describe('access-control service', () => {
     expect(saved.departments.sales).toBe('L3');
     expect(saved.departments.qc).toBe('L2');
     expect(saved.departments.design).toBeUndefined();
-    expect(saved.forms.so_create).toEqual(perms({ view: true, entry: true, edit: true }));
+    expect(saved.forms.so_create).toEqual(
+      perms({ view: true, entry: true, advance: true, edit: true }),
+    );
     expect(saved.forms.qc_submit).toEqual(perms({ view: true, entry: true }));
     expect(saved.forms.item_create).toEqual(perms({ view: true }));
     // Approve must NOT drag entry/edit along — that split is the whole
     // point of an L4 Approver.
     expect(saved.forms.po_create).toEqual(perms({ view: true, approve: true }));
+  });
+
+  it('ADR-231: an Advance tick saves as view+advance only — no entry, no edit', async () => {
+    const saved = await service.saveUserAccess(
+      viewer.id,
+      {
+        fullAccess: false,
+        auditor: false,
+        drawingDownload: false,
+        mainDept: null,
+        confirmAdminChange: false,
+        departments: { sales: 'L1' },
+        forms: { so_create: perms({ advance: true }) },
+      },
+      admin,
+    );
+    expect(saved.forms.so_create).toEqual(perms({ view: true, advance: true }));
   });
 
   it('saveUserAccess accepts the pre-0100 boolean dept shape as L1', async () => {
@@ -353,7 +374,8 @@ describe('access-control service', () => {
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3' },
-        // Edit-only on purchase line should cascade to view+entry+edit at read time.
+        // Edit-only on purchase line should cascade to view+entry+advance+edit at
+        // read time (Edit ⇒ Advance, ADR-231).
         forms: { po_create: perms({ edit: true }) },
       },
       admin,
@@ -361,7 +383,9 @@ describe('access-control service', () => {
     const my = await service.getMyAccess(viewer);
     expect(my.fullAccess).toBe(false);
     expect(my.departments.sales).toBe('L3');
-    expect(my.forms.po_create).toEqual(perms({ view: true, entry: true, edit: true }));
+    expect(my.forms.po_create).toEqual(
+      perms({ view: true, entry: true, advance: true, edit: true }),
+    );
   });
 
   it('ADR-229: one request reuses its read; the next request sees a right switched OFF', async () => {

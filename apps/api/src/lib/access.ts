@@ -35,6 +35,7 @@ import { AuthorizationError } from './errors';
 const ACTION_VERB: Record<AccessAction, string> = {
   view: 'open',
   entry: 'create records in',
+  advance: 'move records forward in',
   edit: 'change records in',
   approve: 'approve records in',
 };
@@ -43,6 +44,7 @@ const ACTION_VERB: Record<AccessAction, string> = {
 const ACTION_TICK: Record<AccessAction, string> = {
   view: 'View',
   entry: 'Entry',
+  advance: 'Advance',
   edit: 'Edit',
   approve: 'Approve',
 };

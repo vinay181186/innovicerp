@@ -29,7 +29,6 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { salesOrderLines, salesOrders } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -52,9 +51,10 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
+// ADR-231 — closing moves the SO to its next step: Advance (not Edit) plus
+// Approve. The matrix alone decides: no role guard in front of it.
 async function requireClosePermission(user: AuthContext): Promise<void> {
-  requireWriteRole(user);
-  await requireFormAccess(user, 'so_create', 'edit');
+  await requireFormAccess(user, 'so_create', 'advance');
   await requireFormAccess(user, 'so_create', 'approve');
 }
 

@@ -92,7 +92,7 @@ function rowToUserAccess(r: {
 }
 
 // Count granted depts / forms for the list-row summary. A form counts as
-// hand-configured if any of view/entry/edit/approve is true, or if money was
+// hand-configured if any of view/entry/advance/edit/approve is true, or if money was
 // granted below the department's normal level (`price`) or taken away above it
 // (`priceOff`) — those are decisions someone made by hand and the row should
 // not read as "nothing set here".
@@ -106,15 +106,17 @@ function countForms(m: AccessFormsMap): number {
     return p &&
       (p.view ||
         p.entry ||
+        p.advance ||
         p.edit ||
         p.approve ||
         p.price ||
         p.priceOff ||
-        // A page with only OFF switches set (Hide page / No create / No edit /
-        // No approve) is still a hand-made decision — count it, or the row reads
+        // A page with only OFF switches set (Hide page / No create / No advance /
+        // No edit / No approve) is still a hand-made decision — count it, or the row reads
         // "nothing configured" when in fact an action was taken away.
         p.viewOff ||
         p.entryOff ||
+        p.advanceOff ||
         p.editOff ||
         p.approveOff)
       ? n + 1
@@ -546,8 +548,8 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
   });
 }
 
-// Admin: upsert one user's matrix. Cascades view⊆entry⊆edit on save,
-// prunes unknown dept/form keys, emits activity log.
+// Admin: upsert one user's matrix. Cascades on save (Edit ⇒ Entry + Advance ⇒
+// View; Entry does NOT imply Advance — ADR-231), prunes unknown dept/form keys, emits activity log.
 export async function saveUserAccess(
   userId: string,
   input: SaveUserAccessInput,
