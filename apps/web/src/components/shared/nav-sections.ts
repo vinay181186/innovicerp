@@ -15,6 +15,10 @@ export interface NavItem {
   // Items without a formKey are always shown to anyone who can see the section,
   // exactly as before. Wired for Purchase first; add keys to widen it.
   formKey?: AccessFormKey;
+  // The right the page itself asks for, when it is more than View. The link is
+  // shown only to someone holding it, so a menu link never leads to a "no
+  // access" page (ADR-231: Close Production Order asks for Advance).
+  formAction?: 'advance';
   // Query string for the link, e.g. { group: 'Sales' } on a department's
   // "Reports" link → /reports?group=Sales. An item with `search` matches the
   // current page only when the URL carries the same values (see
@@ -172,7 +176,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/op-entry', label: 'Op Entry', icon: '✚', formKey: 'op_entry' },
           { to: '/jc-ops', label: 'JC Operations', icon: '⨯', formKey: 'jc_create' },
           { to: '/daily-report', label: 'Daily Production Report', icon: '📊' },
-          { to: '/production-orders/close', label: 'Close Production Order', icon: '🔒', formKey: 'prodorder_create' },
+          { to: '/production-orders/close', label: 'Close Production Order', icon: '🔒', formKey: 'prodorder_create', formAction: 'advance' },
         ],
       },
       {

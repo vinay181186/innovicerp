@@ -163,12 +163,14 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // Access matrix (so_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
-  // ADR-196 — Close (short) is a department-admin decision, the same edit +
-  // approve pair the JWSO line short close takes (ADR-194 R8). The server
-  // enforces it; this only hides the buttons.
+  // ADR-196 — Close (short) takes the advance + approve pair on so_create, the
+  // same pair the JWSO line short close takes (ADR-231: L4 Approver and L5
+  // Department Admin; no role check). The server enforces it; this only hides
+  // the buttons.
+  const canCloseRight = perms.advance && perms.approve;
   // A draft or cancelled order has nothing to close (the server refuses too) —
   // the shared status map (S8) says which statuses Close is offered from.
-  const canClose = perms.edit && perms.approve && SO_CLOSABLE_STATUSES.includes(detail.status);
+  const canClose = canCloseRight && SO_CLOSABLE_STATUSES.includes(detail.status);
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Money hidden for L1 Viewers: the API nulls the SO's GST % and every line
@@ -335,8 +337,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
           // ADR-196 — "Close line" in the ⋯; same Close dialog as before.
           rowMenu={(l) =>
             lineRowMenu(l, {
-              canClose: perms.edit && perms.approve,
-              isWriteRole: me?.role === 'admin' || me?.role === 'manager',
+              canClose: canCloseRight,
               soStatus: detail.status,
               onCloseLine: (line) => setCloseTarget({ line }),
             })
