@@ -92,12 +92,14 @@ const ACTIONS: readonly Action[] = ['view', 'entry', 'edit', 'approve', 'price']
 const NO_PERMS: FormPerms = {
   view: false,
   entry: false,
+  advance: false,
   edit: false,
   approve: false,
   price: false,
   priceOff: false,
   viewOff: false,
   entryOff: false,
+  advanceOff: false,
   editOff: false,
   approveOff: false,
 };
@@ -381,6 +383,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       priceOff: false,
       viewOff: false,
       entryOff: false,
+      advanceOff: false,
       editOff: false,
       approveOff: false,
     };
@@ -396,14 +399,16 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       if (f.dept !== deptKey) continue;
       const cur = forms[f.key] ?? NO_PERMS;
       const own: FormPerms = {
-        view: cur.view || cur.entry || cur.edit || cur.approve,
+        view: cur.view || cur.entry || cur.advance || cur.edit || cur.approve,
         entry: cur.entry || cur.edit,
+        advance: cur.advance || cur.edit,
         edit: cur.edit,
         approve: cur.approve,
         price: cur.price && !cur.priceOff,
         priceOff: cur.priceOff,
         viewOff: cur.viewOff,
         entryOff: cur.entryOff,
+        advanceOff: cur.advanceOff,
         editOff: cur.editOff,
         approveOff: cur.approveOff,
       };
@@ -417,6 +422,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       if (cur.priceOff) n++;
       if (cur.viewOff) n++;
       if (cur.entryOff) n++;
+      if (cur.advanceOff) n++;
       if (cur.editOff) n++;
       if (cur.approveOff) n++;
     }
@@ -1203,14 +1209,17 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           // Displayed state = own ticks after cascade, unioned
                           // with whatever the department tier already gives.
                           const own: FormPerms = {
-                            view: cur.view || cur.entry || cur.edit || cur.approve,
+                            view:
+                              cur.view || cur.entry || cur.advance || cur.edit || cur.approve,
                             entry: cur.entry || cur.edit,
+                            advance: cur.advance || cur.edit,
                             edit: cur.edit,
                             approve: cur.approve,
                             price: cur.price,
                             priceOff: cur.priceOff,
                             viewOff: cur.viewOff,
                             entryOff: cur.entryOff,
+                            advanceOff: cur.advanceOff,
                             editOff: cur.editOff,
                             approveOff: cur.approveOff,
                           };

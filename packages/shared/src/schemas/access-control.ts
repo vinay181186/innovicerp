@@ -48,13 +48,19 @@ import {
   isAccessTierKey,
 } from '../enums/access-control';
 
-// Per-form action set. Cascade (Edit ⇒ Entry ⇒ View, Approve ⇒ View) is
-// enforced by the service on save; reads receive whatever was last stored.
-// `approve` defaults so pre-0100 rows — which only ever stored the three
-// original actions — parse without a backfill.
+// Per-form action set. Cascade (Edit ⇒ Entry + Advance ⇒ View, Approve ⇒
+// View) is enforced by the service on save; reads receive whatever was last
+// stored. `approve` defaults so pre-0100 rows — which only ever stored the
+// three original actions — parse without a backfill. `advance` / `advanceOff`
+// (ADR-231) default the same way: no migration, and a row stored before
+// Advance existed reads as "not ticked" — while a stored Edit tick still
+// carries Advance through the cascade, so nobody who had Edit loses Close.
 export const accessFormPermsSchema = z.object({
   view: z.boolean(),
   entry: z.boolean(),
+  // `advance` = move a saved record to its next step (close, short close,
+  // dispose, close rework, mark planned, assign, record a return). ADR-231.
+  advance: z.boolean().default(false),
   edit: z.boolean(),
   approve: z.boolean().default(false),
   // `price` = may this user see money (rates / amounts / totals / costs) on
@@ -80,12 +86,16 @@ export const accessFormPermsSchema = z.object({
   //                URL shows the no-access panel). Cascades: a page you cannot
   //                open grants no create / edit / approve / price either.
   //   entryOff   = "No create"  — can open and read, but cannot create.
+  //   advanceOff = "No advance" — cannot move a saved record to its next step
+  //                (ADR-231). Takes away ONLY Advance; "No edit" does not
+  //                touch it, so an L3 with "No edit" can still close.
   //   editOff    = "No edit"    — cannot change a saved record.
   //   approveOff = "No approve" — cannot approve / reject.
   //
   // All default false, so every stored row keeps behaving exactly as before.
   viewOff: z.boolean().default(false),
   entryOff: z.boolean().default(false),
+  advanceOff: z.boolean().default(false),
   editOff: z.boolean().default(false),
   approveOff: z.boolean().default(false),
 });
@@ -193,7 +203,7 @@ export const listUserAccessQuerySchema = z.object({
 export type ListUserAccessQuery = z.input<typeof listUserAccessQuerySchema>;
 
 // "Effective" access for /me — applies fullAccess + cascade so the web
-// shell can answer canView/canEdit/canEntry/canApprove without re-deriving
+// shell can answer canView/canEntry/canAdvance/canEdit/canApprove without re-deriving
 // the logic.
 export const effectiveAccessSchema = z.object({
   fullAccess: z.boolean(),
@@ -208,24 +218,28 @@ export type EffectiveAccess = z.infer<typeof effectiveAccessSchema>;
 const NO_PERMS: AccessFormPerms = {
   view: false,
   entry: false,
+  advance: false,
   edit: false,
   approve: false,
   price: false,
   priceOff: false,
   viewOff: false,
   entryOff: false,
+  advanceOff: false,
   editOff: false,
   approveOff: false,
 };
 const ALL_PERMS: AccessFormPerms = {
   view: true,
   entry: true,
+  advance: true,
   edit: true,
   approve: true,
   price: true,
   priceOff: false,
   viewOff: false,
   entryOff: false,
+  advanceOff: false,
   editOff: false,
   approveOff: false,
 };
@@ -234,11 +248,16 @@ export function emptyFormPerms(): AccessFormPerms {
   return { ...NO_PERMS };
 }
 
-// Apply the cascade to a single perms set. Edit ⇒ View+Entry+Edit;
-// Entry ⇒ View+Entry; Approve ⇒ View+Approve (approve is deliberately
-// NOT implied by edit — an Editor who cannot approve is the point of L3).
+// Apply the cascade to a single perms set. Edit ⇒ View+Entry+Advance+Edit;
+// Entry ⇒ View+Entry; Advance ⇒ View+Advance; Approve ⇒ View+Approve.
+// Approve is deliberately NOT implied by edit — an Editor who cannot approve is
+// the point of L3. Entry deliberately does NOT imply Advance (ADR-231):
+// raising a paper and finishing one are separate rights. Edit DOES imply
+// Advance, so every Edit tick stored before Advance existed keeps granting
+// Close / Dispose without a backfill.
 export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
   const approve = p.approve;
+  const advance = p.advance;
   // `price` / `priceOff` (can-see-money) are independent — they neither imply
   // nor are implied by any write action, so they pass straight through the
   // cascade untouched. The four OFF switches are subtractions applied AFTER the
@@ -248,12 +267,23 @@ export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
     priceOff: p.priceOff,
     viewOff: p.viewOff,
     entryOff: p.entryOff,
+    advanceOff: p.advanceOff,
     editOff: p.editOff,
     approveOff: p.approveOff,
   };
-  if (p.edit) return { view: true, entry: true, edit: true, approve, price, ...off };
-  if (p.entry) return { view: true, entry: true, edit: false, approve, price, ...off };
-  return { view: p.view || approve, entry: false, edit: false, approve, price, ...off };
+  if (p.edit) {
+    return { view: true, entry: true, advance: true, edit: true, approve, price, ...off };
+  }
+  if (p.entry) return { view: true, entry: true, advance, edit: false, approve, price, ...off };
+  return {
+    view: p.view || approve || advance,
+    entry: false,
+    advance,
+    edit: false,
+    approve,
+    price,
+    ...off,
+  };
 }
 
 // Apply the cascade across every form. Used on save and when computing
@@ -364,6 +394,7 @@ export function effectiveFormPerms(
       ...NO_PERMS,
       viewOff: true,
       entryOff: fromForm.entryOff,
+      advanceOff: fromForm.advanceOff,
       editOff: fromForm.editOff,
       approveOff: fromForm.approveOff,
       priceOff: fromForm.priceOff,
@@ -383,6 +414,9 @@ export function effectiveFormPerms(
     // tier just like Hide-price does. Grants can only ever ADD; these are the
     // sanctioned way to take one action back for one page.
     entry: (fromTier.entry || fromForm.entry) && !fromForm.entryOff,
+    // ADR-231: only "No advance" removes Advance. "No edit" leaves it, so an L3
+    // who must not rewrite a saved paper can still close it.
+    advance: (fromTier.advance || fromForm.advance) && !fromForm.advanceOff,
     edit: (fromTier.edit || fromForm.edit) && !fromForm.editOff,
     approve: (fromTier.approve || fromForm.approve) && !fromForm.approveOff,
     // Auditors read everything, money included; otherwise money follows the
@@ -390,6 +424,7 @@ export function effectiveFormPerms(
     price: !fromForm.priceOff && (eff.auditor || tierPrice || fromForm.price),
     viewOff: false,
     entryOff: fromForm.entryOff,
+    advanceOff: fromForm.advanceOff,
     editOff: fromForm.editOff,
     approveOff: fromForm.approveOff,
     priceOff: fromForm.priceOff,
@@ -408,6 +443,14 @@ export function canEntryForm(
   formKey: AccessFormKey,
 ): boolean {
   return effectiveFormPerms(eff, formKey).entry;
+}
+
+// ADR-231: may this user move a saved record on this form to its next step?
+export function canAdvanceForm(
+  eff: EffectiveAccess | null | undefined,
+  formKey: AccessFormKey,
+): boolean {
+  return effectiveFormPerms(eff, formKey).advance;
 }
 
 export function canEditForm(
