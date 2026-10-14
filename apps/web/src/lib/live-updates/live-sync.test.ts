@@ -118,6 +118,19 @@ describe('LiveSync', () => {
     expect(invalidatedRoots()).toEqual(['*']);
   });
 
+  it('a resync re-reads everything but rings no record watcher', () => {
+    const t = fakeTransport();
+    sync.start(t.transport, 'co-1');
+    t.sink().connected();
+    invalidate.mockClear();
+    const watcher = vi.fn();
+    sync.watchRecord('sales_orders', 'so-1', watcher);
+    t.sink().resync();
+    vi.advanceTimersByTime(LIVE_BATCH_MAX_WAIT_MS);
+    expect(invalidatedRoots()).toEqual(['*']);
+    expect(watcher).not.toHaveBeenCalled();
+  });
+
   it('a connection that never answers is reported as paused', () => {
     const t = fakeTransport();
     sync.start(t.transport, 'co-1');

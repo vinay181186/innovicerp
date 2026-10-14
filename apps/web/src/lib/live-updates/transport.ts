@@ -14,6 +14,10 @@ export interface LiveSink {
   /** The transport can hear again. If it had been deaf, the core re-reads
    *  every screen on display, because whatever changed meanwhile was missed. */
   connected(): void;
+  /** The transport heard that SOMETHING changed but cannot say what (e.g. its
+   *  cursor fell too far behind). Every screen on display re-reads; no edit
+   *  screen is told "someone else changed this", because nobody may have. */
+  resync(): void;
   /** The transport cannot hear right now. `reason` is a short machine word
    *  (`CHANNEL_ERROR`, `TIMED_OUT`, `http_503`, …) for logs; it is never shown
    *  to the user. The transport keeps retrying on its own. */

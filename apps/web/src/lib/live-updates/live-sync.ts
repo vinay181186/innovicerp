@@ -70,6 +70,9 @@ export class LiveSync {
         this.setStatus('live');
         this.refreshEverythingOnScreen();
       },
+      resync: () => {
+        if (!stopped) this.refreshEverythingOnScreen();
+      },
       disconnected: (reason, error) => {
         if (stopped) return;
         clearTimeout(connectTimer);
