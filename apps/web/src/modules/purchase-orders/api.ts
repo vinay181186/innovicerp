@@ -48,11 +48,18 @@ export function usePurchaseOrdersList(
   });
 }
 
-export function usePurchaseOrder(id: string | undefined) {
+/** `options.refetchInterval` — the detail PAGE passes the ADR-230 safety
+ *  refresh; edit screens and pickers that read this hook do not, so a form
+ *  source never polls. */
+export function usePurchaseOrder(
+  id: string | undefined,
+  options?: Pick<UseQueryOptions<PurchaseOrderDetail>, 'refetchInterval'>,
+) {
   return useQuery<PurchaseOrderDetail>({
     queryKey: id ? purchaseOrdersKeys.detail(id) : purchaseOrdersKeys.detail('__missing__'),
     queryFn: () => apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}`),
     enabled: Boolean(id),
+    ...options,
   });
 }
 
@@ -61,31 +68,33 @@ export function useUpdatePurchaseOrder(id: string, saveKey?: SaveKey) {
   // ADR-202 — when the edit-approval gate is on and the PO is live, the PATCH
   // returns a DocumentEditStagedResult (the edit was staged for approval)
   // instead of the updated PO. The form reads the union to tell the two apart.
-  return useMutation<PurchaseOrderDetail | DocumentEditStagedResult, Error, UpdatePurchaseOrderInput>(
-    {
-      mutationFn: (input) =>
-        withSaveKey(saveKey, (headers) =>
-          apiFetch<PurchaseOrderDetail | DocumentEditStagedResult>(`/purchase-orders/${id}`, {
-            method: 'PATCH',
-            json: input,
-            ...(headers ? { headers } : {}),
-          }),
-        ),
-      onSuccess: (updated) => {
-        void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
-        // ADR-197 — the document's History tab reads the activity log.
-        void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-        if ('staged' in updated) {
-          // Nothing changed on the PO itself — just refresh so the detail page
-          // shows the new pending-change chips.
-          void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(id) });
-          void qc.invalidateQueries({ queryKey: ['document-edits'] });
-          return;
-        }
-        qc.setQueryData(purchaseOrdersKeys.detail(id), updated);
-      },
+  return useMutation<
+    PurchaseOrderDetail | DocumentEditStagedResult,
+    Error,
+    UpdatePurchaseOrderInput
+  >({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PurchaseOrderDetail | DocumentEditStagedResult>(`/purchase-orders/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      // ADR-197 — the document's History tab reads the activity log.
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the PO itself — just refresh so the detail page
+        // shows the new pending-change chips.
+        void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
+      qc.setQueryData(purchaseOrdersKeys.detail(id), updated);
     },
-  );
+  });
 }
 
 export function useSoftDeletePurchaseOrder() {

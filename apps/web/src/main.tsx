@@ -17,7 +17,12 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      refetchOnWindowFocus: false,
+      // ADR-230 — a screen re-reads when the user comes back to the window or
+      // the network returns, so a PC left on another window never shows what
+      // it loaded an hour ago. Only stale queries refetch, and a refetch never
+      // re-seeds an open form (forms take their values once).
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
       retry: 1,
     },
   },

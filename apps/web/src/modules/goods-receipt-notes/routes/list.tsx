@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { useSession } from '@/lib/session';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
@@ -111,7 +112,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     [sf.param, search.search, search.qcStatus, search.page],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query);
+  const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query, {
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
   // The KPI summary has no "QC In Progress" count, so the QC-status dropdown's
   // In Progress count reads the pager total of the same list filtered to it
   // (same endpoint). The rows also tell each line whether it is in QC right now

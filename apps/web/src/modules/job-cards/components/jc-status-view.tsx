@@ -28,6 +28,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { useOpFlow } from '@/modules/flow-views/api';
 import { ReworkTreePanel } from '@/modules/flow-views/components/jc-flow-panels';
 import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
@@ -56,7 +57,12 @@ const TAB_KEYS: readonly TabKey[] = ['ops', 'docs', 'material', 'related', 'hist
 
 export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
-  const { data: jc, isLoading, isError, error } = useJobCard(id);
+  const {
+    data: jc,
+    isLoading,
+    isError,
+    error,
+  } = useJobCard(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   // `opsLoading` gates the Print button: the ops come from their own query, so
   // a click landing between "job card loaded" and "ops loaded" printed a Job
   // Card whose Operation Routing table said "No operations".

@@ -15,6 +15,7 @@ import type {
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 
 export const jobCardsKeys = {
   all: ['job-cards'] as const,
@@ -67,6 +68,8 @@ export function useJcStatusCounts(query: JcStatusCountsQuery) {
         `/job-cards/status-counts?${filterParams(query).toString()}`,
       ),
     placeholderData: (prev) => prev,
+    // ADR-230 safety refresh — only the JC list reads these counts.
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
 }
 
@@ -79,11 +82,18 @@ export function useNextJcCode(enabled = true) {
   });
 }
 
-export function useJobCard(id: string | undefined) {
+/** `options.refetchInterval` — the detail PAGE passes the ADR-230 safety
+ *  refresh; edit screens and pickers that read this hook do not, so a form
+ *  source never polls. */
+export function useJobCard(
+  id: string | undefined,
+  options?: Pick<UseQueryOptions<JobCardListItem>, 'refetchInterval'>,
+) {
   return useQuery<JobCardListItem>({
     queryKey: id ? jobCardsKeys.detail(id) : jobCardsKeys.detail('__missing__'),
     queryFn: () => apiFetch<JobCardListItem>(`/job-cards/${id}`),
     enabled: Boolean(id),
+    ...options,
   });
 }
 
@@ -144,6 +154,9 @@ export function useJobCardStatusExtras(id: string | undefined) {
       : (['job-cards', 'status', '__missing__'] as const),
     queryFn: () => apiFetch<JobCardStatusExtras>(`/job-cards/${id}/status`),
     enabled: Boolean(id),
+    // ADR-230 safety refresh — display-only (QC docs, completion feed), never a
+    // form source; the edit screen reads useJobCardEditModel.
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
 }
 

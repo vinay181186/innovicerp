@@ -55,11 +55,18 @@ export function usePurchaseRequestsList(
   });
 }
 
-export function usePurchaseRequest(id: string | undefined) {
+/** `options.refetchInterval` — the detail PAGE passes the ADR-230 safety
+ *  refresh; edit screens and pickers that read this hook do not, so a form
+ *  source never polls. */
+export function usePurchaseRequest(
+  id: string | undefined,
+  options?: Pick<UseQueryOptions<PurchaseRequestDetail>, 'refetchInterval'>,
+) {
   return useQuery<PurchaseRequestDetail>({
     queryKey: id ? purchaseRequestsKeys.detail(id) : purchaseRequestsKeys.detail('__missing__'),
     queryFn: () => apiFetch<PurchaseRequestDetail>(`/purchase-requests/${id}`),
     enabled: Boolean(id),
+    ...options,
   });
 }
 
@@ -88,29 +95,31 @@ export function useUpdatePurchaseRequest(id: string, saveKey?: SaveKey) {
   // ADR-202 — when the edit-approval gate is on and the PR is live, the PATCH
   // returns a DocumentEditStagedResult (the edit was staged for approval)
   // instead of the updated PR. The edit page reads the union to tell them apart.
-  return useMutation<PurchaseRequest | DocumentEditStagedResult, Error, UpdatePurchaseRequestInput>({
-    mutationFn: (input) =>
-      withSaveKey(saveKey, (headers) =>
-        apiFetch<PurchaseRequest | DocumentEditStagedResult>(`/purchase-requests/${id}`, {
-          method: 'PATCH',
-          json: input,
-          ...(headers ? { headers } : {}),
-        }),
-      ),
-    onSuccess: (updated) => {
-      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
-      // ADR-197 — the PR's History tab reads the activity log.
-      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      if ('staged' in updated) {
-        // Nothing changed on the PR itself — just refresh so the detail page
-        // shows the new pending-change chips.
-        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(id) });
-        void qc.invalidateQueries({ queryKey: ['document-edits'] });
-        return;
-      }
-      qc.setQueryData(purchaseRequestsKeys.detail(id), updated);
+  return useMutation<PurchaseRequest | DocumentEditStagedResult, Error, UpdatePurchaseRequestInput>(
+    {
+      mutationFn: (input) =>
+        withSaveKey(saveKey, (headers) =>
+          apiFetch<PurchaseRequest | DocumentEditStagedResult>(`/purchase-requests/${id}`, {
+            method: 'PATCH',
+            json: input,
+            ...(headers ? { headers } : {}),
+          }),
+        ),
+      onSuccess: (updated) => {
+        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+        // ADR-197 — the PR's History tab reads the activity log.
+        void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+        if ('staged' in updated) {
+          // Nothing changed on the PR itself — just refresh so the detail page
+          // shows the new pending-change chips.
+          void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(id) });
+          void qc.invalidateQueries({ queryKey: ['document-edits'] });
+          return;
+        }
+        qc.setQueryData(purchaseRequestsKeys.detail(id), updated);
+      },
     },
-  });
+  );
 }
 
 export function useApprovePr() {

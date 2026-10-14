@@ -31,7 +31,7 @@ import {
   roundQty,
 } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { todayIst } from '@/lib/date';
@@ -213,8 +213,13 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   const { data: selectedPoDetail } = usePurchaseOrder(
     isCreate && selectedPoId ? selectedPoId : undefined,
   );
+  const seededForPo = useRef<string | null>(null);
   useEffect(() => {
     if (isEdit || !selectedPoDetail) return;
+    // Seed once per PO. A refetch of the SAME PO (window focus, a live update,
+    // another GRN against it) must not wipe the quantities being typed (ADR-230).
+    if (seededForPo.current === selectedPoDetail.id) return;
+    seededForPo.current = selectedPoDetail.id;
     if (selectedPoDetail.vendorId) {
       setValue('header.vendorId', selectedPoDetail.vendorId, { shouldDirty: true });
     }

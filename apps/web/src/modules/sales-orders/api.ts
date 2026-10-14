@@ -70,11 +70,18 @@ export async function fetchSalesOrdersForExport(
   return { items, total, limit: items.length, offset: 0 };
 }
 
-export function useSalesOrder(id: string | undefined) {
+/** `options.refetchInterval` — the detail PAGE passes the ADR-230 safety
+ *  refresh; edit screens and pickers that read this hook do not, so a form
+ *  source never polls. */
+export function useSalesOrder(
+  id: string | undefined,
+  options?: Pick<UseQueryOptions<SalesOrderDetail>, 'refetchInterval'>,
+) {
   return useQuery<SalesOrderDetail>({
     queryKey: id ? salesOrdersKeys.detail(id) : salesOrdersKeys.detail('__missing__'),
     queryFn: () => apiFetch<SalesOrderDetail>(`/sales-orders/${id}`),
     enabled: Boolean(id),
+    ...options,
   });
 }
 

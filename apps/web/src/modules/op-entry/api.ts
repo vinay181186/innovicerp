@@ -1,10 +1,13 @@
-// Op Entry data layer (T-025b). TanStack Query hooks + Realtime subscriptions
-// per ADR-004 (Realtime is on for op_log + running_ops, the two hot tables).
+// Op Entry data layer (T-025b). TanStack Query hooks.
 //
 // Optimistic update on useSubmitOpLog mutates the cached jc_ops row before the
-// server round-trip — operator UI feels instant. The Realtime sub on op_log
-// invalidates the list a second time when the server's INSERT propagates,
-// reconciling any drift.
+// server round-trip — operator UI feels instant. onSettled invalidates the list
+// so the server's figures replace the optimistic ones.
+//
+// ADR-230 — the two Realtime subscriptions that used to live here (op_log,
+// running_ops) were removed: their tables were never in the publication
+// (migration 0205), so they never delivered an event. Live updates now arrive
+// through lib/live-updates; the polls below stay as they were.
 
 import type {
   DecideOpLogTimeChangeInput,
@@ -34,14 +37,15 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useId } from 'react';
 import { apiFetch } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
 import { jobQueueKeys } from '@/modules/job-queue/api';
 import { opLogKeys } from '@/modules/op-log/api';
+import { qcCommandKeys } from '@/modules/qc-command/api';
+import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { shopFloorKeys } from '@/modules/shop-floor/api';
 
 export const opEntryKeys = {
@@ -70,6 +74,7 @@ export function useJcOpsEnriched(
     queryFn: () => apiFetch<JcOpEnriched[]>(`/op-entry/jc-ops?${params.toString()}`),
     enabled: Boolean(query.jobCardId || query.jobCardCode || query.machineId),
     placeholderData: (prev) => prev,
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     ...options,
   });
 }
@@ -86,6 +91,7 @@ export function useOpLog(
     queryKey: opEntryKeys.opLog(query),
     queryFn: () => apiFetch<OpLog[]>(`/op-entry/op-log?${params.toString()}`),
     enabled: Boolean(query.jcOpId || query.jobCardId),
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     ...options,
   });
 }
@@ -116,7 +122,7 @@ export function useRunningOps(
   return useQuery<RunningOp[]>({
     queryKey: opEntryKeys.running(query),
     queryFn: () => apiFetch<RunningOp[]>(`/op-entry/running-ops?${params.toString()}`),
-    refetchInterval: 30_000, // 30s polling fallback alongside Realtime
+    refetchInterval: 30_000, // 30s polling fallback alongside live updates
     ...options,
   });
 }
@@ -206,8 +212,7 @@ export function useSubmitOpLog() {
 // QC inspection submit (T-040d). Same shape as useSubmitOpLog but writes the
 // QC log path. No optimistic update on this mutation — qc_pending math from
 // the view is non-trivial to mirror client-side, and a 200ms server round-trip
-// for QC inspections is acceptable. The Realtime sub on op_log invalidates
-// after the server INSERT propagates anyway.
+// for QC inspections is acceptable.
 export function useSubmitQcLog() {
   const qc = useQueryClient();
   return useMutation<OpLog, Error, SubmitQcLogInput>({
@@ -216,6 +221,9 @@ export function useSubmitQcLog() {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'machine-output'] });
+      // The QC History list and the QC Command board both count this inspection.
+      void qc.invalidateQueries({ queryKey: qcHistoryKeys.all });
+      void qc.invalidateQueries({ queryKey: qcCommandKeys.all });
       invalidateProductionViews(qc);
     },
   });
@@ -371,77 +379,4 @@ export function useStopOp() {
       invalidateProductionViews(qc);
     },
   });
-}
-
-// ─── Realtime subscriptions ───────────────────────────────────────────────
-
-// Subscribe to op_log INSERTs filtered by jc_op_id; invalidate the relevant
-// queries when the server's INSERT propagates (reconciles optimistic writes).
-//
-// The topic carries a per-instance suffix — see the note on
-// useRealtimeRunningOps for why a fixed topic makes the hook unsafe to call
-// from two mounted components at once.
-export function useRealtimeOpLog(jcOpId: string | undefined): void {
-  const qc = useQueryClient();
-  const topicId = useChannelTopicId();
-  useEffect(() => {
-    if (!jcOpId) return;
-    const channel = supabase
-      .channel(`op-log:${jcOpId}:${topicId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'op_log', filter: `jc_op_id=eq.${jcOpId}` },
-        () => {
-          void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
-          void qc.invalidateQueries({ queryKey: opEntryKeys.opLog({ jcOpId, limit: 100 }) });
-          // Prefix, so both the per-op and the whole-JC machine breakdowns refresh.
-          void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'machine-output'] });
-        },
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [jcOpId, qc, topicId]);
-}
-
-/** A per-component-instance suffix for a Realtime channel topic.
- *
- *  supabase.channel(topic) returns the SAME channel object for a topic that is
- *  already open. Once that channel has been .subscribe()d, adding another
- *  postgres_changes callback to it throws:
- *
- *    cannot add `postgres_changes` callbacks for realtime:running-ops
- *    after `subscribe()`
- *
- *  which killed the whole page ("Something went wrong!"). It surfaced when Op
- *  Entry's "By Machine" view was folded into the Op Entry page: the page and
- *  the view both call useRealtimeRunningOps, so two mounted components asked
- *  for the one fixed topic. useId gives each caller its own topic, so the hook
- *  is safe to call from as many components as need it. React 18 wraps useId
- *  output in colons, which would read oddly inside a colon-delimited topic, so
- *  they are stripped.
- */
-function useChannelTopicId(): string {
-  return useId().replaceAll(':', '');
-}
-
-// Subscribe to running_ops changes for the company. The subscription itself
-// inherits the company filter via RLS at the WebSocket layer (Supabase
-// Realtime applies RLS to the row stream).
-export function useRealtimeRunningOps(): void {
-  const qc = useQueryClient();
-  const topicId = useChannelTopicId();
-  useEffect(() => {
-    const channel = supabase
-      .channel(`running-ops:${topicId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'running_ops' }, () => {
-        void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
-        void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
-      })
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [qc, topicId]);
 }

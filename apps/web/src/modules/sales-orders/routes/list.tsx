@@ -21,6 +21,7 @@ import { Download, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { usePendingEditIds } from '@/modules/document-edits/api';
@@ -106,7 +107,9 @@ function SalesOrdersListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.type, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query);
+  const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query, {
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
   const gotoPage = useCallback(
     (p: number): void => {
       void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });

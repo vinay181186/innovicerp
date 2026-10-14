@@ -2,10 +2,10 @@
 // Replaces the Firebase-specific legacy renderSettings L13351 with the
 // fields that map to our `companies` table. Admin-only writes.
 
-import type { UpdateCompanyInput } from '@innovic/shared';
+import type { Company, UpdateCompanyInput } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { roleLabel } from '@/lib/role-label';
 import { useSession } from '@/lib/session';
@@ -34,6 +34,20 @@ interface FormValues {
   pincode: string;
 }
 
+function toFormValues(company: Company): FormValues {
+  return {
+    name: company.name,
+    gstNumber: company.gstNumber ?? '',
+    phone: company.phone ?? '',
+    email: company.email ?? '',
+    addressLine1: company.addressLine1 ?? '',
+    addressLine2: company.addressLine2 ?? '',
+    city: company.city ?? '',
+    state: company.state ?? '',
+    pincode: company.pincode ?? '',
+  };
+}
+
 function SettingsPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: company, isLoading, isError, error } = useMyCompany();
@@ -57,19 +71,14 @@ function SettingsPage(): React.JSX.Element {
     },
   });
 
+  // Seed once per company. A refetch (window focus, a live update, another
+  // admin's save) must not wipe what is being typed (ADR-230); our own save
+  // re-seeds from the saved row below.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!company) return;
-    reset({
-      name: company.name,
-      gstNumber: company.gstNumber ?? '',
-      phone: company.phone ?? '',
-      email: company.email ?? '',
-      addressLine1: company.addressLine1 ?? '',
-      addressLine2: company.addressLine2 ?? '',
-      city: company.city ?? '',
-      state: company.state ?? '',
-      pincode: company.pincode ?? '',
-    });
+    if (!company || seededFor.current === company.id) return;
+    seededFor.current = company.id;
+    reset(toFormValues(company));
   }, [company, reset]);
 
   const onValid = async (values: FormValues): Promise<void> => {
@@ -87,7 +96,8 @@ function SettingsPage(): React.JSX.Element {
       pincode: values.pincode.trim() || undefined,
     };
     try {
-      await update.mutateAsync(payload);
+      const saved = await update.mutateAsync(payload);
+      reset(toFormValues(saved));
       setSubmitOk(true);
       window.setTimeout(() => setSubmitOk(false), 3000);
     } catch (e) {

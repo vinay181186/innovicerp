@@ -16,7 +16,7 @@
 // its create mode is no longer reached.
 
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut, roundQty } from '@innovic/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayIst } from '@/lib/date';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
@@ -124,12 +124,19 @@ export function GrnAgainstPoForm({
   // replaced from the newly selected PO (or emptied). No "pristine" guard — the
   // old form only filled lines once, so changing the PO left the previous PO's
   // items on screen. Vendor is derived from `po` below, so it resets for free.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    setFormError(null);
     if (!po) {
+      seededFor.current = null;
+      setFormError(null);
       setLines([]);
       return;
     }
+    // Seed once per PO. A refetch of the SAME PO (window focus, a live update,
+    // another GRN against it) must not wipe the quantities being typed (ADR-230).
+    if (seededFor.current === po.id) return;
+    seededFor.current = po.id;
+    setFormError(null);
     setLines(
       po.lines
         .map((l): LineDraft | null => {

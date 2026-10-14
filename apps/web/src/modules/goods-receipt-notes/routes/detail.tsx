@@ -23,6 +23,7 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -48,7 +49,12 @@ export const goodsReceiptNoteDetailRoute = createRoute({
 function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const { id } = goodsReceiptNoteDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useGoodsReceiptNote(id);
+  const {
+    data: detail,
+    isLoading,
+    isError,
+    error,
+  } = useGoodsReceiptNote(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   // ADR-202 — the edit(s) staged against this GRN and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields in the header grid. Flattened across requests (usually one).

@@ -35,6 +35,7 @@ import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { inrFormat } from '@/lib/print/doc-print';
@@ -102,7 +103,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const { id } = salesOrderDetailRoute.useParams();
   const { uploadFailed } = salesOrderDetailRoute.useSearch();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useSalesOrder(id);
+  const {
+    data: detail,
+    isLoading,
+    isError,
+    error,
+  } = useSalesOrder(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');

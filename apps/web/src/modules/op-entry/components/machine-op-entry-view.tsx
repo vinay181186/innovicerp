@@ -23,7 +23,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useMachinesList } from '@/modules/machines/api';
-import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps } from '../api';
+import { useJcOpsEnriched, useRunningOps } from '../api';
 import { MachineCard } from './machine-card';
 import { OpEntryModal, type OpEntryModalTarget } from './op-entry-modal';
 import { PendingOpsSection, type MadeHereRow } from './pending-ops-section';
@@ -41,7 +41,6 @@ export function MachineOpEntryView({
   // this screen was rebuilt to remove.
   const [entryTarget, setEntryTarget] = useState<OpEntryModalTarget | null>(null);
 
-  useRealtimeRunningOps();
   const machines = useMachinesList({ limit: 200, offset: 0 });
   const running = useRunningOps({ status: 'running' });
 

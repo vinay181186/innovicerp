@@ -41,6 +41,7 @@ import { ConfirmDialog } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -65,7 +66,12 @@ export const purchaseRequestDetailRoute = createRoute({
 function PurchaseRequestDetailPage(): React.JSX.Element {
   const { id } = purchaseRequestDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = usePurchaseRequest(id);
+  const {
+    data: detail,
+    isLoading,
+    isError,
+    error,
+  } = usePurchaseRequest(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'pr_create');
   // ADR-202 — the edit(s) staged against this PR and still waiting for a

@@ -12,6 +12,7 @@ import type {
 } from '@innovic/shared';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { opEntryKeys } from '@/modules/op-entry/api';
 
 export const approvalsKeys = {
@@ -27,6 +28,8 @@ export function useApprovalInbox(opts: { enabled?: boolean; refetchOnMount?: 'al
     queryFn: () => apiFetch<ApprovalInboxResponse>('/approvals/inbox'),
     enabled: opts.enabled ?? true,
     staleTime: 60_000,
+    // ADR-230 safety refresh — the Approvals page and the top-nav badge.
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     ...(opts.refetchOnMount ? { refetchOnMount: opts.refetchOnMount } : {}),
   });
 }
@@ -55,6 +58,7 @@ export function useOpLogTimeChangePage(q: ListOpLogTimeChangePageQuery) {
       );
     },
     placeholderData: (prev) => prev,
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
 }
 
@@ -73,5 +77,6 @@ export function useApprovalInboxList(query: ApprovalInboxListQuery) {
     placeholderData: (prev) => prev,
     staleTime: 60_000,
     refetchOnMount: 'always',
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
 }

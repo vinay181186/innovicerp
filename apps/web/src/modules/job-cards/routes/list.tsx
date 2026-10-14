@@ -53,6 +53,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { usePendingEditIds } from '@/modules/document-edits/api';
@@ -169,7 +170,9 @@ function JobCardsListPage(): React.JSX.Element {
     ],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useJobCardsList(query);
+  const { data, isLoading, isFetching, isError, error } = useJobCardsList(query, {
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
   const { data: operatorsData } = useOperatorsList({ limit: 200, offset: 0 });
   const machines = machinesData?.machines ?? [];
