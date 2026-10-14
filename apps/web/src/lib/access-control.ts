@@ -34,6 +34,7 @@ export {
   // drawing". Read by the Download buttons AND by the server route that mints
   // the link, so a hidden button and a refused request can never disagree.
   canDownloadDrawings,
+  canAdvanceForm,
   canEditForm,
   canApproveForm,
   effectiveFormPerms,

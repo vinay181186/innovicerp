@@ -44,11 +44,25 @@ export type AccessDeptKey = AccessDept['key'];
 export const ACCESS_DEPT_KEYS: readonly AccessDeptKey[] = ACCESS_DEPTS.map((d) => d.key);
 
 // ── Form actions ───────────────────────────────────────────────
-// Edit ⊃ Entry ⊃ View. Approve is INDEPENDENT of edit — it only implies
-// view, so an L4 Approver can sign off a document without being able to
-// create or alter one (segregation of duty). Cascade enforced at
-// write-time by the service.
-export const ACCESS_ACTIONS = ['view', 'entry', 'edit', 'approve'] as const;
+// Five rights (ADR-231):
+//   view     — open and read
+//   entry    — create a NEW record
+//   advance  — move a SAVED record to its next step: close, short close,
+//              dispose, close rework, mark planned, assign, record a return
+//   edit     — correct what was typed on a saved record, and every UNDO
+//              (reverse, cancel). Delete stays edit + approve.
+//   approve  — sign off
+// Edit ⊃ Advance ⊃ View, and Edit ⊃ Entry ⊃ View. Entry does NOT include
+// Advance: creating a paper is not the same right as finishing one. Approve is
+// INDEPENDENT of edit — it only implies view, so an L4 Approver can sign off a
+// document without being able to create or alter one (segregation of duty).
+// Cascade enforced at write-time by the service.
+//
+// Advance exists because finishing a job used to be filed under Edit, and L2
+// has no Edit — so an L2 could raise a Production Order and never close it,
+// report an NC and never dispose it. Advance is the right to do the work;
+// Edit stays the right to rewrite it.
+export const ACCESS_ACTIONS = ['view', 'entry', 'advance', 'edit', 'approve'] as const;
 export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 
 // ── Form keys ──────────────────────────────────────────────────
@@ -156,37 +170,37 @@ export const ACCESS_TIERS = [
   {
     key: 'L1',
     label: 'Viewer',
-    perms: { view: true, entry: false, edit: false, approve: false },
+    perms: { view: true, entry: false, advance: false, edit: false, approve: false },
     hint: 'Can open and read. Cannot save anything. Never sees prices/amounts.',
   },
   {
     key: 'L2',
     label: 'Data Entry',
-    perms: { view: true, entry: true, edit: false, approve: false },
-    hint: 'Can create new records. Cannot change one after it is saved. Sees prices only in Sales, Purchase, Store and Finance.',
+    perms: { view: true, entry: true, advance: true, edit: false, approve: false },
+    hint: 'Can create new records and move them to their next step (close, dispose). Cannot change one after it is saved. Sees prices only in Sales, Purchase, Store and Finance.',
   },
   {
     key: 'L3',
     label: 'Editor / Executor',
-    perms: { view: true, entry: true, edit: true, approve: false },
-    hint: 'Can create and change records. Cannot approve. Sees prices in any department.',
+    perms: { view: true, entry: true, advance: true, edit: true, approve: false },
+    hint: 'Can create, move forward and change records. Cannot approve. Sees prices in any department.',
   },
   {
     key: 'L4',
     label: 'Approver',
-    perms: { view: true, entry: false, edit: false, approve: true },
-    hint: 'Can approve or reject. Cannot create or change — and never their own record.',
+    perms: { view: true, entry: false, advance: true, edit: false, approve: true },
+    hint: 'Can approve or reject, and move records to their next step (close, dispose). Cannot create or change — and never approves their own record.',
   },
   {
     key: 'L5',
     label: 'Department Admin',
-    perms: { view: true, entry: true, edit: true, approve: true },
+    perms: { view: true, entry: true, advance: true, edit: true, approve: true },
     hint: 'Full rights inside this department only.',
   },
 ] as const satisfies readonly {
   key: string;
   label: string;
-  perms: { view: boolean; entry: boolean; edit: boolean; approve: boolean };
+  perms: { view: boolean; entry: boolean; advance: boolean; edit: boolean; approve: boolean };
   hint: string;
 }[];
 
@@ -238,12 +252,19 @@ export function tierSeesPrice(dept: AccessDeptKey, tier: AccessTierKey): boolean
 }
 
 // The full perm set a tier grants inside a given department — the tier table's
-// four write actions plus the department-dependent money right. This is what
+// five actions plus the department-dependent money right. This is what
 // callers want; `accessTier(k).perms` alone cannot answer the price question.
 export function tierPermsForDept(
   dept: AccessDeptKey,
   tier: AccessTierKey,
-): { view: boolean; entry: boolean; edit: boolean; approve: boolean; price: boolean } {
+): {
+  view: boolean;
+  entry: boolean;
+  advance: boolean;
+  edit: boolean;
+  approve: boolean;
+  price: boolean;
+} {
   return { ...accessTier(tier).perms, price: tierSeesPrice(dept, tier) };
 }
 

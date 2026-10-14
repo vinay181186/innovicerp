@@ -171,12 +171,13 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // Tier-driven, per department (QC). Was a global role string
   // (admin||manager||operator) that ignored the user's actual QC tier.
   const ncPerms = effectiveFormPerms(eff, 'nc_dispose');
-  // Dispose / close / create DC / Edit all rewrite a saved NC → `edit`
-  // (L3 Editor and above).
+  // ADR-231 — Dispose / Close Rework / Close move a saved NC to its next step
+  // → `advance` (L2 and above). Correcting the NC (Edit) stays `edit`.
+  const canAdvance = ncPerms.advance;
   const canEdit = ncPerms.edit;
   // The RTV challan is an outward DC: OSP Outward DC entry ALONE raises it, on
   // every route (ADR-211, owner) — no NC edit right needed. Disposing the NC
-  // (the gates above) stays with QC.
+  // (the Advance gate above) stays with QC.
   const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
   // Delete is not one of the four tier actions, so "L5 Department Admin and
   // above" is expressed as the pair only L5/L6 hold: L3 has edit without
@@ -191,7 +192,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // The gate-driven Close: any non-legacy row that has been dispositioned and
   // is not yet closed. Disabled (never hidden) while the server says why not,
   // so the operator sees the shortfall rather than a missing button.
-  const showClose = canEdit && !isPending && mayMoveTo('closed') && !isLegacyRework;
+  const showClose = canAdvance && !isPending && mayMoveTo('closed') && !isLegacyRework;
 
   // Resolve op_seq → operation label for the legacy rework dropdown.
   const reworkOpOptions = (jcOps ?? [])
@@ -311,7 +312,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Action NC ${detail.code}`}
             />
-            {isPending && canEdit ? (
+            {isPending && canAdvance ? (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -321,7 +322,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 <Stamp size={13} /> Dispose
               </button>
             ) : null}
-            {isReworkDisposed && canEdit ? (
+            {isReworkDisposed && canAdvance ? (
               <>
                 <span className="text3" style={{ fontSize: 11 }}>
                   Rework Completed Qty

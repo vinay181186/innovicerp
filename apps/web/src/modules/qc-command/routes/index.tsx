@@ -108,13 +108,13 @@ function QcCommandPage(): React.JSX.Element {
   // Tier-driven, per department (qc_submit sits in QC) — these were global role
   // checks (admin / manager / qc), which ignored the QC tier entirely.
   //   Pick Up  = `entry`: you are creating your own allocation.
-  //   Assign   = `edit`:  re-assigning someone else's queue changes an
-  //                       allocation that is already saved, so L3 Editor and up,
-  //                       not the L2 hand who may only take work for themselves.
+  //   Assign   = `advance` (ADR-231): handing out the queue moves saved work
+  //                       on to its next step, so the Access Control screen's
+  //                       Advance tick decides — no separate Edit needed.
   const { data: eff } = useMyAccess();
   const qcPerms = effectiveFormPerms(eff, 'qc_submit');
   const canPickUp = qcPerms.entry;
-  const canAssign = qcPerms.edit;
+  const canAssign = qcPerms.advance;
 
   const [assignRow, setAssignRow] = useState<QcCommandQueueRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);

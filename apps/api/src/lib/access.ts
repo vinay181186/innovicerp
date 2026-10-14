@@ -5,15 +5,21 @@
 // the server. ADR-035 option A called that a deferred audit task. This is
 // the mechanism that closes it.
 //
-// TWO LAYERS, both must pass:
-//   1. the role guard in ./auth.ts (and the row-level-security policies
-//      behind it) — the outer wall, unchanged
+// TWO LAYERS on most writes, both must pass:
+//   1. the role guard in ./auth.ts — the outer wall
 //   2. `requireFormAccess` — the per-user (Tier + Department) matrix
 //
-// The matrix can only ever NARROW what the role already allows. That is
-// deliberate: it means switching a user's tier can never accidentally hand
-// out a right their role does not have, so the tier model could be rolled
-// out without re-auditing all 176 RLS policies first.
+// Where both are present the matrix can only NARROW what the role allows;
+// that is how the tier model was rolled out without re-auditing the RLS
+// policies (which the API itself does not hit — it connects as a BYPASSRLS
+// role, migration 0180).
+//
+// EXCEPTION (ADR-231, owner: "one lock"): the steps that move a saved record
+// to its next step — close / short close / dispose / mark planned / execute a
+// plan / assign / record a return / SO and JWSO short close — have NO role
+// guard. The matrix alone decides them, so the Access Control screen shows
+// exactly what the person can do. Do not reason about those steps as
+// role-capped.
 //
 // Currently wired into: the approve / reject paths of Purchase Orders and
 // Purchase Requests. Those went first because `approve` is a brand-new
@@ -35,6 +41,7 @@ import { AuthorizationError } from './errors';
 const ACTION_VERB: Record<AccessAction, string> = {
   view: 'open',
   entry: 'create records in',
+  advance: 'move records forward in',
   edit: 'change records in',
   approve: 'approve records in',
 };
@@ -43,6 +50,7 @@ const ACTION_VERB: Record<AccessAction, string> = {
 const ACTION_TICK: Record<AccessAction, string> = {
   view: 'View',
   entry: 'Entry',
+  advance: 'Advance',
   edit: 'Edit',
   approve: 'Approve',
 };

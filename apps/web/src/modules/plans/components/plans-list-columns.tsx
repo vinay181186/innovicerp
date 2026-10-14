@@ -313,7 +313,11 @@ export const renderPlanLink: RenderLink = ({ to, ...rest }) => {
  */
 export function planRowMenu(
   row: PlanRow,
-  opts: { canCreateRouteCard: boolean; canProductionOrder: boolean },
+  opts: {
+    canCreateRouteCard: boolean;
+    canProductionOrder: boolean;
+    canCloseProductionOrder: boolean;
+  },
 ): RowMenuItem[] {
   const newPoTo = newProductionOrderTo(row);
   if (row.derivedStatus === 'route_card_pending') {
@@ -370,7 +374,8 @@ export function planRowMenu(
       label: 'Close Production Order',
       icon: 'lock',
       group: 'workflow',
-      hidden: !opts.canProductionOrder,
+      // ADR-231 — Close is an Advance on Production Orders, not an Entry.
+      hidden: !opts.canCloseProductionOrder,
       disabledReason: jcDone ? undefined : 'Job Card not complete',
       ...(jcDone
         ? { to: withQuery('/production-orders/close', { planId: row.id, planCode: row.code }) }

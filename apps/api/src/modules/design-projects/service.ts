@@ -806,9 +806,9 @@ export async function addDesignTaskComment(
   input: AddDesignCommentInput,
   user: AuthContext,
 ): Promise<DesignTask> {
-  // A discussion comment mutates the saved task record → `edit` (see report:
-  // comment = edit is a judgment call).
-  await requireFormAccess(user, 'dsnproj_create', 'edit');
+  // A discussion comment moves the saved task forward → `advance` (ADR-231),
+  // not `edit`: it changes no typed value.
+  await requireFormAccess(user, 'dsnproj_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -971,9 +971,9 @@ export async function addDesignIssueComment(
   input: AddDesignCommentInput,
   user: AuthContext,
 ): Promise<DesignIssue> {
-  // A discussion comment mutates the saved issue record → `edit` on
-  // dsnissue_create (comment = edit is a judgment call; see report).
-  await requireFormAccess(user, 'dsnissue_create', 'edit');
+  // A discussion comment moves the saved issue forward → `advance` on
+  // dsnissue_create (ADR-231), not `edit`: it changes no typed value.
+  await requireFormAccess(user, 'dsnissue_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
