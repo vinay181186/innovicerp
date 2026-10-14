@@ -42,7 +42,8 @@ export function ToolIssueViewModal({
   const [msg, setMsg] = useState<string | null>(null);
 
   const open = t && !t.cancelledAt && t.stillOutQty > 0;
-  const canCancel = t && !t.cancelledAt && t.returns.length === 0;
+  // State, not permission: nothing returned yet and not already cancelled.
+  const cancellable = t && !t.cancelledAt && t.returns.length === 0;
 
   return (
     <div
@@ -115,7 +116,7 @@ export function ToolIssueViewModal({
               <button type="button" className="btn btn-ghost" onClick={onClose}>
                 Close
               </button>
-              {canCancelIssue && canCancel ? (
+              {canCancelIssue && cancellable ? (
                 <button
                   type="button"
                   className="btn btn-ghost"
