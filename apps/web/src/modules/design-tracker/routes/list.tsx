@@ -72,7 +72,9 @@ export const designTrackerListRoute = createRoute({
 
 function DesignTrackerListPage(): React.JSX.Element {
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Approve / Revise are still role-gated (admin or manager); Submit moved to
+  // the Advance right (ADR-231), so this is no longer a write gate.
+  const isAdminOrManager = me?.role === 'admin' || me?.role === 'manager';
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'design_create');
   const routeSearch = designTrackerListRoute.useSearch();
@@ -238,8 +240,8 @@ function DesignTrackerListPage(): React.JSX.Element {
             onToggleExpanded={(d) => toggleExpand(d.id)}
             rowMenu={(d) =>
               designTrackerRowMenu(d, {
-                canWrite,
-                isAdmin: canWrite,
+                canSubmit: perms.advance,
+                isAdmin: isAdminOrManager,
                 canEdit: perms.edit,
                 onLogTime: setLogTimeRow,
                 onEdit: setEditRow,

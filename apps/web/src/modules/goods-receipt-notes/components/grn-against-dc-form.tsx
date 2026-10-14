@@ -39,7 +39,7 @@ import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
 import { isWholeNumberUom, roundQty } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
@@ -201,13 +201,21 @@ export function GrnAgainstDcForm({
 
   // DEPENDENT-FIELD RULE (DC → lines): pick / change / clear the challan and
   // the lines are rebuilt from it or emptied. Vendor is derived below.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
-    setFormError(null);
-    setSubmitError(null);
     if (!dc) {
+      seededFor.current = null;
+      setFormError(null);
+      setSubmitError(null);
       setLines([]);
       return;
     }
+    // Seed once per challan. A refetch of the SAME challan (window focus, a live update,
+    // another GRN against it) must not wipe the quantities being typed (ADR-230).
+    if (seededFor.current === dc.id) return;
+    seededFor.current = dc.id;
+    setFormError(null);
+    setSubmitError(null);
     const already = computeReceivedByLine(dc);
     setLines(
       dc.lines

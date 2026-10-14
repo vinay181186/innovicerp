@@ -39,6 +39,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { usePendingEditIds } from '@/modules/document-edits/api';
@@ -129,7 +130,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.poType, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query);
+  const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query, {
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
   const gotoPage = useCallback(
     (p: number): void => {
       void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true });

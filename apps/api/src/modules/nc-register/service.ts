@@ -1796,11 +1796,11 @@ export async function disposeNcRegister(
   input: DisposeNcInput,
   user: AuthContext,
 ): Promise<DisposeNcResult> {
-  requireOpEntryRole(user);
-  // Disposition decides scrap vs rework and moves stock — it rewrites a saved
-  // NC, so it is `edit` (L3 Editor and above), never `entry`. Scrap carries a
+  // Disposition decides scrap vs rework and moves a saved NC to its next step,
+  // so it is `advance` (L2 and above, plus L4), never `entry` — ADR-231. The
+  // matrix alone decides: no role guard in front of it. Scrap carries a
   // second, `approve` gate inside the cascade (§3).
-  await requireFormAccess(user, 'nc_dispose', 'edit');
+  await requireFormAccess(user, 'nc_dispose', 'advance');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1931,9 +1931,9 @@ export async function closeNc(
     };
   } = {},
 ): Promise<NcRegister> {
-  requireOpEntryRole(user);
-  // Closing changes an already-disposed NC — `edit`.
-  await requireFormAccess(user, 'nc_dispose', 'edit');
+  // Closing moves an already-disposed NC to its last step — `advance`
+  // (ADR-231). The matrix alone decides: no role guard in front of it.
+  await requireFormAccess(user, 'nc_dispose', 'advance');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -2444,7 +2444,7 @@ export async function softDeleteNcRegister(
   reason?: string | null,
 ): Promise<{ ok: true }> {
   requireOpEntryRole(user);
-  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // Delete is not one of the five tier actions, so it is expressed as the pair
   // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
   // has edit but not approve; L4 Approver has approve but not edit.
   await requireFormAccess(user, 'nc_dispose', 'edit');

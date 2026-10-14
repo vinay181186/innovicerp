@@ -9,14 +9,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import {
-  useJcOpsEnriched,
-  useOpLog,
-  useOpMachineOutput,
-  useRealtimeOpLog,
-  useRealtimeRunningOps,
-  useRunningOps,
-} from '../api';
+import { useJcOpsEnriched, useOpLog, useOpMachineOutput, useRunningOps } from '../api';
 import { JcOpsTable } from '../components/jc-ops-table';
 import { MachineOpEntryView } from '../components/machine-op-entry-view';
 import { MachineOutputPanel } from '../components/machine-output-panel';
@@ -98,11 +91,6 @@ function OpEntryPage() {
     setJcInput(opt.code);
     void navigate({ search: () => ({ jc: opt.code }), replace: true });
   }
-
-  // Realtime: refresh running_ops list everywhere; for the per-op view, sub
-  // is created once an op is selected. Both subs invalidate jc_ops cache.
-  useRealtimeRunningOps();
-  useRealtimeOpLog(search.op);
 
   const jcQuery = useMemo(
     () => (search.jc ? { jobCardCode: search.jc } : ({ jobCardCode: '' } as const)),

@@ -1497,7 +1497,8 @@ export async function closeProductionOrder(
   input: CloseProductionOrderInput,
   user: AuthContext,
 ): Promise<ProductionOrderDetail> {
-  await requireFormAccess(user, 'prodorder_create', 'edit');
+  // ADR-231 — closing moves the order to its next step: Advance, not Edit.
+  await requireFormAccess(user, 'prodorder_create', 'advance');
   const companyId = requireCompany(user);
   // ADR-197 — Finish Short writes pieces off as lost (CLOSE_SHORT), a
   // reason-required action. The shared input keeps `remarks` optional (frozen
@@ -2198,7 +2199,8 @@ export async function shortCloseProductionOrder(
   input: ShortCloseProductionOrderInput,
   user: AuthContext,
 ): Promise<ProductionOrderDetail> {
-  await requireFormAccess(user, 'prodorder_create', 'edit');
+  // ADR-231 — closing moves the order to its next step: Advance, not Edit.
+  await requireFormAccess(user, 'prodorder_create', 'advance');
   const companyId = requireCompany(user);
 
   const reason = input.reason.trim();

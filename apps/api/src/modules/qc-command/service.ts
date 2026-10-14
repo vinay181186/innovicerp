@@ -600,16 +600,16 @@ export async function pickUpQc(
   });
 }
 
-/** Assign — allocate an op to another inspector (qc_submit `edit`). */
+/** Assign — allocate an op to another inspector (qc_submit `advance`). */
 export async function assignQc(
   input: QcAssignInput,
   user: AuthContext,
 ): Promise<QcAssignmentResult> {
   const companyId = requireCompany(user);
-  // Re-assigning ANOTHER person's queue changes an allocation that is already
-  // saved, so it is `edit` rather than `entry` — L3 Editor / L5 Dept Admin, not
-  // the L2 hand who may only pick work up for themselves.
-  await requireFormAccess(user, 'qc_submit', 'edit');
+  // Re-assigning ANOTHER person's queue moves saved work on to the next
+  // inspector, so it is `advance` rather than `entry` — L2 and above, plus L4
+  // (ADR-231).
+  await requireFormAccess(user, 'qc_submit', 'advance');
   return withUserContext(user, async (tx) => {
     await assertOpInCompany(tx, companyId, input.jcOpId);
     const inspectorRows = (await tx.execute(sql`

@@ -1,5 +1,5 @@
-// Tool Issue — returns (ADR-193 phase 4b). toolissue_create 'edit' (recording
-// a return changes a saved issue).
+// Tool Issue — returns (ADR-193 phase 4b). toolissue_create 'advance' (ADR-231:
+// recording a return moves a saved issue to its next step).
 //
 //   Good      → ledger 'in' (tool_return); a serial instrument goes In Store
 //   Consumed  → closes that qty, no stock (bulk only — normal wear)
@@ -96,7 +96,8 @@ export async function recordToolReturn(
   input: RecordToolReturnInput,
   user: AuthContext,
 ): Promise<ToolIssueDetail> {
-  await requireFormAccess(user, 'toolissue_create', 'edit');
+  // ADR-231 — a return moves the issue to its next step: Advance, not Edit.
+  await requireFormAccess(user, 'toolissue_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -194,7 +195,8 @@ export async function returnInstruments(
   input: ReturnInstrumentsInput,
   user: AuthContext,
 ): Promise<ToolIssueDetail> {
-  await requireFormAccess(user, 'toolissue_create', 'edit');
+  // ADR-231 — a return moves the issue to its next step: Advance, not Edit.
+  await requireFormAccess(user, 'toolissue_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
   const ids = input.instruments.map((i) => i.instrumentId);

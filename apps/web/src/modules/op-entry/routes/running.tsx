@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { ShopFloorView } from '@/modules/shop-floor/components/shop-floor-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListHeader } from '@/ui/layout';
-import { useRealtimeRunningOps } from '../api';
 import { useRunningOpsPage } from '../running-ops-page-api';
 import { RunningOpsBoard } from '../components/running-ops-board';
 
@@ -18,7 +17,6 @@ export const runningOpsRoute = createRoute({
 });
 
 function RunningOpsPage(): React.JSX.Element {
-  useRealtimeRunningOps();
   // The header count = every running session, from the server (ADR-201) —
   // the board below loads only 25-row pages, so it is never counted from them.
   const { data, isLoading, isFetching, isError, error } = useRunningOpsPage(RUNNING_COUNT);

@@ -197,7 +197,9 @@ function PlanDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {perms.edit && canFinalize ? (
+            {/* ADR-231 — Mark Planned and Create Job Card / Raise PR move the
+                plan to its next step: Advance, not Edit. */}
+            {perms.advance && canFinalize ? (
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -213,7 +215,7 @@ function PlanDetailPage(): React.JSX.Element {
                 Mark Planned
               </button>
             ) : null}
-            {perms.edit && canExecute ? (
+            {perms.advance && canExecute ? (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"

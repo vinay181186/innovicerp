@@ -35,6 +35,7 @@ import { GlobalSearch } from '@/components/shared/global-search';
 import { canViewForm, useMyAccess } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { roleLabel } from '@/lib/role-label';
+import { LiveStatusMarker } from '@/lib/live-updates/live-status-marker';
 import { signOut, useSession } from '@/lib/session';
 import { useApprovalInboxTotal } from '@/modules/approvals/api';
 import { useDocumentEditPendingTotal } from '@/modules/document-edits/api';
@@ -78,8 +79,7 @@ export function TopNav(): React.JSX.Element {
   // the ADR-190 inbox (PR + PO + Log Entry) plus the ADR-202 edits waiting for
   // approval. The server lists only rows the caller may approve, so someone who
   // approves nothing sees no badge.
-  const pendingApprovals =
-    useApprovalInboxTotal(!!me) + useDocumentEditPendingTotal(!!me);
+  const pendingApprovals = useApprovalInboxTotal(!!me) + useDocumentEditPendingTotal(!!me);
 
   // Which module's menu is open. Remembered in sessionStorage so it survives
   // a page reload (user, 2026-09-21: pick a page, then pick "Create SO" from
@@ -220,6 +220,7 @@ export function TopNav(): React.JSX.Element {
       })}
 
       <div className="tn-right">
+        <LiveStatusMarker />
         <GlobalSearch />
         <Link
           to="/change-password"

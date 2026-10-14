@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { useSession } from '@/lib/session';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
 import { usePendingEditIds } from '@/modules/document-edits/api';
@@ -110,7 +111,9 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.page],
   );
 
-  const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
+  const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query, {
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
 
   // Approve / Reject — the only paths that advance an open PR.
   const approveMut = useApprovePr();

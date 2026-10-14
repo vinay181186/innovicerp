@@ -203,7 +203,12 @@ export function ToolIssueRegisterView({
 
       {showNew && perms.entry ? <NewToolIssueModal onClose={() => setShowNew(false)} /> : null}
       {openId ? (
-        <ToolIssueViewModal id={openId} canReturn={perms.edit} onClose={() => setOpenId(null)} />
+        <ToolIssueViewModal
+          id={openId}
+          canReturn={perms.advance}
+          canCancelIssue={perms.edit}
+          onClose={() => setOpenId(null)}
+        />
       ) : null}
     </div>
   );

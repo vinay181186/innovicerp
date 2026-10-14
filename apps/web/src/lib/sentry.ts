@@ -46,3 +46,14 @@ export function captureReactError(error: Error, info: { componentStack: string }
     Sentry.captureException(error);
   });
 }
+
+/** A problem that is handled (the app recovers on its own) but must still be
+ *  visible to us — e.g. live updates losing their connection (ADR-230). */
+export function captureWarning(message: string, context: Record<string, unknown>): void {
+  if (!initialized) return;
+  Sentry.withScope((scope) => {
+    scope.setLevel('warning');
+    scope.setContext('detail', context);
+    Sentry.captureMessage(message);
+  });
+}

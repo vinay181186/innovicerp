@@ -54,11 +54,11 @@ export const jobQueueRoute = createRoute({
 
 function JobQueuePage(): React.JSX.Element {
   const { data: me } = useSession();
-  // Tier-driven, per department (Production). Reordering the queue rewrites saved
-  // jc_ops → jc_create edit. Start / Log Op open /op-entry, so they use the SAME
-  // key as that page (op_entry entry).
+  // Tier-driven, per department (Production). Reordering the queue moves saved
+  // jc_ops on → jc_create advance (ADR-231). Start / Log Op open /op-entry, so
+  // they use the SAME key as that page (op_entry entry).
   const { data: eff } = useMyAccess();
-  const canReorder = effectiveFormPerms(eff, 'jc_create').edit;
+  const canReorder = effectiveFormPerms(eff, 'jc_create').advance;
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const search = jobQueueRoute.useSearch();
   const navigate = jobQueueRoute.useNavigate();

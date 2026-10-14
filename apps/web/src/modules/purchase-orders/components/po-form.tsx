@@ -45,6 +45,7 @@ import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDocNumber } from '@/lib/use-doc-number';
+import { useLiveChangeNotice } from '@/lib/use-live-change-notice';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useMyCompany } from '@/modules/settings/api';
@@ -113,6 +114,14 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const updatePo = useUpdatePurchaseOrder(props.mode === 'edit' ? props.detail.id : '', saveKey);
   // R5 — the PO's version as it was when this edit form opened.
   const opened = useOpenedVersion(props.mode === 'edit' ? props.detail.updatedAt : undefined);
+  // ADR-230 — the 3-second "someone else just changed this" notice, edit mode
+  // only (no id on create). Never touches the form; the 409 is still the guard.
+  const liveWatch = useLiveChangeNotice(
+    'purchase_orders',
+    props.mode === 'edit' ? props.detail.id : undefined,
+    'Purchase Order',
+    updatePo.isPending,
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
   // ADR-202 — set when an edit to a LIVE PO is staged for approval instead of
   // applied. Shown as a neutral success banner before we return to the PO.
@@ -537,15 +546,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     return null;
     // `lines` is a watched array — a new identity on every keystroke, which is
     // exactly when this must recompute.
-  }, [
-    isEdit,
-    poDate,
-    deliveryDate,
-    vendorId,
-    vendorCodeText,
-    wrongVendorLines,
-    lines,
-  ]);
+  }, [isEdit, poDate, deliveryDate, vendorId, vendorCodeText, wrongVendorLines, lines]);
 
   const submitting = formState.isSubmitting || createPo.isPending || updatePo.isPending;
   const disabled = submitting || blocking !== null;
@@ -609,12 +610,16 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           expectedUpdatedAt: opened.expected(),
         };
         const saved = await updatePo.mutateAsync(payload);
+        // Our own save fires the watch too; clear it so it never shows a notice.
+        liveWatch.acknowledge();
         const editedId = props.detail.id;
         if (isStagedResult(saved)) {
           // The edit-approval gate is on and this PO is live: nothing was
           // changed on the PO — the edit is now waiting for approval. Say so,
           // then return to the PO (its fields now carry the pending-change chip).
-          setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+          setStagedNotice(
+            'Sent for approval — your changes will apply once an approver signs off.',
+          );
           exit.leave(
             () =>
               void navigate({
@@ -672,7 +677,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // Ctrl+S runs the same Save as the header button — and is off whenever that
   // button is disabled, so a held key can neither double-post nor bypass a block.
   useSaveShortcut(() => void handleSubmit(onValid)(), !disabled);
-
 
   return (
     <form onSubmit={handleSubmit(onValid)} style={{ maxWidth: 1280, margin: '0 auto' }}>

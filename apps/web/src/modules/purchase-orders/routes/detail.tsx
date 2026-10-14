@@ -59,6 +59,7 @@ import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
@@ -86,7 +87,12 @@ export const purchaseOrderDetailRoute = createRoute({
 function PurchaseOrderDetailPage(): React.JSX.Element {
   const { id } = purchaseOrderDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = usePurchaseOrder(id);
+  const {
+    data: detail,
+    isLoading,
+    isError,
+    error,
+  } = usePurchaseOrder(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'po_create');

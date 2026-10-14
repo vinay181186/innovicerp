@@ -4,6 +4,7 @@ import { Breadcrumbs } from '@/components/shared/breadcrumbs';
 import { installCellOverflowTitles } from '@/components/shared/cell-overflow-title';
 import { OpenTabsBar } from '@/components/shared/open-tabs-bar';
 import { TopNav } from '@/components/shared/top-nav';
+import { LiveUpdatesProvider } from '@/lib/live-updates/live-updates-provider';
 import { supabase } from '@/lib/supabase';
 import { useUiSettings } from '@/lib/use-ui-settings';
 import { SortFilterScope } from '@/ui/data/sort-filter/scope';
@@ -68,22 +69,26 @@ function AuthenticatedLayout(): React.JSX.Element {
   // page content, so it belongs with TopNav / OpenTabsBar / Breadcrumbs. It is
   // OUTSIDE #content because #content is the scroll container — a toast
   // rendered inside it would scroll away with the rows.
+  // ADR-230 — live updates start once per signed-in tab, around the whole shell,
+  // so the top-bar marker and every screen's record watch share one connection.
   return (
     <ToastProvider>
-      <div id="app-shell">
-        <div id="main">
-          <header id="app-header">
-            <TopNav />
-            <OpenTabsBar />
-            <Breadcrumbs />
-          </header>
-          <div id="content">
-            <SortFilterScope>
-              <Outlet />
-            </SortFilterScope>
+      <LiveUpdatesProvider>
+        <div id="app-shell">
+          <div id="main">
+            <header id="app-header">
+              <TopNav />
+              <OpenTabsBar />
+              <Breadcrumbs />
+            </header>
+            <div id="content">
+              <SortFilterScope>
+                <Outlet />
+              </SortFilterScope>
+            </div>
           </div>
         </div>
-      </div>
+      </LiveUpdatesProvider>
     </ToastProvider>
   );
 }

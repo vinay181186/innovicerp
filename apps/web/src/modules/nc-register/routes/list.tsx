@@ -115,9 +115,9 @@ function NcRegisterListPage(): React.JSX.Element {
   // QC tier is L1 view-only and withheld them from a QC L3 Editor.
   const ncPerms = effectiveFormPerms(eff, 'nc_dispose');
   // Reporting an NC creates a record → entry. Disposing / closing rework
-  // rewrites a saved one → edit.
+  // moves a saved one to its next step → advance (ADR-231).
   const canReportNc = ncPerms.entry;
-  const canDispose = ncPerms.edit;
+  const canDispose = ncPerms.advance;
   // The CAPA button creates a CAPA, so it follows the CAPA form key — gating it
   // on nc_dispose meant the button could open a form the API then refused.
   const canCreateCapa = effectiveFormPerms(eff, 'capa_create').entry;

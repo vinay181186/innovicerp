@@ -123,7 +123,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
     !!data &&
     !isProductionOrderStopped(data.status) &&
     data.status !== 'closed' &&
-    perms.edit &&
+    perms.advance &&
     data.canClose;
   // A refetch that takes Close away (someone else closed it, or credited the
   // last pieces) also forgets the dialog was open, so it can never reopen by
@@ -173,7 +173,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // ADR-179: close is progressive. It stays available while the order is not
   // fully closed and the server still allows it (`canClose`).
   const notClosed = data.status !== 'closed';
-  // `closeOffered` (above) is that rule plus `perms.edit`, read before the
+  // `closeOffered` (above) is that rule plus `perms.advance` (ADR-231), read before the
   // early returns so the dialog's open flag can follow it.
   const showCloseForm = closeOffered;
   // The server's reason Close is off — shown to everyone, as before; the
@@ -183,11 +183,12 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       ? data.closeBlockedReason
       : null;
   // Short Close is offered at ANY stage except an order already stopped — the
-  // ask is "at any stage". Same `edit` right as Close.
-  const showShortCloseButton = !stopped && perms.edit;
+  // ask is "at any stage". Same `advance` right as Close (ADR-231).
+  const showShortCloseButton = !stopped && perms.advance;
   // ADR-202 Phase 3 — header edit (with approval) is offered only while the
   // order is still open or partly closed; a closed / short-closed order is
-  // frozen. Same `edit` right as Close. The server re-checks both.
+  // frozen. Correcting the order is an `edit` (Close/Short Close are
+  // `advance`, ADR-231). The server re-checks both.
   const canEdit = perms.edit && (data.status === 'open' || data.status === 'partially_closed');
   const pct =
     data.orderQty > 0 ? Math.min(100, Math.round((data.jcFinishedQty / data.orderQty) * 100)) : 0;
@@ -238,7 +239,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           🔒 Cannot close yet — {closeBlockedReason}
         </span>
       ) : null}
-      {perms.edit ? (
+      {perms.advance ? (
         // The wrapper carries the tooltip: a disabled button gets no hover.
         <span title={closeBlockedReason ?? undefined}>
           <button

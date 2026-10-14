@@ -147,8 +147,8 @@ type EditOp = JcOpEditValues;
 // then renders the form once everything resolves (so the form seeds its state
 // from props, exactly like job-card-form seeds from its `model` prop).
 function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
-  const { data: jc, isLoading, isError, error } = useJobCard(id);
-  const { data: model, isLoading: modelLoading, isError: modelError } = useJobCardEditModel(id);
+  const { data: jc, isLoading, error } = useJobCard(id);
+  const { data: model, isLoading: modelLoading } = useJobCardEditModel(id);
   const { data: enrichedOps = [] } = useJcOpsEnriched({ jobCardId: id }, { enabled: Boolean(id) });
   const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
 
@@ -159,7 +159,11 @@ function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
       </div>
     );
   }
-  if (isError || modelError || !jc || !model) {
+  // ADR-230 — a failed BACKGROUND re-read keeps the data it had (TanStack v5
+  // sets isError while data stays). Only a load with nothing to show is an
+  // error; otherwise a network blip during a live refresh would unmount the
+  // form and throw away what is being typed.
+  if (!jc || !model) {
     return (
       <div>
         <Link to="/job-cards" className="btn btn-ghost btn-sm">

@@ -8,7 +8,7 @@ import {
   type RtvCandidateState,
   type RtvPendingConflictDetails,
 } from '@innovic/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -124,29 +124,35 @@ export function NewOutwardModal({
   const selectedPo = useMemo(() => poData.items.find((p) => p.id === poId) ?? null, [poData, poId]);
 
   const { data: poLines } = useJwDcPoLines(poId ?? undefined);
-  // Sync lines from server response once
-  useMemo(() => {
-    if (poLines) {
-      setLines(
-        poLines.lines.map((l) => ({
-          purchaseOrderLineId: l.purchaseOrderLineId,
-          itemCode: l.itemCode,
-          itemRevision: l.itemRevision,
-          clientPoLineNo: l.clientPoLineNo,
-          itemName: l.itemName,
-          processText: l.processText,
-          uom: l.uom,
-          poQty: l.poQty,
-          alreadySent: l.alreadySent,
-          available: l.available,
-          sendQty: l.available,
-          checked: l.available > 0,
-        })),
-      );
-    } else {
+  // Seed the lines once per PO. A refetch of the SAME PO (window focus, a live
+  // update, another DC against it) must not reset the Send Qty being typed
+  // (ADR-230); picking another PO reloads them.
+  const seededFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!poLines || !poId) {
+      seededFor.current = null;
       setLines([]);
+      return;
     }
-  }, [poLines]);
+    if (seededFor.current === poId) return;
+    seededFor.current = poId;
+    setLines(
+      poLines.lines.map((l) => ({
+        purchaseOrderLineId: l.purchaseOrderLineId,
+        itemCode: l.itemCode,
+        itemRevision: l.itemRevision,
+        clientPoLineNo: l.clientPoLineNo,
+        itemName: l.itemName,
+        processText: l.processText,
+        uom: l.uom,
+        poQty: l.poQty,
+        alreadySent: l.alreadySent,
+        available: l.available,
+        sendQty: l.available,
+        checked: l.available > 0,
+      })),
+    );
+  }, [poLines, poId]);
 
   // ADR-217 phase 4 — pieces from this PO waiting to go back to the vendor (an
   // RTV NC disposed and not yet sent, or one still awaiting QC's decision).

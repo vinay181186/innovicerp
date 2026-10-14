@@ -48,11 +48,18 @@ export function useGoodsReceiptNotesList(
   });
 }
 
-export function useGoodsReceiptNote(id: string | undefined) {
+/** `options.refetchInterval` — the detail PAGE passes the ADR-230 safety
+ *  refresh; edit screens and pickers that read this hook do not, so a form
+ *  source never polls. */
+export function useGoodsReceiptNote(
+  id: string | undefined,
+  options?: Pick<UseQueryOptions<GoodsReceiptNoteDetail>, 'refetchInterval'>,
+) {
   return useQuery<GoodsReceiptNoteDetail>({
     queryKey: id ? goodsReceiptNotesKeys.detail(id) : goodsReceiptNotesKeys.detail('__missing__'),
     queryFn: () => apiFetch<GoodsReceiptNoteDetail>(`/goods-receipt-notes/${id}`),
     enabled: Boolean(id),
+    ...options,
   });
 }
 

@@ -28,6 +28,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { useOpFlow } from '@/modules/flow-views/api';
 import { ReworkTreePanel } from '@/modules/flow-views/components/jc-flow-panels';
 import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
@@ -56,16 +57,26 @@ const TAB_KEYS: readonly TabKey[] = ['ops', 'docs', 'material', 'related', 'hist
 
 export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
-  const { data: jc, isLoading, isError, error } = useJobCard(id);
+  const {
+    data: jc,
+    isLoading,
+    isError,
+    error,
+  } = useJobCard(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   // `opsLoading` gates the Print button: the ops come from their own query, so
   // a click landing between "job card loaded" and "ops loaded" printed a Job
   // Card whose Operation Routing table said "No operations".
+  // ADR-230 — this display page opts into the 60 s safety refresh; the edit
+  // screen and other readers of these hooks do not, so a form never polls.
   const { data: opsData, isLoading: opsLoading } = useJcOpsEnriched(
     { jobCardId: id },
-    { enabled: Boolean(id) },
+    { enabled: Boolean(id), refetchInterval: LIVE_FALLBACK_POLL_MS },
   );
   const ops = useMemo(() => opsData ?? [], [opsData]);
-  const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
+  const { data: logs = [] } = useOpLog(
+    { jobCardId: id, limit: 300 },
+    { enabled: Boolean(id), refetchInterval: LIVE_FALLBACK_POLL_MS },
+  );
   // Server-computed extras: QC docs, per-op machine name + tool details, and the
   // merged completion feed (op_log ∪ NC ∪ OSP) with a real total (ISSUE-174).
   const { data: extras } = useJobCardStatusExtras(id);

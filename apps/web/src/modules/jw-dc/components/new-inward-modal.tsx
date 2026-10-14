@@ -3,7 +3,7 @@
 // records only how much came back; accept / reject happens at Incoming QC.
 
 import { type CreateJwDcInwardInput, type CreateJwDcInwardLineInput } from '@innovic/shared';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { Banner } from '@/ui/feedback';
@@ -51,26 +51,32 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
   );
 
   const { data: detail } = useJwDcOutwardDetail(dcId ?? undefined);
-  useMemo(() => {
-    if (detail) {
-      setLines(
-        detail.lines.map((l) => ({
-          outwardLineId: l.id,
-          itemCode: l.itemCode ?? l.itemCodeText,
-          itemRevision: l.itemRevision,
-          clientPoLineNo: l.clientPoLineNo,
-          itemName: l.itemName ?? l.itemNameText ?? '',
-          processText: l.processText,
-          sentQty: l.sentQty,
-          alreadyReturned: l.alreadyReturned,
-          pending: l.pending,
-          receivedQty: l.pending,
-        })),
-      );
-    } else {
+  // Seed the lines once per DC. A refetch of the SAME DC (window focus, a live
+  // update) must not reset the Received Qty being typed (ADR-230).
+  const seededFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!detail || !dcId) {
+      seededFor.current = null;
       setLines([]);
+      return;
     }
-  }, [detail]);
+    if (seededFor.current === dcId) return;
+    seededFor.current = dcId;
+    setLines(
+      detail.lines.map((l) => ({
+        outwardLineId: l.id,
+        itemCode: l.itemCode ?? l.itemCodeText,
+        itemRevision: l.itemRevision,
+        clientPoLineNo: l.clientPoLineNo,
+        itemName: l.itemName ?? l.itemNameText ?? '',
+        processText: l.processText,
+        sentQty: l.sentQty,
+        alreadyReturned: l.alreadyReturned,
+        pending: l.pending,
+        receivedQty: l.pending,
+      })),
+    );
+  }, [detail, dcId]);
 
   const createMut = useCreateJwDcInward();
 

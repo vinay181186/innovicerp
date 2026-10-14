@@ -319,6 +319,9 @@ with no live `xxx` to fall back from is a defect (C-13).
 | How urgently a job card should be run (ADR-226) | `Priority` | `priority` | `job_cards.priority` (normal / high) | `Urgency`, `Rush` |
 | A saved report's own name (ADR-226) | `Report Name` | `name` | `saved_reports.name` | bare `Name`, `Title` |
 | Whether a saved report is visible to the whole company (ADR-226) | `Shared` | `isShared` | `saved_reports.is_shared` | `Public`, `Global`, `Everyone` |
+| A user's right to CREATE a new record on a page (ADR-231 clarified) | `Entry`; OFF switch `No create` | `entry` / `entryOff` (`AccessFormPerms`) | `user_access.forms[<page>].entry`, or the department tier (L2, L3, L5) | `Add`, `Create right`; never read as "may finish a job" — that is `Advance` |
+| A user's right to move a SAVED record to its next step: close, short close, dispose, close rework, mark planned, create job card from a plan, assign, record a return, comment on a working document (ADR-231) | `Advance`; OFF switch `No advance` | `advance` / `advanceOff` (`AccessFormPerms`) | `user_access.forms[<page>].advance`, or the department tier (L2, L3, L4, L5); an `Edit` tick includes it | `Process` (already QC Process Master, OSP Process, the NC reason, the BOM field), `Execute` (Plan execute), `Action`, `Progress`, `Complete`, `Work` |
+| A user's right to CORRECT what was typed on a saved record, and to UNDO one (reverse, cancel) (ADR-231 narrowed) | `Edit`; OFF switch `No edit` | `edit` / `editOff` (`AccessFormPerms`) | `user_access.forms[<page>].edit`, or the department tier (L3, L5) | `Change`, `Modify`; never the right to close or dispose — that is `Advance` |
 
 ---
 

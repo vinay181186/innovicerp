@@ -45,6 +45,7 @@ import {
 } from '@/modules/machines/api';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { isStagedResult } from '@/modules/document-edits/api';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useFinalizePlan, useUpdatePlan, useDefaultRouteOps } from '@/modules/plans/api';
 import { useQcProcessesList } from '@/modules/qc-processes/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -197,6 +198,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // edit is refused (409 edit_conflict) and its message shows in the modal.
   const opened = useOpenedVersion(plan.updatedAt);
   const finalize = useFinalizePlan();
+  // ✓ Save Plan also marks the plan Planned (finalize), which is an Advance
+  // step (ADR-231) while saving is an Edit. Someone with Edit but "No
+  // advance" would get the plan saved and then a refusal — half a save — so
+  // the button is closed to them up front and Save Draft stays open.
+  const { data: eff } = useMyAccess();
+  const canFinalize = effectiveFormPerms(eff, 'plan_create').advance;
 
   // Searchable master pickers (server-searched via ?search=; one shared search
   // term per master, like the SO line table). Machine ← Machine Master,
@@ -570,7 +577,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         type="button"
         className="btn btn-primary"
         onClick={() => onSave(true)}
-        disabled={update.isPending || finalize.isPending}
+        disabled={update.isPending || finalize.isPending || !canFinalize}
+        title={
+          canFinalize
+            ? undefined
+            : 'Marking a plan Planned needs Advance on SO/JWSO Planning — use Save Draft'
+        }
       >
         {update.isPending || finalize.isPending ? (
           <>
