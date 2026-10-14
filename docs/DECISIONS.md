@@ -13470,3 +13470,76 @@ secrets).
 - Follow-up (cleanup): the "User is not assigned to a company" check is copied
   in 128 API files; my-access keeps its own copy rather than adding a 129th
   "shared" one. One helper for all of them is a separate API-wide cleanup.
+
+## ADR-230: A change made on one PC reaches every other PC's screen without a reload
+
+**Date:** 2026-10-14
+**Status:** Accepted (owner approved the plan and chose Solution 1 of three built; TEST release)
+**Amends ADR-004** (Realtime beyond the four hot screens)
+
+### Context
+
+Users on several PCs did not see each other's changes until they reloaded —
+QC cleared a call on one PC and the Job Card on another still showed it. Nothing
+told other PCs anything had changed; refetch on window focus was off; the Job
+Card, SO, PO, GRN, PR and Approvals screens never re-read while open; QC submit
+did not even refresh the QC Call Register on the same PC; and Op Entry's two
+Realtime subscriptions had never delivered an event (their tables were never
+published — 0205's header).
+
+### Decision
+
+One transport-independent core in `apps/web/src/lib/live-updates/`:
+
+- `LIVE_TABLES` (packages/shared) is the ONE list of live tables; `table-keys.ts`
+  maps each to the screens it refreshes (typed Record — a missing mapping fails
+  the build).
+- A change message is a doorbell, never data: it only invalidates query roots
+  and the screen re-reads through the API with its own access checks.
+- Batching: 750 ms quiet wait, 2 s ceiling.
+- Every (re)connect re-reads every screen on display (what changed while deaf
+  was not delivered); `resync()` does the same without ringing edit-screen
+  record watchers.
+- A drop shows "Live updates paused — reconnecting" in the top bar, warns in
+  the console and Sentry, once per drop; a transport that never connects is
+  reported after 10 s.
+- Safety nets: refetch on window focus + reconnect (global), and a 60 s refresh
+  on the JC/SO/PO/GRN/PR list + detail pages and Approvals.
+- Forms take their values once: edit screens keep the form when a background
+  re-read fails, SO/PO edit show the "someone else just changed this" notice
+  (own-save echo ignored for 3 s), and screens that re-seeded on every refetch
+  (Settings, GRN against PO/DC/NC, JW DC in/out) now seed once per record.
+
+The transport is **Supabase Realtime** (`transports/realtime-transport.ts`): one
+channel per tab, one `postgres_changes` binding per live table filtered by
+company_id (RLS still applies per subscriber — ADR-228 put company_id in the
+token). A CLOSED channel is reopened by the transport with backoff 1/2/5/10/30 s.
+Migration 0208 publishes jc_ops, op_log, SO/PO/PR (+lines) and
+document_edit_requests; running_ops stays unpublished (0205's reasoning).
+
+### Alternatives Considered
+
+Three complete solutions were built on separate branches over the same core and
+scored for the owner:
+
+- v2 — the API pushes over Server-Sent Events (`live-updates-base-v2`). Rejected:
+  1,039 lines vs 176; sees only writes that pass through its route map (workers
+  and unmapped routes are silent); needs Redis with more than one API replica;
+  Railway proxy behaviour with long streams untested.
+- v3 — each visible tab polls `GET /live/changes?since=` every 5 s
+  (`live-updates-base-v3`). Rejected: up to 5 s slower; ~5 req/s with a Supabase
+  token check each; needs 10 indexes before PROD volume; blind to writes that
+  do not move updated_at. Kept as the fallback design.
+
+### Consequences
+
+- Positive: QC clears, JC/SO/PO/GRN/PR changes and approvals appear on other
+  PCs within seconds; no new server code or infrastructure.
+- Negative: one Realtime socket per tab; an extra full re-read on every
+  (re)connect.
+- Risks: a change lost while the socket looks healthy is caught only by the
+  60 s refresh on the watched pages. Delivery latency was not measured before
+  release (a TEST write was blocked); measure it with two browsers on TEST.
+- Not live (60 s refresh only): op_log_time_change_requests,
+  purchase_request_lines, goods_receipt_note_lines (incoming QC is covered via
+  the PO re-total), qc_assignments.
