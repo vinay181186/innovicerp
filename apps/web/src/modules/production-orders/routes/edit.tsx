@@ -281,7 +281,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
         badges={
           <>
             <span className="panel-title">Edit Production Order</span>
-            <PoStatusBadge status={detail.status} />
+            <PoStatusBadge status={detail.status} shortClosedQty={detail.shortClosedQty} />
           </>
         }
         actions={
@@ -430,7 +430,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
           <b>
             {credited} / {detail.orderQty}
           </b>{' '}
-          credited
+          received
         </span>
       </div>
       <Panel fill bodyPadding="none">

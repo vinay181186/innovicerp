@@ -37,6 +37,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { JC_STATUS_LABEL, JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
@@ -84,7 +85,10 @@ type TabKey = 'ledger' | 'history';
 
 function ProductionOrderDetailPage(): React.JSX.Element {
   const { id } = productionOrderDetailRoute.useParams();
-  const { data, isLoading, isError, error } = useProductionOrder(id);
+  // ADR-233 — the ADR-230 safety refresh, as on the JC / SO / PO detail pages.
+  const { data, isLoading, isError, error } = useProductionOrder(id, {
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
   const [shortCloseOpen, setShortCloseOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [tab, setTab] = useState<TabKey>('ledger');
@@ -184,7 +188,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       : null;
   // Short Close is offered at ANY stage except an order already stopped — the
   // ask is "at any stage". Same `advance` right as Close (ADR-231).
-  const showShortCloseButton = !stopped && perms.advance;
+  // ADR-233: not on an order already fully received — nothing is short there
+  // (the server refuses it the same way).
+  const fullyReceived = data.status === 'closed' && (data.creditedQty ?? 0) >= data.orderQty;
+  const showShortCloseButton = !stopped && !fullyReceived && perms.advance;
   // ADR-202 Phase 3 — header edit (with approval) is offered only while the
   // order is still open or partly closed; a closed / short-closed order is
   // frozen. Correcting the order is an `edit` (Close/Short Close are
@@ -204,19 +211,25 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // text (the badge may be cut short in a narrow cell, so it names it too).
   const jcFinishedTitle =
     (data.jcComputedStatus ? `JC Status: ${JC_STATUS_LABEL[data.jcComputedStatus]}. ` : '') +
-    "Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close credits this qty to stock." +
+    "Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close puts this qty into stock." +
     (data.jcClosedAt ? ` JC closed on ${fmtDate(data.jcClosedAt)}.` : '');
 
+  // ADR-233 — `Short Closed Qty` (server: productionOrderShortClosedQty) =
+  // Order − Stock Received on an order ended under target; Lost is part of it.
+  const shortClosed = data.shortClosedQty;
+  // An order that ended under target (Short Close, or Finish Short → Closed).
+  const endedShort = stopped || shortClosed > 0;
+  const lostPart = data.lostQty ? ` (${data.lostQty} lost)` : '';
+
   // The texts the Short Closed / Closed panels carried, now one line each.
-  const shortClosedText = `Short Closed on ${fmtDate(data.shortClosedAt)} by ${
-    data.shortClosedByName ?? '—'
-  } — ${data.shortCloseReason ?? '—'} · ${credited} credited stay in stock; ${Math.max(
-    0,
-    data.orderQty - credited,
-  )} Pending went back to Plan ${data.planCodeText}.`;
-  const closedText = `✓ Closed — stock credited · Credited Qty ${
-    data.creditedQty ?? '—'
-  } · Lost Qty ${data.lostQty ?? '—'} · Close Date ${fmtDate(data.closedAt)}`;
+  // The figures lead, so they read without hovering (ADR-233).
+  const shortClosedText = `Short Closed ${shortClosed} of ${data.orderQty}${lostPart} · ${credited} in stock · Plan ${data.planCodeText} · ${fmtDate(
+    data.shortClosedAt,
+  )} by ${data.shortClosedByName ?? '—'} — ${data.shortCloseReason ?? '—'}`;
+  const closedText =
+    shortClosed > 0
+      ? `✓ Closed short — Short Closed ${shortClosed} of ${data.orderQty}${lostPart} · ${credited} in stock · Close Date ${fmtDate(data.closedAt)}`
+      : `✓ Closed — Stock Received ${credited} of ${data.orderQty} · Close Date ${fmtDate(data.closedAt)}`;
 
   // Where Close Qty… sits: the button, or — once the order is stopped or fully
   // closed — the one-line banner that replaces it.
@@ -269,7 +282,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         badges={
           <>
             <span className="panel-title">Production Order</span>
-            <PoStatusBadge status={data.status} draft={isDraft} />
+            <PoStatusBadge
+              status={data.status}
+              draft={isDraft}
+              shortClosedQty={data.shortClosedQty}
+            />
           </>
         }
         actions={
@@ -458,24 +475,39 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           <Cluster name={null}>
             <ClusterFact
               num
-              label="Credited Qty"
-              title="Pieces already closed into stock"
+              label="Stock Received"
+              title="Pieces this order has put into stock"
               value={credited}
             />
             <ClusterFact
               num
               label="Lost Qty"
               empty={data.lostQty == null}
-              title="Pieces written off on a short close"
+              title="Pieces scrapped — part of the Short Closed Qty, not added to it"
               value={data.lostQty ?? '—'}
             />
-            <ClusterFact
-              num
-              className="po-act"
-              label="Available to Close"
-              title="Finished on the Job Card and not yet credited — what Close Qty… acts on"
-              value={data.availableToClose}
-            />
+            {/* ADR-233 — once the order has ended under target nothing more can
+                be closed, so Available to Close gives its cell to Short Closed
+                Qty (the row stays four cells). */}
+            {endedShort ? (
+              <ClusterFact
+                num
+                className="po-short"
+                label="Short Closed Qty"
+                title={`Order ${data.orderQty} − Stock Received ${credited} — will never reach stock${
+                  data.lostQty ? `; includes ${data.lostQty} lost` : ''
+                }`}
+                value={shortClosed}
+              />
+            ) : (
+              <ClusterFact
+                num
+                className="po-act"
+                label="Available to Close"
+                title="Finished on the Job Card and not yet put into stock — what Close Qty… acts on"
+                value={data.availableToClose}
+              />
+            )}
             <ClusterFact
               num
               lead
@@ -612,7 +644,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           <b>
             {credited} / {data.orderQty}
           </b>{' '}
-          credited
+          received
         </span>
       </div>
       <Panel fill bodyPadding="none">
@@ -654,6 +686,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           jcCode={data.jcCodeText}
           orderQty={data.orderQty}
           creditedQty={credited}
+          status={data.status}
           onClose={() => setShortCloseOpen(false)}
         />
       ) : null}

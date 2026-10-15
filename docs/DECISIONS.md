@@ -13678,9 +13678,12 @@ nowhere: not on the detail, list, history, report or Job Card. The screen word
    short-closed"). Short Close is refused on an order already fully received.
 6. Status changes on close / reverse / short close also check the status read
    under the row lock (CLAUDE.md §20.2) and refuse a write that changed nothing.
-7. JW source options, JW line "in JC" and the JC Status Summary count a
-   stopped order at its effective qty (same rule the SO screens use), not its
-   full order qty.
+7. NOT changed (audit gap G10 was a false alarm): JW source options, JW line
+   "in JC" and the JC Status Summary keep the literal card qty. A short-closed
+   order's balance already returns to the plan's Pending and is remade from
+   there; counting it free on the JW line too would let a manual Job Card claim
+   the same pieces twice (job-cards/service.ts "JW lines keep the literal card
+   qty").
 8. PRO screens join live updates (ADR-230): migration **0209** publishes
    `production_orders` and `production_order_closes`.
 

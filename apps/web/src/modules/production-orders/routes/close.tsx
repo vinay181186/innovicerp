@@ -336,7 +336,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
               <span className="td-code" style={{ color: 'var(--text)', fontWeight: 700 }}>
                 {po.code}
               </span>
-              <PoStatusBadge status={po.status} />
+              <PoStatusBadge status={po.status} shortClosedQty={po.shortClosedQty} />
               <span className="text3" style={{ fontSize: 11 }}>
                 JC
               </span>
