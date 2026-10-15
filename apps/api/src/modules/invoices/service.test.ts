@@ -13,7 +13,8 @@ import {
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { ConflictError } from '../../lib/errors';
+import { AuthorizationError, ConflictError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -128,5 +129,26 @@ describe('invoices cancel (ADR-202 Phase 3)', () => {
     await expect(
       service.cancelInvoice(id, { reason: 'Second cancel' }, admin),
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): the Access Control ticks alone decide; the
+// derived role never refuses. Unknown id → a gate pass shows as a non-auth error.
+describe('addPayment — ticks decide (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('finance L2 with role operator passes the gate', async () => {
+    const user = asAccess(admin, { departments: { finance: 'L2' } }, 'operator');
+    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('finance L1 (no tick) is refused', async () => {
+    const user = asAccess(admin, { departments: { finance: 'L1' } }, 'manager');
+    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('L7 Auditor is refused', async () => {
+    const user = asAccess(admin, AUDITOR, 'viewer');
+    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
   });
 });

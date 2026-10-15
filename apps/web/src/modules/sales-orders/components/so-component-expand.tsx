@@ -8,7 +8,6 @@ import type { SalesOrderDetail, SalesOrderLine, SalesOrderLineInput } from '@inn
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
-import { useSession } from '@/lib/session';
 import { soNoWithInternal } from '@/lib/so-number';
 import { RowMenu } from '@/ui/data';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -57,10 +56,10 @@ export function ComponentSoExpand({
   canEdit: boolean;
 }): React.JSX.Element {
   const update = useUpdateSalesOrder(so.id);
-  const { data: me } = useSession();
-  // PATCH /sales-orders/:id is admin-only on the server (requireAdminRole) on
-  // top of so_create edit, so the line ⋯ is shown only to an admin editor.
-  const canEditLines = canEdit && me?.role === 'admin';
+  // ADR-232 (owner D1): editing an SO — its lines included — is the Edit tick
+  // on SO Master alone (`canEdit` = so_create edit). A line delete is part of
+  // that edit (it re-sends the surviving lines), so it takes the same right.
+  const canEditLines = canEdit;
   // Line delete asks through ConfirmDialog, not window.confirm. Same update
   // call as before: re-send the surviving lines.
   const [deletingLineId, setDeletingLineId] = useState<string | null>(null);

@@ -1,6 +1,6 @@
 // POs waiting for THIS user's approval — the PO half of GET /approvals/inbox
 // (ADR-190). Every rule is the approve endpoint's own (approvePurchaseOrder):
-//   - Approve on Purchase Orders in the Access Control matrix, and a write role
+//   - Approve on Purchase Orders in the Access Control matrix (ADR-232: the tick alone)
 //   - on approval_config.po_approvers (admins always) — loadApprovalContext
 //   - PO Status Draft
 //   - PO value (Σ qty × rate, no tax) within the caller's approval ceiling —
@@ -13,7 +13,6 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { purchaseOrderLines, purchaseOrders, users, vendors } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice, hasFormAccess } from '../../lib/access';
-import { isWriteRole } from '../../lib/auth';
 import { loadApprovalContext } from './service';
 
 /** The caller's Access Control answers for the PO inbox. Read BEFORE opening
@@ -25,7 +24,7 @@ export interface PoInboxAccess {
 }
 
 export async function loadPoInboxAccess(user: AuthContext): Promise<PoInboxAccess> {
-  const canApprove = isWriteRole(user) && (await hasFormAccess(user, 'po_create', 'approve'));
+  const canApprove = await hasFormAccess(user, 'po_create', 'approve');
   const showMoney = canApprove ? await canSeeFormPrice(user, 'po_create') : false;
   return { canApprove, showMoney };
 }

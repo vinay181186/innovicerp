@@ -9,6 +9,7 @@ import { db } from '../../db/client';
 import { fileRegistry, salesOrders } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import { users } from '../../db/schema';
 import * as service from './service';
 
@@ -124,5 +125,45 @@ describe('so-documents service', () => {
     await expect(
       service.deleteSoDocument('00000000-0000-0000-0000-000000000000', admin),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): upload follows the SO Master Entry tick, not the
+// role; deleting an uploaded file needs L6 Super Admin.
+describe('so-documents — ticks decide (ADR-232)', () => {
+  const doc = (name: string) => ({
+    salesOrderId: soId,
+    soCodeText: soCode,
+    category: 'other' as const,
+    fileName: `${TEST_FILE_PREFIX}${name}.pdf`,
+    storagePath: 'company/so-docs/x.pdf',
+  });
+
+  it('Sales L2 with role operator may upload', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L2' } }, 'operator');
+    const created = await service.createSoDocument(doc('l2-operator'), user);
+    createdIds.push(created.id);
+    expect(created.fileName).toBe(`${TEST_FILE_PREFIX}l2-operator.pdf`);
+  });
+
+  it('Sales L1 (no Entry tick) is refused', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L1' } }, 'manager');
+    await expect(service.createSoDocument(doc('l1'), user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor is refused', async () => {
+    const user = asAccess(admin, AUDITOR, 'viewer');
+    await expect(service.createSoDocument(doc('auditor'), user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('delete: Sales L5 Department Admin is refused (Super Admin only)', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L5' } }, 'manager');
+    await expect(
+      service.deleteSoDocument('00000000-0000-0000-0000-000000000000', user),
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
 });

@@ -1,6 +1,7 @@
 import type { IncomingQcQuery, IncomingQcResponse, SubmitIncomingQcInput } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const incomingQcKeys = {
@@ -41,7 +42,11 @@ export function useIncomingQc(
 
 /** Inline accept/reject for one GRN line (Incoming QC Call Register). Refreshes
  *  the queue (and GRN/PO/stock views) on success. */
-export function useSubmitIncomingQc() {
+//
+// §20 (owner D11): the inspect form passes its one save key (useSaveKey), so a
+// re-click after a timeout carries the SAME Idempotency-Key and the server
+// replays the first result instead of booking the inspection twice.
+export function useSubmitIncomingQc(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<
     { ok: true; grnId: string; raisedNc: { id: string; code: string } | null },
@@ -49,12 +54,15 @@ export function useSubmitIncomingQc() {
     { grnLineId: string; input: SubmitIncomingQcInput }
   >({
     mutationFn: ({ grnLineId, input }) =>
-      apiFetch<{ ok: true; grnId: string; raisedNc: { id: string; code: string } | null }>(
-        `/incoming-qc/${grnLineId}/inspect`,
-        {
-          method: 'POST',
-          json: input,
-        },
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<{ ok: true; grnId: string; raisedNc: { id: string; code: string } | null }>(
+          `/incoming-qc/${grnLineId}/inspect`,
+          {
+            method: 'POST',
+            json: input,
+            ...(headers ? { headers } : {}),
+          },
+        ),
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: incomingQcKeys.all });

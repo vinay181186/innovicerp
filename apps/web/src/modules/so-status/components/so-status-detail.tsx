@@ -22,7 +22,6 @@ import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
-import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn, ROW_TINT, type RowMenuItem } from '@/ui/data';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { useGenerateOspPr } from '@/modules/op-entry/api';
@@ -668,11 +667,9 @@ function LinePanel({
   const toast = useToast();
   // Raise PR for a pending outsource op = the JC Ops board's flow:
   // POST /op-entry/osp-pr { jcOpId }. Server rule (op-entry generateOspPr):
-  // admin / manager always, everyone else needs pr_create entry.
+  // ADR-232: the Entry tick on Purchase Requisitions alone decides.
   const { data: eff } = useMyAccess();
-  const { data: me } = useSession();
-  const canRaisePr =
-    me?.role === 'admin' || me?.role === 'manager' || effectiveFormPerms(eff, 'pr_create').entry;
+  const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
   const generatePr = useGenerateOspPr();
   // Ops raised from this screen, greyed at once until the status refetch drops them.
   const [raisedOpIds, setRaisedOpIds] = useState<Set<string>>(new Set());

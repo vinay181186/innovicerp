@@ -36,7 +36,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ReportTypesPanel } from '@/modules/report-types/components/report-types-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
@@ -83,16 +83,12 @@ function QcProcessesListPage(): React.JSX.Element {
   const navigate = qcProcessesListRoute.useNavigate();
   // Tier-driven, per department (QC). The old gate was admin/manager only —
   // narrower than every sibling QC screen, so a QC lead could not maintain the
-  // master they run. Add is `entry`, Edit is `edit`, Del is the L5-and-above
-  // pair below.
+  // master they run. Add is `entry`, Edit is `edit`, Del is Super
+  // Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'qcprocess_create');
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3
-  // Editor has edit without approve; L4 Approver has approve without edit. The
-  // owner decided L5 gets delete rights — admin-only was locking out the very
-  // tier meant to run the department.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {

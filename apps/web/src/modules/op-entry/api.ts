@@ -38,6 +38,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
@@ -210,10 +211,21 @@ export function useSubmitOpLog() {
 // QC log path. No optimistic update on this mutation — qc_pending math from
 // the view is non-trivial to mirror client-side, and a 200ms server round-trip
 // for QC inspections is acceptable.
-export function useSubmitQcLog() {
+//
+// §20 (owner D11): the inspect form passes its one save key (useSaveKey), so a
+// re-click after a timeout carries the SAME Idempotency-Key and the server
+// replays the first result instead of booking the inspection twice.
+export function useSubmitQcLog(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<OpLog, Error, SubmitQcLogInput>({
-    mutationFn: (input) => apiFetch<OpLog>('/op-entry/qc-log', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<OpLog>('/op-entry/qc-log', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });

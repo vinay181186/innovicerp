@@ -26,8 +26,10 @@ import {
   vendors,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { AuthorizationError } from '../../lib/errors';
+import { asAccess } from '../../lib/test-access';
 import * as poService from '../purchase-orders/service';
-import { decideDocumentEdit } from './service';
+import { decideDocumentEdit, withdrawDocumentEdit } from './service';
 
 const TEST_PREFIX = 'TDE1B-';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -236,5 +238,57 @@ describe('document-edits engine — PO line changes (Phase 1b)', () => {
 
     const line = await readLine(lineId);
     expect(Number(line.rate)).toBe(130); // drift kept; the 120 was NOT applied
+  }, 180_000);
+});
+
+// ADR-232 (owner, 2026-10-15): a pending edit may be withdrawn by the person
+// who asked for it, or by anyone holding Approve on that page — not by role.
+describe('document-edits — withdraw (ADR-232)', () => {
+  async function stagePoEdit(code: string) {
+    const po = await createOpenPo(code, 5, 100);
+    const lineId = po.lines[0]!.id;
+    const staged = (await poService.updatePurchaseOrderOrStage(
+      po.id,
+      {
+        header: {},
+        lines: [{ id: lineId, itemId: firstItemId, itemName: 'Widget', qty: 5, rate: 130 }],
+        expectedUpdatedAt: po.updatedAt,
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    return staged.request.id;
+  }
+
+  async function otherUserId(): Promise<string> {
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.companyId, admin.companyId!), isNull(users.deletedAt)))
+      .limit(5);
+    const other = rows.find((r) => r.id !== admin.id);
+    if (!other) throw new Error('Need a second user in the company');
+    return other.id;
+  }
+
+  it('another user without Approve on the page is refused', async () => {
+    const id = await stagePoEdit(`${TEST_PREFIX}WD1`);
+    const user = asAccess(
+      { ...admin, id: await otherUserId() },
+      { departments: { purchase: 'L3' } },
+      'manager',
+    );
+    await expect(withdrawDocumentEdit(id, user)).rejects.toBeInstanceOf(AuthorizationError);
+  }, 180_000);
+
+  it('another user with Approve on the page (role operator) may withdraw', async () => {
+    const id = await stagePoEdit(`${TEST_PREFIX}WD2`);
+    const user = asAccess(
+      { ...admin, id: await otherUserId() },
+      { departments: { purchase: 'L4' } },
+      'operator',
+    );
+    const row = await withdrawDocumentEdit(id, user);
+    expect(row.status).toBe('withdrawn');
   }, 180_000);
 });

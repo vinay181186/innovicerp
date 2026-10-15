@@ -32,8 +32,8 @@
 //     Status dropdown labels, counted on the server — ADR-201);
 //   · the Days Left colour rule — no date or done: muted · late: red ·
 //     5 days or less: amber · otherwise green;
-//   · the permission expressions: create = entry, edit = edit, delete = the
-//     edit+approve pair only L5 Department Admin and above hold.
+//   · the permission expressions: create = entry, edit = edit, delete =
+//     Super Admin only (ADR-232).
 //
 // JC STATUS COLOURS are now <StatusBadge kind="jc">, whose map
 // (open grey · qc_pending amber · complete green · closed green · no_ops red)
@@ -52,7 +52,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
@@ -179,14 +179,15 @@ function JobCardsListPage(): React.JSX.Element {
   const operators = operatorsData?.operators ?? [];
   // Tier-driven, per department (jc_create sits in Production). Creating a Job
   // Card is `entry` (L2 Data Entry and up); Edit needs `edit` (L3+); Delete
-  // needs the edit+approve pair only L5 Department Admin and above hold. The
+  // is Super Admin only (ADR-232). The
   // last two used to be read inside JcRowWriteActions, which this file
   // replaced with <RowActions> — the expressions are carried over unchanged.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'jc_create');
   const canWrite = perms.entry;
   const canEditJc = perms.edit;
-  const canDeleteJc = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDeleteJc = canDeleteRecords(eff);
   const del = useDeleteJobCard();
 
   const today = todayIst();

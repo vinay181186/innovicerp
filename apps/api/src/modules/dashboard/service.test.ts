@@ -3,12 +3,14 @@
 // each tile has a sensible severity, and that the company scope is honored
 // (a different company's row should not bleed in).
 
+import { accessFormPermsSchema } from '@innovic/shared';
 import { eq } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -53,46 +55,68 @@ describe('dashboard service', () => {
     }
   });
 
-  it('manager sees the same 7 tiles as admin', async () => {
-    const manager: AuthContext = { ...admin, role: 'manager' };
-    const result = await service.getDashboardKpis(manager);
+  // ADR-232: a tile follows the View right of the page it counts, not the role.
+  it('View on every counted page sees all 7 tiles (role manager)', async () => {
+    const all = asAccess(
+      admin,
+      { departments: { sales: 'L1', purchase: 'L1', production: 'L1', qc: 'L1' } },
+      'manager',
+    );
+    const result = await service.getDashboardKpis(all);
     expect(result.tiles.map((t) => t.kind).sort()).toEqual([...ALL_KINDS].sort());
   });
 
-  it('viewer keeps full visibility (read-only audit role)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
-    const result = await service.getDashboardKpis(viewer);
+  it('L7 Auditor sees all 7 tiles (reads every page)', async () => {
+    const auditor = asAccess(admin, AUDITOR, 'viewer');
+    const result = await service.getDashboardKpis(auditor);
     expect(result.tiles).toHaveLength(7);
   });
 
-  it('operator sees jc_ops + NCs + ops_in_progress (3 tiles)', async () => {
-    const operator: AuthContext = { ...admin, role: 'operator' };
+  it('Production tier sees the Op Entry tile only (role operator)', async () => {
+    const operator = asAccess(admin, { departments: { production: 'L2' } }, 'operator');
     const result = await service.getDashboardKpis(operator);
     const kinds = result.tiles.map((t) => t.kind).sort();
-    expect(kinds).toEqual(['jc_ops_awaiting_qc', 'ncs_pending_dispose', 'ops_in_progress']);
+    expect(kinds).toEqual(['ops_in_progress']);
   });
 
-  it('qc sees jc-ops + NCs + GRN-lines + ops_in_progress (4 tiles)', async () => {
-    const qc: AuthContext = { ...admin, role: 'qc' };
+  it('QC tier sees ops awaiting QC + Incoming QC + NC Register tiles (role qc)', async () => {
+    const qc = asAccess(admin, { departments: { qc: 'L2' } }, 'qc');
     const result = await service.getDashboardKpis(qc);
     const kinds = result.tiles.map((t) => t.kind).sort();
-    expect(kinds).toEqual([
-      'grn_lines_pending_qc',
-      'jc_ops_awaiting_qc',
-      'ncs_pending_dispose',
-      'ops_in_progress',
-    ]);
+    expect(kinds).toEqual(['grn_lines_pending_qc', 'jc_ops_awaiting_qc', 'ncs_pending_dispose']);
   });
 
-  it('procurement sees POs + GRN-lines + PRs pending PO (3 tiles)', async () => {
-    const proc: AuthContext = { ...admin, role: 'procurement' };
+  it('Purchase tier sees POs + PRs pending PO', async () => {
+    const proc = asAccess(admin, { departments: { purchase: 'L2' } }, 'operator');
     const result = await service.getDashboardKpis(proc);
     const kinds = result.tiles.map((t) => t.kind).sort();
-    expect(kinds).toEqual([
-      'grn_lines_pending_qc',
-      'open_purchase_orders',
-      'prs_pending_conversion',
-    ]);
+    expect(kinds).toEqual(['open_purchase_orders', 'prs_pending_conversion']);
+  });
+
+  it('a manager role no longer widens the tiles past the ticks (owner D10)', async () => {
+    const salesOnly = asAccess(admin, { departments: { sales: 'L3' } }, 'manager');
+    const result = await service.getDashboardKpis(salesOnly);
+    expect(result.tiles.map((t) => t.kind)).toEqual(['open_sales_orders']);
+  });
+
+  it('a per-page View tick alone shows that tile (role viewer)', async () => {
+    const ticked = asAccess(
+      admin,
+      {
+        forms: {
+          nc_dispose: accessFormPermsSchema.parse({ view: true, entry: false, edit: false }),
+        },
+      },
+      'viewer',
+    );
+    const result = await service.getDashboardKpis(ticked);
+    expect(result.tiles.map((t) => t.kind)).toEqual(['ncs_pending_dispose']);
+  });
+
+  it('an account with nothing configured sees no tiles', async () => {
+    const none = asAccess(admin, {}, 'viewer');
+    const result = await service.getDashboardKpis(none);
+    expect(result.tiles).toEqual([]);
   });
 
   it('ops_in_progress tile severity stays at info or ok (state, not backlog)', async () => {
@@ -100,13 +124,6 @@ describe('dashboard service', () => {
     const opsTile = result.tiles.find((t) => t.kind === 'ops_in_progress');
     expect(opsTile).toBeDefined();
     expect(['ok', 'info']).toContain(opsTile?.severity);
-  });
-
-  it('dispatch sees open sales orders only (until dispatch-specific tiles land)', async () => {
-    const dispatch: AuthContext = { ...admin, role: 'dispatch' };
-    const result = await service.getDashboardKpis(dispatch);
-    const kinds = result.tiles.map((t) => t.kind).sort();
-    expect(kinds).toEqual(['open_sales_orders']);
   });
 
   it('NC tile reports `pending` count + sum of rejected_qty when non-zero', async () => {

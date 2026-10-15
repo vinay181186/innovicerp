@@ -26,7 +26,7 @@
 import type { ListMachineGroupsQuery, MachineGroup } from '@innovic/shared';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult, useDocumentEdits } from '@/modules/document-edits/api';
@@ -55,13 +55,14 @@ const ACTIVE_OPTIONS = [
 
 export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   // Same department form as the machines themselves (machine_create sits in
-  // Production): Add = entry, Edit = edit, Del = the edit+approve pair only
-  // L5 Department Admin and above hold.
+  // Production): Add = entry, Edit = edit, Del = Super Admin only
+  // (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'machine_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   // The tab owns its own search box (the machines tab's box filters machines,
   // and a machine search means nothing on the group list). Debounced into the

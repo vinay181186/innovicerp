@@ -21,6 +21,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { useOperatorsList } from '@/modules/operators/api';
@@ -95,20 +96,26 @@ export function OpEntryForm({
 }: Props): React.JSX.Element {
   const navigate = useNavigate();
   const submit = useSubmitOpLog();
-  const submitQc = useSubmitQcLog();
+  // §20 (owner D11): one idempotency key per QC save — a re-click after a
+  // timeout reuses it; a definite answer (success or refusal) spends it. A
+  // different operation is a different save, so the key turns over with it.
+  const qcSaveKey = useSaveKey();
+  useEffect(() => qcSaveKey.rotate(), [qcSaveKey, op.id]);
+  const submitQc = useSubmitQcLog(qcSaveKey);
   const start = useStartOp();
   const stop = useStopOp();
   const genOsp = useGenerateOspPr();
   const session = useSession();
   const companyId = session.data?.companyId ?? null;
-  // OSP-PR generation stays a manager/admin action (server: requireWriteRole).
-  const canWrite = session.data?.role === 'admin' || session.data?.role === 'manager';
   // Tier-driven, per department. Shop-floor Start/Log/Stop = op_entry entry
   // (Production). The QC inspection sub-form is a QC action, so its submit uses
   // the SAME key the server enforces on it (qc_submit entry).
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
+  // ADR-232: Generate OSP PR raises a Purchase Request — the PR page's Entry
+  // right, no role check.
+  const canWrite = effectiveFormPerms(eff, 'pr_create').entry;
 
   // EVERY field starts BLANK — no seeded date, no seeded time, no pre-selected
   // shift, no "0" already sitting in the reject box. A seeded value is a value
@@ -768,7 +775,7 @@ export function OpEntryForm({
             </div>
           ) : !canWrite ? (
             <div className="text3" style={{ fontSize: 12 }}>
-              Generating an OSP purchase request needs Manager or Admin access.
+              Generating an OSP purchase request needs the Purchase Request create right.
             </div>
           ) : (
             <>

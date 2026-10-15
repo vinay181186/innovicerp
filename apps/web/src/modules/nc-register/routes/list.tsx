@@ -290,7 +290,12 @@ function NcRegisterListPage(): React.JSX.Element {
                 }
                 rowClassName={(nc) => ncRowTint(nc.status)}
                 rowMenu={(nc) =>
-                  ncRowMenu(nc, { canDispose, canCreateCapa, onAssign: setAssignTarget })
+                  ncRowMenu(nc, {
+                    canDispose,
+                    canCreateCapa,
+                    canAssign: ncPerms.advance,
+                    onAssign: setAssignTarget,
+                  })
                 }
                 renderLink={(p) => <Link {...p} />}
                 renderExpanded={(nc) =>

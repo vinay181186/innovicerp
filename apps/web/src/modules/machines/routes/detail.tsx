@@ -34,7 +34,7 @@
 import type { DocumentEditChange, Machine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobQueue } from '@/modules/job-queue/api';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -113,14 +113,11 @@ function MachineDetailPage(): React.JSX.Element {
     await navigate({ to: '/machines', replace: true });
   };
 
-  // Tier-driven, per department. Delete is not one of the four tier actions,
-  // so it is expressed as the pair only L5 Department Admin and above hold:
-  // edit AND approve. L3 has edit without approve; L4 has approve without edit.
-  // Previously delete was admin-only, which locked out the tier meant to run
-  // the department.
+  // Tier-driven, per department.
   const perms = effectiveFormPerms(eff, 'machine_create');
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`

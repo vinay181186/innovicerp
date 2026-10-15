@@ -20,10 +20,12 @@ import {
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
+  AuthorizationError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'TPL5-';
@@ -621,5 +623,63 @@ describe('assembly service — start / stop (WIP, ADR-129)', () => {
     await expect(service.startAssembly(wipSoId, { qty: 1 }, admin)).rejects.toBeInstanceOf(
       ConflictError,
     );
+  });
+});
+
+// ADR-232 (owner, 2026-10-15; D2): the Assembly Tracker tick (assembly_create,
+// Planning) alone decides — Complete / Start / Stop / Dispatch are `entry`,
+// Undo is `edit`, the readiness override is `approve`. users.role refuses
+// nobody (the old manager/admin role check is gone).
+describe('assembly — ADR-232 Access Control ticks alone decide', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+  const as = (tier: 'L1' | 'L2' | 'L3' | 'L4' | 'L5', role = 'operator') =>
+    asAccess(admin, { departments: { planning: tier } }, role);
+  const prodOnly = () => asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+  const auditor = () => asAccess(admin, { ...AUDITOR, departments: { planning: 'L5' } });
+
+  const entryCalls = (u: AuthContext) => [
+    () => service.markUnitAssembled(UNKNOWN_ID, { qty: 1 }, u),
+    () => service.startAssembly(UNKNOWN_ID, { qty: 1 }, u),
+    () => service.stopAssembly(UNKNOWN_ID, { completedQty: 1 }, u),
+    () => service.markUnitDispatched(UNKNOWN_ID, {}, u),
+  ];
+
+  it('entry actions: Planning L2 with role operator passes the gate', async () => {
+    for (const call of entryCalls(as('L2'))) {
+      await expect(call()).rejects.not.toBeInstanceOf(AuthorizationError);
+    }
+  });
+
+  it('entry actions: L1 / no Planning tick / auditor → AuthorizationError', async () => {
+    for (const u of [as('L1', 'viewer'), prodOnly(), auditor()]) {
+      for (const call of entryCalls(u)) {
+        await expect(call()).rejects.toBeInstanceOf(AuthorizationError);
+      }
+    }
+  });
+
+  it('undoLastUnit (edit): Planning L3 with role operator passes; L2 / auditor refused', async () => {
+    await expect(service.undoLastUnit(UNKNOWN_ID, as('L3'))).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.undoLastUnit(UNKNOWN_ID, as('L2'))).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.undoLastUnit(UNKNOWN_ID, auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('setReadinessOverride (approve): Planning L4 with role qc passes; L3 / auditor refused', async () => {
+    const input = { readyQtyOverride: 1 };
+    await expect(
+      service.setReadinessOverride(UNKNOWN_ID, 'X', input, as('L4', 'qc')),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.setReadinessOverride(UNKNOWN_ID, 'X', input, as('L3')),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.setReadinessOverride(UNKNOWN_ID, 'X', input, auditor()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
 });

@@ -26,6 +26,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Play, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
@@ -63,6 +64,10 @@ function AssemblyDetailPage(): React.JSX.Element {
   const [remarks, setRemarks] = useState('');
   // Undo un-builds a batch (and reverses its stock when completed) — ask first.
   const [confirmUndo, setConfirmUndo] = useState(false);
+  // ADR-232: the Assembly Tracker page's ticks decide — Start = Entry, Undo
+  // Last Batch = Edit.
+  const { data: eff } = useMyAccess();
+  const asmPerms = effectiveFormPerms(eff, 'assembly_create');
 
   if (isLoading) {
     return (
@@ -331,34 +336,42 @@ function AssemblyDetailPage(): React.JSX.Element {
               placeholder="optional"
             />
           </div>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={onStart}
-            disabled={start.isPending || startMax < 1}
-            title={
-              startMax < 1
-                ? 'All order units are already started or completed'
-                : `Start up to ${startMax} unit(s)`
-            }
-          >
-            {start.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-            Start
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onUndo}
-            disabled={undo.isPending || data.units.length === 0}
-            title="Undo the latest batch (in-progress, or completed but not dispatched)"
-          >
-            {undo.isPending ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <RotateCcw size={13} />
-            )}
-            Undo Last Batch
-          </button>
+          {asmPerms.entry ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onStart}
+              disabled={start.isPending || startMax < 1}
+              title={
+                startMax < 1
+                  ? 'All order units are already started or completed'
+                  : `Start up to ${startMax} unit(s)`
+              }
+            >
+              {start.isPending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Play size={13} />
+              )}
+              Start
+            </button>
+          ) : null}
+          {asmPerms.edit ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onUndo}
+              disabled={undo.isPending || data.units.length === 0}
+              title="Undo the latest batch (in-progress, or completed but not dispatched)"
+            >
+              {undo.isPending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <RotateCcw size={13} />
+              )}
+              Undo Last Batch
+            </button>
+          ) : null}
           {confirmUndo && lastBatch ? (
             <ConfirmDialog
               open
@@ -759,6 +772,11 @@ function UnitsPanel({
   soId: string;
 }): React.JSX.Element {
   const stop = useStopAssembly();
+  // ADR-232: Complete = the Assembly Tracker's Entry right. Dispatch opens the
+  // Customer Dispatch create page, so it follows that page's Entry right.
+  const { data: eff } = useMyAccess();
+  const canComplete = effectiveFormPerms(eff, 'assembly_create').entry;
+  const canDispatch = effectiveFormPerms(eff, 'dispatch_create').entry;
   const [error, setError] = useState<string | null>(null);
   // Per in-progress row: how many of the batch to complete now (default = all
   // that's left in the batch).
@@ -943,7 +961,7 @@ function UnitsPanel({
                           label: 'Complete',
                           icon: 'check',
                           group: 'workflow',
-                          hidden: !wip,
+                          hidden: !wip || !canComplete,
                           disabledReason: stop.isPending ? 'Working…' : undefined,
                           onSelect: () => onStop(u),
                         },
@@ -955,7 +973,7 @@ function UnitsPanel({
                           label: 'Dispatch',
                           icon: 'truck',
                           group: 'workflow',
-                          hidden: wip || u.dispatched,
+                          hidden: wip || u.dispatched || !canDispatch,
                           to: `/customer-dispatches/new?${new URLSearchParams({ so: soId }).toString()}`,
                         },
                       ]}

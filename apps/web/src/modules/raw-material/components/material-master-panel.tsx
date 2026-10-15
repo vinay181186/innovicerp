@@ -18,7 +18,7 @@
 import type { DocumentEditEntity } from '@innovic/shared';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
 import { useDocumentEdits } from '@/modules/document-edits/api';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -130,12 +130,13 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
   } = props;
 
   // Tier-driven, per department (rawmat_create sits in Production). Add/Import =
-  // entry; Edit = edit; Del = the edit+approve pair only L5+ hold.
+  // entry; Edit = edit; Del = Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'rawmat_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   const total = totalOrUndef ?? 0;
   useClampPage(page, totalOrUndef, onPage);

@@ -208,17 +208,19 @@ export function DesignTrackerExpanded({ row }: { row: DesignTrackerListItem }): 
 }
 
 /**
- * The design's ⋯ menu — same actions and gates as before: Log Time (anyone who
- * can see the page), Edit (edit perm, not Approved), Submit (design_create
- * Advance, In Progress — ADR-231, was a manager/admin role check), Approve
- * (admin, Review), Revise (admin, Review).
+ * The design's ⋯ menu. ADR-232 — the design_create ticks alone decide: Log
+ * Time (Entry — the server's logDesignTime rule), Edit (Edit, not Approved),
+ * Submit (Advance, In Progress — ADR-231), Approve and Revise (Approve, Review).
  */
 export function designTrackerRowMenu(
   row: DesignTrackerListItem,
   opts: {
     /** design_create advance — submit for review moves the design on (ADR-231). */
     canSubmit: boolean;
-    isAdmin: boolean;
+    /** design_create entry — Log Time writes a time row. */
+    canLogTime: boolean;
+    /** design_create approve — Approve / Revise a design under Review. */
+    canApprove: boolean;
     canEdit: boolean;
     onLogTime: (row: DesignTrackerListItem) => void;
     onEdit: (row: DesignTrackerListItem) => void;
@@ -227,9 +229,25 @@ export function designTrackerRowMenu(
     onRevise: (row: DesignTrackerListItem) => void;
   },
 ): RowMenuItem[] {
-  const { canSubmit, isAdmin, canEdit, onLogTime, onEdit, onSubmit, onApprove, onRevise } = opts;
+  const {
+    canSubmit,
+    canLogTime,
+    canApprove,
+    canEdit,
+    onLogTime,
+    onEdit,
+    onSubmit,
+    onApprove,
+    onRevise,
+  } = opts;
   return [
-    { key: 'log', label: 'Log Time', icon: 'plus', onSelect: () => onLogTime(row) },
+    {
+      key: 'log',
+      label: 'Log Time',
+      icon: 'plus',
+      hidden: !canLogTime,
+      onSelect: () => onLogTime(row),
+    },
     {
       key: 'edit',
       label: 'Edit',
@@ -250,7 +268,7 @@ export function designTrackerRowMenu(
       label: 'Approve',
       icon: 'check',
       group: 'workflow',
-      hidden: !isAdmin || row.status !== 'Review',
+      hidden: !canApprove || row.status !== 'Review',
       onSelect: () => onApprove(row),
     },
     {
@@ -259,7 +277,7 @@ export function designTrackerRowMenu(
       label: 'Revise',
       icon: 'arrow-left',
       group: 'danger',
-      hidden: !isAdmin || row.status !== 'Review',
+      hidden: !canApprove || row.status !== 'Review',
       onSelect: () => onRevise(row),
     },
   ];

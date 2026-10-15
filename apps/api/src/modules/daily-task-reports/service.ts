@@ -16,6 +16,7 @@ import type {
 import { and, asc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { dailyReportLines, dailyReports, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireCanWrite } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
@@ -223,6 +224,8 @@ export async function createDailyReport(
   input: UpsertDailyTaskReportInput,
   user: AuthContext,
 ): Promise<DailyTaskReportDetail> {
+  // ADR-232: a person's own daily report — everyone set up, never an Auditor.
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const inserted = await tx
@@ -261,6 +264,8 @@ export async function updateDailyReport(
   input: UpsertDailyTaskReportInput,
   user: AuthContext,
 ): Promise<DailyTaskReportDetail> {
+  // ADR-232: a person's own daily report — everyone set up, never an Auditor.
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx

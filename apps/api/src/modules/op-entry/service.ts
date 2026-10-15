@@ -35,9 +35,13 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import {
+  hasFormAccess,
+  primeAccess,
+  requireAnyFormAccess,
+  requireFormAccess,
+} from '../../lib/access';
 import { diffFields } from '../../lib/audit-trail';
-import { isWriteRole, requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -1205,10 +1209,7 @@ function toInsertedOpLog(
 }
 
 export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): Promise<OpLog> {
-  requireOpEntryRole(user);
-  // Per-department tier gate (op_entry sits in Production). The role guard alone
-  // let anyone with a write-ish role log production; the matrix narrows it to a
-  // user granted `entry` on Op Entry. Admins bypass.
+  // ADR-232 — the Access Control tick alone decides: `entry` on Op Entry.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
 
@@ -1250,11 +1251,8 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
 //   - T-040f: last-op stock cascade (items.stock_qty + store_transactions)
 //   - QC report file attachment (deferred per ADR-022 — qcDocUploads doc_missing)
 export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): Promise<OpLog> {
-  requireOpEntryRole(user);
-  // ADR-035: the role guard alone let a manager record QC even when their QC
-  // department tier is L1 (view-only). Enforce the per-department QC tier too —
-  // a user must have `entry` on the QC Call Register form to accept/reject qty.
-  // Admins bypass; the matrix can only narrow what the role already allows.
+  // ADR-232 — the Access Control tick alone decides: `entry` on the QC Call
+  // Register form to accept/reject qty.
   await requireFormAccess(user, 'qc_submit', 'entry');
   // A third-party-inspection record carries a second, narrower gate: it must also
   // clear the TPI form's entry right. The QC tier grants tpi_submit by default,
@@ -1743,7 +1741,7 @@ async function loadTimingTarget(
 }
 
 // The actual write. Only ever reached by someone entitled to make the change
-// stick: a manager/admin editing directly, an approver accepting a request, or
+// stick: an approver editing directly, an approver accepting a request, or
 // anyone when the approval flag is off.
 async function applyTimingChange(
   tx: DbTransaction,
@@ -1821,6 +1819,8 @@ export async function updateOpLogTiming(
   input: UpdateOpLogTimingInput,
   user: AuthContext,
 ): Promise<UpdateOpLogTimingResult> {
+  // Access is read now, outside the transaction below (see primeAccess).
+  await primeAccess(user);
   const companyId = requireCompany(user);
   // The fourth way a date reaches op_log. Guarding the three entry paths and
   // leaving the correction path open would only move the hole -- a retime can
@@ -1830,11 +1830,11 @@ export async function updateOpLogTiming(
   return withUserContext(user, async (tx) => {
     const row = await loadTimingTarget(tx, input.id, companyId);
 
-    // Who may correct an entry = who may record that kind of entry (the same
-    // split the three RLS insert policies make): QC rows are QC's, production
-    // rows are the operator's, manager/admin can do either.
-    if (row.logType === 'qc') requireQcRole(user);
-    else requireOpEntryRole(user);
+    // Who may correct an entry = whoever holds `edit` on the page that records
+    // that kind of entry (ADR-232): QC rows are QC Call Register's, production
+    // rows are Op Entry's.
+    const timingForm = row.logType === 'qc' ? 'qc_submit' : 'op_entry';
+    await requireFormAccess(user, timingForm, 'edit');
 
     const nextTime =
       input.logTime === undefined ? row.startTime : input.logTime === null ? null : input.logTime;
@@ -1843,10 +1843,10 @@ export async function updateOpLogTiming(
       return { applied: true, opLog: unchanged!, request: null };
     }
 
-    // A manager/admin is the approver, so their own edit applies immediately —
-    // asking them to approve themselves is a round trip with no reviewer. The
-    // gate being off makes any role's edit apply immediately too.
-    const isApprover = user.role === 'admin' || user.role === 'manager';
+    // Someone holding `approve` on that page is the approver, so their own edit
+    // applies immediately — asking them to approve themselves is a round trip
+    // with no reviewer. The gate being off makes anyone's edit apply too.
+    const isApprover = await hasFormAccess(user, timingForm, 'approve');
     if (isApprover || !(await isEditApprovalOn(tx, companyId))) {
       const updated = await applyTimingChange(
         tx,
@@ -2079,7 +2079,8 @@ export async function decideOpLogTimeChange(
   input: DecideOpLogTimeChangeInput,
   user: AuthContext,
 ): Promise<OpLogTimeChangeRequest> {
-  requireWriteRole(user); // manager/admin only — the whole point of ADR-130
+  // Access is read now, outside the transaction below (see primeAccess).
+  await primeAccess(user);
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -2102,6 +2103,24 @@ export async function decideOpLogTimeChange(
       .for('update');
     const req = rows[0];
     if (!req) throw new NotFoundError('Change request not found');
+    // ADR-232 (owner D7) — deciding is `approve` on the page that records that
+    // kind of entry: QC rows → QC Call Register, production rows → Op Entry.
+    // The log row is read after the request lock so its type is known. A log
+    // row that no longer exists (reversed) has no type — either page's
+    // approver may still clear the request.
+    const [logRow] = await tx
+      .select({ logType: opLog.logType })
+      .from(opLog)
+      .where(and(eq(opLog.id, req.opLogId), eq(opLog.companyId, companyId)))
+      .limit(1);
+    if (logRow) {
+      await requireFormAccess(user, logRow.logType === 'qc' ? 'qc_submit' : 'op_entry', 'approve');
+    } else {
+      await requireAnyFormAccess(user, [
+        ['op_entry', 'approve'],
+        ['qc_submit', 'approve'],
+      ]);
+    }
     if (req.status !== 'pending') {
       // 409 like the guarded-write backstop below: another decision got there first.
       throw new ConflictError(
@@ -2186,9 +2205,8 @@ export async function decideOpLogTimeChange(
 }
 
 export async function startOp(input: StartOpInput, user: AuthContext): Promise<RunningOp> {
-  requireOpEntryRole(user);
-  // Per-department tier gate (op_entry sits in Production). Starting a machine
-  // session records shop-floor work → `entry`. Admins bypass.
+  // ADR-232 — the Access Control tick alone decides. Starting a machine
+  // session records shop-floor work → `entry` on Op Entry.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
   assertNotFutureDate(input.startDate, 'Start Date');
@@ -2422,17 +2440,17 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
   });
 }
 
-// OSP auto-PR generation (ADR-039). Allowed to admin / manager, and to anyone
-// whose Access Control grants Purchase Requests ENTRY (pr_create entry) — the
-// same right that lets them raise a PR from the PR form; JC Operations "Raise
-// PR" now calls this path. Server-enforced here, not just a hidden button.
+// OSP auto-PR generation (ADR-039). Allowed to anyone whose Access Control
+// grants Purchase Requests ENTRY (pr_create entry) — the same right that lets
+// them raise a PR from the PR form; JC Operations "Raise PR" calls this path.
+// ADR-232 (owner D10): managers no longer skip the tick.
 // Delegates to generateOspPrForOp inside a single transaction so the PR,
 // optional PO, op link, and audit rows all commit or roll back together.
 export async function generateOspPr(
   input: GenerateOspPrInput,
   user: AuthContext,
 ): Promise<GenerateOspPrResult> {
-  if (!isWriteRole(user)) await requireFormAccess(user, 'pr_create', 'entry');
+  await requireFormAccess(user, 'pr_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // ADR-182 — this route commits MONEY to an outside vendor (a jw_osp
@@ -2473,9 +2491,8 @@ export async function stopOp(
   input: StopOpInput,
   user: AuthContext,
 ): Promise<RunningOp> {
-  requireOpEntryRole(user);
-  // Per-department tier gate (op_entry sits in Production). Stopping a session
-  // commits the produced qty to op_log → `entry`. Admins bypass.
+  // ADR-232 — the Access Control tick alone decides. Stopping a session
+  // commits the produced qty to op_log → `entry` on Op Entry.
   await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
   const qty = input.qty;

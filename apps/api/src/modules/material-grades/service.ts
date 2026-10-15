@@ -13,7 +13,7 @@ import type { DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { materialGrades } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -419,9 +419,8 @@ export async function softDeleteMaterialGrade(
   id: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  // Delete = the edit+approve pair only L5 Department Admin and above hold.
-  await requireFormAccess(user, 'rawmat_create', 'edit');
-  await requireFormAccess(user, 'rawmat_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin — no tier or tick grants it.
+  await requireDeleteRight(user, 'Material Grades');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

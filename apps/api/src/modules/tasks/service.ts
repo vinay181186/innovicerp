@@ -39,6 +39,7 @@ import type {
 import { and, asc, count, eq, inArray, isNull, like } from 'drizzle-orm';
 import { fileRegistry, taskComments, tasks, userAccess, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireCanWrite } from '../../lib/access';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import {
   AuthorizationError,
@@ -291,14 +292,11 @@ export async function getNextTaskCode(
 
 // Assign Task — any authenticated active user. Assigning to yourself is
 // allowed and simply lands in My To-Do; taskType stays 'assigned'.
-// The read-only `viewer` role may look at its own tasks but never write —
-// same as every other module.
-function requireNotViewer(user: AuthContext): void {
-  if (user.role === 'viewer') throw new AuthorizationError('Viewers cannot change tasks');
-}
+// ADR-232 (owner D6): everyone set up works their own tasks; an L7 Auditor and
+// an unconfigured account write nothing (requireCanWrite).
 
 export async function createTask(input: CreateTaskInput, user: AuthContext): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const assignee = await loadAssignee(tx, companyId, input.assignedTo);
@@ -368,7 +366,7 @@ export async function createPersonalTodo(
   input: CreatePersonalTodoInput,
   user: AuthContext,
 ): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     await lockDocSeries(tx, companyId, 'tasks'); // ADR-227
@@ -419,7 +417,7 @@ export async function updateTask(
   input: UpdateTaskInput,
   user: AuthContext,
 ): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
@@ -639,7 +637,7 @@ export async function updateTaskStatus(
   input: UpdateTaskStatusInput,
   user: AuthContext,
 ): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
@@ -653,7 +651,7 @@ export async function completeTask(
   input: CompleteTaskInput,
   user: AuthContext,
 ): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
@@ -674,7 +672,7 @@ export async function cancelTask(
   input: CancelTaskInput,
   user: AuthContext,
 ): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
@@ -690,7 +688,7 @@ export async function reassignTask(
   input: ReassignTaskInput,
   user: AuthContext,
 ): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
@@ -755,7 +753,7 @@ export async function addTaskComment(
   input: AddTaskCommentInput,
   user: AuthContext,
 ): Promise<TaskDetail> {
-  requireNotViewer(user);
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user); // canComment = can view
@@ -780,7 +778,7 @@ export async function addTaskAttachment(
   user: AuthContext,
 ): Promise<TaskDetail> {
   const companyId = requireCompany(user);
-  requireNotViewer(user);
+  await requireCanWrite(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
     if (!permsFor(t, user).canAttach) throw new AuthorizationError('Cannot attach to this task');

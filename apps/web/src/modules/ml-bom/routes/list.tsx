@@ -8,7 +8,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
@@ -220,7 +220,7 @@ function MlBomsListPage(): React.JSX.Element {
                 label: 'Delete',
                 icon: 'trash-2',
                 group: 'danger',
-                hidden: !(perms.edit && perms.approve),
+                hidden: !canDeleteRecords(eff), // ADR-232: Super Admin only
                 onSelect: () => {
                   setDeleteReason('');
                   setToDelete(b);

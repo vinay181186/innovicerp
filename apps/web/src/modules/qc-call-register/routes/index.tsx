@@ -23,7 +23,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, type RowMenuItem } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -118,21 +117,16 @@ function QcCallRegisterPage(): React.JSX.Element {
   // "Mine": only the pending calls QC Command assigned to the signed-in user —
   // the server matches the caller's full name and short form.
   const [mineOnly, setMineOnly] = useState(false);
-  const session = useSession().data;
   // Caller's effective access — drives the "Hide page" VIEW guard below and
-  // whether a row offers Inspect. Each kind follows its server rule exactly:
-  //   job-card op QC (op-entry submitQcLog): role admin / manager / operator
-  //     AND qc_submit entry;
-  //   incoming GRN QC (incoming-qc inspect): role admin / manager AND
-  //     qc_incoming entry. A Party GRN line (ADR-203) follows the same rule.
-  // A viewer who can inspect neither kind gets no ⋯ column.
+  // whether a row offers Inspect. ADR-232: the Access Control ticks alone
+  // decide, no role check:
+  //   job-card op QC (op-entry submitQcLog): qc_submit entry;
+  //   incoming GRN QC (incoming-qc inspect): qc_incoming entry. A Party GRN
+  //     line (ADR-203) follows the same rule.
+  // A user who can inspect neither kind gets no ⋯ column.
   const { data: eff } = useMyAccess();
-  const role = session?.role;
-  const canEntry =
-    (role === 'admin' || role === 'manager' || role === 'operator') &&
-    effectiveFormPerms(eff, 'qc_submit').entry;
-  const canIncoming =
-    (role === 'admin' || role === 'manager') && effectiveFormPerms(eff, 'qc_incoming').entry;
+  const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
+  const canIncoming = effectiveFormPerms(eff, 'qc_incoming').entry;
   // ADR-203: a Party GRN line is booked by POST /party-grn/:id/qc, which needs
   // only qc_incoming · entry (no role) — the same gate as the Party GRN list.
   const canPartyQc = effectiveFormPerms(eff, 'qc_incoming').entry;

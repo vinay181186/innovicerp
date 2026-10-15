@@ -24,7 +24,7 @@ import {
 } from '@innovic/shared';
 import { printTemplates, printTemplateRevisions, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireAdminRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
 
@@ -103,7 +103,8 @@ export async function savePrintTemplate(
   content: string,
   user: AuthContext,
 ): Promise<EffectivePrintTemplate> {
-  requireAdminRole(user);
+  // ADR-232 (owner D4): the Print Templates Edit tick decides.
+  await requireFormAccess(user, 'printtpl_edit', 'edit');
   const companyId = requireCompany(user);
   assertKey(key);
 
@@ -153,7 +154,8 @@ export async function restorePrintTemplateDefault(
   key: string,
   user: AuthContext,
 ): Promise<EffectivePrintTemplate> {
-  requireAdminRole(user);
+  // ADR-232 (owner D4): the Print Templates Edit tick decides.
+  await requireFormAccess(user, 'printtpl_edit', 'edit');
   const companyId = requireCompany(user);
   assertKey(key);
 

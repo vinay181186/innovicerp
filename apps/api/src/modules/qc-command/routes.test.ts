@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { jcOps, jobCards, qcAssignments, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { qcCommandRoutes } from './routes';
 
@@ -86,8 +87,8 @@ describe('qc-command routes', () => {
     expect(res.json().jcOpId).toBe(testOpId);
   });
 
-  it('POST /qc-command/assign by qc role returns 403', async () => {
-    const qc: AuthContext = { ...admin, role: 'qc' };
+  it('POST /qc-command/assign without the QC advance tick returns 403', async () => {
+    const qc = asAccess(admin, { departments: { qc: 'L1' } }, 'qc');
     app = await buildApp(qc);
     const res = await app.inject({
       method: 'POST',

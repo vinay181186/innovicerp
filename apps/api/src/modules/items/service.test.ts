@@ -4,6 +4,7 @@ import { db } from '../../db/client';
 import { activityLog, items, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'T009-';
@@ -212,5 +213,31 @@ describe('items service', () => {
         noCompanyUser,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): deleting any record needs L6 Super Admin. No
+// department tier — not even L5 Department Admin — and no page tick grants it.
+describe('softDeleteItem — Super Admin only (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('L5 Department Admin cannot delete Items — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { store: 'L5' } }, 'manager');
+    await expect(service.softDeleteItem(UNKNOWN_ID, 'test', l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor cannot delete Items — AuthorizationError', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { store: 'L5' } });
+    await expect(service.softDeleteItem(UNKNOWN_ID, 'test', auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('Super Admin passes the delete gate (unknown id → NotFoundError, not refused)', async () => {
+    await expect(service.softDeleteItem(UNKNOWN_ID, 'test', admin)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });

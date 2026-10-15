@@ -1,5 +1,6 @@
 // Dashboard dept-access helper. Mirror of legacy _hasDeptAccess / _getUserAccess.
-// Admin/manager see everything; otherwise fullAccess or the per-dept flag.
+// Super Admin sees everything; otherwise fullAccess or the per-dept tier
+// (ADR-232, owner D10: a manager no longer sees every department).
 
 import { normalizeDeptsMap } from '@innovic/shared';
 import type { AuthContext, FrozenAccess } from '../../db/with-user-context';
@@ -24,7 +25,7 @@ export async function loadAccess(user: AuthContext): Promise<DashAccess> {
 
 export function hasDept(a: DashAccess, dept: string | null): boolean {
   if (!dept) return true;
-  if (a.isAdmin || a.isManager) return true;
+  if (a.isAdmin) return true;
   if (a.eff.fullAccess) return true;
   // L7 Auditor reads every department by definition (0100).
   if (a.eff.auditor) return true;

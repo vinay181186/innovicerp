@@ -31,7 +31,6 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { assertActiveParty } from '../../lib/active-party';
-import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
@@ -683,7 +682,6 @@ export async function createInvoice(
   input: CreateInvoiceInput,
   user: AuthContext,
 ): Promise<InvoiceDetail> {
-  requireWriteRole(user);
   // Phase-2 gap fix: Invoices now carries its own Finance form key. Raising an
   // invoice is `invoice_create` entry.
   await requireFormAccess(user, 'invoice_create', 'entry');
@@ -873,7 +871,6 @@ export async function addPayment(
   input: AddPaymentInput,
   user: AuthContext,
 ): Promise<InvoiceDetail> {
-  requireWriteRole(user);
   // Recording a payment is a Finance data-entry action against the invoice.
   await requireFormAccess(user, 'invoice_create', 'entry');
   const companyId = requireCompany(user);

@@ -11,6 +11,7 @@ import type {
 } from '@innovic/shared';
 import { reportTypes } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
@@ -84,6 +85,8 @@ export async function createReportType(
   input: CreateReportTypeInput,
   user: AuthContext,
 ): Promise<ReportType> {
+  // ADR-232: the Report Types tab lives inside QC Process Master, so its tick decides.
+  await requireFormAccess(user, 'qcprocess_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const inserted = await tx
@@ -107,6 +110,7 @@ export async function updateReportType(
   input: UpdateReportTypeInput,
   user: AuthContext,
 ): Promise<ReportType> {
+  await requireFormAccess(user, 'qcprocess_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -141,6 +145,8 @@ export async function updateReportType(
 }
 
 export async function deleteReportType(id: string, user: AuthContext): Promise<{ id: string }> {
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Report Types');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const updated = await tx

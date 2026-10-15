@@ -18,6 +18,7 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSession } from '@/lib/session';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ConfirmDialog } from '@/ui/feedback';
 import { uploadSoDocFile, useCreateSoDocument, useDeleteSoDocument, useSoDocDetail } from '../api';
 
@@ -38,7 +39,11 @@ function fileIcon(file: SoDocumentFile): string {
 export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Element {
   const { data, isLoading, isError, error } = useSoDocDetail(soId);
   const { data: me } = useSession();
-  const canWrite = !!me && me.role !== 'viewer';
+  // ADR-232 — the ticks alone: Upload = Entry on SO Master; deleting an
+  // uploaded file = L6 Super Admin only.
+  const { data: eff } = useMyAccess();
+  const canUpload = effectiveFormPerms(eff, 'so_create').entry;
+  const canDelete = canDeleteRecords(eff);
   const deleteDoc = useDeleteSoDocument();
   // ADR-197 — the file being deleted and why (required; lands on the SO's
   // History). Asked through the ONE ConfirmDialog, never window.confirm.
@@ -105,7 +110,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
 
       {/* Action bar */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-        {canWrite ? (
+        {canUpload ? (
           <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
             <Upload size={14} /> Upload Document
           </button>
@@ -118,7 +123,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
           key={line.soLineId}
           line={line}
           files={byLine.get(line.lineNo) ?? []}
-          canWrite={canWrite}
+          canDelete={canDelete}
           deletingId={deletingId}
           onDelete={onDelete}
           onView={setPreview}
@@ -136,7 +141,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
               <FileRow
                 key={`${f.source}-${f.id}`}
                 file={f}
-                canWrite={canWrite}
+                canDelete={canDelete}
                 deleting={deletingId === f.id}
                 onDelete={onDelete}
                 onView={setPreview}
@@ -216,14 +221,14 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
 function LinePanel({
   line,
   files,
-  canWrite,
+  canDelete,
   deletingId,
   onDelete,
   onView,
 }: {
   line: SoDocumentLine;
   files: SoDocumentFile[];
-  canWrite: boolean;
+  canDelete: boolean;
   deletingId: string | undefined;
   onDelete: (f: SoDocumentFile) => void;
   onView: (f: SoDocumentFile) => void;
@@ -278,7 +283,7 @@ function LinePanel({
                 <FileRow
                   key={`${f.source}-${f.id}`}
                   file={f}
-                  canWrite={canWrite}
+                  canDelete={canDelete}
                   deleting={deletingId === f.id}
                   onDelete={onDelete}
                   onView={onView}
@@ -295,14 +300,14 @@ function LinePanel({
 
 function FileRow({
   file,
-  canWrite,
+  canDelete,
   deleting,
   onDelete,
   onView,
   idx,
 }: {
   file: SoDocumentFile;
-  canWrite: boolean;
+  canDelete: boolean;
   deleting: boolean;
   onDelete: (f: SoDocumentFile) => void;
   onView: (f: SoDocumentFile) => void;
@@ -359,7 +364,7 @@ function FileRow({
         >
           👁 View
         </button>
-        {canWrite && file.source === 'registry' ? (
+        {canDelete && file.source === 'registry' ? (
           <button
             type="button"
             className="btn btn-danger btn-sm"

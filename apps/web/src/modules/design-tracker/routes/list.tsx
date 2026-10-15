@@ -20,7 +20,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
@@ -71,10 +70,6 @@ export const designTrackerListRoute = createRoute({
 });
 
 function DesignTrackerListPage(): React.JSX.Element {
-  const { data: me } = useSession();
-  // Approve / Revise are still role-gated (admin or manager); Submit moved to
-  // the Advance right (ADR-231), so this is no longer a write gate.
-  const isAdminOrManager = me?.role === 'admin' || me?.role === 'manager';
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'design_create');
   const routeSearch = designTrackerListRoute.useSearch();
@@ -241,7 +236,8 @@ function DesignTrackerListPage(): React.JSX.Element {
             rowMenu={(d) =>
               designTrackerRowMenu(d, {
                 canSubmit: perms.advance,
-                isAdmin: isAdminOrManager,
+                canLogTime: perms.entry,
+                canApprove: perms.approve,
                 canEdit: perms.edit,
                 onLogTime: setLogTimeRow,
                 onEdit: setEditRow,

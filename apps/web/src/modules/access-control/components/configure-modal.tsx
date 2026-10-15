@@ -89,6 +89,10 @@ type Action = 'view' | 'entry' | 'advance' | 'edit' | 'approve' | 'price';
 // saved record to its next step) sits between Entry and Edit; `price`
 // (can-see-money) sits after Approve.
 const ACTIONS: readonly Action[] = ['view', 'entry', 'advance', 'edit', 'approve', 'price'];
+// ADR-232: the write actions an L7 Auditor never holds, and the one reason shown
+// on every box / tier switch that is locked because of it.
+const AUDITOR_LOCKED_ACTIONS: readonly Action[] = ['entry', 'advance', 'edit', 'approve'];
+const AUDITOR_LOCK_TITLE = 'Auditor is view-only';
 
 const NO_PERMS: FormPerms = {
   view: false,
@@ -1093,12 +1097,20 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           value={tier}
                           onChange={(v) => setDeptTier(d.key, v as AccessTierKey | '')}
                           disabled={disabled}
+                          // ADR-232: an L7 Auditor writes nothing, whatever
+                          // tier is stored — say so on the locked switches.
                           options={[
-                            { value: '', label: 'None', title: 'No access to this department.' },
+                            {
+                              value: '',
+                              label: 'None',
+                              title: auditor ? AUDITOR_LOCK_TITLE : 'No access to this department.',
+                            },
                             ...ACCESS_TIERS.map((t) => ({
                               value: t.key,
                               label: t.key,
-                              title: `${t.key} ${t.label} — ${t.hint}`,
+                              title: auditor
+                                ? AUDITOR_LOCK_TITLE
+                                : `${t.key} ${t.label} — ${t.hint}`,
                             })),
                           ]}
                         />
@@ -1276,16 +1288,25 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                 // With the page hidden, the non-View boxes are
                                 // forced off and not clickable.
                                 const forcedByHide = pageHidden && action !== 'view';
+                                // ADR-232: an L7 Auditor is view-only — every
+                                // write box reads unticked and locked, whatever
+                                // is stored (what is saved is not touched).
+                                const auditorLock =
+                                  auditor && !fullAccess && AUDITOR_LOCKED_ACTIONS.includes(action);
                                 // Locked: non-standard access levels lock the lot;
                                 // a tier-granted box stays locked ONLY where it is
                                 // not off-capable (the classic grey tick).
                                 const locked =
                                   disabled ||
                                   fullAccess ||
+                                  auditorLock ||
                                   forcedByHide ||
                                   (tierGrants && !offCapable);
                                 const checked =
-                                  !forcedByHide && !removed && (tierGrants || own[action]);
+                                  !auditorLock &&
+                                  !forcedByHide &&
+                                  !removed &&
+                                  (tierGrants || own[action]);
                                 // A quiet neutral cue — NOT the old red ✕ — on any box
                                 // that differs from the tier, so "off on purpose" never
                                 // looks like "off by default". Grey dot = switched off
@@ -1305,21 +1326,23 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                       checked={checked}
                                       onChange={() => toggleAction(f.key, action, tierGrants)}
                                       title={
-                                        forcedByHide
-                                          ? 'Page is hidden (View removed). Tick View to use this page again.'
-                                          : removed
-                                            ? isPrice
-                                              ? 'Money hidden on this page. Click to show it again.'
-                                              : `Removed for this page. Click to restore what the ${f.dept} tier (${deptTierKey}) grants.`
-                                            : offCapable && tierGrants && deptTierKey && !disabled
+                                        auditorLock
+                                          ? AUDITOR_LOCK_TITLE
+                                          : forcedByHide
+                                            ? 'Page is hidden (View removed). Tick View to use this page again.'
+                                            : removed
                                               ? isPrice
-                                                ? `Shown by the ${f.dept} level (${deptTierKey}) — click to hide money on this page only`
-                                                : `Granted by the ${f.dept} tier (${deptTierKey}) — click to remove it on this page only`
-                                              : added
-                                                ? 'Added for this page, above the tier. Click to remove.'
-                                                : tierGrants && deptTierKey && !disabled
-                                                  ? `Granted by the ${f.dept} tier (${deptTierKey})`
-                                                  : ACTION_HINT[action]
+                                                ? 'Money hidden on this page. Click to show it again.'
+                                                : `Removed for this page. Click to restore what the ${f.dept} tier (${deptTierKey}) grants.`
+                                              : offCapable && tierGrants && deptTierKey && !disabled
+                                                ? isPrice
+                                                  ? `Shown by the ${f.dept} level (${deptTierKey}) — click to hide money on this page only`
+                                                  : `Granted by the ${f.dept} tier (${deptTierKey}) — click to remove it on this page only`
+                                                : added
+                                                  ? 'Added for this page, above the tier. Click to remove.'
+                                                  : tierGrants && deptTierKey && !disabled
+                                                    ? `Granted by the ${f.dept} tier (${deptTierKey})`
+                                                    : ACTION_HINT[action]
                                       }
                                       style={{
                                         width: 16,

@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { itemsRoutes } from './routes';
 
@@ -92,7 +93,8 @@ describe('items routes', () => {
   });
 
   it('POST /items returns clean 403 for viewer role (not 500 from RLS leak)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: no Entry tick on Item Master (Store L1) — refused whatever the role.
+    const viewer = asAccess(admin, { departments: { store: 'L1' } });
     app = await buildApp(viewer);
     const res = await app.inject({
       method: 'POST',

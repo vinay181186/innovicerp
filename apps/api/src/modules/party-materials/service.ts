@@ -36,7 +36,7 @@ import type {
 } from '@innovic/shared';
 import { clients, items, partyMaterials } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import {
   AuthorizationError,
@@ -497,9 +497,8 @@ export async function softDeletePartyMaterial(
   /** ADR-197: why it was deleted (the route requires it). */
   reason?: string,
 ): Promise<void> {
-  // Delete needs edit AND approve (L5 Department Admin and above).
-  await requireFormAccess(user, 'party_create', 'edit');
-  await requireFormAccess(user, 'party_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin — no tier or tick grants it.
+  await requireDeleteRight(user, 'Party Materials');
   const companyId = requireCompany(user);
   const userId = user.id;
   await withUserContext(user, async (tx) => {

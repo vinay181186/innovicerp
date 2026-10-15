@@ -9,7 +9,7 @@ import {
 import type { DocumentEditStagedResult } from '@innovic/shared';
 import { vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -718,13 +718,8 @@ export async function softDeleteVendor(
   reason: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
-  // has edit but not approve; L4 Approver has approve but not edit. The screen
-  // above this used to hide Delete behind admin-only, which locked out the very
-  // tier meant to run the department — the owner decided L5 gets delete rights.
-  await requireFormAccess(user, 'vendor_create', 'edit');
-  await requireFormAccess(user, 'vendor_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin — no tier or tick grants it.
+  await requireDeleteRight(user, 'Vendors');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // The whole row, read BEFORE the update — the "before" of Before → After.

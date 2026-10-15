@@ -12,7 +12,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -215,7 +215,7 @@ function MlBomDetailPage(): React.JSX.Element {
                 {
                   label: 'Delete',
                   danger: true,
-                  hidden: !(perms.edit && perms.approve),
+                  hidden: !canDeleteRecords(eff), // ADR-232: Super Admin only
                   disabled: del.isPending,
                   onClick: () => {
                     setDeleteReason('');

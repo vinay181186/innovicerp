@@ -6,7 +6,7 @@ import {
 import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
@@ -607,9 +607,8 @@ export async function updateOperatorOrStage(
 }
 
 export async function softDeleteOperator(id: string, user: AuthContext): Promise<{ ok: true }> {
-  // Delete = the edit+approve pair only L5 Department Admin and above hold.
-  await requireFormAccess(user, 'operator_create', 'edit');
-  await requireFormAccess(user, 'operator_create', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Operators');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

@@ -57,7 +57,7 @@ import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { apiDownload } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
@@ -178,10 +178,8 @@ function ItemsListPage(): React.JSX.Element {
 
   const canCreate = perms.entry;
   const canEdit = perms.edit;
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
-  // edit without approve; L4 has approve without edit.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   const softDelete = useSoftDeleteItem();
   // ADR-197: Delete asks for a reason — the row's Delete opens this dialog.

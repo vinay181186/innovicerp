@@ -57,10 +57,9 @@ import {
   soStockReservations,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { planSfColumns } from './sf-columns';
-import { requireWriteRole } from '../../lib/auth';
 import { resolveRmItem } from '../../lib/rm-item';
 import {
   AuthorizationError,
@@ -878,7 +877,6 @@ async function assertPlanQtyWithinRemaining(
 }
 
 export async function createPlan(input: CreatePlanInput, user: AuthContext): Promise<PlanDetail> {
-  requireWriteRole(user);
   // Phase 2 matrix enforcement: creating a plan is Planning `plan_create` entry.
   await requireFormAccess(user, 'plan_create', 'entry');
   const companyId = requireCompany(user);
@@ -897,7 +895,6 @@ export async function createPlansBatch(
   input: CreatePlansBatchInput,
   user: AuthContext,
 ): Promise<{ plans: PlanDetail[] }> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'plan_create', 'entry');
   const companyId = requireCompany(user);
 
@@ -1244,7 +1241,6 @@ export async function updatePlan(
   input: UpdatePlanInput,
   user: AuthContext,
 ): Promise<PlanDetail> {
-  requireWriteRole(user);
   // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
   // replay an approved edit for an approver who holds `approve` but not `edit`.
   await requireFormAccess(user, 'plan_create', 'edit');
@@ -1649,7 +1645,6 @@ export async function updatePlanOrStage(
   input: UpdatePlanInput,
   user: AuthContext,
 ): Promise<PlanDetail | DocumentEditStagedResult> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'plan_create', 'edit');
   const companyId = requireCompany(user);
 
@@ -1770,10 +1765,8 @@ export async function softDeletePlan(
   reason: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
-  // Delete = the L5 pair (edit AND approve), matching every other soft-delete.
-  await requireFormAccess(user, 'plan_create', 'edit');
-  await requireFormAccess(user, 'plan_create', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Plans');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -3212,7 +3205,6 @@ export async function reserveStock(
   input: ReserveStockInput,
   user: AuthContext,
 ): Promise<ReservationActionResult> {
-  requireWriteRole(user);
   // Booking stock to an order is a planner's act, gated by the planning form —
   // never an open stock-changing endpoint.
   await requireFormAccess(user, 'plan_create', 'entry');
@@ -3287,7 +3279,6 @@ export async function releaseReservationsForLine(
   input: ReleaseReservationInput,
   user: AuthContext,
 ): Promise<ReservationActionResult> {
-  requireWriteRole(user);
   // Giving promised stock back is a correction to a saved position, so it is
   // `edit` — an L2 data-entry planner may book, not un-book.
   await requireFormAccess(user, 'plan_create', 'edit');

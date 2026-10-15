@@ -34,7 +34,7 @@ import {
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -162,7 +162,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
 
   // Access matrix (so_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
   // ADR-196 — Close (short) takes the advance + approve pair on so_create, the
   // same pair the JWSO line short close takes (ADR-231: L4 Approver and L5
   // Department Admin; no role check). The server enforces it; this only hides

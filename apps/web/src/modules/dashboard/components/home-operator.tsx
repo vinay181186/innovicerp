@@ -11,7 +11,6 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
@@ -113,13 +112,10 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
   const readyRows = page > 1 ? (more.data?.items ?? []) : o.ready;
   const readyTotal = page > 1 ? (more.data?.total ?? o.readyCount) : o.readyCount;
   useClampPage(page, readyTotal, setPage);
-  // The server's Start rule (POST /op-entry/start): role admin / manager /
-  // operator AND op_entry entry. Anyone else gets no Start item at all.
-  const { data: me } = useSession();
+  // ADR-232 — the server's Start rule (POST /op-entry/start) is the Entry tick
+  // on Op Entry alone. Anyone without it gets no Start item at all.
   const { data: eff } = useMyAccess();
-  const canStart =
-    (me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator') &&
-    effectiveFormPerms(eff, 'op_entry').entry;
+  const canStart = effectiveFormPerms(eff, 'op_entry').entry;
   return (
     <div>
       {o.running.length > 0 ? (

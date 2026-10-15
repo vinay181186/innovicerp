@@ -15,7 +15,6 @@
 
 import { ActivityAction, type MlBomImportInput, type MlBomImportResult } from '@innovic/shared';
 import { requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError } from '../../lib/errors';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { emitActivityLog } from '../activity-log/service';
@@ -38,7 +37,6 @@ export async function importMlBoms(
   input: MlBomImportInput,
   user: AuthContext,
 ): Promise<MlBomImportResult> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'view');
   await requireFormAccess(user, FORM, 'entry');
   const companyId = requireCompany(user);

@@ -240,6 +240,8 @@ export function CapaView(props: {
               rowMenu={(c) =>
                 capaRowMenu(c, {
                   canEdit,
+                  // ADR-232: Assign Task = the page's Advance right.
+                  canAssign: perms.advance,
                   onEdit: (row) => setModal({ kind: 'edit', capa: row, readOnly: false }),
                   onAssign: (row) => setAssignCapa(row),
                 })

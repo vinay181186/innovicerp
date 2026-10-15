@@ -40,7 +40,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -68,12 +68,11 @@ function TpiMastersListPage(): React.JSX.Element {
   const search = tpiMastersListRoute.useSearch();
   const navigate = tpiMastersListRoute.useNavigate();
   // Tier-driven, per department (QC) — same gate shape as QC Process Master.
-  // Add is `entry`, Edit is `edit`, Del is the L5-and-above pair below.
+  // Add is `entry`, Edit is `edit`, Del is Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'tpimaster_create');
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: edit AND approve.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {

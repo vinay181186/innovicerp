@@ -1,14 +1,16 @@
 // OSP Process Configuration service.
 //
-// CRUD over `osp_processes`. Manager/admin writes. Mirror of legacy
-// Settings page OSP block (_addOspProcess L13249 / _editOspProcess
+// CRUD over `osp_processes`. An Admin setting (ADR-232, owner D3): create /
+// update are Super Admin only (requireAdminRole); delete is requireDeleteRight.
+// Mirror of legacy Settings page OSP block (_addOspProcess L13249 / _editOspProcess
 // L13269 / _delOspProcess L13288). Soft-delete on remove.
 
 import type { ListOspProcessesResponse, OspProcess, OspProcessInput } from '@innovic/shared';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { ospProcesses, vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireDeleteRight } from '../../lib/access';
+import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
 
@@ -71,7 +73,7 @@ export async function createOspProcess(
   input: OspProcessInput,
   user: AuthContext,
 ): Promise<OspProcess> {
-  requireWriteRole(user);
+  requireAdminRole(user);
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -155,7 +157,7 @@ export async function updateOspProcess(
   input: OspProcessInput,
   user: AuthContext,
 ): Promise<OspProcess> {
-  requireWriteRole(user);
+  requireAdminRole(user);
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -205,7 +207,8 @@ export async function updateOspProcess(
 }
 
 export async function softDeleteOspProcess(id: string, user: AuthContext): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'OSP processes');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

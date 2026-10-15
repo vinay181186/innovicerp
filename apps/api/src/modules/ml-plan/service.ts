@@ -14,7 +14,6 @@
 // entity 'MlPlan' + entityId, so the plan's History panel finds them.
 
 import { requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireCompany } from '../ml-bom/helpers';
 import { listEligibleLinesTx, listMlPlansTx, loadMlPlanDetail, peekNextMlPlanCode } from './reads';
@@ -76,7 +75,6 @@ export async function createMlPlan(
   input: CreateMlPlanInput,
   user: AuthContext,
 ): Promise<MlPlanDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => createMlPlanTx(tx, companyId, input, user));
@@ -87,7 +85,6 @@ export async function updateMlPlan(
   input: UpdateMlPlanInput,
   user: AuthContext,
 ): Promise<MlPlanDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => updateMlPlanTx(tx, companyId, id, input, user));
@@ -98,7 +95,6 @@ export async function refreshMlPlan(
   input: RefreshMlPlanInput,
   user: AuthContext,
 ): Promise<MlPlanDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => refreshMlPlanTx(tx, companyId, id, input, user));
@@ -109,7 +105,6 @@ export async function cancelMlPlan(
   input: CancelMlPlanInput,
   user: AuthContext,
 ): Promise<MlPlanDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => cancelMlPlanTx(tx, companyId, id, input, user));
@@ -122,7 +117,6 @@ export async function raiseMlPlanOrders(
   input: RaiseMlPlanOrdersInput,
   user: AuthContext,
 ): Promise<MlPlanDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => raiseMlPlanOrdersTx(tx, companyId, id, input, user));

@@ -19,7 +19,6 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -316,10 +315,7 @@ export async function submitIncomingQc(
   input: SubmitIncomingQcInput,
   user: AuthContext,
 ): Promise<{ ok: true; grnId: string; raisedNc: { id: string; code: string } | null }> {
-  requireWriteRole(user);
-  // ADR-035: enforce the per-department QC tier, not just the role — a user
-  // with Incoming QC view-only (L1) must not accept/reject received goods even
-  // if their global role is manager. Admins bypass.
+  // ADR-232 — the Access Control tick alone decides: Incoming QC `entry`.
   await requireFormAccess(user, 'qc_incoming', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {

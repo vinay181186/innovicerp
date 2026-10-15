@@ -26,7 +26,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -364,14 +364,8 @@ export async function createQcDocument(
 }
 
 export async function deleteQcDocument(id: string, user: AuthContext): Promise<{ id: string }> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
-  // has edit but not approve; L4 Approver has approve but not edit. Removing a
-  // quality record is a department-admin action — the owner decided L5 gets
-  // delete rights, because admin-only was locking out the very tier meant to
-  // run the department. This path had no permission check at all before.
-  await requireFormAccess(user, 'qcdocs_upload', 'edit');
-  await requireFormAccess(user, 'qcdocs_upload', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'QC documents');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const updated = await tx

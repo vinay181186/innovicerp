@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { clients, items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { jobWorkOrdersRoutes } from './routes';
 
@@ -134,8 +135,9 @@ describe('job-work-orders routes', () => {
     expect(res.json()).toMatchObject({ error: 'validation_error' });
   });
 
-  it('POST /job-work-orders returns clean 403 for viewer role (not 500)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('POST /job-work-orders returns clean 403 without the Entry tick (not 500)', async () => {
+    // ADR-232: Sales L1 (view only) — refused whatever the role.
+    const viewer = asAccess(admin, { departments: { sales: 'L1' } });
     app = await buildApp(viewer);
     const res = await app.inject({
       method: 'POST',

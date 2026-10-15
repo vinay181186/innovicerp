@@ -60,7 +60,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
@@ -635,7 +635,7 @@ export async function markUnitAssembled(
   input: MarkUnitAssembledInput,
   user: AuthContext,
 ): Promise<AssemblyUnitRow> {
-  requireWriteRole(user);
+  await requireFormAccess(user, 'assembly_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -789,7 +789,7 @@ export async function startAssembly(
   input: StartAssemblyInput,
   user: AuthContext,
 ): Promise<AssemblyUnitRow> {
-  requireWriteRole(user);
+  await requireFormAccess(user, 'assembly_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -902,7 +902,7 @@ export async function stopAssembly(
   input: StopAssemblyInput,
   user: AuthContext,
 ): Promise<AssemblyUnitRow> {
-  requireWriteRole(user);
+  await requireFormAccess(user, 'assembly_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1065,7 +1065,7 @@ export async function markUnitDispatched(
   input: MarkUnitDispatchedInput,
   user: AuthContext,
 ): Promise<AssemblyUnitRow> {
-  requireWriteRole(user);
+  await requireFormAccess(user, 'assembly_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1127,7 +1127,7 @@ export async function undoLastUnit(
   soId: string,
   user: AuthContext,
 ): Promise<{ ok: true; removedUnitNo: number }> {
-  requireWriteRole(user);
+  await requireFormAccess(user, 'assembly_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1209,7 +1209,7 @@ export async function setReadinessOverride(
   input: SetReadinessOverrideInput,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  await requireFormAccess(user, 'assembly_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

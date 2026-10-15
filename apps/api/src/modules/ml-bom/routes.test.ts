@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, mlBoms, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { mlBomRoutes } from './routes';
 
@@ -115,8 +116,9 @@ describe('ml-bom routes', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('POST /ml-boms returns 403 for viewer', async () => {
-    app = await buildApp({ ...admin, role: 'viewer' });
+  it('POST /ml-boms returns 403 without the Entry tick', async () => {
+    // ADR-232: Design L1 (view only) — refused whatever the role.
+    app = await buildApp(asAccess(admin, { departments: { design: 'L1' } }));
     const res = await app.inject({
       method: 'POST',
       url: '/ml-boms',
@@ -150,8 +152,8 @@ describe('ml-bom routes', () => {
     expect(second.statusCode).toBe(409);
   });
 
-  it('DELETE /ml-boms/:id returns 403 for manager (admin-only)', async () => {
-    app = await buildApp({ ...admin, role: 'manager' });
+  it('DELETE /ml-boms/:id returns 403 for an L5 Department Admin (Super Admin only)', async () => {
+    app = await buildApp(asAccess(admin, { departments: { design: 'L5' } }, 'manager'));
     const list = await db.select({ id: mlBoms.id }).from(mlBoms).where(eq(mlBoms.itemId, parentId));
     const del = await app.inject({
       method: 'DELETE',

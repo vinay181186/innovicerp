@@ -33,6 +33,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { useQcUserOptions } from '@/modules/qc-users/api';
@@ -86,7 +87,12 @@ export function useQcCallInspect(props: {
   onDone: (raisedNc?: RaisedNc) => void;
 }): QcCallInspectState {
   const { o, onDone } = props;
-  const submitQc = useSubmitQcLog();
+  // §20 (owner D11): one idempotency key per QC save — a re-click after a
+  // timeout reuses it; a definite answer (success or refusal) spends it. A
+  // different operation is a different save, so the key turns over with it.
+  const saveKey = useSaveKey();
+  useEffect(() => saveKey.rotate(), [saveKey, o.jcOpId]);
+  const submitQc = useSubmitQcLog(saveKey);
   const queryClient = useQueryClient();
   const session = useSession().data;
   const companyId = session?.companyId ?? null;

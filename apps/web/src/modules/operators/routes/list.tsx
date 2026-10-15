@@ -38,7 +38,7 @@ import { z } from 'zod';
 import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { apiDownload } from '@/lib/api';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
@@ -70,12 +70,13 @@ function OperatorsListPage(): React.JSX.Element {
   const search = operatorsListRoute.useSearch();
   const navigate = operatorsListRoute.useNavigate();
   // Tier-driven, per department (operator_create sits in Production). Add/Import
-  // = entry; Edit = edit; Del = the edit+approve pair only L5+ hold.
+  // = entry; Edit = edit; Del = Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'operator_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {

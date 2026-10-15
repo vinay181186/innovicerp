@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, items, machines, routeCards, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { routeCardRoutes } from './routes';
 
@@ -127,8 +128,8 @@ describe('route-card routes', () => {
     expect(body.revisions).toHaveLength(1);
   });
 
-  it('POST /route-cards returns 403 for viewer', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('POST /route-cards returns 403 for an L1 Planning viewer', async () => {
+    const viewer = asAccess(admin, { departments: { planning: 'L1' } }, 'viewer');
     app = await buildApp(viewer);
     const res = await app.inject({
       method: 'POST',
@@ -150,7 +151,7 @@ describe('route-card routes', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('DELETE /route-cards/:id returns 403 for manager (admin-only)', async () => {
+  it('DELETE /route-cards/:id returns 403 for an L5 Planning manager (Super Admin only)', async () => {
     app = await buildApp(admin);
     const created = await app.inject({
       method: 'POST',
@@ -172,7 +173,7 @@ describe('route-card routes', () => {
     const id = created.json().id;
 
     await app.close();
-    const manager: AuthContext = { ...admin, role: 'manager' };
+    const manager = asAccess(admin, { departments: { planning: 'L5' } }, 'manager');
     app = await buildApp(manager);
     const del = await app.inject({ method: 'DELETE', url: `/route-cards/${id}` });
     expect(del.statusCode).toBe(403);

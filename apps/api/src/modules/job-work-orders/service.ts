@@ -41,9 +41,8 @@ import {
   plans,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
-import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { assertActiveParty } from '../../lib/active-party';
@@ -1013,7 +1012,6 @@ export async function ensureJwRmItem(
   input: EnsureJwRmItemInput,
   user: AuthContext,
 ): Promise<EnsureJwRmItemResponse> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'jw_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -1031,7 +1029,6 @@ export async function createJobWorkOrder(
   input: CreateJobWorkOrderInput,
   user: AuthContext,
 ): Promise<JobWorkOrderDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'jw_create', 'entry');
   const companyId = requireCompany(user);
   // ADR-203 rule 8: a user who may not see prices does not set them either —
@@ -1177,7 +1174,6 @@ export async function updateJobWorkOrder(
   input: UpdateJobWorkOrderInput,
   user: AuthContext,
 ): Promise<JobWorkOrderDetail> {
-  requireWriteRole(user);
   // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
   // replay an approved edit for an approver who holds `approve` but not `edit`.
   await requireFormAccess(user, 'jw_create', 'edit');
@@ -1426,7 +1422,6 @@ export async function updateJobWorkOrderOrStage(
   input: UpdateJobWorkOrderInput,
   user: AuthContext,
 ): Promise<JobWorkOrderDetail | DocumentEditStagedResult> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'jw_create', 'edit');
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'jw_create');
@@ -1833,9 +1828,8 @@ export async function softDeleteJobWorkOrder(
   /** ADR-197: why it was moved to Trash (the route requires it). */
   reason?: string,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
-  await requireFormAccess(user, 'jw_create', 'edit');
-  await requireFormAccess(user, 'jw_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Job Work Orders');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

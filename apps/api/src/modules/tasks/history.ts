@@ -104,7 +104,8 @@ export function permsFor(
     canReassign: owner,
     canEdit: owner,
     canComment: view,
-    canAttach: view && user.role !== 'viewer',
+    // ADR-232: addTaskAttachment's requireCanWrite refuses an Auditor.
+    canAttach: view,
   };
 }
 

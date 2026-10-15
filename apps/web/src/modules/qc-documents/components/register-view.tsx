@@ -12,7 +12,7 @@ import {
 } from '@innovic/shared';
 import { useCallback, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -33,12 +33,11 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
   const { data: me } = useSession();
   // Tier-driven, per department (QC), replacing the old role list
   // (admin/manager/qc). 📎 Upload Document is `entry`; removing a registered
-  // upload is the L5-and-above pair — see `canDelete` below.
+  // upload is Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'qcdocs_upload');
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: edit AND approve.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   const del = useDeleteQcDocument();
   const [uploadOpen, setUploadOpen] = useState(false);
   // The box mirrors the URL's ?search= (the server searches); typing writes

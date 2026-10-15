@@ -21,6 +21,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
+import { loadPoInboxAccess } from './approval-inbox';
 import * as service from './service';
 
 const TEST_PREFIX = 'T036B-';
@@ -786,7 +788,11 @@ describe('purchase-orders service', () => {
 // so the shared singleton is left exactly as found.
 describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
   const APPROVE_PREFIX = 'T036B-APP-';
-  const manager = (): AuthContext => ({ ...admin, role: 'manager' });
+  // ADR-232: a Purchase L4 matrix (Approve ticked) — a fresh caller each call so
+  // no access memo is shared between tests. Role stays non-admin so the
+  // approvers list and the value ceiling apply.
+  const manager = (): AuthContext =>
+    asAccess(admin, { departments: { purchase: 'L4' } }, 'manager');
 
   let cfgExisted = false;
   let origApprovers: unknown = [];
@@ -935,4 +941,106 @@ describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
       ValidationError,
     );
   }, 180_000);
+
+  // ── ADR-232: the Approve tick on Purchase Orders alone decides approve,
+  // reject and short close. The derived role never refuses. ──
+  const UNKNOWN_PO = '00000000-0000-0000-0000-000000000000';
+  const ticked = (): AuthContext =>
+    asAccess(admin, { departments: { purchase: 'L4' } }, 'operator');
+  const notTicked = (): AuthContext =>
+    asAccess(admin, { departments: { purchase: 'L3' } }, 'manager');
+  const auditor = (): AuthContext =>
+    asAccess(admin, { ...AUDITOR, departments: { purchase: 'L5' } });
+
+  it('approve: Approve tick + role operator → approved', async () => {
+    await db.update(users).set({ approvalLimit: null }).where(eq(users.id, admin.id));
+    const po = await createDraftPo(`${APPROVE_PREFIX}OPA`, 1, 100);
+    const res = await service.approvePurchaseOrder(po.id, null, ticked());
+    expect(res.status).toBe('open');
+  }, 180_000);
+
+  it('approve: no Approve tick → AuthorizationError', async () => {
+    await expect(
+      service.approvePurchaseOrder(UNKNOWN_PO, null, notTicked()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('approve: L7 Auditor → AuthorizationError', async () => {
+    await expect(service.approvePurchaseOrder(UNKNOWN_PO, null, auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('reject: Approve tick + role operator → rejected (PO Cancelled)', async () => {
+    const po = await createDraftPo(`${APPROVE_PREFIX}OPR`, 1, 100);
+    const res = await service.rejectPurchaseOrder(po.id, 'not needed', ticked());
+    expect(res.status).toBe('cancelled');
+  }, 180_000);
+
+  it('reject: no Approve tick → AuthorizationError', async () => {
+    await expect(
+      service.rejectPurchaseOrder(UNKNOWN_PO, 'not needed', notTicked()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('reject: L7 Auditor → AuthorizationError', async () => {
+    await expect(
+      service.rejectPurchaseOrder(UNKNOWN_PO, 'not needed', auditor()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('short close: Approve tick + role operator → short-closed', async () => {
+    const po = await createDraftPo(`${APPROVE_PREFIX}OPS`, 1, 100);
+    await service.approvePurchaseOrder(po.id, null, admin); // → open
+    const res = await service.shortClosePurchaseOrder(
+      po.id,
+      { reason: 'vendor cannot supply' },
+      ticked(),
+    );
+    expect(['cancelled', 'closed']).toContain(res.status);
+  }, 180_000);
+
+  it('short close: no Approve tick → AuthorizationError', async () => {
+    await expect(
+      service.shortClosePurchaseOrder(UNKNOWN_PO, { reason: 'vendor cannot supply' }, notTicked()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('short close: L7 Auditor → AuthorizationError', async () => {
+    await expect(
+      service.shortClosePurchaseOrder(UNKNOWN_PO, { reason: 'vendor cannot supply' }, auditor()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('approvals inbox: the Approve tick alone decides who sees PO rows', async () => {
+    expect((await loadPoInboxAccess(ticked())).canApprove).toBe(true);
+    expect((await loadPoInboxAccess(notTicked())).canApprove).toBe(false);
+    expect((await loadPoInboxAccess(auditor())).canApprove).toBe(false);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): deleting any record needs L6 Super Admin. No
+// department tier — not even L5 Department Admin — and no page tick grants it.
+describe('softDeletePurchaseOrder — Super Admin only (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('L5 Department Admin cannot delete Purchase Orders — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { purchase: 'L5' } }, 'manager');
+    await expect(service.softDeletePurchaseOrder(UNKNOWN_ID, l5, 'test')).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor cannot delete Purchase Orders — AuthorizationError', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { purchase: 'L5' } });
+    await expect(
+      service.softDeletePurchaseOrder(UNKNOWN_ID, auditor, 'test'),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('Super Admin passes the delete gate (unknown id → NotFoundError, not refused)', async () => {
+    await expect(service.softDeletePurchaseOrder(UNKNOWN_ID, admin, 'test')).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
 });

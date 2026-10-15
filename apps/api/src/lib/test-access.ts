@@ -28,4 +28,7 @@ export function asAccess(
 }
 
 /** An L7 Auditor who still has a write tier stored — must write nothing. */
-export const AUDITOR = { auditor: true, departments: { sales: 'L5', planning: 'L5', qc: 'L5' } } as const;
+export const AUDITOR = {
+  auditor: true,
+  departments: { sales: 'L5', planning: 'L5', qc: 'L5' },
+} as const;

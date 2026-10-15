@@ -17,7 +17,6 @@ import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateAndTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useSession } from '@/lib/session';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useStopOp } from '@/modules/op-entry/api';
 import { StopOpModal } from '@/modules/op-entry/components/stop-op-modal';
@@ -25,14 +24,11 @@ import { RowMenu } from '@/ui/data';
 import { useShopFloor } from '../api';
 
 export function ShopFloorView(): React.JSX.Element {
-  const { data: me } = useSession();
-  // Stop follows the server rule (POST /op-entry/running-ops/:id/stop): role
-  // admin / manager / operator AND op_entry entry — the same gate as the Table
-  // tab's Stop (running-ops-board.tsx), so the two tabs agree.
+  // Stop follows the server rule (POST /op-entry/running-ops/:id/stop). ADR-232:
+  // the op_entry Entry tick alone decides — the same gate as the Table tab's
+  // Stop, so the two tabs agree.
   const { data: eff } = useMyAccess();
-  const canWrite =
-    (me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator') &&
-    effectiveFormPerms(eff, 'op_entry').entry;
+  const canWrite = effectiveFormPerms(eff, 'op_entry').entry;
   const { data, isLoading, isError, error, refetch } = useShopFloor();
   const stopMut = useStopOp();
   // The row whose Stop box is open (with its machine code for the title), and

@@ -7,16 +7,17 @@
 //
 //   pr       — purchase-requests/approval-inbox.ts (approvePurchaseRequest's rules)
 //   po       — purchase-orders/approval-inbox.ts   (approvePurchaseOrder's rules)
-//   logEntry — op-entry's pending date/time corrections (ADR-130), which only a
-//              manager/admin may decide (decideOpLogTimeChange)
+//   logEntry — op-entry's pending date/time corrections (ADR-130), shown to
+//              whoever holds Approve on Operation Entry or QC Submit (ADR-232, D7)
 
 import type { ApprovalInboxResponse, ApprovalInboxRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { isWriteRole } from '../../lib/auth';
+import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
-import { listOpLogTimeChangeRequests } from '../op-entry/service';
+import { selectTimeChangeRequests } from '../op-entry/service';
+import { decidableTimeChangeScope } from '../op-entry/time-change-page';
 import { listPoApprovalInbox, loadPoInboxAccess } from '../purchase-orders/approval-inbox';
 import { listPrApprovalInbox, loadPrInboxAccess } from '../purchase-requests/approval-inbox';
 
@@ -31,6 +32,12 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   // inside the inbox transaction below (see clients/related.ts).
   const prAccess = await loadPrInboxAccess(user);
   const poAccess = await loadPoInboxAccess(user);
+  const canDecideLogEntry =
+    (await hasFormAccess(user, 'op_entry', 'approve')) ||
+    (await hasFormAccess(user, 'qc_submit', 'approve'));
+  // ADR-232: only the rows this caller can decide (QC rows on QC Approve,
+  // production rows on Op Entry Approve) — in the count AND the list.
+  const logScope = canDecideLogEntry ? await decidableTimeChangeScope(user) : sql`AND false`;
   const { pr, po } = await withUserContext(user, async (tx) => ({
     pr: await listPrApprovalInbox(tx, companyId, user, prAccess),
     po: await listPoApprovalInbox(tx, companyId, user, poAccess),
@@ -38,7 +45,7 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
 
   let logEntry: ApprovalInboxRow[] = [];
   let logEntryCount = 0;
-  if (isWriteRole(user)) {
+  if (canDecideLogEntry) {
     // The count is the whole waiting queue (ADR-201) — the list below stops at
     // LOG_ENTRY_LIMIT. Same rows selectTimeChangeRequests can return: its
     // inner joins (op_log, a live jc_op, its job card) are repeated here.
@@ -52,12 +59,16 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
         WHERE r.company_id = ${companyId}::uuid
           AND r.deleted_at IS NULL
           AND r.status = 'pending'
+          ${logScope}
       `),
     )) as unknown as Array<{ n: number }>;
     logEntryCount = Number(c?.n ?? 0);
-    const requests = await listOpLogTimeChangeRequests(
-      { status: 'pending', limit: LOG_ENTRY_LIMIT },
-      user,
+    const requests = await withUserContext(user, (tx) =>
+      selectTimeChangeRequests(tx, companyId, {
+        status: 'pending',
+        limit: LOG_ENTRY_LIMIT,
+        where: logScope,
+      }),
     );
     logEntry = requests.map((r) => ({
       id: r.id,

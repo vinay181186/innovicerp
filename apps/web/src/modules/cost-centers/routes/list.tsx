@@ -41,8 +41,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useSession } from '@/lib/session';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
@@ -81,17 +80,12 @@ function CostCentersListPage(): React.JSX.Element {
   const search = costCentersListRoute.useSearch();
   const navigate = costCentersListRoute.useNavigate();
   // Tier-driven (cc_create sits in Finance). Add -> entry, Edit -> edit, Delete
-  // -> edit AND approve (the pair only L5 Department Admin and above hold).
+  // -> L6 Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'cc_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
-  // The server also needs role admin/manager to edit or delete (requireWriteRole):
-  // without it the two ⋯ items show greyed with the reason.
-  const { data: me } = useSession();
-  const roleBlock =
-    !me || me.role === 'admin' || me.role === 'manager' ? undefined : 'Needs admin or manager role';
+  const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -377,34 +371,15 @@ function CostCentersListPage(): React.JSX.Element {
             rowActions={(cc) => (
               <RowActions
                 // Row click opens the record, so no View. ⋯: Edit (a real link)
-                // · ─ · Move to Trash; without the role both are greyed `items`.
-                editTo={canEdit && !roleBlock ? `/cost-centers/${cc.id}/edit` : undefined}
+                // · ─ · Move to Trash. ADR-232: the ticks alone decide.
+                editTo={canEdit ? `/cost-centers/${cc.id}/edit` : undefined}
                 renderLink={(p) => <Link {...p} />}
-                items={[
-                  {
-                    key: 'edit-role',
-                    label: 'Edit',
-                    icon: 'pencil',
-                    hidden: !(canEdit && roleBlock),
-                    disabledReason: roleBlock,
-                  },
-                  {
-                    key: 'delete-role',
-                    label: 'Move to Trash',
-                    icon: 'trash-2',
-                    group: 'danger',
-                    hidden: !(canDelete && roleBlock),
-                    disabledReason: roleBlock,
-                  },
-                ]}
                 // The PROMISE is handed back, not swallowed: the confirm dialog
                 // then owns the wait and closes only once the cost centre is
                 // really gone. An `if (softDelete.isPending) return;` here
                 // would close the dialog and delete NOTHING.
                 onDelete={
-                  canDelete && !roleBlock
-                    ? (): Promise<void> => softDelete.mutateAsync(cc.id)
-                    : undefined
+                  canDelete ? (): Promise<void> => softDelete.mutateAsync(cc.id) : undefined
                 }
                 // And every OTHER row's Delete greys out while one is in
                 // flight, exactly as `disabled={softDelete.isPending}` did.

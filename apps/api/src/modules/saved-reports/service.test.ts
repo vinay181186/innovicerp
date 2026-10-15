@@ -15,6 +15,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 import type { AdHocSpec } from './schema';
 
@@ -374,5 +375,62 @@ describe('saved-reports cleanup pattern', () => {
     for (const r of rows.filter((x) => x.name.startsWith(PREFIX))) {
       expect(r.name).toMatch(/^T041B-/);
     }
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): another person's private report is the owner's
+// or a Super Admin's only — a manager role no longer reads or changes it. The
+// owner works their own report unless they are an L7 Auditor (requireCanWrite).
+describe('saved-reports — ownership, not role (ADR-232)', () => {
+  const make = (name: string, isShared: boolean) =>
+    service.createSavedReport(
+      { name: `${PREFIX}${name}`, description: '', sourceKey: 'sales-orders', spec: sampleSpec, isShared },
+      admin,
+    );
+
+  it('an L5 manager who is not the owner cannot open a private report', async () => {
+    const created = await make('adr232-private', false);
+    const mgr = asAccess(viewer, { departments: { sales: 'L5' } }, 'manager');
+    await expect(service.getSavedReport(created.id, mgr)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('an L5 manager who is not the owner cannot edit or delete a shared report', async () => {
+    const created = await make('adr232-shared', true);
+    const mgr = asAccess(viewer, { departments: { sales: 'L5' } }, 'manager');
+    await expect(
+      service.updateSavedReport(created.id, { description: 'tamper' }, mgr),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.softDeleteSavedReport(created.id, mgr)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('the owner with only View (role viewer) may edit their own report', async () => {
+    const created = await make('adr232-own', false);
+    const owner = asAccess(admin, { departments: { sales: 'L1' } }, 'viewer');
+    const updated = await service.updateSavedReport(created.id, { description: 'mine' }, owner);
+    expect(updated.description).toBe('mine');
+  });
+
+  it('an L7 Auditor owner may not create, edit or delete', async () => {
+    const created = await make('adr232-auditor', false);
+    const auditor = asAccess(admin, AUDITOR, 'viewer');
+    await expect(
+      service.createSavedReport(
+        { name: `${PREFIX}adr232-aud-new`, description: '', sourceKey: 'sales-orders', spec: sampleSpec, isShared: false },
+        auditor,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.updateSavedReport(created.id, { description: 'x' }, auditor),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.softDeleteSavedReport(created.id, auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('a Super Admin who is not the owner may delete it', async () => {
+    const created = await make('adr232-sa-del', false);
+    await expect(service.softDeleteSavedReport(created.id, secondAdmin)).resolves.toBeUndefined();
   });
 });

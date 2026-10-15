@@ -2,8 +2,7 @@ import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { costCenters } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -135,7 +134,6 @@ export async function createCostCenter(
   input: CreateCostCenterInput,
   user: AuthContext,
 ): Promise<CostCenter> {
-  requireWriteRole(user);
   // Tier gate (Access Control matrix). L2 Data Entry+ in Finance can add a cost
   // center; L1 Viewer and L4 Approver cannot.
   await requireFormAccess(user, 'cc_create', 'entry');
@@ -179,7 +177,6 @@ export async function updateCostCenter(
   input: UpdateCostCenterInput,
   user: AuthContext,
 ): Promise<CostCenter> {
-  requireWriteRole(user);
   // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
   // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
   // replay an approved edit for an approver who holds `approve` but not `edit`.
@@ -265,7 +262,6 @@ export async function updateCostCenterOrStage(
   input: UpdateCostCenterInput,
   user: AuthContext,
 ): Promise<CostCenter | DocumentEditStagedResult> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'cc_create', 'edit');
   const companyId = requireCompany(user);
 
@@ -303,11 +299,8 @@ export async function updateCostCenterOrStage(
 }
 
 export async function softDeleteCostCenter(id: string, user: AuthContext): Promise<{ ok: true }> {
-  requireWriteRole(user);
-  // Delete is expressed as the pair only L5 Department Admin and above hold:
-  // edit AND approve. L3 Editor has edit but not approve; L4 Approver the reverse.
-  await requireFormAccess(user, 'cc_create', 'edit');
-  await requireFormAccess(user, 'cc_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Cost Centres');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

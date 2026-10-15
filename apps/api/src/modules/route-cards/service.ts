@@ -68,11 +68,10 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { hasFormAccess, requireFormAccess } from '../../lib/access';
+import { hasFormAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActivePartiesBatch } from '../../lib/active-party';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
-import { requireWriteRole } from '../../lib/auth';
 import { RC_SF_COLUMNS } from './sf-columns';
 import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
@@ -867,7 +866,6 @@ export async function createRouteCard(
   input: CreateRouteCardInput,
   user: AuthContext,
 ): Promise<RouteCardDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'routecard_create', 'entry');
   const companyId = requireCompany(user);
 
@@ -1004,7 +1002,6 @@ export async function updateRouteCard(
   input: UpdateRouteCardInput,
   user: AuthContext,
 ): Promise<RouteCardDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'routecard_create', 'edit');
   const companyId = requireCompany(user);
 
@@ -1297,11 +1294,8 @@ export async function softDeleteRouteCard(
    *  still deletes; the Route Card screens always ask for one. */
   reason?: string | null,
 ): Promise<RouteCard> {
-  if (user.role !== 'admin') {
-    throw new AuthorizationError('You do not have permission to delete Route Cards. Ask an admin.');
-  }
-  await requireFormAccess(user, 'routecard_create', 'edit');
-  await requireFormAccess(user, 'routecard_create', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Route Cards');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

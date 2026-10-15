@@ -16,6 +16,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'T031-';
@@ -397,5 +398,35 @@ describe('job-work-orders service', () => {
         noCompanyUser,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): the Access Control ticks alone decide; the
+// derived role never refuses. Unknown id → a gate pass shows as a non-auth error.
+describe('updateJobWorkOrder — ticks decide (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('sales L3 with role operator passes the gate', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L3' } }, 'operator');
+    await expect(service.updateJobWorkOrder(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('sales L2 (no tick) is refused', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L2' } }, 'manager');
+    await expect(service.updateJobWorkOrder(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('L7 Auditor is refused', async () => {
+    const user = asAccess(admin, AUDITOR, 'viewer');
+    await expect(service.updateJobWorkOrder(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('delete: sales L5 Department Admin is refused (Super Admin only)', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L5' } }, 'manager');
+    await expect(service.softDeleteJobWorkOrder(UNKNOWN_ID, user, 'test')).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('delete: Super Admin passes the gate', async () => {
+    await expect(service.softDeleteJobWorkOrder(UNKNOWN_ID, admin, 'test')).rejects.not.toBeInstanceOf(AuthorizationError);
   });
 });

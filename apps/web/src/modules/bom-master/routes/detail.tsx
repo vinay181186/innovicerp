@@ -13,7 +13,7 @@ import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -191,7 +191,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                 {
                   label: 'Delete',
                   danger: true,
-                  hidden: !(perms.edit && perms.approve),
+                  hidden: !canDeleteRecords(eff), // ADR-232: Super Admin only
                   disabled: del.isPending,
                   title:
                     detail.linkedSoCount > 0

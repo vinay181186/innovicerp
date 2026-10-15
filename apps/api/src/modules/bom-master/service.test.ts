@@ -16,6 +16,7 @@ import {
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 import { computeBomDiffNote } from './service';
 
@@ -321,8 +322,9 @@ describe('bom-master service — CRUD', () => {
     ).rejects.toThrow(/Duplicate item code on line 2/);
   });
 
-  it('createBomMaster denies viewer with AuthorizationError', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('createBomMaster denies a user without the Entry tick', async () => {
+    // ADR-232: Design L1 (view only) — refused whatever the role.
+    const viewer = asAccess(admin, { departments: { design: 'L1' } });
     await expect(
       service.createBomMaster(
         {
@@ -478,7 +480,7 @@ describe('bom-master service — CRUD', () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('softDeleteBomMaster denies manager (admin-only)', async () => {
+  it('softDeleteBomMaster denies an L5 Department Admin (Super Admin only)', async () => {
     const created = await service.createBomMaster(
       {
         bomNo: `${TEST_PREFIX}DEL1`,
@@ -488,7 +490,7 @@ describe('bom-master service — CRUD', () => {
       },
       admin,
     );
-    const manager: AuthContext = { ...admin, role: 'manager' };
+    const manager = asAccess(admin, { departments: { design: 'L5' } }, 'manager');
     await expect(service.softDeleteBomMaster(created.id, manager)).rejects.toBeInstanceOf(
       AuthorizationError,
     );
@@ -581,3 +583,24 @@ void bomMasterRevisions;
 void and;
 void isNull;
 void notLike;
+
+// ADR-232 (owner, 2026-10-15): the Access Control ticks alone decide; the
+// derived role never refuses. Unknown id → a gate pass shows as a non-auth error.
+describe('updateBomMaster — ticks decide (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('design L3 with role qc passes the gate', async () => {
+    const user = asAccess(admin, { departments: { design: 'L3' } }, 'qc');
+    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('design L2 (no tick) is refused', async () => {
+    const user = asAccess(admin, { departments: { design: 'L2' } }, 'manager');
+    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('L7 Auditor is refused', async () => {
+    const user = asAccess(admin, AUDITOR, 'viewer');
+    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+});

@@ -211,3 +211,14 @@ export async function requireCanWrite(user: AuthContext): Promise<void> {
     );
   }
 }
+
+/**
+ * Load the caller's access into the per-request memo (ADR-229) BEFORE a
+ * transaction opens. getMyAccess runs its own transaction, so a check made
+ * inside an open one would hold a second pool connection — and, after a
+ * FOR UPDATE, keep the row locked while it waits. Call this first in any
+ * write whose permission check can only run once the row has been read.
+ */
+export async function primeAccess(user: AuthContext): Promise<void> {
+  if (user.role !== 'admin') await getMyAccess(user);
+}

@@ -9,6 +9,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'T040A-NC-';
@@ -154,8 +155,8 @@ describe('nc-register service', () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it('createNcRegister rejects viewer role with AuthorizationError', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('createNcRegister rejects an L1 QC viewer with AuthorizationError', async () => {
+    const viewer = asAccess(admin, { departments: { qc: 'L1' } }, 'viewer');
     await expect(
       service.createNcRegister(
         {
@@ -172,8 +173,10 @@ describe('nc-register service', () => {
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
 
-  it('createNcRegister allows operator role (mirrors legacy canEntry semantics)', async () => {
-    const operator: AuthContext = { ...admin, role: 'operator' };
+  // ADR-232 — the NC Register tick decides: a Quality-only L2 (derived role
+  // 'qc') may raise an NC; the old operator-role check used to refuse them.
+  it('createNcRegister allows a QC L2 whose role is qc', async () => {
+    const operator = asAccess(admin, { departments: { qc: 'L2' } }, 'qc');
     const code = `${TEST_PREFIX}OP1`;
     const nc = await service.createNcRegister(
       {
@@ -189,6 +192,60 @@ describe('nc-register service', () => {
     );
     expect(nc.code).toBe(code);
     expect(nc.createdBy).toBe(admin.id); // operator's `id` reused on this AuthContext
+  });
+
+  it('createNcRegister: no NC Register tick / auditor → AuthorizationError', async () => {
+    const input = {
+      code: `${TEST_PREFIX}GATE-NO`,
+      ncDate: '2026-05-04',
+      jobCardId: firstJobCardId,
+      itemId: firstItemId,
+      rejectedQty: 1,
+      reasonCategory: 'other' as const,
+      reason: 'gate test defect',
+    };
+    const prodOnly = asAccess(admin, { departments: { production: 'L5' } }, 'operator');
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { qc: 'L5' } });
+    await expect(service.createNcRegister(input, prodOnly)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.createNcRegister(input, auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('updateNcRegister / updateNcRegisterOrStage: QC L3 with role qc passes the gate; L2 / auditor refused', async () => {
+    const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+    const l3 = asAccess(admin, { departments: { qc: 'L3' } }, 'qc');
+    const l2 = asAccess(admin, { departments: { qc: 'L2' } }, 'qc');
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { qc: 'L5' } });
+    await expect(
+      service.updateNcRegister(UNKNOWN_ID, { reason: 'gate' }, l3),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.updateNcRegisterOrStage(UNKNOWN_ID, { reason: 'gate' }, l3),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.updateNcRegister(UNKNOWN_ID, { reason: 'gate' }, l2),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.updateNcRegisterOrStage(UNKNOWN_ID, { reason: 'gate' }, auditor),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('softDeleteNcRegister: L5 QC Department Admin / auditor refused; Super Admin passes the gate (ADR-232)', async () => {
+    const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+    const l5 = asAccess(admin, { departments: { qc: 'L5' } }, 'manager');
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { qc: 'L5' } });
+    await expect(service.softDeleteNcRegister(UNKNOWN_ID, l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.softDeleteNcRegister(UNKNOWN_ID, auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.softDeleteNcRegister(UNKNOWN_ID, admin)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   it('getNcRegister returns the row by id; throws NotFoundError when missing', async () => {

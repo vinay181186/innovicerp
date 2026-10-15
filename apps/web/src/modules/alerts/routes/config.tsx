@@ -1,4 +1,4 @@
-// Alert configuration (T-041d Phase A). Admin/manager-only — toggles
+// Alert configuration (T-041d Phase A). Super Admin only (ADR-232 D3) — toggles
 // per-rule on/off, persisted as alert_config rows. Mirrors legacy
 // `renderAlertConfig` (legacy HTML L22427):
 //   - `.section-hdr` "Alert Configuration" (L22446)
@@ -8,8 +8,8 @@
 //     when inactive (L22438-22441)
 //   - tip line (L22450) dropped — it restated the Active column (R5 SH-N45)
 // Legacy gated on `isAdmin()` and returned a bare `.empty-state`
-// "⛔ Admin access required" (L22428); our service layer additionally allows
-// `manager` to match the `manager_write` RLS policy — gate left as-is.
+// "⛔ Admin access required" (L22428). ADR-232 (owner D3) keeps it admin-only
+// on both sides; the old `manager` allowance is gone.
 //
 // Port-only beyond legacy's four columns: the rule `description` sub-line and
 // the Setting column ("Changed" when overridden, blank for default) — both real server fields.
@@ -31,7 +31,9 @@ export const alertsConfigRoute = createRoute({
 
 function AlertsConfigPage() {
   const { data: session } = useSession();
-  const canEdit = session?.role === 'admin' || session?.role === 'manager';
+  // ADR-232 (owner D3): switching a company alert on/off is a system setting —
+  // Super Admin only, matching the server (requireAdminRole).
+  const canEdit = session?.role === 'admin';
   const navigate = useNavigate();
 
   return (

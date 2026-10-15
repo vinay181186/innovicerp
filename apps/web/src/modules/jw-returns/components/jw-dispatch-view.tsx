@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -43,8 +43,12 @@ export function JwDispatchView({
 }: {
   initialSearch?: string | undefined;
 }): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // ADR-232 — the ticks alone, matching the server (jw-returns service):
+  // New Return = jw_create Entry; Cancel Return = jw_create Edit AND Approve.
+  const { data: eff } = useMyAccess();
+  const jwPerms = effectiveFormPerms(eff, 'jw_create');
+  const canCreate = jwPerms.entry;
+  const canCancel = jwPerms.edit && jwPerms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
@@ -121,7 +125,7 @@ export function JwDispatchView({
         }}
         filtersActive={sf.filtering || searchInput !== ''}
         primary={
-          canWrite ? (
+          canCreate ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
               <Plus size={14} /> New Return
             </button>
@@ -173,7 +177,7 @@ export function JwDispatchView({
                 label: 'Cancel Return',
                 icon: 'x',
                 group: 'danger',
-                hidden: !canWrite,
+                hidden: !canCancel,
                 disabledReason: r.status === 'cancelled' ? 'Already Cancelled' : undefined,
                 onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
               },

@@ -30,7 +30,7 @@ import { z } from 'zod';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -121,7 +121,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'jw_create');
   const canCreate = perms.entry;
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
   const today = todayIst();
 
   // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one

@@ -34,7 +34,7 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -179,11 +179,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // every route (ADR-211, owner) — no NC edit right needed. Disposing the NC
   // (the Advance gate above) stays with QC.
   const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: L3 has edit without
-  // approve, L4 has approve without edit. Was admin-only, which locked out the
-  // very tier meant to run the department.
-  const canDelete = ncPerms.edit && ncPerms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   // The button creates a CAPA, so it follows the CAPA form key, not nc_dispose.
   const canCreateCapaRecord = effectiveFormPerms(eff, 'capa_create').entry;
   // "Create CAPA" only once the NC is disposed/closed and has no linked CAPA
