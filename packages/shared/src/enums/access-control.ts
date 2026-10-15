@@ -50,7 +50,8 @@ export const ACCESS_DEPT_KEYS: readonly AccessDeptKey[] = ACCESS_DEPTS.map((d) =
 //   advance  — move a SAVED record to its next step: close, short close,
 //              dispose, close rework, mark planned, assign, record a return
 //   edit     — correct what was typed on a saved record, and every UNDO
-//              (reverse, cancel). Delete stays edit + approve.
+//              (reverse, cancel). Deleting a record is NOT a tier right:
+//              only L6 Super Admin (full access) may delete (ADR-232).
 //   approve  — sign off
 // Edit ⊃ Advance ⊃ View, and Edit ⊃ Entry ⊃ View. Entry does NOT include
 // Advance: creating a paper is not the same right as finishing one. Approve is
@@ -82,6 +83,9 @@ export const ACCESS_FORMS = [
   // what turns a plan into a Job Card. It lives under Planning > Master and
   // the PLANNING tier governs it (owner, 2026-10-03). Moved from `design`.
   { key: 'routecard_create', dept: 'planning', label: 'Route Card Master' },
+  // ADR-232 — the Assembly Tracker's start / stop / complete / undo used to be
+  // gated by the derived role alone, with no page tick. Planning runs assembly.
+  { key: 'assembly_create', dept: 'planning', label: 'Assembly Tracker' },
   // Production
   { key: 'jc_create', dept: 'production', label: 'Job Cards' },
   { key: 'prodorder_create', dept: 'production', label: 'Production Orders' },
@@ -195,7 +199,7 @@ export const ACCESS_TIERS = [
     key: 'L5',
     label: 'Department Admin',
     perms: { view: true, entry: true, advance: true, edit: true, approve: true },
-    hint: 'Full rights inside this department only.',
+    hint: 'Full rights inside this department only. Deleting a record needs L6 Super Admin.',
   },
 ] as const satisfies readonly {
   key: string;
