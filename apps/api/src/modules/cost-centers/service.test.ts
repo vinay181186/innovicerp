@@ -145,25 +145,35 @@ describe('updateCostCenter — ticks decide (ADR-232)', () => {
 
   it('finance L3 with role operator passes the gate', async () => {
     const user = asAccess(admin, { departments: { finance: 'L3' } }, 'operator');
-    await expect(service.updateCostCenter(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.updateCostCenter(UNKNOWN_ID, {} as never, user),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
   });
 
   it('finance L2 (no tick) is refused', async () => {
     const user = asAccess(admin, { departments: { finance: 'L2' } }, 'manager');
-    await expect(service.updateCostCenter(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateCostCenter(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('L7 Auditor is refused', async () => {
     const user = asAccess(admin, AUDITOR, 'viewer');
-    await expect(service.updateCostCenter(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateCostCenter(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('delete: finance L5 Department Admin is refused (Super Admin only)', async () => {
     const user = asAccess(admin, { departments: { finance: 'L5' } }, 'manager');
-    await expect(service.softDeleteCostCenter(UNKNOWN_ID, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.softDeleteCostCenter(UNKNOWN_ID, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('delete: Super Admin passes the gate', async () => {
-    await expect(service.softDeleteCostCenter(UNKNOWN_ID, admin)).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(service.softDeleteCostCenter(UNKNOWN_ID, admin)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });

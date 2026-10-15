@@ -259,25 +259,35 @@ describe('updateMlBom — ticks decide (ADR-232)', () => {
 
   it('design L3 with role qc passes the gate', async () => {
     const user = asAccess(admin, { departments: { design: 'L3' } }, 'qc');
-    await expect(service.updateMlBom(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateMlBom(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('design L2 (no tick) is refused', async () => {
     const user = asAccess(admin, { departments: { design: 'L2' } }, 'manager');
-    await expect(service.updateMlBom(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateMlBom(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('L7 Auditor is refused', async () => {
     const user = asAccess(admin, AUDITOR, 'viewer');
-    await expect(service.updateMlBom(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateMlBom(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('delete: design L5 Department Admin is refused (Super Admin only)', async () => {
     const user = asAccess(admin, { departments: { design: 'L5' } }, 'manager');
-    await expect(service.softDeleteMlBom(UNKNOWN_ID, user, 'test')).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.softDeleteMlBom(UNKNOWN_ID, user, 'test')).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('delete: Super Admin passes the gate', async () => {
-    await expect(service.softDeleteMlBom(UNKNOWN_ID, admin, 'test')).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(service.softDeleteMlBom(UNKNOWN_ID, admin, 'test')).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });

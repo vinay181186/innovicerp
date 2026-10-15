@@ -591,16 +591,22 @@ describe('updateBomMaster — ticks decide (ADR-232)', () => {
 
   it('design L3 with role qc passes the gate', async () => {
     const user = asAccess(admin, { departments: { design: 'L3' } }, 'qc');
-    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('design L2 (no tick) is refused', async () => {
     const user = asAccess(admin, { departments: { design: 'L2' } }, 'manager');
-    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('L7 Auditor is refused', async () => {
     const user = asAccess(admin, AUDITOR, 'viewer');
-    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateBomMaster(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });

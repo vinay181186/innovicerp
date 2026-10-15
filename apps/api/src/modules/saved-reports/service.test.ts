@@ -384,7 +384,13 @@ describe('saved-reports cleanup pattern', () => {
 describe('saved-reports — ownership, not role (ADR-232)', () => {
   const make = (name: string, isShared: boolean) =>
     service.createSavedReport(
-      { name: `${PREFIX}${name}`, description: '', sourceKey: 'sales-orders', spec: sampleSpec, isShared },
+      {
+        name: `${PREFIX}${name}`,
+        description: '',
+        sourceKey: 'sales-orders',
+        spec: sampleSpec,
+        isShared,
+      },
       admin,
     );
 
@@ -417,7 +423,13 @@ describe('saved-reports — ownership, not role (ADR-232)', () => {
     const auditor = asAccess(admin, AUDITOR, 'viewer');
     await expect(
       service.createSavedReport(
-        { name: `${PREFIX}adr232-aud-new`, description: '', sourceKey: 'sales-orders', spec: sampleSpec, isShared: false },
+        {
+          name: `${PREFIX}adr232-aud-new`,
+          description: '',
+          sourceKey: 'sales-orders',
+          spec: sampleSpec,
+          isShared: false,
+        },
         auditor,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);

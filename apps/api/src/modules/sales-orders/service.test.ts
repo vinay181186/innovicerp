@@ -618,25 +618,35 @@ describe('updateSalesOrder (owner D1: no longer admin-only) — ticks decide (AD
 
   it('sales L3 with role operator passes the gate', async () => {
     const user = asAccess(admin, { departments: { sales: 'L3' } }, 'operator');
-    await expect(service.updateSalesOrder(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.updateSalesOrder(UNKNOWN_ID, {} as never, user),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
   });
 
   it('sales L2 (no tick) is refused', async () => {
     const user = asAccess(admin, { departments: { sales: 'L2' } }, 'manager');
-    await expect(service.updateSalesOrder(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateSalesOrder(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('L7 Auditor is refused', async () => {
     const user = asAccess(admin, AUDITOR, 'viewer');
-    await expect(service.updateSalesOrder(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateSalesOrder(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('delete: sales L5 Department Admin is refused (Super Admin only)', async () => {
     const user = asAccess(admin, { departments: { sales: 'L5' } }, 'manager');
-    await expect(service.softDeleteSalesOrder(UNKNOWN_ID, user, 'test')).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.softDeleteSalesOrder(UNKNOWN_ID, user, 'test')).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('delete: Super Admin passes the gate', async () => {
-    await expect(service.softDeleteSalesOrder(UNKNOWN_ID, admin, 'test')).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.softDeleteSalesOrder(UNKNOWN_ID, admin, 'test'),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
   });
 });
