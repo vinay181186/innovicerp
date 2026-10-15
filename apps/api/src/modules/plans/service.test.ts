@@ -19,10 +19,12 @@ import {
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
+  AuthorizationError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'TPL3-';
@@ -163,8 +165,8 @@ describe('plans service — create', () => {
     expect(n2).toBe(n1 + 1);
   });
 
-  it('rejects viewer role with AuthorizationError (RLS leak guard)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('rejects an L1 Planning viewer with AuthorizationError (RLS leak guard)', async () => {
+    const viewer = asAccess(admin, { departments: { planning: 'L1' } }, 'viewer');
     await expect(
       service.createPlan(
         {
@@ -643,6 +645,108 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
       .returning();
     await expect(service.executePlan(inserted[0]!.id, admin)).rejects.toBeInstanceOf(
       ValidationError,
+    );
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): the SO/JWSO Planning tick alone decides every
+// plan write — users.role refuses nobody. Deleting a plan needs Super Admin.
+describe('plans — ADR-232 Access Control ticks alone decide', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+  const planningL2 = () => asAccess(admin, { departments: { planning: 'L2' } }, 'operator');
+  const planningL3 = () => asAccess(admin, { departments: { planning: 'L3' } }, 'operator');
+  const salesOnly = () => asAccess(admin, { departments: { sales: 'L5' } }, 'manager');
+  const auditor = () => asAccess(admin, { ...AUDITOR, departments: { planning: 'L5' } });
+
+  it('createPlansBatch: Planning L2 with role operator passes the gate (empty batch writes nothing)', async () => {
+    await expect(service.createPlansBatch({ plans: [] }, planningL2())).resolves.toEqual({
+      plans: [],
+    });
+  });
+
+  it('createPlansBatch: no Planning tick / auditor → AuthorizationError', async () => {
+    await expect(service.createPlansBatch({ plans: [] }, salesOnly())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.createPlansBatch({ plans: [] }, auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('updatePlan / updatePlanOrStage: Planning L3 with role operator passes the gate', async () => {
+    await expect(service.updatePlan(UNKNOWN_ID, {}, planningL3())).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+    await expect(
+      service.updatePlanOrStage(UNKNOWN_ID, {}, planningL3()),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('updatePlan: L2 (no edit tick) / auditor → AuthorizationError', async () => {
+    await expect(service.updatePlan(UNKNOWN_ID, {}, planningL2())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.updatePlan(UNKNOWN_ID, {}, auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  const reserve = {
+    soLineId: UNKNOWN_ID,
+    itemId: UNKNOWN_ID,
+    qty: 0,
+    soCodeText: 'GATE',
+    lineNo: 1,
+  };
+
+  it('reserveStock: Planning L2 with role operator passes the gate (refused later: qty 0)', async () => {
+    await expect(service.reserveStock(reserve, planningL2())).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
+  it('reserveStock: no Planning tick / auditor → AuthorizationError', async () => {
+    await expect(service.reserveStock(reserve, salesOnly())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.reserveStock(reserve, auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('releaseReservationsForLine: Planning L3 with role operator passes (nothing held → nothing moved)', async () => {
+    const res = await service.releaseReservationsForLine(
+      { soLineId: UNKNOWN_ID, reason: 'gate test' },
+      planningL3(),
+    );
+    expect(res.qtyMoved).toBe(0);
+  });
+
+  it('releaseReservationsForLine: L2 (no edit tick) / auditor → AuthorizationError', async () => {
+    await expect(
+      service.releaseReservationsForLine({ soLineId: UNKNOWN_ID, reason: 'x' }, planningL2()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.releaseReservationsForLine({ soLineId: UNKNOWN_ID, reason: 'x' }, auditor()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('softDeletePlan: L5 Planning Department Admin → AuthorizationError (Super Admin only)', async () => {
+    const l5 = asAccess(admin, { departments: { planning: 'L5' } }, 'manager');
+    await expect(service.softDeletePlan(UNKNOWN_ID, 'gate test', l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('softDeletePlan: L7 Auditor → AuthorizationError', async () => {
+    await expect(service.softDeletePlan(UNKNOWN_ID, 'gate test', auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('softDeletePlan: Super Admin passes the delete gate (unknown id → NotFoundError)', async () => {
+    await expect(service.softDeletePlan(UNKNOWN_ID, 'gate test', admin)).rejects.toBeInstanceOf(
+      NotFoundError,
     );
   });
 });

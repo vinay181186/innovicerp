@@ -14,6 +14,7 @@ import {
 } from '@innovic/shared';
 import { fileRegistry, jobWorkOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -98,10 +99,9 @@ export async function createJwDocument(
   input: CreateJwDocumentInput,
   user: AuthContext,
 ): Promise<JwDocumentFile> {
+  // ADR-232: the jw_create Entry tick decides who may upload.
+  await requireFormAccess(user, 'jw_create', 'entry');
   const companyId = requireCompany(user);
-  if (user.role === 'viewer') {
-    throw new AuthorizationError('Viewers cannot upload documents');
-  }
   return withUserContext(user, async (tx) => {
     // Guard: the JWSO must belong to this company (RLS also enforces it).
     const jw = rows(
@@ -173,6 +173,8 @@ export async function createJwDocument(
 
 /** Soft-delete a registered JWSO file. */
 export async function deleteJwDocument(id: string, user: AuthContext): Promise<{ id: string }> {
+  // ADR-232: deleting any record — an uploaded file too — needs L6 Super Admin.
+  await requireDeleteRight(user, 'JWSO documents');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const updated = await tx

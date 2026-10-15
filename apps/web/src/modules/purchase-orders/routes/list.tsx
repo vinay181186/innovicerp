@@ -41,7 +41,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -152,8 +151,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
-  const { data: me } = useSession();
-  const canAssign = Boolean(me) && me?.role !== 'viewer';
+  // ADR-232: Assign Task = this page's Advance right.
+  const canAssign = perms.advance;
   const [assignPo, setAssignPo] = useState<PurchaseOrderListItem | null>(null);
 
   const total = data?.total ?? 0;

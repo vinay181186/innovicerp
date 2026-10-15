@@ -17,7 +17,7 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
@@ -47,16 +47,13 @@ function PartyMaterialsListPage(): React.JSX.Element {
   // admin/manager flag, which collapsed all seven tiers into two.
   //   + Add -> entry (L2 Data Entry and up)
   //   Edit  -> edit  (L3 Editor and up; L2 creates but cannot alter)
-  //   Del   -> edit AND approve. Delete is not one of the four tier actions, so
-  //     it is expressed as the pair only L5 Department Admin and above hold: L3
-  //     has edit without approve, L4 has approve without edit. Previously this
-  //     was admin-only, which locked out the L5 Store Department Admin — the
-  //     tier meant to have full rights inside Store.
+  //   Del   -> Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'party_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   const urlSearch = partyMaterialsListRoute.useSearch();
   const navigate = partyMaterialsListRoute.useNavigate();
   const page = urlSearch.page;

@@ -24,7 +24,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
-import { useSession } from '@/lib/session';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
@@ -233,10 +232,9 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [today],
   );
 
-  // Assign Task: page-level modal (the ⋯ menu cannot host one). Hidden for the
-  // read-only viewer role, which POST /tasks refuses.
-  const { data: me } = useSession();
-  const canAssign = Boolean(me) && me?.role !== 'viewer';
+  // Assign Task: page-level modal (the ⋯ menu cannot host one). ADR-232: shown
+  // only to a user holding this page's Advance right.
+  const canAssign = perms.advance;
   const [assignPr, setAssignPr] = useState<PurchaseRequestListItem | null>(null);
 
   // Per-row ⋯ menu — reuses the module's existing handlers / targets.

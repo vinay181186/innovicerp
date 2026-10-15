@@ -25,7 +25,7 @@ import {
 import type { DocumentEditStagedResult } from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -768,12 +768,8 @@ export async function softDeleteItem(
   reason: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
-  // has edit but not approve; L4 Approver has approve but not edit. The owner
-  // scoped delete to the tier meant to run the department.
-  await requireFormAccess(user, 'item_create', 'edit');
-  await requireFormAccess(user, 'item_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin — no tier or tick grants it.
+  await requireDeleteRight(user, 'Items');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

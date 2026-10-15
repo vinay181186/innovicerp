@@ -16,7 +16,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, StatStrip, type StatStripItem } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -93,10 +92,7 @@ function InvoiceListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
-  // The server takes a payment from role admin / manager only (on top of the
-  // invoice_create entry right), so other roles see Add Payment greyed.
-  const { data: me } = useSession();
-  const isWriteRole = me?.role === 'admin' || me?.role === 'manager';
+  // ADR-232: Add Payment is the Entry tick on Invoices alone.
 
   if (eff && !perms.view) return <PageState as="page" state="noaccess" />;
 
@@ -246,12 +242,7 @@ function InvoiceListPage(): React.JSX.Element {
                   label: 'Add Payment',
                   to: `/invoices/${inv.id}`,
                   hidden: !perms.entry,
-                  disabledReason:
-                    inv.status === 'paid'
-                      ? 'Already Paid'
-                      : !isWriteRole
-                        ? 'Needs admin or manager role'
-                        : undefined,
+                  disabledReason: inv.status === 'paid' ? 'Already Paid' : undefined,
                 },
               ]}
             />

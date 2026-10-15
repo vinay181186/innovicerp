@@ -25,8 +25,8 @@
 // the URL parameter.
 //
 // What did NOT change: the route and its search param, the 300ms debounce on
-// the URL write, normalizeSearchTerm, the gates (Edit needs edit, Delete needs
-// edit AND approve), the per-row 🖨 Print button and everything it does, row
+// the URL write, normalizeSearchTerm, the gates (Edit needs edit, Delete is
+// Super Admin only since ADR-232), the per-row 🖨 Print button and everything it does, row
 // click -> detail, RC No. -> detail, and the lazily-fetched op sequence (one
 // detail request per OPENED row, not per row).
 //
@@ -45,7 +45,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
@@ -119,10 +119,9 @@ function RouteCardsListPage(): React.JSX.Element {
   });
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
-  // Legacy delRouteCard (L10279): confirm, then remove. Delete is admin-only
-  // server-side (route-cards service L698), so it stays expressed as the pair
-  // only L5 Department Admin and above hold — matching the detail page.
-  const canDelete = perms.edit && perms.approve;
+  // Legacy delRouteCard (L10279): confirm, then remove.
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   const del = useDeleteRouteCard();
   // ADR-197: Delete asks for a reason, so the row hands the question to this
   // page's own ConfirmDialog (RowActions' built-in one has no reason box).

@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, purchaseRequests, users, vendors } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { purchaseRequestsRoutes } from './routes';
 
@@ -169,7 +170,8 @@ describe('purchase-requests routes', () => {
   });
 
   it('POST /purchase-requests returns clean 403 for viewer role (not 500 from RLS leak)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: no Entry tick on Purchase Requests (Purchase L1) — refused whatever the role.
+    const viewer = asAccess(admin, { departments: { purchase: 'L1' } });
     app = await buildApp(viewer);
     const res = await app.inject({
       method: 'POST',

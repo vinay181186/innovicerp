@@ -32,7 +32,7 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { GlobalSearch } from '@/components/shared/global-search';
-import { canViewForm, useMyAccess } from '@/lib/access-control';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { roleLabel } from '@/lib/role-label';
 import { LiveStatusMarker } from '@/lib/live-updates/live-status-marker';
@@ -158,9 +158,14 @@ export function TopNav(): React.JSX.Element {
           .map((grp) => ({
             label: grp.label,
             // "Hide page": a link with a formKey vanishes when the user's access
-            // does not grant VIEW on it. Admin bypasses; links without a formKey
-            // are always shown.
-            items: grp.items.filter((it) => isAdmin || !it.formKey || canViewForm(eff, it.formKey)),
+            // does not grant VIEW on it (or the link's formAction, e.g. Advance).
+            // Admin bypasses; links without a formKey are always shown.
+            items: grp.items.filter(
+              (it) =>
+                isAdmin ||
+                !it.formKey ||
+                effectiveFormPerms(eff, it.formKey)[it.formAction ?? 'view'],
+            ),
           }))
           .filter((grp) => grp.items.length > 0);
         return (

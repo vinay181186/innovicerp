@@ -137,7 +137,7 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     return service.stopOp(id, body, req.user);
   });
 
-  // OSP auto-PR generation (ADR-039). Manager/admin only (enforced in service).
+  // OSP auto-PR generation (ADR-039). Needs Purchase Requests entry (ADR-232, in service).
   app.post('/op-entry/osp-pr', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = generateOspPrInputSchema.parse(req.body);

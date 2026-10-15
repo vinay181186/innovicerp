@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { costCenters, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { ConflictError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'TCC-';
@@ -134,5 +135,45 @@ describe('costCenters service', () => {
     );
     await service.softDeleteCostCenter(created.id, admin);
     await expect(service.getCostCenter(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): the Access Control ticks alone decide; the
+// derived role never refuses. Unknown id → a gate pass shows as a non-auth error.
+describe('updateCostCenter — ticks decide (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('finance L3 with role operator passes the gate', async () => {
+    const user = asAccess(admin, { departments: { finance: 'L3' } }, 'operator');
+    await expect(
+      service.updateCostCenter(UNKNOWN_ID, {} as never, user),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('finance L2 (no tick) is refused', async () => {
+    const user = asAccess(admin, { departments: { finance: 'L2' } }, 'manager');
+    await expect(service.updateCostCenter(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor is refused', async () => {
+    const user = asAccess(admin, AUDITOR, 'viewer');
+    await expect(service.updateCostCenter(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('delete: finance L5 Department Admin is refused (Super Admin only)', async () => {
+    const user = asAccess(admin, { departments: { finance: 'L5' } }, 'manager');
+    await expect(service.softDeleteCostCenter(UNKNOWN_ID, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('delete: Super Admin passes the gate', async () => {
+    await expect(service.softDeleteCostCenter(UNKNOWN_ID, admin)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });

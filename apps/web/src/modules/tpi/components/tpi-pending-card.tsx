@@ -13,13 +13,14 @@ import {
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { tpiKeys } from '../api';
@@ -32,7 +33,12 @@ export function PendingTpi(props: {
   onDone: () => void;
 }): React.JSX.Element {
   const { o, open, onToggle, onDone } = props;
-  const submit = useSubmitQcLog();
+  // §20 (owner D11): one idempotency key per QC save — a re-click after a
+  // timeout reuses it; a definite answer (success or refusal) spends it. A
+  // different operation is a different save, so the key turns over with it.
+  const saveKey = useSaveKey();
+  useEffect(() => saveKey.rotate(), [saveKey, o.jcOpId]);
+  const submit = useSubmitQcLog(saveKey);
   const queryClient = useQueryClient();
   const companyId = useSession().data?.companyId ?? null;
   // TPI posts through op-entry's submitQcLog, which now enforces BOTH qc_submit

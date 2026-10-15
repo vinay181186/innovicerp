@@ -22,14 +22,15 @@
 //   - the Job Card is complete or closed, or a Production Order on its chain is
 //     closed, partly closed or short closed.
 //
-// Who: edit AND approve on Op Entry (Access Control). Admins bypass.
+// Who: edit AND approve on Op Entry (production rows) or QC Call Register (QC
+// rows) — Access Control, ADR-232. Admins bypass.
 
 import { ActivityAction, activityReasonSchema, type OpLog, opSrNo } from '@innovic/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { jcOps, jobCards, opLog } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { primeAccess, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { jobCardOrderChainCte } from '../../lib/production-order-link';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
@@ -138,10 +139,8 @@ export async function reverseOpLog(
   input: ReverseOpLogInput,
   user: AuthContext,
 ): Promise<OpLog> {
-  // Undoing recorded production is a correction a supervisor signs: it needs
-  // BOTH the edit and the approve right on Op Entry.
-  await requireFormAccess(user, 'op_entry', 'edit');
-  await requireFormAccess(user, 'op_entry', 'approve');
+  // Access is read now, outside the transaction below (see primeAccess).
+  await primeAccess(user);
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   const companyId = user.companyId;
   const reason = input.reason.trim();
@@ -171,6 +170,14 @@ export async function reverseOpLog(
       .limit(1);
     const row = rows[0];
     if (!row) throw new NotFoundError('Op log entry not found. Refresh the page.');
+
+    // Undoing a recorded entry is a correction a supervisor signs: BOTH the
+    // edit and the approve right on the page that records that kind of entry
+    // (ADR-232, owner D8) — QC rows on QC Call Register, production rows on Op
+    // Entry. Checked here, once the row's type is known, before any rule below.
+    const rightsForm = row.logType === 'qc' ? 'qc_submit' : 'op_entry';
+    await requireFormAccess(user, rightsForm, 'edit');
+    await requireFormAccess(user, rightsForm, 'approve');
 
     if (row.reversalOfId) {
       throw new ValidationError(`${row.logNo} is itself a reversal — it cannot be reversed.`);

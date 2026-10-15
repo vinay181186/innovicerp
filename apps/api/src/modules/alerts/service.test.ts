@@ -106,6 +106,13 @@ describe('alerts service — config', () => {
     );
   });
 
+  it('setAlertActive is Super Admin only — a manager is refused (ADR-232, owner D3)', async () => {
+    const manager: AuthContext = { ...admin, role: 'manager' };
+    await expect(service.setAlertActive('AL-001', false, manager)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
   it('setAlertActive rejects unknown code with NotFoundError', async () => {
     await expect(service.setAlertActive('AL-999', true, admin)).rejects.toBeInstanceOf(
       NotFoundError,

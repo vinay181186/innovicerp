@@ -25,10 +25,10 @@ import {
 } from '@innovic/shared';
 import { approvalConfig, documentEditRequests } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { primeAccess, requireFormAccess } from '../../lib/access';
 import { diffFields, valuesEqual } from '../../lib/audit-trail';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { getEntry, requireCompany, selectDocumentEditRows } from './helpers';
 
@@ -317,6 +317,8 @@ export async function withdrawDocumentEdit(
   id: string,
   user: AuthContext,
 ): Promise<DocumentEditRow> {
+  // Access is read now, outside the transaction below (see primeAccess).
+  await primeAccess(user);
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -334,10 +336,9 @@ export async function withdrawDocumentEdit(
       .for('update');
     const req = reqRows[0];
     if (!req) throw new NotFoundError('Edit request not found.');
-    if (req.requestedBy !== user.id && user.role !== 'admin') {
-      throw new AuthorizationError(
-        'Only the person who requested this edit, or an admin, can withdraw it.',
-      );
+    // ADR-232: the requester, or anyone who may approve edits on that page.
+    if (req.requestedBy !== user.id) {
+      await requireFormAccess(user, getEntry(req.entity).formKey, 'approve');
     }
     if (req.status !== 'pending') {
       throw new ConflictError(`This edit was already ${req.status} — nothing to withdraw.`);

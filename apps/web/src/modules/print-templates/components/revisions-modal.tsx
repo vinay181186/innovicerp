@@ -12,9 +12,17 @@ interface Props {
   blockName: string;
   onClose: () => void;
   onRestore: (content: string) => void;
+  /** ADR-232: Restore loads a version into the editor — Edit tick only. */
+  canRestore: boolean;
 }
 
-export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: Props): React.JSX.Element {
+export function RevisionsModal({
+  templateKey,
+  blockName,
+  onClose,
+  onRestore,
+  canRestore,
+}: Props): React.JSX.Element {
   const { data, isLoading, isError } = usePrintTemplateRevisions(templateKey);
   const items = data?.items ?? [];
 
@@ -100,6 +108,7 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
                             key: 'restore',
                             label: 'Restore',
                             icon: 'refresh-cw',
+                            hidden: !canRestore,
                             onSelect: () => onRestore(r.content),
                           },
                         ]}

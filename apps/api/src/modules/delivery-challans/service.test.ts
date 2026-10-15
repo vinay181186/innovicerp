@@ -34,6 +34,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { asAccess } from '../../lib/test-access';
 import * as poService from '../purchase-orders/service';
 import * as service from './service';
 
@@ -216,7 +217,8 @@ async function readStockTxnsFor(
 
 describe('delivery-challans service — outward writes (T-059a)', () => {
   beforeAll(async () => {
-    manager = { ...admin, role: 'manager' };
+    // ADR-232: Purchase L3 — Edit without Approve, so Cancel (edit AND approve) is refused.
+    manager = asAccess(admin, { departments: { purchase: 'L3' } }, 'manager');
     await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
     const itemRows = await db
       .insert(items)
@@ -573,7 +575,8 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
 
   it('createDeliveryChallan denies viewer role with AuthorizationError', async () => {
     const po = await freshJwPo('CR7', 10);
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: no Entry tick (Purchase L1) — refused whatever the role.
+    const viewer = asAccess(admin, { departments: { purchase: 'L1' } });
     await expect(
       service.createDeliveryChallan(
         {
@@ -1121,7 +1124,8 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
 
   it('viewer role denied with AuthorizationError', async () => {
     const ctx = await setupIssuedDc('RCA', { sentQty: 3 });
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: View only on Purchase and Store — no Entry on the DC or the GRN.
+    const viewer = asAccess(admin, { departments: { purchase: 'L1', store: 'L1' } });
     await expect(
       service.receiveAgainstDeliveryChallan(
         ctx.dcId,

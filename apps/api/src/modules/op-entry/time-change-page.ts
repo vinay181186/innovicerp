@@ -3,12 +3,13 @@
 // requests, and `total` is counted with the SAME joins + WHERE as the page.
 // The plain list (badge count, log-history ⏳ marker) is unchanged.
 
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import type {
   ListOpLogTimeChangePageQuery,
   ListOpLogTimeChangePageResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { selectTimeChangeRequests, TIME_CHANGE_FROM } from './service';
@@ -35,6 +36,22 @@ export const TIME_CHANGE_SF_COLUMNS: SfColumnMap = {
   decidedBy: { sql: sql`COALESCE(du.full_name, du.email)`, type: 'text' },
 };
 
+/**
+ * ADR-232: which correction requests this caller may decide. A QC row is
+ * decided on QC Call Register Approve, a production row on Op Entry Approve
+ * (decideOpLogTimeChange) — so the queue and its count show only those, and an
+ * approver never sees a row whose Approve button would refuse them. Read before
+ * any transaction: each access check opens its own.
+ */
+export async function decidableTimeChangeScope(user: AuthContext): Promise<SQL> {
+  const qc = await hasFormAccess(user, 'qc_submit', 'approve');
+  const prod = await hasFormAccess(user, 'op_entry', 'approve');
+  if (qc && prod) return sql``;
+  if (qc) return sql`AND l.log_type = 'qc'`;
+  if (prod) return sql`AND l.log_type <> 'qc'`;
+  return sql`AND false`;
+}
+
 export async function listOpLogTimeChangePage(
   input: ListOpLogTimeChangePageQuery,
   user: AuthContext,
@@ -57,7 +74,8 @@ export async function listOpLogTimeChangePage(
         OR COALESCE(du.full_name, du.email) ILIKE ${pat} ESCAPE '\\'
       )`
     : sql``;
-  const where = sql`${searchFrag} ${sfWhere(TIME_CHANGE_SF_COLUMNS, sf)}`;
+  const scope = await decidableTimeChangeScope(user);
+  const where = sql`${scope} ${searchFrag} ${sfWhere(TIME_CHANGE_SF_COLUMNS, sf)}`;
   // Waiting is a FIFO queue (oldest first); the decided tabs read newest
   // first. Ends on r.id so pages never skip or repeat a request.
   const fallback =

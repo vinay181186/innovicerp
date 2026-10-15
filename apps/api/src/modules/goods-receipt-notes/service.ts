@@ -31,7 +31,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import {
@@ -1954,11 +1954,8 @@ export async function softDeleteGoodsReceiptNote(
   /** Why it was moved to Trash — required at the route (ADR-197). */
   reason?: string,
 ): Promise<{ ok: true }> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
-  // has edit but not approve; L4 Approver has approve but not edit.
-  await requireFormAccess(user, 'grn_create', 'edit');
-  await requireFormAccess(user, 'grn_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin — no tier or tick grants it.
+  await requireDeleteRight(user, 'GRNs');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

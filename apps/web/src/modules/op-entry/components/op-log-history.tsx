@@ -20,7 +20,7 @@ import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests, useUpdateOpLogTiming } from '../api';
 
 /** GET /op-entry/op-log rows carry three fields the shared OpLog type does not
@@ -63,8 +63,14 @@ function whenLabel(date: string, time: string | null): string {
 }
 
 export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Element {
-  const { data: me } = useSession();
-  const canApprove = me?.role === 'admin' || me?.role === 'manager';
+  // ADR-232 (owner D7): rights follow the page the entry belongs to. A QC
+  // entry is the QC Call Register's (qc_submit); a production entry is Op
+  // Entry's (op_entry). Correcting the date/time needs that page's Edit right;
+  // deciding someone else's correction needs its Approve right.
+  const { data: eff } = useMyAccess();
+  const qcPerms = effectiveFormPerms(eff, 'qc_submit');
+  const prodPerms = effectiveFormPerms(eff, 'op_entry');
+  const permsFor = (l: OpLog): typeof qcPerms => (l.logType === 'qc' ? qcPerms : prodPerms);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftDate, setDraftDate] = useState('');
@@ -150,6 +156,8 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
           const editing = editingId === l.id;
           const req = pendingByLog.get(l.id) ?? null;
           const reversal = isReversal(l);
+          const canApprove = permsFor(l).approve;
+          const canEdit = permsFor(l).edit;
           const ts = reversal ? { bg: 'var(--red3)', fg: 'var(--red2)' } : TYPE_STYLE[l.logType];
           return (
             <div
@@ -274,7 +282,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     <span className="text3" style={{ fontSize: 11 }}>
                       awaiting approval
                     </span>
-                  ) : (
+                  ) : canEdit ? (
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
@@ -283,7 +291,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     >
                       <Pencil className="h-3 w-3" />
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
 

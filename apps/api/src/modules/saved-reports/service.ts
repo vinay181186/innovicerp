@@ -2,7 +2,7 @@
 //
 // RLS provides company isolation. The service layer enforces:
 //   - List filter: own reports + shared in same company
-//   - Update / delete: only owner OR admin/manager
+//   - Update / delete: only the owner, or a Super Admin (ADR-232)
 //   - Spec validation against the source catalog before any DB write/run
 
 import { and, count, desc, eq, isNull, or, sql } from 'drizzle-orm';
@@ -10,7 +10,7 @@ import type { listSavedReportsQuerySchema } from '@innovic/shared';
 import type { z } from 'zod';
 import { savedReports, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { hasFormAccess } from '../../lib/access';
+import { hasFormAccess, primeAccess, requireCanWrite, requireDeleteRight } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -35,7 +35,9 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
-const isManager = (user: AuthContext): boolean => user.role === 'admin' || user.role === 'manager';
+// ADR-232: role 'admin' is L6 Super Admin — the only one who sees or changes
+// another person's private report.
+const isSuperAdmin = (user: AuthContext): boolean => user.role === 'admin';
 
 // A data source is offered only to users who may VIEW its department page
 // (Sales Orders, Purchase Orders, Job Cards, Item Master, NC Register) —
@@ -185,7 +187,7 @@ export async function getSavedReport(id: string, user: AuthContext): Promise<Sav
 
     const row = rows[0];
     if (!row) throw new NotFoundError('Saved report not found. Refresh the page.');
-    if (row.ownerId !== user.id && !row.isShared && !isManager(user)) {
+    if (row.ownerId !== user.id && !row.isShared && !isSuperAdmin(user)) {
       throw new NotFoundError('Saved report not found. Refresh the page.');
     }
     return rowToSavedReport(
@@ -211,6 +213,8 @@ export async function createSavedReport(
   input: CreateSavedReportInput,
   user: AuthContext,
 ): Promise<SavedReport> {
+  // ADR-232: a person's own report — everyone set up may save one, an Auditor not.
+  await requireCanWrite(user);
   const companyId = requireCompany(user);
   if (input.spec.sourceKey !== input.sourceKey) {
     throw new ConflictError('spec.sourceKey must match input.sourceKey');
@@ -254,9 +258,29 @@ export async function createSavedReport(
   });
 }
 
-function assertCanWrite(row: typeof savedReports.$inferSelect, user: AuthContext): void {
-  if (row.ownerId === user.id || isManager(user)) return;
-  throw new AuthorizationError('Only the owner or an admin/manager can modify this report');
+async function assertCanWrite(
+  row: typeof savedReports.$inferSelect,
+  user: AuthContext,
+): Promise<void> {
+  if (row.ownerId === user.id) {
+    await requireCanWrite(user);
+    return;
+  }
+  if (isSuperAdmin(user)) return;
+  throw new AuthorizationError('Only the owner or a Super Admin can modify this report');
+}
+
+/** ADR-232: a person may delete their OWN saved report; anyone else's needs
+ *  the Super Admin delete right. */
+async function assertCanDelete(
+  row: typeof savedReports.$inferSelect,
+  user: AuthContext,
+): Promise<void> {
+  if (row.ownerId === user.id) {
+    await requireCanWrite(user);
+    return;
+  }
+  await requireDeleteRight(user, "other people's saved reports");
 }
 
 export async function updateSavedReport(
@@ -264,6 +288,8 @@ export async function updateSavedReport(
   input: UpdateSavedReportInput,
   user: AuthContext,
 ): Promise<SavedReport> {
+  // Access is read now, outside the transaction below (see primeAccess).
+  await primeAccess(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx
@@ -287,7 +313,7 @@ export async function updateSavedReport(
       .for('update');
     const existing = rows[0];
     if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
-    assertCanWrite(existing, user);
+    await assertCanWrite(existing, user);
     // ADR-226 / §20.4 — refuse the save if someone else changed this report after
     // the form loaded it, and say who. Under the lock above, so check-then-write
     // is atomic. The name lookup runs only on the refusal path (see
@@ -351,6 +377,8 @@ export async function updateSavedReport(
 }
 
 export async function softDeleteSavedReport(id: string, user: AuthContext): Promise<void> {
+  // Access is read now, outside the transaction below (see primeAccess).
+  await primeAccess(user);
   const companyId = requireCompany(user);
   await withUserContext(user, async (tx) => {
     const rows = await tx
@@ -366,7 +394,7 @@ export async function softDeleteSavedReport(id: string, user: AuthContext): Prom
       .limit(1);
     const existing = rows[0];
     if (!existing) throw new NotFoundError('Saved report not found. Refresh the page.');
-    assertCanWrite(existing, user);
+    await assertCanDelete(existing, user);
 
     await tx
       .update(savedReports)

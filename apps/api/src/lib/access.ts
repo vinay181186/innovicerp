@@ -5,32 +5,28 @@
 // the server. ADR-035 option A called that a deferred audit task. This is
 // the mechanism that closes it.
 //
-// TWO LAYERS on most writes, both must pass:
-//   1. the role guard in ./auth.ts — the outer wall
-//   2. `requireFormAccess` — the per-user (Tier + Department) matrix
+// ADR-232 (owner, 2026-10-15): ONE LAYER. The Access Control matrix alone
+// decides every write — `requireFormAccess(user, page, action)`. The derived
+// `users.role` (see roleForAccess) no longer refuses anyone: it used to, and it
+// refused people the matrix allowed ("has the right, still 'Ask an admin'").
+// The guard test `no-role-gates.test.ts` fails the build if a role check comes
+// back on a write.
 //
-// Where both are present the matrix can only NARROW what the role allows;
-// that is how the tier model was rolled out without re-auditing the RLS
-// policies (which the API itself does not hit — it connects as a BYPASSRLS
-// role, migration 0180).
+// Three fixed rules sit on top of the ticks:
+//   - L6 Super Admin (full access, the only way to role 'admin') passes all.
+//   - L7 Auditor never writes — enforced inside effectiveFormPerms.
+//   - Deleting any record needs Super Admin — `requireDeleteRight` below.
+// Genuine system screens (users, access control, company settings, backup,
+// approval setup) stay on `requireAdminRole` in ./auth.ts.
 //
-// EXCEPTION (ADR-231, owner: "one lock"): the steps that move a saved record
-// to its next step — close / short close / dispose / mark planned / execute a
-// plan / assign / record a return / SO and JWSO short close — have NO role
-// guard. The matrix alone decides them, so the Access Control screen shows
-// exactly what the person can do. Do not reason about those steps as
-// role-capped.
-//
-// Currently wired into: the approve / reject paths of Purchase Orders and
-// Purchase Requests. Those went first because `approve` is a brand-new
-// action with no legacy behaviour to preserve — nobody can be locked out of
-// something they could do yesterday. Extending this to the remaining
-// modules' write endpoints is a follow-up sweep.
+// The API connects as a BYPASSRLS role (migration 0180), so the RLS policies
+// that mention roles never run for API traffic; this file is the enforcement.
 
 import {
   type AccessAction,
   type AccessFormKey,
   ACCESS_FORMS,
+  canDeleteRecords,
   effectiveFormPerms,
   isUnconfigured,
 } from '@innovic/shared';
@@ -171,4 +167,58 @@ export async function canSeeFormPrice(user: AuthContext, formKey: AccessFormKey)
   if (user.role === 'admin') return true;
   const eff = await getMyAccess(user);
   return effectiveFormPerms(eff, formKey).price;
+}
+
+/**
+ * ADR-232 (owner, 2026-10-15): deleting ANY record — a document, a master or
+ * an uploaded file — needs L6 Super Admin. No tier and no per-page tick grants
+ * it. Cancel, short close, reverse and close are NOT deletes; they keep their
+ * own rights (`requireFormAccess` with edit / advance / approve).
+ *
+ * `what` names the record in the refusal, e.g. "Route Cards".
+ */
+export async function requireDeleteRight(user: AuthContext, what: string): Promise<void> {
+  if (await hasDeleteRight(user)) return;
+  throw new AuthorizationError(
+    `Only an L6 Super Admin can delete ${what}. Ask a Super Admin to do it.`,
+  );
+}
+
+/** Non-throwing twin of requireDeleteRight, for read paths that decide whether
+ *  to offer Delete. Same rule as `canDeleteRecords` on the web. */
+export async function hasDeleteRight(user: AuthContext): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  const eff = await getMyAccess(user);
+  return canDeleteRecords(eff);
+}
+
+/**
+ * ADR-232: for the few writes that belong to a PERSON rather than a page — their
+ * own Task Board work, their own saved report — there is no page tick to ask.
+ * Everyone who has been set up may do them, except an L7 Auditor (who writes
+ * nothing anywhere) and an account nobody has configured yet.
+ */
+export async function requireCanWrite(user: AuthContext): Promise<void> {
+  if (user.role === 'admin') return;
+  const eff = await getMyAccess(user);
+  if (eff.auditor) {
+    throw new AuthorizationError('Auditor access is view-only. Ask an admin if you need to save.');
+  }
+  if (isUnconfigured(eff)) {
+    throw new AuthorizationError(
+      'Your account has no access configured yet. Ask an admin to set your ' +
+        'department tiers in Access Control.',
+    );
+  }
+}
+
+/**
+ * Load the caller's access into the per-request memo (ADR-229) BEFORE a
+ * transaction opens. getMyAccess runs its own transaction, so a check made
+ * inside an open one would hold a second pool connection — and, after a
+ * FOR UPDATE, keep the row locked while it waits. Call this first in any
+ * write whose permission check can only run once the row has been read.
+ */
+export async function primeAccess(user: AuthContext): Promise<void> {
+  if (user.role !== 'admin') await getMyAccess(user);
 }

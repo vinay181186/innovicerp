@@ -58,7 +58,7 @@ import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -210,10 +210,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const isApprover =
     isAdmin || (perms.approve && me ? (approvalCfg?.poApprovers ?? []).includes(me.id) : false);
   const showApprovalActions = detail.status === 'draft' && isApprover;
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: L3 has edit without
-  // approve, L4 has approve without edit.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   async function doApprove(): Promise<void> {
     if (!detail) return;
@@ -366,7 +364,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 { label: 'Print', onClick: onPrint },
-                { label: 'Assign Task', onClick: () => setAssignOpen(true) },
+                // ADR-232: Assign Task = the page's Advance right.
+                {
+                  label: 'Assign Task',
+                  hidden: !perms.advance,
+                  onClick: () => setAssignOpen(true),
+                },
                 {
                   label: 'Edit',
                   hidden: !canEdit,

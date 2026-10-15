@@ -67,14 +67,12 @@ function SavedReportsListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
   const { data: catalog } = useSourceCatalog();
   const deleteMutation = useDeleteSavedReport();
-  // The server lets only the report's owner or role admin/manager edit or
+  // ADR-232: the server lets only the report's owner or a Super Admin edit or
   // delete it (saved-reports service, assertCanWrite). Other users' shared
   // reports show both ⋯ items greyed with the reason.
   const { data: me } = useSession();
   const ownerBlock = (ownerId: string): string | undefined =>
-    !me || me.id === ownerId || me.role === 'admin' || me.role === 'manager'
-      ? undefined
-      : 'Only the owner can change this';
+    !me || me.id === ownerId || me.role === 'admin' ? undefined : 'Only the owner can change this';
 
   // Source label ("Sales Orders"), never the raw source key.
   const sourceLabel = useMemo(

@@ -39,7 +39,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -3696,10 +3696,8 @@ export async function deleteJobCard(
   user: AuthContext,
   reason: string | null = null,
 ): Promise<{ ok: true }> {
-  // Delete = the edit+approve pair only L5 Department Admin and above hold. L3
-  // Editor has edit but not approve; L4 Approver has approve but not edit.
-  await requireFormAccess(user, 'jc_create', 'edit');
-  await requireFormAccess(user, 'jc_create', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Job Cards');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx

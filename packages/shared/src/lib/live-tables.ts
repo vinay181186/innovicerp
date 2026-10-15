@@ -22,6 +22,9 @@ export const LIVE_TABLES = [
   'purchase_requests',
   'goods_receipt_notes',
   'document_edit_requests',
+  // ADR-233 — Production Order list/detail and its close history.
+  'production_orders',
+  'production_order_closes',
 ] as const;
 
 export type LiveTable = (typeof LIVE_TABLES)[number];

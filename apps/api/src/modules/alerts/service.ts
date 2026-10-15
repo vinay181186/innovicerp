@@ -20,7 +20,7 @@ import type { AlertConfigEntry, AlertDept, ListAlertConfigResponse } from '@inno
 import { eq, sql } from 'drizzle-orm';
 import { alertConfig as alertConfigTable } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { ALERTS, listAlertDefinitions, type RegisteredAlert } from './registry';
@@ -159,7 +159,8 @@ export async function setAlertActive(
   active: boolean,
   user: AuthContext,
 ): Promise<AlertConfigEntry> {
-  requireWriteRole(user);
+  // ADR-232 (owner D3): switching a company alert on/off is a system setting.
+  requireAdminRole(user);
   const companyId = requireCompany(user);
   const reg = ALERTS[code];
   if (!reg) throw new NotFoundError(`Alert "${code}" not found`);

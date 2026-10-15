@@ -11,7 +11,8 @@
 // opposite entry (negative Completed / Rejected) is added. A reversal row reads
 // "Reversal of LOG-…" + its reason in red; the original it cancels reads
 // "Reversed by LOG-…" with its figures struck through. The Reverse button needs
-// edit AND approve on the 'op_entry' Access Control form.
+// edit AND approve on the entry's own page: 'op_entry', or 'qc_submit' for a
+// QC entry (ADR-232).
 
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -65,11 +66,15 @@ function OpLogListPage(): React.JSX.Element {
   const search = opLogListRoute.useSearch();
   const navigate = opLogListRoute.useNavigate();
 
-  // Reverse = edit AND approve on Op Entry (the server checks the same; admin
-  // bypasses inside effectiveFormPerms). Hidden until the matrix has loaded.
+  // Reverse = edit AND approve on the page the entry belongs to (ADR-232,
+  // owner D8): a QC entry needs them on qc_submit, a production entry on
+  // op_entry. Hidden until the matrix has loaded.
   const { data: eff } = useMyAccess();
   const opEntryPerms = effectiveFormPerms(eff, 'op_entry');
-  const canReverse = Boolean(eff) && opEntryPerms.edit && opEntryPerms.approve;
+  const qcPerms = effectiveFormPerms(eff, 'qc_submit');
+  const canReverseProd = Boolean(eff) && opEntryPerms.edit && opEntryPerms.approve;
+  const canReverseQc = Boolean(eff) && qcPerms.edit && qcPerms.approve;
+  const canReverse = canReverseProd || canReverseQc;
   const [reversing, setReversing] = useState<OpLogListItem | null>(null);
   const columns = useMemo(() => opLogColumns(), []);
 
@@ -287,11 +292,11 @@ function OpLogListPage(): React.JSX.Element {
             emptyText="No log entries match these filters."
             defaultPinned={OP_LOG_DEFAULT_PINNED}
             // ⋯ menu: Reverse — only on an entry that can still be reversed,
-            // and only for a user with edit + approve on Op Entry.
+            // and only for a user with edit + approve on that entry's page.
             rowMenu={
               canReverse
                 ? (r) =>
-                    canReverseRow(r)
+                    canReverseRow(r) && (r.logType === 'qc' ? canReverseQc : canReverseProd)
                       ? [
                           {
                             key: 'reverse',

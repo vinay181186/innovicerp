@@ -19,6 +19,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'T036A-';
@@ -665,5 +666,31 @@ describe('purchase-requests service', () => {
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: '   ' }, admin),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): deleting any record needs L6 Super Admin. No
+// department tier — not even L5 Department Admin — and no page tick grants it.
+describe('softDeletePurchaseRequest — Super Admin only (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('L5 Department Admin cannot delete Purchase Requests — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { purchase: 'L5' } }, 'manager');
+    await expect(service.softDeletePurchaseRequest(UNKNOWN_ID, 'test', l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor cannot delete Purchase Requests — AuthorizationError', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { purchase: 'L5' } });
+    await expect(
+      service.softDeletePurchaseRequest(UNKNOWN_ID, 'test', auditor),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('Super Admin passes the delete gate (unknown id → NotFoundError, not refused)', async () => {
+    await expect(
+      service.softDeletePurchaseRequest(UNKNOWN_ID, 'test', admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });

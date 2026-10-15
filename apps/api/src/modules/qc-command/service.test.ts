@@ -13,6 +13,7 @@ import { db } from '../../db/client';
 import { jcOps, jobCards, qcAssignments, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -118,9 +119,24 @@ describe('qc-command service — pick up / assign', () => {
     expect(active.length).toBe(1);
   });
 
-  it('pickUp by an operator role is rejected', async () => {
-    const operator: AuthContext = { ...admin, role: 'operator' };
+  // ADR-232 — the QC Call Register tick decides, not users.role.
+  it('pickUp without the QC tick (Production L5, role operator) is rejected', async () => {
+    const operator = asAccess(admin, { departments: { production: 'L5' } }, 'operator');
     await expect(service.pickUpQc({ jcOpId: testOpId }, operator)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('pickUp with the QC tick passes the gate even when role is operator', async () => {
+    const qcL2 = asAccess(admin, { departments: { qc: 'L2' } }, 'operator');
+    await expect(service.pickUpQc({ jcOpId: ZERO_UUID }, qcL2)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it('pickUp by an L7 Auditor is rejected', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { qc: 'L5' } });
+    await expect(service.pickUpQc({ jcOpId: testOpId }, auditor)).rejects.toBeInstanceOf(
       AuthorizationError,
     );
   });
@@ -131,10 +147,24 @@ describe('qc-command service — pick up / assign', () => {
     );
   });
 
-  it('assign by a non-admin (qc) is rejected', async () => {
-    const qc: AuthContext = { ...admin, role: 'qc' };
+  it('assign without the QC advance tick (QC L1, role qc) is rejected', async () => {
+    const qc = asAccess(admin, { departments: { qc: 'L1' } }, 'qc');
     await expect(
       service.assignQc({ jcOpId: testOpId, inspectorUserId: admin.id }, qc),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('assign with the QC advance tick passes the gate even when role is qc', async () => {
+    const qcL2 = asAccess(admin, { departments: { qc: 'L2' } }, 'qc');
+    await expect(
+      service.assignQc({ jcOpId: ZERO_UUID, inspectorUserId: admin.id }, qcL2),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('assign by an L7 Auditor is rejected', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { qc: 'L5' } });
+    await expect(
+      service.assignQc({ jcOpId: testOpId, inspectorUserId: admin.id }, auditor),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
 

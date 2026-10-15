@@ -703,9 +703,7 @@ export async function submitDesignForReview(id: string, user: AuthContext): Prom
 }
 
 export async function approveDesign(id: string, user: AuthContext): Promise<DesignTracker> {
-  if (user.role !== 'admin' && user.role !== 'manager') {
-    throw new AuthorizationError('You do not have permission to approve designs. Ask an admin.');
-  }
+  // ADR-232: the design_create Approve tick alone decides.
   await requireFormAccess(user, 'design_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
@@ -749,11 +747,7 @@ export async function reviseDesign(
   input: ReviseDesignInput,
   user: AuthContext,
 ): Promise<DesignTracker> {
-  if (user.role !== 'admin' && user.role !== 'manager') {
-    throw new AuthorizationError(
-      'You do not have permission to send designs back for revision. Ask an admin.',
-    );
-  }
+  // ADR-232: the design_create Approve tick alone decides.
   await requireFormAccess(user, 'design_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;

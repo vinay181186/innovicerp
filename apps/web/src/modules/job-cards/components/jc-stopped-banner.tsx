@@ -51,6 +51,11 @@ export function JcStoppedBanner({
           {order.code}
         </Link>
         <span>was short closed{on ? ` on ${on}` : ''} — no further work</span>
+        {/* ADR-233 — the figures, read off the same order row (Short Closed
+            Qty = Order − Stock Received; Lost is part of it). */}
+        <span className="mono" style={{ color: 'var(--text2)' }}>
+          · {order.shortClosedQty} short-closed · {order.creditedQty ?? 0} in stock
+        </span>
       </div>
       {order.shortClosedByName || order.shortCloseReason ? (
         <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>

@@ -1,25 +1,30 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PRINT_TEMPLATE_DEFAULTS, PRINT_TEMPLATE_KEYS } from '@innovic/shared';
+import {
+  PRINT_TEMPLATE_DEFAULTS,
+  PRINT_TEMPLATE_KEYS,
+  accessFormPermsSchema,
+} from '@innovic/shared';
 import { db } from '../../db/client';
 import { printTemplateRevisions, printTemplates, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ValidationError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
+
+const EDIT_TICK = accessFormPermsSchema.parse({ view: true, entry: false, edit: true });
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 // Keys this suite mutates — cleaned up in afterAll (scoped, never company-wide).
 const TOUCHED_KEYS = ['po_terms', 'po_special_notes', 'jwdc_footer'];
 
 let admin: AuthContext;
-let operator: AuthContext;
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
   const u = rows[0];
   if (!u || !u.companyId) throw new Error('Seed admin missing');
   admin = { id: u.id, email: u.email, companyId: u.companyId, role: u.role, isActive: u.isActive };
-  operator = { ...admin, role: 'operator' };
 });
 
 async function cleanup(): Promise<void> {
@@ -86,12 +91,32 @@ describe('print-templates service', () => {
     );
   });
 
-  it('requires admin role to write', async () => {
+  it('requires the Print Templates Edit tick to write (ADR-232, owner D4)', async () => {
+    // L5 in another department, no Print Templates tick — refused.
+    const untick = asAccess(admin, { departments: { sales: 'L5' } }, 'manager');
     await expect(
-      service.savePrintTemplate('po_terms', 'nope', operator),
+      service.savePrintTemplate('po_terms', 'nope', untick),
     ).rejects.toBeInstanceOf(AuthorizationError);
     await expect(
-      service.restorePrintTemplateDefault('po_terms', operator),
+      service.restorePrintTemplateDefault('po_terms', untick),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('the Edit tick alone passes the gate, whatever the role (ADR-232)', async () => {
+    const ticked = asAccess(admin, { forms: { printtpl_edit: EDIT_TICK } }, 'operator');
+    // An unknown key fails AFTER the gate — a ValidationError, not a refusal.
+    await expect(service.savePrintTemplate('not_a_key', 'x', ticked)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    await expect(service.restorePrintTemplateDefault('not_a_key', ticked)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
+  it('an L7 Auditor is refused even with the Edit tick stored', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, forms: { printtpl_edit: EDIT_TICK } }, 'viewer');
+    await expect(
+      service.savePrintTemplate('po_terms', 'nope', auditor),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
 

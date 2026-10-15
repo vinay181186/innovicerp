@@ -21,6 +21,7 @@ import {
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { DEFAULT_FINAL_QC_OP } from '../../lib/jc-default-qc';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -869,8 +870,8 @@ describe('job-cards service — writes (ADR-051)', () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it('createJobCard is write-role gated (viewer rejected)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('createJobCard is tick gated (L1 Production viewer rejected)', async () => {
+    const viewer = asAccess(admin, { departments: { production: 'L1' } }, 'viewer');
     await expect(
       service.createJobCard(
         {
@@ -903,5 +904,31 @@ describe('job-cards service — writes (ADR-051)', () => {
     createdIds.push(jc.id);
     await service.deleteJobCard(jc.id, admin);
     await expect(service.getJobCard(jc.id, admin)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): deleting any record needs L6 Super Admin. No
+// department tier — not even L5 Department Admin — and no page tick grants it.
+describe('deleteJobCard — Super Admin only (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('L5 Production Department Admin cannot delete Job Cards — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+    await expect(service.deleteJobCard(UNKNOWN_ID, l5, 'test')).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor cannot delete Job Cards — AuthorizationError', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { production: 'L5' } });
+    await expect(service.deleteJobCard(UNKNOWN_ID, auditor, 'test')).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('Super Admin passes the delete gate (unknown id → NotFoundError, not refused)', async () => {
+    await expect(service.deleteJobCard(UNKNOWN_ID, admin, 'test')).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });

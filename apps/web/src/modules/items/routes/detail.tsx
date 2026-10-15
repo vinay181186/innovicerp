@@ -47,7 +47,7 @@ import {
   PendingChangeChip,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { STORE_TXN_SOURCE_LABELS } from '@/modules/store-transactions/lib/txn-labels';
@@ -127,11 +127,8 @@ function ItemDetailPage(): React.JSX.Element {
   // Tier-driven, per department (Store). Was admin/manager for Edit and
   // admin-only for Delete.
   const canEdit = perms.edit;
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
-  // edit without approve; L4 has approve without edit. Admin-only was locking
-  // out the tier meant to run the department.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   // "Raise PR" opens a new Purchase Request for this item — gated on the PR's
   // own entry right, the same gate /purchase-requests/new enforces.
   const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;

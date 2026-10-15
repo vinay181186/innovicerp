@@ -30,7 +30,7 @@
 import type { DocumentEditChange, Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -104,10 +104,11 @@ function OperatorDetailPage(): React.JSX.Element {
   };
 
   // Tier-driven, per department (operator_create sits in Production). Edit = edit
-  // (L3+); Delete = the edit+approve pair only L5+ hold.
+  // (L3+); Delete = Super Admin only (ADR-232).
   const perms = effectiveFormPerms(eff, 'operator_create');
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`

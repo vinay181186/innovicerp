@@ -6,14 +6,14 @@
 // Print and Download Excel run the SAME click logic as the old row buttons
 // (usePrintJc / useExcelJc: lazy fetch, spinner, popup-blocked alert, one
 // print per click); their Promise keeps the ⋯ busy until the job has fired.
-// Assign Task opens the same modal the old button did; it is hidden for a
-// viewer, whom the server refuses.
+// Assign Task opens the same modal the old button did; it shows only to a
+// user holding the Job Card page's Advance right (ADR-232).
 
 import type { JobCardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { RowActions } from '@/ui/layout';
 import { useExcelJc } from './excel-jc-button';
@@ -36,7 +36,9 @@ export function JcRowMenu({
 }): React.JSX.Element {
   const print = usePrintJc(jc, draft);
   const excel = useExcelJc(jc);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  // ADR-232: Assign = the page's Advance right.
+  const canAssign = effectiveFormPerms(eff, 'jc_create').advance;
   const [assigning, setAssigning] = useState(false);
 
   return (
@@ -54,7 +56,7 @@ export function JcRowMenu({
             label: 'Assign Task',
             icon: 'user-round',
             group: 'assign',
-            hidden: !me || me.role === 'viewer',
+            hidden: !canAssign,
             onSelect: () => setAssigning(true),
           },
         ]}

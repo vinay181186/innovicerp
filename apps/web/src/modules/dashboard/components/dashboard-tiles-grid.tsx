@@ -50,7 +50,7 @@ export function DashboardTilesGrid() {
       </div>
       {data.tiles.length === 0 ? (
         <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-          No KPI tiles configured for your role.
+          No KPI tiles configured for your access.
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">

@@ -5,7 +5,7 @@
 import type { QcLineDetailResponse } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
@@ -23,16 +23,12 @@ export function LineDetailModal({
   // `me` is still needed for the company id the upload path writes against.
   const { data: me } = useSession();
   // Tier-driven, per department (QC), replacing the old role list
-  // (admin/manager/qc). Attaching a document is `entry`; removing one is the
-  // L5-and-above pair — see `canDelete` below.
+  // (admin/manager/qc). Attaching a document is `entry`; removing one is
+  // Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'qcdocs_upload');
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3
-  // Editor has edit without approve; L4 Approver has approve without edit. The
-  // owner decided L5 gets delete rights — admin-only was locking out the very
-  // tier meant to run the department.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   const { data, isLoading, isError, error } = useQcLineDetail(jobCardId);
 
   return (

@@ -12,9 +12,7 @@
 // Audit (ADR-197): CREATE / EDIT / DELETE rows land in activity_log with
 // entity 'MlBom' + entityId, so the BOM's History panel finds them.
 
-import { requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
-import { AuthorizationError } from '../../lib/errors';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireCompany } from './helpers';
 import { listMlBomsTx, loadMlBomDetail, nextMlBomCode } from './reads';
@@ -75,7 +73,6 @@ export async function createMlBom(
   input: CreateMlBomInput,
   user: AuthContext,
 ): Promise<MlBomDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => createMlBomTx(tx, companyId, input, user));
@@ -86,7 +83,6 @@ export async function updateMlBom(
   input: UpdateMlBomInput,
   user: AuthContext,
 ): Promise<MlBomDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => updateMlBomTx(tx, companyId, id, input, user));
@@ -97,25 +93,18 @@ export async function makeDefaultMlBom(
   input: MakeDefaultMlBomInput,
   user: AuthContext,
 ): Promise<MlBomDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, FORM, 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => makeDefaultMlBomTx(tx, companyId, id, input, user));
 }
 
-/** Same rule as BOM Master's delete: admin only, with Edit + Approve. */
+/** Same rule as BOM Master's delete: L6 Super Admin only (ADR-232). */
 export async function softDeleteMlBom(
   id: string,
   user: AuthContext,
   reason?: string | null,
 ): Promise<MlBom> {
-  if (user.role !== 'admin') {
-    throw new AuthorizationError(
-      'You do not have permission to delete Multi-Level BOMs. Ask an admin.',
-    );
-  }
-  await requireFormAccess(user, FORM, 'edit');
-  await requireFormAccess(user, FORM, 'approve');
+  await requireDeleteRight(user, 'Multi-Level BOMs');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => softDeleteMlBomTx(tx, companyId, id, user, reason ?? null));
 }

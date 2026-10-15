@@ -18,6 +18,7 @@ import {
   vendors,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import * as poService from '../purchase-orders/service';
 import { deliveryChallansRoutes } from './routes';
@@ -144,7 +145,8 @@ describe('delivery-challans routes', () => {
   });
 
   it('GET /delivery-challans returns 200 + viewer role works (read-only)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: a Purchase L1 (View only) matrix, not a spoofed role.
+    const viewer = asAccess(admin, { departments: { purchase: 'L1' } }, 'viewer');
     app = await buildApp(viewer);
     const res = await app.inject({ method: 'GET', url: '/delivery-challans?limit=10' });
     expect(res.statusCode).toBe(200);
@@ -232,7 +234,8 @@ describe('delivery-challans routes', () => {
 
   it('POST /delivery-challans returns 403 when viewer attempts to create', async () => {
     const po = await freshJwPo('PR3');
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: no Entry tick on OSP Outward DC (Purchase L1) — refused whatever the role.
+    const viewer = asAccess(admin, { departments: { purchase: 'L1' } });
     app = await buildApp(viewer);
     const res = await app.inject({
       method: 'POST',
@@ -344,7 +347,8 @@ describe('delivery-challans routes', () => {
 
   it('POST /delivery-challans/:id/receive returns 403 for viewer', async () => {
     const dc = await createIssuedDcViaRoute('RCV2');
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: View only on Purchase and Store — no Entry on the DC or the GRN.
+    const viewer = asAccess(admin, { departments: { purchase: 'L1', store: 'L1' } });
     await app.close();
     app = await buildApp(viewer);
     const res = await app.inject({

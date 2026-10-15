@@ -40,7 +40,7 @@ import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { ConfirmDialog } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu } from '@/ui/layout';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -151,10 +151,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // Tier-driven, per department (Purchase). Raising the PO off this PR is an
   // entry right; changing the PR itself is an edit right.
   const canEdit = perms.edit;
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // only L5 Department Admin and above hold: edit AND approve. L3 has edit
-  // without approve; L4 has approve without edit.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   const linkedToPo = detail.poId !== null;
   // What is still to order. A PR for 100 with a PO for 10 has 90 left, so
   // "has a PO" is no longer the test for whether another PO may be raised.
@@ -266,7 +264,12 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                     setCloseOpen(true);
                   },
                 },
-                { label: 'Assign Task', onClick: () => setAssignOpen(true) },
+                // ADR-232: Assign Task = the page's Advance right.
+                {
+                  label: 'Assign Task',
+                  hidden: !perms.advance,
+                  onClick: () => setAssignOpen(true),
+                },
                 {
                   label: 'Edit',
                   hidden: !(canEdit && !linkedToPo),

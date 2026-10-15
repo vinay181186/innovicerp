@@ -9,9 +9,8 @@ import {
 import type { DocumentEditStagedResult } from '@innovic/shared';
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
-import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
@@ -250,7 +249,6 @@ export async function createClient(
   input: CreateClientInput,
   user: AuthContext,
 ): Promise<ClientSaveResponse> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'entry');
   const companyId = requireCompany(user);
   // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
@@ -417,7 +415,6 @@ export async function createClientsBulk(
 ): Promise<BulkCreateClientsResponse> {
   const mode = input.mode ?? 'insert';
   const dryRun = input.dryRun ?? false;
-  requireWriteRole(user);
   // Insert raises customers (`entry`); Update Existing changes saved ones (`edit`).
   await requireFormAccess(user, 'client_create', mode === 'update' ? 'edit' : 'entry');
   const companyId = requireCompany(user);
@@ -648,7 +645,6 @@ export async function updateClient(
   // Access checks in the public wrapper, not the tx body, so the edit-approval
   // engine's applyEdit can replay an approved edit for an approver who holds
   // `approve` but not `edit`.
-  requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'edit');
   return withUserContext(user, (tx) => updateClientTx(tx, id, input, user));
 }
@@ -724,7 +720,6 @@ export async function updateClientOrStage(
   input: UpdateClientInput,
   user: AuthContext,
 ): Promise<ClientSaveResponse | DocumentEditStagedResult> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'client_create', 'edit');
   const companyId = requireCompany(user);
 
@@ -754,9 +749,8 @@ export async function softDeleteClient(
   reason: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
-  await requireFormAccess(user, 'client_create', 'edit');
-  await requireFormAccess(user, 'client_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Customers');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // The whole row, read BEFORE the update — the "before" of Before → After.

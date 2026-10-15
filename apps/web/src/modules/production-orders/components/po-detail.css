@@ -91,6 +91,22 @@
   color: var(--blue);
 }
 
+/* ── Short Closed Qty (ADR-233) ──────────────────────────────────────────────
+   Takes Available to Close's cell once the order has ended under target. Same
+   shape as `.po-act`, in the orange warning tone, so the pieces that will
+   never reach stock stand out without reading as a result. */
+.po-detail .cl-grid > .cl-row > .cl-fact.po-short {
+  border-left: 3px solid var(--orange);
+  padding-left: var(--sp-3);
+}
+.po-detail .cl-fact.po-short > .cl-fact-k {
+  color: var(--text2);
+  font-weight: 600;
+}
+.po-detail .cl-fact.po-short > .cl-fact-v {
+  color: var(--orange2);
+}
+
 /* JC Finished: a short progress track in front of the count. */
 .po-detail .po-bar {
   display: inline-block;
@@ -128,7 +144,7 @@
 }
 
 /* ── Tabs ────────────────────────────────────────────────────────────────── */
-/* "20 / 40 credited" at the right end of the tab strip. TabStrip has no slot
+/* "20 / 40 received" at the right end of the tab strip. TabStrip has no slot
    for it, so it sits over the strip's right end; the strip is a `.panel` with
    a bottom gap, which the meta leaves alone. */
 .po-detail .po-tabs {

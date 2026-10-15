@@ -16,7 +16,7 @@ import type {
 } from '@innovic/shared';
 import { fileRegistry, salesOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -259,10 +259,9 @@ export async function createSoDocument(
   input: CreateSoDocumentInput,
   user: AuthContext,
 ): Promise<SoDocumentFile> {
+  // ADR-232: the so_create Entry tick decides who may upload.
+  await requireFormAccess(user, SO_DOCS_FORM, 'entry');
   const companyId = requireCompany(user);
-  if (user.role === 'viewer') {
-    throw new AuthorizationError('Viewers cannot upload documents');
-  }
   return withUserContext(user, async (tx) => {
     const inserted = await tx
       .insert(fileRegistry)
@@ -317,13 +316,8 @@ export async function deleteSoDocument(
   /** ADR-197 — why the file goes (the route requires it). */
   reason?: string | null,
 ): Promise<{ id: string }> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
-  // edit but not approve; L4 Approver has approve but not edit. Exactly how
-  // deleteQcDocument states it, and for the same reason — removing a document
-  // from the record is a department-admin act, not an everyday edit.
-  await requireFormAccess(user, SO_DOCS_FORM, 'edit');
-  await requireFormAccess(user, SO_DOCS_FORM, 'approve');
+  // ADR-232: deleting any record — an uploaded file too — needs L6 Super Admin.
+  await requireDeleteRight(user, 'SO documents');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const stamp = softDeleteStamp(user);

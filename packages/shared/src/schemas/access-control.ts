@@ -406,6 +406,12 @@ export function effectiveFormPerms(
   // L3. See `priceStartTier` for why.
   const tierPrice = form && tierKey ? tierSeesPrice(form.dept, tierKey) : false;
 
+  // ADR-232: L7 Auditor reads everything and writes nothing. The flag used to
+  // only ADD view, so an auditor who still had a department tier stored got
+  // that tier's write rights here — the derived role 'viewer' was the only
+  // thing stopping them. The role no longer gates writes, so the matrix must.
+  const ro = eff.auditor;
+
   return {
     view: eff.auditor || fromTier.view || fromForm.view,
     // Each OFF switch subtracts its own action AFTER the tier ∪ per-form-grant
@@ -413,12 +419,12 @@ export function effectiveFormPerms(
     // create / No edit / No approve" on this one page meant it, so it beats the
     // tier just like Hide-price does. Grants can only ever ADD; these are the
     // sanctioned way to take one action back for one page.
-    entry: (fromTier.entry || fromForm.entry) && !fromForm.entryOff,
+    entry: !ro && (fromTier.entry || fromForm.entry) && !fromForm.entryOff,
     // ADR-231: only "No advance" removes Advance. "No edit" leaves it, so an L3
     // who must not rewrite a saved paper can still close it.
-    advance: (fromTier.advance || fromForm.advance) && !fromForm.advanceOff,
-    edit: (fromTier.edit || fromForm.edit) && !fromForm.editOff,
-    approve: (fromTier.approve || fromForm.approve) && !fromForm.approveOff,
+    advance: !ro && (fromTier.advance || fromForm.advance) && !fromForm.advanceOff,
+    edit: !ro && (fromTier.edit || fromForm.edit) && !fromForm.editOff,
+    approve: !ro && (fromTier.approve || fromForm.approve) && !fromForm.approveOff,
     // Auditors read everything, money included; otherwise money follows the
     // department's starting tier or an explicit per-form "see price" tick.
     price: !fromForm.priceOff && (eff.auditor || tierPrice || fromForm.price),
@@ -429,6 +435,14 @@ export function effectiveFormPerms(
     approveOff: fromForm.approveOff,
     priceOff: fromForm.priceOff,
   };
+}
+
+// ADR-232 (owner, 2026-10-15): deleting ANY record — document, master or
+// uploaded file — needs L6 Super Admin. No tier or per-page tick grants it.
+// Cancel, short close, reverse and close are not deletes; they keep their own
+// rights. Web buttons and the API guard both ask this one question.
+export function canDeleteRecords(eff: EffectiveAccess | null | undefined): boolean {
+  return !!eff?.fullAccess;
 }
 
 export function canViewForm(

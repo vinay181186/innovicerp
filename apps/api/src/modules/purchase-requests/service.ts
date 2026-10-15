@@ -30,7 +30,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -1753,11 +1753,8 @@ export async function softDeletePurchaseRequest(
   reason: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // only L5 Department Admin and above hold: edit AND approve. L3 has edit
-  // without approve; L4 has approve without edit.
-  await requireFormAccess(user, 'pr_create', 'edit');
-  await requireFormAccess(user, 'pr_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin — no tier or tick grants it.
+  await requireDeleteRight(user, 'Purchase Requests');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

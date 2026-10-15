@@ -35,6 +35,7 @@ export {
   // the link, so a hidden button and a refused request can never disagree.
   canDownloadDrawings,
   canAdvanceForm,
+  canDeleteRecords,
   canEditForm,
   canApproveForm,
   effectiveFormPerms,

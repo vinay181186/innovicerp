@@ -24,7 +24,7 @@
 import type { CostCenter, DocumentEditChange } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -73,10 +73,10 @@ function CostCenterDetailPage(): React.JSX.Element {
   const pendingEdit = usePendingEditForDoc('CostCenter', data?.id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
-  // Tier-driven (cc_create, Finance). Edit -> edit; Delete -> edit AND approve.
+  // Tier-driven (cc_create, Finance). Edit -> edit; Delete -> Super Admin (ADR-232).
   const perms = effectiveFormPerms(eff, 'cc_create');
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the

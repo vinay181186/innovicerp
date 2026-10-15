@@ -4,6 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { storeTransactionsRoutes } from './routes';
 
@@ -88,7 +89,8 @@ describe('store-transactions routes', () => {
   });
 
   it('viewer role can read store-transactions (read-only ledger)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    // ADR-232: a Store L1 (View only) matrix, not a spoofed role.
+    const viewer = asAccess(admin, { departments: { store: 'L1' } }, 'viewer');
     app = await buildApp(viewer);
     const res = await app.inject({ method: 'GET', url: '/store-transactions?limit=5' });
     expect(res.statusCode).toBe(200);

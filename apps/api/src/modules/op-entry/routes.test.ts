@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, jcOps, jobCards, opLog, runningOps, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { opEntryRoutes } from './routes';
 
@@ -144,7 +145,7 @@ describe('op-entry routes', () => {
     await app.close();
 
     // viewer should be blocked
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    const viewer = asAccess(admin, { departments: { production: 'L1' } }, 'viewer');
     app = await buildApp(viewer);
     const denied = await app.inject({
       method: 'POST',

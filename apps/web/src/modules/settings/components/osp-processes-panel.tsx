@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, useSaveKey, withSaveKey } from '@/lib/use-save-key';
+import { canDeleteRecords, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { useVendorsList } from '@/modules/vendors/api';
 import { RowMenu } from '@/ui/data';
@@ -84,7 +85,11 @@ const emptyEdit: EditState = {
 
 export function OspProcessesPanel(): React.JSX.Element {
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Owner D3 (ADR-232): OSP process setup is a system panel — Super Admin only
+  // (server: requireAdminRole on create / update, requireDeleteRight on delete).
+  const canWrite = me?.role === 'admin';
+  const { data: eff } = useMyAccess();
+  const canDelete = canDeleteRecords(eff);
   const { data, isLoading, isError, error } = useOspProcesses();
   const [vendorSearch, setVendorSearch] = useState('');
   const { data: vendorsList, isFetching: vendorsLoading } = useVendorsList(
@@ -255,6 +260,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                               label: 'Delete',
                               icon: 'trash-2',
                               group: 'danger',
+                              hidden: !canDelete,
                               onSelect: () => setRemoving(p),
                             },
                           ]}

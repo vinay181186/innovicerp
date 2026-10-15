@@ -72,11 +72,18 @@ export function useProductionOrdersList(
   });
 }
 
-export function useProductionOrder(id: string | undefined) {
+/** `options.refetchInterval` — the detail PAGE passes the ADR-230 safety
+ *  refresh (ADR-233); the Close and Edit screens do not, so a form source
+ *  never polls. */
+export function useProductionOrder(
+  id: string | undefined,
+  options?: Pick<UseQueryOptions<ProductionOrderDetail>, 'refetchInterval'>,
+) {
   return useQuery<ProductionOrderDetail>({
     queryKey: id ? productionOrdersKeys.detail(id) : productionOrdersKeys.detail('__missing__'),
     queryFn: () => apiFetch<ProductionOrderDetail>(`/production-orders/${id}`),
     enabled: Boolean(id),
+    ...options,
   });
 }
 

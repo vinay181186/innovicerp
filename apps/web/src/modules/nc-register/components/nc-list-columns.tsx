@@ -293,12 +293,14 @@ function Field({
  *  all living on the NC detail page (they link there), plus Assign Task. The
  *  workflow action follows the card's exact precedence so a row shows the one
  *  it showed before: Dispose (pending) → Close Rework (disposed + rework) →
- *  CAPA (disposed/… with no CAPA yet). Assign shows for any open NC. */
+ *  CAPA (disposed/… with no CAPA yet). Assign shows for any open NC to a user
+ *  holding the NC page's Advance right (ADR-232). */
 export function ncRowMenu(
   nc: NcRegisterListItem,
   opts: {
     canDispose: boolean;
     canCreateCapa: boolean;
+    canAssign: boolean;
     onAssign: (nc: NcRegisterListItem) => void;
   },
 ): RowMenuItem[] {
@@ -319,7 +321,7 @@ export function ncRowMenu(
     items.push({ key: 'capa', label: 'Create CAPA', icon: 'activity', group: 'workflow', to });
   }
 
-  if (nc.status !== 'closed') {
+  if (opts.canAssign && nc.status !== 'closed') {
     items.push({
       key: 'assign',
       label: 'Assign Task',

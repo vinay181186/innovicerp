@@ -7,8 +7,8 @@
 //
 // What stays (DATA + RULES unchanged): the same query and cache, the same
 // prodorder_create access matrix (view gate + entry gate on New), the
-// All / Open / Closed / Short Closed status dropdown with its counts, and the
-// `search` / `status` URL params. Search is server-side (`?search=` matches PO
+// All / Open / Partly Closed / Closed / Short Closed status dropdown with its
+// counts, and the `search` / `status` URL params. Search is server-side (`?search=` matches PO
 // code, plan code, POL, item code / name, JC code and SO code — every text
 // column this table shows; see the API contract). 25 rows a page (ADR-201):
 // only the page on screen is loaded, and the column sort / filters (▾) run on
@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
@@ -42,6 +43,11 @@ import { PO_LIST_DETAIL_IDS, poListColumns, poRowTint } from '../components/po-l
 // and the PR list). Module-level constants keep the query keys stable.
 const COUNT_ALL: ListProductionOrdersQuery = { limit: 1, offset: 0 };
 const COUNT_OPEN: ListProductionOrdersQuery = { status: 'open', limit: 1, offset: 0 };
+const COUNT_PARTLY_CLOSED: ListProductionOrdersQuery = {
+  status: 'partially_closed',
+  limit: 1,
+  offset: 0,
+};
 const COUNT_CLOSED: ListProductionOrdersQuery = { status: 'closed', limit: 1, offset: 0 };
 // ADR-182 — orders stopped at some stage. Its own tile so a stopped order is
 // never mistaken for a finished one.
@@ -112,11 +118,15 @@ function ProductionOrdersListPage(): React.JSX.Element {
     [search.search, search.status, sf.param, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useProductionOrdersList(query);
+  // ADR-233 — the ADR-230 safety refresh, as on the JC / SO / PO lists.
+  const { data, isLoading, isFetching, isError, error } = useProductionOrdersList(query, {
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
   useClampPage(search.page, data?.total, gotoPage);
 
   const allCount = useProductionOrdersList(COUNT_ALL).data?.total ?? 0;
   const openCount = useProductionOrdersList(COUNT_OPEN).data?.total ?? 0;
+  const partlyClosedCount = useProductionOrdersList(COUNT_PARTLY_CLOSED).data?.total ?? 0;
   const closedCount = useProductionOrdersList(COUNT_CLOSED).data?.total ?? 0;
   const shortClosedCount = useProductionOrdersList(COUNT_SHORT_CLOSED).data?.total ?? 0;
 
@@ -181,21 +191,18 @@ function ProductionOrdersListPage(): React.JSX.Element {
             options={[
               { value: '', label: `All (${allCount})` },
               { value: 'open', label: `Open (${openCount})` },
+              // ADR-233 — Partly Closed is a real status the server filter
+              // accepts (productionOrderStatusSchema); it used to be reachable
+              // only through a link that already carried it. Its own count now.
+              {
+                value: 'partially_closed',
+                label: `${PRODUCTION_ORDER_STATUS_LABEL.partially_closed} (${partlyClosedCount})`,
+              },
               { value: 'closed', label: `Closed (${closedCount})` },
               {
                 value: 'short_closed',
                 label: `${PRODUCTION_ORDER_STATUS_LABEL.short_closed} (${shortClosedCount})`,
               },
-              // Partly Closed never had a tile; it stays reachable only through
-              // a link that already carries it, so the box can still show it.
-              ...(search.status === 'partially_closed'
-                ? [
-                    {
-                      value: 'partially_closed',
-                      label: PRODUCTION_ORDER_STATUS_LABEL.partially_closed,
-                    },
-                  ]
-                : []),
             ]}
             onChange={(e) =>
               setStatusFilter(

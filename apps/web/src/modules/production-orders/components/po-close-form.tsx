@@ -9,10 +9,11 @@
 //
 // Layout (pro-routecard-create-edit-mockup.html frame 3, approved 2026-10-06):
 // the old running line became a four-cell account on the ClusterGrid —
-// PRO Qty | JC Finished | Credited Qty | Available to Close (green result) —
+// PRO Qty | JC Finished | Stock Received | Available to Close (green result) —
 // then Qty to Close★ and Remarks, with Pending and Lost Qty in the help line.
-// Finish Short ticked: PRO Qty | Credited Qty | Available to Close | Lost Qty
-// (orange), and Reason★ takes the whole row. Rules, messages, the Finish Short
+// Finish Short ticked: PRO Qty | Stock Received | Available to Close | Lost Qty
+// (orange), and Reason★ takes the whole row. ADR-233: Finish Short now asks a
+// ConfirmDialog first ("X go to stock, Y short-closed (Z lost)"). Rules, messages, the Finish Short
 // sentence and the button are unchanged. Used by the detail page's Close Qty…
 // dialog and by routes/close.tsx.
 //
@@ -22,7 +23,8 @@
 
 import type { ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Lock } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ConfirmDialog } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
 import { useCloseProductionOrder } from '../api';
 import './po-edit.css';
@@ -41,6 +43,10 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
   const [finish, setFinish] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // ADR-233 — Finish Short ends the order for good, so it asks once more
+  // ("X go to stock, Y short-closed"). An ordinary partial close stays one click.
+  const [askFinish, setAskFinish] = useState(false);
+  const inFlight = useRef(false);
 
   // The order refetches a lower availableToClose after each partial close while
   // this form stays mounted (detail page). Re-seed the qty field to the new
@@ -65,8 +71,11 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
   // still needs a valid qty in [1, available].
   const canSubmit = (finish ? remarksValid : qtyValid) && !closeMut.isPending;
 
-  const onSubmit = (): void => {
-    if (!canSubmit) return;
+  const submit = (): void => {
+    // A double-click on the confirm fires twice inside one render, where
+    // canSubmit is still stale — the ref is read at call time.
+    if (!canSubmit || inFlight.current) return;
+    inFlight.current = true;
     setError(null);
     closeMut.mutate(
       {
@@ -76,6 +85,9 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           : { qty: qtyNum, ...(remarks.trim() ? { remarks: remarks.trim() } : {}) },
       },
       {
+        onSettled: () => {
+          inFlight.current = false;
+        },
         onSuccess: (closed) => onClosed?.(closed),
         onError: (e) =>
           setError(
@@ -83,6 +95,15 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           ),
       },
     );
+  };
+
+  const onSubmit = (): void => {
+    if (!canSubmit) return;
+    if (finish) {
+      setAskFinish(true);
+      return;
+    }
+    submit();
   };
 
   // The account's figures, worked out once so the cells, the help lines, the
@@ -98,8 +119,11 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
   // the Lost Qty the cell shows; otherwise just the figure.
   const lostSum =
     po.orderQty - credited - po.availableToClose === lostOnFinish
-      ? `${po.orderQty} − ${credited} credited − ${po.availableToClose} credited now = ${lostOnFinish} recorded as lost`
+      ? `${po.orderQty} − ${credited} received − ${po.availableToClose} received now = ${lostOnFinish} recorded as lost`
       : `${lostOnFinish} recorded as lost`;
+  // ADR-233 `Short Closed Qty` once finished = Order − Stock Received after
+  // this close (the server's productionOrderShortClosedQty on a closed order).
+  const shortOnFinish = Math.max(0, po.orderQty - credited - po.availableToClose);
 
   return (
     <div className="po-close-form">
@@ -111,7 +135,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         {finish ? (
           <Cluster>
             <ClusterFact num label="PRO Qty" value={po.orderQty} />
-            <ClusterFact num label="Credited Qty" value={credited} />
+            <ClusterFact num label="Stock Received" value={credited} />
             <ClusterFact num label="Available to Close" value={po.availableToClose} />
             <ClusterFact
               num
@@ -125,12 +149,12 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           <Cluster>
             <ClusterFact num label="PRO Qty" value={po.orderQty} />
             <ClusterFact num label="JC Finished" value={po.jcFinishedQty} />
-            <ClusterFact num label="Credited Qty" value={credited} />
+            <ClusterFact num label="Stock Received" value={credited} />
             <ClusterFact
               num
               lead
               label="Available to Close"
-              title="Finished on the Job Card and not yet credited"
+              title="Finished on the Job Card and not yet put into stock"
               value={po.availableToClose}
             />
           </Cluster>
@@ -146,7 +170,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
               label="Qty to Close"
               required
               htmlFor={`close-qty-${po.id}`}
-              help={`Credited to stock · 1 to ${max}`}
+              help={`Goes into stock · 1 to ${max}`}
             >
               <input
                 id={`close-qty-${po.id}`}
@@ -208,7 +232,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           <b style={{ color: 'var(--amber2)' }}>Finish Short</b>
           <span className="text3">
             {' '}
-            — finish now: the {po.availableToClose} ready are credited, the other{' '}
+            — finish now: the {po.availableToClose} ready go into stock, the other{' '}
             {Math.max(0, po.remainingQty - po.availableToClose)} of {po.orderQty} are recorded as
             lost.
           </span>
@@ -252,14 +276,29 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           style={compact ? { padding: '4px 10px' } : undefined}
           title={
             finish
-              ? `Finish ${po.code}: credit the ${po.availableToClose} available, record ${Math.max(0, po.remainingQty - po.availableToClose)} lost`
-              : `Credit ${qtyValid ? qtyNum : 0} of ${po.availableToClose} to stock`
+              ? `Finish ${po.code}: put the ${po.availableToClose} available into stock, record ${Math.max(0, po.remainingQty - po.availableToClose)} lost`
+              : `Put ${qtyValid ? qtyNum : 0} of ${po.availableToClose} into stock`
           }
         >
           {closeMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}{' '}
           {finish ? 'Finish Short' : 'Close'}
         </button>
       </div>
+
+      {askFinish ? (
+        <ConfirmDialog
+          title={`Finish ${po.code} short?`}
+          message={`Finish short: ${po.availableToClose} go to stock, ${shortOnFinish} short-closed (${lostOnFinish} lost). Continue?`}
+          confirmLabel="Finish Short"
+          cancelLabel="Cancel"
+          tone="danger"
+          onCancel={() => setAskFinish(false)}
+          onConfirm={() => {
+            setAskFinish(false);
+            submit();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

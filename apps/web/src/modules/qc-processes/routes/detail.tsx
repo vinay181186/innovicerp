@@ -37,7 +37,7 @@
 import type { DocumentEditChange, QcProcess } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -85,15 +85,12 @@ function QcProcessDetailPage(): React.JSX.Element {
   const pendingEdit = usePendingEditForDoc('QcProcess', data?.id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
 
-  // Tier-driven, matching the list and the new/edit routes. Delete is not one
-  // of the four tier actions, so "L5 Department Admin and above" is expressed
-  // as the pair only L5/L6 hold: L3 Editor has edit without approve, L4
-  // Approver has approve without edit. Previously both buttons shared one
-  // admin/manager flag, so an editor could delete and a QC lead could not edit.
+  // Tier-driven, matching the list and the new/edit routes.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'qcprocess_create');
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading QC process…" />;

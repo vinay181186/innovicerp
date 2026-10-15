@@ -8,7 +8,7 @@
 import type { DesignWorkLogEntry } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { DataTable, Panel, RowMenu } from '@/ui/data';
@@ -81,12 +81,12 @@ function dayHrsColor(h: number): string {
 
 export function EntryTab(): React.JSX.Element {
   const { data: me } = useSession();
-  // Tier-driven (dsnworklog_create, Design dept). Create → entry; delete → the
-  // edit+approve pair (L5 Dept Admin and up).
+  // Tier-driven (dsnworklog_create, Design dept). Create → entry; delete → L6
+  // Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnworklog_create');
   const canAdd = perms.entry;
-  const canDelete = perms.edit && perms.approve;
+  const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
   const engineer = me?.email ?? '';
 
   const { data, isLoading } = useDesignWorkLogList({

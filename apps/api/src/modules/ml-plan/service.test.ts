@@ -15,7 +15,8 @@ import {
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { AppError, ConflictError, ValidationError } from '../../lib/errors';
+import { AppError, AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as mlBomService from '../ml-bom/service';
 import * as soService from '../sales-orders/service';
 import { shortCloseSalesOrderLine } from '../sales-orders/short-close';
@@ -281,5 +282,62 @@ describe('SO guards', () => {
     await expect(
       shortCloseSalesOrderLine(lineId, { reason: 'test' }, admin),
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): the Multi-Level Plan tick alone decides every
+// write — users.role refuses nobody. A Planning L2/L3 whose derived role is
+// 'operator' was refused by the old role check.
+describe('ml-plan — ADR-232 Access Control ticks alone decide', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+  const l2 = () => asAccess(admin, { departments: { planning: 'L2' } }, 'operator');
+  const l3 = () => asAccess(admin, { departments: { planning: 'L3' } }, 'operator');
+  const salesOnly = () => asAccess(admin, { departments: { sales: 'L5' } }, 'manager');
+  const auditor = () => asAccess(admin, { ...AUDITOR, departments: { planning: 'L5' } });
+
+  it('createMlPlan / raiseMlPlanOrders (entry): Planning L2 with role operator passes the gate', async () => {
+    await expect(
+      service.createMlPlan({ soLineId: UNKNOWN_ID, planQty: 1 }, l2()),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(
+      service.raiseMlPlanOrders(UNKNOWN_ID, { lines: [] }, l2()),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('createMlPlan / raiseMlPlanOrders: no Planning tick / auditor → AuthorizationError', async () => {
+    for (const u of [salesOnly(), auditor()]) {
+      await expect(
+        service.createMlPlan({ soLineId: UNKNOWN_ID, planQty: 1 }, u),
+      ).rejects.toBeInstanceOf(AuthorizationError);
+      await expect(service.raiseMlPlanOrders(UNKNOWN_ID, { lines: [] }, u)).rejects.toBeInstanceOf(
+        AuthorizationError,
+      );
+    }
+  });
+
+  it('updateMlPlan / refreshMlPlan / cancelMlPlan (edit): Planning L3 with role operator passes the gate', async () => {
+    await expect(service.updateMlPlan(UNKNOWN_ID, { planQty: 1 }, l3())).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.refreshMlPlan(UNKNOWN_ID, {}, l3())).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(
+      service.cancelMlPlan(UNKNOWN_ID, { reason: 'gate test' }, l3()),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('updateMlPlan / refreshMlPlan / cancelMlPlan: L2 (no edit tick) / auditor → AuthorizationError', async () => {
+    for (const u of [l2(), auditor()]) {
+      await expect(service.updateMlPlan(UNKNOWN_ID, { planQty: 1 }, u)).rejects.toBeInstanceOf(
+        AuthorizationError,
+      );
+      await expect(service.refreshMlPlan(UNKNOWN_ID, {}, u)).rejects.toBeInstanceOf(
+        AuthorizationError,
+      );
+      await expect(
+        service.cancelMlPlan(UNKNOWN_ID, { reason: 'gate test' }, u),
+      ).rejects.toBeInstanceOf(AuthorizationError);
+    }
   });
 });

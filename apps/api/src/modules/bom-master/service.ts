@@ -40,12 +40,11 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { BOM_SF_COLUMNS } from './sf-columns';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { buildImportTemplateBuffer } from '../../lib/excel-template';
 import { listItems } from '../items/service';
 import { listMaterialGrades } from '../material-grades/service';
 import { listMaterialSizes } from '../material-sizes/service';
-import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -698,7 +697,6 @@ export async function createBomMaster(
   input: CreateBomMasterInput,
   user: AuthContext,
 ): Promise<BomMasterDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'bom_create', 'entry');
   const companyId = requireCompany(user);
 
@@ -826,7 +824,6 @@ export async function updateBomMaster(
   // The `edit` access check lives HERE, not in updateBomMasterTx, so the
   // edit-approval engine's applyEdit can replay an approved edit for an approver
   // who holds `approve` but not `edit` (mirrors updatePurchaseOrder).
-  requireWriteRole(user);
   await requireFormAccess(user, 'bom_create', 'edit');
   return withUserContext(user, (tx) => updateBomMasterTx(tx, id, input, user));
 }
@@ -845,7 +842,6 @@ export async function updateBomMasterOrStage(
   input: UpdateBomMasterInput,
   user: AuthContext,
 ): Promise<BomMasterDetail | DocumentEditStagedResult> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'bom_create', 'edit');
   const companyId = requireCompany(user);
 
@@ -1114,11 +1110,8 @@ export async function softDeleteBomMaster(
   user: AuthContext,
   reason?: string | null,
 ): Promise<BomMaster> {
-  if (user.role !== 'admin') {
-    throw new AuthorizationError('You do not have permission to delete BOMs. Ask an admin.');
-  }
-  await requireFormAccess(user, 'bom_create', 'edit');
-  await requireFormAccess(user, 'bom_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'BOMs');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

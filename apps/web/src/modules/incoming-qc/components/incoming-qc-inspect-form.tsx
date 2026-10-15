@@ -29,6 +29,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { useSubmitIncomingQc } from '../api';
@@ -80,7 +81,12 @@ export function useIncomingQcInspect(props: {
   onDone: (raisedNc?: IncomingRaisedNc) => void;
 }): IncomingQcInspectState {
   const { o, onDone } = props;
-  const submit = useSubmitIncomingQc();
+  // §20 (owner D11): one idempotency key per save of this line — a re-click
+  // after a timeout reuses it; a definite answer (success or refusal) spends
+  // it. A different line is a different save, so the key turns over with it.
+  const saveKey = useSaveKey();
+  useEffect(() => saveKey.rotate(), [saveKey, o.grnLineId]);
+  const submit = useSubmitIncomingQc(saveKey);
   const session = useSession().data;
   const companyId = session?.companyId ?? null;
   // Incoming material is its OWN form key — this row sits on the QC Call

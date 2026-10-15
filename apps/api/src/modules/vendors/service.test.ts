@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { users, vendors } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { ConflictError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'T018-';
@@ -118,5 +119,31 @@ describe('vendors service', () => {
     );
     await service.softDeleteVendor(created.id, 'test cleanup', admin);
     await expect(service.getVendor(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): deleting any record needs L6 Super Admin. No
+// department tier — not even L5 Department Admin — and no page tick grants it.
+describe('softDeleteVendor — Super Admin only (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('L5 Department Admin cannot delete Vendors — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { purchase: 'L5' } }, 'manager');
+    await expect(service.softDeleteVendor(UNKNOWN_ID, 'test', l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor cannot delete Vendors — AuthorizationError', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { purchase: 'L5' } });
+    await expect(service.softDeleteVendor(UNKNOWN_ID, 'test', auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('Super Admin passes the delete gate (unknown id → NotFoundError, not refused)', async () => {
+    await expect(service.softDeleteVendor(UNKNOWN_ID, 'test', admin)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });

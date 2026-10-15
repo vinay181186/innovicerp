@@ -8,6 +8,7 @@ import { db } from '../../db/client';
 import { activityLog, items, machines, routeCards, users, vendors } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 import { computeRouteCardDiffNote } from './service';
 
@@ -262,8 +263,8 @@ describe('route-card service — CRUD', () => {
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it('createRouteCard denies viewer with AuthorizationError', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('createRouteCard denies an L1 Planning viewer with AuthorizationError', async () => {
+    const viewer = asAccess(admin, { departments: { planning: 'L1' } }, 'viewer');
     await expect(
       service.createRouteCard(
         {
@@ -282,6 +283,83 @@ describe('route-card service — CRUD', () => {
         viewer,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  // ADR-232 — the Route Card Master tick alone decides. An L2 Planning user
+  // (derived role 'operator') used to be refused by the role check.
+  it('createRouteCard: Planning L2 with role operator passes the gate (refused later: item already has a card)', async () => {
+    const planner = asAccess(admin, { departments: { planning: 'L2' } }, 'operator');
+    await expect(
+      service.createRouteCard(
+        {
+          code: `${TEST_PREFIX}GATE-L2`,
+          itemId: testItemId2,
+          ops: [
+            {
+              machineId: testMachineId,
+              operation: 'x',
+              opType: 'process',
+              cycleTimeMin: 1,
+              qcRequired: false,
+            },
+          ],
+        },
+        planner,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('createRouteCard: no Planning tick / auditor → AuthorizationError', async () => {
+    const input = {
+      code: `${TEST_PREFIX}GATE-NO`,
+      itemId: testItemId2,
+      ops: [
+        {
+          machineId: testMachineId,
+          operation: 'x',
+          opType: 'process' as const,
+          cycleTimeMin: 1,
+          qcRequired: false,
+        },
+      ],
+    };
+    const prodOnly = asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { planning: 'L5' } });
+    await expect(service.createRouteCard(input, prodOnly)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.createRouteCard(input, auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('updateRouteCard: Planning L3 with role operator passes the gate; L2 / auditor refused', async () => {
+    const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+    const input = {
+      code: `${TEST_PREFIX}GATE-UPD`,
+      itemId: testItemId2,
+      ops: [
+        {
+          machineId: testMachineId,
+          operation: 'x',
+          opType: 'process' as const,
+          cycleTimeMin: 1,
+          qcRequired: false,
+        },
+      ],
+    };
+    const l3 = asAccess(admin, { departments: { planning: 'L3' } }, 'operator');
+    const l2 = asAccess(admin, { departments: { planning: 'L2' } }, 'operator');
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { planning: 'L5' } });
+    await expect(service.updateRouteCard(UNKNOWN_ID, input, l3)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.updateRouteCard(UNKNOWN_ID, input, l2)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.updateRouteCard(UNKNOWN_ID, input, auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('createRouteCard supports OSP op with FK vendor', async () => {
@@ -594,7 +672,7 @@ describe('route-card service — CRUD', () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('softDeleteRouteCard denies manager (admin-only)', async () => {
+  it('softDeleteRouteCard denies an L5 Planning Department Admin (Super Admin only, ADR-232)', async () => {
     const it = await db
       .insert(items)
       .values({
@@ -624,8 +702,12 @@ describe('route-card service — CRUD', () => {
       },
       admin,
     );
-    const manager: AuthContext = { ...admin, role: 'manager' };
+    const manager = asAccess(admin, { departments: { planning: 'L5' } }, 'manager');
     await expect(service.softDeleteRouteCard(created.id, manager)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { planning: 'L5' } });
+    await expect(service.softDeleteRouteCard(created.id, auditor)).rejects.toBeInstanceOf(
       AuthorizationError,
     );
   });

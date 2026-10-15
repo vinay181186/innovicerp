@@ -15,11 +15,11 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Pencil, Printer } from 'lucide-react';
 import { Fragment, useMemo, useRef, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { COMPANY_PAN } from '@/lib/print/doc-print';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import type { SheetField } from '@/lib/print/sheet-print';
-import { useSession } from '@/lib/session';
 import { statusText } from '@/lib/status-text';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ConfirmDialog } from '@/ui/feedback';
@@ -85,8 +85,12 @@ function lastEditLabel(t: EffectivePrintTemplate): string {
 }
 
 function PrintTemplatesPage(): React.JSX.Element {
-  const { data: me } = useSession();
-  const isAdmin = me?.role === 'admin';
+  // ADR-232 (owner D4): the Print Templates ticks decide — View opens the
+  // page, Edit saves / resets a block (server: requireFormAccess edit).
+  const { data: eff } = useMyAccess();
+  const tplPerms = effectiveFormPerms(eff, 'printtpl_edit');
+  const canOpen = tplPerms.view;
+  const canEditTpl = tplPerms.edit;
 
   const [doc, setDoc] = useState<PrintDocType>('PO');
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -102,12 +106,15 @@ function PrintTemplatesPage(): React.JSX.Element {
     run: () => void;
   } | null>(null);
 
-  const { data, isLoading, isError } = usePrintTemplates({ enabled: isAdmin });
+  const { data, isLoading, isError } = usePrintTemplates({ enabled: canOpen });
   const save = useSavePrintTemplate();
   const restore = useRestorePrintTemplateDefault();
 
   const allTemplates = useMemo(() => data?.items ?? [], [data]);
-  const docTemplates = useMemo(() => allTemplates.filter((t) => t.doc === doc), [allTemplates, doc]);
+  const docTemplates = useMemo(
+    () => allTemplates.filter((t) => t.doc === doc),
+    [allTemplates, doc],
+  );
   const sample = useMemo(() => sampleDataFor(doc), [doc]);
   const allowedVars = PRINT_TEMPLATE_VARS[doc];
   // The GRN is its own shape: an INWARD receipt, so it prints received /
@@ -167,6 +174,7 @@ function PrintTemplatesPage(): React.JSX.Element {
   const unknownVars = editingKey ? unknownTemplateVars(draft, allowedVars) : [];
 
   function startEdit(t: EffectivePrintTemplate): void {
+    if (!canEditTpl) return;
     setEditingKey(t.templateKey);
     setDraft(t.content);
   }
@@ -176,10 +184,7 @@ function PrintTemplatesPage(): React.JSX.Element {
   }
   function doSave(): void {
     if (!editingKey) return;
-    save.mutate(
-      { key: editingKey, content: draft },
-      { onSuccess: () => cancelEdit() },
-    );
+    save.mutate({ key: editingKey, content: draft }, { onSuccess: () => cancelEdit() });
   }
   function commitSave(): void {
     if (!editingKey) return;
@@ -196,7 +201,7 @@ function PrintTemplatesPage(): React.JSX.Element {
     doSave();
   }
   function resetBlock(key: string): void {
-    if (editingKey) return;
+    if (editingKey || !canEditTpl) return;
     setAsking({
       title: 'Reset this block to the factory default?',
       confirmLabel: 'Reset',
@@ -220,13 +225,13 @@ function PrintTemplatesPage(): React.JSX.Element {
     });
   }
 
-  if (!isAdmin) {
+  if (eff && !canOpen) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--sig-critical)' }}>
         <div style={{ fontSize: 28, marginBottom: 10 }}>🔒</div>
-        <div className="fw-700">Admin access required</div>
+        <div className="fw-700">No access</div>
         <div className="text3" style={{ fontSize: 12, marginTop: 6 }}>
-          Print Templates can be edited only by Admin users.
+          Print Templates is not ticked for you in Access Control.
         </div>
       </div>
     );
@@ -254,7 +259,13 @@ function PrintTemplatesPage(): React.JSX.Element {
         style={{
           position: 'relative',
           border: `2px ${isEditing ? 'solid' : 'dashed'} ${isEditing ? '#d97706' : content ? '#16a34a' : '#cbd5e1'}`,
-          background: isEditing ? '#fffbeb' : isSignature ? '#ffffff' : content ? '#f0fdf4' : '#fafafa',
+          background: isEditing
+            ? '#fffbeb'
+            : isSignature
+              ? '#ffffff'
+              : content
+                ? '#f0fdf4'
+                : '#fafafa',
           margin: isSmallCentered ? 0 : '4px 8px',
           padding: isSmallCentered ? '8px 14px' : '12px 14px',
           borderRadius: 4,
@@ -328,7 +339,9 @@ function PrintTemplatesPage(): React.JSX.Element {
               </div>
             </div>
             {unknownVars.length > 0 ? (
-              <div style={{ marginTop: 6, fontSize: 10, color: 'var(--sig-warn)', textAlign: 'left' }}>
+              <div
+                style={{ marginTop: 6, fontSize: 10, color: 'var(--sig-warn)', textAlign: 'left' }}
+              >
                 ⚠ Unknown variable{unknownVars.length > 1 ? 's' : ''}:{' '}
                 {unknownVars.map((v) => (
                   <span
@@ -352,9 +365,9 @@ function PrintTemplatesPage(): React.JSX.Element {
           <>
             <div
               onClick={() => startEdit(t)}
-              title="Click to edit"
+              title={canEditTpl ? 'Click to edit' : undefined}
               style={{
-                cursor: 'pointer',
+                cursor: canEditTpl ? 'pointer' : 'default',
                 fontSize: isSmallCentered ? 10 : 11,
                 lineHeight: 1.6,
                 color: rendered ? '#1e293b' : '#94a3b8',
@@ -382,12 +395,14 @@ function PrintTemplatesPage(): React.JSX.Element {
                 📍 {t.position} &nbsp;·&nbsp; {lastEditLabel(t)}
               </span>
               <span style={{ display: 'flex', gap: 10 }}>
-                <span
-                  onClick={() => startEdit(t)}
-                  style={{ cursor: 'pointer', color: 'var(--cyan)' }}
-                >
-                  <Pencil size={11} className="inline" /> Edit
-                </span>
+                {canEditTpl ? (
+                  <span
+                    onClick={() => startEdit(t)}
+                    style={{ cursor: 'pointer', color: 'var(--cyan)' }}
+                  >
+                    <Pencil size={11} className="inline" /> Edit
+                  </span>
+                ) : null}
                 {t.revisionCount > 0 ? (
                   <span
                     onClick={() => setRevisionsKey(t.templateKey)}
@@ -396,7 +411,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                     🕐 {t.revisionCount} revision{t.revisionCount > 1 ? 's' : ''}
                   </span>
                 ) : null}
-                {t.isCustomised ? (
+                {t.isCustomised && canEditTpl ? (
                   <span
                     onClick={() => resetBlock(t.templateKey)}
                     style={{ cursor: 'pointer', color: 'var(--red2)', textDecoration: 'underline' }}
@@ -502,11 +517,24 @@ function PrintTemplatesPage(): React.JSX.Element {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 14, alignItems: 'start' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 240px',
+            gap: 14,
+            alignItems: 'start',
+          }}
+        >
           {/* LEFT — document mock */}
           <div
             className="panel"
-            style={{ padding: 0, background: '#fff', color: '#1e293b', borderRadius: 6, overflow: 'hidden' }}
+            style={{
+              padding: 0,
+              background: '#fff',
+              color: '#1e293b',
+              borderRadius: 6,
+              overflow: 'hidden',
+            }}
           >
             <div style={{ padding: 0, border: isPoSheet ? PO_RULE : '2px solid #333' }}>
               {isPoSheet ? (
@@ -545,7 +573,8 @@ function PrintTemplatesPage(): React.JSX.Element {
                         </div>
                         <div style={{ fontSize: 10 }}>{sample.companyAddress}</div>
                         <div style={{ fontSize: 10 }}>
-                          e-mail: {sample.companyEmail} &nbsp;&middot;&nbsp; M: {sample.companyPhone}
+                          e-mail: {sample.companyEmail} &nbsp;&middot;&nbsp; M:{' '}
+                          {sample.companyPhone}
                         </div>
                         <div style={{ fontSize: 10 }}>
                           <b>GSTIN:</b> {sample.companyGSTIN} &nbsp;&middot;&nbsp; <b>PAN:</b>{' '}
@@ -820,362 +849,455 @@ function PrintTemplatesPage(): React.JSX.Element {
                 </>
               ) : (
                 <>
-                {/* Header: the letterhead the two delivery challans and the
+                  {/* Header: the letterhead the two delivery challans and the
                     GRN still preview. Both purchase orders have their own, on
                     the shared sheet, above. */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: 14,
-                    borderBottom: '2px solid #333',
-                  }}
-                >
                   <div
                     style={{
-                      fontSize: 28,
-                      fontWeight: 900,
-                      color: '#1E4DB3',
-                      marginRight: 18,
-                      letterSpacing: -1,
-                    }}
-                  >
-                    INNOVIC
-                  </div>
-                  <div style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: '#1E4DB3', letterSpacing: 1 }}>
-                      {sample.companyName}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
-                      {sample.companyAddress}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
-                      GSTIN: {sample.companyGSTIN}
-                      {sample.companyPhone ? `   Phone: ${sample.companyPhone}` : ''}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
-                      E-Mail: {sample.companyEmail}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Document title bar */}
-                <div
-                  style={{
-                    textAlign: 'center',
-                    padding: 10,
-                    borderBottom: '2px solid #333',
-                    fontSize: 18,
-                    fontWeight: 900,
-                    letterSpacing: 3,
-                    color: DOC_COLOR[doc],
-                    background: '#f8fafc',
-                  }}
-                >
-                  {DOC_TITLE[doc]}
-                </div>
-
-                {/* Meta info row (sample) */}
-                {isGrn ? (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      borderBottom: '1px solid #999',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: 14,
+                      borderBottom: '2px solid #333',
                     }}
                   >
                     <div
-                      style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 900,
+                        color: '#1E4DB3',
+                        marginRight: 18,
+                        letterSpacing: -1,
+                      }}
                     >
-                      <b>GRN No.:</b> {sample.grnNo}
-                      <br />
-                      <b>GRN Date:</b> {sample.grnDate}
-                      <br />
-                      <b>Vendor:</b> {sample.vendorName}
+                      INNOVIC
                     </div>
-                    <div style={{ padding: '10px 14px', fontSize: 11 }}>
-                      <b>PO No.:</b> {sample.poNo}
-                      <br />
-                      <b>Vendor Challan No.:</b> {sample.dcNo}
-                      <br />
-                      <b>Invoice No.:</b> {sample.invoiceNo}
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      borderBottom: '1px solid #999',
-                    }}
-                  >
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid #999', fontSize: 11 }}>
-                      <b>DC No.:</b> {sample.dcNo}
-                      <br />
-                      <b>DC Date:</b> {sample.dcDate}
-                      <br />
-                      <b>Purpose:</b> {sample.purpose}
-                    </div>
-                    <div style={{ padding: '10px 14px', fontSize: 11 }}>
-                      <b>Recipient:</b> {sample.recipientName}
-                      <br />
-                      <b>Vehicle No.:</b> {sample.vehicleNo}
-                      <br />
-                      <b>PO No.:</b> {sample.linkedPONo}
+                    <div style={{ flex: 1, textAlign: 'center' }}>
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 800,
+                          color: '#1E4DB3',
+                          letterSpacing: 1,
+                        }}
+                      >
+                        {sample.companyName}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
+                        {sample.companyAddress}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
+                        GSTIN: {sample.companyGSTIN}
+                        {sample.companyPhone ? `   Phone: ${sample.companyPhone}` : ''}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
+                        E-Mail: {sample.companyEmail}
+                      </div>
                     </div>
                   </div>
-                )}
 
-                {/* Sample items table (NOT editable — system-generated) */}
-                <div style={{ borderBottom: '1px solid #999' }}>
+                  {/* Document title bar */}
                   <div
                     style={{
-                      padding: '6px 14px',
-                      background: '#f1f5f9',
-                      fontSize: 9,
-                      color: '#64748b',
-                      fontWeight: 700,
-                      letterSpacing: '.04em',
-                      borderBottom: '1px solid #cbd5e1',
+                      textAlign: 'center',
+                      padding: 10,
+                      borderBottom: '2px solid #333',
+                      fontSize: 18,
+                      fontWeight: 900,
+                      letterSpacing: 3,
+                      color: DOC_COLOR[doc],
+                      background: '#f8fafc',
                     }}
                   >
-                    SYSTEM-GENERATED — LINE ITEMS TABLE
+                    {DOC_TITLE[doc]}
                   </div>
+
+                  {/* Meta info row (sample) */}
                   {isGrn ? (
-                    // Received / accepted / rejected — no Rate, no Amount, no
-                    // money. Same seven columns, same order, same two sample
-                    // lines the GRN test print puts on paper.
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                      <thead>
-                        <tr style={{ background: '#f1f5f9' }}>
-                          <th
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              width: 44,
-                            }}
-                          >
-                            Sr No.
-                          </th>
-                          <th
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'left',
-                              width: 110,
-                            }}
-                          >
-                            Item Code
-                          </th>
-                          <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>
-                            Item Name
-                          </th>
-                          <th
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              width: 78,
-                            }}
-                          >
-                            Received
-                          </th>
-                          <th
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              width: 78,
-                            }}
-                          >
-                            Accepted
-                          </th>
-                          <th
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              width: 78,
-                            }}
-                          >
-                            Deviated
-                          </th>
-                          <th
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'left',
-                              width: 90,
-                            }}
-                          >
-                            QC Status
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {GRN_SAMPLE_LINES.map((l, i) => (
-                          <tr key={l.itemCode}>
-                            <td
-                              style={{
-                                padding: '5px 8px',
-                                border: '1px solid #cbd5e1',
-                                textAlign: 'center',
-                              }}
-                            >
-                              {i + 1}
-                            </td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                              {l.itemCode}
-                            </td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                              {l.itemName}
-                            </td>
-                            <td
-                              style={{
-                                padding: '5px 8px',
-                                border: '1px solid #cbd5e1',
-                                textAlign: 'center',
-                                fontWeight: 700,
-                              }}
-                            >
-                              {l.receivedQty}
-                            </td>
-                            <td
-                              style={{
-                                padding: '5px 8px',
-                                border: '1px solid #cbd5e1',
-                                textAlign: 'center',
-                                color: '#16a34a',
-                                fontWeight: 700,
-                              }}
-                            >
-                              {l.qcAcceptedQty}
-                            </td>
-                            <td
-                              style={{
-                                padding: '5px 8px',
-                                border: '1px solid #cbd5e1',
-                                textAlign: 'center',
-                                color: '#d97706',
-                                fontWeight: 700,
-                              }}
-                            >
-                              {l.qcRejectedQty}
-                            </td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
-                              {statusText(l.qcStatus)}
-                            </td>
-                          </tr>
-                        ))}
-                        <tr style={{ background: '#f8fafc' }}>
-                          <td
-                            colSpan={3}
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'right',
-                              fontWeight: 700,
-                            }}
-                          >
-                            TOTAL
-                          </td>
-                          <td
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              fontWeight: 800,
-                            }}
-                          >
-                            {sample.totalReceived}
-                          </td>
-                          <td
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              fontWeight: 800,
-                              color: '#16a34a',
-                            }}
-                          >
-                            {sample.totalAccepted}
-                          </td>
-                          <td
-                            style={{
-                              padding: 6,
-                              border: '1px solid #cbd5e1',
-                              textAlign: 'center',
-                              fontWeight: 800,
-                              color: '#d97706',
-                            }}
-                          >
-                            {sample.totalRejected}
-                          </td>
-                          <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        borderBottom: '1px solid #999',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRight: '1px solid #999',
+                          fontSize: 11,
+                        }}
+                      >
+                        <b>GRN No.:</b> {sample.grnNo}
+                        <br />
+                        <b>GRN Date:</b> {sample.grnDate}
+                        <br />
+                        <b>Vendor:</b> {sample.vendorName}
+                      </div>
+                      <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                        <b>PO No.:</b> {sample.poNo}
+                        <br />
+                        <b>Vendor Challan No.:</b> {sample.dcNo}
+                        <br />
+                        <b>Invoice No.:</b> {sample.invoiceNo}
+                      </div>
+                    </div>
                   ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                    <thead>
-                      <tr style={{ background: '#f1f5f9' }}>
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'center', width: 44 }}>
-                          Sr No.
-                        </th>
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 110 }}>
-                          Item Code
-                        </th>
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}>Item Name</th>
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'right', width: 60 }}>
-                          Qty
-                        </th>
-                        <th style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left', width: 60 }}>UOM</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>1</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>STL-PL-6</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Steel Plate 6mm</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      </tr>
-                      <tr>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>2</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>BRG-6203</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>Bearings 6203</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>100</td>
-                        <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                      </tr>
-                      <tr style={{ background: '#f8fafc' }}>
-                        <td
-                          colSpan={2}
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'right',
-                            fontWeight: 700,
-                          }}
-                        >
-                          TOTAL QTY
-                        </td>
-                        <td
-                          style={{
-                            padding: 6,
-                            border: '1px solid #cbd5e1',
-                            textAlign: 'right',
-                            fontWeight: 800,
-                          }}
-                        >
-                          {sample.totalQty}
-                        </td>
-                        <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
-                      </tr>
-                    </tbody>
-                  </table>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        borderBottom: '1px solid #999',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRight: '1px solid #999',
+                          fontSize: 11,
+                        }}
+                      >
+                        <b>DC No.:</b> {sample.dcNo}
+                        <br />
+                        <b>DC Date:</b> {sample.dcDate}
+                        <br />
+                        <b>Purpose:</b> {sample.purpose}
+                      </div>
+                      <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                        <b>Recipient:</b> {sample.recipientName}
+                        <br />
+                        <b>Vehicle No.:</b> {sample.vehicleNo}
+                        <br />
+                        <b>PO No.:</b> {sample.linkedPONo}
+                      </div>
+                    </div>
                   )}
-                </div>
+
+                  {/* Sample items table (NOT editable — system-generated) */}
+                  <div style={{ borderBottom: '1px solid #999' }}>
+                    <div
+                      style={{
+                        padding: '6px 14px',
+                        background: '#f1f5f9',
+                        fontSize: 9,
+                        color: '#64748b',
+                        fontWeight: 700,
+                        letterSpacing: '.04em',
+                        borderBottom: '1px solid #cbd5e1',
+                      }}
+                    >
+                      SYSTEM-GENERATED — LINE ITEMS TABLE
+                    </div>
+                    {isGrn ? (
+                      // Received / accepted / rejected — no Rate, no Amount, no
+                      // money. Same seven columns, same order, same two sample
+                      // lines the GRN test print puts on paper.
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                        <thead>
+                          <tr style={{ background: '#f1f5f9' }}>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                width: 44,
+                              }}
+                            >
+                              Sr No.
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'left',
+                                width: 110,
+                              }}
+                            >
+                              Item Code
+                            </th>
+                            <th
+                              style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}
+                            >
+                              Item Name
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                width: 78,
+                              }}
+                            >
+                              Received
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                width: 78,
+                              }}
+                            >
+                              Accepted
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                width: 78,
+                              }}
+                            >
+                              Deviated
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'left',
+                                width: 90,
+                              }}
+                            >
+                              QC Status
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {GRN_SAMPLE_LINES.map((l, i) => (
+                            <tr key={l.itemCode}>
+                              <td
+                                style={{
+                                  padding: '5px 8px',
+                                  border: '1px solid #cbd5e1',
+                                  textAlign: 'center',
+                                }}
+                              >
+                                {i + 1}
+                              </td>
+                              <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                                {l.itemCode}
+                              </td>
+                              <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                                {l.itemName}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '5px 8px',
+                                  border: '1px solid #cbd5e1',
+                                  textAlign: 'center',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {l.receivedQty}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '5px 8px',
+                                  border: '1px solid #cbd5e1',
+                                  textAlign: 'center',
+                                  color: '#16a34a',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {l.qcAcceptedQty}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '5px 8px',
+                                  border: '1px solid #cbd5e1',
+                                  textAlign: 'center',
+                                  color: '#d97706',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {l.qcRejectedQty}
+                              </td>
+                              <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                                {statusText(l.qcStatus)}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr style={{ background: '#f8fafc' }}>
+                            <td
+                              colSpan={3}
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'right',
+                                fontWeight: 700,
+                              }}
+                            >
+                              TOTAL
+                            </td>
+                            <td
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                fontWeight: 800,
+                              }}
+                            >
+                              {sample.totalReceived}
+                            </td>
+                            <td
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                fontWeight: 800,
+                                color: '#16a34a',
+                              }}
+                            >
+                              {sample.totalAccepted}
+                            </td>
+                            <td
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                fontWeight: 800,
+                                color: '#d97706',
+                              }}
+                            >
+                              {sample.totalRejected}
+                            </td>
+                            <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
+                          </tr>
+                        </tbody>
+                      </table>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                        <thead>
+                          <tr style={{ background: '#f1f5f9' }}>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                                width: 44,
+                              }}
+                            >
+                              Sr No.
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'left',
+                                width: 110,
+                              }}
+                            >
+                              Item Code
+                            </th>
+                            <th
+                              style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}
+                            >
+                              Item Name
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'right',
+                                width: 60,
+                              }}
+                            >
+                              Qty
+                            </th>
+                            <th
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'left',
+                                width: 60,
+                              }}
+                            >
+                              UOM
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                              }}
+                            >
+                              1
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                              STL-PL-6
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                              Steel Plate 6mm
+                            </td>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'right',
+                              }}
+                            >
+                              100
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
+                          </tr>
+                          <tr>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'center',
+                              }}
+                            >
+                              2
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                              BRG-6203
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>
+                              Bearings 6203
+                            </td>
+                            <td
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'right',
+                              }}
+                            >
+                              100
+                            </td>
+                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
+                          </tr>
+                          <tr style={{ background: '#f8fafc' }}>
+                            <td
+                              colSpan={2}
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'right',
+                                fontWeight: 700,
+                              }}
+                            >
+                              TOTAL QTY
+                            </td>
+                            <td
+                              style={{
+                                padding: 6,
+                                border: '1px solid #cbd5e1',
+                                textAlign: 'right',
+                                fontWeight: 800,
+                              }}
+                            >
+                              {sample.totalQty}
+                            </td>
+                            <td style={{ padding: 6, border: '1px solid #cbd5e1' }} />
+                          </tr>
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </>
               )}
 
@@ -1195,9 +1317,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                   borderTop: '1px solid #999',
                 }}
               >
-                <div
-                  style={{ padding: 14, fontSize: 10, borderRight: '1px solid #999', flex: 1 }}
-                >
+                <div style={{ padding: 14, fontSize: 10, borderRight: '1px solid #999', flex: 1 }}>
                   PAN: AQKPM4121A
                   <br />
                   <span style={{ fontStyle: 'italic', color: '#666' }}>E. &amp; O.E.</span>
@@ -1280,9 +1400,10 @@ function PrintTemplatesPage(): React.JSX.Element {
           templateKey={revisionsKey}
           blockName={docTemplates.find((t) => t.templateKey === revisionsKey)?.name ?? revisionsKey}
           onClose={() => setRevisionsKey(null)}
+          canRestore={canEditTpl}
           onRestore={(content) => {
             const t = docTemplates.find((x) => x.templateKey === revisionsKey);
-            if (t) {
+            if (t && canEditTpl) {
               setEditingKey(t.templateKey);
               setDraft(content);
             }

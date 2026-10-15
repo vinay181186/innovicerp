@@ -46,8 +46,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
-import { requireAdminRole, requireWriteRole } from '../../lib/auth';
+import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { isUniqueViolation, withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
@@ -1512,7 +1511,6 @@ export async function createSalesOrder(
   input: CreateSalesOrderInput,
   user: AuthContext,
 ): Promise<SalesOrderDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'so_create', 'entry');
   const companyId = requireCompany(user);
 
@@ -1765,12 +1763,10 @@ export async function updateSalesOrder(
    *  the History row of a line the save removes or cancels. */
   reason?: string | null,
 ): Promise<SalesOrderDetail> {
-  // Editing an existing SO is admin-only (managers can still create). A
-  // non-admin update is rejected server-side even if the UI is bypassed.
+  // ADR-232: the so_create Edit tick alone decides who edits a saved SO.
   // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit
-  // can replay an approved edit for an approver who holds `approve` but not the
-  // admin edit right.
-  requireAdminRole(user);
+  // can replay an approved edit for an approver who holds `approve` but not
+  // `edit`.
   await requireFormAccess(user, 'so_create', 'edit');
   try {
     return await withUserContext(user, (tx) => updateSalesOrderTx(tx, id, input, user, reason));
@@ -2095,7 +2091,6 @@ export async function updateSalesOrderOrStage(
   user: AuthContext,
   reason?: string | null,
 ): Promise<SalesOrderDetail | DocumentEditStagedResult> {
-  requireAdminRole(user);
   await requireFormAccess(user, 'so_create', 'edit');
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'so_create');
@@ -2656,9 +2651,8 @@ export async function softDeleteSalesOrder(
   /** ADR-197 — why it goes to Trash (the route requires it). */
   reason?: string | null,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
-  await requireFormAccess(user, 'so_create', 'edit');
-  await requireFormAccess(user, 'so_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Sales Orders');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

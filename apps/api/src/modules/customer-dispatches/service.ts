@@ -28,7 +28,6 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { assertActiveParty } from '../../lib/active-party';
-import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -916,7 +915,6 @@ export async function createDispatch(
   input: CreateCustomerDispatchInput,
   user: AuthContext,
 ): Promise<CustomerDispatchDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'dispatch_create', 'entry');
   const companyId = requireCompany(user);
 
@@ -1098,7 +1096,6 @@ export async function cancelDispatch(
   reason: string,
   user: AuthContext,
 ): Promise<CustomerDispatchDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'dispatch_create', 'edit');
   await requireFormAccess(user, 'dispatch_create', 'approve');
   const companyId = requireCompany(user);
@@ -1528,7 +1525,6 @@ export async function updateCustomerDispatch(
   input: UpdateCustomerDispatchInput,
   user: AuthContext,
 ): Promise<CustomerDispatchDetail> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'dispatch_create', 'edit');
   return withUserContext(user, async (tx) => updateCustomerDispatchTx(tx, id, input, user));
 }
@@ -1544,7 +1540,6 @@ export async function updateCustomerDispatchOrStage(
   input: UpdateCustomerDispatchInput,
   user: AuthContext,
 ): Promise<CustomerDispatchDetail | DocumentEditStagedResult> {
-  requireWriteRole(user);
   await requireFormAccess(user, 'dispatch_create', 'edit');
   const companyId = requireCompany(user);
 

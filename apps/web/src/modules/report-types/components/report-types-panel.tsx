@@ -9,7 +9,7 @@ import { REPORT_TYPE_STATUSES, type CreateReportTypeInput, type ReportType } fro
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -39,8 +39,13 @@ export function ReportTypesPanel(): React.JSX.Element {
   });
   const total = data?.total ?? 0;
   useClampPage(page, data?.total, setPage);
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  // ADR-232: this is a tab of QC Process Master, so it follows that page's
+  // ticks — Add = entry, Edit = edit, Delete = Super Admin only.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'qcprocess_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = canDeleteRecords(eff);
   const del = useDeleteReportType();
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const items = data?.items ?? [];
@@ -121,7 +126,7 @@ export function ReportTypesPanel(): React.JSX.Element {
             <Loader2 className="inline h-3 w-3 animate-spin" />
           </span>
         ) : null}
-        {canWrite ? (
+        {canAdd ? (
           <button
             type="button"
             className="btn btn-primary"
@@ -167,7 +172,7 @@ export function ReportTypesPanel(): React.JSX.Element {
                 key: 'edit',
                 label: 'Edit',
                 icon: 'pencil',
-                hidden: !canWrite,
+                hidden: !canEdit,
                 onSelect: () => setModal({ kind: 'edit', row }),
               },
               {
@@ -175,7 +180,7 @@ export function ReportTypesPanel(): React.JSX.Element {
                 label: 'Delete',
                 icon: 'trash-2',
                 group: 'danger',
-                hidden: !canWrite,
+                hidden: !canDelete,
                 // As before: no second delete while one is saving.
                 disabledReason: del.isPending ? 'Deleting…' : undefined,
                 onSelect: () => onDelete(row),

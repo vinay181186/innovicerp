@@ -41,10 +41,9 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
-import { requireOpEntryRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
@@ -1445,11 +1444,8 @@ export async function createNcRegister(
   input: CreateNcRegisterInput,
   user: AuthContext,
 ): Promise<NcRegister> {
-  requireOpEntryRole(user);
-  // ADR-035: the role guard alone let anyone with a write role raise an NC even
-  // when their QC department tier is L1 (view-only). Reporting an NC is a
-  // create, so it needs `entry` on NC Register. Admins bypass; the matrix can
-  // only narrow what the role already allows.
+  // ADR-232 — the Access Control tick alone decides. Reporting an NC is a
+  // create, so it needs `entry` on NC Register.
   await requireFormAccess(user, 'nc_dispose', 'entry');
   const companyId = requireCompany(user);
 
@@ -1610,7 +1606,6 @@ export async function updateNcRegister(
   input: UpdateNcRegisterInput,
   user: AuthContext,
 ): Promise<NcRegister> {
-  requireOpEntryRole(user);
   // Changing a saved NC is `edit`, not `entry` — an L2 Data Entry hand may
   // raise an NC but must not go back and rewrite the reason on one. Checked HERE,
   // not in the tx body, so the edit-approval engine's applyEdit can replay an
@@ -1736,7 +1731,6 @@ export async function updateNcRegisterOrStage(
   input: UpdateNcRegisterInput,
   user: AuthContext,
 ): Promise<NcRegister | DocumentEditStagedResult> {
-  requireOpEntryRole(user);
   await requireFormAccess(user, 'nc_dispose', 'edit');
   const companyId = requireCompany(user);
 
@@ -2443,12 +2437,8 @@ export async function softDeleteNcRegister(
   user: AuthContext,
   reason?: string | null,
 ): Promise<{ ok: true }> {
-  requireOpEntryRole(user);
-  // Delete is not one of the five tier actions, so it is expressed as the pair
-  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
-  // has edit but not approve; L4 Approver has approve but not edit.
-  await requireFormAccess(user, 'nc_dispose', 'edit');
-  await requireFormAccess(user, 'nc_dispose', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'NC records');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

@@ -2,14 +2,13 @@
 //   Edit · Print · ─ · Move to Trash
 // No View — the row click already opens the card.
 //
-// Hidden when the Access Control tier lacks the right; GREYED where the
-// server would refuse on role (route-cards service): Edit needs role admin or
-// manager, Delete role admin. Print runs the same click logic as the old row
+// ADR-232: the Access Control ticks alone decide — Edit shows with the
+// routecard_create Edit right, Move to Trash only for Super Admin (the caller
+// passes onDelete only then). Print runs the same click logic as the old row
 // button (usePrintRouteCard); its Promise keeps the ⋯ busy until it fires.
 
 import type { RouteCardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { useSession } from '@/lib/session';
 import { RowActions } from '@/ui/layout';
 import { usePrintRouteCard } from './print-route-card-button';
 
@@ -26,25 +25,13 @@ export function RouteCardRowMenu({
   deleteDisabled: boolean;
 }): React.JSX.Element {
   const print = usePrintRouteCard(rc);
-  const { data: me } = useSession();
-  const role = me?.role;
-  const editBlocked = role !== undefined && role !== 'admin' && role !== 'manager';
-  const deleteBlocked = role !== undefined && role !== 'admin';
 
   return (
     <RowActions
       // Edit is a ROUTE, so it stays a real link — ctrl-click still works.
-      // When the role cannot save it, Edit is a greyed item instead.
-      editTo={canEdit && !editBlocked ? `/route-cards/${rc.id}/edit` : undefined}
+      editTo={canEdit ? `/route-cards/${rc.id}/edit` : undefined}
       renderLink={(p) => <Link {...p} />}
       items={[
-        {
-          key: 'edit-blocked',
-          label: 'Edit',
-          icon: 'pencil',
-          hidden: !canEdit || !editBlocked,
-          disabledReason: 'Needs admin or manager role',
-        },
         { key: 'print', label: 'Print', icon: 'printer', onSelect: print.start },
         {
           // Caller-owned confirm (routes/list.tsx): it asks for the reason,
@@ -54,12 +41,8 @@ export function RouteCardRowMenu({
           icon: 'trash-2',
           group: 'danger',
           hidden: !onDelete,
-          disabledReason: deleteBlocked
-            ? 'Only an admin can delete'
-            : deleteDisabled
-              ? 'Working…'
-              : undefined,
-          onSelect: deleteBlocked ? undefined : onDelete,
+          disabledReason: deleteDisabled ? 'Working…' : undefined,
+          onSelect: onDelete,
         },
       ]}
     />

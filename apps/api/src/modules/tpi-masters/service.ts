@@ -3,7 +3,7 @@ import type { DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { tpiMasters } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -324,11 +324,8 @@ export async function updateTpiMasterOrStage(
 }
 
 export async function softDeleteTpiMaster(id: string, user: AuthContext): Promise<{ ok: true }> {
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
-  // has edit but not approve; L4 Approver has approve but not edit.
-  await requireFormAccess(user, 'tpimaster_create', 'edit');
-  await requireFormAccess(user, 'tpimaster_create', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'TPI masters');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

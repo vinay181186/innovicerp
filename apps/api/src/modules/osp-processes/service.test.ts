@@ -16,7 +16,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { ospProcesses, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { NotFoundError, ValidationError } from '../../lib/errors';
+import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'TOSP-';
@@ -100,5 +101,52 @@ describe('ospProcesses service', () => {
     const listed = await service.listOspProcesses(admin);
     expect(listed.items.map((p) => p.id)).not.toContain(created.id);
     await expect(service.getOspProcess(created.id, admin)).rejects.toThrow(NotFoundError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): deleting any record needs L6 Super Admin. No
+// department tier — not even L5 Department Admin — and no page tick grants it.
+describe('softDeleteOspProcess — Super Admin only (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('L5 Production Department Admin cannot delete OSP processes — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+    await expect(service.softDeleteOspProcess(UNKNOWN_ID, l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor cannot delete OSP processes — AuthorizationError', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { production: 'L5' } });
+    await expect(service.softDeleteOspProcess(UNKNOWN_ID, auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('Super Admin passes the delete gate (unknown id → NotFoundError, not refused)', async () => {
+    await expect(service.softDeleteOspProcess(UNKNOWN_ID, admin)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+});
+
+// ADR-232 (owner D3): OSP Process Configuration stays an Admin setting — create
+// and update are Super Admin only, whatever the caller's department tier.
+describe('OSP process create / update — Admin setting (ADR-232 D3)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+  const input = { processName: 'T-GATE-OSP', vendorId: null, autoPo: false, leadDays: 5 };
+
+  it('an L5 Department Admin cannot create or update an OSP process — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { production: 'L5', purchase: 'L5' } }, 'manager');
+    await expect(service.createOspProcess(input, l5)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateOspProcess(UNKNOWN_ID, input, l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('Super Admin passes the update gate (unknown id → NotFoundError)', async () => {
+    await expect(service.updateOspProcess(UNKNOWN_ID, input, admin)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });

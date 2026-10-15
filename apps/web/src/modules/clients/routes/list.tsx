@@ -35,8 +35,7 @@ import { MasterImportDialog } from '@/components/shared/master-import-dialog';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { apiDownload } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useSession } from '@/lib/session';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
@@ -138,13 +137,8 @@ function ClientsListPage(): React.JSX.Element {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; code: string } | null>(null);
   const canAdd = perms.entry;
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
-  // The clients service also needs role admin/manager to edit or delete
-  // (requireWriteRole); a user with the tier but another role sees the two
-  // ⋯ items greyed with the reason instead of a refusal after the click.
-  const { data: me } = useSession();
-  const roleBlock =
-    !me || me.role === 'admin' || me.role === 'manager' ? undefined : 'Needs admin or manager role';
+  // ADR-232: deleting any record is L6 Super Admin only; Edit is the Edit tick.
+  const canDelete = canDeleteRecords(eff);
 
   // Excel import — ONE shared dialog (components/shared/master-import-dialog):
   // Import Type (Insert new / Update existing by Code) → preview (dryRun, the
@@ -326,7 +320,6 @@ function ClientsListPage(): React.JSX.Element {
                     icon: 'pencil',
                     to: `/clients/${c.id}/edit`,
                     hidden: !canEdit,
-                    disabledReason: roleBlock,
                   },
                   {
                     // Opens the Trash dialog below, which asks for a reason
@@ -338,7 +331,7 @@ function ClientsListPage(): React.JSX.Element {
                     hidden: !canDelete,
                     // Every OTHER row's Trash greys out while one is in flight,
                     // exactly as `disabled={softDelete.isPending}` did.
-                    disabledReason: roleBlock ?? (softDelete.isPending ? 'Working…' : undefined),
+                    disabledReason: softDelete.isPending ? 'Working…' : undefined,
                     onSelect: () => setDeleteTarget({ id: c.id, code: c.code }),
                   },
                 ]}

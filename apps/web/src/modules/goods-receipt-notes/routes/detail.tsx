@@ -22,7 +22,7 @@ import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -139,10 +139,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   };
 
   const canEdit = perms.edit;
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
-  // edit without approve; L4 has approve without edit.
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
 
   // ADR-189: a GRN with ANY inspected qty (not only a fully cleared line)
   // cannot be deleted — the server refuses it, so the menu says so up front.

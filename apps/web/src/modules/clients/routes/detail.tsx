@@ -26,10 +26,15 @@
 // (plan v3 Step 2) closes the Phone · GSTIN row at md · md · md; State shows
 // "Name (code)" from the State Code, else an old record's free text.
 
-import { type Client, type DocumentEditChange, gstCategoryLabel, stateLabel } from '@innovic/shared';
+import {
+  type Client,
+  type DocumentEditChange,
+  gstCategoryLabel,
+  stateLabel,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -114,10 +119,9 @@ function ClientDetailPage(): React.JSX.Element {
   };
 
   // Tier-driven, per department (client_create sits in Sales). Delete is not
-  // one of the four tier actions, so it is expressed as the pair only L5
-  // Department Admin and above hold: edit AND approve. Unchanged.
+  // one of the page ticks: ADR-232 makes it L6 Super Admin only.
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
 
   return (
     <div>
@@ -201,7 +205,12 @@ function ClientFacts(props: {
         size="md"
         value={readWithChip(stateLabel(client.stateCode) || client.state, pc, 'stateCode', 'state')}
       />
-      <ReadField label="Pincode" size="xs" mono value={readWithChip(client.pincode, pc, 'pincode')} />
+      <ReadField
+        label="Pincode"
+        size="xs"
+        mono
+        value={readWithChip(client.pincode, pc, 'pincode')}
+      />
 
       <ReadField
         label="Contact Person"
@@ -211,7 +220,12 @@ function ClientFacts(props: {
       <ReadField label="Email" size="lg" value={readWithChip(client.email, pc, 'email')} />
 
       <ReadField label="Phone" size="md" mono value={readWithChip(client.phone, pc, 'phone')} />
-      <ReadField label="GSTIN" size="md" mono value={readWithChip(client.gstNumber, pc, 'gstNumber')} />
+      <ReadField
+        label="GSTIN"
+        size="md"
+        mono
+        value={readWithChip(client.gstNumber, pc, 'gstNumber')}
+      />
       <ReadField
         label="GST Category"
         size="md"

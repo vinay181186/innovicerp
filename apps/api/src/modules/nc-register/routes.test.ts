@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, jobCards, ncRegister, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { ncRegisterRoutes } from './routes';
 
@@ -127,8 +128,8 @@ describe('nc-register routes', () => {
     expect(res.json()).toMatchObject({ error: 'validation_error' });
   });
 
-  it('POST /nc-register returns 403 for viewer; 201 for operator', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('POST /nc-register returns 403 for an L1 QC viewer; 201 for a QC L2 whose role is qc', async () => {
+    const viewer = asAccess(admin, { departments: { qc: 'L1' } }, 'viewer');
     app = await buildApp(viewer);
     const viewerRes = await app.inject({
       method: 'POST',
@@ -148,7 +149,7 @@ describe('nc-register routes', () => {
     expect(viewerRes.json()).toMatchObject({ error: 'forbidden' });
     await app.close();
 
-    const operator: AuthContext = { ...admin, role: 'operator' };
+    const operator = asAccess(admin, { departments: { qc: 'L2' } }, 'qc');
     app = await buildApp(operator);
     const opRes = await app.inject({
       method: 'POST',

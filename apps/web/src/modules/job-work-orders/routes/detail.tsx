@@ -23,7 +23,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import {
   uploadJwDocFile,
   useCreateJwDocument,
@@ -112,7 +112,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
   // Access matrix (jw_create) replaces the old admin/manager role flags.
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
   // R6 (ADR-194) #4: short-close hits requireFormAccess(...,'approve') on the
   // server, so the UI must require approve as well — otherwise a user without
   // it sees the button and gets a 403. ADR-231: the other half of the pair is
@@ -131,10 +131,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     .reduce((s, l) => s + l.orderQty, 0);
 
   // Next steps — each opens the downstream create screen with this JWSO
-  // already picked (`?jw=<jwsoId>`). Gates mirror the target screens: Party
-  // GRN is party_create entry; JW DC and JW Invoice are admin/manager there.
+  // already picked (`?jw=<jwsoId>`). Gates mirror the target screens (ADR-232,
+  // the Entry tick alone): Party GRN is party_create, JW DC is ospdc_create,
+  // JW Invoice is invoice_create.
   const canReceive = effectiveFormPerms(eff, 'party_create').entry;
-  const canJwWrite = me?.role === 'admin' || me?.role === 'manager';
+  const canJwDc = effectiveFormPerms(eff, 'ospdc_create').entry;
+  const canJwInvoice = effectiveFormPerms(eff, 'invoice_create').entry;
   const goReceive = (): void =>
     void navigate({ to: '/party-grn', search: { tab: 'receive', jw: detail.id } });
   // `jw` is read by the JW DC screen (owned by another module). The assertion
@@ -156,8 +158,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     detail.lines.length > 0 && detail.lines.every((l) => l.returnedQty >= l.orderQty);
   const nextSteps = [
     { key: 'receive', label: 'Receive Material', allowed: canReceive, go: goReceive },
-    { key: 'jwdc', label: 'JW DC', allowed: canJwWrite, go: goJwDc },
-    { key: 'invoice', label: 'JW Invoice', allowed: canJwWrite, go: goJwInvoice },
+    { key: 'jwdc', label: 'JW DC', allowed: canJwDc, go: goJwDc },
+    { key: 'invoice', label: 'JW Invoice', allowed: canJwInvoice, go: goJwInvoice },
   ];
   const primaryKey = materialShort ? 'receive' : allDispatched ? 'invoice' : 'jwdc';
   const primaryStep =
@@ -357,8 +359,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         jwId={detail.id}
         jwCode={detail.code}
         companyId={me?.companyId ?? null}
-        canUpload={me?.role !== 'viewer' && (perms.entry || perms.edit)}
-        canDelete={me?.role !== 'viewer'}
+        canUpload={perms.entry}
+        canDelete={canDeleteRecords(eff)}
       />
 
       <RelatedDocsTabs module="job-work-orders" id={detail.id} extraTabs={[historyTab]} />

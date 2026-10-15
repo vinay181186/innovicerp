@@ -17,7 +17,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -141,7 +141,8 @@ function RouteCardDetailPage(): React.JSX.Element {
             {
               label: 'Delete',
               danger: true,
-              hidden: !(perms.edit && perms.approve),
+              // ADR-232: deleting any record is Super Admin only.
+              hidden: !canDeleteRecords(eff),
               disabled: del.isPending,
               title: 'Move this Route Card to Trash',
               onClick: () => {

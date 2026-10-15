@@ -13635,3 +13635,101 @@ message "You do not have permission to record Op Entry".
   page they open (e.g. "Create Invoice" with no check); Report NC / edit NC
   still refuse QC-only staff through the same role guard; the SO screens and
   the top-menu link wait for the live-updates session's claim to clear.
+
+## ADR-232: Access Control ticks alone decide every write; delete is Super Admin only
+
+**Date:** 2026-10-15
+**Status:** Accepted (owner)
+
+### Context
+
+Users with the right still got "Ask an admin": Shivani (Quality-only) could not Inspect
+or save QC, Mitul (Planning L2) could not save a Route Card. Cause: two gates. `users.role`
+is derived from Access Control (`roleForAccess`: qc-only writers → `qc`, top L2 →
+`operator`), and ~80 API writes still called `requireWriteRole` / `requireOpEntryRole` /
+`requireQcRole` before `requireFormAccess`; ~30 web buttons mirrored them. Some role checks
+also granted more than the ticks (OSP PR, saved reports, SO documents, dashboard).
+
+### Decision
+
+- The Access Control matrix alone decides every write and button:
+  View / Entry / Edit / Approve / Advance on the page. The role never refuses a write.
+- L7 Auditor never writes: `effectiveFormPerms` zeroes entry/advance/edit/approve.
+  An all-L1 user with an explicit per-page tick gets that action.
+- Deleting any record, master or uploaded file needs L6 Super Admin
+  (`requireDeleteRight` / `canDeleteRecords`). Cancel, short close, reverse, close and
+  line removal inside an edit are not deletes. A user may delete their own saved report.
+- `requireAdminRole` stays only for system screens: users, access control, company,
+  backup, approval setup, trash, alerts on/off, OSP process master, machine-code repair.
+- Owner decisions D1–D11: SO edit by the SO Edit tick; new page key `assembly_create`
+  (Planning, "Assembly Tracker"); print templates on `printtpl_edit`; Task Board work for
+  everyone but the Auditor; time-correction approval and QC reversal on the row's own
+  page (QC Call Register for QC rows, Op Entry otherwise); Operator with the Incoming QC
+  tick may do GRN QC; managers lose the role extras; QC saves reuse one Idempotency-Key.
+- `apps/api/src/lib/no-role-gates.test.ts` fails the build if a role gate returns.
+
+### Consequences
+
+- Positive: the Access Control screen is the truth; no "has the right, still refused".
+- Negative: L5 department heads lose Delete; managers lose OSP PR without the PR tick,
+  other people's private saved reports, all-department dashboard tiles, alerts on/off.
+- Open: daily-report "see all" and the manager home layout still read the role (reads,
+  allow-listed in the guard test); Assign Task is gated on Advance only in the browser.
+
+## ADR-233: A Production Order ended short shows how much was short-closed
+
+**Date:** 2026-10-15
+**Status:** Accepted (owner approved all three phases 2026-10-15; TEST first, PROD on "push to main")
+
+### Context
+
+On .com the owner short-closed PRO 5 and could not see how many pieces were
+short-closed. There are two ways to end an order under target:
+
+- **Finish Short** (ADR-179, a tick in the Close form) — status `closed`,
+  records `lost_qty = order − credited`, shows a plain "Closed" badge.
+- **Short Close** (ADR-182, header button) — status `short_closed`, records
+  `lost_qty` = NC scrap only, writes no close-history row.
+
+Both force Pending to 0, so the un-made balance (order − credited) appeared
+nowhere: not on the detail, list, history, report or Job Card. The screen word
+"Credited" also confused the owner.
+
+### Decision
+
+1. **`Short Closed Qty` = Order Qty − Stock Received** when status is
+   `closed` or `short_closed`, else 0. Lost Qty is the scrapped PART of it,
+   never added to it. **Worked out, never stored** —
+   `productionOrderShortClosedQty` (@innovic/shared) and its SQL twin
+   `PRO_SHORT_CLOSED_QTY_SQL`; a Short Close cannot be reversed and reversing
+   a Finish Short re-opens the order, so the figure cannot drift and old
+   orders (PRO 5) show it with no backfill.
+2. **"Credited" is renamed "Stock Received"** on every screen, report and
+   message (NAMING.md). Field and column names (`creditedQty`,
+   `credited_qty`) stay.
+3. **Close history** gets a Type (Close / Finish Short / Reversal / Short
+   Close). A Short Close, and a Finish Short that put nothing into stock,
+   leave no ledger row (the ledger refuses qty 0), so the server adds them
+   from the order's own header fields with `reversible: false`.
+4. Shown on: PRO detail (Short Closed Qty cell + banner figure), PRO list
+   (Stock Received + Short Closed Qty columns, sort/filter), status badge
+   ("Closed (Short N)" / "Short Closed (N)"), report, JC stopped banner.
+5. Both short actions confirm with the qty first ("4 of 10 will be
+   short-closed"). Short Close is refused on an order already fully received.
+6. Status changes on close / reverse / short close also check the status read
+   under the row lock (CLAUDE.md §20.2) and refuse a write that changed nothing.
+7. NOT changed (audit gap G10 was a false alarm): JW source options, JW line
+   "in JC" and the JC Status Summary keep the literal card qty. A short-closed
+   order's balance already returns to the plan's Pending and is remade from
+   there; counting it free on the JW line too would let a manual Job Card claim
+   the same pieces twice (job-cards/service.ts "JW lines keep the literal card
+   qty").
+8. PRO screens join live updates (ADR-230): migration **0209** publishes
+   `production_orders` and `production_order_closes`.
+
+### Consequences
+
+- No stored figure, no backfill; rollback is a code revert (0209 can stay — it
+  only lets changes arrive sooner).
+- Not changed: Finish Short and Short Close keep their names and both still log
+  the CloseShort activity action; merging them is a separate decision.

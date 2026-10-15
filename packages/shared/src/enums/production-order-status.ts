@@ -32,3 +32,23 @@ export const PRODUCTION_ORDER_STATUS_LABEL: Record<ProductionOrderStatus, string
 export function isProductionOrderStopped(status: ProductionOrderStatus): boolean {
   return status === 'short_closed';
 }
+
+/** ADR-233 — `Short Closed Qty`: pieces of the order that will never reach
+ *  stock because the order was ended under target, by Finish Short (status
+ *  `closed`, credited < order) or by Short Close (`short_closed`). It is
+ *  Order Qty − Stock Received, and it INCLUDES any Lost Qty (NC scrap): Lost
+ *  is the scrapped part of it, not a separate amount. 0 while the order is
+ *  still open or partly closed — those pieces are Pending, not short.
+ *
+ *  Worked out, never stored: Order and Stock Received are stored, a Short
+ *  Close cannot be reversed, and reversing a Finish Short re-opens the order
+ *  (so this returns 0 again). The SQL twin is `PRO_SHORT_CLOSED_QTY_SQL` in
+ *  apps/api/src/modules/production-orders — change both together. */
+export function productionOrderShortClosedQty(order: {
+  status: ProductionOrderStatus;
+  orderQty: number;
+  creditedQty: number | null;
+}): number {
+  if (order.status !== 'closed' && order.status !== 'short_closed') return 0;
+  return Math.max(0, order.orderQty - (order.creditedQty ?? 0));
+}

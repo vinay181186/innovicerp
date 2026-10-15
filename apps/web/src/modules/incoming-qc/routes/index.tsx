@@ -71,6 +71,8 @@ export const incomingQcRoute = createRoute({
 
 function IncomingQcPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
+  // ADR-232: Inspect books a QC result — the page's Entry right.
+  const canInspect = effectiveFormPerms(eff, 'qc_incoming').entry;
   const search = incomingQcRoute.useSearch();
   const navigate = incomingQcRoute.useNavigate();
 
@@ -292,6 +294,7 @@ function IncomingQcPage(): React.JSX.Element {
                   label: 'Inspect',
                   icon: 'check',
                   group: 'workflow',
+                  hidden: !canInspect,
                   onSelect: () => setInspectLineId(r.grnLineId),
                 },
               ]}

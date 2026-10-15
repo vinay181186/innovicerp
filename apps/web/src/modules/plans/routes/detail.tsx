@@ -23,7 +23,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -242,7 +242,8 @@ function PlanDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {perms.edit && perms.approve && isEditable ? (
+            {/* ADR-232: deleting any record is Super Admin only. */}
+            {canDeleteRecords(eff) && isEditable ? (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"

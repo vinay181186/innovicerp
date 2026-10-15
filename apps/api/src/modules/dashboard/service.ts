@@ -4,9 +4,10 @@
 // All queries are scoped to the user's company via withUserContext (RLS
 // enforces it at the DB layer; service-level scope is defensive).
 //
-// T-043 — tiles are filtered to those visible to the caller's role
-// before returning. The visibility map is intentionally local to this
-// service (it's an authorization decision, not a wire shape).
+// T-043 — tiles are filtered to those the caller may see before returning.
+// ADR-232: each tile follows the View right of the page it counts, not the
+// role. The map is intentionally local to this service (it's an
+// authorization decision, not a wire shape).
 //
 // Severity rules:
 //   - count == 0  → 'ok' (caught up)
@@ -15,10 +16,11 @@
 //   - many        → 'danger'
 // Thresholds are conservative for the 15-20-user scale; tune per tile.
 
-import type { UserRole } from '@innovic/shared';
+import { type AccessFormKey, effectiveFormPerms } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { getMyAccess } from '../access-control/service';
 import type {
   DashboardKpisResponse,
   DashboardTile,
@@ -26,22 +28,23 @@ import type {
   DashboardTileSeverity,
 } from './schema';
 
-// Tile visibility per role. Admin/manager/viewer see everything;
-// function-specific roles see only what's relevant to their work.
-// `viewer` keeps full visibility because it's a read-only audit role —
-// it sees what an admin sees, just can't edit.
-const TILE_VISIBILITY: Record<DashboardTileKind, readonly UserRole[]> = {
-  open_sales_orders: ['admin', 'manager', 'viewer', 'dispatch', 'design'],
-  open_purchase_orders: ['admin', 'manager', 'viewer', 'procurement'],
-  jc_ops_awaiting_qc: ['admin', 'manager', 'viewer', 'operator', 'qc'],
-  ncs_pending_dispose: ['admin', 'manager', 'viewer', 'operator', 'qc'],
-  grn_lines_pending_qc: ['admin', 'manager', 'viewer', 'qc', 'procurement'],
-  prs_pending_conversion: ['admin', 'manager', 'viewer', 'procurement'],
-  ops_in_progress: ['admin', 'manager', 'viewer', 'operator', 'qc'],
+// Tile visibility (ADR-232): a tile shows iff the caller may VIEW the page it
+// counts. Super Admin sees every tile; an L7 Auditor views every page, so
+// sees every tile too (effectiveFormPerms).
+const TILE_VIEW_FORM: Record<DashboardTileKind, AccessFormKey> = {
+  open_sales_orders: 'so_create',
+  open_purchase_orders: 'po_create',
+  jc_ops_awaiting_qc: 'qc_submit',
+  ncs_pending_dispose: 'nc_dispose',
+  grn_lines_pending_qc: 'qc_incoming',
+  prs_pending_conversion: 'pr_create',
+  ops_in_progress: 'op_entry',
 };
 
-function isTileVisible(kind: DashboardTileKind, role: UserRole): boolean {
-  return TILE_VISIBILITY[kind].includes(role);
+async function visibleTileKinds(user: AuthContext): Promise<(kind: DashboardTileKind) => boolean> {
+  if (user.role === 'admin') return () => true;
+  const eff = await getMyAccess(user);
+  return (kind) => effectiveFormPerms(eff, TILE_VIEW_FORM[kind]).view;
 }
 
 const requireCompany = (user: AuthContext): string => {
@@ -63,6 +66,8 @@ function severityForCount(count: number, warn: number, danger: number): Dashboar
 
 export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpisResponse> {
   const companyId = requireCompany(user);
+  // Access read first — it opens its own transaction (see clients/related.ts).
+  const isTileVisible = await visibleTileKinds(user);
 
   return withUserContext(user, async (tx) => {
     const [openSos, openPos, jcQcAwait, ncsPending, grnQcPending, prsPending, opsRunning] =
@@ -213,7 +218,7 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
       },
     ];
 
-    const visible = tiles.filter((t) => isTileVisible(t.kind, user.role));
+    const visible = tiles.filter((t) => isTileVisible(t.kind));
 
     return {
       generatedAt: new Date().toISOString(),

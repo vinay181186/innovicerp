@@ -38,9 +38,8 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
+import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { requireWriteRole } from '../../lib/auth';
 import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
@@ -2648,13 +2647,8 @@ export async function softDeletePurchaseOrder(
   user: AuthContext,
   reason?: string | null,
 ): Promise<{ ok: true }> {
-  // Delete is not one of the four tier actions, so "L5 Department Admin and
-  // above" is expressed as the pair only L5/L6 hold: L3 has edit without
-  // approve, L4 has approve without edit. Previously this was `requireWriteRole`
-  // alone, which let any manager delete a PO through the API while the UI only
-  // ever offered Delete to admins.
-  await requireFormAccess(user, 'po_create', 'edit');
-  await requireFormAccess(user, 'po_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin — no tier or tick grants it.
+  await requireDeleteRight(user, 'Purchase Orders');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -3419,9 +3413,7 @@ export async function approvePurchaseOrder(
   remarks: string | null,
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
-  requireWriteRole(user);
-  // The Access Control matrix must also grant Approve on Purchase Orders —
-  // an L3 Editor can raise a PO but cannot sign it off (0100).
+  // ADR-232: the Access Control tick alone decides — Approve on Purchase Orders.
   await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
 
@@ -3521,8 +3513,7 @@ export async function rejectPurchaseOrder(
   reason: string,
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
-  requireWriteRole(user);
-  // Rejecting is the other half of approving — same permission (0100).
+  // ADR-232: rejecting is the other half of approving — same tick, nothing else.
   await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
 
@@ -3691,8 +3682,8 @@ export async function shortClosePurchaseOrder(
   input: ShortClosePurchaseOrderInput,
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
-  requireWriteRole(user);
-  // Undoing an approved commitment is a sign-off, like Reject (review).
+  // ADR-232: undoing an approved commitment is a sign-off, like Reject — the
+  // Approve tick alone decides.
   await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
   const reason = input.reason.trim();

@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { bomMasters, items, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { bomMasterRoutes } from './routes';
 
@@ -109,8 +110,9 @@ describe('bom-master routes', () => {
     expect(body.revisions).toHaveLength(1);
   });
 
-  it('POST /bom-masters returns 403 for viewer', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('POST /bom-masters returns 403 without the Entry tick', async () => {
+    // ADR-232: Design L1 (view only) — refused whatever the role.
+    const viewer = asAccess(admin, { departments: { design: 'L1' } });
     app = await buildApp(viewer);
     const res = await app.inject({
       method: 'POST',
@@ -140,7 +142,8 @@ describe('bom-master routes', () => {
     const id = created.json().id;
 
     await app.close();
-    const manager: AuthContext = { ...admin, role: 'manager' };
+    // ADR-232: delete needs L6 Super Admin — Design L5 is refused.
+    const manager = asAccess(admin, { departments: { design: 'L5' } }, 'manager');
     app = await buildApp(manager);
     const del = await app.inject({
       method: 'DELETE',

@@ -21,7 +21,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -88,7 +87,6 @@ function DesignIssuesAllPage(): React.JSX.Element {
   }, [search, term, gotoPage]);
   const sf = useServerSortFilter(TABLE_KEYS.designIssues, () => gotoPage(1));
   const offset = pageOffset(page);
-  const { data: me } = useSession();
   // The issue whose ⋯ → Assign Task is open (one modal for the whole list).
   const [assignTarget, setAssignTarget] = useState<{
     id: string;
@@ -269,14 +267,13 @@ function DesignIssuesAllPage(): React.JSX.Element {
             }
             rowMenu={(i) => [
               {
-                // Same rule as the old button: none on a resolved / closed issue;
-                // a viewer is refused by the server.
+                // None on a resolved / closed issue. ADR-232: Assign is the
+                // Advance tick on Design Issues.
                 key: 'assign',
                 label: 'Assign Task',
                 icon: 'user-round',
                 group: 'assign',
-                hidden:
-                  i.status === 'Closed' || i.status === 'Resolved' || !me || me.role === 'viewer',
+                hidden: i.status === 'Closed' || i.status === 'Resolved' || !perms.advance,
                 onSelect: () =>
                   setAssignTarget({
                     id: i.id,

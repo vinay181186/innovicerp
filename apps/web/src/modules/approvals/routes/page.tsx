@@ -19,7 +19,7 @@
 import type { DocumentEditEntity } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDocumentEditCounts } from '@/modules/document-edits/api';
 import { EditApprovalTab } from '@/modules/document-edits/components/doc-type-approvals';
@@ -67,10 +67,11 @@ const FIXED_TABS: TabDef[] = [
 ];
 
 function ApprovalsPage(): React.JSX.Element {
-  const { data: me } = useSession();
-  // Op Entry corrections are decided by managers / admins only — the existing
-  // permission gate is preserved (the inbox only counts them for those users).
-  const canDecideLogEntry = me?.role === 'admin' || me?.role === 'manager';
+  const { data: eff } = useMyAccess();
+  // ADR-232: Op Entry corrections are decided by whoever holds Approve on Op
+  // Entry or on QC Submit in Access Control — the tick alone, no role.
+  const canDecideLogEntry =
+    effectiveFormPerms(eff, 'op_entry').approve || effectiveFormPerms(eff, 'qc_submit').approve;
   const inbox = useApprovalInbox({ refetchOnMount: 'always' });
   const counts = inbox.data?.counts;
   const editCounts = useDocumentEditCounts();
@@ -98,12 +99,14 @@ function ApprovalsPage(): React.JSX.Element {
   const [picked, setPicked] = useState<string | null>(null);
   const pickedTab = tabDefs.find((t) => t.key === picked);
   const active: TabDef =
-    pickedTab ??
-    (counts ? tabDefs.find((t) => (pendingFor(t) ?? 0) > 0) : undefined) ??
-    PR_TAB;
+    pickedTab ?? (counts ? tabDefs.find((t) => (pendingFor(t) ?? 0) > 0) : undefined) ?? PR_TAB;
 
   const tabs = (
-    <div role="tablist" aria-label="Approval type" style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
+    <div
+      role="tablist"
+      aria-label="Approval type"
+      style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}
+    >
       {tabDefs.map((t) => {
         const on = t.key === active.key;
         const n = pendingFor(t);

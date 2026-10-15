@@ -144,7 +144,6 @@ function SalesOrderNewPage(): React.JSX.Element {
 function SalesOrderEditPage(): React.JSX.Element {
   const { id } = salesOrderEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
   const { data: detail, isLoading, error } = useSalesOrder(id);
@@ -166,29 +165,12 @@ function SalesOrderEditPage(): React.JSX.Element {
   );
   const exit = useExitConfirm({ onExit: goBack });
 
-  // Access matrix: edit access to SO Master is required (also enforced server-side).
+  // ADR-232 (owner D1): the Edit tick on SO Master alone opens the editor
+  // (also enforced server-side) — no separate admin-only wall any more.
   if (eff && !perms.edit) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         You do not have permission to edit SOs. Ask an admin.
-      </div>
-    );
-  }
-
-  // Editing a Sales Order is admin-only (enforced again server-side).
-  if (me && me.role !== 'admin') {
-    return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back to SO
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red2)' }}>
-            🔒 Only an admin can edit a Sales Order.
-          </div>
-        </div>
       </div>
     );
   }

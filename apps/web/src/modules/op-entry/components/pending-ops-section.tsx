@@ -17,7 +17,6 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { useSession } from '@/lib/session';
 import { DataTable } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
@@ -49,14 +48,10 @@ export function PendingOpsSection({
   isLoading,
   onStart,
 }: PendingOpsSectionProps): React.JSX.Element {
-  // Starting a session records shop-floor work. The server (POST /op-entry/start)
-  // demands role admin / manager / operator AND op_entry entry, so a qc or
-  // viewer role never sees Start even when it holds the op_entry tier.
-  const { data: me } = useSession();
+  // Starting a session records shop-floor work. ADR-232: the op_entry Entry
+  // tick alone decides (POST /op-entry/start checks the same right).
   const { data: eff } = useMyAccess();
-  const canOpEntry =
-    (me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator') &&
-    effectiveFormPerms(eff, 'op_entry').entry;
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const pendingCols = useMemo(() => pendingOpsColumns(), []);
   const madeCols = useMemo(() => madeHereColumns(), []);
 

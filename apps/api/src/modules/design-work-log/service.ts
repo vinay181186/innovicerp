@@ -14,7 +14,7 @@ import {
 } from '@innovic/shared';
 import { designProjects, designWorkLog, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
 
@@ -261,10 +261,8 @@ export async function createDesignWorkLogEntry(
 }
 
 export async function deleteDesignWorkLogEntry(id: string, user: AuthContext): Promise<void> {
-  // Soft-delete is expressed as the edit+approve pair (L5 Dept Admin and up),
-  // matching the machines module delete pattern.
-  await requireFormAccess(user, 'dsnworklog_create', 'edit');
-  await requireFormAccess(user, 'dsnworklog_create', 'approve');
+  // ADR-232: deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Design Work Log entries');
   const companyId = requireCompany(user);
   const userId = user.id;
   await withUserContext(user, async (tx) => {

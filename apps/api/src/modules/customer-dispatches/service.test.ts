@@ -31,6 +31,8 @@ import {
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import { AuthorizationError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import {
   cancelDispatch,
   createDispatch,
@@ -553,5 +555,40 @@ describe('customer dispatch — edit (ADR-202 Phase 3): reverse-then-repost', ()
     expect(await onHand(parent2)).toBe(4); // 10 − 6, unchanged
     expect(await dispatchedQtyOf(soLine1)).toBe(8);
     expect(await dispatchedQtyOf(soLine2)).toBe(6);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): the Access Control ticks alone decide; the
+// derived role never refuses. Unknown id → a gate pass shows as a non-auth error.
+describe('updateCustomerDispatch — ticks decide (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('sales L3 with role operator passes the gate', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L3' } }, 'operator');
+    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('sales L2 (no tick) is refused', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L2' } }, 'manager');
+    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('L7 Auditor is refused', async () => {
+    const user = asAccess(admin, AUDITOR, 'viewer');
+    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('cancelDispatch (not a delete): Sales L5 with role operator passes the gate', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L5' } }, 'operator');
+    await expect(cancelDispatch(UNKNOWN_ID, 'test', user)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('cancelDispatch: Sales L3 (Edit but no Approve) is refused', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L3' } }, 'manager');
+    await expect(cancelDispatch(UNKNOWN_ID, 'test', user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });

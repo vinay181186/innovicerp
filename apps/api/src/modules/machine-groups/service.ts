@@ -16,7 +16,7 @@ import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -273,9 +273,8 @@ export async function updateMachineGroupOrStage(
 }
 
 export async function softDeleteMachineGroup(id: string, user: AuthContext): Promise<{ ok: true }> {
-  // Delete = the edit+approve pair only L5 Department Admin and above hold.
-  await requireFormAccess(user, 'machine_create', 'edit');
-  await requireFormAccess(user, 'machine_create', 'approve');
+  // ADR-232 — deleting any record needs L6 Super Admin.
+  await requireDeleteRight(user, 'Machine Groups');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

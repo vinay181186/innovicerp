@@ -133,18 +133,18 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
 /**
  * The CAPA's ⋯ menu — the retired row buttons, same gates. View is the row
  * click (not repeated here); Edit needs edit on a non-closed CAPA; Assign Task
- * is open to any user on a non-closed CAPA (ADR-176 — the server sets Assigned
- * By, so no edit gate here, matching the old inline button).
+ * needs the CAPA page's Advance right on a non-closed CAPA (ADR-232).
  */
 export function capaRowMenu(
   c: CapaRecord,
   opts: {
     canEdit: boolean;
+    canAssign: boolean;
     onEdit: (c: CapaRecord) => void;
     onAssign: (c: CapaRecord) => void;
   },
 ): RowMenuItem[] {
-  const { canEdit, onEdit, onAssign } = opts;
+  const { canEdit, canAssign, onEdit, onAssign } = opts;
   return [
     {
       key: 'edit',
@@ -158,7 +158,7 @@ export function capaRowMenu(
       label: 'Assign Task',
       icon: 'user-round',
       group: 'assign',
-      hidden: c.status === 'Closed',
+      hidden: !canAssign || c.status === 'Closed',
       onSelect: () => onAssign(c),
     },
   ];

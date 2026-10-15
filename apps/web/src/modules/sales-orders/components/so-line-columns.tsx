@@ -261,24 +261,21 @@ export function lineColumns(opts: {
 
 /**
  * ADR-196 — the line's ⋯ menu: "Close line" (closed short: the qty not yet
- * dispatched is dropped). Hidden without so_create edit + approve; greyed with
- * the reason the server would refuse it (role, SO status, line state).
+ * dispatched is dropped). Hidden without so_create advance + approve (ADR-231);
+ * greyed with the reason the server would refuse it (SO status, line state).
  */
 export function lineRowMenu(
   l: SalesOrderLine,
   opts: {
-    /** so_create edit + approve. */
+    /** so_create advance + approve. */
     canClose: boolean;
-    /** Role admin / manager — the server's write-role check. */
-    isWriteRole: boolean;
     soStatus: SoStatus;
     onCloseLine: (line: SalesOrderLine) => void;
   },
 ): RowMenuItem[] {
-  const { canClose, isWriteRole, soStatus, onCloseLine } = opts;
-  const why = !isWriteRole
-    ? 'Needs admin or manager role'
-    : soStatus === 'draft'
+  const { canClose, soStatus, onCloseLine } = opts;
+  const why =
+    soStatus === 'draft'
       ? 'SO is draft'
       : soStatus === 'cancelled'
         ? 'SO is cancelled'

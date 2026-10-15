@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { qcProcesses, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { ConflictError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const TEST_PREFIX = 'TQP-';
@@ -118,5 +119,31 @@ describe('qcProcesses service', () => {
     );
     await service.softDeleteQcProcess(created.id, admin);
     await expect(service.getQcProcess(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): deleting any record needs L6 Super Admin. No
+// department tier — not even L5 Department Admin — and no page tick grants it.
+describe('softDeleteQcProcess — Super Admin only (ADR-232)', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+
+  it('L5 QC Department Admin cannot delete QC processes — AuthorizationError', async () => {
+    const l5 = asAccess(admin, { departments: { qc: 'L5' } }, 'manager');
+    await expect(service.softDeleteQcProcess(UNKNOWN_ID, l5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('L7 Auditor cannot delete QC processes — AuthorizationError', async () => {
+    const auditor = asAccess(admin, { ...AUDITOR, departments: { qc: 'L5' } });
+    await expect(service.softDeleteQcProcess(UNKNOWN_ID, auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('Super Admin passes the delete gate (unknown id → NotFoundError, not refused)', async () => {
+    await expect(service.softDeleteQcProcess(UNKNOWN_ID, admin)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });

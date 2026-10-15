@@ -157,7 +157,7 @@ function orderColumns(planCode: Map<string, string>): DataTableColumn<LevelProdu
     },
     { header: 'Order Qty', align: 'right', nowrap: true, render: (o) => <N v={o.orderQty} /> },
     {
-      header: 'Credited Qty',
+      header: 'Stock Received',
       align: 'right',
       nowrap: true,
       headColor: 'var(--green)',
@@ -174,7 +174,7 @@ function orderColumns(planCode: Map<string, string>): DataTableColumn<LevelProdu
       header: 'Pending',
       align: 'right',
       nowrap: true,
-      title: () => 'Order Qty − Credited Qty while the order is open; 0 once it is closed',
+      title: () => 'Order Qty − Stock Received while the order is open; 0 once it is closed',
       render: (o) => <N v={o.pendingQty} />,
     },
     {

@@ -117,7 +117,7 @@ export function PoQuantityClusters({ po }: { po: Po }): React.JSX.Element {
   const credited = po.creditedQty ?? 0;
   const jcFinishedTitle =
     (po.jcComputedStatus ? `JC Status: ${JC_STATUS_LABEL[po.jcComputedStatus]}. ` : '') +
-    "Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close credits this qty to stock." +
+    "Finished qty = output of the Job Card's last op (QC-accepted if it is QC). Close puts this qty into stock." +
     (po.jcClosedAt ? ` JC closed on ${fmtDate(po.jcClosedAt)}.` : '');
   return (
     <>
@@ -174,22 +174,22 @@ export function PoQuantityClusters({ po }: { po: Po }): React.JSX.Element {
       <Cluster name={null}>
         <ClusterFact
           num
-          label="Credited Qty"
-          title="Pieces already closed into stock"
+          label="Stock Received"
+          title="Pieces this order has put into stock"
           value={credited}
         />
         <ClusterFact
           num
           label="Lost Qty"
           empty={po.lostQty == null}
-          title="Pieces written off on a short close"
+          title="Pieces scrapped — part of the Short Closed Qty, not added to it"
           value={po.lostQty ?? '—'}
         />
         <ClusterFact
           num
           className="po-act"
           label="Available to Close"
-          title="Finished on the Job Card and not yet credited — what Close Qty… acts on"
+          title="Finished on the Job Card and not yet put into stock — what Close Qty… acts on"
           value={po.availableToClose}
         />
         <ClusterFact

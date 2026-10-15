@@ -6,6 +6,7 @@ import { ACCESS_TIERS, accessTier, tierPermsForDept } from '../enums/access-cont
 import {
   accessFormPermsSchema,
   canAdvanceForm,
+  canDeleteRecords,
   cascadeFormPerms,
   effectiveFormPerms,
   emptyFormPerms,
@@ -153,5 +154,36 @@ describe('effective perms', () => {
 
   it('no access loaded yet → nothing', () => {
     expect(canAdvanceForm(null, PRO)).toBe(false);
+  });
+});
+
+// ADR-232 — Access Control ticks alone decide; the derived role no longer
+// gates writes, so these two rules must hold in the matrix itself.
+describe('ADR-232 auditor and delete', () => {
+  it('gives an Auditor view only, even with a stored write tier and ticks', () => {
+    const eff = access({
+      auditor: true,
+      departments: { qc: 'L5' },
+      forms: { [NC]: ticks({ entry: true, edit: true, approve: true, advance: true }) },
+    });
+    const p = effectiveFormPerms(eff, NC);
+    expect(p.view).toBe(true);
+    expect([p.entry, p.advance, p.edit, p.approve]).toEqual([false, false, false, false]);
+  });
+
+  it('lets an all-L1 user use the one page they were ticked on', () => {
+    const eff = access({
+      departments: { qc: 'L1', production: 'L1' },
+      forms: { [NC]: ticks({ entry: true }) },
+    });
+    expect(effectiveFormPerms(eff, NC).entry).toBe(true);
+    expect(effectiveFormPerms(eff, PRO).entry).toBe(false);
+  });
+
+  it('gives Delete to Super Admin only — never to an L5 head', () => {
+    expect(canDeleteRecords(access({ fullAccess: true }))).toBe(true);
+    expect(canDeleteRecords(access({ departments: { qc: 'L5' } }))).toBe(false);
+    expect(canDeleteRecords(access({ auditor: true }))).toBe(false);
+    expect(canDeleteRecords(null)).toBe(false);
   });
 });

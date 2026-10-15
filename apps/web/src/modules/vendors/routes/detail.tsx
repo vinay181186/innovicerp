@@ -23,7 +23,7 @@
 import { type DocumentEditChange, type Vendor, gstCategoryLabel, stateLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -95,13 +95,10 @@ function VendorDetailPage(): React.JSX.Element {
 
   // Tier-driven, per department (vendor_create sits in Purchase). Replaces the
   // old admin/manager + admin flags, which collapsed all seven tiers into two.
-  // Delete is not one of the four tier actions, so it is expressed as the pair
-  // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
-  // edit without approve; L4 Approver has approve without edit. Delete was
-  // admin-only, which locked out the very tier meant to run the department.
   const perms = effectiveFormPerms(eff, 'vendor_create');
   const canEdit = perms.edit;
-  const canDelete = perms.edit && perms.approve;
+  // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
+  const canDelete = canDeleteRecords(eff);
   // "New PO" raises a purchase order to this vendor — gated on the PO's own
   // entry right, the same gate /purchase-orders/from-pr enforces.
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;

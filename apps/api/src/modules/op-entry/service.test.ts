@@ -9,12 +9,15 @@ import {
   jobCards,
   ncRegister,
   opLog,
+  opLogTimeChangeRequests,
   runningOps,
   storeTransactions,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
+import { AUDITOR, asAccess } from '../../lib/test-access';
+import { reverseOpLog } from './reverse-op-log';
 import * as service from './service';
 
 const TEST_PREFIX = 'T025-';
@@ -175,8 +178,8 @@ describe('op-entry service', () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it('submitOpLog rejects viewer role with AuthorizationError (not RLS leak)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
+  it('submitOpLog rejects an L1 Production viewer with AuthorizationError (not RLS leak)', async () => {
+    const viewer = asAccess(admin, { departments: { production: 'L1' } }, 'viewer');
     await expect(
       service.submitOpLog(
         { jcOpId: testJcOpId, qty: 1, rejectQty: 0, logDate: '2026-05-01', shift: 'day' },
@@ -1278,5 +1281,263 @@ describe('op-entry submitQcLog (T-040d)', () => {
     await db.delete(items).where(eq(items.id, itemId));
     await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}JC-QC-CASC%`));
     await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}SO-QC-CASCADE%`));
+  });
+});
+
+// ADR-232 (owner, 2026-10-15): the Access Control ticks alone decide. The
+// derived users.role refuses nobody — a Quality-only inspector (role 'qc') may
+// save QC, a Production L2 (role 'operator') may log production, and someone
+// without the tick is refused whatever their role says.
+describe('op-entry — ADR-232 Access Control ticks alone decide', () => {
+  const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
+  let prodRowId: string;
+  let qcRowId: string;
+  let qcRequestId: string;
+
+  beforeAll(async () => {
+    // Qty-0 rows: they pass every gate and are then refused by a business rule
+    // ("records no qty"), so the reverse tests below write nothing.
+    const [prod] = await db
+      .insert(opLog)
+      .values({
+        companyId: admin.companyId!,
+        jcOpId: testJcOpId,
+        logNo: `${TEST_PREFIX}GATE-P`,
+        logType: 'complete',
+        logDate: '2026-05-01',
+        shift: 'day',
+        qty: 0,
+        rejectQty: 0,
+        createdBy: admin.id,
+      })
+      .returning({ id: opLog.id });
+    prodRowId = prod!.id;
+    const [qc] = await db
+      .insert(opLog)
+      .values({
+        companyId: admin.companyId!,
+        jcOpId: testJcOpId,
+        logNo: `${TEST_PREFIX}GATE-Q`,
+        logType: 'qc',
+        logDate: '2026-05-01',
+        shift: 'day',
+        qty: 0,
+        rejectQty: 0,
+        createdBy: admin.id,
+      })
+      .returning({ id: opLog.id });
+    qcRowId = qc!.id;
+    const [req] = await db
+      .insert(opLogTimeChangeRequests)
+      .values({
+        companyId: admin.companyId!,
+        opLogId: qcRowId,
+        jcOpId: testJcOpId,
+        prevLogDate: '2026-05-01',
+        requestedLogDate: '2026-04-30',
+        status: 'pending',
+        requestedBy: admin.id,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning({ id: opLogTimeChangeRequests.id });
+    qcRequestId = req!.id;
+  });
+
+  afterAll(async () => {
+    // Requests cascade with their op_log row.
+    await db.delete(opLog).where(like(opLog.logNo, `${TEST_PREFIX}GATE-%`));
+  });
+
+  const prodL2 = () => asAccess(admin, { departments: { production: 'L2' } }, 'qc');
+  const qcL2 = () => asAccess(admin, { departments: { qc: 'L2' } }, 'qc');
+  const auditor = () =>
+    asAccess(admin, { ...AUDITOR, departments: { production: 'L5', qc: 'L5' } });
+
+  // ─── submitOpLog / startOp / stopOp — Op Entry `entry` ─────────────────
+  it('submitOpLog: Production L2 with role qc passes the gate (refused later on qty)', async () => {
+    await expect(
+      service.submitOpLog(
+        { jcOpId: testJcOpId, qty: 999, rejectQty: 0, logDate: '2026-05-01', shift: 'day' },
+        prodL2(),
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('submitOpLog: QC L5 manager without the Op Entry tick → AuthorizationError', async () => {
+    const qcOnly = asAccess(admin, { departments: { qc: 'L5' } }, 'manager');
+    await expect(
+      service.submitOpLog(
+        { jcOpId: testJcOpId, qty: 1, rejectQty: 0, logDate: '2026-05-01', shift: 'day' },
+        qcOnly,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('submitOpLog: L7 Auditor → AuthorizationError', async () => {
+    await expect(
+      service.submitOpLog(
+        { jcOpId: testJcOpId, qty: 1, rejectQty: 0, logDate: '2026-05-01', shift: 'day' },
+        auditor(),
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('startOp / stopOp: Production L2 with role qc passes the gate; no tick / auditor refused', async () => {
+    const start = {
+      jcOpId: UNKNOWN_ID,
+      startDate: '2026-05-01',
+      startTime: '10:00',
+      shift: 'day' as const,
+      operatorName: 'GateTest',
+    };
+    const stop = {
+      qty: 0,
+      rejectQty: 0,
+      logDate: '2026-05-01',
+      logTime: '10:30',
+      shift: 'day' as const,
+      operatorName: 'GateTest',
+    };
+    await expect(service.startOp(start, prodL2())).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(service.stopOp(UNKNOWN_ID, stop, prodL2())).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.startOp(start, qcL2())).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.stopOp(UNKNOWN_ID, stop, qcL2())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.startOp(start, auditor())).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.stopOp(UNKNOWN_ID, stop, auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  // ─── submitQcLog — QC Call Register `entry` ────────────────────────────
+  const qcInput = () => ({
+    jcOpId: testJcOpId,
+    qty: 1,
+    rejectQty: 0,
+    logDate: '2026-05-02',
+    shift: 'day' as const,
+    operatorName: 'QC-Insp',
+  });
+
+  it('submitQcLog: Quality-only inspector (role qc) passes the gate (refused later: not a QC op)', async () => {
+    await expect(service.submitQcLog(qcInput(), qcL2())).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('submitQcLog: Production L5 operator without the QC tick → AuthorizationError', async () => {
+    const prodOnly = asAccess(admin, { departments: { production: 'L5' } }, 'operator');
+    await expect(service.submitQcLog(qcInput(), prodOnly)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('submitQcLog: L7 Auditor → AuthorizationError', async () => {
+    await expect(service.submitQcLog(qcInput(), auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  // ─── updateOpLogTiming — `edit` on the page that records the row ───────
+  it('updateOpLogTiming: QC row — QC L3 with role operator passes (unchanged time → no write)', async () => {
+    const qcL3 = asAccess(admin, { departments: { qc: 'L3' } }, 'operator');
+    const res = await service.updateOpLogTiming({ id: qcRowId, logDate: '2026-05-01' }, qcL3);
+    expect(res.applied).toBe(true);
+  });
+
+  it('updateOpLogTiming: production row — Production L3 with role qc passes', async () => {
+    const prodL3 = asAccess(admin, { departments: { production: 'L3' } }, 'qc');
+    const res = await service.updateOpLogTiming({ id: prodRowId, logDate: '2026-05-01' }, prodL3);
+    expect(res.applied).toBe(true);
+  });
+
+  it('updateOpLogTiming: QC row by a Production L5 (no QC edit tick) → AuthorizationError', async () => {
+    const prodL5 = asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+    await expect(
+      service.updateOpLogTiming({ id: qcRowId, logDate: '2026-05-01' }, prodL5),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('updateOpLogTiming: L7 Auditor → AuthorizationError', async () => {
+    await expect(
+      service.updateOpLogTiming({ id: prodRowId, logDate: '2026-05-01' }, auditor()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  // ─── decideOpLogTimeChange — `approve` by the row's type (owner D7) ────
+  it('decideOpLogTimeChange: QC row — QC L4 with role qc passes (refused later: reject needs a reason)', async () => {
+    const qcL4 = asAccess(admin, { departments: { qc: 'L4' } }, 'qc');
+    await expect(
+      service.decideOpLogTimeChange({ id: qcRequestId, decision: 'reject' }, qcL4),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('decideOpLogTimeChange: QC row by a Production L5 manager (no QC approve) → AuthorizationError', async () => {
+    const prodL5 = asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+    await expect(
+      service.decideOpLogTimeChange({ id: qcRequestId, decision: 'reject' }, prodL5),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('decideOpLogTimeChange: L7 Auditor → AuthorizationError', async () => {
+    await expect(
+      service.decideOpLogTimeChange({ id: qcRequestId, decision: 'reject' }, auditor()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  // ─── reverseOpLog — edit + approve by the row's type (owner D8) ────────
+  it('reverseOpLog: QC row — QC L5 with role qc passes (refused later: no qty)', async () => {
+    const qcL5 = asAccess(admin, { departments: { qc: 'L5' } }, 'qc');
+    await expect(reverseOpLog(qcRowId, { reason: 'gate test' }, qcL5)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
+  it('reverseOpLog: QC row by a Production L5 manager (Op Entry rights only) → AuthorizationError', async () => {
+    const prodL5 = asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+    await expect(reverseOpLog(qcRowId, { reason: 'gate test' }, prodL5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('reverseOpLog: production row — Production L5 with role operator passes; QC L5 refused', async () => {
+    const prodL5 = asAccess(admin, { departments: { production: 'L5' } }, 'operator');
+    await expect(reverseOpLog(prodRowId, { reason: 'gate test' }, prodL5)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    const qcL5 = asAccess(admin, { departments: { qc: 'L5' } }, 'qc');
+    await expect(reverseOpLog(prodRowId, { reason: 'gate test' }, qcL5)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('reverseOpLog: L7 Auditor → AuthorizationError', async () => {
+    await expect(reverseOpLog(qcRowId, { reason: 'gate test' }, auditor())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  // ─── generateOspPr — Purchase Requests `entry`, always (owner D10) ─────
+  it('generateOspPr: Purchase L2 with role operator passes the gate', async () => {
+    const buyer = asAccess(admin, { departments: { purchase: 'L2' } }, 'operator');
+    await expect(service.generateOspPr({ jcOpId: UNKNOWN_ID }, buyer)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('generateOspPr: a manager without the Purchase Requests tick → AuthorizationError', async () => {
+    const mgr = asAccess(admin, { departments: { production: 'L5' } }, 'manager');
+    await expect(service.generateOspPr({ jcOpId: UNKNOWN_ID }, mgr)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  });
+
+  it('generateOspPr: L7 Auditor → AuthorizationError', async () => {
+    const aud = asAccess(admin, { ...AUDITOR, departments: { purchase: 'L5' } });
+    await expect(service.generateOspPr({ jcOpId: UNKNOWN_ID }, aud)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });
