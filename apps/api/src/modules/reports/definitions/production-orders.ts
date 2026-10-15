@@ -8,11 +8,14 @@
 // NOT stored on the PO — `jc_status` is read live off v_jc_status and
 // `finished_qty` is the JC's last live op the same way the JC list computes
 // `lastOpCompletedQty` (job-cards/service.ts): the QC-accepted qty for a QC /
-// qc_required op, else the completed qty. `credited_qty` is what Close
-// actually booked to stock (null until closed).
+// qc_required op, else the completed qty. `credited_qty` ("Stock Received",
+// ADR-233) is what Close actually booked to stock (null until closed).
+// `short_closed_qty` (ADR-233) is worked out by the SQL twin of the shared
+// productionOrderShortClosedQty rule — never stored.
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { proShortClosedQtyRaw } from '../../production-orders/short-closed-qty';
 
 // ADR-182 added 'short_closed' — an order stopped at any stage. Blank picks
 // every status, so the filter is only about narrowing to one of these.
@@ -25,7 +28,7 @@ export const productionOrdersReport: RegisteredReport = {
     slug: 'production-orders',
     title: 'Production Orders',
     description:
-      'Every Production Order with its plan, SO/JWSO, item, the Job Card it built, the live JC status and finished qty, and — once closed — the qty credited to stock. Open orders first, then newest.',
+      'Every Production Order with its plan, SO/JWSO, item, the Job Card it built, the live JC status and finished qty, and — once closed — the Stock Received and, when ended short, the Short Closed Qty with who, when and why. Open orders first, then newest.',
     group: 'Production',
     dept: 'production',
     filters: [
@@ -50,9 +53,15 @@ export const productionOrdersReport: RegisteredReport = {
       { key: 'finished_qty', label: 'Completed', type: 'number' },
       { key: 'status', label: 'Production Order Status', type: 'text' },
       { key: 'closed_at', label: 'Closed Date', type: 'datetime' },
-      { key: 'credited_qty', label: 'Credited Qty', type: 'number' },
+      { key: 'credited_qty', label: 'Stock Received', type: 'number' },
       // ADR-185 — the lost pieces the order detail states (finish / short close).
       { key: 'lost_qty', label: 'Lost Qty', type: 'number' },
+      // ADR-233 — Order − Stock Received once ended short (Finish Short or
+      // Short Close), else 0; then the Short Close stamps (ADR-182).
+      { key: 'short_closed_qty', label: 'Short Closed Qty', type: 'number' },
+      { key: 'short_closed_at', label: 'Short Closed On', type: 'datetime' },
+      { key: 'short_closed_by', label: 'Short Closed By', type: 'text' },
+      { key: 'short_close_reason', label: 'Short Close Reason', type: 'text' },
     ],
   },
   async run({ tx, companyId, filters }) {
@@ -85,9 +94,14 @@ export const productionOrdersReport: RegisteredReport = {
         po.status,
         to_char(po.closed_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS closed_at,
         po.credited_qty::int AS credited_qty,
-        po.lost_qty::int AS lost_qty
+        po.lost_qty::int AS lost_qty,
+        ${sql.raw(proShortClosedQtyRaw('po'))} AS short_closed_qty,
+        to_char(po.short_closed_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS short_closed_at,
+        scu.full_name AS short_closed_by,
+        po.short_close_reason
       FROM public.production_orders po
       LEFT JOIN public.v_jc_status s ON s.job_card_id = po.job_card_id
+      LEFT JOIN public.users scu ON scu.id = po.short_closed_by
       -- ADR-207 — live Internal SO No. through the order's plan → SO line
       -- (a JWSO plan has no SO line, so the cell stays blank).
       LEFT JOIN public.plans pl ON pl.id = po.plan_id
@@ -119,6 +133,10 @@ export const productionOrdersReport: RegisteredReport = {
       closed_at: (r['closed_at'] as string | null) ?? null,
       credited_qty: r['credited_qty'] != null ? Number(r['credited_qty']) : null,
       lost_qty: r['lost_qty'] != null ? Number(r['lost_qty']) : null,
+      short_closed_qty: Number(r['short_closed_qty'] ?? 0),
+      short_closed_at: (r['short_closed_at'] as string | null) ?? null,
+      short_closed_by: (r['short_closed_by'] as string | null) ?? null,
+      short_close_reason: (r['short_close_reason'] as string | null) ?? null,
     }));
 
     return { columns: productionOrdersReport.definition.columns, rows };

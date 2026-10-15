@@ -2,7 +2,7 @@
 // (packages/shared/src/enums/production-order-status.ts, ADR-179 + ADR-182):
 //   open             = nothing credited yet
 //   partially_closed = some finished pieces credited, more still to come
-//   closed           = fully credited (or closed short)
+//   closed           = fully credited (or closed short — then "Closed (Short N)")
 //   short_closed     = STOPPED at some stage — nothing further may be done on
 //                      the order or its Job Card, and the un-produced qty went
 //                      back to the plan's Pending
@@ -30,12 +30,29 @@ const LABELS: Record<ProductionOrderStatus, string> = {
   short_closed: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
 };
 
+/** ADR-233 — the badge names how much was short-closed, so an order ended
+ *  under target never reads as a plain "Closed": `Closed (Short 4)` for a
+ *  Finish Short, `Short Closed (4)` for a stopped order. `shortClosedQty` is
+ *  the server's `productionOrderShortClosedQty` (0 while open / partly closed). */
+function labelFor(status: ProductionOrderStatus, shortClosedQty: number): string {
+  if (shortClosedQty > 0 && status === 'closed') {
+    return `${LABELS.closed} (Short ${shortClosedQty})`;
+  }
+  if (shortClosedQty > 0 && status === 'short_closed') {
+    return `${LABELS.short_closed} (${shortClosedQty})`;
+  }
+  return LABELS[status];
+}
+
 export function PoStatusBadge({
   status,
   draft,
+  shortClosedQty = 0,
 }: {
   status: ProductionOrderStatus;
   draft?: boolean | undefined;
+  /** ADR-233 `Short Closed Qty` — omit (0) where the screen does not carry it. */
+  shortClosedQty?: number | undefined;
 }): React.JSX.Element {
   // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
   if (draft) {
@@ -45,5 +62,5 @@ export function PoStatusBadge({
       </span>
     );
   }
-  return <span className={`badge ${CLASSES[status]}`}>{LABELS[status]}</span>;
+  return <span className={`badge ${CLASSES[status]}`}>{labelFor(status, shortClosedQty)}</span>;
 }

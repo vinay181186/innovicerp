@@ -55,11 +55,16 @@
 //     goods-receipt-notes/cascades.ts read job_cards.production_order_id and
 //     credit nothing for a PO-linked JC; the only credit is the close below.
 
-import { ActivityAction, PRODUCTION_ORDER_STATUS_LABEL } from '@innovic/shared';
+import {
+  ActivityAction,
+  PRODUCTION_ORDER_STATUS_LABEL,
+  productionOrderShortClosedQty,
+} from '@innovic/shared';
 import type { DocumentEditStagedResult, ProductionOrderStatus } from '@innovic/shared';
 import { and, asc, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
+  activityLog,
   jobCards,
   plans,
   productionOrderCloses,
@@ -75,6 +80,11 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { productionOrderSfColumns } from './sf-columns';
+import {
+  buildCloseHistory,
+  needsZeroCreditFinishShortRow,
+  type CloseLedgerRow,
+} from './close-history';
 import {
   AuthorizationError,
   ConflictError,
@@ -133,6 +143,14 @@ function todayIso(): string {
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
+}
+
+/** §20.2 — a status UPDATE conditional on the status read under the row lock
+ *  matched no row: the order moved underneath this request. */
+function statusChangedError(code: string): ConflictError {
+  return new ConflictError(
+    `Production Order ${code} was changed by someone else just now — reload and try again.`,
+  );
 }
 
 function toIso(v: Date | string | null | undefined): string | null {
@@ -534,6 +552,14 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     createdByName: r.createdByName ?? null,
     closedByName: r.closedByName ?? null,
     shortClosedByName: r.shortClosedByName ?? null,
+    // ADR-233 — Order − Stock Received once the order is ended short, else 0.
+    // The shared function, so every screen and this API agree on one rule
+    // (SQL twin for sort / filter / report: ./short-closed-qty.ts).
+    shortClosedQty: productionOrderShortClosedQty({
+      status: r.status as ProductionOrderListItem['status'],
+      orderQty: r.orderQty,
+      creditedQty: r.creditedQty,
+    }),
   };
 }
 
@@ -597,12 +623,13 @@ function toDetail(
 }
 
 /** The close ledger for one PO, newest first. Reads the running history the
- *  detail view + reversal need (ADR-179). */
+ *  detail view + reversal need (ADR-179). ADR-233: close-history.ts turns it
+ *  into the typed history (adds `kind` and the header-built rows). */
 async function readClosesInTx(
   tx: DbTransaction,
   productionOrderId: string,
   companyId: string,
-): Promise<ProductionOrderClose[]> {
+): Promise<CloseLedgerRow[]> {
   const closedByUserC = alias(users, 'po_close_by');
   const rows = await tx
     .select({
@@ -748,12 +775,41 @@ async function readDetailInTx(
   const row = rows[0];
   if (!row) throw new NotFoundError('Production Order not found. Refresh the page.');
   const item = toListItem(row as PoRow);
-  const [settled, closes, planFacts] = await Promise.all([
+  const [settled, ledger, planFacts] = await Promise.all([
     readJcSettledWithLosses(tx, item),
     readClosesInTx(tx, id, companyId),
     readPlanFactsInTx(tx, item.planId, companyId),
   ]);
-  return toDetail(item, settled, closes, planFacts);
+  // ADR-233 — a Finish Short that put nothing into stock left no ledger row;
+  // its reason lives only on the CLOSE_SHORT activity entry (close remarks
+  // never overwrite the order's planner Remarks). Read it only in that case.
+  const finishShortReason = needsZeroCreditFinishShortRow(item, ledger)
+    ? await readLatestCloseShortReason(tx, id, companyId)
+    : null;
+  return toDetail(item, settled, buildCloseHistory(item, ledger, finishShortReason), planFacts);
+}
+
+/** The reason on the order's newest CLOSE_SHORT activity entry (ADR-197 makes
+ *  it mandatory on Finish Short). Null when none is found. */
+async function readLatestCloseShortReason(
+  tx: DbTransaction,
+  productionOrderId: string,
+  companyId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ reason: activityLog.reason })
+    .from(activityLog)
+    .where(
+      and(
+        eq(activityLog.companyId, companyId),
+        eq(activityLog.entity, 'ProductionOrder'),
+        eq(activityLog.entityId, productionOrderId),
+        eq(activityLog.action, ActivityAction.CloseShort),
+      ),
+    )
+    .orderBy(desc(activityLog.ts))
+    .limit(1);
+  return rows[0]?.reason ?? null;
 }
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
@@ -1652,8 +1708,11 @@ export async function closeProductionOrder(
     }
 
     const now = new Date();
+    const lockedStatus = locked[0].status;
     const writeOrder = async (): Promise<void> => {
-      await tx
+      // §20.2 — conditional on the status read under the lock above; 0 rows
+      // means it moved underneath us, so refuse rather than overwrite.
+      const written = await tx
         .update(productionOrders)
         .set({
           status: finalStatus,
@@ -1665,7 +1724,9 @@ export async function closeProductionOrder(
           updatedAt: now,
           updatedBy: user.id,
         })
-        .where(eq(productionOrders.id, id));
+        .where(and(eq(productionOrders.id, id), eq(productionOrders.status, lockedStatus)))
+        .returning({ id: productionOrders.id });
+      if (written.length === 0) throw statusChangedError(current.code);
     };
     // ADR-184 — once the order is 'closed' it covers only what it credited, so
     // a finish-close with losses gives the lost pieces back to the plan's
@@ -1704,7 +1765,7 @@ export async function closeProductionOrder(
         changes: [
           {
             field: 'creditedQty',
-            label: 'Credited Qty',
+            label: 'Stock Received',
             before: alreadyCredited,
             after: newCredited,
           },
@@ -1792,6 +1853,15 @@ export async function reverseProductionOrderClose(
     // ADR-182 — nothing may be undone on a stopped order either: its credited
     // pieces stay credited exactly as they were when it was short closed.
     await assertProductionOrderNotShortClosed(tx, po.jobCardId);
+
+    // ADR-233 — the history's header-built rows (a Short Close, a Finish Short
+    // that put nothing into stock) carry the ORDER's id. They have no stock
+    // entry to undo, so say so instead of a bare "not found".
+    if (input.closeId === id) {
+      throw new ValidationError(
+        `That ${po.code} history entry put nothing into stock, so there is nothing to reverse.`,
+      );
+    }
 
     // The close row being reversed must belong to this PO, be a real close (not
     // itself a reversal) and not already reversed.
@@ -1918,7 +1988,8 @@ export async function reverseProductionOrderClose(
       newCredited <= 0 ? 'open' : newCredited >= po.orderQty ? 'closed' : 'partially_closed';
     const now = new Date();
     const writeReversal = async (): Promise<void> => {
-      await tx
+      // §20.2 — conditional on the status read under the lock above.
+      const written = await tx
         .update(productionOrders)
         .set({
           status: finalStatus,
@@ -1928,7 +1999,9 @@ export async function reverseProductionOrderClose(
           updatedAt: now,
           updatedBy: user.id,
         })
-        .where(eq(productionOrders.id, id));
+        .where(and(eq(productionOrders.id, id), eq(productionOrders.status, po.status)))
+        .returning({ id: productionOrders.id });
+      if (written.length === 0) throw statusChangedError(po.code);
     };
     // ADR-184 — a reversal can move the plan's Pending both ways (a 'closed'
     // order covering only its credit goes back to its full Order Qty), so the
@@ -1964,13 +2037,13 @@ export async function reverseProductionOrderClose(
         changes: [
           {
             field: 'creditedQty',
-            label: 'Credited Qty',
+            label: 'Stock Received',
             before: po.creditedQty ?? 0,
             after: newCredited,
           },
         ],
         detail:
-          `${po.code} — reversed close of ${close.qty} (now ${newCredited} of ${po.orderQty} closed)` +
+          `${po.code} — reversed close of ${close.qty} (Stock Received now ${newCredited} of ${po.orderQty})` +
           (unbooked > 0 ? `, ${unbooked} reservation released` : ''),
         refId: po.code,
       },
@@ -2190,9 +2263,11 @@ export function shortCloseReasonError(reason: string): string | null {
  * lossSql already counts on the root; adding the child's own scrap NC too
  * would count the same piece twice.
  *
- * The only status it refuses is `short_closed` itself. A fully `closed` order
- * CAN be short closed; its Covered is already its credited qty, so nothing
- * goes back, and the loss its finish-close recorded is kept.
+ * It refuses `short_closed` itself, and (ADR-233, gap G9) a `closed` order
+ * whose Stock Received already equals its Order Qty — nothing is short there.
+ * A `closed` order ended by Finish Short (Stock Received < Order Qty) CAN
+ * still be short closed; its Covered is already its Stock Received, so
+ * nothing goes back, and the loss its Finish Short recorded is kept.
  */
 export async function shortCloseProductionOrder(
   id: string,
@@ -2239,6 +2314,23 @@ export async function shortCloseProductionOrder(
     }
 
     const credited = po.creditedQty ?? 0;
+    // ADR-233 (G9) — a fully received order has nothing short to stop.
+    if (po.status === 'closed' && credited >= po.orderQty) {
+      throw new ConflictError(
+        `${po.code} is fully received into stock (${credited} of ${po.orderQty}) — nothing is short.`,
+      );
+    }
+    // Short Closed Qty before and after, by the shared rule (ADR-233).
+    const shortBefore = productionOrderShortClosedQty({
+      status: po.status as ProductionOrderStatus,
+      orderQty: po.orderQty,
+      creditedQty: po.creditedQty,
+    });
+    const shortAfter = productionOrderShortClosedQty({
+      status: 'short_closed',
+      orderQty: po.orderQty,
+      creditedQty: po.creditedQty,
+    });
 
     // ADR-184 review — finished pieces that were never credited would be
     // stranded for good: short close freezes the Job Card, caps dispatch at the
@@ -2250,8 +2342,8 @@ export async function shortCloseProductionOrder(
     const finished = Math.max(0, Number(finishedRows[0]?.finished ?? 0));
     if (finished > credited) {
       throw new ConflictError(
-        `${po.code}: ${finished - credited} finished piece(s) on ${po.jcCodeText ?? 'the Job Card'} are not yet credited to stock ` +
-          `(${finished} finished, ${credited} credited). Close them first, then Short Close.`,
+        `${po.code}: ${finished - credited} finished piece(s) on ${po.jcCodeText ?? 'the Job Card'} are not yet received into stock ` +
+          `(${finished} finished, ${credited} Stock Received). Close them first, then Short Close.`,
       );
     }
 
@@ -2269,7 +2361,8 @@ export async function shortCloseProductionOrder(
       tx,
       { planId: po.planId, companyId, poCode: po.code, how: 'short close', user },
       async () => {
-        await tx
+        // §20.2 — conditional on the status read under the lock above.
+        const written = await tx
           .update(productionOrders)
           .set({
             status: 'short_closed',
@@ -2280,7 +2373,9 @@ export async function shortCloseProductionOrder(
             updatedAt: now,
             updatedBy: user.id,
           })
-          .where(eq(productionOrders.id, id));
+          .where(and(eq(productionOrders.id, id), eq(productionOrders.status, po.status)))
+          .returning({ id: productionOrders.id });
+        if (written.length === 0) throw statusChangedError(po.code);
       },
     );
 
@@ -2341,10 +2436,17 @@ export async function shortCloseProductionOrder(
             after: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
           },
           { field: 'lostQty', label: 'Lost Qty', before: po.lostQty ?? null, after: lost },
+          // ADR-233 — the pieces this stop leaves short (Order − Stock Received).
+          {
+            field: 'shortClosedQty',
+            label: 'Short Closed Qty',
+            before: shortBefore,
+            after: shortAfter,
+          },
         ],
         detail:
-          `${po.code} Short Closed — JC ${po.jcCodeText}: credited ${credited} of ${po.orderQty}, ` +
-          `lost ${lost}, returned ${returned} to plan ${planCode}` +
+          `${po.code} Short Closed — JC ${po.jcCodeText}: Stock Received ${credited} of ${po.orderQty}, ` +
+          `Short Closed Qty ${shortAfter}, lost ${lost}, returned ${returned} to plan ${planCode}` +
           (shift ? ` (Pending ${shift.pendingBefore} → ${shift.pendingAfter})` : '') +
           (shift?.reopened ? ', plan re-opened for a new Production Order' : '') +
           (closedJcs.length > 0 ? `; closed JC ${closedJcs.map((r) => r.code).join(', ')}` : '') +

@@ -3,7 +3,7 @@
 // It is NOT ADR-179's "close short" (which finishes a COMPLETE Job Card and
 // writes off its losses). This one abandons the order wherever it stands:
 //
-//   • nothing is credited and nothing already credited is taken back;
+//   • nothing is put into stock and no Stock Received is taken back;
 //   • the order AND its Job Card are frozen — no Op Entry, no QC, no NC, no
 //     OSP step, no edit. The server refuses every one of them;
 //   • the un-produced qty goes back to the plan's Pending, so a fresh
@@ -12,6 +12,7 @@
 // The reason is mandatory — the database CHECK refuses a short close without
 // one, so the button stays off until something is typed.
 
+import type { ProductionOrderStatus } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Modal } from '@/ui/feedback';
@@ -23,21 +24,30 @@ export function PoShortCloseModal({
   jcCode,
   orderQty,
   creditedQty,
+  status,
   onClose,
 }: {
   id: string;
   code: string;
   jcCode: string;
   orderQty: number;
-  /** Pieces already credited to stock — they STAY credited. */
+  /** `Stock Received` — pieces already put into stock. They STAY in stock. */
   creditedQty: number;
+  /** The order's status now. A `closed` order (Finish Short) already covers
+   *  only its Stock Received on the plan, so nothing goes back to Pending. */
+  status: ProductionOrderStatus;
   onClose: () => void;
 }): React.JSX.Element {
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const shortClose = useShortCloseProductionOrder();
   const trimmed = reason.trim();
+  // ADR-233 `Short Closed Qty` once this is done = Order − Stock Received
+  // (productionOrderShortClosedQty on a short_closed order).
   const stopping = Math.max(0, orderQty - creditedQty);
+  // What the plan's Pending gains (server: shiftPlanPending) — only an order
+  // still open or partly closed gives its balance back.
+  const backToPlan = status === 'closed' ? 0 : stopping;
 
   const onSubmit = (): void => {
     setErr(null);
@@ -89,7 +99,7 @@ export function PoShortCloseModal({
             title={!trimmed ? 'Type the reason first' : 'Stop this Production Order'}
           >
             {shortClose.isPending ? <Loader2 size={14} className="animate-spin" /> : null} Short
-            Close
+            Close {stopping} pcs
           </button>
         </>
       }
@@ -101,11 +111,13 @@ export function PoShortCloseModal({
         </span>{' '}
         is frozen — no entry or edit is allowed on it afterwards.
         <div style={{ marginTop: 8 }}>
-          {creditedQty} of {orderQty} credited stay in stock. The Pending{' '}
-          <span className="fw-700" style={{ color: 'var(--amber2)' }}>
-            {stopping}
-          </span>{' '}
-          go back to the plan.
+          <b style={{ color: 'var(--orange2)' }}>
+            {stopping} of {orderQty} will be short-closed
+          </b>{' '}
+          (not produced). {creditedQty} stay in stock.{' '}
+          {backToPlan > 0
+            ? `${backToPlan} go back to the plan as Pending.`
+            : 'The plan does not change — this order already counts only its stock.'}
         </div>
       </div>
 

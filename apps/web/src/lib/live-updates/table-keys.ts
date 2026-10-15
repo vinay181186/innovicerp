@@ -19,7 +19,9 @@ import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jobQueueKeys } from '@/modules/job-queue/api';
 import { opEntryKeys } from '@/modules/op-entry/api';
+import { plansKeys } from '@/modules/plans/api';
 import { productionDashboardKeys } from '@/modules/production-dashboard/api';
+import { productionOrdersKeys } from '@/modules/production-orders/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 import { qcCommandKeys } from '@/modules/qc-command/api';
@@ -27,6 +29,7 @@ import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
 import { shopFloorKeys } from '@/modules/shop-floor/api';
 import { soOverviewKeys } from '@/modules/so-overview/api';
+import { soPlanningKeys } from '@/modules/so-planning/api';
 import { soStatusKeys } from '@/modules/so-status/api';
 
 /** Everything that shows a job card's header, status or op progress. */
@@ -68,6 +71,20 @@ const PURCHASE_ORDER_VIEWS: readonly QueryKey[] = [
   qcHistoryKeys.all,
 ];
 
+/** ADR-233 — a Production Order's status, Stock Received and close history.
+ *  A close or Short Close also moves the plan's Pending (plans + SO planning),
+ *  the PRO coverage SO Status / SO Overview show, and freezes or re-opens the
+ *  order's Job Card (the JC page reads its order through forJobCard, which
+ *  sits under productionOrdersKeys.all). */
+const PRODUCTION_ORDER_VIEWS: readonly QueryKey[] = [
+  productionOrdersKeys.all,
+  plansKeys.all,
+  soPlanningKeys.all,
+  soStatusKeys.all,
+  soOverviewKeys.all,
+  jobCardsKeys.all,
+];
+
 export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> = {
   job_cards: PRODUCTION_VIEWS,
   jc_ops: OP_VIEWS,
@@ -85,4 +102,6 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
     purchaseOrdersKeys.all,
   ],
   document_edit_requests: [documentEditsKeys.all, approvalsKeys.all],
+  production_orders: PRODUCTION_ORDER_VIEWS,
+  production_order_closes: PRODUCTION_ORDER_VIEWS,
 };

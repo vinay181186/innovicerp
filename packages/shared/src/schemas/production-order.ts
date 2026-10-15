@@ -86,12 +86,16 @@ export const productionOrderSchema = z.object({
 
   closedAt: z.string().nullable(),
   closedBy: z.string().uuid().nullable(),
-  /** RUNNING total credited to stock so far (sum of the close ledger, ADR-179).
-   *  0 or null while nothing has been closed; grows with each partial close;
-   *  equals orderQty when fully closed (or orderQty − lost on a short close). */
+  /** `Stock Received` (ADR-233; was "Credited") — RUNNING total this order
+   *  has put into stock (sum of the close ledger, ADR-179). 0 or null while
+   *  nothing has been closed; grows with each partial close; equals orderQty
+   *  when fully closed. Below orderQty on an order ended short — the gap is
+   *  `shortClosedQty`. */
   creditedQty: z.number().int().nonnegative().nullable(),
-  /** Pieces recorded as lost on a short close (order_qty − credited on finish).
-   *  Null until the PO is closed short. Invariant: credited + lost = order. */
+  /** `Lost Qty` — pieces scrapped. Finish Short records order − credited;
+   *  Short Close records the NC scrap only (capped at order − credited). Null
+   *  until the order is ended short. Lost is PART of `shortClosedQty`, never
+   *  added to it: credited + shortClosedQty = order on a stopped order. */
   lostQty: z.number().int().nonnegative().nullable().default(null),
   remarks: z.string().nullable(),
 
@@ -103,14 +107,41 @@ export const productionOrderSchema = z.object({
 });
 export type ProductionOrder = z.infer<typeof productionOrderSchema>;
 
-/** One row of the append-only close ledger (`production_order_closes`, ADR-179).
- *  Each partial close is one row; a reversal is another row (isReversal) that
- *  points at the close it undoes. A short close carries lostQty. */
+/** ADR-233 — what one close-history row records. `close` = pieces put into
+ *  stock; `finish_short` = the close that ended the order under target
+ *  (ADR-179 Finish Short); `reversal` = undoes a close; `short_close` = the
+ *  order was stopped (ADR-182 Short Close). */
+export const PRODUCTION_ORDER_CLOSE_KINDS = [
+  'close',
+  'finish_short',
+  'reversal',
+  'short_close',
+] as const;
+export const productionOrderCloseKindSchema = z.enum(PRODUCTION_ORDER_CLOSE_KINDS);
+export type ProductionOrderCloseKind = z.infer<typeof productionOrderCloseKindSchema>;
+
+/** One row of the close history. Most rows are the append-only ledger
+ *  (`production_order_closes`, ADR-179): each partial close is one row; a
+ *  reversal is another row (isReversal) that points at the close it undoes.
+ *
+ *  ADR-233: two events leave no ledger row (the ledger refuses qty 0), so the
+ *  server adds them from the order's own header fields — never stored twice:
+ *  a Short Close (`short_closed_at/by/reason`) and a Finish Short that put
+ *  nothing into stock (`closed_at/by`, `lost_qty`). Those rows carry
+ *  `reversible: false` and the order's id as their id. */
 export const productionOrderCloseSchema = z.object({
   id: z.string().uuid(),
   productionOrderId: z.string().uuid(),
-  /** Pieces credited by this row (always > 0; a reversal's qty is the amount undone). */
-  qty: z.number().int().positive(),
+  kind: productionOrderCloseKindSchema,
+  /** Pieces put into stock by this row (a reversal's qty is the amount
+   *  undone). 0 only on a header-built row. */
+  qty: z.number().int().nonnegative(),
+  /** `Short Closed Qty` this row ended the order with (finish_short /
+   *  short_close rows); null on close and reversal rows. */
+  shortClosedQty: z.number().int().nonnegative().nullable().default(null),
+  /** False on a header-built row — it has no stock entry to undo. The web
+   *  also hides Reverse on reversal rows and on rows already reversed. */
+  reversible: z.boolean().default(true),
   isReversal: z.boolean(),
   reversesCloseId: z.string().uuid().nullable(),
   /** Set only on the close-short row that finishes the PO under target. */
@@ -145,6 +176,8 @@ export const productionOrderListItemSchema = productionOrderSchema.extend({
   createdByName: z.string().nullable(),
   closedByName: z.string().nullable(),
   shortClosedByName: z.string().nullable().default(null),
+  /** `Short Closed Qty` (ADR-233) = productionOrderShortClosedQty(row). */
+  shortClosedQty: z.number().int().nonnegative().default(0),
 });
 export type ProductionOrderListItem = z.infer<typeof productionOrderListItemSchema>;
 
@@ -159,7 +192,8 @@ export const productionOrderDetailSchema = productionOrderListItemSchema.extend(
   availableToClose: z.number().int().nonnegative(),
   /** Pieces still to be closed = max(0, orderQty − creditedQty) while the order is open; 0 once it is closed or short closed (ADR-179/184). */
   remainingQty: z.number().int().nonnegative(),
-  /** The close ledger, newest first — every partial close + reversal. */
+  /** The close history, newest first — every close, Finish Short, reversal
+   *  and Short Close (ADR-233 adds the header-built rows, see above). */
   closes: z.array(productionOrderCloseSchema),
 
   // ── The plan's own facts, joined in for the detail page (2026-10-05) ──

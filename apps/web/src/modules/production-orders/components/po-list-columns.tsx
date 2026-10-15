@@ -9,7 +9,7 @@
 // hidden by default (defaultHidden in list.tsx), so they ride in the ▸ detail
 // row rather than the main line. Labels per docs/NAMING.md: Production Order
 // No., Production Order Date, Item Code, Item Name, Order Qty, Completed,
-// Production Order Status, PRO Target Date (the order's own target date, owner
+// Stock Received, Short Closed Qty (ADR-233), Production Order Status, PRO Target Date (the order's own target date, owner
 // label 2026-09-30), plus Plan No., SO / JWSO No., Internal SO No., POL and
 // JC No. in the ▸.
 
@@ -142,13 +142,49 @@ export function poListColumns(
       render: (po) => <span style={{ color: completedColor(po) }}>{po.jcFinishedQty}</span>,
     },
     {
+      // ADR-233 — `Stock Received` (was "Credited"): pieces this order has put
+      // into stock, the running total of its closes.
+      id: 'stock_received',
+      header: 'Stock Received',
+      kind: 'num',
+      align: 'right',
+      sortFilterField: 'creditedQty',
+      className: 'mono',
+      nowrap: true,
+      render: (po) => po.creditedQty ?? 0,
+    },
+    {
+      // ADR-233 — `Short Closed Qty` = Order − Stock Received on an order ended
+      // under target (Finish Short or Short Close); Lost is part of it. Blank
+      // while the order is still running, so a 0 never reads as a fact.
+      id: 'short_closed_qty',
+      header: 'Short Closed Qty',
+      kind: 'num',
+      align: 'right',
+      sortFilterField: 'shortClosedQty',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (po) =>
+        po.shortClosedQty > 0 ? (
+          <span style={{ color: 'var(--orange2)' }}>{po.shortClosedQty}</span>
+        ) : (
+          <span className="text3">—</span>
+        ),
+    },
+    {
       id: 'pro_status',
       header: 'Production Order Status',
       kind: 'badge',
       sortFilterField: 'status',
       filterOptions: STATUS_OPTIONS,
       nowrap: true,
-      render: (po) => <PoStatusBadge status={po.status} draft={draftIds?.has(po.id)} />,
+      render: (po) => (
+        <PoStatusBadge
+          status={po.status}
+          draft={draftIds?.has(po.id)}
+          shortClosedQty={po.shortClosedQty}
+        />
+      ),
     },
     {
       id: 'pro_target_date',

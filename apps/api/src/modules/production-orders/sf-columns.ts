@@ -9,6 +9,7 @@ import { type SQL, sql } from 'drizzle-orm';
 
 import { productionOrders } from '../../db/schema';
 import type { SfColumnMap } from '../../lib/list-query';
+import { PRO_SHORT_CLOSED_QTY_SQL } from './short-closed-qty';
 
 export function productionOrderSfColumns(frags: {
   itemRevision: SQL;
@@ -28,6 +29,15 @@ export function productionOrderSfColumns(frags: {
     itemName: { sql: sql`${productionOrders.itemNameText}`, type: 'text' },
     orderQty: { sql: sql`${productionOrders.orderQty}`, type: 'num' },
     jcFinishedQty: { sql: frags.jcFinishedQty, type: 'num' },
+    // ADR-233 — `Stock Received` (the stored credited_qty), `Lost Qty`, and
+    // `Short Closed Qty` worked out by the SQL twin of the shared rule.
+    creditedQty: { sql: sql`${productionOrders.creditedQty}`, type: 'num' },
+    lostQty: { sql: sql`${productionOrders.lostQty}`, type: 'num' },
+    shortClosedQty: { sql: PRO_SHORT_CLOSED_QTY_SQL, type: 'num' },
+    shortClosedAt: {
+      sql: sql`(${productionOrders.shortClosedAt} AT TIME ZONE 'Asia/Kolkata')::date`,
+      type: 'date',
+    },
     status: { sql: sql`${productionOrders.status}`, type: 'list' },
     targetDate: { sql: sql`${productionOrders.targetDate}`, type: 'date' },
     planCode: { sql: sql`${productionOrders.planCodeText}`, type: 'text' },
