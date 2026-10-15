@@ -13635,3 +13635,58 @@ message "You do not have permission to record Op Entry".
   page they open (e.g. "Create Invoice" with no check); Report NC / edit NC
   still refuse QC-only staff through the same role guard; the SO screens and
   the top-menu link wait for the live-updates session's claim to clear.
+
+## ADR-233: A Production Order ended short shows how much was short-closed
+
+**Date:** 2026-10-15
+**Status:** Accepted (owner approved all three phases 2026-10-15; TEST first, PROD on "push to main")
+
+### Context
+
+On .com the owner short-closed PRO 5 and could not see how many pieces were
+short-closed. There are two ways to end an order under target:
+
+- **Finish Short** (ADR-179, a tick in the Close form) — status `closed`,
+  records `lost_qty = order − credited`, shows a plain "Closed" badge.
+- **Short Close** (ADR-182, header button) — status `short_closed`, records
+  `lost_qty` = NC scrap only, writes no close-history row.
+
+Both force Pending to 0, so the un-made balance (order − credited) appeared
+nowhere: not on the detail, list, history, report or Job Card. The screen word
+"Credited" also confused the owner.
+
+### Decision
+
+1. **`Short Closed Qty` = Order Qty − Stock Received** when status is
+   `closed` or `short_closed`, else 0. Lost Qty is the scrapped PART of it,
+   never added to it. **Worked out, never stored** —
+   `productionOrderShortClosedQty` (@innovic/shared) and its SQL twin
+   `PRO_SHORT_CLOSED_QTY_SQL`; a Short Close cannot be reversed and reversing
+   a Finish Short re-opens the order, so the figure cannot drift and old
+   orders (PRO 5) show it with no backfill.
+2. **"Credited" is renamed "Stock Received"** on every screen, report and
+   message (NAMING.md). Field and column names (`creditedQty`,
+   `credited_qty`) stay.
+3. **Close history** gets a Type (Close / Finish Short / Reversal / Short
+   Close). A Short Close, and a Finish Short that put nothing into stock,
+   leave no ledger row (the ledger refuses qty 0), so the server adds them
+   from the order's own header fields with `reversible: false`.
+4. Shown on: PRO detail (Short Closed Qty cell + banner figure), PRO list
+   (Stock Received + Short Closed Qty columns, sort/filter), status badge
+   ("Closed (Short N)" / "Short Closed (N)"), report, JC stopped banner.
+5. Both short actions confirm with the qty first ("4 of 10 will be
+   short-closed"). Short Close is refused on an order already fully received.
+6. Status changes on close / reverse / short close also check the status read
+   under the row lock (CLAUDE.md §20.2) and refuse a write that changed nothing.
+7. JW source options, JW line "in JC" and the JC Status Summary count a
+   stopped order at its effective qty (same rule the SO screens use), not its
+   full order qty.
+8. PRO screens join live updates (ADR-230): migration **0209** publishes
+   `production_orders` and `production_order_closes`.
+
+### Consequences
+
+- No stored figure, no backfill; rollback is a code revert (0209 can stay — it
+  only lets changes arrive sooner).
+- Not changed: Finish Short and Short Close keep their names and both still log
+  the CloseShort activity action; merging them is a separate decision.
