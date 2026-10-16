@@ -111,7 +111,15 @@ describe('job-work-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: { code, jwDate: '2026-05-02', clientId: testClientId, status: 'open' },
-        lines: [{ partName: 'Routed Part', itemId: firstItemId, uom: 'NOS', orderQty: 5 }],
+        lines: [
+          {
+            partName: 'Routed Part',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 5,
+          },
+        ],
       },
     });
     expect(res.statusCode).toBe(201);
@@ -128,7 +136,9 @@ describe('job-work-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: { code: `${TEST_PREFIX}BAD`, jwDate: '2026-05-02', status: 'open' },
-        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        lines: [
+          { partName: 'X', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+        ],
       },
     });
     expect(res.statusCode).toBe(400);
@@ -150,10 +160,59 @@ describe('job-work-orders routes', () => {
           clientId: testClientId,
           status: 'open',
         },
-        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        lines: [
+          { partName: 'X', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+        ],
       },
     });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ error: 'forbidden' });
+  });
+
+  // ── ADR-236: POL compulsory on every JWSO line, optional line Remarks ──
+  const postJw = (codeSuffix: string, line: Record<string, unknown>) =>
+    app.inject({
+      method: 'POST',
+      url: '/job-work-orders',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        header: {
+          code: `${TEST_PREFIX}${codeSuffix}`,
+          jwDate: '2026-05-02',
+          clientId: testClientId,
+        },
+        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, ...line }],
+      },
+    });
+
+  it('POST /job-work-orders refuses a line without a POL (400 "POL is required")', async () => {
+    app = await buildApp(admin);
+    const res = await postJw('NOPOL', {});
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'validation_error' });
+    expect(JSON.stringify(res.json())).toContain('POL is required');
+  });
+
+  it('POST /job-work-orders refuses a spaces-only POL', async () => {
+    app = await buildApp(admin);
+    const res = await postJw('SPPOL', { clientPoLineNo: '   ' });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('POL is required');
+  });
+
+  it('POST /job-work-orders refuses line Remarks over 500 characters', async () => {
+    app = await buildApp(admin);
+    const res = await postJw('LONGRM', { clientPoLineNo: '1', remarks: 'x'.repeat(501) });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('Remarks can be at most 500 characters');
+  });
+
+  it('POST /job-work-orders stores the POL and line Remarks (trimmed) and returns them', async () => {
+    app = await buildApp(admin);
+    const res = await postJw('POLOK', { clientPoLineNo: ' 20 ', remarks: ' urgent ' });
+    expect(res.statusCode).toBe(201);
+    const line = res.json().lines[0];
+    expect(line.clientPoLineNo).toBe('20');
+    expect(line.remarks).toBe('urgent');
   });
 });

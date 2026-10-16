@@ -1,10 +1,14 @@
 import { and, asc, eq, isNull, like, ne, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { DocumentEditStagedResult } from '@innovic/shared';
 import { db } from '../../db/client';
 import {
   activityLog,
+  approvalConfig,
   clients,
+  documentEditRequests,
   items,
+  jobCards,
   jobWorkOrderLines,
   jobWorkOrders,
   users,
@@ -100,6 +104,7 @@ describe('job-work-orders service', () => {
         lines: [
           {
             partName: 'Machined Shaft',
+            clientPoLineNo: '1',
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 10,
@@ -107,6 +112,7 @@ describe('job-work-orders service', () => {
           },
           {
             partName: 'Bracket',
+            clientPoLineNo: '1',
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 5,
@@ -139,7 +145,9 @@ describe('job-work-orders service', () => {
     const detail = await service.createJobWorkOrder(
       {
         header: { jwDate: '2026-05-03', customerName: 'Auto Code Co', clientId: firstClientId },
-        lines: [{ partName: 'Auto', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        lines: [
+          { partName: 'Auto', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+        ],
       },
       admin,
     );
@@ -154,7 +162,9 @@ describe('job-work-orders service', () => {
       service.createJobWorkOrder(
         {
           header: { jwDate: '2026-05-03', customerName: 'Seq Co', clientId: firstClientId },
-          lines: [{ partName: 'Seq', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+          lines: [
+            { partName: 'Seq', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+          ],
         },
         admin,
       );
@@ -173,7 +183,9 @@ describe('job-work-orders service', () => {
     await service.createJobWorkOrder(
       {
         header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', clientId: firstClientId },
-        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        lines: [
+          { partName: 'X', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+        ],
       },
       admin,
     );
@@ -181,7 +193,9 @@ describe('job-work-orders service', () => {
       service.createJobWorkOrder(
         {
           header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', clientId: firstClientId },
-          lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+          lines: [
+            { partName: 'X', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+          ],
         },
         admin,
       ),
@@ -197,7 +211,9 @@ describe('job-work-orders service', () => {
             jwDate: '2026-05-02',
             clientId: '00000000-0000-0000-0000-000000000000',
           },
-          lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+          lines: [
+            { partName: 'X', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+          ],
         },
         admin,
       ),
@@ -210,8 +226,20 @@ describe('job-work-orders service', () => {
       {
         header: { code, jwDate: '2026-05-02', customerName: 'Gettable', clientId: firstClientId },
         lines: [
-          { partName: 'Line One', itemId: firstItemId, uom: 'NOS', orderQty: 3 },
-          { partName: 'Line Two', itemId: firstItemId, uom: 'NOS', orderQty: 7 },
+          {
+            partName: 'Line One',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 3,
+          },
+          {
+            partName: 'Line Two',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 7,
+          },
         ],
       },
       admin,
@@ -239,8 +267,22 @@ describe('job-work-orders service', () => {
           clientId: firstClientId,
         },
         lines: [
-          { partName: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 4, rate: 10 },
-          { partName: 'B', itemId: firstItemId, uom: 'NOS', orderQty: 6, rate: 20 },
+          {
+            partName: 'A',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 4,
+            rate: 10,
+          },
+          {
+            partName: 'B',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 6,
+            rate: 20,
+          },
         ],
       },
       admin,
@@ -266,7 +308,9 @@ describe('job-work-orders service', () => {
     const created = await service.createJobWorkOrder(
       {
         header: { code, jwDate: '2026-05-02', customerName: 'Before', clientId: firstClientId },
-        lines: [{ partName: 'Stay', itemId: firstItemId, uom: 'NOS', orderQty: 9 }],
+        lines: [
+          { partName: 'Stay', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 9 },
+        ],
       },
       admin,
     );
@@ -288,8 +332,20 @@ describe('job-work-orders service', () => {
       {
         header: { code, jwDate: '2026-05-02', customerName: 'Merge', clientId: firstClientId },
         lines: [
-          { partName: 'Keep+Update', itemId: firstItemId, uom: 'NOS', orderQty: 10 },
-          { partName: 'Drop Me', itemId: firstItemId, uom: 'NOS', orderQty: 20 },
+          {
+            partName: 'Keep+Update',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 10,
+          },
+          {
+            partName: 'Drop Me',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 20,
+          },
         ],
       },
       admin,
@@ -301,8 +357,21 @@ describe('job-work-orders service', () => {
       {
         header: {},
         lines: [
-          { id: keptId, partName: 'Keep+Updated', itemId: firstItemId, uom: 'NOS', orderQty: 11 },
-          { partName: 'Brand New', itemId: firstItemId, uom: 'NOS', orderQty: 30 },
+          {
+            id: keptId,
+            partName: 'Keep+Updated',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 11,
+          },
+          {
+            partName: 'Brand New',
+            clientPoLineNo: '1',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 30,
+          },
           // "Drop Me" is omitted → soft-deleted
         ],
       },
@@ -333,8 +402,8 @@ describe('job-work-orders service', () => {
       {
         header: { code, jwDate: '2026-05-02', customerName: 'Goner', clientId: firstClientId },
         lines: [
-          { partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
-          { partName: 'L2', itemId: firstItemId, uom: 'NOS', orderQty: 2 },
+          { partName: 'L1', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+          { partName: 'L2', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 2 },
         ],
       },
       admin,
@@ -358,7 +427,9 @@ describe('job-work-orders service', () => {
           customerName: 'Audit Customer',
           clientId: firstClientId,
         },
-        lines: [{ partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        lines: [
+          { partName: 'L1', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+        ],
       },
       admin,
     );
@@ -393,7 +464,9 @@ describe('job-work-orders service', () => {
             jwDate: '2026-05-02',
             customerName: 'X',
           },
-          lines: [{ partName: 'L', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+          lines: [
+            { partName: 'L', clientPoLineNo: '1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+          ],
         },
         noCompanyUser,
       ),
@@ -438,5 +511,341 @@ describe('updateJobWorkOrder — ticks decide (ADR-232)', () => {
     await expect(
       service.softDeleteJobWorkOrder(UNKNOWN_ID, admin, 'test'),
     ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+});
+
+// ADR-236: POL is compulsory on every JWSO line; the line Remarks is optional.
+// Both are the JWSO line's own facts — not locked by ADR-203's in-use rule.
+describe('JWSO line POL + Remarks (ADR-236)', () => {
+  it('create stores POL and Remarks; the detail returns both', async () => {
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code: `${TEST_PREFIX}POL1`, jwDate: '2026-05-02', clientId: firstClientId },
+        lines: [
+          {
+            partName: 'Pol Part',
+            clientPoLineNo: '20',
+            remarks: 'urgent',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+          },
+        ],
+      },
+      admin,
+    );
+    const fetched = await service.getJobWorkOrder(created.id, admin);
+    expect(fetched.lines[0]?.clientPoLineNo).toBe('20');
+    expect(fetched.lines[0]?.remarks).toBe('urgent');
+  });
+
+  it('edit changes POL 20→21 and clears Remarks; History names POL and Remarks', async () => {
+    const code = `${TEST_PREFIX}POL2`;
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', clientId: firstClientId },
+        lines: [
+          {
+            partName: 'Pol Part',
+            clientPoLineNo: '20',
+            remarks: 'urgent',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+          },
+        ],
+      },
+      admin,
+    );
+    const lineId = created.lines[0]!.id;
+    const updated = await service.updateJobWorkOrder(
+      created.id,
+      {
+        header: {},
+        lines: [
+          {
+            id: lineId,
+            partName: 'Pol Part',
+            clientPoLineNo: '21',
+            remarks: null,
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+          },
+        ],
+      },
+      admin,
+    );
+    expect(updated.lines[0]?.clientPoLineNo).toBe('21');
+    expect(updated.lines[0]?.remarks).toBeNull();
+
+    const edits = await db
+      .select()
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.companyId, admin.companyId!),
+          eq(activityLog.refId, code),
+          eq(activityLog.action, 'EDIT'),
+        ),
+      );
+    const labels = edits.flatMap((r) => (r.changes ?? []).map((c) => c.label));
+    expect(labels).toContain('POL');
+    expect(labels).toContain('Remarks');
+  });
+
+  it('an absent remarks key leaves the stored Remarks alone', async () => {
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code: `${TEST_PREFIX}POL3`, jwDate: '2026-05-02', clientId: firstClientId },
+        lines: [
+          {
+            partName: 'Keep Note',
+            clientPoLineNo: '5',
+            remarks: 'keep me',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+          },
+        ],
+      },
+      admin,
+    );
+    const updated = await service.updateJobWorkOrder(
+      created.id,
+      {
+        header: {},
+        lines: [
+          {
+            id: created.lines[0]!.id,
+            partName: 'Keep Note',
+            clientPoLineNo: '5',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+          },
+        ],
+      },
+      admin,
+    );
+    expect(updated.lines[0]?.remarks).toBe('keep me');
+  });
+
+  it('a line already on a Job Card can still change its POL and Remarks', async () => {
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code: `${TEST_PREFIX}POL4`, jwDate: '2026-05-02', clientId: firstClientId },
+        lines: [
+          {
+            partName: 'In Use',
+            clientPoLineNo: '30',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 4,
+          },
+        ],
+      },
+      admin,
+    );
+    const lineId = created.lines[0]!.id;
+    const jc = await db
+      .insert(jobCards)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}JC-${Date.now()}`,
+        jcDate: '2026-05-02',
+        itemId: firstItemId,
+        orderQty: 4,
+        sourceJwLineId: lineId,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning({ id: jobCards.id });
+    try {
+      const updated = await service.updateJobWorkOrder(
+        created.id,
+        {
+          header: {},
+          lines: [
+            {
+              id: lineId,
+              partName: 'In Use',
+              clientPoLineNo: '31',
+              remarks: 'customer moved the line',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 4,
+            },
+          ],
+        },
+        admin,
+      );
+      expect(updated.lines[0]?.inUse).toBe(true);
+      expect(updated.lines[0]?.clientPoLineNo).toBe('31');
+      expect(updated.lines[0]?.remarks).toBe('customer moved the line');
+    } finally {
+      await db.delete(jobCards).where(eq(jobCards.id, jc[0]!.id));
+    }
+  });
+
+  it('list search finds a JWSO by its line POL', async () => {
+    const code = `${TEST_PREFIX}POL5`;
+    await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', clientId: firstClientId },
+        lines: [
+          {
+            partName: 'Searchable',
+            clientPoLineNo: 'T031POLX9',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+          },
+        ],
+      },
+      admin,
+    );
+    const result = await service.listJobWorkOrders(
+      { search: 'T031POLX9', limit: 50, offset: 0 },
+      admin,
+    );
+    expect(result.items.map((j) => j.code)).toContain(code);
+  });
+});
+
+// ADR-236 + ADR-202: with Document Edit Approval ON, a POL-only or Remarks-only
+// change on a live JWSO is a LINE change and is refused like any other; an
+// unchanged resend (blank Remarks vs stored null) is not, so the header stages.
+describe('JWSO edit-approval gate — POL / Remarks are line changes (ADR-236)', () => {
+  let cfgExisted = false;
+  let origDocEditApproval = false;
+
+  beforeAll(async () => {
+    const cfg = await db
+      .select()
+      .from(approvalConfig)
+      .where(eq(approvalConfig.companyId, admin.companyId!))
+      .limit(1);
+    if (cfg[0]) {
+      cfgExisted = true;
+      origDocEditApproval = cfg[0].docEditApproval;
+      await db
+        .update(approvalConfig)
+        .set({ docEditApproval: true })
+        .where(eq(approvalConfig.id, cfg[0].id));
+    } else {
+      await db.insert(approvalConfig).values({
+        companyId: admin.companyId!,
+        docEditApproval: true,
+        poApproval: false,
+        prApproval: false,
+        invoiceApproval: false,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      });
+    }
+  }, 180_000);
+
+  afterAll(async () => {
+    if (cfgExisted) {
+      await db
+        .update(approvalConfig)
+        .set({ docEditApproval: origDocEditApproval })
+        .where(eq(approvalConfig.companyId, admin.companyId!));
+    } else {
+      await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
+    }
+    await db
+      .delete(documentEditRequests)
+      .where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
+  }, 180_000);
+
+  function liveJw(suffix: string) {
+    return service.createJobWorkOrder(
+      {
+        header: { code: `${TEST_PREFIX}${suffix}`, jwDate: '2026-05-02', clientId: firstClientId },
+        lines: [
+          {
+            partName: 'Gate Part',
+            clientPoLineNo: '20',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+          },
+        ],
+      },
+      admin,
+    );
+  }
+
+  it('a POL-only change is refused', async () => {
+    const jw = await liveJw('GT1');
+    await expect(
+      service.updateJobWorkOrderOrStage(
+        jw.id,
+        {
+          header: {},
+          lines: [
+            {
+              id: jw.lines[0]!.id,
+              partName: 'Gate Part',
+              clientPoLineNo: '21',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 2,
+            },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('a Remarks-only change is refused', async () => {
+    const jw = await liveJw('GT2');
+    await expect(
+      service.updateJobWorkOrderOrStage(
+        jw.id,
+        {
+          header: {},
+          lines: [
+            {
+              id: jw.lines[0]!.id,
+              partName: 'Gate Part',
+              clientPoLineNo: '20',
+              remarks: 'new note',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 2,
+            },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('an unchanged resend (blank Remarks vs stored null) is no line change — the header stages', async () => {
+    const jw = await liveJw('GT3');
+    const res = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { remarks: 'header note' },
+        lines: [
+          {
+            id: jw.lines[0]!.id,
+            partName: 'Gate Part',
+            clientPoLineNo: '20',
+            remarks: '',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+          },
+        ],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(res.staged).toBe(true);
   });
 });

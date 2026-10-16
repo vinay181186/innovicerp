@@ -1373,6 +1373,8 @@ function toSalesOrderLine(
     rate: row.rate,
     dueDate: row.dueDate,
     clientPoLineNo: row.clientPoLineNo,
+    // ADR-236: the line's own note — shown on the SO only, never copied on.
+    remarks: row.remarks ?? null,
     status: row.status,
     shortClosedAt:
       row.shortClosedAt instanceof Date
@@ -1662,6 +1664,8 @@ function createSalesOrderOnce(
           rate: rateToString(l),
           dueDate: l.dueDate ?? null,
           clientPoLineNo: l.clientPoLineNo ?? null,
+          // ADR-236: optional line note.
+          remarks: l.remarks ?? null,
           status: l.status ?? headerStatus,
           sourceBomMasterId: l.sourceBomMasterId ?? null,
           createdBy: user.id,
@@ -2012,6 +2016,7 @@ function soChildRowsChanged(
     rate: string;
     dueDate: string | null;
     clientPoLineNo: string | null;
+    remarks: string | null;
     status: string;
     sourceBomMasterId: string | null;
   }>,
@@ -2051,6 +2056,8 @@ function soChildRowsChanged(
       if (p.dueDate !== undefined && !valuesEqual(p.dueDate, c.dueDate)) return true;
       if (p.clientPoLineNo !== undefined && !valuesEqual(p.clientPoLineNo, c.clientPoLineNo))
         return true;
+      // ADR-236: the line Remarks — valuesEqual reads null and '' as the same.
+      if (p.remarks !== undefined && !valuesEqual(p.remarks, c.remarks)) return true;
       if (p.status !== undefined && !valuesEqual(p.status, c.status)) return true;
       if (p.sourceBomMasterId !== undefined && !valuesEqual(p.sourceBomMasterId, c.sourceBomMasterId))
         return true;
@@ -2150,6 +2157,7 @@ export async function updateSalesOrderOrStage(
           rate: salesOrderLines.rate,
           dueDate: salesOrderLines.dueDate,
           clientPoLineNo: salesOrderLines.clientPoLineNo,
+          remarks: salesOrderLines.remarks,
           status: salesOrderLines.status,
           sourceBomMasterId: salesOrderLines.sourceBomMasterId,
         })
@@ -2596,8 +2604,10 @@ async function mergeLines(
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
     if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = rateToString(u.data);
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
-    if (u.data.clientPoLineNo !== undefined)
-      lineUpdate['clientPoLineNo'] = u.data.clientPoLineNo ?? null;
+    // ADR-236: POL is compulsory on every line, so it is written as sent;
+    // the line Remarks only when sent (`null` clears).
+    lineUpdate['clientPoLineNo'] = u.data.clientPoLineNo;
+    if (u.data.remarks !== undefined) lineUpdate['remarks'] = u.data.remarks ?? null;
     if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
     if (u.data.sourceBomMasterId !== undefined)
       lineUpdate['sourceBomMasterId'] = u.data.sourceBomMasterId ?? null;
@@ -2632,6 +2642,7 @@ async function mergeLines(
         rate: rateToString(l),
         dueDate: l.dueDate ?? null,
         clientPoLineNo: l.clientPoLineNo ?? null,
+        remarks: l.remarks ?? null,
         status: l.status ?? 'open',
         sourceBomMasterId: l.sourceBomMasterId ?? null,
         createdBy: user.id,
