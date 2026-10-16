@@ -43,7 +43,11 @@ export function lineToInput(l: SalesOrderLine): SalesOrderLineInput {
     orderQty: l.orderQty,
     rate: Number(l.rate) || 0,
     ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-    ...(l.clientPoLineNo ? { clientPoLineNo: l.clientPoLineNo } : {}),
+    // ADR-236: POL is compulsory on the input shape, so it is always carried.
+    // An old line saved without one sends '' and the server refuses the delete
+    // with "POL is required" — the user fills it in on Edit first. `remarks` is
+    // left OUT on purpose: an absent key leaves each line's note untouched.
+    clientPoLineNo: l.clientPoLineNo ?? '',
     status: l.status,
   };
 }

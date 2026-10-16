@@ -17,8 +17,11 @@ import {
   type CreateJobWorkOrderInput,
   type JobWorkOrderDetail,
   type JobWorkOrderLine,
+  LINE_REMARKS_MAX,
   type ListItemsResponse,
   normalizeRevision,
+  POL_MAX,
+  polError,
   revisionBackwardsMessage,
   revisionGoesBackwards,
   type SoStatus,
@@ -70,6 +73,12 @@ interface LineFormValue {
   orderQty: number;
   rate: number;
   dueDate?: string | undefined;
+  /** POL — the CUSTOMER'S PO line number (ADR-236: compulsory). Never locked:
+   *  an old line saved without one must stay fillable or the JWSO can never be
+   *  saved again. */
+  clientPoLineNo?: string | undefined;
+  /** ADR-236: this line's own note (optional). Not the header's JWSO Remarks. */
+  remarks?: string | undefined;
   /** Assembly line: the BOM whose components make up this part (0086). */
   sourceBomMasterId?: string | undefined;
   /** ADR-203: a downstream document uses this line — Item / UOM / BOM locked,
@@ -107,6 +116,8 @@ const NEW_LINE: LineFormValue = {
   orderQty: 1,
   rate: 0,
   revision: '',
+  clientPoLineNo: '',
+  remarks: '',
 };
 
 /** ADR-177: the Rev box capitalises AS TYPED ('b' shows as 'B' at once), so what
@@ -593,6 +604,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           // Drawing No. belongs to THIS order's line, not the item master (user
           // decision 2026-09-21): from the sheet, or blank for the person to type.
           drawingNo: r.drawingNo ?? '',
+          // ADR-236: POL / Remarks from the sheet (the parser refused a blank POL).
+          clientPoLineNo: r.clientPoLineNo,
+          remarks: r.remarks ?? '',
           // Set explicitly AFTER the `...r` spread, never through it: an absent
           // Rev column spreads `revision: undefined` over the value below. A
           // sheet with no Rev column leaves the box EMPTY, exactly like a
@@ -631,7 +645,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             `Please add ${uniq.length > 1 ? 'each' : 'it'} (item code + item name) in Item Master first, then re-import.`,
         );
       }
-      if (errs.length) parts.push(`${errs.length} row(s) skipped.`);
+      // Name the first reason, so a sheet without the (now compulsory, ADR-236)
+      // POL column says why its rows were skipped.
+      if (errs.length) parts.push(`${errs.length} row(s) skipped — ${errs[0]}`);
       setImportMsg(parts.join(' ') || 'No rows found in the sheet.');
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
@@ -715,6 +731,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         return;
       }
     }
+    // ADR-236: POL (the customer's PO line number) is compulsory on every line,
+    // in-use and short-closed lines included — same rule and words as the API
+    // (shared polError), named by line like the checks above.
+    for (let i = 0; i < values.lines.length; i++) {
+      const msg = polError(values.lines[i]?.clientPoLineNo);
+      if (msg) {
+        setLineError(`${lineRef(i)}: ${msg}`);
+        return;
+      }
+    }
 
     const h = values.header;
     // Built field by field — never a spread of the form header, which also holds
@@ -767,6 +793,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         ...(priceVisible ? { rate: Number(l.rate) || 0 } : {}),
         // Each line's own date — the header Due Date only ever filled these in.
         dueDate: l.dueDate || null,
+        // ADR-236: compulsory, always sent trimmed (checked non-blank above).
+        clientPoLineNo: String(l.clientPoLineNo ?? '').trim(),
+        // null, not undefined: a cleared Remarks must be sent as null to clear it.
+        remarks: l.remarks?.trim() || null,
         ...(bomId ? { sourceBomMasterId: bomId } : {}),
       };
     });
@@ -780,9 +810,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     }
   };
 
-  // Line table column count: Ln, Item Code, Item Name, Customer RM, Drawing
-  // Rev, UOM, Order Qty, [Rate, Amount], Due Date, More, Remove.
-  const colCount = priceVisible ? 12 : 10;
+  // Line table column count: Ln, Item Code, Item Name, POL, Customer RM,
+  // Drawing Rev, UOM, Order Qty, [Rate, Amount], Due Date, More, Remove.
+  const colCount = priceVisible ? 13 : 11;
+  // Column widths (%), summing to exactly 100 in both layouts. Without prices
+  // the 14 points of Rate + Amount go to Item Code, Item Name and Customer RM.
+  const W = priceVisible
+    ? { code: 13, name: 13, rm: 10 } // 4+13+13+6+10+6+6+6+7+7+10+8+4 = 100
+    : { code: 18, name: 19, rm: 13 }; // 4+18+19+6+13+6+6+6+10+8+4 = 100
   const standalone = Boolean(props.pageTitle);
   // ADR-227: the number can no longer make a save invalid — it is not sent.
   const saveDisabled = formState.isSubmitting;
@@ -1127,8 +1162,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           ) : null}
 
           <div className="form-grp f-full">
+            {/* ADR-236: the WHOLE-ORDER note; a line's own note is "Remarks"
+                under each line's ▸ More (the GRN split). */}
             <label className="form-label" htmlFor="remarks">
-              Remarks
+              JWSO Remarks
             </label>
             <textarea
               id="remarks"
@@ -1249,9 +1286,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </div>
 
         {/* Same shape as the SO line editor: one row per line in a fixed-layout
-          table. Visible: Ln, Item Code, Item Name, Customer RM, Drawing Rev,
-          UOM, Order Qty, [Rate, Amount], Due Date; the less-used Material,
-          Drawing No., Drawing File and Assembly BOM open per line under
+          table. Visible: Ln, Item Code, Item Name, POL, Customer RM, Drawing
+          Rev, UOM, Order Qty, [Rate, Amount], Due Date; the less-used Material,
+          Drawing No., Drawing File, Assembly BOM and Remarks open per line under
           "▸ More", like ERPNext's grid row edit. Rate / Amount are dropped for a
           user who may not see prices. */}
         <table
@@ -1261,26 +1298,32 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           <thead>
             <tr>
               <th style={{ width: '4%' }}>Ln</th>
-              <th style={{ width: '14%' }}>
+              <th style={{ width: `${W.code}%` }}>
                 Item Code <span className="req">★</span>
               </th>
-              <th style={{ width: '16%' }}>Item Name</th>
-              <th style={{ width: '12%' }} title="The customer's raw material for this item">
+              <th style={{ width: `${W.name}%` }}>Item Name</th>
+              <th
+                style={{ width: '6%', color: 'var(--purple)' }}
+                title="POL — the customer's PO line number"
+              >
+                POL <span className="req">★</span>
+              </th>
+              <th style={{ width: `${W.rm}%` }} title="The customer's raw material for this item">
                 Customer RM
               </th>
-              <th style={{ width: '7%' }}>
+              <th style={{ width: '6%' }}>
                 Drawing Rev <span className="req">★</span>
               </th>
-              <th style={{ width: '7%' }}>UOM</th>
-              <th className="th-num" style={{ width: '7%' }}>
+              <th style={{ width: '6%' }}>UOM</th>
+              <th className="th-num" style={{ width: '6%' }}>
                 Order Qty <span className="req">★</span>
               </th>
               {priceVisible ? (
                 <>
-                  <th className="th-num" style={{ width: '8%', color: 'var(--green2)' }}>
+                  <th className="th-num" style={{ width: '7%', color: 'var(--green2)' }}>
                     Rate (₹)
                   </th>
-                  <th className="th-num" style={{ width: '8%', color: 'var(--green2)' }}>
+                  <th className="th-num" style={{ width: '7%', color: 'var(--green2)' }}>
                     Amount
                   </th>
                 </>
@@ -1315,6 +1358,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   wl?.drawingNo,
                   wl?.drawingFilePath,
                   wl?.sourceBomMasterId,
+                  wl?.remarks,
                 ].filter((v) => typeof v === 'string' && v.trim() !== '').length;
                 return (
                   <Fragment key={field.id}>
@@ -1358,6 +1402,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         {errors.lines?.[idx]?.partName?.message ? (
                           <div className="form-error">{errors.lines[idx]?.partName?.message}</div>
                         ) : null}
+                      </td>
+                      {/* ADR-236: the customer's PO line number. Never locked — not
+                        even on a line in use — so an old line without one can be
+                        filled in. Compulsory: onValid refuses a blank one. */}
+                      <td>
+                        <input
+                          className="innovic-input"
+                          autoComplete="off"
+                          placeholder="POL"
+                          aria-label={`POL, row ${idx + 1}`}
+                          maxLength={POL_MAX}
+                          style={{ color: 'var(--purple)', fontWeight: 600 }}
+                          {...register(`lines.${idx}.clientPoLineNo` as const)}
+                        />
                       </td>
                       <td>
                         <CustomerRmCell rm={wl?.itemId ? rmByItem[wl.itemId] : undefined} />
@@ -1441,7 +1499,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           className="btn btn-ghost btn-sm"
                           aria-expanded={isOpen}
                           onClick={() => toggleMore(field.id)}
-                          title="Material, Drawing No., Drawing File and Assembly BOM for this line"
+                          title="Material, Drawing No., Drawing File, Assembly BOM and Remarks for this line"
                         >
                           {isOpen ? '▾ Less' : `▸ More${filledMore ? ` (${filledMore})` : ''}`}
                         </button>
@@ -1507,6 +1565,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                                   </option>
                                 ))}
                               </select>
+                            </div>
+                            {/* ADR-236: this line's own note (optional, never locked). */}
+                            <div className="form-grp f-full">
+                              <label className="form-label" htmlFor={`jwln-remarks-${idx}`}>
+                                Remarks
+                              </label>
+                              <input
+                                id={`jwln-remarks-${idx}`}
+                                className="innovic-input"
+                                autoComplete="off"
+                                placeholder="Remarks"
+                                maxLength={LINE_REMARKS_MAX}
+                                {...register(`lines.${idx}.remarks` as const)}
+                              />
                             </div>
                           </div>
                         </td>
@@ -1627,6 +1699,10 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
               rate: Number(l.rate ?? 0),
               ...(l.dueDate ? { dueDate: l.dueDate } : {}),
               ...(l.sourceBomMasterId ? { sourceBomMasterId: l.sourceBomMasterId } : {}),
+              // ADR-236: '' for a line saved before POL was compulsory, so the
+              // check asks for it before the save.
+              clientPoLineNo: l.clientPoLineNo ?? '',
+              remarks: l.remarks ?? '',
               inUse: l.inUse,
             }),
           )

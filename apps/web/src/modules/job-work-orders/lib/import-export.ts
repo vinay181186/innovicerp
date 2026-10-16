@@ -1,6 +1,8 @@
 // JW line-items Excel import (in-form). Mirror of the SO form's in-form line
-// import, with JW columns (Rate instead of SO's POL). Adds parsed rows as line
-// items to the JW being created/edited. Uses SheetJS to READ a filled sheet.
+// import, with JW columns. Since ADR-236 it reads the same compulsory 'POL'
+// (the customer's PO line number) and optional line 'Remarks' as the SO sheet.
+// Adds parsed rows as line items to the JW being created/edited. Uses SheetJS
+// to READ a filled sheet.
 //
 // The blank template itself is built by the API (GET
 // /import-templates/jw-lines.xlsx, apps/api/src/modules/import-templates) so
@@ -13,7 +15,7 @@
 // mismatch between the sheet and the master with no way to tell which won.
 // Old sheets that still carry the column import fine; it's ignored.
 
-import { normalizeRevision } from '@innovic/shared';
+import { normalizeRevision, polError } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
 export interface JwLineImportRow {
@@ -21,6 +23,10 @@ export interface JwLineImportRow {
   material?: string | undefined;
   drawingNo?: string | undefined;
   revision?: string | undefined;
+  /** POL — compulsory (ADR-236); a row without one is skipped with a message. */
+  clientPoLineNo: string;
+  /** ADR-236: the line's own note (optional). */
+  remarks?: string | undefined;
   orderQty: number;
   rate: number;
   dueDate?: string | undefined;
@@ -61,12 +67,21 @@ export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportR
       errors.push(`Row ${i + 2}: Order Qty must be a positive number — skipped`);
       return;
     }
+    // ADR-236: POL is compulsory, as on the SO sheet ('CPO Line' = older header).
+    const clientPoLineNo = String(r['POL'] ?? r['CPO Line'] ?? '').trim();
+    const polMsg = polError(clientPoLineNo);
+    if (polMsg) {
+      errors.push(`Row ${i + 2}: ${polMsg} — skipped`);
+      return;
+    }
     rows.push({
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
       drawingNo: String(r['Drawing No.'] ?? r['Drawing No'] ?? '').trim() || undefined,
       // ADR-177: capital letters always — 'b' in the sheet lands as 'B'.
       revision: normalizeRevision(String(r['Drawing Rev'] ?? r['Rev'] ?? '')) || undefined,
+      clientPoLineNo,
+      remarks: String(r['Remarks'] ?? '').trim() || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),

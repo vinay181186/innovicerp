@@ -5,7 +5,11 @@
 // through + New SO / WO. What remains is the LINE import inside the SO form —
 // item code only, name/UOM fetched from Item Master by the form.
 
-import { normalizeRevision, type SalesOrderListItem } from '@innovic/shared';
+import {
+  normalizeRevision,
+  polError,
+  type SalesOrderListItem,
+} from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { todayIst } from '@/lib/date';
 import { coerceDate } from '@/lib/xlsx-import';
@@ -50,7 +54,7 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<void> {
   const header = [
     'SO No.', 'Internal SO No.', 'SO Date', 'Customer', 'Client PO No.', 'SO Type', 'Lines', 'Total Qty',
-    'JC Qty', 'Earliest Due Date', 'SO Status', 'BOM Status', 'Raised By', 'Raised On (IST)', 'Remarks',
+    'JC Qty', 'Earliest Due Date', 'SO Status', 'BOM Status', 'Raised By', 'Raised On (IST)', 'SO Remarks',
   ];
   const body = rows.map((r) => [
     r.code,
@@ -128,7 +132,10 @@ export interface SoLineImportRow {
   /** Blank in the sheet means "not supplied" — the form falls back to its own
    *  default rather than writing an empty Rev, which the API would reject. */
   revision?: string | undefined;
-  clientPoLineNo?: string | undefined;
+  /** POL — compulsory (ADR-236); a row without one is skipped with a message. */
+  clientPoLineNo: string;
+  /** ADR-236: the line's own note (optional). */
+  remarks?: string | undefined;
   orderQty: number;
   rate: number;
   dueDate?: string | undefined;
@@ -155,15 +162,24 @@ export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportR
       errors.push(`Row ${i + 2}: "Order Qty" must be a number bigger than 0. Row skipped.`);
       return;
     }
+    // 'POL' is the current header; 'CPO Line' is what sheets downloaded
+    // before the rename still carry, so both are read. Compulsory (ADR-236).
+    const clientPoLineNo = String(r['POL'] ?? r['CPO Line'] ?? '').trim();
+    const polMsg = polError(clientPoLineNo);
+    if (polMsg) {
+      errors.push(`Row ${i + 2}: ${polMsg} Row skipped.`);
+      return;
+    }
     rows.push({
       itemCodeText,
       material: String(r['Material'] ?? '').trim() || undefined,
       drawingNo: String(r['Drawing No.'] ?? r['Drawing No'] ?? '').trim() || undefined,
       // ADR-177: capital letters always — 'b' in the sheet lands as 'B'.
       revision: normalizeRevision(String(r['Drawing Rev'] ?? r['Rev'] ?? '')) || undefined,
-      // 'POL' is the current header; 'CPO Line' is what sheets downloaded
-      // before the rename still carry, so both are read.
-      clientPoLineNo: String(r['POL'] ?? r['CPO Line'] ?? '').trim() || undefined,
+      clientPoLineNo,
+      // Optional (ADR-236). Never cut short here: an over-long note reaches the
+      // form box and the save names the limit, rather than losing text silently.
+      remarks: String(r['Remarks'] ?? '').trim() || undefined,
       orderQty,
       rate: Number(r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),

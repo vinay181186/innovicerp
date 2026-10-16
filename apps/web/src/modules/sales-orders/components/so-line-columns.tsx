@@ -233,6 +233,17 @@ export function lineColumns(opts: {
       render: (l) => fmtDate(l.dueDate),
     },
     {
+      // ADR-236: the LINE's own note (the order's note is "SO Remarks" above).
+      // Long prose: one line, cut with "…", the full text on hover.
+      id: 'remarks',
+      header: 'Remarks',
+      width: '10%',
+      align: 'left',
+      ellipsis: true,
+      render: (l) => l.remarks ?? '—',
+      title: (l) => l.remarks ?? '',
+    },
+    {
       id: 'status',
       kind: 'badge',
       header: 'SO Status',

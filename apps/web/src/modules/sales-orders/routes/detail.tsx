@@ -723,7 +723,7 @@ function SoReadGrid(props: {
         }
       />
       <ReadField
-        label="Remarks"
+        label="SO Remarks"
         size="full"
         pre
         value={withChip(

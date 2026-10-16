@@ -39,7 +39,7 @@ export function SoExpandedPanel({
         </span>
         <span>·</span>
         <span title={so.remarks ?? ''}>
-          Remarks <span className="text2">{so.remarks || '—'}</span>
+          SO Remarks <span className="text2">{so.remarks || '—'}</span>
         </span>
       </div>
       {isLoading ? (

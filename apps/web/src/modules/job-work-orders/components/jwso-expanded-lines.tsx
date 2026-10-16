@@ -3,9 +3,10 @@
 // no lines, so only a row actually opened costs a request. Split out of
 // routes/list.tsx so that file stays under the 400-line ceiling.
 //
-// Shows the line detail the list row cannot: Ln · Item (CODE/REV + name) ·
+// Shows the line detail the list row cannot: Ln · POL · Item (CODE/REV + name) ·
 // Customer RM · Accepted (ADR-203) · Material · Drawing No. · Order Qty ·
-// Dispatched · Pending · UOM · [Rate] · Due Date · JWSO Status. The JWSO-level Remarks sit below the table (the
+// Dispatched · Pending · UOM · [Rate] · Due Date · Remarks · JWSO Status. The
+// JWSO-level note (JWSO Remarks) sits below the table (the
 // retired card showed them on its meta line). No per-line Edit: it opened the
 // same JWSO edit page as the row's ⋯ Edit, so it was a duplicate.
 
@@ -38,10 +39,10 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
   // the Rate column is dropped here too. Told by the server, not inferred from a
   // null money field (a null also means "no value yet").
   const priceHidden = jw.priceVisible === false;
-  // Ln · thumbnail · Item (badge) · Customer RM · Accepted · Material ·
+  // Ln · POL · thumbnail · Item (badge) · Customer RM · Accepted · Material ·
   // Drawing No. · Qty · Dispatched · Pending · UOM · [Rate] · Due Date ·
-  // JWSO Status.
-  const cols = 14 - (priceHidden ? 1 : 0);
+  // Remarks · JWSO Status.
+  const cols = 16 - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div
@@ -60,6 +61,7 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
           <thead>
             <tr style={{ background: 'var(--bg4)' }}>
               <th style={{ width: 36 }}>Ln</th>
+              <th style={{ color: 'var(--purple)' }}>POL</th>
               <ItemThumbnailHeader />
               <th>Item</th>
               <th>Customer RM</th>
@@ -76,6 +78,7 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
               <th>UOM</th>
               {priceHidden ? null : <th className="th-num">Rate</th>}
               <th>Due Date</th>
+              <th>Remarks</th>
               <th>JWSO Status</th>
             </tr>
           </thead>
@@ -93,6 +96,9 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
                   <tr key={l.id} style={{ background: 'var(--bg)' }}>
                     <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                       {l.lineNo}
+                    </td>
+                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {l.clientPoLineNo ?? '—'}
                     </td>
                     {/* CODE/REV — the client's drawing revision typed on this line
                         travels with the code (the badge formats it via
@@ -150,6 +156,14 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
                     <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
                       {fmtDate(l.dueDate)}
                     </td>
+                    {/* ADR-236: the line's own note — one line, "…", full text on hover. */}
+                    <td
+                      className="text2"
+                      style={{ fontSize: 11, maxWidth: 200 }}
+                      title={l.remarks ?? undefined}
+                    >
+                      {l.remarks ?? '—'}
+                    </td>
                     <td>
                       <SoStatusBadge status={l.status} />
                     </td>
@@ -163,7 +177,7 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
       {jw.remarks ? (
         <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text2)' }}>
           <span className="mono fw-700" style={{ color: 'var(--text3)' }}>
-            Remarks:{' '}
+            JWSO Remarks:{' '}
           </span>
           <span title={jw.remarks}>{jw.remarks}</span>
         </div>
