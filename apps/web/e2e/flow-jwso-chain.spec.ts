@@ -189,6 +189,8 @@ test('@chain 01 — create the JWSO', async ({ page }) => {
   await page.locator('#jwln-ic-0').fill(ITEM_CODE);
   await page.getByRole('option').filter({ hasText: ITEM_CODE }).first().click({ timeout: 30_000 });
   await page.waitForTimeout(2000);
+  // ADR-236: POL is compulsory on every JWSO line.
+  await page.locator('input[name="lines.0.clientPoLineNo"]').fill('1');
 
   // ELEMENT: an on-master item code must auto-fill Part Name and lock it.
   const partNameBox = page.locator('input[name="lines.0.partName"]');
