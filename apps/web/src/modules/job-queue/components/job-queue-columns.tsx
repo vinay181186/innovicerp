@@ -14,9 +14,9 @@
 // POL, Item Name, SO No., Internal SO No., Customer, Priority, Order Qty,
 // Completed, Actual Machine).
 
+import { ActionLink } from '@/components/shared/action-link';
 import type { JobQueueMachine, JobQueueRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -136,7 +136,7 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       header: 'JC No.',
       nowrap: true,
       render: (r) => (
-        <Link
+        <ActionLink fallback="text"
           to="/job-cards/$id"
           params={{ id: r.jcId }}
           className="td-code cyan"
@@ -144,7 +144,7 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
           onClick={(e) => e.stopPropagation()}
         >
           {r.jcCode}
-        </Link>
+        </ActionLink>
       ),
     },
     {

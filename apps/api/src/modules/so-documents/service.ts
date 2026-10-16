@@ -16,7 +16,7 @@ import type {
 } from '@innovic/shared';
 import { fileRegistry, salesOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireAnyTick, requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -260,7 +260,10 @@ export async function createSoDocument(
   user: AuthContext,
 ): Promise<SoDocumentFile> {
   // ADR-232/234: the New screen (Entry) and the Edit screen (Edit) both upload.
-  await requireAnyTick(user, SO_DOCS_FORM, ['entry', 'edit']);
+  await requireAnyFormAccess(user, [
+    [SO_DOCS_FORM, 'entry'],
+    [SO_DOCS_FORM, 'edit'],
+  ]);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const inserted = await tx

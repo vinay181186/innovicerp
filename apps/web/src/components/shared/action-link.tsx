@@ -6,7 +6,7 @@
 // rule in PAGE_ACCESS (packages/shared/src/lib/page-access.ts) is met.
 
 import { canOpenPage, canWriteAnything } from '@innovic/shared';
-import { Link, type LinkProps } from '@tanstack/react-router';
+import { Link, type LinkComponentProps } from '@tanstack/react-router';
 import { useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 
@@ -33,22 +33,28 @@ export function useCanWrite(): boolean {
   return isSuperAdmin || canWriteAnything(eff);
 }
 
-type ActionLinkProps = LinkProps & {
-  /** The URL to check, when `to` is a pattern with params, e.g.
-   *  to="/production-orders/new" needs no check; to="/plans/$id/edit" with
-   *  params → pass check="/plans/x/edit" or rely on the pattern itself. */
+type ActionLinkProps = LinkComponentProps<'a'> & {
+  /** The URL to check when it differs from `to` (by default `to` itself — a
+   *  route pattern such as '/plans/$id/edit' is checked as that pattern). */
   check?: string;
-  className?: string;
-  title?: string;
-  children?: React.ReactNode;
+  /** 'text': when the page cannot be opened, show the label as plain text
+   *  (a document code in a table) instead of hiding it. */
+  fallback?: 'text';
 };
 
 /** A router <Link> that renders nothing when the user cannot open its page. */
-export function ActionLink({ check, ...props }: ActionLinkProps): React.JSX.Element | null {
+export function ActionLink({ check, fallback, ...props }: ActionLinkProps): React.JSX.Element | null {
   const canOpen = useCanOpen();
   const target = check ?? String(props.to ?? '');
-  if (!canOpen(target)) return null;
-  return <Link {...(props as LinkProps)} />;
+  if (!canOpen(target)) {
+    if (fallback !== 'text') return null;
+    return (
+      <span className={props.className} style={props.style} title={props.title}>
+        {props.children as React.ReactNode}
+      </span>
+    );
+  }
+  return <Link {...props} />;
 }
 
 /** A stored path may carry a query ('/nc-register?tab=capa&capa=CAPA-3'). The

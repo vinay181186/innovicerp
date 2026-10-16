@@ -121,7 +121,9 @@ function PageAccessGuard(): React.JSX.Element {
   if (mePending || (effPending && !effError)) return <PageState as="page" state="loading" />;
   const isSuperAdmin = me?.role === 'admin' || !!eff?.fullAccess;
   if (isSuperAdmin) return <Outlet />;
-  if (effError) return <PageState as="page" state="error" />;
+  // Access could not be read (network / 500): let the page load as it did
+  // before this guard existed — every save is still checked by the server.
+  if (effError) return <Outlet />;
   if (!rule || !meetsPageRule(eff, false, rule)) {
     return <PageState as="page" state="noaccess" message={missingRightText(rule)} />;
   }

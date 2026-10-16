@@ -5,9 +5,9 @@
 // routes/index.tsx. Op-status wording/colour come from the shared OpStatusBadge
 // so the Ready board and the machine-load widget never disagree.
 
+import { ActionLink } from '@/components/shared/action-link';
 import type { ProductionDashboardReadyOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { ROW_TINT } from '@/ui/data';
@@ -57,14 +57,14 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
       header: 'JC No.',
       className: 'td-code',
       render: (op) => (
-        <Link
+        <ActionLink fallback="text"
           to="/job-cards/$id"
           params={{ id: op.jobCardId }}
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           title="View job card status"
         >
           {op.jobCardCode}
-        </Link>
+        </ActionLink>
       ),
     },
     {

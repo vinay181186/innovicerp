@@ -34,7 +34,7 @@ import {
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
-import { ActionLink, useCanWrite } from '@/components/shared/action-link';
+import { ActionLink } from '@/components/shared/action-link';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate } from '@/lib/date';
@@ -113,7 +113,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
-  const canAssign = useCanWrite();
+  const canAssign = perms.advance; // ADR-232: Assign Task = the page's Advance right
   // ADR-202 — the edit(s) staged against this SO and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).

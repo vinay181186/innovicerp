@@ -7,9 +7,9 @@
 // Display only: the ▶ Start action, its permission gate and the pending-ops
 // filter all stay in the section/view. These builders just describe cells.
 
+import { ActionLink } from '@/components/shared/action-link';
 import type { JcOpEnriched } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 
@@ -29,14 +29,14 @@ export const PENDING_OPS_DEFAULT_HIDDEN = ['client_po_line_no', 'item_name'];
  *  chance to land on the wrong one. */
 function jcLink(op: JcOpEnriched): React.JSX.Element {
   return (
-    <Link
+    <ActionLink fallback="text"
       to="/job-cards/$id"
       params={{ id: op.jobCardId }}
       style={{ color: 'var(--cyan)', textDecoration: 'none' }}
       title="Open this job card"
     >
       {op.jobCardCode}
-    </Link>
+    </ActionLink>
   );
 }
 

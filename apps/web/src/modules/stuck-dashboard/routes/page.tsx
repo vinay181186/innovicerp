@@ -18,7 +18,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { useCanWrite } from '@/components/shared/action-link';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
@@ -199,9 +199,10 @@ function StuckDashboardPage(): React.JSX.Element {
   useClampPage(search.page, data?.total, onPage);
   // The row whose ⋯ → Assign Task popup is open; null = closed.
   const [assignFor, setAssignFor] = useState<StuckItem | null>(null);
-  // ADR-234 — Assign Task creates a task (server requireCanWrite): anyone set
-  // up to write, not an Auditor or an unconfigured login.
-  const canAssign = useCanWrite();
+  // ADR-232: Assign Task on a stuck operation = Advance on Job Cards (the page
+  // the operation belongs to), the same rule as the Job Card row menu.
+  const { data: eff } = useMyAccess();
+  const canAssign = effectiveFormPerms(eff, 'jc_create').advance;
   const rows = data?.items ?? [];
   const filtered = Boolean(search.search) || sf.filtering;
 

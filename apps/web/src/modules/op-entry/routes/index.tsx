@@ -1,5 +1,6 @@
+import { ActionLink } from '@/components/shared/action-link';
 import { missingRightText, pageRuleFor } from '@innovic/shared';
-import { createRoute, Link } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
@@ -328,7 +329,7 @@ function OpEntryPage() {
                 thing as an op without a card. Same target and same underlined
                 treatment as the code on the Job Cards list. */}
                 {jcHead ? (
-                  <Link
+                  <ActionLink fallback="text"
                     to="/job-cards/$id"
                     params={{ id: jcHead.jobCardId }}
                     className="mono fw-700"
@@ -336,7 +337,7 @@ function OpEntryPage() {
                     title="Open this job card"
                   >
                     {search.jc}
-                  </Link>
+                  </ActionLink>
                 ) : (
                   <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
                     {search.jc}

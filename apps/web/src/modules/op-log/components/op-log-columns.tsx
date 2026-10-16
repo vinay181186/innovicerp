@@ -4,8 +4,8 @@
 // Log Type cell for two columns of their own at the right, so they are the
 // first to move into ▸ on a narrow screen.
 
+import { ActionLink } from '@/components/shared/action-link';
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { DocRefLink } from '@/modules/activity-log/components/doc-ref-link';
@@ -35,14 +35,14 @@ export function isReversalRow(r: OpLogListItem): boolean {
  *  addendum), else resolved from the JC number through search. */
 function jcLink(r: OpLogListItem, label: string): React.JSX.Element {
   return r.jobCardId ? (
-    <Link
+    <ActionLink fallback="text"
       to="/job-cards/$id"
       params={{ id: r.jobCardId }}
       className="mono fw-700"
       title={`Open ${r.jcNo}`}
     >
       {label}
-    </Link>
+    </ActionLink>
   ) : (
     <DocRefLink entity="Job Card" refId={r.jcNo} label={label} />
   );

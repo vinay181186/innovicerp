@@ -5,7 +5,7 @@
 
 import type { TaskLinkedRef } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { useCanOpen } from '@/components/shared/action-link';
+import { hrefLink, useCanOpen } from '@/components/shared/action-link';
 
 const QC_CALL_PREFIX = '/qc-call-register?op=';
 // Tasks raised from a CAPA before 2026-10-16 stored '/capa', a page that never
@@ -52,24 +52,10 @@ export function RelatedRefLink({
       </Link>
     );
   }
-  const q = nav.indexOf('?');
-  if (q >= 0) {
-    // A path with a query string ('/nc-register?tab=capa&capa=CAPA-0003'):
-    // the router takes the query as a search object, not inside `to`.
-    const search = Object.fromEntries(new URLSearchParams(nav.slice(q + 1)));
-    return (
-      <Link
-        to={nav.slice(0, q)}
-        search={search as never}
-        onClick={onClick}
-        title={`Open ${linkedRef.display}`}
-      >
-        {chip}
-      </Link>
-    );
-  }
   return (
-    <Link to={nav} onClick={onClick} title={`Open ${linkedRef.display}`}>
+    // hrefLink: a stored path with a query ('/nc-register?tab=capa&capa=…')
+    // goes to the router as `to` + `search`.
+    <Link {...(hrefLink(nav) as { to: string })} onClick={onClick} title={`Open ${linkedRef.display}`}>
       {chip}
     </Link>
   );

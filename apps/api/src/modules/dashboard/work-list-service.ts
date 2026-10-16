@@ -8,7 +8,7 @@ import { sql } from 'drizzle-orm';
 import { users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
-import { type DashAccess, hasTick, loadAccess } from './access';
+import { type DashAccess, canSeeLink, hasTick, loadAccess } from './access';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -351,7 +351,8 @@ export async function buildWorkListWith(
   const run = async (gate: boolean, fn: () => Promise<WorkListItem[]>): Promise<void> => {
     if (!gate) return;
     try {
-      all.push(...(await fn()));
+      // ...and only when the page the row opens is one the caller may open.
+      all.push(...(await fn()).filter((it) => canSeeLink(a, null, it.navPage)));
     } catch {
       /* one rule failing must not sink the panel (legacy try/catch) */
     }

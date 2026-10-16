@@ -15,6 +15,7 @@
 // the server. Up/down asks the server to swap the row with its neighbour in the
 // machine's FULL queue, so a move on page 2 never disturbs another page.
 
+import { useCanOpen } from '@/components/shared/action-link';
 import { createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -62,6 +63,8 @@ function JobQueuePage(): React.JSX.Element {
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const search = jobQueueRoute.useSearch();
   const navigate = jobQueueRoute.useNavigate();
+  // ADR-234: a row opens its Job Card only for someone who may open Job Cards.
+  const canOpenJc = useCanOpen()('/job-cards/$id');
   const selectedMachineCode = search.machine ?? '';
 
   // The machine-code backfill stays a pure admin data-hygiene tool (the server
@@ -250,7 +253,11 @@ function JobQueuePage(): React.JSX.Element {
               )
             }
             rowClassName={(r) => jobQueueRowTint(r, today)}
-            onRowClick={(r) => void navigate({ to: '/job-cards/$id', params: { id: r.jcId } })}
+            onRowClick={
+              canOpenJc
+                ? (r) => void navigate({ to: '/job-cards/$id', params: { id: r.jcId } })
+                : undefined
+            }
             rowActions={(r) =>
               jobQueueRowActions({ row: r, canReorder, canOpEntry, searching, onMove })
             }

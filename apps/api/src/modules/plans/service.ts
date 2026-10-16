@@ -61,7 +61,7 @@ import {
   canSeeFormPrice,
   hasFormAccess,
   primeAccess,
-  requireAnyTick,
+  requireAnyFormAccess,
   requireDeleteRight,
   requireFormAccess,
 } from '../../lib/access';
@@ -1258,7 +1258,10 @@ export async function planEditMode(user: AuthContext): Promise<PlanEditMode> {
   await primeAccess(user);
   if (await hasFormAccess(user, 'plan_create', 'edit')) return 'edit';
   if (await hasFormAccess(user, 'plan_create', 'entry')) return 'own-draft';
-  await requireAnyTick(user, 'plan_create', ['entry', 'edit']); // throws, naming the ticks
+  await requireAnyFormAccess(user, [
+    ['plan_create', 'entry'],
+    ['plan_create', 'edit'],
+  ]); // throws, naming the ticks
   return 'edit';
 }
 

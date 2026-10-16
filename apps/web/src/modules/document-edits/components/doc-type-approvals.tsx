@@ -20,6 +20,7 @@ import {
   type DocumentEditChange,
   type DocumentEditEntity,
   type DocumentEditRow,
+  DOCUMENT_EDIT_FORM_KEY,
 } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { useIsSuperAdmin } from '@/components/shared/action-link';
@@ -30,7 +31,7 @@ import { Icon } from '@/ui/core';
 import { type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { useDecideDocumentEdit, useDocumentEditCounts, useDocumentEdits } from '../api';
-import { DOCUMENT_EDIT_FORM_KEY } from '../edit-form-keys';
+
 import { EditRejectDialog } from './edit-reject-dialog';
 import { ApprovalTab, type ApprovalView } from '@/modules/approvals/components/approval-tab';
 

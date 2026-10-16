@@ -227,9 +227,19 @@ export function meetsPageRule(
 /** Turn a real URL ('/production-orders/12/edit?x=1') into its route pattern
  *  ('/production-orders/$id/edit'). A literal segment wins over a parameter,
  *  so '/production-orders/new' is the New page, not the detail of id "new". */
+const patternCache = new Map<string, string | undefined>();
+
 export function pagePattern(href: string): string | undefined {
   const path = (href.split(/[?#]/)[0] ?? '').replace(/\/+$/, '') || '/';
   if (PAGE_ACCESS[path]) return path;
+  // Table rows ask this per render; the answer for a path never changes.
+  if (patternCache.has(path)) return patternCache.get(path);
+  const found = matchPattern(path);
+  if (patternCache.size < 5000) patternCache.set(path, found);
+  return found;
+}
+
+function matchPattern(path: string): string | undefined {
   const parts = path.split('/');
   let best: { pattern: string; literals: number } | undefined;
   for (const pattern of Object.keys(PAGE_ACCESS)) {

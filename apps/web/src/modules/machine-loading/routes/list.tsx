@@ -16,6 +16,7 @@
 // of the Job Queue screen. There is now ONE queue screen — the "Job Queue →"
 // button opens /job-queue?machine=<code> for the picked machine (or all).
 
+import { useCanOpen } from '@/components/shared/action-link';
 import type { MachineLoadCard, MachineLoadOp } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
@@ -65,6 +66,8 @@ export const machineLoadingRoute = createRoute({
 function MachineLoadingPage(): React.JSX.Element {
   const search = machineLoadingRoute.useSearch();
   const navigate = machineLoadingRoute.useNavigate();
+  // ADR-234: a row opens its Job Card only for someone who may open Job Cards.
+  const canOpenJc = useCanOpen()('/job-cards/$id');
   const { data: company } = useMyCompany();
   const selMachineId = search.m ?? null;
 
@@ -307,8 +310,10 @@ function MachineLoadingPage(): React.JSX.Element {
                   : 'No pending operations.'
               }
               rowClassName={(op) => opRowTint(op)}
-              onRowClick={(op) =>
-                void navigate({ to: '/job-cards/$id', params: { id: op.jobCardId } })
+              onRowClick={
+                canOpenJc
+                  ? (op) => void navigate({ to: '/job-cards/$id', params: { id: op.jobCardId } })
+                  : undefined
               }
               // The fit table's ▸ is the row's one expand control: it opens the
               // op's secondary facts. renderExpanded returns null for a closed row.
