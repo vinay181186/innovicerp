@@ -1737,6 +1737,8 @@ export const salesOrderLines = pgTable(
     // customer-dispatches service; drives pending-dispatch + invoice gating.
     dispatchedQty: integer('dispatched_qty').notNull().default(0),
     clientPoLineNo: text('client_po_line_no'),
+    // ADR-236 (migration 0211): the line's own optional Remarks.
+    remarks: text('remarks'),
     status: soStatusEnum('status').notNull().default('open'),
     // ADR-196 (0177): the line was CLOSED short (ERPNext Sales Order "Close").
     // status stays 'closed' (so_status is NOT widened, as ADR-194 R6); these
@@ -1992,6 +1994,8 @@ export const jobWorkOrderLines = pgTable(
     // column as sales_order_lines.client_po_line_no. Compulsory on input
     // (packages/shared/src/lib/pol.ts); nullable for lines saved before 0210.
     clientPoLineNo: text('client_po_line_no'),
+    // ADR-236 (migration 0211): the line's own optional Remarks.
+    remarks: text('remarks'),
     // The customer's DRAWING REVISION and the drawing FILE (migration 0120),
     // the sales-order line's two columns copied deliberately so a JWSO line and
     // an SO line are the same shape and one screen can serve both. Before this

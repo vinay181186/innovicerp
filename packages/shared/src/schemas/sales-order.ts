@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { polInputSchema } from '../lib/pol';
+import { lineRemarksInputSchema } from '../lib/line-remarks';
 import { internalSoNoError, normaliseInternalSoNo } from '../lib/internal-so-no';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { sfRawParamSchema } from './list-query';
@@ -102,6 +103,8 @@ export const salesOrderLineSchema = z.object({
   rate: z.string().nullable(),
   dueDate: z.string().nullable(), // ISO date
   clientPoLineNo: z.string().nullable(),
+  /** ADR-236: the LINE's own note (optional). Not the header's `SO Remarks`. */
+  remarks: z.string().nullable().default(null),
   status: soStatusSchema,
   /** ADR-196 — the line was CLOSED short (ERPNext "Close"): status is 'closed'
    *  and its undelivered qty (Order Qty − Dispatched) is dropped from every
@@ -288,6 +291,8 @@ export const salesOrderLineInputSchema = z
       .optional(),
     // ADR-236: COMPULSORY — the customer's PO line number (lib/pol.ts).
     clientPoLineNo: polInputSchema,
+    // ADR-236: optional line Remarks (lib/line-remarks.ts).
+    remarks: lineRemarksInputSchema,
     status: soStatusSchema.optional(),
     // BOM-8 cascade: when set, line creation spawns child JCs / PRs from
     // the BOM's lines (per bom_type). Fires once per line creation;

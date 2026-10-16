@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { polInputSchema } from '../lib/pol';
+import { lineRemarksInputSchema } from '../lib/line-remarks';
 import { SO_STATUSES } from '../enums/so-status';
 import { uomSchema } from './item';
 import { sfRawParamSchema } from './list-query';
@@ -54,6 +55,8 @@ export const jobWorkOrderLineSchema = z.object({
   /** POL — the customer's PO line number (ADR-236). Nullable on read: lines
    *  saved before migration 0210 have none and render "—". */
   clientPoLineNo: z.string().nullable().default(null),
+  /** ADR-236: the LINE's own note (optional). Not the header's `JWSO Remarks`. */
+  remarks: z.string().nullable().default(null),
   /** The customer's DRAWING REVISION and the drawing FILE (migration 0120) —
    *  the sales-order line's two fields, so a JWSO line and an SO line are the
    *  same shape and one screen can serve both. `revision` is free text, what is
@@ -197,6 +200,8 @@ export const jobWorkOrderLineInputSchema = z.object({
   drawingNo: z.string().max(64).nullable().optional(),
   // ADR-236: COMPULSORY — the customer's PO line number (lib/pol.ts).
   clientPoLineNo: polInputSchema,
+  // ADR-236: optional line Remarks (lib/line-remarks.ts).
+  remarks: lineRemarksInputSchema,
   // Compulsory on the FORM (the only layer that can ask a human), optional
   // here so the server paths that insert a JWSO line without asking anyone —
   // the BOM cascade and the SO-to-JW conversions — still work. Same split the
