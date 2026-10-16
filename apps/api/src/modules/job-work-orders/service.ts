@@ -43,6 +43,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import {
   canSeeFormPrice,
+  hasFormAccess,
   requireAnyFormAccess,
   requireDeleteRight,
   requireFormAccess,
@@ -352,10 +353,15 @@ const JW_READ_PAIRS = [
   ['ospdc_create', 'view'],
 ] as const;
 
-/** Rates / amounts on a JWSO read: JWSO Master's see-price, or Invoices'
- *  (a JW Invoice prefills its rate from the JWSO line). */
+/** Rates / GST on a JWSO read. A user who can open JWSO Master gets JWSO
+ *  Master's see-price — the same rule the JWSO writes use, so its own Price
+ *  OFF switch still hides money there and an edit never posts a rate the save
+ *  would drop. Everyone reading from another screen gets Invoices' see-price
+ *  (a JW Invoice prefills its rate from the JWSO line); Store / JW DC readers
+ *  without it get no money. */
 async function jwShowMoney(user: AuthContext): Promise<boolean> {
-  return (await canSeeFormPrice(user, 'jw_create')) || canSeeFormPrice(user, 'invoice_create');
+  if (await hasFormAccess(user, 'jw_create', 'view')) return canSeeFormPrice(user, 'jw_create');
+  return canSeeFormPrice(user, 'invoice_create');
 }
 
 export async function listJobWorkOrders(

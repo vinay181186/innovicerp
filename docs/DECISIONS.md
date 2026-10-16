@@ -13826,3 +13826,49 @@ it compulsory on both, and asked for an optional free-text Remarks per line.
   customer's line number.
 - Negative: editing an old JWSO now asks for POL on its blank lines.
 - Risks: a downstream read missed → shows "—" for a JW row (cosmetic, no data loss).
+
+## ADR-237: Picker lists readable from the screen that hosts them
+
+**Date:** 2026-10-16
+**Status:** Accepted (owner approved 2026-10-16)
+
+### Context
+
+Deep (Store, Party Material rights) saw "No matches" in the JWSO No. dropdown on
+New Party GRN on PROD. The JWSO list and detail needed JWSO Master (Sales) View
+(ADR-203 rule 8); the 403 was swallowed by SearchableSelect. A read-only audit
+found the same fault on Party Material Issue, Customer Material Return, JW Invoice,
+JW DC outward (JWSO), RM Grade / RM Size (Route Card, BOM, JC, ML BOM), Machine
+Group (JC, Route Card, Op Entry, Edit Plan), a JC's own Production Order lookup,
+and CAPA's admin-only user list.
+
+### Decision
+
+1. JWSO list + detail: View on any of JWSO Master, Party Material, Invoices, OSP
+   Outward DC (`requireAnyFormAccess`, JWSO Master first so a refusal names it).
+   The JWSO trace (Related) and every write keep JWSO Master rights.
+2. JWSO money: a user who can open JWSO Master keeps JWSO Master's see-price (same
+   rule as the writes; its Price OFF still works). Other readers get Invoices'
+   see-price. A Store / JW DC reader gets rate and GST % blank.
+3. RM Grade, RM Size, Machine Group LIST reads: any login of the company, like
+   Items and Machines. Single-record reads and writes stay gated.
+4. Production Order list filtered by `jobCardId`: Production Order View or Job
+   Card View.
+5. SearchableSelect gets an optional `error` prop and shows the server's reason
+   instead of "No matches"; wired on the affected pickers.
+6. CAPA Responsible / Verified By use `/tasks/user-options` (login only).
+
+### Alternatives Considered
+
+- Tick JWSO Master View for every Store user — rejected: shows the Sales page and,
+  at L2+, JWSO prices.
+- New per-screen lookup endpoints — rejected (Section 21: reuse requireAnyFormAccess).
+
+### Consequences
+
+- Positive: Store / Finance / JW DC / Production users pick from these lists
+  without rights on the owning master; refusals are visible.
+- Negative: JWSO Master "Hide page" no longer hides JWSO reads for a user who holds
+  Party Material / Invoices / OSP DC View.
+- Open: from a JC, the Production Order link still needs Production Order View;
+  a 403 is retried once (global `retry: 1`) before the reason shows.
