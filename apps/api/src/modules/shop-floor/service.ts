@@ -12,6 +12,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -68,9 +69,9 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         -- a database without migration 0119 still holds the old integer here.
         COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced cards are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- off the same SO line as the revision above, else the Job Work SO
+        -- line's POL for a JW-sourced card (ADR-236).
+        ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no AS "soInternalNo",

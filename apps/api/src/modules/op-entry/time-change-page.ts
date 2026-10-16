@@ -11,6 +11,7 @@ import type {
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { selectTimeChangeRequests, TIME_CHANGE_FROM } from './service';
 
@@ -30,7 +31,7 @@ export const TIME_CHANGE_SF_COLUMNS: SfColumnMap = {
   entryQty: { sql: sql`l.qty`, type: 'num' },
   askedBy: { sql: sql`COALESCE(ru.full_name, ru.email)`, type: 'text' },
   status: { sql: sql`r.status`, type: 'list' },
-  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   itemName: { sql: sql`i.name`, type: 'text' },
   reason: { sql: sql`r.reason`, type: 'text' },
   decidedBy: { sql: sql`COALESCE(du.full_name, du.email)`, type: 'text' },
@@ -66,7 +67,7 @@ export async function listOpLogTimeChangePage(
         OR i.code ILIKE ${pat} ESCAPE '\\'
         OR COALESCE(sol.revision::text, rev_jwl.revision::text) ILIKE ${pat} ESCAPE '\\'
         OR i.name ILIKE ${pat} ESCAPE '\\'
-        OR sol.client_po_line_no ILIKE ${pat} ESCAPE '\\'
+        OR ${polSql('sol', 'rev_jwl')} ILIKE ${pat} ESCAPE '\\'
         OR o.operation ILIKE ${pat} ESCAPE '\\'
         OR COALESCE(m.code, l.machine_code_text) ILIKE ${pat} ESCAPE '\\'
         OR r.reason ILIKE ${pat} ESCAPE '\\'

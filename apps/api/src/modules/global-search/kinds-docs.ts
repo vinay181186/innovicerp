@@ -45,7 +45,14 @@ export const DOC_KINDS: readonly KindMeta[] = [
       from: sql`public.job_work_order_lines l`,
       fk: sql`l.job_work_order_id`,
       display: pair(sql`l.item_code_text`, sql`l.part_name`),
-      match: [sql`l.item_code_text`, sql`l.part_name`, sql`l.material`, sql`l.drawing_no`],
+      // ADR-236: the JWSO line's POL is searchable like the SO line's above.
+      match: [
+        sql`l.item_code_text`,
+        sql`l.part_name`,
+        sql`l.material`,
+        sql`l.drawing_no`,
+        sql`l.client_po_line_no`,
+      ],
       order: sql`l.line_no`,
       qty: sql`l.order_qty`,
     },

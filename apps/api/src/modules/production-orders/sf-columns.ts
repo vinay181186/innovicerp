@@ -14,6 +14,7 @@ import { PRO_SHORT_CLOSED_QTY_SQL } from './short-closed-qty';
 export function productionOrderSfColumns(frags: {
   itemRevision: SQL;
   jcFinishedQty: SQL;
+  clientPoLineNo: SQL;
 }): SfColumnMap {
   return {
     code: { sql: sql`${productionOrders.code}`, type: 'text' },
@@ -61,15 +62,9 @@ export function productionOrderSfColumns(frags: {
       )`,
       type: 'text',
     },
-    clientPoLineNo: {
-      sql: sql`(
-        SELECT sol.client_po_line_no
-          FROM public.plans p
-          JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
-         WHERE p.id = ${productionOrders.planId} LIMIT 1
-      )`,
-      type: 'text',
-    },
+    // ADR-236: SO line's POL, else the JWSO line's — the service's own
+    // fragment, keyed on production_orders.plan_id so the count query can use it.
+    clientPoLineNo: { sql: frags.clientPoLineNo, type: 'text' },
     jcCode: { sql: sql`${productionOrders.jcCodeText}`, type: 'text' },
   };
 }

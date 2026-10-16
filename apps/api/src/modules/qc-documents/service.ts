@@ -30,6 +30,7 @@ import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { polOf, polSql } from '../../lib/pol';
 import { QC_DOC_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
@@ -163,10 +164,10 @@ export async function listQcDocuments(
           OR ${items.code} ILIKE ${term} ESCAPE '\\'
           OR ${items.name} ILIKE ${term} ESCAPE '\\'
           -- POL, the customer's own PO line number, now on the register. Off
-          -- the same LEFT-joined SO line as the revision below, so a document
-          -- with no card behind it simply does not match rather than dropping
-          -- out of the list.
-          OR ${salesOrderLines.clientPoLineNo} ILIKE ${term} ESCAPE '\\'
+          -- the same LEFT-joined SO / JWSO lines as the revision below (ADR-236),
+          -- so a document with no card behind it simply does not match rather
+          -- than dropping out of the list.
+          OR ${polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo)} ILIKE ${term} ESCAPE '\\'
           OR ${qcDocuments.uploadedByText} ILIKE ${term} ESCAPE '\\'
           -- The Date cell prints createdAt.slice(0,10) — the calendar day, not
           -- the timestamp — so match the date, not "…T09:14:22.981Z".
@@ -229,9 +230,9 @@ export async function listQcDocuments(
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         // POL — the line number on the CUSTOMER's own purchase order, off the
-        // SAME sol join as the revision above. SO side only: a JWSO-sourced or
-        // standalone card has no customer PO line and correctly stays null.
-        clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // SAME two line joins as the revision above: SO line first, else the
+        // JWSO line (ADR-236); a standalone card stays null.
+        clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
         // ADR-207: Internal SO No., live off the document's SO (FK).
         soInternalNo: sql<string | null>`(
           SELECT so.internal_so_no FROM public.sales_orders so
@@ -776,9 +777,9 @@ export async function getQcLineDetail(
         -- the LEFT JOINs made here; null for a standalone card. Cast to text so
         -- a pre-0119 database cannot hand the UI a number. Never items.revision.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- POL, off the SAME sol join. SO side only — a JWSO-sourced card has no
-        -- customer PO line, so null is the right answer there.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- POL, off the SAME sol / rev_jwl joins: SO line first, else the JWSO
+        -- line (ADR-236).
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         COALESCE(i.name, sol.part_name) AS "itemName"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id

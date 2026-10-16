@@ -111,7 +111,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
           jwo.code                                     AS order_code,
           NULL::text                                   AS so_internal_no,
           COALESCE(cl.name, jwo.customer_name, '—')    AS client_name,
-          NULL::text                                   AS client_po_line_no,
+          jwl.client_po_line_no                        AS client_po_line_no, -- ADR-236
           COALESCE(it.code, jwl.item_code_text)   AS item_code,
           jwl.revision::text                           AS item_revision,
           jwl.returned_qty                             AS dispatched_qty,

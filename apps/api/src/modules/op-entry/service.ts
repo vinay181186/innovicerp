@@ -42,6 +42,7 @@ import {
   requireFormAccess,
 } from '../../lib/access';
 import { diffFields } from '../../lib/audit-trail';
+import { polOf, polSql } from '../../lib/pol';
 import {
   AuthorizationError,
   ConflictError,
@@ -192,9 +193,9 @@ export async function listJcOpsEnriched(
         -- screen a number. The cast is a no-op once 0119 is applied.
         COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced cards are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- off the same SO line as the revision above, else the Job Work SO
+        -- line's POL for a JW-sourced card (ADR-236).
+        ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no      AS "soInternalNo",
         o.op_seq               AS "opSeq",
@@ -2004,9 +2005,9 @@ export async function selectTimeChangeRequests(
       -- item master and would print a plausible-looking lie in its place.
       COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
       -- POL = the line number printed on the CUSTOMER's own purchase order, off
-      -- the same SO line as the revision above. SO side only: a job-work line
-      -- has no customer PO, so JW-sourced cards are correctly null.
-      sol.client_po_line_no             AS "clientPoLineNo",
+      -- the same SO line as the revision above, else the Job Work SO line's
+      -- POL for a JW-sourced card (ADR-236).
+      ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
       i.name                            AS "itemName",
       COALESCE(m.code, l.machine_code_text) AS "machineCode",
       l.qty                             AS "qty",
@@ -2367,9 +2368,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         // POL — the line number printed on the CUSTOMER's own purchase order,
-        // off the same already-joined SO line. No JW branch: a job-work line
-        // has no customer PO, so a JW-sourced card is correctly null.
-        clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // off the same already-joined SO line, else the JW line (ADR-236).
+        clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
       })
       .from(jcOps)
       .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
@@ -2600,9 +2600,8 @@ export async function stopOp(
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         // POL — the line number printed on the CUSTOMER's own purchase order,
-        // off the same already-joined SO line. No JW branch: a job-work line
-        // has no customer PO, so a JW-sourced card is correctly null.
-        clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // off the same already-joined SO line, else the JW line (ADR-236).
+        clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
         // The PLAN beside the session's ACTUAL machine (ADR-164): the op's own.
         plannedMachineCode: plannedMachineCodeSql,
       })

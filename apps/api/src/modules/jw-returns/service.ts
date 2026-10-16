@@ -787,8 +787,8 @@ export async function listJwReturnChallans(
 }
 
 // The register row plus what the printed return challan needs: item code
-// (live join, snapshot fallback), the customer's drawing revision, the unit and
-// the JWSO's Client PO No. Shared by the list and the single read.
+// (live join, snapshot fallback), the customer's drawing revision, POL, the unit
+// and the JWSO's Client PO No. Shared by the list and the single read.
 function selectListItems(tx: DbTransaction) {
   return tx
     .select({
@@ -798,6 +798,8 @@ function selectListItems(tx: DbTransaction) {
       itemCode: items.code,
       itemCodeText: jobWorkOrderLines.itemCodeText,
       itemRevision: jobWorkOrderLines.revision,
+      // POL — the customer's PO line no. typed on the JWSO line (ADR-236).
+      clientPoLineNo: jobWorkOrderLines.clientPoLineNo,
       uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
       hsnCode: items.hsnCode,
       clientPoNo: jobWorkOrders.clientPoNo,
@@ -816,6 +818,7 @@ function toListItem(r: {
   itemCode: string | null;
   itemCodeText: string | null;
   itemRevision: string | null;
+  clientPoLineNo: string | null;
   uom: string | null;
   hsnCode: string | null;
   clientPoNo: string | null;
@@ -826,6 +829,7 @@ function toListItem(r: {
     partName: r.partName ?? null,
     itemCode: r.itemCode ?? r.itemCodeText ?? null,
     itemRevision: r.itemRevision ?? null,
+    clientPoLineNo: r.clientPoLineNo ?? null,
     uom: r.uom ?? null,
     hsnCode: r.hsnCode ?? null,
     clientPoNo: r.clientPoNo ?? null,

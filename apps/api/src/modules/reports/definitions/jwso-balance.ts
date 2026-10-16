@@ -34,6 +34,7 @@ export const jwsoBalanceReport: RegisteredReport = {
       { key: 'jw_code', label: 'JWSO No.', type: 'text' },
       { key: 'jw_date', label: 'JWSO Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'line_no', label: 'Ln', type: 'number' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_revision', label: 'Drawing Rev', type: 'text' },
@@ -64,6 +65,7 @@ export const jwsoBalanceReport: RegisteredReport = {
         jwo.code                                    AS jw_code,
         jwo.jw_date::text                           AS jw_date,
         COALESCE(cl.name, jwo.customer_name, '—')   AS client_name,
+        jwl.client_po_line_no                       AS client_po_line_no, -- ADR-236
         jwl.line_no                                 AS line_no,
         COALESCE(it.code, jwl.item_code_text)  AS item_code,
         jwl.revision::text                          AS item_revision,
@@ -108,6 +110,7 @@ export const jwsoBalanceReport: RegisteredReport = {
       jw_code: String(r['jw_code'] ?? ''),
       jw_date: dateCell(r['jw_date']),
       client_name: String(r['client_name'] ?? ''),
+      client_po_line_no: textCell(r['client_po_line_no']),
       line_no: numCell(r['line_no']),
       item_code: String(r['item_code'] ?? '—'),
       item_revision: textCell(r['item_revision']),

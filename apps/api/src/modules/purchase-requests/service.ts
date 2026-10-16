@@ -40,6 +40,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { polOf, polSql } from '../../lib/pol';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
@@ -608,9 +609,9 @@ export async function listPurchaseRequests(
           OR so.code ILIKE ${term} ESCAPE '\\'
           OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
           -- POL, the customer's own PO line number, now printed on the card.
-          -- Off the same sol join the SO code above already uses, and sol is
-          -- joined by BOTH the page query and the count query below.
-          OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+          -- Off the same sol / rev_jwl joins (ADR-236), both made by BOTH the
+          -- page query and the count query below.
+          OR ${polSql('sol', 'rev_jwl')} ILIKE ${term} ESCAPE '\\'
           OR jc.code ILIKE ${term} ESCAPE '\\'
           OR po.code ILIKE ${term} ESCAPE '\\'
         )`
@@ -707,11 +708,9 @@ export async function listPurchaseRequests(
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- The customer's own PO line number, off the SAME sol join as the
-        -- revision above. No job-work fallback: a JW line belongs to a
-        -- job-work order, not to a customer PO, so there is no client PO line
-        -- number on that side and the field correctly stays null.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- The customer's own PO line number, off the SAME sol / rev_jwl joins
+        -- as the revision above: SO line first, else the JWSO line (ADR-236).
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         jc.code AS "sourceJcCode",
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
@@ -926,11 +925,9 @@ export async function getPurchaseRequest(
         itemRevision: sql<
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
-        // The customer's own PO line number, off the SAME SO line join as the
-        // revision above. No job-work fallback: a JW line belongs to a job-work
-        // order, not to a customer PO, so it has no client PO line number and
-        // the field correctly stays null there.
-        clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // The customer's own PO line number, off the SAME two line joins as
+        // the revision above: SO line first, else the JWSO line (ADR-236).
+        clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
         // Resolve the source/linked document codes so the detail page shows real
         // values instead of a '— linked —' placeholder.
         poCode: purchaseOrders.code,

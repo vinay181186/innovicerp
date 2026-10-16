@@ -37,6 +37,7 @@ import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 import { QC_COMMAND_ALL, pageOf, sortQueue } from './paging';
 
 function requireCompany(user: AuthContext): string {
@@ -136,10 +137,10 @@ export async function getQcCommand(
           -- number wearing a string type. The cast is a no-op once 0119 is in.
           COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
           -- POL = the line number printed on the CUSTOMER's own purchase
-          -- order, off the SAME sol join as the revision above. SO side only:
-          -- a job-work line has no customer PO, so it correctly stays null
-          -- there. Never sol.line_no, which is OUR line number.
-          sol.client_po_line_no AS "clientPoLineNo",
+          -- order, off the SAME sol / rev_jwl joins as the revision above: SO
+          -- line first, else the JWSO line (ADR-236). Never sol.line_no,
+          -- which is OUR line number.
+          ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
           -- WHAT is being made. A job-card number says which job, not which
           -- part, so the item name rides along beside the code off the items
           -- LEFT JOIN that is already here for i.code. The QC-log query below
@@ -180,10 +181,10 @@ export async function getQcCommand(
           -- through the per-op group built from these rows.
           COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
           -- POL = the line number printed on the CUSTOMER's own purchase
-          -- order, off the SAME sol join as the revision above. SO side only:
-          -- a job-work line has no customer PO, so it correctly stays null
-          -- there. Never sol.line_no, which is OUR line number.
-          sol.client_po_line_no AS "clientPoLineNo",
+          -- order, off the SAME sol / rev_jwl joins as the revision above: SO
+          -- line first, else the JWSO line (ADR-236). Never sol.line_no,
+          -- which is OUR line number.
+          ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
           i.name AS "itemName", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
           COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector"

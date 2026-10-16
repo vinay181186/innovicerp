@@ -107,6 +107,7 @@ import type {
 } from './schema';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 import { JC_SF_COLUMNS } from './sf-columns';
 import { JC_LIST_JOINS, jcListWhere, jcStatusCounts } from './list-filters';
 
@@ -248,7 +249,7 @@ export async function listJobCards(
         jwl.part_name AS "jwPartName",
         ${JC_CUSTOMER_MATERIAL_SELECT}
         COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
-        sol.client_po_line_no AS "clientPoLineNo",
+        ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
         -- the masters, so the header and the printed JC still show the grade and
@@ -400,7 +401,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jwl.part_name AS "jwPartName",
         ${JC_CUSTOMER_MATERIAL_SELECT}
         COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
-        sol.client_po_line_no AS "clientPoLineNo",
+        ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
         -- the masters, so the header and the printed JC still show the grade and
@@ -711,7 +712,8 @@ async function resolveLinkedSource(
             jwl.item_id AS "itemId",
             COALESCE(cli.name, jw.customer_name) AS "customerName",
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
-            NULL AS "clientPoLineNo",
+            -- ADR-236: a JWSO line carries the customer's PO line no. too.
+            jwl.client_po_line_no AS "clientPoLineNo",
             COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
               WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
                 AND jc.recovery_kind IS NULL), 0)::int AS "inJc"
@@ -750,7 +752,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       SELECT 'jw' AS type, jw.id, jwl.id, jw.code, NULL, jwl.line_no, jwl.part_name,
         COALESCE(i2.code, jwl.item_code_text),
         COALESCE(cli2.name, jw.customer_name),
-        jwl.order_qty, jwl.due_date, NULL,
+        jwl.order_qty, jwl.due_date, jwl.client_po_line_no, -- POL (ADR-236)
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
           WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
             AND jc.recovery_kind IS NULL), 0)::int,

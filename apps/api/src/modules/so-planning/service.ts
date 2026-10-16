@@ -1316,7 +1316,8 @@ async function getJwPlanningDetail(
     return {
       soLineId: r.line.id,
       lineNo: r.line.lineNo,
-      clientPoLineNo: null,
+      // ADR-236: the JW line carries the customer's PO line no. too.
+      clientPoLineNo: r.line.clientPoLineNo ?? null,
       itemId: r.line.itemId,
       itemCode: r.itemCode ?? r.line.itemCodeText,
       // ADR-177: the JW line carries its own drawing revision (the customer's

@@ -18,6 +18,7 @@ import {
   users,
 } from '../../db/schema';
 import type { SfColumnMap } from '../../lib/list-query';
+import { polOf } from '../../lib/pol';
 
 // Second handle on machines for the PLANNED machine (jc_ops.machine_id); the
 // plain `machines` join is the machine the row was ACTUALLY made on (ADR-164).
@@ -26,7 +27,10 @@ export const plannedMachine = alias(machines, 'planned_machine');
 export const OP_LOG_SF_COLUMNS: SfColumnMap = {
   logNo: { sql: sql`${opLog.logNo}`, type: 'text' },
   jcNo: { sql: sql`${jobCards.code}`, type: 'text' },
-  clientPoLineNo: { sql: sql`${salesOrderLines.clientPoLineNo}`, type: 'text' },
+  clientPoLineNo: {
+    sql: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
+    type: 'text',
+  },
   // CODE/REV as the cell prints it (itemCodeWithRev): the customer's drawing
   // revision off the SO line, else the JW line, after a slash.
   itemCode: {

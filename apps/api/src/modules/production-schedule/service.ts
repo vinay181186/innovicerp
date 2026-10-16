@@ -35,6 +35,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -134,11 +135,11 @@ export async function getProductionSchedule(
         -- line). Both joins are LEFT, so a JW-sourced or standalone card keeps
         -- its bar on the Gantt with nulls here. ::text on the revision because
         -- the contract types it as a string and a database without migration
-        -- 0119 still holds an integer. POL has no JW branch on purpose: a
-        -- job-work line has no customer PO. Never items.revision, never
+        -- 0119 still holds an integer. POL takes the JW line's when there is
+        -- no SO line (ADR-236). Never items.revision, never
         -- sol.line_no (that is OUR line number, a different fact).
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        sol.client_po_line_no AS "clientPoLineNo",
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         -- The part's NAME as well as its code. A JC number says WHICH JOB, not
         -- which part, and the bar is far too small to carry the name, so it is
         -- fetched for the bar's hover tooltip -- see the note at the Bar

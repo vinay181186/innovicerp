@@ -6,6 +6,7 @@ import type { ListRunningOpsPageQuery, RunningOp } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 
 export const RUNNING_OPS_SELECT = sql`
@@ -34,9 +35,9 @@ export const RUNNING_OPS_SELECT = sql`
         -- board a number. The cast is a no-op once 0119 is applied.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced cards are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- off the same SO line as the revision above, else the Job Work SO
+        -- line's POL for a JW-sourced card (ADR-236).
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         o.op_seq            AS "opSeq",
         o.operation,
         r.machine_id        AS "machineId",
@@ -109,7 +110,7 @@ export const RUNNING_OPS_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   itemName: { sql: sql`i.name`, type: 'text' },
-  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   machineCode: { sql: sql`m.code`, type: 'text' },
   plannedMachineCode: {
     sql: sql`COALESCE(pm.code, NULLIF(o.machine_code_text, 'QC'))`,

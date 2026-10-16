@@ -52,6 +52,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
@@ -322,16 +323,18 @@ export async function getJwDcOutwardDetail(
         jdol.purchase_order_line_id AS "purchaseOrderLineId",
         jdol.item_id AS "itemId",
         i.code AS "itemCode",
-        -- The customer's drawing revision + PO line number, off the SO line
+        -- The customer's drawing revision + PO line number, off the order line
         -- behind this outward line: jw_dc_outward_lines -> purchase_order_lines
-        -- -> source_so_line_id -> sales_order_lines. Both LEFT: a JWPO line
-        -- raised from a JWSO (or a DC line with no PO line) genuinely has no
-        -- customer order behind it and correctly comes back null. Revision is
-        -- cast to text because the contract types it as a string and the column
-        -- is only text on a database that has had migration 0119. POL is the
-        -- number on the CUSTOMER's own PO, never our sol.line_no.
-        sol.revision::text AS "itemRevision",
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- -> source_so_line_id -> sales_order_lines, else (ADR-236, a JWPO
+        -- raised off a JWSO-sourced card) -> source_jc_op_id -> jc_ops ->
+        -- job_cards -> source_jw_line_id -> job_work_order_lines. All LEFT: a
+        -- DC line with no PO line, or a PO line with neither source, comes back
+        -- null. Revision is cast to text because the contract types it as a
+        -- string and the column is only text on a database that has had
+        -- migration 0119. POL is the number on the CUSTOMER's own PO, never our
+        -- sol.line_no.
+        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         i.name AS "itemName",
         i.uom::text AS "uom",
         jdol.item_code_text AS "itemCodeText",
@@ -346,11 +349,18 @@ export async function getJwDcOutwardDetail(
         COALESCE(ret.returned, 0)::float8 AS "alreadyReturned"
       FROM public.jw_dc_outward_lines jdol
       LEFT JOIN public.items i ON i.id = jdol.item_id AND i.deleted_at IS NULL
-      -- Two single-row FK hops, so neither can multiply the line count.
+      -- Single-row FK hops (each joins on the target's primary key), so none
+      -- can multiply the line count.
       LEFT JOIN public.purchase_order_lines pol
         ON pol.id = jdol.purchase_order_line_id AND pol.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.jc_ops jco
+        ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
+      LEFT JOIN public.job_cards jc
+        ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl
+        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT SUM(received_qty)::float8 AS returned
         FROM public.jw_dc_inward_lines jdil
@@ -692,11 +702,11 @@ export async function getJwDcPoLines(
         pol.id AS "purchaseOrderLineId",
         pol.item_id AS "itemId",
         COALESCE(i.code, pol.item_code_text, '') AS "itemCode",
-        -- Same SO-line hop as the outward detail above, one level shorter: the
-        -- PO line already carries source_so_line_id. Null on a JWSO-sourced PO
-        -- line, which has no customer order behind it.
-        sol.revision::text AS "itemRevision",
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- Same order-line hops as the outward detail above, one level
+        -- shorter: the PO line already carries source_so_line_id /
+        -- source_jc_op_id. SO line first, else the JWSO line (ADR-236).
+        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         pol.item_name AS "itemName",
         pol.line_remarks AS "processText",
         i.uom::text AS "uom",
@@ -707,6 +717,14 @@ export async function getJwDcPoLines(
       LEFT JOIN public.items i ON i.id = pol.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
+      -- ADR-236: PO line -> its JC op -> job card -> JWSO line. Each hop joins
+      -- on the target's primary key, so none can multiply the PO lines.
+      LEFT JOIN public.jc_ops jco
+        ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
+      LEFT JOIN public.job_cards jc
+        ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl
+        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
       WHERE pol.purchase_order_id = ${purchaseOrderId}::uuid
         AND pol.deleted_at IS NULL
       ORDER BY pol.line_no
