@@ -111,8 +111,8 @@ export function EditCapaModal({
         <span>
           <span className="text3">JC No.</span> <b className="mono">{capa.jcNo ?? '—'}</b>
         </span>
-        {/* POL — the CUSTOMER's own purchase-order line number off the SO line
-            behind this CAPA. Read-only; it is typed only on the Sales Order. */}
+        {/* POL — the CUSTOMER's own purchase-order line number off the SO or JWSO
+            line behind this CAPA. Read-only; typed on that order line (ADR-236). */}
         <span>
           <span className="text3">POL</span>{' '}
           <b className="mono" style={{ color: 'var(--purple)' }}>

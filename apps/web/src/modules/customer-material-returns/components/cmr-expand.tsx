@@ -46,6 +46,16 @@ function lineColumns(): DataTableColumn<CustomerMaterialReturnLine>[] {
       ),
     },
     {
+      // POL — the customer's PO line number on the JWSO line (ADR-236).
+      id: 'client_po_line_no',
+      header: 'POL',
+      kind: 'code',
+      headColor: 'var(--purple)',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (l) => <span style={{ color: 'var(--purple)' }}>{l.clientPoLineNo ?? '—'}</span>,
+    },
+    {
       id: 'part_code',
       header: 'Item Code',
       kind: 'code',

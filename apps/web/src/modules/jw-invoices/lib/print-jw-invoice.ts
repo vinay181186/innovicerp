@@ -223,6 +223,8 @@ export function printJwInvoice(args: {
         // name alone. A JWSO line with no coded item still prints blank rather
         // than a value invented to fill the column.
         itemCode: itemCodeWithRev(invoice.itemCode, invoice.itemRevision, ''),
+        // The customer's PO line number on the JWSO line (ADR-236).
+        pol: invoice.clientPoLineNo,
         itemName: invoice.partName ?? '',
         uom,
         qty: String(invoice.qty),

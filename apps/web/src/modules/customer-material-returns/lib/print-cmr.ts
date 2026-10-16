@@ -61,6 +61,8 @@ export function printCustomerMaterialReturn(
     ].filter(Boolean);
     return {
       itemCode: l.rmItemCode ?? l.partyMaterialCode ?? '',
+      // The customer's PO line number on the JWSO line (ADR-236).
+      pol: l.clientPoLineNo,
       itemName: l.rmItemName,
       uom: CMR_UOM,
       hsn: null,
