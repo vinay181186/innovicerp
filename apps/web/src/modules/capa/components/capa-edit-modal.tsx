@@ -14,7 +14,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useOperatorsList } from '@/modules/operators/api';
-import { useUsersList } from '@/modules/users/api';
+import { useTaskUserOptions } from '@/modules/tasks/api';
 import { useUpdateCapa } from '../api';
 import { Overlay } from './capa-overlay';
 
@@ -31,14 +31,17 @@ export function EditCapaModal({
   // Responsible and Verified By are one select of operators + active users
   // (legacy L22862).
   const operatorsQuery = useOperatorsList({ limit: 200, offset: 0, isActive: true });
-  const usersQuery = useUsersList({ limit: 200, offset: 0, isActive: true });
+  // Active users come from the login-only Task Board feed: the /users list is
+  // admin-only, so a non-admin got a silent 403 and saw operators alone. Same
+  // names either way (users.fullName, active users of this company).
+  const usersQuery = useTaskUserOptions();
   const responsibleOptions = useMemo(() => {
     const names = new Set<string>();
     for (const o of operatorsQuery.data?.operators ?? []) {
       if (o.name) names.add(o.name);
     }
-    for (const u of usersQuery.data?.items ?? []) {
-      if (u.fullName) names.add(u.fullName);
+    for (const u of usersQuery.data?.options ?? []) {
+      if (u.name) names.add(u.name);
     }
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [operatorsQuery.data, usersQuery.data]);

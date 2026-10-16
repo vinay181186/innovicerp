@@ -59,7 +59,9 @@ export async function listMachineGroups(
   input: ListMachineGroupsQuery,
   user: AuthContext,
 ): Promise<ListMachineGroupsResponse> {
-  await requireFormAccess(user, 'machine_create', 'view');
+  // Reading the list is open to every login, like Items and Machines: it feeds
+  // the Machine Group picker on Job Card, Route Card, Op Entry and Edit Plan,
+  // whose users need not hold Machine Master View. Adding / editing stays gated.
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [

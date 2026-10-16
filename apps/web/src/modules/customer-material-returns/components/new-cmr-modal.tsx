@@ -234,6 +234,7 @@ export function NewCmrModal({
               onChange={onPickJw}
               onSearch={setJwSearch}
               loading={jwQuery.isFetching}
+              error={jwQuery.error}
               placeholder="🔍 Select JWSO — type number or customer…"
               options={jwHeaders.map((j) => ({
                 id: j.jwId,

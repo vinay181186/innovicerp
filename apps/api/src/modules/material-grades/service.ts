@@ -59,7 +59,9 @@ export async function listMaterialGrades(
   input: ListMaterialGradesQuery,
   user: AuthContext,
 ): Promise<ListMaterialGradesResponse> {
-  await requireFormAccess(user, 'rawmat_create', 'view');
+  // Reading the list is open to every login, like Items and Machines: it feeds
+  // the RM Grade picker on Route Card, BOM, Job Card and ML BOM, whose users
+  // need not hold Raw Material Master View. Adding / editing stays gated.
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [

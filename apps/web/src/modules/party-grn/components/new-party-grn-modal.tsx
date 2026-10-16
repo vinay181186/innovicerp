@@ -221,6 +221,7 @@ export function NewPartyGrnModal({
               onChange={onJwChange}
               onSearch={setJwSearch}
               loading={jwQuery.isFetching}
+              error={jwQuery.error}
               placeholder="🔍 Select JWSO — type number or customer…"
               options={jwHeaders.map((j) => ({
                 id: j.jwId,
@@ -329,6 +330,18 @@ export function NewPartyGrnModal({
                 <tr>
                   <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
                     <Loader2 size={13} className="inline animate-spin" /> Loading lines…
+                  </td>
+                </tr>
+              ) : jwDetailQ.isError ? (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="empty-state"
+                    style={{ color: 'var(--red2)', padding: 14 }}
+                  >
+                    {jwDetailQ.error instanceof Error
+                      ? jwDetailQ.error.message
+                      : 'Could not load the JWSO lines.'}
                   </td>
                 </tr>
               ) : jwLines.length === 0 ? (

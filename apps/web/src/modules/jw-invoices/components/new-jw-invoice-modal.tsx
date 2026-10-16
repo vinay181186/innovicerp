@@ -164,6 +164,7 @@ export function NewJwInvoiceModal({
                 }}
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
+                error={jwQuery.error}
                 // The pre-picked JWSO may sit outside the first 50 the picker
                 // lists, so its label comes from the loaded detail.
                 valueLabel={
@@ -195,9 +196,14 @@ export function NewJwInvoiceModal({
                     ? 'Select a JWSO first…'
                     : jwDetailQ.isFetching || billableQ.isFetching
                       ? 'Loading lines…'
-                      : jwLines.length === 0
-                        ? 'No lines on this JWSO'
-                        : 'Select a line…'}
+                      : jwDetailQ.isError || billableQ.isError
+                        ? (() => {
+                            const e = jwDetailQ.error ?? billableQ.error;
+                            return e instanceof Error ? e.message : 'Could not load the lines.';
+                          })()
+                        : jwLines.length === 0
+                          ? 'No lines on this JWSO'
+                          : 'Select a line…'}
                 </option>
                 {jwLines.map((l) => {
                   const b = toInvoiceById.get(l.id);

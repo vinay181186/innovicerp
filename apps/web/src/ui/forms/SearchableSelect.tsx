@@ -56,6 +56,8 @@ export interface SearchableSelectProps {
   id?: string | undefined;
   className?: string | undefined;
   emptyText?: string | undefined;
+  /** The list hook's error; shown in place of `emptyText` when set. */
+  error?: unknown;
   /** Applied to a wrapper around the control (design-ref API). */
   style?: React.CSSProperties | undefined;
 }
@@ -78,6 +80,7 @@ export function SearchableSelect({
   id,
   className,
   emptyText,
+  error,
   style,
 }: SearchableSelectProps): React.JSX.Element {
   const control = (
@@ -94,6 +97,7 @@ export function SearchableSelect({
       id={id}
       className={className}
       emptyText={emptyText}
+      error={error}
     />
   );
   // Only wrap when there is something to put on the wrapper. The extra node

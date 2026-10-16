@@ -77,7 +77,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { withUniqueRetry } from '../../lib/db-retry';
-import { requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf, polSql } from '../../lib/pol';
 import { productionOrderSfColumns } from './sf-columns';
@@ -837,7 +837,16 @@ export async function listProductionOrders(
   query: ListProductionOrdersQuery,
   user: AuthContext,
 ): Promise<ListProductionOrdersResponse> {
-  await requireFormAccess(user, 'prodorder_create', 'view');
+  // A Job Card looks up its own order (stopped banner, Actual Size, print):
+  // Job Card View is enough for that one lookup.
+  if (query.jobCardId) {
+    await requireAnyFormAccess(user, [
+      ['prodorder_create', 'view'],
+      ['jc_create', 'view'],
+    ]);
+  } else {
+    await requireFormAccess(user, 'prodorder_create', 'view');
+  }
   const companyId = requireCompany(user);
   const sf = readSf(query.sf);
   return withUserContext(user, async (tx) => {

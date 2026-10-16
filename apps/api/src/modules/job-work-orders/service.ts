@@ -340,13 +340,30 @@ function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+/** Who may READ a JWSO (list + detail). ADR-203 rule 8 put this on JWSO
+ *  Master view alone, which left the Store / Finance / JW DC screens that pick
+ *  a JWSO with a silent empty dropdown (Party GRN, Party Material Issue,
+ *  Customer Material Return, JW Invoice, JW DC outward). JWSO Master stays
+ *  first so a refusal names it. Money is still hidden — see jwShowMoney. */
+const JW_READ_PAIRS = [
+  ['jw_create', 'view'],
+  ['party_create', 'view'],
+  ['invoice_create', 'view'],
+  ['ospdc_create', 'view'],
+] as const;
+
+/** Rates / amounts on a JWSO read: JWSO Master's see-price, or Invoices'
+ *  (a JW Invoice prefills its rate from the JWSO line). */
+async function jwShowMoney(user: AuthContext): Promise<boolean> {
+  return (await canSeeFormPrice(user, 'jw_create')) || canSeeFormPrice(user, 'invoice_create');
+}
+
 export async function listJobWorkOrders(
   input: ListJobWorkOrdersQuery,
   user: AuthContext,
 ): Promise<ListJobWorkOrdersResponse> {
   const companyId = requireCompany(user);
-  // ADR-203 rule 8: reading the JWSO Master needs its view right.
-  await requireFormAccess(user, 'jw_create', 'view');
+  await requireAnyFormAccess(user, JW_READ_PAIRS);
   return withUserContext(user, async (tx) => {
     // Search covers every field the JWSO list card actually shows — band 1
     // (JWSO code, client name, status badge), band 2's meta line (JWSO date,
@@ -578,8 +595,8 @@ async function loadJobWorkOrderDetail(
 
 export async function getJobWorkOrder(id: string, user: AuthContext): Promise<JobWorkOrderDetail> {
   const companyId = requireCompany(user);
-  await requireFormAccess(user, 'jw_create', 'view');
-  const showMoney = await canSeeFormPrice(user, 'jw_create');
+  await requireAnyFormAccess(user, JW_READ_PAIRS);
+  const showMoney = await jwShowMoney(user);
   return withUserContext(user, (tx) => loadJobWorkOrderDetail(tx, id, companyId, showMoney));
 }
 
