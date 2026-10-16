@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 
 // ADR-236 — POL, the customer's PO line number, on every document downstream of
 // an order line. Two sources, one rule:
@@ -27,6 +28,9 @@ export function polSql(solAlias: string, jwlAlias: string): SQL {
 
 /** Same rule for Drizzle query-builder selects: pass the two column refs,
  *  e.g. `polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo)`. */
-export function polOf(soLinePol: unknown, jwLinePol: unknown): SQL<string | null> {
+export function polOf(
+  soLinePol: AnyPgColumn | SQL,
+  jwLinePol: AnyPgColumn | SQL,
+): SQL<string | null> {
   return sql<string | null>`COALESCE(${soLinePol}, ${jwLinePol})`;
 }

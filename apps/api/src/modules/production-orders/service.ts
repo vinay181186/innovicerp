@@ -79,7 +79,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { withUniqueRetry } from '../../lib/db-retry';
 import { requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { polSql } from '../../lib/pol';
+import { polOf, polSql } from '../../lib/pol';
 import { productionOrderSfColumns } from './sf-columns';
 import {
   buildCloseHistory,
@@ -382,7 +382,13 @@ function polViaPlanSql(planId: unknown): SQL<string | null> {
    WHERE p.id = ${planId} LIMIT 1
 )`;
 }
-const CLIENT_PO_LINE_NO_SQL = polViaPlanSql(plans.id);
+// The select reads straight off the plan row baseQuery already joined (two
+// primary-key lookups); polViaPlanSql stays for search / sort, which also run
+// on the count query where plans is not joined.
+const CLIENT_PO_LINE_NO_SQL = polOf(
+  sql`(SELECT client_po_line_no FROM public.sales_order_lines WHERE id = ${plans.soLineId})`,
+  sql`(SELECT client_po_line_no FROM public.job_work_order_lines WHERE id = ${plans.jwLineId})`,
+);
 
 /** ADR-207 — the SO's Internal SO No., read live through the plan's SO line
  *  (never copied). Keyed on production_orders.plan_id only, so the list's

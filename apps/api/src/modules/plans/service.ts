@@ -452,7 +452,9 @@ export async function listPlans(
                          AND po.code ILIKE ${term})
           OR EXISTS (SELECT 1 FROM ${jobCards} jc WHERE jc.id = ${plans.jcId} AND jc.code ILIKE ${term})
           OR EXISTS (SELECT 1 FROM ${salesOrderLines} sol WHERE sol.id = ${plans.soLineId} AND sol.deleted_at IS NULL AND sol.client_po_line_no ILIKE ${term})
-          -- ADR-236: the JWSO line's POL, which the row shows when there is no SO line.
+          -- ADR-236: SO POL else JWSO POL (the rule in lib/pol.ts) as two EXISTS —
+          -- this predicate also runs on the count query, which has no line joins.
+          -- A plan has one source, so OR finds the same rows as the COALESCE.
           OR EXISTS (SELECT 1 FROM public.job_work_order_lines sjwl WHERE sjwl.id = ${plans.jwLineId} AND sjwl.deleted_at IS NULL AND sjwl.client_po_line_no ILIKE ${term}))`,
       );
     }

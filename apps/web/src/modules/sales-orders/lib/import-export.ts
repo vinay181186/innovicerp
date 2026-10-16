@@ -167,7 +167,7 @@ export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportR
     const clientPoLineNo = String(r['POL'] ?? r['CPO Line'] ?? '').trim();
     const polMsg = polError(clientPoLineNo);
     if (polMsg) {
-      errors.push(`Row ${i + 2}: ${polMsg} Row skipped.`);
+      errors.push(`Row ${i + 2}: ${polMsg}. Row skipped.`);
       return;
     }
     rows.push({

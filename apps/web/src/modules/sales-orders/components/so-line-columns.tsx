@@ -114,7 +114,7 @@ export function lineColumns(opts: {
     {
       id: 'material',
       header: 'Material',
-      width: '8%',
+      width: '6%',
       className: 'text3',
       ellipsis: true,
       render: (l) => l.material ?? '—',
@@ -123,7 +123,7 @@ export function lineColumns(opts: {
     {
       id: 'drawing',
       header: 'Drawing',
-      width: '10%',
+      width: '8%',
       className: 'mono',
       render: (l) => {
         const drawingFilePath = l.drawingFilePath ?? null;
@@ -237,7 +237,7 @@ export function lineColumns(opts: {
       // Long prose: one line, cut with "…", the full text on hover.
       id: 'remarks',
       header: 'Remarks',
-      width: '10%',
+      width: '6%',
       align: 'left',
       ellipsis: true,
       render: (l) => l.remarks ?? '—',
@@ -247,7 +247,7 @@ export function lineColumns(opts: {
       id: 'status',
       kind: 'badge',
       header: 'SO Status',
-      width: '10%',
+      width: '8%',
       render: (l) => (
         // One line (ADR-199): status and closed-short chip side by side.
         <span

@@ -198,11 +198,12 @@ export const jobWorkOrderLineInputSchema = z.object({
   partName: z.string().min(1).max(255),
   material: z.string().max(255).nullable().optional(),
   drawingNo: z.string().max(64).nullable().optional(),
-  // ADR-236: COMPULSORY — the customer's PO line number (lib/pol.ts).
+  // ADR-236: COMPULSORY here AND on the form — the customer's PO line number
+  // (lib/pol.ts). Every caller that builds a JWSO line must supply it.
   clientPoLineNo: polInputSchema,
   // ADR-236: optional line Remarks (lib/line-remarks.ts).
   remarks: lineRemarksInputSchema,
-  // Compulsory on the FORM (the only layer that can ask a human), optional
+  // Rev — compulsory on the FORM (the only layer that can ask a human), optional
   // here so the server paths that insert a JWSO line without asking anyone —
   // the BOM cascade and the SO-to-JW conversions — still work. Same split the
   // sales-order line makes.

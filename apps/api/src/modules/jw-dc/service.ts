@@ -353,14 +353,16 @@ export async function getJwDcOutwardDetail(
       -- can multiply the line count.
       LEFT JOIN public.purchase_order_lines pol
         ON pol.id = jdol.purchase_order_line_id AND pol.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.jc_ops jco
         ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
       LEFT JOIN public.job_cards jc
         ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines jwl
         ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      -- The SO line: the PO line's own link, else the Job Card's (an OSP PO raised
+      -- from an SO-sourced card may not carry source_so_line_id). Still one row.
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = COALESCE(pol.source_so_line_id, jc.source_so_line_id) AND sol.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT SUM(received_qty)::float8 AS returned
         FROM public.jw_dc_inward_lines jdil
@@ -715,8 +717,6 @@ export async function getJwDcPoLines(
         ${sql.raw(poLineSentRaw('pol.id'))}::float8 AS "alreadySent"
       FROM public.purchase_order_lines pol
       LEFT JOIN public.items i ON i.id = pol.item_id AND i.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
       -- ADR-236: PO line -> its JC op -> job card -> JWSO line. Each hop joins
       -- on the target's primary key, so none can multiply the PO lines.
       LEFT JOIN public.jc_ops jco
@@ -725,6 +725,10 @@ export async function getJwDcPoLines(
         ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines jwl
         ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      -- The SO line: the PO line's own link, else the Job Card's (an OSP PO raised
+      -- from an SO-sourced card may not carry source_so_line_id). Still one row.
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = COALESCE(pol.source_so_line_id, jc.source_so_line_id) AND sol.deleted_at IS NULL
       WHERE pol.purchase_order_id = ${purchaseOrderId}::uuid
         AND pol.deleted_at IS NULL
       ORDER BY pol.line_no

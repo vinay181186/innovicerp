@@ -462,6 +462,9 @@ export async function listNcRegister(
               AND ssol.deleted_at IS NULL
               AND ssol.client_po_line_no ILIKE ${term} ESCAPE '\\'
           )
+          -- ADR-236: SO POL else JWSO POL (the rule in lib/pol.ts), written as two
+          -- EXISTS because this fragment also runs on the count query, which has
+          -- no line joins for polSql to use. A card has one source, so OR = COALESCE.
           OR EXISTS (
             SELECT 1
             FROM public.job_work_order_lines sjwl

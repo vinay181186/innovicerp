@@ -22,10 +22,10 @@ export const polInputSchema = z
   .min(1, 'POL is required')
   .max(POL_MAX, `POL can be at most ${POL_MAX} characters`);
 
-/** The plain-English problem with a typed POL, or null when it is fine. */
+/** The plain-English problem with a typed POL, or null when it is fine —
+ *  derived from polInputSchema, so the form and the API share one rule and
+ *  one wording. */
 export function polError(raw: string | null | undefined): string | null {
-  const v = (raw ?? '').trim();
-  if (v === '') return 'POL is required.';
-  if (v.length > POL_MAX) return `POL can be at most ${POL_MAX} characters.`;
-  return null;
+  const r = polInputSchema.safeParse(raw ?? '');
+  return r.success ? null : (r.error.issues[0]?.message ?? 'POL is invalid');
 }
