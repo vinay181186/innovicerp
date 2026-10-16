@@ -54,9 +54,7 @@ export function currentQuickLinks(saved: string[] | null | undefined): string[] 
   return [...new Set(saved.map((p) => RENAMED_QUICK_LINKS[p] ?? p))];
 }
 
-export function rowToConfig(
-  row: typeof dashboardConfig.$inferSelect | undefined,
-): DashboardConfig {
+export function rowToConfig(row: typeof dashboardConfig.$inferSelect | undefined): DashboardConfig {
   return {
     widgets: row?.widgets ?? null,
     quickLinks: currentQuickLinks(row?.quickLinks),
@@ -112,7 +110,12 @@ export async function saveConfig(
     if (existing) {
       await tx
         .update(dashboardConfig)
-        .set({ widgets: input.widgets, quickLinks: input.quickLinks, updatedBy: user.id, updatedAt: new Date() })
+        .set({
+          widgets: input.widgets,
+          quickLinks: input.quickLinks,
+          updatedBy: user.id,
+          updatedAt: new Date(),
+        })
         .where(eq(dashboardConfig.id, existing.id));
     } else {
       await tx.insert(dashboardConfig).values({

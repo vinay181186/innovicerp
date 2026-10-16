@@ -26,7 +26,8 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
       kind: 'code',
       nowrap: true,
       render: (jc) => (
-        <ActionLink fallback="text"
+        <ActionLink
+          fallback="text"
           to="/job-cards/$id"
           params={{ id: jc.jobCardId }}
           title="View job card status"

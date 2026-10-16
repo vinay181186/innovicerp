@@ -55,7 +55,11 @@ export function RelatedRefLink({
   return (
     // hrefLink: a stored path with a query ('/nc-register?tab=capa&capa=…')
     // goes to the router as `to` + `search`.
-    <Link {...(hrefLink(nav) as { to: string })} onClick={onClick} title={`Open ${linkedRef.display}`}>
+    <Link
+      {...(hrefLink(nav) as { to: string })}
+      onClick={onClick}
+      title={`Open ${linkedRef.display}`}
+    >
       {chip}
     </Link>
   );

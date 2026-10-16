@@ -784,7 +784,8 @@ export async function addTaskAttachment(
   await requireCanWrite(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
-    if (!permsFor(t, user, true).canAttach) throw new AuthorizationError('Cannot attach to this task');
+    if (!permsFor(t, user, true).canAttach)
+      throw new AuthorizationError('Cannot attach to this task');
     const names = await loadUserNames(tx, companyId);
     await registerAttachment(tx, companyId, t, input, user, names);
     return getTaskInternal(tx, id, companyId, user);

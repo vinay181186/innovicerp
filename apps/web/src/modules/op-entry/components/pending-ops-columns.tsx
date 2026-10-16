@@ -29,7 +29,8 @@ export const PENDING_OPS_DEFAULT_HIDDEN = ['client_po_line_no', 'item_name'];
  *  chance to land on the wrong one. */
 function jcLink(op: JcOpEnriched): React.JSX.Element {
   return (
-    <ActionLink fallback="text"
+    <ActionLink
+      fallback="text"
       to="/job-cards/$id"
       params={{ id: op.jobCardId }}
       style={{ color: 'var(--cyan)', textDecoration: 'none' }}

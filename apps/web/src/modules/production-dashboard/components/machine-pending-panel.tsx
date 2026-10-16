@@ -73,7 +73,8 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
     kind: 'code',
     nowrap: true,
     render: ({ op }) => (
-      <ActionLink fallback="text"
+      <ActionLink
+        fallback="text"
         to="/job-cards/$id"
         params={{ id: op.jobCardId }}
         title="View job card status"

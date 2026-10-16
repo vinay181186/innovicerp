@@ -8,11 +8,20 @@ import { useState } from 'react';
 import { useWorkList } from '../api';
 
 function sevColor(sev: string): string {
-  return sev === 'critical' ? 'var(--sig-critical)' : sev === 'warn' ? 'var(--sig-warn)' : 'var(--sig-info)';
+  return sev === 'critical'
+    ? 'var(--sig-critical)'
+    : sev === 'warn'
+      ? 'var(--sig-warn)'
+      : 'var(--sig-info)';
 }
 
 function Row({ it }: { it: WorkListItem }): React.JSX.Element {
-  const btnCls = it.severity === 'critical' ? 'btn-danger' : it.severity === 'warn' ? 'btn-primary' : 'btn-ghost';
+  const btnCls =
+    it.severity === 'critical'
+      ? 'btn-danger'
+      : it.severity === 'warn'
+        ? 'btn-primary'
+        : 'btn-ghost';
   // The whole row is the link (ERPNext list rows open the record). A plain
   // "View"/"Open" chip only repeated that, so it is dropped; a real verb
   // (Create PO, Inspect …) stays as a chip naming what the click leads to.
@@ -35,7 +44,15 @@ function Row({ it }: { it: WorkListItem }): React.JSX.Element {
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{it.title}</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--text3)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {it.detail}
           </div>
         </div>
@@ -64,7 +81,11 @@ function Row({ it }: { it: WorkListItem }): React.JSX.Element {
   );
 }
 
-export function MyWorkPanel({ mode = 'full' }: { mode?: 'full' | 'strip' }): React.JSX.Element | null {
+export function MyWorkPanel({
+  mode = 'full',
+}: {
+  mode?: 'full' | 'strip';
+}): React.JSX.Element | null {
   const { data } = useWorkList();
   const [expanded, setExpanded] = useState(false);
   const items = data?.items ?? [];
@@ -94,9 +115,15 @@ export function MyWorkPanel({ mode = 'full' }: { mode?: 'full' | 'strip' }): Rea
         <span className="panel-title">📋 My Work</span>
         <span
           className="badge"
-          style={critical > 0 ? { background: 'var(--sig-critical-bg)', color: 'var(--sig-critical)' } : undefined}
+          style={
+            critical > 0
+              ? { background: 'var(--sig-critical-bg)', color: 'var(--sig-critical)' }
+              : undefined
+          }
         >
-          {critical > 0 ? `${critical} critical · ${items.length} total` : `${items.length} item${items.length > 1 ? 's' : ''}`}
+          {critical > 0
+            ? `${critical} critical · ${items.length} total`
+            : `${items.length} item${items.length > 1 ? 's' : ''}`}
         </span>
       </div>
       <div>
@@ -105,11 +132,19 @@ export function MyWorkPanel({ mode = 'full' }: { mode?: 'full' | 'strip' }): Rea
         ))}
       </div>
       {mode === 'full' && hidden > 0 ? (
-        <div className="wl-footer" style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--cyan)' }} onClick={() => setExpanded(true)}>
+        <div
+          className="wl-footer"
+          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--cyan)' }}
+          onClick={() => setExpanded(true)}
+        >
           📋 {hidden} more item{hidden > 1 ? 's' : ''} · Show all →
         </div>
       ) : mode === 'full' && expanded && items.length > 10 ? (
-        <div className="wl-footer" style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--cyan)' }} onClick={() => setExpanded(false)}>
+        <div
+          className="wl-footer"
+          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--cyan)' }}
+          onClick={() => setExpanded(false)}
+        >
           ▴ Show less
         </div>
       ) : null}

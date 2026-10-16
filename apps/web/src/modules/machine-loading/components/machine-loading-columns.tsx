@@ -57,7 +57,8 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       // the job card. stopPropagation on the link, not the cell, so clicking
       // the rest of the cell still opens the row.
       render: (op) => (
-        <ActionLink fallback="text"
+        <ActionLink
+          fallback="text"
           to="/job-cards/$id"
           params={{ id: op.jobCardId }}
           className="td-code cyan"
