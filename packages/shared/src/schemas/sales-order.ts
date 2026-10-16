@@ -27,6 +27,7 @@
 import { z } from 'zod';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
+import { polInputSchema } from '../lib/pol';
 import { internalSoNoError, normaliseInternalSoNo } from '../lib/internal-so-no';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { sfRawParamSchema } from './list-query';
@@ -285,7 +286,8 @@ export const salesOrderLineInputSchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
       .optional(),
-    clientPoLineNo: z.string().max(64).optional(),
+    // ADR-236: COMPULSORY — the customer's PO line number (lib/pol.ts).
+    clientPoLineNo: polInputSchema,
     status: soStatusSchema.optional(),
     // BOM-8 cascade: when set, line creation spawns child JCs / PRs from
     // the BOM's lines (per bom_type). Fires once per line creation;

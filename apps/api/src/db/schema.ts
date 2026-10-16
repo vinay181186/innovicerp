@@ -1988,6 +1988,10 @@ export const jobWorkOrderLines = pgTable(
     partName: text('part_name').notNull(),
     material: text('material'),
     drawingNo: text('drawing_no'),
+    // ADR-236 (migration 0210): POL, the customer's PO line number — same
+    // column as sales_order_lines.client_po_line_no. Compulsory on input
+    // (packages/shared/src/lib/pol.ts); nullable for lines saved before 0210.
+    clientPoLineNo: text('client_po_line_no'),
     // The customer's DRAWING REVISION and the drawing FILE (migration 0120),
     // the sales-order line's two columns copied deliberately so a JWSO line and
     // an SO line are the same shape and one screen can serve both. Before this
