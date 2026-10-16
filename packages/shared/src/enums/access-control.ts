@@ -7,7 +7,7 @@
 // plus 4 new keys for React-only modules:
 //   - tpi_submit             (TPI module)
 //   - qcdocs_upload          (QC Documents matrix)
-//   - accesscontrol_manage   (this module itself)
+//   - (accesscontrol_manage — removed, ADR-234)
 //   - printtpl_edit          (Print Templates admin editor)
 //
 // Single source of truth — API, web sidebar gating, web button gating,
@@ -90,7 +90,6 @@ export const ACCESS_FORMS = [
   { key: 'jc_create', dept: 'production', label: 'Job Cards' },
   { key: 'prodorder_create', dept: 'production', label: 'Production Orders' },
   { key: 'op_entry', dept: 'production', label: 'Op Entry' },
-  { key: 'machop_entry', dept: 'production', label: 'Machine Op Entry' },
   { key: 'machine_create', dept: 'production', label: 'Machine Master' },
   { key: 'operator_create', dept: 'production', label: 'Operator Master' },
   { key: 'rawmat_create', dept: 'production', label: 'Raw Material Master' },
@@ -130,10 +129,9 @@ export const ACCESS_FORMS = [
   // Finance
   { key: 'cc_create', dept: 'finance', label: 'Cost Centre Master' },
   { key: 'invoice_create', dept: 'finance', label: 'Invoices' },
-  // System
-  { key: 'user_manage', dept: 'system', label: 'User Management' },
-  // — New React-only System keys —
-  { key: 'accesscontrol_manage', dept: 'system', label: 'Access Control' },
+  // System. User Management and Access Control are Super Admin pages
+  // (ADR-232); their ticks did nothing and were removed with Machine Op Entry
+  // (ADR-234, owner E3). A stored tick for a removed key is simply ignored.
   { key: 'printtpl_edit', dept: 'system', label: 'Print Templates' },
 ] as const satisfies readonly { key: string; dept: AccessDeptKey; label: string }[];
 
