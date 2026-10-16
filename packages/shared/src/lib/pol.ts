@@ -17,7 +17,8 @@ import { z } from 'zod';
 export const POL_MAX = 64;
 
 export const polInputSchema = z
-  .string()
+  // A MISSING key says the same as a blank one, not zod's bare "Required".
+  .string({ required_error: 'POL is required', invalid_type_error: 'POL is required' })
   .trim()
   .min(1, 'POL is required')
   .max(POL_MAX, `POL can be at most ${POL_MAX} characters`);
