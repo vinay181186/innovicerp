@@ -43,6 +43,9 @@ export const jwReturnChallanListItemSchema = jwReturnChallanSchema.extend({
    *  JWSO's Client PO No. */
   itemCode: z.string().nullable().default(null),
   itemRevision: z.string().nullable().default(null),
+  /** POL — the JWSO line's customer PO line number (ADR-236); null on
+   *  lines saved before migration 0210. */
+  clientPoLineNo: z.string().nullable().default(null),
   uom: z.string().nullable().default(null),
   /** HSN off the item master (items.hsn_code), printed on the challan (A4). */
   hsnCode: z.string().nullable().optional(),
