@@ -101,7 +101,13 @@ function MachinesListPage(): React.JSX.Element {
   // user flashes this panel on cold load. Checked once here, so it covers both
   // tabs.
   if (eff && !perms.view) {
-    return <PageState as="page" state="noaccess" />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="⛔ You do not have permission to view Machines. Ask an admin."
+      />
+    );
   }
 
   // Machines | Machine Groups switch — one strip, rendered inside whichever

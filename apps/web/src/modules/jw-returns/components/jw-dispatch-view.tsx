@@ -214,7 +214,7 @@ export function JwDispatchView({
           onClose={() => setCancelTarget(null)}
         />
       ) : null}
-      {showModal ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
+      {showModal && canCreate ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Download, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { useCanWrite } from '@/components/shared/action-link';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
@@ -125,6 +126,8 @@ function SalesOrdersListPage(): React.JSX.Element {
   const canCreate = perms.entry;
   const canEdit = perms.edit;
   const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
+  const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
+  const canAssign = useCanWrite();
 
   // Rows whose ▸ is open (none on load, so no per-order fetches on arrival).
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -347,7 +350,14 @@ function SalesOrdersListPage(): React.JSX.Element {
             }
             onToggleExpanded={(so) => toggleExpand(so.id)}
             rowMenu={(so) =>
-              soRowMenu(so, { canEdit, canDelete, onAssign: setAssignSo, onDelete: onDeleteSo })
+              soRowMenu(so, {
+                canEdit,
+                canDelete,
+                canPlan,
+                canAssign,
+                onAssign: setAssignSo,
+                onDelete: onDeleteSo,
+              })
             }
             // Splits a `?query` off a ⋯ `to` (Plan BOM Items → /planning?soId=).
             renderLink={renderRowMenuLink}

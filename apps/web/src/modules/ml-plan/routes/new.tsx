@@ -64,7 +64,13 @@ function MlPlanNewPage(): React.JSX.Element {
   };
 
   if (eff && !perms.entry) {
-    return <PageState as="page" state="noaccess" />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to create Multi-Level Plans. Ask an admin."
+      />
+    );
   }
   if (soLineId && pre.isLoading) {
     return <PageState state="loading" message="⟳ Loading SO line…" />;

@@ -2,6 +2,7 @@
 
 import type { CreatePurchaseRequestInput, UpdatePurchaseRequestInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { useCanOpen } from '@/components/shared/action-link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -183,6 +184,8 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   // typing the URL handed the form to anyone, including an L1 Viewer and an
   // L4 Approver, who deliberately cannot change a saved record.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
+  // ADR-234 — "View the PO →" only for someone who may open the PO.
+  const canOpenPo = useCanOpen()('/purchase-orders/$id');
   const perms = effectiveFormPerms(eff, 'pr_create');
   // Where Cancel goes, and where ESC → Exit goes.
   const goBack = useCallback(
@@ -275,7 +278,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
             This PR is on a PO and can no longer be edited.
-            {detail.poId ? (
+            {detail.poId && canOpenPo ? (
               <>
                 {' '}
                 <Link

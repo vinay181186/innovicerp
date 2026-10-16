@@ -137,7 +137,7 @@ export function InwardView({
         />
       ) : null}
 
-      {showModal ? <NewInwardModal onClose={() => setShowModal(false)} /> : null}
+      {showModal && canWrite ? <NewInwardModal onClose={() => setShowModal(false)} /> : null}
     </div>
   );
 }

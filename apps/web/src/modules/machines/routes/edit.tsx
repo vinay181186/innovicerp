@@ -4,6 +4,7 @@ import type { CreateMachineInput, UpdateMachineInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -65,6 +66,7 @@ function MachineNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateMachine(saveKey);
+  const { data: eff } = useMyAccess();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/machines' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -80,6 +82,15 @@ function MachineNewPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Could not save Machine. Try again.');
     }
   };
+
+  // ADR-234 — the page's own guard (createMachine needs Machine Master Entry).
+  if (eff && !effectiveFormPerms(eff, 'machine_create').entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create Machines. Ask an admin.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -112,6 +123,7 @@ function MachineEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: machine, isLoading, isError, error } = useMachine(id);
   const update = useUpdateMachine(id);
+  const { data: eff } = useMyAccess();
   const fetchMachine = useFetchMachine();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
@@ -159,6 +171,15 @@ function MachineEditPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Could not save Machine. Try again.');
     }
   };
+
+  // ADR-234 — the page's own guard (updateMachine needs Machine Master Edit).
+  if (eff && !effectiveFormPerms(eff, 'machine_create').edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to edit Machines. Ask an admin.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

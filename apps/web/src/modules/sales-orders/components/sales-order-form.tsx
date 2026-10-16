@@ -67,6 +67,8 @@ import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { apiDownload, apiFetch } from '@/lib/api';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useCanOpen } from '@/components/shared/action-link';
 import { cascadeField, useFieldCascade } from '@/lib/use-field-cascade';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useBomMastersList } from '@/modules/bom-master/api';
@@ -297,6 +299,15 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // Inline client quick-add (legacy addClientQuick) — add + select without
   // leaving the SO form.
   const [showAddClient, setShowAddClient] = useState(false);
+  // ADR-234 — each control checks the page/server function it reaches:
+  // "+ New" customer → Customer Master Entry; "Go to BOM Master" → BOM Master
+  // New; Upload PO Doc / Attach Email Ref → the SO documents API, which takes
+  // SO Entry OR Edit.
+  const { data: eff } = useMyAccess();
+  const canAddClient = effectiveFormPerms(eff, 'client_create').entry;
+  const soPerms = effectiveFormPerms(eff, 'so_create');
+  const canAttach = soPerms.entry || soPerms.edit;
+  const canOpen = useCanOpen();
   function onClientCreated(id: string, label: string): void {
     setValue('header.clientId', id, { shouldValidate: true });
     setClientLabel(label);
@@ -921,7 +932,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       {/* Header — customer first, then the document no. / dates / type, then
           remarks. Row 1: Customer 6 + Client PO 4 + GST 2; row 2: SO No. +
           Internal SO No. + SO Date + Due Date + SO Type; Remarks full width. */}
-      <Panel title="Order Details" actions={attachButtons}>
+      <Panel title="Order Details" actions={canAttach ? attachButtons : undefined}>
         <FormGrid>
           <FormField label="Customer" required size="lg" error={errors.header?.clientId?.message}>
             <div style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'flex-start' }}>
@@ -945,14 +956,16 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   }
                 />
               </div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                title="New Customer"
-                onClick={() => setShowAddClient(true)}
-              >
-                + New
-              </button>
+              {canAddClient ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  title="New Customer"
+                  onClick={() => setShowAddClient(true)}
+                >
+                  + New
+                </button>
+              ) : null}
             </div>
             <input
               type="hidden"
@@ -1202,9 +1215,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   ) : (
                     <>
                       ⚠ No BOM for {equipItem.code}.{' '}
-                      <Link to="/bom-masters/new" className="btn btn-ghost btn-sm">
-                        Go to BOM Master →
-                      </Link>
+                      {canOpen('/bom-masters/new') ? (
+                        <Link to="/bom-masters/new" className="btn btn-ghost btn-sm">
+                          Go to BOM Master →
+                        </Link>
+                      ) : null}
                     </>
                   )}
                 </Banner>
@@ -1638,7 +1653,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         </>
       )}
 
-      {showAddClient ? (
+      {showAddClient && canAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />
       ) : null}
     </form>

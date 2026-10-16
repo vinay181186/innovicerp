@@ -27,6 +27,7 @@ import {
   type AccessFormKey,
   ACCESS_FORMS,
   canDeleteRecords,
+  canWriteAnything,
   effectiveFormPerms,
   isUnconfigured,
 } from '@innovic/shared';
@@ -130,6 +131,33 @@ export async function requireAnyFormAccess(
   await requireFormAccess(user, formKey, action);
 }
 
+/**
+ * ADR-234: pass if the caller has ANY ONE of `actions` on ONE page — e.g. a
+ * file upload or lookup that both the New screen (Entry) and the Edit screen
+ * (Edit) call. The refusal names every tick that would do, so the admin knows
+ * exactly what to grant: "Needs the Entry or Edit tick on JWSO Master."
+ */
+export async function requireAnyTick(
+  user: AuthContext,
+  formKey: AccessFormKey,
+  actions: readonly AccessAction[],
+): Promise<void> {
+  if (user.role === 'admin') return;
+  const eff = await getMyAccess(user);
+  const perms = effectiveFormPerms(eff, formKey);
+  if (actions.some((a) => perms[a])) return;
+  if (isUnconfigured(eff)) {
+    throw new AuthorizationError(
+      'Your account has no access configured yet. Ask an admin to set your ' +
+        'department tiers in Access Control.',
+    );
+  }
+  const ticks = actions.map((a) => ACTION_TICK[a]).join(' or ');
+  throw new AuthorizationError(
+    `Needs the ${ticks} tick on ${formLabel(formKey)}. Ask an admin.`,
+  );
+}
+
 /** ADR-193 — who may READ store stock screens (inventory, ledger, issue
  *  registers): anyone whose work depends on what is in the store. Wide on
  *  purpose (paper test P24): a planner or buyer must not be locked out. */
@@ -210,6 +238,14 @@ export async function requireCanWrite(user: AuthContext): Promise<void> {
         'department tiers in Access Control.',
     );
   }
+}
+
+/** Non-throwing twin of requireCanWrite, for read paths that decide whether
+ *  to OFFER a write (task permissions, daily report Edit). Call it before a
+ *  transaction opens (it reads access in its own). */
+export async function canWrite(user: AuthContext): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  return canWriteAnything(await getMyAccess(user));
 }
 
 /**

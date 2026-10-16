@@ -22,6 +22,7 @@ import {
 } from 'drizzle-orm';
 import { tasks } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { canWrite } from '../../lib/access';
 import { requireAdminRole } from '../../lib/auth';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import {
@@ -78,6 +79,7 @@ export async function listTasks(
   const me = user.id;
   const sf = readSf(query.sf);
   const cols = taskSfColumns(query.view);
+  const writer = await canWrite(user); // before the tx (ADR-229)
 
   return withUserContext(user, async (tx) => {
     const names = await loadUserNames(tx, companyId);
@@ -199,7 +201,7 @@ export async function listTasks(
       companyId,
       rows.map((r) => r.id),
     );
-    const ctx: RowContext = { names, user, today, ...perTask };
+    const ctx: RowContext = { names, user, today, ...perTask, canWrite: writer };
     const mapped: TaskRow[] = rows.map((r) => rowToTask(r, ctx));
 
     return {

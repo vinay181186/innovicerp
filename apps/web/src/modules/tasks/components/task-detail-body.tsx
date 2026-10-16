@@ -6,6 +6,7 @@
 import type { TaskDetail, TaskHistoryEntry } from '@innovic/shared';
 import { TASK_HISTORY_ACTION_LABELS, TASK_PRIORITY_LABELS } from '@innovic/shared';
 import { useMemo, useRef, useState } from 'react';
+import { useCanWrite } from '@/components/shared/action-link';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
 import { useAddTaskAttachment, useAddTaskComment } from '../api';
@@ -71,6 +72,7 @@ export function TaskBody({
   onPreview: (a: TaskDetail['attachments'][number]) => void;
 }): React.JSX.Element {
   const { data: me } = useSession();
+  const canWrite = useCanWrite(); // ADR-232: no Add file / Add remark for an Auditor
   const pill = statusPill(t);
   const addComment = useAddTaskComment(t.id);
   const addAttachment = useAddTaskAttachment(t.id);
@@ -202,7 +204,7 @@ export function TaskBody({
       {/* Attachments */}
       <SectionTitle>
         <span>📎 Attachments ({t.attachments.length})</span>
-        {t.permissions.canAttach ? (
+        {t.permissions.canAttach && canWrite ? (
           <span>
             <input
               ref={fileRef}
@@ -264,7 +266,7 @@ export function TaskBody({
           </div>
         ))
       )}
-      {t.permissions.canComment ? (
+      {t.permissions.canComment && canWrite ? (
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <input
             className="innovic-input"

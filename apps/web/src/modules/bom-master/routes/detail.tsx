@@ -11,6 +11,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
+import { useCanOpen } from '@/components/shared/action-link';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -536,6 +537,8 @@ function LinkedSoLinesModal({
 }): React.JSX.Element {
   const { data, isLoading, isError } = useBomLinkedSoLines(bomId, true);
   const lines = data?.lines ?? [];
+  // ADR-234 — the SO No. links to the Sales Order only for someone who may open it.
+  const canOpenSo = useCanOpen()('/sales-orders/$id');
   return (
     <div
       className="overlay"
@@ -582,13 +585,19 @@ function LinkedSoLinesModal({
                 {lines.map((l) => (
                   <tr key={l.salesOrderLineId}>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      <Link
-                        to="/sales-orders/$id"
-                        params={{ id: l.salesOrderId }}
-                        className="td-code"
-                      >
-                        {soNoWithInternal(l.soCode, l.soInternalNo)}
-                      </Link>
+                      {canOpenSo ? (
+                        <Link
+                          to="/sales-orders/$id"
+                          params={{ id: l.salesOrderId }}
+                          className="td-code"
+                        >
+                          {soNoWithInternal(l.soCode, l.soInternalNo)}
+                        </Link>
+                      ) : (
+                        <span className="td-code">
+                          {soNoWithInternal(l.soCode, l.soInternalNo)}
+                        </span>
+                      )}
                     </td>
                     <td className="mono">{l.clientPoLineNo ?? '—'}</td>
                     <td

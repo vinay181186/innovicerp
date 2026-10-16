@@ -41,6 +41,7 @@ import type { JcOpEnriched, OpLog } from '@innovic/shared';
 import { fmtOpSrNo, SHIFT_LABELS } from '@innovic/shared';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { RowMenu } from '@/ui/data';
@@ -180,6 +181,10 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
     onRemove,
     onOutsourceBalance,
   } = props;
+  // ADR-234 — Outsource Available calls outsourceOpBalance, which also raises
+  // a PR: this page's JC Edit (the route's gate) AND Purchase Request Entry.
+  const { data: eff } = useMyAccess();
+  const canOutsourceBalance = effectiveFormPerms(eff, 'pr_create').entry;
   const isQc = op.opType === 'qc';
   const isOut = op.opType === 'outsource';
   const kind = isQc ? 'qc' : isOut ? 'osp' : 'mc';
@@ -375,7 +380,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
         <td>
           {isQc ? (
             <span className="text3">—</span>
-          ) : op.hasStarted && !isOut && op.available > 0 && op.id ? (
+          ) : canOutsourceBalance && op.hasStarted && !isOut && op.available > 0 && op.id ? (
             <button
               type="button"
               className="btn btn-sm jc-edit-bal"

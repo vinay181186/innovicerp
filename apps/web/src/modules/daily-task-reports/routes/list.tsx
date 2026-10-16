@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate } from '@/lib/date';
+import { useCanWrite } from '@/components/shared/action-link';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -37,6 +38,9 @@ type ModalState =
 const SHIFT_OPTIONS = SHIFTS.map((v) => ({ value: v, label: SHIFT_LABELS[v] }));
 
 function DailyTaskReportsPage(): React.JSX.Element {
+  // ADR-232/234: + New Report and ⋯ Edit are writes — none for an Auditor or
+  // an account nobody has set up (the server refuses them too).
+  const canWrite = useCanWrite();
   const { page } = dailyTaskReportsRoute.useSearch();
   const navigate = dailyTaskReportsRoute.useNavigate();
   const gotoPage = useCallback(
@@ -229,13 +233,15 @@ function DailyTaskReportsPage(): React.JSX.Element {
           term.trim() !== ''
         }
         primary={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModal({ kind: 'new' })}
-          >
-            + New Report
-          </button>
+          canWrite ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModal({ kind: 'new' })}
+            >
+              + New Report
+            </button>
+          ) : undefined
         }
       />
 
@@ -260,7 +266,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
               key: 'edit',
               label: 'Edit',
               icon: 'pencil',
-              hidden: !r.canEdit,
+              hidden: !(r.canEdit && canWrite),
               onSelect: () => setModal({ kind: 'edit', id: r.id }),
             },
           ]}

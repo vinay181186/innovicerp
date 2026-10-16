@@ -36,9 +36,9 @@ import type {
   Vendor,
 } from '@innovic/shared';
 import { opSrNo, qcAfterOutsourceError } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActionLink } from '@/components/shared/action-link';
 import { rmItemToInput } from '@/components/shared/rm-item-fields';
 import { fmtDate } from '@/lib/date';
 import { useItemsList } from '@/modules/items/api';
@@ -649,13 +649,14 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               An item has one Route Card. Changes to its operations are saved as a new revision of
               that card, not as a second card.
             </span>
-            <Link
+            {/* ADR-234 — only for a Route Card Edit holder. */}
+            <ActionLink
               to="/route-cards/$id/edit"
               params={{ id: blockingCard.id }}
               className="btn btn-primary btn-sm"
             >
               Open {blockingCard.code} to add a revision
-            </Link>
+            </ActionLink>
           </div>
         </Banner>
       ) : null}

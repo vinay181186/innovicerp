@@ -162,7 +162,10 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   //              above hold: L3 Editor has edit without approve, L4 Approver has
   //              approve without edit. It was admin-only, which locked out the
   //              very tier meant to run the department.
-  const canReceive = dc.status === 'issued' && perms.entry;
+  // ADR-234 — Receive opens /delivery-challans/$id/receive, whose route and
+  // API accept OSP DC Entry OR GRN Entry; the list ⋯ already does this.
+  const canReceive =
+    dc.status === 'issued' && (perms.entry || effectiveFormPerms(eff, 'grn_create').entry);
   const canCancel = dc.status === 'issued' && perms.edit && perms.approve;
   // Edit (ADR-202) -> edit, only while the DC is still issued and nothing has
   // been received against it (receiving freezes the quantities). The server

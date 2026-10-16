@@ -30,6 +30,7 @@ import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { AlertTriangle, X } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useRunningOps } from '../api';
 import { OpEntryForm } from './op-entry-form';
@@ -94,6 +95,9 @@ export function OpEntryModal({
   // machine picked by hand.
   const runningOps = useRunningOps({ status: 'running' });
   const [startElsewhere, setStartElsewhere] = useState(false);
+  // ADR-234 — starting elsewhere opens the Start form: Op Entry Entry.
+  const { data: eff } = useMyAccess();
+  const canStart = effectiveFormPerms(eff, 'op_entry').entry;
   const plannedMachineId = isQc ? null : (target.machineId ?? op.machineId ?? null);
   const plannedBusy =
     !activeRunningId && plannedMachineId
@@ -322,14 +326,16 @@ export function OpEntryModal({
               <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
                 Close
               </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                title="Open the Start form with the Actual Machine left blank, to pick a free one"
-                onClick={() => setStartElsewhere(true)}
-              >
-                ⚙ Start on another machine
-              </button>
+              {canStart ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  title="Open the Start form with the Actual Machine left blank, to pick a free one"
+                  onClick={() => setStartElsewhere(true)}
+                >
+                  ⚙ Start on another machine
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-primary btn-sm"

@@ -20,6 +20,7 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useCanOpen } from '@/components/shared/action-link';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -73,6 +74,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
   const { data: eff } = useMyAccess();
+  // ADR-234 — the saved DC's code links only for someone who may open DCs.
+  const canOpenDc = useCanOpen()('/delivery-challans/$id');
   // ADR-202 — edits staged against this NC and still waiting for a decision.
   // Their per-field changes drive the inline amber chips next to the record
   // fields below. Flattened across requests (usually one).
@@ -508,6 +511,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
           <Link
             to="/delivery-challans/$id"
             params={{ id: detail.deliveryChallanId }}
+            disabled={!canOpenDc}
             className="mono fw-700"
             style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           >

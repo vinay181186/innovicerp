@@ -13,7 +13,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { dashboardConfig } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
-import { type DashAccess, hasDept, loadAccess } from './access';
+import { canSeeLink, type DashAccess, loadAccess } from './access';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -77,7 +77,7 @@ function widgetRegistry(a: DashAccess): RegistryWidget[] {
     color: w.color,
     dept: w.dept,
     navPage: w.navPage,
-    hasAccess: hasDept(a, w.dept),
+    hasAccess: canSeeLink(a, w.dept, w.navPage),
   }));
 }
 
@@ -88,7 +88,7 @@ function quickLinkRegistry(a: DashAccess): RegistryQuickLink[] {
     icon: l.icon,
     color: l.color,
     dept: l.dept,
-    hasAccess: hasDept(a, l.dept),
+    hasAccess: canSeeLink(a, l.dept, l.page),
   }));
 }
 

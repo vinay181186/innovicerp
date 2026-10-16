@@ -34,6 +34,7 @@
 import type { DocumentEditChange, Machine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { ActionLink } from '@/components/shared/action-link';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobQueue } from '@/modules/job-queue/api';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -124,7 +125,13 @@ function MachineDetailPage(): React.JSX.Element {
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
-    return <PageState state="noaccess" as="page" />;
+    return (
+      <PageState
+        state="noaccess"
+        as="page"
+        message="⛔ You do not have permission to view Machines. Ask an admin."
+      />
+    );
   }
 
   const queuePending = queue.data
@@ -171,14 +178,15 @@ function MachineDetailPage(): React.JSX.Element {
             >
               Loading →
             </Link>
-            <Link
+            {/* ADR-234 — shown only to a user who can open Op Entry. */}
+            <ActionLink
               to="/op-entry"
               search={{ view: 'machine', machineId: machine.id }}
               className="btn btn-ghost btn-sm"
               title="Op Entry — By Machine, with this machine picked"
             >
               Op Entry →
-            </Link>
+            </ActionLink>
             {canEdit ? (
               <Link
                 to="/machines/$id/edit"

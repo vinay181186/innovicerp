@@ -8,7 +8,7 @@ import { sql } from 'drizzle-orm';
 import { users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
-import { type DashAccess, detectPrimaryDept, hasDept, loadAccess } from './access';
+import { canSeeLink, type DashAccess, detectPrimaryDept, loadAccess } from './access';
 import { getConfig } from './config-service';
 import { buildOperator, buildSpecialist } from './home-views';
 import { readyOpsPage } from './ready-ops';
@@ -225,7 +225,7 @@ async function buildAdmin(
 }
 
 function visibleQuickLinks(a: DashAccess, selected: string[] | null): string[] {
-  return DASHBOARD_QUICK_LINKS.filter((l) => hasDept(a, l.dept))
+  return DASHBOARD_QUICK_LINKS.filter((l) => canSeeLink(a, l.dept, l.page))
     .filter((l) => !selected || selected.includes(l.page))
     .map((l) => l.page);
 }

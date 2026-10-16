@@ -12,6 +12,7 @@
 
 import { NC_STATUS_LABELS, type NcRegister } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { useCanOpen } from '@/components/shared/action-link';
 
 export function NcLinksBlock(props: {
   detail: NcRegister;
@@ -19,6 +20,9 @@ export function NcLinksBlock(props: {
   siblings: NcRegister[];
 }): React.JSX.Element | null {
   const { detail, splitParent, siblings } = props;
+  // ADR-234 — a code links to its page only for someone who may open it;
+  // otherwise it stays on screen as text.
+  const canOpen = useCanOpen();
   const childId = detail.childJobCardCode ? detail.childJobCardId : null;
   const dcId = detail.deliveryChallanCode ? detail.deliveryChallanId : null;
   // Both halves are needed to make a link: the id to route to and the code to
@@ -42,6 +46,7 @@ export function NcLinksBlock(props: {
           <Link
             to="/job-cards/$id"
             params={{ id: childId }}
+            disabled={!canOpen('/job-cards/$id')}
             className="mono"
             style={{ ...linkStyle, color: 'var(--cyan)' }}
           >
@@ -54,6 +59,7 @@ export function NcLinksBlock(props: {
           <Link
             to="/purchase-orders/$id"
             params={{ id: poId }}
+            disabled={!canOpen('/purchase-orders/$id')}
             className="mono fw-700"
             style={{ ...linkStyle, color: 'var(--cyan)' }}
             title="Open the zero-value job-work order this return raised"
@@ -67,6 +73,7 @@ export function NcLinksBlock(props: {
           <Link
             to="/delivery-challans/$id"
             params={{ id: dcId }}
+            disabled={!canOpen('/delivery-challans/$id')}
             className="mono"
             style={{ ...linkStyle, color: 'var(--cyan)' }}
             title="Open the return-to-vendor challan"

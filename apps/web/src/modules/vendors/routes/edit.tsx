@@ -55,7 +55,7 @@ function VendorNewPage(): React.JSX.Element {
     }
   };
 
-  if (!perms.entry) {
+  if (eff && !perms.entry) {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>
@@ -138,7 +138,7 @@ function VendorEditPage(): React.JSX.Element {
     }
   };
 
-  if (!perms.edit) {
+  if (eff && !perms.edit) {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber2)' }}>

@@ -191,7 +191,9 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   '/customer-material-returns': v('party_create'),
 
   // ── Finance ──
-  ...crud('/invoices', 'invoice_create'),
+  '/invoices': v('invoice_create'),
+  '/invoices/$id': v('invoice_create'),
+  '/invoices/new': entry('invoice_create'),
   ...crud('/cost-centers', 'cc_create'),
 };
 

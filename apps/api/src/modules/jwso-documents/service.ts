@@ -14,7 +14,7 @@ import {
 } from '@innovic/shared';
 import { fileRegistry, jobWorkOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { requireAnyTick, requireDeleteRight } from '../../lib/access';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -99,8 +99,8 @@ export async function createJwDocument(
   input: CreateJwDocumentInput,
   user: AuthContext,
 ): Promise<JwDocumentFile> {
-  // ADR-232: the jw_create Entry tick decides who may upload.
-  await requireFormAccess(user, 'jw_create', 'entry');
+  // ADR-232/234: the New screen (Entry) and the Edit screen (Edit) both upload.
+  await requireAnyTick(user, 'jw_create', ['entry', 'edit']);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // Guard: the JWSO must belong to this company (RLS also enforces it).

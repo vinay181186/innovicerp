@@ -50,3 +50,14 @@ export function ActionLink({ check, ...props }: ActionLinkProps): React.JSX.Elem
   if (!canOpen(target)) return null;
   return <Link {...(props as LinkProps)} />;
 }
+
+/** A stored path may carry a query ('/nc-register?tab=capa&capa=CAPA-3'). The
+ *  router wants the query as a `search` object, not inside `to`. */
+export function hrefLink(href: string): { to: string; search?: Record<string, string> } {
+  const q = href.indexOf('?');
+  if (q < 0) return { to: href };
+  return {
+    to: href.slice(0, q),
+    search: Object.fromEntries(new URLSearchParams(href.slice(q + 1))),
+  };
+}

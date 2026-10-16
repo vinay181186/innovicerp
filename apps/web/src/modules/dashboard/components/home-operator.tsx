@@ -6,6 +6,7 @@ import type { HomeResponse, ReadyOpRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useCanOpen } from '@/components/shared/action-link';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -116,6 +117,10 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
   // on Op Entry alone. Anyone without it gets no Start item at all.
   const { data: eff } = useMyAccess();
   const canStart = effectiveFormPerms(eff, 'op_entry').entry;
+  // ADR-234 — a link shows only if the user may open the page it leads to.
+  const canOpen = useCanOpen();
+  const opEntryTo = canOpen('/op-entry') ? '/op-entry' : undefined;
+  const prodDashTo = canOpen('/production-dashboard') ? '/production-dashboard' : undefined;
   return (
     <div>
       {o.running.length > 0 ? (
@@ -191,9 +196,13 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
                     {r.completed}/{r.orderQty}
                   </div>
                 </div>
-                <Link to="/op-entry" className="btn btn-success btn-sm">
-                  ✓ Log Completion
-                </Link>
+                {/* Logging is the Entry tick on Op Entry (ADR-232/234), not the
+                    operator role the home layout was picked by. */}
+                {canStart ? (
+                  <Link to="/op-entry" className="btn btn-success btn-sm">
+                    ✓ Log Completion
+                  </Link>
+                ) : null}
               </div>
             ))}
           </div>
@@ -208,7 +217,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
             label: 'My Output Today',
             count: `${o.myOutputQty} pcs`,
             color: 'var(--sig-ok)',
-            to: '/op-entry',
+            to: opEntryTo,
             sub: `Across ${o.myEntries} entries`,
           },
           {
@@ -216,7 +225,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
             label: 'Ready to Work',
             count: o.readyCount,
             color: 'var(--dept-production)',
-            to: '/op-entry',
+            to: opEntryTo,
             sub: o.readyCount > 0 ? 'Pick an op below to start' : 'None ready',
           },
           {
@@ -225,7 +234,7 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
             count: o.allRunningCount,
             sub: 'Whole factory',
             color: 'var(--sig-warn)',
-            to: '/production-dashboard',
+            to: prodDashTo,
           },
         ]}
       />

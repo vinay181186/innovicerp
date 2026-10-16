@@ -22,6 +22,7 @@ import type { ListStoreInventoryResponse, StoreInventoryRow } from '@innovic/sha
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { useCanOpen } from '@/components/shared/action-link';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -98,9 +99,11 @@ function StoreInventoryPage(): React.JSX.Element {
   });
   useClampPage(page, data?.total, gotoPage);
 
+  // ADR-234 — the Item Code opens the Item Master only for someone who may open it.
+  const canOpenItem = useCanOpen()('/items/$id');
   const columns = useMemo(
-    () => storeInventoryColumns({ onReservedClick: (row) => setReservedRow(row) }),
-    [],
+    () => storeInventoryColumns({ onReservedClick: (row) => setReservedRow(row), canOpenItem }),
+    [canOpenItem],
   );
 
   return (

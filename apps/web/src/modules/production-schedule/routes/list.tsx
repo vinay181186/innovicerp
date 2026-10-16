@@ -72,10 +72,11 @@ export const productionScheduleRoute = createRoute({
 });
 
 function ProductionSchedulePage(): React.JSX.Element {
-  // Tier-driven, per department (Production). Dragging a bar reschedules / re-routes
-  // a saved jc_op → jc_create edit (L3 Editor and up).
+  // Dragging a bar reschedules / re-routes a saved jc_op. Owner decision E4
+  // (ADR-234): moving jobs is ADVANCE on Job Cards — the same right as a Job
+  // Queue move, and the same the server checks.
   const { data: eff } = useMyAccess();
-  const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
+  const canWrite = effectiveFormPerms(eff, 'jc_create').advance;
   const search = productionScheduleRoute.useSearch();
   const navigate = productionScheduleRoute.useNavigate();
   const startDate = search.startDate ?? todayIso();

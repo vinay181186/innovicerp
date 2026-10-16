@@ -99,6 +99,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // jc_create edit). Hidden until the access matrix has loaded.
   const { data: eff } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
 
   // ADR-202 — the edit(s) staged against this Job Card and still waiting for a
   // decision. Their per-field changes drive the amber chips on the facts.
@@ -216,7 +217,8 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
               ]}
             />
             {/* ADR-182 — no more work on a stopped order's card. */}
-            {!stopped ? (
+            {/* ADR-234 — opens Op Entry to log work: Op Entry Entry. */}
+            {!stopped && canOpEntry ? (
               <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
                 ▶ Production Entry
               </button>

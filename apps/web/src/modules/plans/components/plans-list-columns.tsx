@@ -317,6 +317,8 @@ export function planRowMenu(
     canCreateRouteCard: boolean;
     canProductionOrder: boolean;
     canCloseProductionOrder: boolean;
+    /** ADR-234 — may open the Job Card page (Job Card View). */
+    canOpenJobCard: boolean;
   },
 ): RowMenuItem[] {
   const newPoTo = newProductionOrderTo(row);
@@ -361,12 +363,13 @@ export function planRowMenu(
       ...(nothingPending ? {} : { to: newPoTo }),
     },
     {
-      // The Job Card: status, then Op Entry from there.
-      key: 'op-entry',
-      label: 'Op Entry',
-      icon: 'play',
+      // The Job Card: status, then Op Entry from there. Named for the page it
+      // OPENS (ADR-234) — it used to read "Op Entry" but lands on the Job Card.
+      key: 'open-jc',
+      label: 'Open Job Card',
+      icon: 'eye',
       group: 'workflow',
-      hidden: !row.jcId,
+      hidden: !row.jcId || !opts.canOpenJobCard,
       to: row.jcId ? `/job-cards/${row.jcId}` : undefined,
     },
     {

@@ -8,7 +8,7 @@ import { sql } from 'drizzle-orm';
 import { users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
-import { type DashAccess, hasDept, loadAccess } from './access';
+import { type DashAccess, hasTick, loadAccess } from './access';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -229,7 +229,7 @@ async function ruleMyCapas(
       detail: `${String(r['problem'] ?? '').slice(0, 60)} · Target ${r['target_date'] ?? '—'}${dTo < 0 ? ' (OVERDUE)' : ''}`,
       age: 0,
       actionLabel: 'Continue',
-      navPage: '/capa',
+      navPage: `/nc-register?tab=capa&capa=${encodeURIComponent(String(r['code']))}`,
     };
   });
 }
@@ -357,15 +357,20 @@ export async function buildWorkListWith(
     }
   };
 
-  await run(hasDept(a, 'purchase'), () => rulePoApproval(tx, cid, today));
-  await run(hasDept(a, 'purchase'), () => rulePrConversion(tx, cid, today));
-  await run(hasDept(a, 'qc'), () => rulePendingQC(tx, cid, today));
-  await run(hasDept(a, 'design'), () => ruleBomPending(tx, cid, today));
-  await run(true, () => ruleMyTasks(tx, cid, user.id, today));
-  await run(hasDept(a, 'qc'), () => ruleMyCapas(tx, cid, myName, today));
-  await run(hasDept(a, 'production'), () => ruleOverdueJCs(tx, cid, today));
-  await run(hasDept(a, 'purchase'), () => ruleOverduePO(tx, cid, today));
-  await run(hasDept(a, 'production'), () => ruleStuckOps(tx, cid));
+  // ADR-234: each prompt is shown only to someone holding the tick its action
+  // needs (not merely the department) — an approve prompt to an approver, a
+  // "create" prompt to someone with Entry. Look-only rows need View.
+  await run(hasTick(a, 'po_create', 'approve'), () => rulePoApproval(tx, cid, today));
+  await run(hasTick(a, 'po_create', 'entry'), () => rulePrConversion(tx, cid, today));
+  await run(hasTick(a, 'qc_incoming', 'entry'), () => rulePendingQC(tx, cid, today));
+  await run(hasTick(a, 'bom_create', 'entry'), () => ruleBomPending(tx, cid, today));
+  await run(true, () => ruleMyTasks(tx, cid, user.id, today)); // the caller's own tasks
+  await run(hasTick(a, 'capa_create', 'edit') && hasTick(a, 'nc_dispose', 'view'), () =>
+    ruleMyCapas(tx, cid, myName, today),
+  );
+  await run(hasTick(a, 'jc_create', 'view'), () => ruleOverdueJCs(tx, cid, today));
+  await run(hasTick(a, 'po_create', 'view'), () => ruleOverduePO(tx, cid, today));
+  await run(hasTick(a, 'jc_create', 'view'), () => ruleStuckOps(tx, cid));
 
   all.sort((x, y) => {
     const s = SEV_RANK[x.severity] - SEV_RANK[y.severity];

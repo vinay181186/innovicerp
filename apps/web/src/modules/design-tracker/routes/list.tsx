@@ -158,7 +158,13 @@ function DesignTrackerListPage(): React.JSX.Element {
   const columns = useMemo(() => designTrackerColumns({ today }), [today]);
 
   if (eff && !perms.view) {
-    return <PageState as="page" state="noaccess" />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to view the Design Tracker. Ask an admin."
+      />
+    );
   }
 
   return (

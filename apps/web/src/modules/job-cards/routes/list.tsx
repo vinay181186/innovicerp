@@ -186,6 +186,7 @@ function JobCardsListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'jc_create');
   const canWrite = perms.entry;
   const canEditJc = perms.edit;
+  const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
   // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
   const canDeleteJc = canDeleteRecords(eff);
   const del = useDeleteJobCard();
@@ -343,7 +344,9 @@ function JobCardsListPage(): React.JSX.Element {
           ) : null
         }
         primary={
-          canWrite ? (
+          // ADR-234 — this opens Planning, where plans are made: Plan Entry,
+          // not the Job Card tick.
+          canPlan ? (
             <Link to="/planning" className="btn btn-primary">
               + Plan &amp; Create Job Card
             </Link>

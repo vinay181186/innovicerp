@@ -11,6 +11,8 @@ import type {
   QcRegisterQuery,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { useCanOpen } from '@/components/shared/action-link';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fetchAllPages } from '@/lib/list-paging';
 import { Banner } from '@/ui/feedback/Banner';
 import { fetchQcRegister } from '@/modules/qc-history/api';
@@ -100,6 +102,25 @@ export async function exportRegister(
   exportCompletedQc(ops, inc);
 }
 
+/** ADR-234 — the link after "NC-xxx raised —". Dispose needs NC Advance, so
+ *  only that tick reads "Dispose now →"; an NC viewer gets "Open NC →"; anyone
+ *  else gets no link. Used by this banner and by Incoming QC's. */
+export function RaisedNcLink(props: { ncId: string }): React.JSX.Element | null {
+  const { data: eff } = useMyAccess();
+  const canOpen = useCanOpen();
+  if (!eff) return null;
+  const dispose = effectiveFormPerms(eff, 'nc_dispose').advance;
+  if (!dispose && !canOpen('/nc-register/$id')) return null;
+  return (
+    <>
+      —{' '}
+      <Link to="/nc-register/$id" params={{ id: props.ncId }}>
+        {dispose ? 'Dispose now →' : 'Open NC →'}
+      </Link>
+    </>
+  );
+}
+
 /** The NC the last QC submit raised (ADR-190), with a link to dispose it. */
 export function RaisedNcBanner(props: { nc: RaisedNc; onDismiss: () => void }): React.JSX.Element {
   const { nc, onDismiss } = props;
@@ -114,10 +135,7 @@ export function RaisedNcBanner(props: { nc: RaisedNc; onDismiss: () => void }): 
           <span className="mono fw-700" style={{ color: 'var(--text)' }}>
             {nc.code}
           </span>{' '}
-          raised —{' '}
-          <Link to="/nc-register/$id" params={{ id: nc.id }}>
-            Dispose now →
-          </Link>
+          raised <RaisedNcLink ncId={nc.id} />
         </>
       }
     >

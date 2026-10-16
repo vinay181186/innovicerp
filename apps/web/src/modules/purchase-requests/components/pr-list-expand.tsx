@@ -6,6 +6,7 @@
 
 import { type PurchaseRequestListItem, opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { prBalanceClosedText, prOrderBalance } from '../lib/pr-balance';
@@ -55,6 +56,8 @@ export function PrListExpand({
   priceHidden: boolean;
 }): React.JSX.Element {
   const bal = prOrderBalance(pr);
+  // ADR-234 — the PO No. links to the PO only for someone who may open it.
+  const canOpenPo = useCanOpen()('/purchase-orders/$id');
   const estCost = Number(pr.estCost ?? 0);
   return (
     <div
@@ -99,7 +102,7 @@ export function PrListExpand({
       <Fact label="PO No. / Date">
         {pr.poCode ? (
           <span>
-            {pr.poId ? (
+            {pr.poId && canOpenPo ? (
               <Link
                 to="/purchase-orders/$id"
                 params={{ id: pr.poId }}

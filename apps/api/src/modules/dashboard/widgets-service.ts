@@ -7,7 +7,7 @@ import { DASHBOARD_WIDGETS } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
-import { type DashAccess, hasDept, loadAccess } from './access';
+import { canSeeLink, type DashAccess, hasDept, loadAccess } from './access';
 import { getConfig } from './config-service';
 import { getMachineLoading } from '../machine-loading/service';
 import { istToday } from './work-list-service';
@@ -246,7 +246,7 @@ export async function getWidgets(user: AuthContext): Promise<ListWidgetsResponse
     for (const key of order) {
       const def = DASHBOARD_WIDGETS.find((w) => w.key === key);
       if (!def) continue;
-      if (!hasDept(a, def.dept)) continue;
+      if (!canSeeLink(a, def.dept, def.navPage)) continue;
       if (dataKeys.has(key)) {
         widgets.push(await computeWidget(tx, companyId, user.id, today, key, mlBars));
       } else {

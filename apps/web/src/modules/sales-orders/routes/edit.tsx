@@ -30,6 +30,55 @@ export const salesOrderEditRoute = createRoute({
   component: SalesOrderEditPage,
 });
 
+type CreateSoDocMutation = ReturnType<typeof useCreateSoDocument>;
+
+/** Upload the Client PO document + Email Reference picked on the form against
+ *  a SAVED SO. Shared by New and Edit (E6 — the Edit screen used to drop the
+ *  files). The SO is already saved, so a failed upload never undoes it: the
+ *  failures are returned and the SO opens with a red banner naming them. */
+async function uploadSoDocs(
+  files: { po: File | null; email: File | null },
+  companyId: string | null | undefined,
+  so: { id: string; code: string },
+  createDoc: CreateSoDocMutation,
+): Promise<string[]> {
+  const failed: string[] = [];
+  const uploads: {
+    file: File | null;
+    category: 'client_po' | 'email_reference';
+    docType: string;
+    label: string;
+  }[] = [
+    { file: files.po, category: 'client_po', docType: 'Client PO', label: 'Client PO file' },
+    {
+      file: files.email,
+      category: 'email_reference',
+      docType: 'Email Reference',
+      label: 'Email Reference file',
+    },
+  ];
+  for (const u of uploads) {
+    if (!u.file) continue;
+    try {
+      if (!companyId) throw new Error('no company');
+      const storagePath = await uploadSoDocFile(u.file, companyId);
+      await createDoc.mutateAsync({
+        salesOrderId: so.id,
+        soCodeText: so.code,
+        category: u.category,
+        docType: u.docType,
+        fileName: u.file.name,
+        storagePath,
+        fileSize: u.file.size,
+        fileType: u.file.type || undefined,
+      });
+    } catch {
+      failed.push(`${u.label} (${u.file.name})`);
+    }
+  }
+  return failed;
+}
+
 function SalesOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
@@ -53,45 +102,12 @@ function SalesOrderNewPage(): React.JSX.Element {
       // a failed upload never undoes it — but it is no longer swallowed: the SO
       // opens with a red banner naming the file that did not attach, and the
       // Client PO bar on that page has the Upload button to retry.
-      const failed: string[] = [];
-      const uploads: {
-        file: File | null;
-        category: 'client_po' | 'email_reference';
-        docType: string;
-        label: string;
-      }[] = [
-        {
-          file: poFileRef.current,
-          category: 'client_po',
-          docType: 'Client PO',
-          label: 'Client PO file',
-        },
-        {
-          file: emailFileRef.current,
-          category: 'email_reference',
-          docType: 'Email Reference',
-          label: 'Email Reference file',
-        },
-      ];
-      for (const u of uploads) {
-        if (!u.file) continue;
-        try {
-          if (!me?.companyId) throw new Error('no company');
-          const storagePath = await uploadSoDocFile(u.file, me.companyId);
-          await createDoc.mutateAsync({
-            salesOrderId: created.id,
-            soCodeText: created.code,
-            category: u.category,
-            docType: u.docType,
-            fileName: u.file.name,
-            storagePath,
-            fileSize: u.file.size,
-            fileType: u.file.type || undefined,
-          });
-        } catch {
-          failed.push(`${u.label} (${u.file.name})`);
-        }
-      }
+      const failed = await uploadSoDocs(
+        { po: poFileRef.current, email: emailFileRef.current },
+        me?.companyId,
+        { id: created.id, code: created.code },
+        createDoc,
+      );
       exit.leave(
         () =>
           void navigate({
@@ -149,6 +165,12 @@ function SalesOrderEditPage(): React.JSX.Element {
   const { data: detail, isLoading, error } = useSalesOrder(id);
   const saveKey = useSaveKey();
   const update = useUpdateSalesOrder(id, saveKey);
+  // E6 — the Client PO document / Email Ref picked on the edit form, uploaded
+  // after the save (they used to be silently dropped).
+  const createDoc = useCreateSoDocument();
+  const { data: me } = useSession();
+  const poFileRef = useRef<File | null>(null);
+  const emailFileRef = useRef<File | null>(null);
   // R5 — the version this form opened with; a save over someone else's newer
   // edit is refused (409 edit_conflict) and its message shows in the banner.
   const opened = useOpenedVersion(detail?.updatedAt);
@@ -181,16 +203,29 @@ function SalesOrderEditPage(): React.JSX.Element {
       const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
       // Our own save fires the watch too; clear it so it never shows a notice.
       liveWatch.acknowledge();
+      // A document is its own record, not a field of the SO, so it is
+      // uploaded whether the edit applied or was staged for approval.
+      const failed = await uploadSoDocs(
+        { po: poFileRef.current, email: emailFileRef.current },
+        me?.companyId,
+        { id, code: detail?.code ?? '' },
+        createDoc,
+      );
+      const search = failed.length > 0 ? { uploadFailed: failed.join(', ') } : {};
       if (isStagedResult(saved)) {
         // The edit-approval gate is on and this SO is live: nothing was changed
         // on the SO — the edit is now waiting for approval. Say so, then return
         // to the SO (its fields now carry the pending-change chip).
         setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
-        exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
+        exit.leave(
+          () => void navigate({ to: '/sales-orders/$id', params: { id }, search, replace: true }),
+        );
         return;
       }
       opened.saved(saved.updatedAt);
-      exit.leave(() => void navigate({ to: '/sales-orders/$id', params: { id }, replace: true }));
+      exit.leave(
+        () => void navigate({ to: '/sales-orders/$id', params: { id }, search, replace: true }),
+      );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');
     }
@@ -242,6 +277,12 @@ function SalesOrderEditPage(): React.JSX.Element {
         backLabel="Back to SO"
         onBack={goBack}
         onSubmit={onSubmit}
+        onPoFileChange={(f) => {
+          poFileRef.current = f;
+        }}
+        onEmailFileChange={(f) => {
+          emailFileRef.current = f;
+        }}
         submitError={submitError}
         onCancel={() => exit.leave(goBack)}
       />

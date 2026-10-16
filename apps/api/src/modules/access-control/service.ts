@@ -440,7 +440,6 @@ const PRODUCTION_ENTRY_FORMS: readonly AccessFormKey[] = [
   'jc_create',
   'prodorder_create',
   'op_entry',
-  'machop_entry',
   'machine_create',
   'operator_create',
   'rawmat_create',

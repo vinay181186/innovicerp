@@ -9,6 +9,7 @@
 
 import type { TaskLinkedRef } from '@innovic/shared';
 import { useState } from 'react';
+import { useCanWrite } from '@/components/shared/action-link';
 import { AssignTaskModal } from './task-modals';
 
 export function AssignTaskButton({
@@ -23,6 +24,10 @@ export function AssignTaskButton({
   label?: string | undefined;
 }): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
+  // ADR-232/234: creating a task is a write — none for an Auditor or an
+  // account nobody has set up.
+  const canWrite = useCanWrite();
+  if (!canWrite) return null;
 
   return (
     <>

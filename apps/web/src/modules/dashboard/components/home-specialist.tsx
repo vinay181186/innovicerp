@@ -2,6 +2,7 @@
 // _homeSpecialistView (L2769). Dept KPIs + dept panels.
 
 import type { HomeResponse } from '@innovic/shared';
+import { hrefLink } from '@/components/shared/action-link';
 import { Link } from '@tanstack/react-router';
 import { StatStrip } from '@/components/shared/stat-strip';
 
@@ -49,7 +50,7 @@ export function HomeSpecialist({ home }: { home: HomeResponse }): React.JSX.Elem
                       <tr key={ri} style={{ cursor: 'pointer' }}>
                         {r.cells.map((c, ci) => (
                           <td key={ci} className={ci === 0 ? 'td-code' : undefined} style={ci === 0 ? { color: 'var(--cyan)' } : { fontSize: 11 }}>
-                            {ci === 0 ? <Link to={r.navPage} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>{c}</Link> : c}
+                            {ci === 0 ? <Link {...(hrefLink(r.navPage) as { to: string })} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>{c}</Link> : c}
                           </td>
                         ))}
                       </tr>

@@ -86,8 +86,12 @@ function outsourceLadder(
       target: { to: '/delivery-challans/new', search: { poId: row.outsourcePoId } },
     });
   }
-  // 3. Receive — L155: a challan is still out, ospdc_create.entry.
-  if (row.outsourceOpenDcId && effectiveFormPerms(eff, 'ospdc_create').entry) {
+  // 3. Receive — L155: a challan is still out. ADR-234: the Receive page
+  //    takes OSP DC Entry OR GRN Entry (it books the GRN too).
+  if (
+    row.outsourceOpenDcId &&
+    (effectiveFormPerms(eff, 'ospdc_create').entry || effectiveFormPerms(eff, 'grn_create').entry)
+  ) {
     out.push({
       key: 'receive',
       label: `Receive ${row.outsourceOpenDcCode ?? 'challan'}`,
@@ -97,10 +101,11 @@ function outsourceLadder(
       target: { to: '/delivery-challans/$id/receive', params: { id: row.outsourceOpenDcId } },
     });
   }
-  // 4. Incoming QC — L176: pieces back and not inspected, qc_incoming.view;
-  //    L179: the register when there is a PO code and qc_submit.view, else
-  //    the Incoming QC queue (L189).
-  if (op.inQcQty > 0 && effectiveFormPerms(eff, 'qc_incoming').view) {
+  // 4. Incoming QC — L176: pieces back and not inspected. ADR-234: Inspect
+  //    records a result, so it needs qc_incoming ENTRY (not view); L179: the
+  //    register when there is a PO code and qc_submit.entry, else the
+  //    Incoming QC queue (L189).
+  if (op.inQcQty > 0 && effectiveFormPerms(eff, 'qc_incoming').entry) {
     const poCode = row.outsourcePoCode;
     out.push({
       key: 'iqc',
@@ -109,7 +114,7 @@ function outsourceLadder(
       icon: 'search',
       tone: 'qc',
       target:
-        poCode && effectiveFormPerms(eff, 'qc_submit').view
+        poCode && effectiveFormPerms(eff, 'qc_submit').entry
           ? { to: '/qc-call-register', search: { search: poCode } }
           : { to: '/incoming-qc' },
     });
@@ -149,7 +154,8 @@ export function opActions({
 
   // jc-op-actions.tsx L295 / L297 / L301-302 — the permission keys.
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  const canQc = effectiveFormPerms(eff, 'qc_submit').view;
+  // ADR-234 — Inspect submits a QC result: QC Entry, not View.
+  const canQc = effectiveFormPerms(eff, 'qc_submit').entry;
   const canTpi =
     effectiveFormPerms(eff, 'qc_submit').entry && effectiveFormPerms(eff, 'tpi_submit').entry;
 

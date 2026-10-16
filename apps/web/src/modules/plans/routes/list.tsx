@@ -118,6 +118,7 @@ function PlansListPage(): React.JSX.Element {
   const canProductionOrder = proPerms.entry;
   // Closing an order moves it to its next step — Advance, not Entry (ADR-231).
   const canCloseProductionOrder = proPerms.advance;
+  const canOpenJobCard = effectiveFormPerms(eff, 'jc_create').view;
 
   // The row's ▸ opens its detail reveal; a Set — many can be open.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -334,6 +335,7 @@ function PlansListPage(): React.JSX.Element {
                   canCreateRouteCard,
                   canProductionOrder,
                   canCloseProductionOrder,
+                  canOpenJobCard,
                 })
               }
               renderLink={renderPlanLink}

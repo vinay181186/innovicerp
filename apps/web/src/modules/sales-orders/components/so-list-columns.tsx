@@ -310,7 +310,8 @@ export function soListColumns(opts: {
  * The order's ⋯ menu — the retired card's actions, same gates. View is the row
  * click (so it is not repeated here); Edit needs edit; Plan BOM Items (workflow)
  * only on an equipment SO with a BOM linked — it moved here from the ▸ panel;
- * Assign Task needs edit on a non-closed order; Delete needs edit + approve on
+ * Assign Task needs a write-capable login on a non-closed order (ADR-234,
+ * same as SO detail); Plan BOM Items needs Plan Entry; Delete needs edit + approve on
  * a non-closed order. Plan BOM Items carries `?soId=`, so the table's
  * renderLink must be renderRowMenuLink.
  */
@@ -319,11 +320,15 @@ export function soRowMenu(
   opts: {
     canEdit: boolean;
     canDelete: boolean;
+    /** ADR-234 — Plan BOM Items raises plans: Plan Entry. */
+    canPlan: boolean;
+    /** ADR-234 — Assign Task: anyone set up to write (the server's rule). */
+    canAssign: boolean;
     onAssign: (so: SalesOrderListItem) => void;
     onDelete: (so: SalesOrderListItem) => void;
   },
 ): RowMenuItem[] {
-  const { canEdit, canDelete, onAssign, onDelete } = opts;
+  const { canEdit, canDelete, canPlan, canAssign, onAssign, onDelete } = opts;
   return [
     {
       key: 'edit',
@@ -337,7 +342,7 @@ export function soRowMenu(
       label: 'Plan BOM Items',
       icon: 'package',
       group: 'workflow',
-      hidden: so.type !== 'equipment' || !so.bomMasterId,
+      hidden: !canPlan || so.type !== 'equipment' || !so.bomMasterId,
       to: `/planning?soId=${so.id}`,
     },
     {
@@ -345,7 +350,7 @@ export function soRowMenu(
       label: 'Assign Task',
       icon: 'user-round',
       group: 'assign',
-      hidden: !canEdit || so.status === 'closed',
+      hidden: !canAssign || so.status === 'closed',
       onSelect: () => onAssign(so),
     },
     {

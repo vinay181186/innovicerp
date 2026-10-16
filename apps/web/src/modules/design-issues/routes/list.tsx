@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { DESIGN_ISSUE_SEVERITIES, DESIGN_ISSUE_STATUSES } from '@innovic/shared';
 import type { DesignIssueListItem } from '@innovic/shared';
+import { useCanOpen } from '@/components/shared/action-link';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -66,6 +67,9 @@ function DesignIssuesAllPage(): React.JSX.Element {
   const [term, setTerm] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState<FilterKey>('all');
   const navigate = useNavigate();
+  // ADR-234 — the title link and row click open the Design Project, which
+  // needs Design Projects View; without it the title is plain text.
+  const canOpenProject = useCanOpen()('/design-projects/$id');
   const { page } = designIssuesListRoute.useSearch();
   const routeNavigate = designIssuesListRoute.useNavigate();
   const gotoPage = useCallback(
@@ -113,7 +117,13 @@ function DesignIssuesAllPage(): React.JSX.Element {
   // "Hide page" (Access Control → Config): a user whose VIEW was removed for
   // the Design Issues page sees the no-access panel, not the page.
   if (eff && !perms.view) {
-    return <PageState as="page" state="noaccess" />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to view Design Issues. Ask an admin."
+      />
+    );
   }
 
   const rows = data?.items ?? [];
@@ -127,16 +137,19 @@ function DesignIssuesAllPage(): React.JSX.Element {
       className: 'fw-700',
       // The row's ▸ opens the engine detail; the title link opens the design
       // project. stopPropagation on the link, not the cell.
-      render: (i) => (
-        <Link
-          to="/design-projects/$id"
-          params={{ id: i.designProjectId }}
-          style={{ color: 'inherit', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {i.title}
-        </Link>
-      ),
+      render: (i) =>
+        !canOpenProject ? (
+          i.title
+        ) : (
+          <Link
+            to="/design-projects/$id"
+            params={{ id: i.designProjectId }}
+            style={{ color: 'inherit', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {i.title}
+          </Link>
+        ),
       title: (i) => i.title,
       sortFilterField: 'title',
     },
@@ -262,8 +275,14 @@ function DesignIssuesAllPage(): React.JSX.Element {
                 : 'No Design Issues yet.'
             }
             rowClassName={(i) => issueRowTint(i)}
-            onRowClick={(i) =>
-              void navigate({ to: '/design-projects/$id', params: { id: i.designProjectId } })
+            onRowClick={
+              canOpenProject
+                ? (i) =>
+                    void navigate({
+                      to: '/design-projects/$id',
+                      params: { id: i.designProjectId },
+                    })
+                : undefined
             }
             rowMenu={(i) => [
               {

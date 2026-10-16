@@ -30,6 +30,7 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { soNoWithInternal } from '@/lib/so-number';
+import { useCanOpen } from '@/components/shared/action-link';
 import { useDefaultRouteOps, useNextPlanCode } from '../api';
 
 export interface PlanFormValues {
@@ -258,6 +259,7 @@ export function PlanForm({
   // so the id is read off that route rather than threaded through a new prop.
   const routeParams: { id?: string | undefined } = useParams({ strict: false });
   const editPlanId = isEdit ? routeParams.id : undefined;
+  const canOpen = useCanOpen();
 
   // Reload default ops button is wired against itemId; query enabled only when item is set.
   const {
@@ -741,7 +743,8 @@ export function PlanForm({
       ) : null}
 
       {/* ADR-170 — route-card-driven plan: no ops editor at all. */}
-      {hideOps ? (
+      {/* ADR-234 — shown only to a user who can open Production Order Entry. */}
+      {hideOps && canOpen('/production-orders/new') ? (
         <div className="panel">
           <div className="panel-body">
             <div className="text3" style={{ fontSize: 12 }}>

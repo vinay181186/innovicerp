@@ -5,8 +5,12 @@
 
 import type { TaskLinkedRef } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { useCanOpen } from '@/components/shared/action-link';
 
 const QC_CALL_PREFIX = '/qc-call-register?op=';
+// Tasks raised from a CAPA before 2026-10-16 stored '/capa', a page that never
+// existed; CAPA lives on the NC Register's CAPA tab.
+const LEGACY_NAV: Record<string, string> = { '/capa': '/nc-register?tab=capa' };
 
 export function RelatedRefLink({
   linkedRef,
@@ -16,6 +20,7 @@ export function RelatedRefLink({
   /** Inside a clickable table row: keep the click from opening the row too. */
   stopRowClick?: boolean;
 }): React.JSX.Element {
+  const canOpen = useCanOpen();
   if (!linkedRef?.display) return <span className="text3">—</span>;
   const chip = (
     <span
@@ -26,8 +31,10 @@ export function RelatedRefLink({
       🔗 {linkedRef.display}
     </span>
   );
-  const nav = linkedRef.navPage;
-  if (!nav) return chip;
+  const raw = linkedRef.navPage;
+  const nav = raw ? (LEGACY_NAV[raw] ?? raw) : raw;
+  // ADR-234: no link to a page this user cannot open — the chip stays as text.
+  if (!nav || !canOpen(nav)) return chip;
   const onClick = stopRowClick ? (e: React.MouseEvent) => e.stopPropagation() : undefined;
   if (nav.startsWith(QC_CALL_PREFIX)) {
     return (
@@ -38,6 +45,22 @@ export function RelatedRefLink({
         // simply drops the unknown key and opens the register. Untyped on
         // purpose so the task link works on both.
         search={{ op: nav.slice(QC_CALL_PREFIX.length) } as never}
+        onClick={onClick}
+        title={`Open ${linkedRef.display}`}
+      >
+        {chip}
+      </Link>
+    );
+  }
+  const q = nav.indexOf('?');
+  if (q >= 0) {
+    // A path with a query string ('/nc-register?tab=capa&capa=CAPA-0003'):
+    // the router takes the query as a search object, not inside `to`.
+    const search = Object.fromEntries(new URLSearchParams(nav.slice(q + 1)));
+    return (
+      <Link
+        to={nav.slice(0, q)}
+        search={search as never}
         onClick={onClick}
         title={`Open ${linkedRef.display}`}
       >

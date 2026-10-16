@@ -46,8 +46,9 @@ function buildSearch(q: ListStoreIssuesQuery): string {
   return p.toString();
 }
 
-export function useStoreIssuesList(query: ListStoreIssuesQuery) {
+export function useStoreIssuesList(query: ListStoreIssuesQuery, enabled = true) {
   return useQuery<ListStoreIssuesResponse>({
+    enabled,
     queryKey: storeIssuesKeys.list(query),
     queryFn: () => apiFetch<ListStoreIssuesResponse>(`/store-issues?${buildSearch(query)}`),
     refetchInterval: 60_000,

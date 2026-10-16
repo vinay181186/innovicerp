@@ -39,7 +39,7 @@ import type {
 import { and, asc, count, eq, inArray, isNull, like } from 'drizzle-orm';
 import { fileRegistry, taskComments, tasks, userAccess, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireCanWrite } from '../../lib/access';
+import { canWrite, requireCanWrite } from '../../lib/access';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import {
   AuthorizationError,
@@ -201,11 +201,13 @@ async function getTaskInternal(
   id: string,
   companyId: string,
   user: AuthContext,
+  // Write paths reach here only after requireCanWrite passed.
+  writer = true,
 ): Promise<TaskDetail> {
   const t = await loadVisibleTask(tx, id, companyId, user);
   const names = await loadUserNames(tx, companyId);
   const counts = await loadCounts(tx, companyId, [t.id]);
-  const row = rowToTask(t, { names, user, today: istToday(), ...counts });
+  const row = rowToTask(t, { names, user, today: istToday(), ...counts, canWrite: writer });
   // Sequential on purpose — one transaction, one connection.
   const comments = await loadComments(tx, t.id, names);
   const attachments = await loadAttachments(tx, companyId, t.id);
@@ -244,7 +246,8 @@ async function registerAttachment(
 
 export async function getTask(id: string, user: AuthContext): Promise<TaskDetail> {
   const companyId = requireCompany(user);
-  return withUserContext(user, (tx) => getTaskInternal(tx, id, companyId, user));
+  const writer = await canWrite(user); // before the tx (ADR-229)
+  return withUserContext(user, (tx) => getTaskInternal(tx, id, companyId, user, writer));
 }
 
 export async function getTaskHistory(id: string, user: AuthContext): Promise<TaskHistoryEntry[]> {
@@ -421,7 +424,7 @@ export async function updateTask(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
-    if (!permsFor(t, user).canEdit) {
+    if (!permsFor(t, user, true).canEdit) {
       throw new AuthorizationError('Only the task creator or an admin can edit this task');
     }
     if (t.taskType === 'assigned' && input.dueDate === null) {
@@ -552,7 +555,7 @@ async function transitionStatus(
   companyId: string,
   user: AuthContext,
 ): Promise<void> {
-  const perms = permsFor(t, user);
+  const perms = permsFor(t, user, true); // callers ran requireCanWrite
   if (target === 'cancelled') {
     if (!perms.canCancel) {
       throw new AuthorizationError('Only the task creator or an admin can cancel this task');
@@ -692,7 +695,7 @@ export async function reassignTask(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
-    if (!permsFor(t, user).canReassign) {
+    if (!permsFor(t, user, true).canReassign) {
       throw new AuthorizationError('Only the task creator or an admin can reassign this task');
     }
     if (!isOpenStatus(t.status)) {
@@ -781,7 +784,7 @@ export async function addTaskAttachment(
   await requireCanWrite(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user);
-    if (!permsFor(t, user).canAttach) throw new AuthorizationError('Cannot attach to this task');
+    if (!permsFor(t, user, true).canAttach) throw new AuthorizationError('Cannot attach to this task');
     const names = await loadUserNames(tx, companyId);
     await registerAttachment(tx, companyId, t, input, user, names);
     return getTaskInternal(tx, id, companyId, user);
