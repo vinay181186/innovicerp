@@ -210,6 +210,9 @@ export interface PartyGrnQcRow {
   /** The finished part the material is for (CODE + customer drawing Rev). */
   partCode: string | null;
   partRevision: string | null;
+  /** POL — the JWSO line's customer PO line number (ADR-236); null on lines
+   *  saved before migration 0210. */
+  clientPoLineNo: string | null;
   /** The customer RM received (`<item>-RM`) and its register row (PM-####). */
   rmItemCode: string | null;
   rmItemName: string | null;
