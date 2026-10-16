@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { useCanOpen } from '@/components/shared/action-link';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import {
   LIST_PAGE_SIZE,
@@ -87,6 +88,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const canAdd = perms.entry;
   const canCancel = perms.edit && perms.approve;
+  const canInvoice = useCanOpen()('/invoices/new');
   // Lazy initial: the URL seeds the box once; keystrokes stay local after that.
   // Only when the landing targets THIS tab — a `?tab=jw` landing must not
   // pre-fill the Customer Dispatch box with a JW code.
@@ -381,6 +383,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                   g={g}
                   billedStatus={billedById.get(g.dispatchId)}
                   canCancel={canCancel}
+                  canInvoice={canInvoice}
                   cancelPending={cancelling !== null}
                   onInvoice={() =>
                     void navigate({ to: '/invoices/new', search: { dispatchId: g.dispatchId } })

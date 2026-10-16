@@ -4,7 +4,9 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { useCanWrite, useIsSuperAdmin } from '@/components/shared/action-link';
 import { ApiError, apiDownload } from '@/lib/api';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSavedReport, useSavedReportRun, useSourceCatalog } from '../api';
 import { ResultTable } from '../components/result-table';
@@ -21,6 +23,13 @@ function SavedReportRunPage(): React.JSX.Element {
   const runQ = useSavedReportRun(id);
   const { data: catalog } = useSourceCatalog();
   const [excelLoading, setExcelLoading] = useState(false);
+  // ADR-232/234: Edit only for the report's owner or a Super Admin, and never
+  // for an Auditor / unconfigured account (the server refuses both).
+  const { data: me } = useSession();
+  const canWrite = useCanWrite();
+  const isSuperAdmin = useIsSuperAdmin();
+  const canEditReport = (ownerId: string): boolean =>
+    canWrite && (isSuperAdmin || me?.id === ownerId);
 
   const onExcel = async () => {
     setExcelLoading(true);
@@ -105,9 +114,11 @@ function SavedReportRunPage(): React.JSX.Element {
                 )}
               </div>
             </div>
-            <Link to="/saved-reports/$id/edit" params={{ id }} className="btn btn-ghost btn-sm">
-              ✎ Edit
-            </Link>
+            {canEditReport(report.ownerId) ? (
+              <Link to="/saved-reports/$id/edit" params={{ id }} className="btn btn-ghost btn-sm">
+                ✎ Edit
+              </Link>
+            ) : null}
           </div>
 
           <ResultTable

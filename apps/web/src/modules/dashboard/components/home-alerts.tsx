@@ -3,6 +3,7 @@
 
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { useCanOpen } from '@/components/shared/action-link';
 import { useAlerts } from '@/modules/alerts/api';
 import { DEPT_LABEL } from '@/modules/alerts/lib/dept';
 import { QuickLinks } from './quick-links';
@@ -22,6 +23,7 @@ const DEPT_NAV: Record<string, string> = {
 
 export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): React.JSX.Element {
   const { data, isLoading } = useAlerts();
+  const canOpen = useCanOpen(); // ADR-234: the department link only if its page opens
   if (isLoading || !data) {
     return (
       <div className="empty-state" style={{ padding: 40 }}>
@@ -91,17 +93,23 @@ export function HomeAlerts({ quickLinkPages }: { quickLinkPages: string[] }): Re
                   return (
                     <tr key={a.code}>
                       <td>
-                        <Link
-                          to={DEPT_NAV[a.dept] ?? '/'}
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 12,
-                            color: 'var(--cyan)',
-                            textDecoration: 'none',
-                          }}
-                        >
-                          {DEPT_LABEL[a.dept]}
-                        </Link>
+                        {!canOpen(DEPT_NAV[a.dept] ?? '/') ? (
+                          <span style={{ fontWeight: 700, fontSize: 12 }}>
+                            {DEPT_LABEL[a.dept]}
+                          </span>
+                        ) : (
+                          <Link
+                            to={DEPT_NAV[a.dept] ?? '/'}
+                            style={{
+                              fontWeight: 700,
+                              fontSize: 12,
+                              color: 'var(--cyan)',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            {DEPT_LABEL[a.dept]}
+                          </Link>
+                        )}
                       </td>
                       <td style={{ fontWeight: 600 }}>{a.name}</td>
                       <td className="td-num">

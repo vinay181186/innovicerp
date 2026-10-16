@@ -422,6 +422,9 @@ function EquipmentBomBanner({
   // falls back to navigating to the Planning screen (e.g. planning not loaded).
   onPlanBom: (() => void) | null;
 }): React.JSX.Element {
+  // ADR-234 — Plan BOM Items raises plans (createPlansBatch): Plan Entry.
+  const { data: eff } = useMyAccess();
+  const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
   // Legacy renders BOM STATUS as bold coloured text (L4300), not a badge.
   const bomStatusColor =
     bomStatus === 'BOM Pending'
@@ -476,7 +479,7 @@ function EquipmentBomBanner({
             </div>
           </div>
           <div style={{ marginLeft: 'auto' }}>
-            {onPlanBom ? (
+            {!canPlan ? null : onPlanBom ? (
               <button
                 type="button"
                 onClick={onPlanBom}
@@ -670,6 +673,8 @@ function LinePanel({
   // ADR-232: the Entry tick on Purchase Requisitions alone decides.
   const { data: eff } = useMyAccess();
   const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
+  // ADR-234 — "+ Plan" / BOM Planning raise plans: Plan Entry.
+  const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
   const generatePr = useGenerateOspPr();
   // Ops raised from this screen, greyed at once until the status refetch drops them.
   const [raisedOpIds, setRaisedOpIds] = useState<Set<string>>(new Set());
@@ -1074,7 +1079,7 @@ function LinePanel({
           flexWrap: 'wrap',
         }}
       >
-        {showAssemblyBom ? (
+        {showAssemblyBom && canPlan ? (
           <button
             type="button"
             className="btn btn-sm"
@@ -1090,7 +1095,7 @@ function LinePanel({
             📦 BOM Planning ({planningLine?.bomPartsCount ?? 0} parts)
           </button>
         ) : null}
-        {showPlan ? (
+        {showPlan && canPlan ? (
           <button
             type="button"
             className="btn btn-sm"
@@ -1105,7 +1110,7 @@ function LinePanel({
           >
             <Plus size={12} /> Plan {remainingToPlan} pcs
           </button>
-        ) : !showAssemblyBom && !isEquipmentLine ? (
+        ) : !showPlan && !showAssemblyBom && !isEquipmentLine ? (
           <span style={{ fontSize: 11, color: 'var(--green2)', fontWeight: 700 }}>
             ✓ Fully Planned
           </span>

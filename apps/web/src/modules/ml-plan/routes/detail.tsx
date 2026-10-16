@@ -40,6 +40,8 @@ function MlPlanDetailPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useMlPlan(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlplan_create');
+  const canRaisePlan = effectiveFormPerms(eff, 'plan_create').entry;
+  const canRaisePr = effectiveFormPerms(eff, 'pr_create').entry;
   const refresh = useRefreshMlPlan();
   const [tab, setTab] = useState<TabKey>('plan');
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -80,10 +82,14 @@ function MlPlanDetailPage(): React.JSX.Element {
 
   const isDraft = detail.status === 'draft';
   // Raise Orders: Draft or Released, Planning entry, and a row left to raise.
+  // ADR-234 — and at least one row the user may raise: a Plan row needs Plan
+  // Entry, a PR row Purchase Request Entry (the server checks the same).
   const canRaise =
     perms.entry &&
     (detail.status === 'draft' || detail.status === 'released') &&
-    detail.nodes.some((n) => Number(n.toRaiseQty) > 0);
+    detail.nodes.some(
+      (n) => Number(n.toRaiseQty) > 0 && (n.raises === 'pr' ? canRaisePr : canRaisePlan),
+    );
   const onRefresh = (): void => {
     setActionError(null);
     refresh.mutate(

@@ -55,7 +55,13 @@ function MlPlanEditPage(): React.JSX.Element {
   };
 
   if (eff && !perms.edit) {
-    return <PageState as="page" state="noaccess" />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to edit Multi-Level Plans. Ask an admin."
+      />
+    );
   }
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading plan…" />;

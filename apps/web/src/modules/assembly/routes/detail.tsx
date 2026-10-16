@@ -68,6 +68,7 @@ function AssemblyDetailPage(): React.JSX.Element {
   // Last Batch = Edit.
   const { data: eff } = useMyAccess();
   const asmPerms = effectiveFormPerms(eff, 'assembly_create');
+  const canIssue = effectiveFormPerms(eff, 'issue_create').entry;
 
   if (isLoading) {
     return (
@@ -229,15 +230,24 @@ function AssemblyDetailPage(): React.JSX.Element {
                 {shortCodesShown.join(', ')}
               </span>
               {shortCodesHidden > 0 ? ` and ${shortCodesHidden} more` : ''}. Issue them on the Item
-              Issue Register —{' '}
-              <Link
-                to="/issue-register"
-                search={{ tab: 'items', new: 'assembly_so', salesOrderId: soId }}
-                className="fw-700"
-                style={{ color: 'var(--blue)' }}
-              >
-                Issue from Store →
-              </Link>
+              Issue Register
+              {/* ADR-234 — the link opens a new Store Issue: Item Issue Entry only. */}
+              {canIssue ? (
+                <>
+                  {' '}
+                  —{' '}
+                  <Link
+                    to="/issue-register"
+                    search={{ tab: 'items', new: 'assembly_so', salesOrderId: soId }}
+                    className="fw-700"
+                    style={{ color: 'var(--blue)' }}
+                  >
+                    Issue from Store →
+                  </Link>
+                </>
+              ) : (
+                '.'
+              )}
             </Banner>
           </div>
         ) : null}

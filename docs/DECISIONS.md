@@ -13733,3 +13733,49 @@ nowhere: not on the detail, list, history, report or Job Card. The screen word
   only lets changes arrive sooner).
 - Not changed: Finish Short and Short Close keep their names and both still log
   the CloseShort activity action; merging them is a separate decision.
+
+## ADR-234: A button or link shows only if the user's tick allows the page it opens
+
+**Date:** 2026-10-16
+**Status:** Accepted (owner, 2026-10-16: "ok. approve go")
+
+### Context
+
+After ADR-232 the server refused only what the ticks refuse, but the screens
+still offered actions the user could not use: about 105 places (59 serious).
+A link checked the tick of the page it sat on, not the page it opened (Plan →
+"Create PRO" for a PRO viewer; PO → "Create GRN" on PO Edit); the menu showed
+"New Production Order" on View; Super Admin pages showed to the whole System
+department; Auditors saw task / saved-report / daily-report saves.
+
+### Decision
+
+- **One list:** `packages/shared/src/lib/page-access.ts` — `PAGE_ACCESS` maps
+  every route pattern to the tick it needs (`{form, action}`, `anyOf`,
+  `superAdmin`, `canWrite`, `open`). `canOpenPage`, `missingRightText`.
+- **Everything reads it:** the one route guard in `routes/_authenticated.tsx`
+  (refusal names the missing tick), the header menu, Home quick links /
+  widgets / work list (API), and next-step buttons through `<ActionLink>` /
+  `useCanOpen()` (`components/shared/action-link.tsx`).
+- **Auditor / unconfigured never write:** `canWriteAnything` on the web, the
+  same rule in the API tasks `permsFor` and daily-report `canEdit`.
+- Owner decisions: E3 remove the dead ticks Machine Op Entry, User
+  Management, Access Control; E4 moving work on Production Schedule and Job
+  Queue both need Advance; E5 an Entry-only planner may save the plan they
+  created while it is In Planning; E6 SO edit uploads PO Doc / Email Ref.
+  E1/E2 (cancel and short close) are replaced by ADR-235 (request + approval).
+- JWSO: the RM lookup and documents accept Entry OR Edit, so an Edit-only user
+  can save a JWSO.
+
+### Guard
+
+`apps/web/src/routes/page-access.test.ts` fails when a route has no rule, a
+rule has no route, a New page does not need Entry, an Edit page does not need
+Edit, or a menu / Home link points at a path that is not a route.
+
+### Consequences
+
+- The server is unchanged as the real check; this only stops the screen from
+  offering what the server refuses.
+- Not done: Production Dashboard QC rows still use the Op Entry tick — the
+  dashboard data has no op type yet.

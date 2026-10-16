@@ -23,6 +23,7 @@ import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect, type SearchableOption } from '@/components/shared/searchable-select';
+import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { useNcSourceChallanCandidates } from '../api';
 import { ncOpenQty } from '../nc-qty';
@@ -460,6 +461,8 @@ function DisposeOutcome(props: {
 }): React.JSX.Element {
   const { result, onClose } = props;
   const { nc, remainderNc, childJobCardId, childJobCardCode } = result;
+  // ADR-234 — the JC code is a link only for someone who may open Job Cards.
+  const canOpenJc = useCanOpen()('/job-cards/$id');
   return (
     <div>
       <Note tone="green">
@@ -475,6 +478,7 @@ function DisposeOutcome(props: {
           <Link
             to="/job-cards/$id"
             params={{ id: childJobCardId }}
+            disabled={!canOpenJc}
             className="mono fw-700"
             style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           >

@@ -20,6 +20,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { ActionLink } from '@/components/shared/action-link';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -139,6 +140,11 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   };
 
   const canEdit = perms.edit;
+  // ADR-234 — Assign Task: the same Advance gate as the GRN list ⋯.
+  const canAssign = perms.advance;
+  // ADR-234 — "Open in Incoming QC" deep-links to the Inspect popup, whose save
+  // needs Incoming QC Entry. False while access loads (no flash).
+  const canInspect = !!eff && effectiveFormPerms(eff, 'qc_incoming').entry;
   // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
   const canDelete = canDeleteRecords(eff);
 
@@ -208,45 +214,47 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             <QcStatusBadge status={headerQcStatus} draft={isDraft} />
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <AssignTaskButton
-              linkedRef={{
-                type: 'grn',
-                id: detail.id,
-                display: `GRN ${detail.code}`,
-                navPage: `/goods-receipt-notes/${detail.id}`,
-              }}
-              suggestedTitle={`Follow up on GRN ${detail.code}`}
-            />
+            {canAssign ? (
+              <AssignTaskButton
+                linkedRef={{
+                  type: 'grn',
+                  id: detail.id,
+                  display: `GRN ${detail.code}`,
+                  navPage: `/goods-receipt-notes/${detail.id}`,
+                }}
+                suggestedTitle={`Follow up on GRN ${detail.code}`}
+              />
+            ) : null}
             {detail.purchaseOrderId ? (
-              <Link
+              <ActionLink
                 to="/purchase-orders/$id"
                 params={{ id: detail.purchaseOrderId }}
                 className="btn btn-ghost btn-sm"
               >
                 Open PO
-              </Link>
+              </ActionLink>
             ) : null}
             {/* Set only on a GRN raised by receiving an NC's return-to-vendor
                 challan (Against NC, ADR-161). */}
             {detail.ncId ? (
-              <Link
+              <ActionLink
                 to="/nc-register/$id"
                 params={{ id: detail.ncId }}
                 className="btn btn-ghost btn-sm"
               >
                 Open NC
-              </Link>
+              </ActionLink>
             ) : null}
             {/* Set only on a GRN the DC receive auto-raised (Against JW PO / DC
                 or Against NC — both come back through the challan). */}
             {detail.deliveryChallanId ? (
-              <Link
+              <ActionLink
                 to="/delivery-challans/$id"
                 params={{ id: detail.deliveryChallanId }}
                 className="btn btn-ghost btn-sm"
               >
                 Open DC
-              </Link>
+              </ActionLink>
             ) : null}
             {/* Print stays disabled until the print blocks land. Printing early
                 is worse than waiting: the sheet comes out looking complete but
@@ -287,7 +295,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               ]}
             />
             {/* The one next step: while any line still waits for QC. */}
-            {firstQcPending ? (
+            {firstQcPending && canInspect ? (
               <Link
                 to="/incoming-qc"
                 search={{ line: firstQcPending.id }}

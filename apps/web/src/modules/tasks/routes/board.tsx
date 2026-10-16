@@ -26,6 +26,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { useCanWrite } from '@/components/shared/action-link';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
@@ -70,6 +71,9 @@ function TaskBoardPage(): React.JSX.Element {
   const routeSearch = taskBoardRoute.useSearch();
   const navigate = taskBoardRoute.useNavigate();
   const view: TaskView = routeSearch.view ?? 'inbox';
+  // ADR-232/234: + Assign Task / + My To-Do are writes — hidden for an
+  // Auditor or an account nobody has set up (the server refuses them too).
+  const canWrite = useCanWrite();
 
   // Search term: URL is the source of truth; the box mirrors it and writes
   // back after 300ms of quiet (same shape as the SO / WO list).
@@ -259,23 +263,27 @@ function TaskBoardPage(): React.JSX.Element {
             {data.unreadCount > 0 ? (
               <span className="badge b-red">🔔 {data.unreadCount} new</span>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setModal({ kind: 'todo' })}
-            >
-              + My To-Do
-            </button>
+            {canWrite ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setModal({ kind: 'todo' })}
+              >
+                + My To-Do
+              </button>
+            ) : null}
           </>
         }
         primary={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setModal({ kind: 'assign' })}
-          >
-            + Assign Task
-          </button>
+          canWrite ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setModal({ kind: 'assign' })}
+            >
+              + Assign Task
+            </button>
+          ) : undefined
         }
       >
         <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />

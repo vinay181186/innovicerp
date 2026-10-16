@@ -2,6 +2,7 @@
 // rows, age chips, action buttons, "N critical · M total" badge, show-all.
 
 import type { WorkListItem } from '@innovic/shared';
+import { hrefLink } from '@/components/shared/action-link';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useWorkList } from '../api';
@@ -17,7 +18,7 @@ function Row({ it }: { it: WorkListItem }): React.JSX.Element {
   // (Create PO, Inspect …) stays as a chip naming what the click leads to.
   const verb = it.actionLabel === 'View' || it.actionLabel === 'Open' ? null : it.actionLabel;
   return (
-    <Link to={it.navPage} className="dash-link">
+    <Link {...(hrefLink(it.navPage) as { to: string })} className="dash-link">
       <div
         className="dash-surface"
         style={{

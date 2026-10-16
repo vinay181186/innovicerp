@@ -49,7 +49,9 @@ export function JwInvoiceView({
   // ADR-203: create and cancel use ONE key — invoice_create — on the server
   // (the write-role check was dropped there; form access is the rule).
   const invPerms = effectiveFormPerms(eff, 'invoice_create');
-  const canWrite = !eff || invPerms.entry;
+  // ADR-234 — false while access loads, so neither the button nor the `?jw=`
+  // auto-opened form shows to someone who turns out to lack Entry.
+  const canWrite = !!eff && invPerms.entry;
   const canCancel = invPerms.edit && invPerms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));

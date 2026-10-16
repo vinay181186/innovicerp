@@ -7,6 +7,7 @@
 // Machines with nothing pending (the old "Idle" cards) are named on one line
 // above the table, so no machine drops out of sight.
 
+import { ActionLink } from '@/components/shared/action-link';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { MachineLoadOp } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
@@ -72,7 +73,7 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
     kind: 'code',
     nowrap: true,
     render: ({ op }) => (
-      <Link
+      <ActionLink fallback="text"
         to="/job-cards/$id"
         params={{ id: op.jobCardId }}
         title="View job card status"
@@ -80,7 +81,7 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
         style={{ textDecoration: 'none' }}
       >
         {op.jobCardCode}
-      </Link>
+      </ActionLink>
     ),
   },
   {

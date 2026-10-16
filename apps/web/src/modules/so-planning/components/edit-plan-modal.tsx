@@ -46,6 +46,7 @@ import {
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useSession } from '@/lib/session';
 import { useFinalizePlan, useUpdatePlan, useDefaultRouteOps } from '@/modules/plans/api';
 import { useQcProcessesList } from '@/modules/qc-processes/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -203,7 +204,18 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // advance" would get the plan saved and then a refusal — half a save — so
   // the button is closed to them up front and Save Draft stays open.
   const { data: eff } = useMyAccess();
-  const canFinalize = effectiveFormPerms(eff, 'plan_create').advance;
+  const planPerms = effectiveFormPerms(eff, 'plan_create');
+  const canFinalize = planPerms.advance;
+  // E5 / ADR-234 — saving needs Plan Edit, OR Plan Entry on a plan this user
+  // created that is still In Planning (the "+ Plan" box hands an Entry-only
+  // planner straight here). The server checks the same under the plan's lock.
+  const { data: me } = useSession();
+  const canSave =
+    planPerms.edit ||
+    (planPerms.entry && !!me?.id && plan.createdBy === me.id && plan.planStatus === 'in_planning');
+  const noSaveTitle = canSave
+    ? undefined
+    : 'Saving this plan needs the Edit tick on SO/JWSO Planning (Entry only covers your own plan while it is In Planning). Ask an admin.';
 
   // Searchable master pickers (server-searched via ?search=; one shared search
   // term per master, like the SO line table). Machine ← Machine Master,
@@ -469,6 +481,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   };
 
   const onSave = async (finalizeAfter: boolean) => {
+    if (!canSave) return;
     const v = validate();
     if (v) {
       setErr(v);
@@ -569,7 +582,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         type="button"
         className="btn"
         onClick={() => onSave(false)}
-        disabled={update.isPending || finalize.isPending}
+        disabled={update.isPending || finalize.isPending || !canSave}
+        title={noSaveTitle}
       >
         Save Draft
       </button>
@@ -577,11 +591,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         type="button"
         className="btn btn-primary"
         onClick={() => onSave(true)}
-        disabled={update.isPending || finalize.isPending || !canFinalize}
+        disabled={update.isPending || finalize.isPending || !canFinalize || !canSave}
         title={
-          canFinalize
-            ? undefined
-            : 'Marking a plan Planned needs Advance on SO/JWSO Planning — use Save Draft'
+          !canSave
+            ? noSaveTitle
+            : canFinalize
+              ? undefined
+              : 'Marking a plan Planned needs Advance on SO/JWSO Planning — use Save Draft'
         }
       >
         {update.isPending || finalize.isPending ? (

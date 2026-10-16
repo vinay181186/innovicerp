@@ -125,7 +125,13 @@ function DesignProjectsListPage(): React.JSX.Element {
   // this page sees the no-access panel, not the list. `eff` undefined only while
   // access loads — don't block then, or every legitimate user flashes it.
   if (eff && !perms.view) {
-    return <PageState as="page" state="noaccess" />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to view Design Projects. Ask an admin."
+      />
+    );
   }
 
   return (

@@ -38,6 +38,7 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useCanOpen } from '@/components/shared/action-link';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -84,6 +85,8 @@ function InvoiceDetailPage(): React.JSX.Element {
   const { data: inv, isLoading, isError, error } = useInvoice(id);
   const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
+  // ADR-234 — the SO No. stays as text (no link) for someone who may not open SOs.
+  const canOpen = useCanOpen();
   // The preview is the print: the same Innovic Sheet markup + stylesheet, in an
   // iframe so the sheet's paper styles never leak into the app's own CSS.
   const docHtml = useMemo(
@@ -173,8 +176,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   // invoice cannot be unwound here). totalPaid is null when prices are hidden —
   // those users don't get the action, which is the safe default.
   const isCancelled = inv.status === 'cancelled';
-  const canCancel =
-    perms.edit && perms.approve && !isCancelled && (inv.totalPaid ?? 0) === 0;
+  const canCancel = perms.edit && perms.approve && !isCancelled && (inv.totalPaid ?? 0) === 0;
   const stats: { label: string; value: string; size: number; color?: string }[] = priceHidden
     ? []
     : [
@@ -305,7 +307,12 @@ function InvoiceDetailPage(): React.JSX.Element {
 
       <div style={{ fontSize: 13, marginBottom: 10 }}>
         Customer: <b>{inv.clientName ?? '—'}</b> · SO No.:{' '}
-        <Link to="/sales-orders/$id" params={{ id: inv.salesOrderId }} className="fw-700">
+        <Link
+          to="/sales-orders/$id"
+          params={{ id: inv.salesOrderId }}
+          className="fw-700"
+          disabled={!canOpen('/sales-orders/$id')}
+        >
           {inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'}
         </Link>{' '}
         · Due Date: <b>{fmtDate(inv.dueDate)}</b>

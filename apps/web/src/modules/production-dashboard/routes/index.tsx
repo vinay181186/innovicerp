@@ -23,6 +23,7 @@
 //    are grouped by machine for display only.
 //  - "Supply Snapshot" reads supplyChain on GET /production-dashboard.
 
+import { useCanOpen } from '@/components/shared/action-link';
 import { createRoute, Link } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -74,6 +75,8 @@ const JC_COLUMNS = openJcColumns();
 function ProductionDashboardPage(): React.JSX.Element {
   const search = productionDashboardRoute.useSearch();
   const navigate = productionDashboardRoute.useNavigate();
+  // ADR-234: a row opens its Job Card only for someone who may open Job Cards.
+  const canOpenJc = useCanOpen()('/job-cards/$id');
   const tab: Tab = search.tab ?? 'ready';
   const setTab = (k: string): void => {
     const next = TABS.find((t) => t === k);
@@ -227,8 +230,11 @@ function ProductionDashboardPage(): React.JSX.Element {
                   rowKey={(jc) => jc.jobCardId}
                   loading={jcs.isLoading}
                   emptyText="No open Job Cards."
-                  onRowClick={(jc) =>
-                    void navigate({ to: '/job-cards/$id', params: { id: jc.jobCardId } })
+                  onRowClick={
+                    canOpenJc
+                      ? (jc) =>
+                          void navigate({ to: '/job-cards/$id', params: { id: jc.jobCardId } })
+                      : undefined
                   }
                   rowActionsWidth="1%"
                   rowActions={(jc) => <OpenJcRowMenu jc={jc} canOpEntry={canOpEntry} />}

@@ -682,8 +682,11 @@ describe('plans — ADR-232 Access Control ticks alone decide', () => {
     ).rejects.not.toBeInstanceOf(AuthorizationError);
   });
 
-  it('updatePlan: L2 (no edit tick) / auditor → AuthorizationError', async () => {
-    await expect(service.updatePlan(UNKNOWN_ID, {}, planningL2())).rejects.toBeInstanceOf(
+  // ADR-234 (owner E5): an Entry-only planner may save their OWN plan while it
+  // is still In Planning, so the gate lets L2 through to the plan lookup; the
+  // own-draft rule itself is covered in own-draft.unit.test.ts.
+  it('updatePlan: L2 (entry, no edit) passes the gate / auditor → AuthorizationError', async () => {
+    await expect(service.updatePlan(UNKNOWN_ID, {}, planningL2())).rejects.not.toBeInstanceOf(
       AuthorizationError,
     );
     await expect(service.updatePlan(UNKNOWN_ID, {}, auditor())).rejects.toBeInstanceOf(

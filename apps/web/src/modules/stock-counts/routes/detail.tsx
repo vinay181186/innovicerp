@@ -223,6 +223,16 @@ function StockCountPage(): React.JSX.Element {
       </div>
     );
   }
+  // ADR-234 — /stock-counts/new shares this route; the shell lets a viewer in,
+  // so the New form refuses here without Stock Count Entry (the create API's
+  // own check). Waits for access so a permitted user never sees it flash.
+  if (isNew && eff && !perms.entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+        You do not have permission to create Stock Counts. Ask an admin.
+      </div>
+    );
+  }
   const status = sc?.status ?? 'draft';
   const canApprove =
     sc?.status === 'submitted' && perms.approve && !sc.blockedApproverIds.includes(me?.id ?? '');

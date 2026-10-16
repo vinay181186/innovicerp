@@ -18,6 +18,8 @@ export function DispatchRowActions(props: {
   /** Undefined while the dispatch list loads — Invoice stays shown. */
   billedStatus?: CustomerDispatchRow['billedStatus'];
   canCancel: boolean;
+  /** ADR-234 — Invoice opens Create Invoice: Invoice Entry. */
+  canInvoice: boolean;
   cancelPending: boolean;
   onInvoice: () => void;
   onCancel: () => void;
@@ -38,7 +40,7 @@ export function DispatchRowActions(props: {
     { key: 'print', label: 'Print DC', icon: 'printer', onSelect: printDc.start },
   ];
   // Fully invoiced — nothing left to bill, so no Invoice entry (card's gate).
-  if (props.billedStatus !== 'full') {
+  if (props.canInvoice && props.billedStatus !== 'full') {
     items.push({ key: 'invoice', label: 'Invoice', onSelect: props.onInvoice });
   }
   if (props.canCancel) {

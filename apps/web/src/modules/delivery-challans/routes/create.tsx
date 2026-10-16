@@ -765,7 +765,9 @@ function PoDcFormBody({
     );
   };
 
-  if (!perms.entry) {
+  // ADR-234 — wait for access before refusing, so a permitted user never sees
+  // the refusal flash while it loads.
+  if (eff && !perms.entry) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)' }}>
         You do not have permission to create DCs. Ask an admin.
@@ -1513,7 +1515,7 @@ function NcDcFormBody({
     remarks !== '';
   useReportSave(saveCtl, { canSave: canCreateDc && canSubmit, saving: submitting, dirty });
 
-  if (!canCreateDc) {
+  if (eff && !canCreateDc) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)' }}>
         You do not have permission to create a return DC. Ask an admin.

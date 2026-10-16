@@ -27,6 +27,7 @@
 
 import { type DocumentEditChange, type PurchaseRequestDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { ActionLink, useCanOpen } from '@/components/shared/action-link';
 import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -87,6 +88,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // a different key than its destination is the "button that only fails on
   // click" pattern this whole pass exists to remove.
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
+  const canOpen = useCanOpen();
   const prApprovalOn = usePrApprovalOn();
   const softDelete = useSoftDeletePurchaseRequest();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -158,6 +160,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // "has a PO" is no longer the test for whether another PO may be raised.
   const bal = prOrderBalance(detail);
   // ADR-189: while PR approval is on, the PR must be Approved before a PO.
+  // ADR-234 — "View linked PO" opens the PO; only for someone who may open it.
+  const canOpenPo = canOpen('/purchase-orders/$id');
   const canOrder = prConvertible(detail, prApprovalOn) && bal.balance > 0 && canCreatePo;
   // Offered only when there is something to close: part of it bought, part of
   // it still outstanding, nothing closed yet, request not cancelled. A PR with
@@ -235,13 +239,13 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 <FileText size={13} /> Create PO
               </Link>
             ) : linkedToPo && detail.poId ? (
-              <Link
+              <ActionLink
                 to="/purchase-orders/$id"
                 params={{ id: detail.poId }}
                 className="btn btn-primary"
               >
                 <FileText size={13} /> View linked PO
-              </Link>
+              </ActionLink>
             ) : null}
             <ActionMenu
               items={[
@@ -249,7 +253,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                   // Once a PO exists this PR is locked — surface the PO to view,
                   // and hide Edit below.
                   label: 'View linked PO',
-                  hidden: !(canOrder && linkedToPo && detail.poId),
+                  hidden: !(canOrder && linkedToPo && detail.poId && canOpenPo),
                   onClick: () => {
                     if (detail.poId)
                       void navigate({ to: '/purchase-orders/$id', params: { id: detail.poId } });

@@ -280,7 +280,9 @@ export function CapaView(props: {
             type: 'capa',
             id: assignCapa.id,
             display: `CAPA ${assignCapa.code}`,
-            navPage: '/capa',
+            // There is no /capa page: CAPA is a tab of the NC Register, and
+            // `?tab=capa&capa=<code>` lands on it with the CAPA found.
+            navPage: `/nc-register?tab=capa&capa=${encodeURIComponent(assignCapa.code)}`,
           }}
           suggestedTitle={`Continue ${assignCapa.code}`}
           onClose={() => setAssignCapa(null)}

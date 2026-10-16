@@ -4,9 +4,9 @@
 // the ▸ detail. Split out of routes/list.tsx so that file stays under the
 // 400-line ceiling. Labels per docs/NAMING.md.
 
+import { ActionLink } from '@/components/shared/action-link';
 import type { MachineLoadOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { SoNo } from '@/components/shared/so-no';
 import { fmtDate } from '@/lib/date';
@@ -57,7 +57,7 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       // the job card. stopPropagation on the link, not the cell, so clicking
       // the rest of the cell still opens the row.
       render: (op) => (
-        <Link
+        <ActionLink fallback="text"
           to="/job-cards/$id"
           params={{ id: op.jobCardId }}
           className="td-code cyan"
@@ -66,7 +66,7 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
           onClick={(e) => e.stopPropagation()}
         >
           {op.jobCardCode}
-        </Link>
+        </ActionLink>
       ),
     },
     {

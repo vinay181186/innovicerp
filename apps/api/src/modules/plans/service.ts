@@ -57,7 +57,15 @@ import {
   soStockReservations,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
+import {
+  canSeeFormPrice,
+  hasFormAccess,
+  primeAccess,
+  requireAnyFormAccess,
+  requireDeleteRight,
+  requireFormAccess,
+} from '../../lib/access';
+import { ownDraftPlanRefusal } from './own-draft';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { planSfColumns } from './sf-columns';
 import { resolveRmItem } from '../../lib/rm-item';
@@ -1236,15 +1244,39 @@ function planOpsChanged(
   return false;
 }
 
+/**
+ * E5 / ADR-234 — which plan edits the caller may save, decided BEFORE the
+ * transaction opens (the access read runs its own tx). 'edit' = any editable
+ * plan. 'own-draft' = an Entry-only planner finishing the plan they just made
+ * (the "+ Plan" box saves, then EditPlanModal saves the rest): only a plan
+ * they created that is still In Planning — checked under the plan's lock in
+ * updatePlanTx via assertOwnDraftPlan.
+ */
+export type PlanEditMode = 'edit' | 'own-draft';
+
+export async function planEditMode(user: AuthContext): Promise<PlanEditMode> {
+  await primeAccess(user);
+  if (await hasFormAccess(user, 'plan_create', 'edit')) return 'edit';
+  if (await hasFormAccess(user, 'plan_create', 'entry')) return 'own-draft';
+  await requireAnyFormAccess(user, [
+    ['plan_create', 'entry'],
+    ['plan_create', 'edit'],
+  ]); // throws, naming the ticks
+  return 'edit';
+}
+
 export async function updatePlan(
   id: string,
   input: UpdatePlanInput,
   user: AuthContext,
+  mode?: PlanEditMode,
 ): Promise<PlanDetail> {
   // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit can
   // replay an approved edit for an approver who holds `approve` but not `edit`.
-  await requireFormAccess(user, 'plan_create', 'edit');
-  return withUserContext(user, (tx) => updatePlanTx(tx, id, input, user));
+  const m = mode ?? (await planEditMode(user));
+  return withUserContext(user, (tx) =>
+    updatePlanTx(tx, id, input, user, m === 'own-draft' ? { ownDraftOnly: true } : undefined),
+  );
 }
 
 /**
@@ -1260,6 +1292,7 @@ export async function updatePlanTx(
   id: string,
   input: UpdatePlanInput,
   user: AuthContext,
+  opts?: { ownDraftOnly?: boolean },
 ): Promise<PlanDetail> {
   const companyId = requireCompany(user);
   // FOR UPDATE: since ADR-182 a plan stays 'planned' while it is only PART
@@ -1274,6 +1307,11 @@ export async function updatePlanTx(
     .for('update');
   const row = existing[0];
   if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+  // E5: an Entry-only caller, checked under the lock so a concurrent finalise wins.
+  if (opts?.ownDraftOnly) {
+    const refusal = ownDraftPlanRefusal(row, user.id);
+    if (refusal) throw new AuthorizationError(refusal);
+  }
   // R5: refuse the save if someone else edited the plan after this form opened it.
   assertUnchangedSinceOpened(row.updatedAt, input.expectedUpdatedAt);
 
@@ -1645,7 +1683,11 @@ export async function updatePlanOrStage(
   input: UpdatePlanInput,
   user: AuthContext,
 ): Promise<PlanDetail | DocumentEditStagedResult> {
-  await requireFormAccess(user, 'plan_create', 'edit');
+  const mode = await planEditMode(user);
+  // E5: an Entry-only planner finishing their own In Planning draft saves it
+  // directly — staging needs the Edit tick (requestDocumentEdit), and a draft
+  // nobody else has seen is not a live-document edit.
+  if (mode === 'own-draft') return updatePlan(id, input, user, mode);
   const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with plan-edit-registry
@@ -1688,7 +1730,7 @@ export async function updatePlanOrStage(
     return { staged: true, request };
   }
 
-  return updatePlan(id, input, user);
+  return updatePlan(id, input, user, mode);
 }
 
 /** Transition: in_planning → planned. Single forward state move shipped in

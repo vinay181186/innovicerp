@@ -33,6 +33,7 @@ import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiDownload, apiFetch } from '@/lib/api';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useClientsList } from '@/modules/clients/api';
@@ -345,6 +346,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     props.mode === 'edit' ? (props.detail.customerName ?? '') : '',
   );
   const [showAddClient, setShowAddClient] = useState(false);
+  // ADR-234 — "+ New" customer needs Customer Master Entry; Attach Email Ref /
+  // Upload PO Doc go to the JWSO documents API, which takes Entry OR Edit.
+  const { data: eff } = useMyAccess();
+  const canAddClient = effectiveFormPerms(eff, 'client_create').entry;
+  const jwPerms = effectiveFormPerms(eff, 'jw_create');
+  const canAttach = jwPerms.entry || jwPerms.edit;
   function onClientCreated(id: string, label: string): void {
     setValue('header.clientId', id, { shouldValidate: true });
     setClientLabel(label);
@@ -865,15 +872,17 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   }
                 />
               </div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ whiteSpace: 'nowrap' }}
-                disabled={anyLineInUse}
-                onClick={() => setShowAddClient(true)}
-              >
-                + New
-              </button>
+              {canAddClient ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ whiteSpace: 'nowrap' }}
+                  disabled={anyLineInUse}
+                  onClick={() => setShowAddClient(true)}
+                >
+                  + New
+                </button>
+              ) : null}
             </div>
             {anyLineInUse ? (
               <div className="form-help">
@@ -903,8 +912,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
                 Client PO No.
               </label>
-              <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
-              {emailFileName ? (
+              {canAttach ? (
+                <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
+              ) : null}
+              {!canAttach ? null : emailFileName ? (
                 <span
                   style={{
                     fontSize: 11,
@@ -991,40 +1002,43 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 },
               })}
             />
-            {/* Upload PO Doc (#8) — reflects on the JWSO after save. */}
-            <div style={{ marginTop: 6 }}>
-              <input
-                ref={poFileRef}
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
-                style={{ display: 'none' }}
-                onChange={onPickPoFile}
-              />
-              {poFileName ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                  <span className="mono" style={{ color: 'var(--blue)' }}>
-                    📎 {poFileName}
-                  </span>
+            {/* Upload PO Doc (#8) — reflects on the JWSO after save. ADR-234:
+                only for a JWSO Entry or Edit holder (the documents API's rule). */}
+            {canAttach ? (
+              <div style={{ marginTop: 6 }}>
+                <input
+                  ref={poFileRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+                  style={{ display: 'none' }}
+                  onChange={onPickPoFile}
+                />
+                {poFileName ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                    <span className="mono" style={{ color: 'var(--blue)' }}>
+                      📎 {poFileName}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={clearPoFile}
+                      aria-label="Remove PO document"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
-                    onClick={clearPoFile}
-                    aria-label="Remove PO document"
+                    onClick={() => poFileRef.current?.click()}
                   >
-                    ✕
+                    📤 Upload PO Doc
                   </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => poFileRef.current?.click()}
-                >
-                  📤 Upload PO Doc
-                </button>
-              )}
-              {poFileError ? <div className="form-error">{poFileError}</div> : null}
-            </div>
+                )}
+                {poFileError ? <div className="form-error">{poFileError}</div> : null}
+              </div>
+            ) : null}
             {poEmailError ? (
               <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red2)' }}>
                 ⚠ {poEmailError}
@@ -1541,7 +1555,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </div>
       )}
 
-      {showAddClient ? (
+      {showAddClient && canAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />
       ) : null}
     </form>

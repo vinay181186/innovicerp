@@ -5,8 +5,8 @@
 // Entry for this card) is now the row's ⋯ menu item; the JC No. still opens
 // the job card itself. Same endpoint and 25-row paging the cards used.
 
+import { ActionLink } from '@/components/shared/action-link';
 import type { ProductionDashboardJc } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
@@ -26,7 +26,7 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
       kind: 'code',
       nowrap: true,
       render: (jc) => (
-        <Link
+        <ActionLink fallback="text"
           to="/job-cards/$id"
           params={{ id: jc.jobCardId }}
           title="View job card status"
@@ -35,7 +35,7 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
           onClick={(e) => e.stopPropagation()}
         >
           {jc.code}
-        </Link>
+        </ActionLink>
       ),
     },
     {

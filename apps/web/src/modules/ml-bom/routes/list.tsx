@@ -95,7 +95,13 @@ function MlBomsListPage(): React.JSX.Element {
   const columns = useMemo(() => mlBomListColumns(offset), [offset]);
 
   if (eff && !perms.view) {
-    return <PageState as="page" state="noaccess" />;
+    return (
+      <PageState
+        as="page"
+        state="noaccess"
+        message="You do not have permission to view Multi-Level BOMs. Ask an admin."
+      />
+    );
   }
 
   const onMakeDefault = async (b: MlBomListItem): Promise<void> => {

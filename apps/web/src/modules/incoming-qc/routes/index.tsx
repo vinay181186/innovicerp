@@ -21,7 +21,7 @@
 // one line on its own (grnLineId), so a ?line= deep link opens whatever page
 // the line is on.
 
-import { createRoute, Link } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -38,6 +38,7 @@ import { useIncomingQc } from '../api';
 import { type IncomingRaisedNc } from '../components/incoming-qc-inspect-form';
 import { IncomingQcInspectModal } from '../components/incoming-qc-inspect-modal';
 import { IncomingQcMetricsStrip } from '../components/incoming-qc-metrics';
+import { RaisedNcLink } from '@/modules/qc-call-register/components/qc-call-extras';
 import {
   IncomingQcCompletedExpanded,
   incomingQcCompletedColumns,
@@ -72,7 +73,9 @@ export const incomingQcRoute = createRoute({
 function IncomingQcPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   // ADR-232: Inspect books a QC result — the page's Entry right.
-  const canInspect = effectiveFormPerms(eff, 'qc_incoming').entry;
+  // False while access loads, so the ?line= deep link cannot open the Inspect
+  // popup for someone without Entry (ADR-234).
+  const canInspect = !!eff && effectiveFormPerms(eff, 'qc_incoming').entry;
   const search = incomingQcRoute.useSearch();
   const navigate = incomingQcRoute.useNavigate();
 
@@ -227,10 +230,7 @@ function IncomingQcPage(): React.JSX.Element {
               <span className="mono fw-700" style={{ color: 'var(--text)' }}>
                 {raisedNc.code}
               </span>{' '}
-              raised —{' '}
-              <Link to="/nc-register/$id" params={{ id: raisedNc.id }}>
-                Dispose now →
-              </Link>
+              raised <RaisedNcLink ncId={raisedNc.id} />
             </>
           }
         >
@@ -238,7 +238,7 @@ function IncomingQcPage(): React.JSX.Element {
         </Banner>
       ) : null}
 
-      {inspectRow ? (
+      {inspectRow && canInspect ? (
         <IncomingQcInspectModal
           key={inspectRow.grnLineId}
           o={inspectRow}

@@ -255,9 +255,10 @@ export async function rescheduleJcOp(
   input: RescheduleJcOpInput,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  // Dragging a bar reschedules / re-routes a saved jc_op — an edit on the Job
-  // Card (jc_create). Previously this write had NO matrix guard at all.
-  await requireFormAccess(user, 'jc_create', 'edit');
+  // Dragging a bar reschedules / re-routes a saved jc_op. ADR-234 (E4): the
+  // same right as a Job Queue move (job-queue moveQueueOp / reorder) — Advance
+  // on Job Cards — so the two screens that move work agree.
+  await requireFormAccess(user, 'jc_create', 'advance');
   const companyId = requireCompany(user);
   const userId = user.id;
 

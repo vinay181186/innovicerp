@@ -27,6 +27,7 @@ import {
   type AccessFormKey,
   ACCESS_FORMS,
   canDeleteRecords,
+  canWriteAnything,
   effectiveFormPerms,
   isUnconfigured,
 } from '@innovic/shared';
@@ -127,6 +128,13 @@ export async function requireAnyFormAccess(
     if (effectiveFormPerms(eff, formKey)[action]) return;
   }
   const [formKey, action] = pairs[0]!;
+  // ADR-234: several ticks on ONE page (an upload both the New screen and the
+  // Edit screen call) — name every tick that would do, so the admin knows what
+  // to grant: "Needs the Entry or Edit tick on JWSO Master."
+  if (pairs.length > 1 && pairs.every(([f]) => f === formKey) && !isUnconfigured(eff)) {
+    const ticks = pairs.map(([, a]) => ACTION_TICK[a]).join(' or ');
+    throw new AuthorizationError(`Needs the ${ticks} tick on ${formLabel(formKey)}. Ask an admin.`);
+  }
   await requireFormAccess(user, formKey, action);
 }
 
@@ -210,6 +218,14 @@ export async function requireCanWrite(user: AuthContext): Promise<void> {
         'department tiers in Access Control.',
     );
   }
+}
+
+/** Non-throwing twin of requireCanWrite, for read paths that decide whether
+ *  to OFFER a write (task permissions, daily report Edit). Call it before a
+ *  transaction opens (it reads access in its own). */
+export async function canWrite(user: AuthContext): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  return canWriteAnything(await getMyAccess(user));
 }
 
 /**

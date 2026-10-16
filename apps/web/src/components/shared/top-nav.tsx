@@ -12,9 +12,9 @@
 //
 // Same data as before: SECTIONS / ORDERED_SECTIONS in nav-sections.ts still
 // feed the breadcrumbs and the open-page tabs, so a page named here is named
-// everywhere. Same gates as before: a module shows only for someone with
-// department access (admin sees all), and a page inside it hides when the
-// user's access does not grant VIEW on its form key ("Hide page").
+// everywhere. A module shows only for someone with department access (admin
+// sees all), and a page inside it shows only when the user may open it —
+// canOpenPage over PAGE_ACCESS (ADR-234), the rule the route guard uses too.
 //
 // The module button carries no icon: with twelve modules, the labels alone
 // are what fit a 1366px screen beside the search box; the pages inside the
@@ -32,7 +32,8 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { GlobalSearch } from '@/components/shared/global-search';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useIsSuperAdmin } from '@/components/shared/action-link';
+import { useMyAccess } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { roleLabel } from '@/lib/role-label';
 import { LiveStatusMarker } from '@/lib/live-updates/live-status-marker';
@@ -42,6 +43,7 @@ import { useDocumentEditPendingTotal } from '@/modules/document-edits/api';
 import { Icon } from '@/ui/core';
 import {
   initials,
+  menuGroups,
   navItemMatches,
   ORDERED_SECTIONS,
   shouldShowSection,
@@ -75,6 +77,7 @@ export function TopNav(): React.JSX.Element {
   const isOn = makeIsOn(pathname, search as Record<string, unknown>);
   const { data: eff } = useMyAccess();
   const isAdmin = me?.role === 'admin';
+  const isSuperAdmin = useIsSuperAdmin();
   // Badge on System Settings → Approvals: everything waiting for THIS user —
   // the ADR-190 inbox (PR + PO + Log Entry) plus the ADR-202 edits waiting for
   // approval. The server lists only rows the caller may approve, so someone who
@@ -154,20 +157,12 @@ export function TopNav(): React.JSX.Element {
       {visible.map((sec) => {
         const here = sec.groups.some((g) => g.items.some(isOn));
         const open = openKey === sec.key;
-        const items = sec.groups
-          .map((grp) => ({
-            label: grp.label,
-            // "Hide page": a link with a formKey vanishes when the user's access
-            // does not grant VIEW on it (or the link's formAction, e.g. Advance).
-            // Admin bypasses; links without a formKey are always shown.
-            items: grp.items.filter(
-              (it) =>
-                isAdmin ||
-                !it.formKey ||
-                effectiveFormPerms(eff, it.formKey)[it.formAction ?? 'view'],
-            ),
-          }))
-          .filter((grp) => grp.items.length > 0);
+        // ADR-234: a link shows only if the user may open the page it leads
+        // to — the same PAGE_ACCESS rule the route guard applies, so "New
+        // Production Order" needs Entry, Close needs Advance, and the Users /
+        // Access Control / Approval Rules / Trash / Backup pages show only to
+        // Super Admin.
+        const items = menuGroups(sec, eff, isSuperAdmin);
         return (
           <div key={sec.key} className={`tn-sec tn-mod-${sec.modClass}${open ? ' open' : ''}`}>
             <button

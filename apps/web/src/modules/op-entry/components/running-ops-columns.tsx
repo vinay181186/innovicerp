@@ -6,9 +6,9 @@
 // machine split (ADR-164) and the Started-By audit line (ADR-197) are preserved
 // exactly, now rendered through DataTable columns instead of hand-written <td>s.
 
+import { ActionLink } from '@/components/shared/action-link';
 import type { RunningOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -26,14 +26,14 @@ export type RunningOpRow = RunningOp & { startedByName?: string | null };
  *  board. A JC number is short, so it stays on one line. */
 function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
   return (
-    <Link
+    <ActionLink fallback="text"
       to="/job-cards/$id"
       params={{ id }}
       title="View job card status"
       style={{ color: 'inherit', textDecoration: 'none', whiteSpace: 'nowrap' }}
     >
       {code}
-    </Link>
+    </ActionLink>
   );
 }
 

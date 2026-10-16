@@ -12,6 +12,7 @@ import {
 } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useVendorsList } from '@/modules/vendors/api';
 import { Button } from '@/ui/core';
@@ -75,10 +76,20 @@ export function RaiseOrdersModal({ detail, onClose }: Props): React.JSX.Element 
   const [error, setError] = useState<string | null>(null);
   const [requiredDate, setRequiredDate] = useState('');
 
-  const rows = useMemo(
+  // ADR-234 — the server raises a Plan row under Plan Entry and a PR row
+  // under Purchase Request Entry, so offer only the rows this user may raise.
+  const { data: eff } = useMyAccess();
+  const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
+  const canPr = effectiveFormPerms(eff, 'pr_create').entry;
+  const allRows = useMemo(
     () => [...detail.nodes].filter((n) => Number(n.toRaiseQty) > 0).sort((a, b) => a.seq - b.seq),
     [detail.nodes],
   );
+  const rows = useMemo(
+    () => allRows.filter((n) => (n.raises === 'pr' ? canPr : canPlan)),
+    [allRows, canPlan, canPr],
+  );
+  const hiddenCount = allRows.length - rows.length;
 
   const [state, setState] = useState<Map<string, RowState>>(
     () =>
@@ -340,6 +351,14 @@ export function RaiseOrdersModal({ detail, onClose }: Props): React.JSX.Element 
           onChange={(e) => setRequiredDate(e.target.value)}
         />
       </div>
+      {hiddenCount > 0 ? (
+        <Banner tone="info" flush>
+          {plural(hiddenCount, 'row is', 'rows are')} not shown:{' '}
+          {canPlan ? '' : 'Plan rows need the Entry tick on Plan. '}
+          {canPr ? '' : 'PR rows need the Entry tick on Purchase Request. '}
+          Ask an admin.
+        </Banner>
+      ) : null}
       <DataTable
         columns={columns}
         rows={rows}

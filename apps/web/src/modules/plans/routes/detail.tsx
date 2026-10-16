@@ -24,6 +24,7 @@ import {
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -81,6 +82,7 @@ function PlanDetailPage(): React.JSX.Element {
   const execute = useExecutePlan();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
+  const canOpen = useCanOpen();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -257,7 +259,9 @@ function PlanDetailPage(): React.JSX.Element {
                 condition and same destination as the link it replaces — it was
                 a text link in a box at the foot of the body, where the page's
                 primary action read as a footnote. */}
-            {fromRouteCard && perms.entry && plan.planStatus === 'planned' && !plan.jcId ? (
+            {/* ADR-234 — gated on the page it OPENS (Production Order Entry),
+                not on this page's Plan tick. */}
+            {fromRouteCard && canOpen('/production-orders/new') && plan.planStatus === 'planned' && !plan.jcId ? (
               <Link
                 to="/production-orders/new"
                 search={{ planId: plan.id, planCode: plan.code }}

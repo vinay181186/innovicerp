@@ -87,14 +87,21 @@ export function visibleTasksWhere(companyId: string, user: AuthContext): SQL {
 
 // ── Permissions ───────────────────────────────────────────────────────────
 
+/**
+ * `canWrite` = lib/access canWrite(user): false for an L7 Auditor or an
+ * unconfigured account (ADR-232/234), and then every write flag is false —
+ * every task write runs requireCanWrite first. Write paths call this only
+ * after requireCanWrite passed, so they pass `true`.
+ */
 export function permsFor(
   r: Pick<TaskRecord, 'createdBy' | 'assignedTo' | 'assignedBy'>,
   user: AuthContext,
+  canWrite: boolean,
 ): TaskPermissions {
   const admin = isAdmin(user);
   const creator = r.createdBy === user.id;
   const assignee = r.assignedTo === user.id;
-  const view = canViewTask(r, user);
+  const view = canWrite && canViewTask(r, user);
   const actor = view && (assignee || creator || admin);
   const owner = view && (creator || admin);
   return {
@@ -104,7 +111,6 @@ export function permsFor(
     canReassign: owner,
     canEdit: owner,
     canComment: view,
-    // ADR-232: addTaskAttachment's requireCanWrite refuses an Auditor.
     canAttach: view,
   };
 }
@@ -150,6 +156,8 @@ export interface RowContext {
   today: string;
   attachmentCounts: Map<string, number>;
   commentCounts: Map<string, number>;
+  /** lib/access canWrite(user), read before the transaction. */
+  canWrite: boolean;
 }
 
 const asTaskType = (t: string): TaskType => (t === 'personal' ? 'personal' : 'assigned');
@@ -187,7 +195,7 @@ export function rowToTask(r: TaskRecord, ctx: RowContext): TaskRow {
     isUnread: isUnreadRow(r, ctx.user.id),
     attachmentCount: ctx.attachmentCounts.get(r.id) ?? 0,
     commentCount: ctx.commentCounts.get(r.id) ?? 0,
-    permissions: permsFor(r, ctx.user),
+    permissions: permsFor(r, ctx.user, ctx.canWrite),
   };
 }
 

@@ -16,7 +16,7 @@ import type {
 import { and, asc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { dailyReportLines, dailyReports, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireCanWrite } from '../../lib/access';
+import { canWrite, requireCanWrite } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
@@ -59,6 +59,8 @@ export async function listDailyReports(
   const isAdmin = user.role === 'admin';
   const canSeeAll = canSeeAllReports(user);
   const sf = readSf(filters.sf);
+  // ADR-232/234: an Auditor / unconfigured account is never offered Edit.
+  const writer = await canWrite(user);
   return withUserContext(user, async (tx) => {
     const names = await loadUserNames(tx, companyId);
 
@@ -122,7 +124,7 @@ export async function listDailyReports(
       shift: h.shift,
       taskCount: Number(h.taskCount) || 0,
       totalHours: Math.round(n(h.hours) * 100) / 100,
-      canEdit: isAdmin || h.userId === user.id,
+      canEdit: writer && (isAdmin || h.userId === user.id),
     }));
 
     const userOptions = canSeeAll ? [...names.entries()].map(([id, name]) => ({ id, name })) : [];
@@ -136,6 +138,8 @@ async function getReportInternal(
   companyId: string,
   user: AuthContext,
   names: Map<string, string>,
+  // Write paths reach here only after requireCanWrite passed.
+  writer = true,
 ): Promise<DailyTaskReportDetail> {
   const rows = await tx
     .select()
@@ -179,7 +183,7 @@ async function getReportInternal(
     shift: h.shift,
     taskCount: lines.length,
     totalHours: Math.round(totalHours * 100) / 100,
-    canEdit: user.role === 'admin' || h.userId === user.id,
+    canEdit: writer && (user.role === 'admin' || h.userId === user.id),
     lines,
   };
 }
@@ -189,9 +193,10 @@ export async function getDailyReport(
   user: AuthContext,
 ): Promise<DailyTaskReportDetail> {
   const companyId = requireCompany(user);
+  const writer = await canWrite(user); // before the tx (ADR-229)
   return withUserContext(user, async (tx) => {
     const names = await loadUserNames(tx, companyId);
-    return getReportInternal(tx, id, companyId, user, names);
+    return getReportInternal(tx, id, companyId, user, names, writer);
   });
 }
 

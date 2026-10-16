@@ -4,10 +4,14 @@
 
 import { DASHBOARD_QUICK_LINKS } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { useCanOpen } from '@/components/shared/action-link';
 
 export function QuickLinks({ pages }: { pages: string[] }): React.JSX.Element {
   const set = new Set(pages);
-  const links = DASHBOARD_QUICK_LINKS.filter((l) => set.has(l.page));
+  // ADR-234 — and only the pages this user may open (the per-page tick, not
+  // just the department the server filtered on).
+  const canOpen = useCanOpen();
+  const links = DASHBOARD_QUICK_LINKS.filter((l) => set.has(l.page) && canOpen(l.page));
   return (
     <div>
       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>🚀 Quick Access</div>

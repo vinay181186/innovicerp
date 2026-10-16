@@ -103,6 +103,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
   // the form appearing when the URL is typed directly by a viewer.
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
+  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
   // Created By — the signed-in user, who the server records as the creator.
   const { data: me } = useSession();
 
@@ -371,10 +372,17 @@ function ProductionOrderNewPage(): React.JSX.Element {
         {noRouteCard ? (
           <Banner tone="warn" role="alert">
             ⚠ No Route Card for this item —{' '}
-            <Link to="/route-cards/new" search={newRouteCardSearch} className="fw-700">
-              create it
-            </Link>{' '}
-            first.
+            {/* ADR-234 — the link only for a Route Card Entry holder. */}
+            {canCreateRouteCard ? (
+              <>
+                <Link to="/route-cards/new" search={newRouteCardSearch} className="fw-700">
+                  create it
+                </Link>{' '}
+                first.
+              </>
+            ) : (
+              'a Route Card user must create it first.'
+            )}
           </Banner>
         ) : null}
         {directPurchase ? (

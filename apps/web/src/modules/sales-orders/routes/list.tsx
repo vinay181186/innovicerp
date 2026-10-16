@@ -125,6 +125,8 @@ function SalesOrdersListPage(): React.JSX.Element {
   const canCreate = perms.entry;
   const canEdit = perms.edit;
   const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
+  const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
+  const canAssign = perms.advance; // ADR-232: Assign Task = the page's Advance right
 
   // Rows whose ▸ is open (none on load, so no per-order fetches on arrival).
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -347,7 +349,14 @@ function SalesOrdersListPage(): React.JSX.Element {
             }
             onToggleExpanded={(so) => toggleExpand(so.id)}
             rowMenu={(so) =>
-              soRowMenu(so, { canEdit, canDelete, onAssign: setAssignSo, onDelete: onDeleteSo })
+              soRowMenu(so, {
+                canEdit,
+                canDelete,
+                canPlan,
+                canAssign,
+                onAssign: setAssignSo,
+                onDelete: onDeleteSo,
+              })
             }
             // Splits a `?query` off a ⋯ `to` (Plan BOM Items → /planning?soId=).
             renderLink={renderRowMenuLink}

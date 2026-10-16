@@ -41,7 +41,12 @@ import {
   plans,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
+import {
+  canSeeFormPrice,
+  requireAnyFormAccess,
+  requireDeleteRight,
+  requireFormAccess,
+} from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -1012,7 +1017,11 @@ export async function ensureJwRmItem(
   input: EnsureJwRmItemInput,
   user: AuthContext,
 ): Promise<EnsureJwRmItemResponse> {
-  await requireFormAccess(user, 'jw_create', 'entry');
+  // ADR-234: the Edit screen runs the same lookup, so Edit also passes.
+  await requireAnyFormAccess(user, [
+    ['jw_create', 'entry'],
+    ['jw_create', 'edit'],
+  ]);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rm = await ensureRmItemForOrderItem(tx, companyId, input.itemId, user.id);
@@ -1463,9 +1472,7 @@ export async function updateJobWorkOrderOrStage(
           sourceBomMasterId: jobWorkOrderLines.sourceBomMasterId,
         })
         .from(jobWorkOrderLines)
-        .where(
-          and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)),
-        );
+        .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)));
       if (jwLinesChanged(currentLines, input.lines, showMoney)) {
         throw new ConflictError(
           "Editing Job Work Order lines isn't available while Document Edit Approval is on yet — only the JWSO's own fields go for approval. Turn the gate off to edit lines.",

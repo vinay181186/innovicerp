@@ -279,6 +279,8 @@ export function OrderDetail({
           onDismiss={() => setSavedPlan(null)}
         >
           {savedPlan.derivedStatus === 'route_card_pending' ? (
+            // ADR-234 — offer the next step only to a Route Card Entry holder.
+            canCreateRouteCard ? (
             <>
               Next:{' '}
               <Link
@@ -298,6 +300,7 @@ export function OrderDetail({
                 New Route Card →
               </Link>
             </>
+            ) : null
           ) : canProductionOrder ? (
             <>
               Next:{' '}

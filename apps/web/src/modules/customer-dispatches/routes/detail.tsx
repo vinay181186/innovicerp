@@ -9,6 +9,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ActionLink } from '@/components/shared/action-link';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -130,15 +131,16 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
             >
               🖨 Print DC
             </button>
+            {/* ADR-234 — shown only to an Invoice Entry holder. */}
             {!cancelled && d.billedStatus !== 'full' ? (
-              <Link
+              <ActionLink
                 to="/invoices/new"
                 search={{ dispatchId: d.id }}
                 className="btn btn-primary"
                 title="Raise an invoice against this dispatch"
               >
                 🧾 Create Invoice
-              </Link>
+              </ActionLink>
             ) : null}
           </>
         }

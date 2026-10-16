@@ -30,7 +30,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readStockPosition } from '../../lib/stock-reservation';
 import { readAssemblyReservationRows } from './assembly-reservations';
@@ -164,7 +164,9 @@ export async function listReservations(
   query: ListReservationsQuery,
   user: AuthContext,
 ): Promise<ListReservationsResponse> {
-  await requireFormAccess(user, 'item_create', 'view');
+  // ADR-234: the Reserved drill-down sits on Store Inventory, which opens for
+  // any store-screen viewer (STORE_VIEW_FORMS) — same list here.
+  await requireAnyFormAccess(user, STORE_VIEW_FORMS);
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

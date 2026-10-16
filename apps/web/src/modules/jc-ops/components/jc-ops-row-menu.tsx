@@ -100,7 +100,8 @@ export function jcOpsRowMenu(o: JcOpsBoardRow, p: JcOpsActionProps): RowMenuItem
       label: 'Outsource Available',
       icon: 'truck',
       group: 'workflow',
-      hidden: !p.canWrite || o.opType !== 'process',
+      // ADR-234 — outsourceOpBalance needs JC Edit AND Purchase Request Entry.
+      hidden: !p.canWrite || !p.canCreatePr || o.opType !== 'process',
       disabledReason: stateReason ?? (o.available > 0 ? undefined : 'Nothing Pending'),
       onSelect: () => p.onOutsource(o),
     },

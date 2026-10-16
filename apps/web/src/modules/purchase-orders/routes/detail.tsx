@@ -96,6 +96,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'po_create');
+  // ADR-234 — Create DC / Create GRN open another page; each checks THAT
+  // page's Entry tick (what its route and API refuse), not this PO's Edit.
+  const dcPerms = effectiveFormPerms(eff, 'ospdc_create');
+  const grnPerms = effectiveFormPerms(eff, 'grn_create');
   const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
@@ -284,7 +288,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const nextIcon = sendsOut ? <Send size={13} /> : <Inbox size={13} />;
   // A draft PO is not approved yet — the GRN / DC forms refuse it — so the step
   // shows, disabled, with the reason, instead of opening a dead-end form.
-  const nextBlockedByDraft = detail.status === 'draft' && canEdit;
+  const canNext = !!eff && (sendsOut ? dcPerms.entry : grnPerms.entry);
+  const nextBlockedByDraft = detail.status === 'draft' && canNext;
 
   return (
     <div>
@@ -333,7 +338,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 </button>
               </>
             ) : null}
-            {canIssueOrReceive && canEdit ? (
+            {canIssueOrReceive && canNext ? (
               sendsOut ? (
                 <Link
                   to="/delivery-challans/new"
@@ -381,8 +386,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   // otherwise closed short (un-received qty back to its PRs).
                   label: 'Short Close',
                   danger: true,
+                  // ADR-234 — the server (shortClosePurchaseOrder) needs Approve.
                   hidden:
-                    !canEdit ||
+                    !perms.approve ||
                     !(
                       detail.status === 'open' ||
                       detail.status === 'partial' ||

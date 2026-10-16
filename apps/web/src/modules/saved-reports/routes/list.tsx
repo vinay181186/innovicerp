@@ -11,7 +11,9 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { useCanWrite, useIsSuperAdmin } from '@/components/shared/action-link';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { canDeleteRecords, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -69,10 +71,19 @@ function SavedReportsListPage(): React.JSX.Element {
   const deleteMutation = useDeleteSavedReport();
   // ADR-232: the server lets only the report's owner or a Super Admin edit or
   // delete it (saved-reports service, assertCanWrite). Other users' shared
-  // reports show both ⋯ items greyed with the reason.
+  // reports show both ⋯ items greyed with the reason. An Auditor or an
+  // unconfigured account (no write at all) gets neither item, nor + New Report.
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const canWrite = useCanWrite();
+  const isSuperAdmin = useIsSuperAdmin();
   const ownerBlock = (ownerId: string): string | undefined =>
-    !me || me.id === ownerId || me.role === 'admin' ? undefined : 'Only the owner can change this';
+    !me || me.id === ownerId || isSuperAdmin ? undefined : 'Only the owner can change this';
+  // Someone else's report: the server's delete right (Full Access).
+  const deleteBlock = (ownerId: string): string | undefined =>
+    !me || me.id === ownerId || isSuperAdmin || canDeleteRecords(eff)
+      ? undefined
+      : 'Only the owner can delete this';
 
   // Source label ("Sales Orders"), never the raw source key.
   const sourceLabel = useMemo(
@@ -177,9 +188,11 @@ function SavedReportsListPage(): React.JSX.Element {
         }}
         filtersActive={sf.filtering || term !== ''}
         primary={
-          <Link to="/saved-reports/new" className="btn btn-primary">
-            <Icon name="plus" size={14} /> New Report
-          </Link>
+          canWrite ? (
+            <Link to="/saved-reports/new" className="btn btn-primary">
+              <Icon name="plus" size={14} /> New Report
+            </Link>
+          ) : undefined
         }
       />
 
@@ -209,14 +222,16 @@ function SavedReportsListPage(): React.JSX.Element {
                 // Row click runs the report, so no View. ⋯ menu: Edit · ─ ·
                 // Delete; without the owner right both are greyed `items`
                 // (Delete then has no handler).
-                editTo={ownerBlock(r.ownerId) ? undefined : `/saved-reports/${r.id}/edit`}
+                editTo={
+                  !canWrite || ownerBlock(r.ownerId) ? undefined : `/saved-reports/${r.id}/edit`
+                }
                 renderLink={(p) => <Link {...p} />}
                 items={[
                   {
                     key: 'edit-owner',
                     label: 'Edit',
                     icon: 'pencil',
-                    hidden: !ownerBlock(r.ownerId),
+                    hidden: !canWrite || !ownerBlock(r.ownerId),
                     disabledReason: ownerBlock(r.ownerId),
                   },
                   {
@@ -224,12 +239,14 @@ function SavedReportsListPage(): React.JSX.Element {
                     label: 'Delete',
                     icon: 'trash-2',
                     group: 'danger',
-                    hidden: !ownerBlock(r.ownerId),
-                    disabledReason: ownerBlock(r.ownerId),
+                    hidden: !canWrite || !deleteBlock(r.ownerId),
+                    disabledReason: deleteBlock(r.ownerId),
                   },
                 ]}
                 onDelete={
-                  ownerBlock(r.ownerId) ? undefined : () => deleteMutation.mutateAsync(r.id)
+                  !canWrite || deleteBlock(r.ownerId)
+                    ? undefined
+                    : () => deleteMutation.mutateAsync(r.id)
                 }
                 deleteDisabled={deleteMutation.isPending}
                 deleteConfirm={{

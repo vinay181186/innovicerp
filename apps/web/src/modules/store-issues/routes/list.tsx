@@ -93,18 +93,27 @@ function StoreIssuesListPage(): React.JSX.Element {
   // (tier on `toolissue_create`); the server enforces it too.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'issue_create');
+  // ADR-234 — the page opens on Item Issues View OR Tool Issues View; each tab
+  // shows only to its own tick. A tool-only storekeeper lands on Tool Issues.
+  const toolView = effectiveFormPerms(eff, 'toolissue_create').view;
+  const showItemsTab = !eff || perms.view;
+  const showToolsTab = !eff || toolView;
+  const activeTab: 'items' | 'tools' = !showItemsTab ? 'tools' : !showToolsTab ? 'items' : tab;
 
   // Sort & Filter runs on the SERVER here (ADR-200): the register is paged, so
   // filtering only the loaded page would miss slips. Every change goes back to
   // page 1.
   const sf = useServerSortFilter(TABLE_KEYS.issueRegister, () => setPage(1));
 
-  const { data, isLoading, isError, error } = useStoreIssuesList({
-    search: term || undefined,
-    sf: sf.param,
-    limit: LIST_PAGE_SIZE,
-    offset: pageOffset(page),
-  });
+  const { data, isLoading, isError, error } = useStoreIssuesList(
+    {
+      search: term || undefined,
+      sf: sf.param,
+      limit: LIST_PAGE_SIZE,
+      offset: pageOffset(page),
+    },
+    showItemsTab,
+  );
   useClampPage(page, data?.total, setPage);
 
   const columns = useMemo(() => issueRegisterColumns(), []);
@@ -123,10 +132,10 @@ function StoreIssuesListPage(): React.JSX.Element {
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
-  if (eff && !perms.view) {
+  if (eff && !perms.view && !toolView) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Issues. Ask an admin.
+        You do not have permission to view Item Issues or Tool Issues. Ask an admin.
       </div>
     );
   }
@@ -135,7 +144,7 @@ function StoreIssuesListPage(): React.JSX.Element {
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Tool Issues tab is its own screen and keeps today's page scroll.
-    <div className={tab === 'tools' ? undefined : 'page-fill'}>
+    <div className={activeTab === 'tools' ? undefined : 'page-fill'}>
       <div
         style={{
           display: 'flex',
@@ -144,29 +153,31 @@ function StoreIssuesListPage(): React.JSX.Element {
           marginBottom: 14,
         }}
       >
-        {(['items', 'tools'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'items' ? 'Item Issues' : 'Tool Issues'}
-          </button>
-        ))}
+        {(['items', 'tools'] as const)
+          .filter((t) => (t === 'items' ? showItemsTab : showToolsTab))
+          .map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+                color: activeTab === t ? 'var(--cyan)' : 'var(--text3)',
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '6px 12px',
+                cursor: 'pointer',
+                marginBottom: -1,
+              }}
+            >
+              {t === 'items' ? 'Item Issues' : 'Tool Issues'}
+            </button>
+          ))}
       </div>
 
-      {tab === 'tools' ? (
+      {activeTab === 'tools' ? (
         // key: a new ?search landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
         <ToolIssueRegisterView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />

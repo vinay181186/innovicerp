@@ -1,4 +1,6 @@
-import { createRoute, Link } from '@tanstack/react-router';
+import { ActionLink } from '@/components/shared/action-link';
+import { missingRightText, pageRuleFor } from '@innovic/shared';
+import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
@@ -170,13 +172,24 @@ function OpEntryPage() {
     // Still loading, or the id belongs to a different job card. Leave the ref
     // alone so a later fetch can still honour the link.
     if (!op) return;
+    // Access still loading — wait for it rather than drop the link.
+    if (!eff) return;
     autoOpenedOpRef.current = opId;
-    setEntryTarget({ op, activeRunningId: op.activeRunningOpId, mode: search.mode });
+    // ADR-234 — open the box only when this user can save in it: a QC-bearing
+    // op saves an inspection (QC Entry), any other op a production entry (Op
+    // Entry Entry). Otherwise the row is just selected — no popup with no Save.
+    const qcBearing = op.opType === 'qc' || op.qcRequired;
+    const canSaveHere = qcBearing
+      ? effectiveFormPerms(eff, 'qc_submit').entry
+      : effectiveFormPerms(eff, 'op_entry').entry;
+    if (canSaveHere) {
+      setEntryTarget({ op, activeRunningId: op.activeRunningOpId, mode: search.mode });
+    }
     // The link has now been acted on, so take the intent back out of the URL.
     // The op stays (it is the selected row), but a refresh is not a second
     // request to open the box.
     void navigate({ search: (prev) => ({ ...prev, mode: undefined }), replace: true });
-  }, [ops.data, search.op, search.mode, navigate]);
+  }, [ops.data, search.op, search.mode, navigate, eff]);
 
   function handleJcSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -204,10 +217,16 @@ function OpEntryPage() {
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
-  if (eff && !effectiveFormPerms(eff, 'op_entry').view) {
+  // ADR-234 — a QC-only inspector reaches Inspect from here too, so View on
+  // Op Entry OR on QC opens the page (PAGE_ACCESS '/op-entry').
+  if (
+    eff &&
+    !effectiveFormPerms(eff, 'op_entry').view &&
+    !effectiveFormPerms(eff, 'qc_submit').view
+  ) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Op Entry. Ask an admin.
+        You do not have permission to view Op Entry. {missingRightText(pageRuleFor('/op-entry'))}
       </div>
     );
   }
@@ -310,7 +329,7 @@ function OpEntryPage() {
                 thing as an op without a card. Same target and same underlined
                 treatment as the code on the Job Cards list. */}
                 {jcHead ? (
-                  <Link
+                  <ActionLink fallback="text"
                     to="/job-cards/$id"
                     params={{ id: jcHead.jobCardId }}
                     className="mono fw-700"
@@ -318,7 +337,7 @@ function OpEntryPage() {
                     title="Open this job card"
                   >
                     {search.jc}
-                  </Link>
+                  </ActionLink>
                 ) : (
                   <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
                     {search.jc}

@@ -17,6 +17,7 @@
 //   `onClick` → <button> filters the list below it
 //   neither   → <div>    a plain total, not announced as a control
 
+import { hrefLink } from '@/components/shared/action-link';
 import { Link } from '@tanstack/react-router';
 
 export interface StatStripItem {
@@ -96,7 +97,7 @@ export function StatStrip({ items }: { items: StatStripItem[] }): React.JSX.Elem
           return (
             <Link
               key={s.key}
-              to={s.to!}
+              {...(hrefLink(s.to!) as { to: string })}
               className="dash-link dash-cell"
               title={s.title ?? `Open ${s.label}`}
               style={cellStyle}

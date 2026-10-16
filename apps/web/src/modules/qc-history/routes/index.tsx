@@ -15,6 +15,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import {
   LIST_PAGE_SIZE,
   fetchAllPages,
@@ -59,6 +60,10 @@ type Tab = 'pending' | 'entries';
 function QcHistoryPage(): React.JSX.Element {
   const search = qcHistoryRoute.useSearch();
   const navigate = qcHistoryRoute.useNavigate();
+  // ADR-234 — "Open QC" opens the Inspect popup on the QC Call Register, whose
+  // save needs QC Inspection Entry. Hidden until access has loaded.
+  const { data: eff } = useMyAccess();
+  const canInspect = !!eff && effectiveFormPerms(eff, 'qc_submit').entry;
   const tab: Tab = search.tab ?? 'pending';
   const setTab = (t: string): void =>
     void navigate({
@@ -274,13 +279,16 @@ function QcHistoryPage(): React.JSX.Element {
                 q || sfPend.filtering ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'
               }
               defaultPinned={QC_HISTORY_DEFAULT_PINNED}
-              rowMenu={() => [
+              rowMenu={(o) => [
                 {
                   key: 'open-qc',
                   label: 'Open QC',
                   icon: 'search',
                   group: 'workflow',
-                  to: '/qc-call-register',
+                  hidden: !canInspect,
+                  // ?op= opens this op's Inspect popup (the register's deep link).
+                  onSelect: () =>
+                    void navigate({ to: '/qc-call-register', search: { op: o.jcOpId } }),
                 },
               ]}
               renderLink={(p) => <Link {...p} />}

@@ -5,6 +5,7 @@
 // deep link (`?task=<uuid>`).
 
 import { useState } from 'react';
+import { useCanWrite } from '@/components/shared/action-link';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { useTaskDetail, useUpdateTaskStatus } from '../api';
 import { isOpenTask } from '../lib/format';
@@ -28,6 +29,9 @@ export function TaskDetailModal({
   onClose: () => void;
 }): React.JSX.Element {
   const { data: t, isLoading, isError, error } = useTaskDetail(taskId);
+  // ADR-232/234: an Auditor or unconfigured account gets no write button,
+  // whatever the task's own permissions say.
+  const canWrite = useCanWrite();
   const [child, setChild] = useState<Child>({ kind: 'none' });
   const closeChild = (): void => setChild({ kind: 'none' });
 
@@ -43,7 +47,7 @@ export function TaskDetailModal({
   }
 
   const open = t ? isOpenTask(t) : false;
-  const p = t?.permissions;
+  const p = canWrite ? t?.permissions : undefined;
   const footer = t ? (
     <>
       {actionErr ? (

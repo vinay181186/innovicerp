@@ -1114,3 +1114,35 @@ operation details the PR needs.
 one. Point at the line that locks the parent row and show the insert is in the same
 transaction. Point at the `WHERE status = …` or `WHERE updated_at = …` on your UPDATE.
 Name the test that runs two of your requests at the same time.
+
+---
+
+## Section 21 — Code Quality: the "Solution 1" Standard (owner rule 2026-10-15)
+
+Applies to **every** code change — feature, fix or one-line tweak. It comes
+from ADR-230, where the owner chose the live-updates build that was smallest,
+reused what existed and added no new infrastructure (176 lines against 1,039).
+
+When there is more than one way to build something, pick the one that:
+
+1. **Is the smallest.** Fewer lines and fewer files. No extra code "just in case".
+2. **Reuses what already exists.** Use the ERP's existing parts (shared rules in
+   `packages/shared`, existing helpers and components, the database's own
+   features) before writing new ones.
+3. **Adds no new infrastructure without the owner's yes.** No new servers,
+   services, background workers, caches or paid tools unless the owner approves
+   it in the plan.
+4. **Has one place to change.** Logic lives in one spot and every screen uses
+   it; never copy the same rule into several files.
+5. **Misses nothing.** It works for every way the data can change, not only the
+   main screen — no silent gaps.
+
+How to apply:
+
+- Every plan (point 1 and point 5 of the six-point plan) states how the change
+  meets these five points. If a point cannot be met, say why and wait for the
+  owner's yes.
+- When the plan offers choices, show the code-quality score **separately** from
+  the trade-offs (speed, cost, risk).
+- The code review before each release checks the change against these five
+  points.

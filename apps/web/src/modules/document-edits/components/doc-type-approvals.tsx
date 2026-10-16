@@ -20,19 +20,20 @@ import {
   type DocumentEditChange,
   type DocumentEditEntity,
   type DocumentEditRow,
+  DOCUMENT_EDIT_FORM_KEY,
 } from '@innovic/shared';
 import { useMemo, useState } from 'react';
+import { useIsSuperAdmin } from '@/components/shared/action-link';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { Icon } from '@/ui/core';
 import { type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { useDecideDocumentEdit, useDocumentEditCounts, useDocumentEdits } from '../api';
+
 import { EditRejectDialog } from './edit-reject-dialog';
-import {
-  ApprovalTab,
-  type ApprovalView,
-} from '@/modules/approvals/components/approval-tab';
+import { ApprovalTab, type ApprovalView } from '@/modules/approvals/components/approval-tab';
 
 /** before / after value → readable text (already formatted by the API). */
 function fmtVal(v: ActivityChangeValue): string {
@@ -125,6 +126,13 @@ export function EditApprovalTab({
   const list = useDocumentEdits({ entity, status: view });
   const decide = useDecideDocumentEdit();
   const counts = useDocumentEditCounts();
+  // ADR-234 — the decide API needs Approve on THIS document type's form
+  // (document-edits service: requireFormAccess(formKey,'approve')). Without
+  // it the rows stay readable but carry no ✓ / ✗. False while access loads.
+  const { data: eff } = useMyAccess();
+  const isSuperAdmin = useIsSuperAdmin();
+  const canDecide =
+    isSuperAdmin || (!!eff && effectiveFormPerms(eff, DOCUMENT_EDIT_FORM_KEY[entity]).approve);
 
   const viewCounts = useMemo(() => {
     const c = counts.data?.counts.find((x) => x.entity === entity);
@@ -180,7 +188,7 @@ export function EditApprovalTab({
     // Outcomes already recorded on this request (by an earlier ✓/✗, possibly by
     // someone else). A change with an outcome is read-only.
     const outcomeByChange = new Map(row.decisions.map((d) => [d.changeId, d]));
-    const pendingHere = view === 'pending';
+    const pendingHere = view === 'pending' && canDecide;
     return (
       <div style={{ padding: 'var(--sp-2) var(--sp-3)' }}>
         <table className="innovic-table tbl-compact tbl-ctr" style={{ width: '100%' }}>
@@ -233,7 +241,11 @@ export function EditApprovalTab({
                           aria-label={`Reject ${c.label}`}
                           disabled={busy}
                           onClick={() =>
-                            setRejectingChange({ requestId: row.id, change: c, docCode: row.docCode })
+                            setRejectingChange({
+                              requestId: row.id,
+                              change: c,
+                              docCode: row.docCode,
+                            })
                           }
                         >
                           <Icon name="x" size={14} />
@@ -282,10 +294,14 @@ export function EditApprovalTab({
         emptyNoMatch="No edit requests match."
         renderExpanded={renderExpanded}
         onToggleExpanded={toggleExpanded}
+        canAct={() => canDecide}
         approveRow={async (r) => {
           await decide.mutateAsync({
             id: r.id,
-            decisions: stillPending(r).map((c) => ({ changeId: c.id, decision: 'approve' as const })),
+            decisions: stillPending(r).map((c) => ({
+              changeId: c.id,
+              decision: 'approve' as const,
+            })),
           });
         }}
         rejectRow={async (r, reason) => {
@@ -353,7 +369,10 @@ function DecisionOutcome({
     );
   }
   return (
-    <span className="badge b-grey" title="The document changed before this was approved — not applied">
+    <span
+      className="badge b-grey"
+      title="The document changed before this was approved — not applied"
+    >
       Superseded
     </span>
   );

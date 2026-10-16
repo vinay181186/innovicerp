@@ -166,7 +166,7 @@ export async function buildSpecialist(
         value: activeCAPAs,
         sub: '',
         color: 'var(--sig-warn)',
-        navPage: '/capa',
+        navPage: '/nc-register?tab=capa',
       },
     );
     const grnRows = await q(

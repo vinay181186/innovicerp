@@ -17,6 +17,7 @@ import {
   TASK_STATUS_LABELS,
 } from '@innovic/shared';
 import { useState } from 'react';
+import { useCanWrite } from '@/components/shared/action-link';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -204,6 +205,8 @@ export function TaskTable({
   filtered: boolean;
   onAction: (action: RowAction, task: TaskRow) => void;
 }): React.JSX.Element {
+  // ADR-232/234: an Auditor or unconfigured account gets no write action.
+  const canWrite = useCanWrite();
   // The row's ▸ (fit engine) is the one expand control. A Set — many open.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const toggleExpand = (id: string): void =>
@@ -228,7 +231,7 @@ export function TaskTable({
         empty={filtered ? 'No Tasks match.' : 'No Tasks yet.'}
         rowMenu={(t) => {
           const p = t.permissions;
-          const open = isOpenTask(t);
+          const open = canWrite && isOpenTask(t);
           return [
             {
               key: 'status',

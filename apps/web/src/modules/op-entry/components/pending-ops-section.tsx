@@ -52,6 +52,10 @@ export function PendingOpsSection({
   // tick alone decides (POST /op-entry/start checks the same right).
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
+  // ADR-234 — a QC op (or a process op flagged QC Required) opens the QC
+  // inspection form, which submits under qc_submit Entry — the same rule and
+  // label as the JC table on this page (jc-ops-table.tsx rowAction).
+  const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
   const pendingCols = useMemo(() => pendingOpsColumns(), []);
   const madeCols = useMemo(() => madeHereColumns(), []);
 
@@ -108,16 +112,33 @@ export function PendingOpsSection({
             // rule above. It opens the one shared OpEntryModal (which owns the
             // submit lock), so onSelect returns nothing.
             rowMenu={
-              canOpEntry
-                ? (op) => [
-                    {
-                      key: 'start',
-                      label: 'Start Operation',
-                      icon: 'play',
-                      group: 'workflow',
-                      onSelect: () => onStart(op),
-                    },
-                  ]
+              canOpEntry || canQcSubmit
+                ? (op) => {
+                    if (op.opType === 'qc' || op.qcRequired) {
+                      return canQcSubmit
+                        ? [
+                            {
+                              key: 'inspect',
+                              label: op.qcPending > 0 ? `Inspect (${op.qcPending})` : 'Inspect',
+                              icon: 'search',
+                              group: 'workflow',
+                              onSelect: () => onStart(op),
+                            },
+                          ]
+                        : [];
+                    }
+                    return canOpEntry
+                      ? [
+                          {
+                            key: 'start',
+                            label: 'Start Operation',
+                            icon: 'play',
+                            group: 'workflow',
+                            onSelect: () => onStart(op),
+                          },
+                        ]
+                      : [];
+                  }
                 : undefined
             }
           />

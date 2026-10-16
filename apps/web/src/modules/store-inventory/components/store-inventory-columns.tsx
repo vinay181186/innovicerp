@@ -25,8 +25,10 @@ function HeadWithHint({ label, hint }: { label: string; hint: string }): React.J
 
 export function storeInventoryColumns(opts: {
   onReservedClick: (row: StoreInventoryRow) => void;
+  /** ADR-234 — may this user open /items/$id? Otherwise the code is plain text. */
+  canOpenItem: boolean;
 }): DataTableColumn<StoreInventoryRow>[] {
-  const { onReservedClick } = opts;
+  const { onReservedClick, canOpenItem } = opts;
   return [
     {
       id: 'item_code',
@@ -36,18 +38,23 @@ export function storeInventoryColumns(opts: {
       nowrap: true,
       // The code opens the Item Master record; a real link so it can be
       // ctrl / middle-clicked into a new tab.
-      render: (row) => (
-        <Link
-          to="/items/$id"
-          params={{ id: row.itemId }}
-          className="td-code fw-700"
-          style={{ color: 'var(--text)' }}
-          title="Open this item in the Item Master"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {row.itemCode}
-        </Link>
-      ),
+      render: (row) =>
+        !canOpenItem ? (
+          <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
+            {row.itemCode}
+          </span>
+        ) : (
+          <Link
+            to="/items/$id"
+            params={{ id: row.itemId }}
+            className="td-code fw-700"
+            style={{ color: 'var(--text)' }}
+            title="Open this item in the Item Master"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {row.itemCode}
+          </Link>
+        ),
     },
     {
       id: 'item_name',
