@@ -77,8 +77,9 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { withUniqueRetry } from '../../lib/db-retry';
-import { requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { polOf, polSql } from '../../lib/pol';
 import { productionOrderSfColumns } from './sf-columns';
 import {
   buildCloseHistory,
@@ -368,15 +369,26 @@ const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
 )`;
 
 /** POL — the line number printed on the CUSTOMER's own purchase order, read
- *  live off the SO line this order's plan was raised from. Unlike the revision
- *  above there is no job-work branch: a JWSO line has no customer PO, so a
- *  JWSO-sourced order is correctly null. Reads the plan row already LEFT
- *  JOINed by baseQuery, so this costs one primary-key lookup and no new join. */
-const CLIENT_PO_LINE_NO_SQL = sql<string | null>`(
-  SELECT sol.client_po_line_no
-    FROM public.sales_order_lines sol
-   WHERE sol.id = ${plans.soLineId} LIMIT 1
+ *  live off the line this order's plan was raised from: the SO line, else
+ *  (ADR-236) the JWSO line — the same two branches as the revision above.
+ *  Keyed on the plan row already LEFT JOINed by baseQuery; a scalar subquery
+ *  of primary-key lookups, so it can never multiply the order rows. */
+function polViaPlanSql(planId: unknown): SQL<string | null> {
+  return sql<string | null>`(
+  SELECT ${polSql('sol', 'jl')}
+    FROM public.plans p
+    LEFT JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+    LEFT JOIN public.job_work_order_lines jl ON jl.id = p.jw_line_id
+   WHERE p.id = ${planId} LIMIT 1
 )`;
+}
+// The select reads straight off the plan row baseQuery already joined (two
+// primary-key lookups); polViaPlanSql stays for search / sort, which also run
+// on the count query where plans is not joined.
+const CLIENT_PO_LINE_NO_SQL = polOf(
+  sql`(SELECT client_po_line_no FROM public.sales_order_lines WHERE id = ${plans.soLineId})`,
+  sql`(SELECT client_po_line_no FROM public.job_work_order_lines WHERE id = ${plans.jwLineId})`,
+);
 
 /** ADR-207 — the SO's Internal SO No., read live through the plan's SO line
  *  (never copied). Keyed on production_orders.plan_id only, so the list's
@@ -818,13 +830,23 @@ async function readLatestCloseShortReason(
 const PO_SF_COLUMNS = productionOrderSfColumns({
   itemRevision: ITEM_REVISION_SQL,
   jcFinishedQty: JC_FINISHED_QTY_SQL,
+  clientPoLineNo: polViaPlanSql(productionOrders.planId),
 });
 
 export async function listProductionOrders(
   query: ListProductionOrdersQuery,
   user: AuthContext,
 ): Promise<ListProductionOrdersResponse> {
-  await requireFormAccess(user, 'prodorder_create', 'view');
+  // A Job Card looks up its own order (stopped banner, Actual Size, print):
+  // Job Card View is enough for that one lookup.
+  if (query.jobCardId) {
+    await requireAnyFormAccess(user, [
+      ['prodorder_create', 'view'],
+      ['jc_create', 'view'],
+    ]);
+  } else {
+    await requireFormAccess(user, 'prodorder_create', 'view');
+  }
   const companyId = requireCompany(user);
   const sf = readSf(query.sf);
   return withUserContext(user, async (tx) => {
@@ -854,13 +876,8 @@ export async function listProductionOrders(
         // reads the `plans` alias which only baseQuery joins; this predicate is
         // also handed to the count() query below, which selects from
         // production_orders alone. Same shape as PARTY_NAME_SQL for that
-        // reason. SO side only: a JWSO-sourced order has no customer PO line.
-        sql`(
-          SELECT sol.client_po_line_no
-            FROM public.plans p
-            JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
-           WHERE p.id = ${productionOrders.planId} LIMIT 1
-        ) ILIKE ${term}`,
+        // reason. SO line's POL, else the JWSO line's (ADR-236).
+        sql`${polViaPlanSql(productionOrders.planId)} ILIKE ${term}`,
       );
       if (s) conditions.push(s);
     }

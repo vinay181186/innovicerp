@@ -7,6 +7,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 export function dateLike(v: unknown): string {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
@@ -50,7 +51,8 @@ export function pendingFrom(companyId: string): SQL {
 
 // The customer's drawing revision is read live off the SO line the card was
 // raised against (never items.revision), cast to text so a pre-0119 database
-// cannot hand the UI a number. POL is the CUSTOMER's PO line (never our line).
+// cannot hand the UI a number. POL is the CUSTOMER's PO line (never our line):
+// the SO line's, else the JWSO line's (ADR-236).
 export const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.id AS "jobCardId", jc.code AS "jcCode",
   vos.op_seq AS "opSeq", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
@@ -60,7 +62,7 @@ export const PENDING_SELECT = sql`
   jo.operation, jc.order_qty AS "orderQty",
   vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
   vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
-  sol.client_po_line_no AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
+  ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
   ${PEND_SINCE} AS "pendSince", qa.inspector_name AS "assignedTo"`;
 
 /** Paging order: latest QC call first, then card + op, then the op id. */
@@ -87,7 +89,7 @@ export const LOGS_SELECT = sql`
   ol.id AS "logId", jc.id AS "jobCardId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
   so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-  sol.client_po_line_no AS "clientPoLineNo", i.name AS "itemName",
+  ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   ${LOG_IS_LAST} AS "isLastOp", jo.operation,
   ol.qty AS "accepted", ol.reject_qty AS "rejected",
   ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift,
@@ -110,7 +112,7 @@ export function opSearchWhere(term: string | undefined): SQL {
     sql`so.code`,
     // ADR-207: the SO's Internal SO No. finds its rows too.
     sql`so.internal_so_no`,
-    sql`sol.client_po_line_no`,
+    polSql('sol', 'rev_jwl'),
     sql`i.code`,
     sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
     sql`${ITEM_CODE_REV}`,

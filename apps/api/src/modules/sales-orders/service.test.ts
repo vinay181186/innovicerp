@@ -1,7 +1,16 @@
 import { and, asc, eq, inArray, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { DocumentEditStagedResult, SalesOrderLineInput } from '@innovic/shared';
 import { db } from '../../db/client';
-import { activityLog, items, salesOrderLines, salesOrders, users } from '../../db/schema';
+import {
+  activityLog,
+  approvalConfig,
+  documentEditRequests,
+  items,
+  salesOrderLines,
+  salesOrders,
+  users,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
   AuthorizationError,
@@ -90,6 +99,7 @@ describe('sales-orders service', () => {
         lines: [
           {
             partName: 'Widget Alpha',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -98,6 +108,7 @@ describe('sales-orders service', () => {
           },
           {
             partName: 'Widget Beta',
+            clientPoLineNo: '1',
             revision: 'A',
             itemCodeText: 'NONEXISTENT-CODE',
             uom: 'NOS',
@@ -138,6 +149,7 @@ describe('sales-orders service', () => {
         lines: [
           {
             partName: 'Coded',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -172,6 +184,7 @@ describe('sales-orders service', () => {
           lines: [
             {
               partName: 'Auto',
+              clientPoLineNo: '1',
               revision: 'A',
               itemId: firstItemId,
               uom: 'NOS',
@@ -211,7 +224,15 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          {
+            partName: 'X',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -227,7 +248,15 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          {
+            partName: 'X',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -249,7 +278,15 @@ describe('sales-orders service', () => {
             gstPercent: 18,
           },
           lines: [
-            { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+            {
+              partName: 'X',
+              clientPoLineNo: '1',
+              revision: 'A',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 1,
+              rate: 0,
+            },
           ],
         },
         admin,
@@ -272,6 +309,7 @@ describe('sales-orders service', () => {
         lines: [
           {
             partName: 'Line One',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -280,6 +318,7 @@ describe('sales-orders service', () => {
           },
           {
             partName: 'Line Two',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -317,6 +356,7 @@ describe('sales-orders service', () => {
         lines: [
           {
             partName: 'Equip',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -325,6 +365,7 @@ describe('sales-orders service', () => {
           },
           {
             partName: 'Spare',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -362,6 +403,7 @@ describe('sales-orders service', () => {
         lines: [
           {
             partName: 'Stay',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -399,6 +441,7 @@ describe('sales-orders service', () => {
         lines: [
           {
             partName: 'Keep+Update',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -407,6 +450,7 @@ describe('sales-orders service', () => {
           },
           {
             partName: 'Drop Me',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -428,6 +472,7 @@ describe('sales-orders service', () => {
           {
             id: keptId,
             partName: 'Keep+Updated',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -437,6 +482,7 @@ describe('sales-orders service', () => {
           // New line — should get auto-assigned lineNo above the surviving max
           {
             partName: 'Brand New',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -482,8 +528,24 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'L1', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
-          { partName: 'L2', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 2, rate: 0 },
+          {
+            partName: 'L1',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
+          {
+            partName: 'L2',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -510,7 +572,15 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'L1', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          {
+            partName: 'L1',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -552,7 +622,15 @@ describe('sales-orders service', () => {
             gstPercent: 18,
           },
           lines: [
-            { partName: 'L', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+            {
+              partName: 'L',
+              clientPoLineNo: '1',
+              revision: 'A',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 1,
+              rate: 0,
+            },
           ],
         },
         noCompanyUser,
@@ -573,7 +651,15 @@ describe('sales-orders service', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'L1', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          {
+            partName: 'L1',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
         ],
       },
       admin,
@@ -648,5 +734,236 @@ describe('updateSalesOrder (owner D1: no longer admin-only) — ticks decide (AD
     await expect(
       service.softDeleteSalesOrder(UNKNOWN_ID, admin, 'test'),
     ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+});
+
+// ADR-236: POL is compulsory on every SO line; the line Remarks is optional and
+// is the SO line's own note. The header note is now labelled "SO Remarks".
+const soHeader = (internalSoNo: string) => ({
+  internalSoNo,
+  soDate: '2026-05-02',
+  customerName: 'POL Customer',
+  type: 'component_manufacturing' as const,
+  status: 'open' as const,
+  gstPercent: 18,
+});
+
+describe('SO line POL + Remarks (ADR-236)', () => {
+  it('edit changes POL and clears Remarks; History names POL, Remarks and SO Remarks', async () => {
+    const created = await service.createSalesOrder(
+      {
+        header: soHeader(`${TEST_PREFIX}POL1`),
+        lines: [
+          {
+            partName: 'Pol Part',
+            clientPoLineNo: '20',
+            remarks: 'urgent',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+            rate: 0,
+          },
+        ],
+      },
+      admin,
+    );
+    expect(created.lines[0]?.clientPoLineNo).toBe('20');
+    expect(created.lines[0]?.remarks).toBe('urgent');
+
+    const updated = await service.updateSalesOrder(
+      created.id,
+      {
+        header: { remarks: 'whole-order note' },
+        lines: [
+          {
+            id: created.lines[0]!.id,
+            partName: 'Pol Part',
+            clientPoLineNo: '21',
+            remarks: null,
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+            rate: 0,
+          },
+        ],
+      },
+      admin,
+    );
+    expect(updated.lines[0]?.clientPoLineNo).toBe('21');
+    expect(updated.lines[0]?.remarks).toBeNull();
+
+    const rows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.entityId, created.id), eq(activityLog.action, 'EDIT')));
+    const labels = rows.flatMap((r) => (r.changes ?? []).map((c) => c.label));
+    expect(labels).toContain('POL');
+    expect(labels).toContain('Remarks');
+    expect(labels).toContain('SO Remarks');
+  });
+
+  it('an absent remarks key leaves the stored line Remarks alone', async () => {
+    const created = await service.createSalesOrder(
+      {
+        header: soHeader(`${TEST_PREFIX}POL2`),
+        lines: [
+          {
+            partName: 'Keep Note',
+            clientPoLineNo: '5',
+            remarks: 'keep me',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
+        ],
+      },
+      admin,
+    );
+    const updated = await service.updateSalesOrder(
+      created.id,
+      {
+        header: {},
+        lines: [
+          {
+            id: created.lines[0]!.id,
+            partName: 'Keep Note',
+            clientPoLineNo: '5',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
+        ],
+      },
+      admin,
+    );
+    expect(updated.lines[0]?.remarks).toBe('keep me');
+  });
+});
+
+// ADR-236 + ADR-202: with Document Edit Approval ON, a Remarks-only or POL-only
+// change on a live SO is a LINE change and is refused like any other; an
+// unchanged resend (blank Remarks vs stored null) is not, so the header stages.
+describe('SO edit-approval gate — POL / Remarks are line changes (ADR-236)', () => {
+  let cfgExisted = false;
+  let origDocEditApproval = false;
+
+  beforeAll(async () => {
+    const cfg = await db
+      .select()
+      .from(approvalConfig)
+      .where(eq(approvalConfig.companyId, admin.companyId!))
+      .limit(1);
+    if (cfg[0]) {
+      cfgExisted = true;
+      origDocEditApproval = cfg[0].docEditApproval;
+      await db
+        .update(approvalConfig)
+        .set({ docEditApproval: true })
+        .where(eq(approvalConfig.id, cfg[0].id));
+    } else {
+      await db.insert(approvalConfig).values({
+        companyId: admin.companyId!,
+        docEditApproval: true,
+        poApproval: false,
+        prApproval: false,
+        invoiceApproval: false,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      });
+    }
+  }, 180_000);
+
+  afterAll(async () => {
+    if (cfgExisted) {
+      await db
+        .update(approvalConfig)
+        .set({ docEditApproval: origDocEditApproval })
+        .where(eq(approvalConfig.companyId, admin.companyId!));
+    } else {
+      await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
+    }
+    const ids = (
+      await db
+        .select({ id: salesOrders.id })
+        .from(salesOrders)
+        .where(like(salesOrders.internalSoNo, `${TEST_PREFIX}GT%`))
+    ).map((r) => r.id);
+    if (ids.length > 0) {
+      await db.delete(documentEditRequests).where(inArray(documentEditRequests.entityId, ids));
+    }
+  }, 180_000);
+
+  function liveSo(suffix: string) {
+    return service.createSalesOrder(
+      {
+        header: soHeader(`${TEST_PREFIX}${suffix}`),
+        lines: [
+          {
+            partName: 'Gate Part',
+            clientPoLineNo: '20',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 2,
+            rate: 0,
+          },
+        ],
+      },
+      admin,
+    );
+  }
+
+  const gateLine = (id: string, extra: Partial<SalesOrderLineInput>): SalesOrderLineInput => ({
+    id,
+    partName: 'Gate Part',
+    clientPoLineNo: '20',
+    revision: 'A',
+    itemId: firstItemId,
+    uom: 'NOS',
+    orderQty: 2,
+    rate: 0,
+    ...extra,
+  });
+
+  it('a POL-only change is refused', async () => {
+    const so = await liveSo('GT1');
+    await expect(
+      service.updateSalesOrderOrStage(
+        so.id,
+        { header: {}, lines: [gateLine(so.lines[0]!.id, { clientPoLineNo: '21' })] },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('a Remarks-only change is refused', async () => {
+    const so = await liveSo('GT2');
+    await expect(
+      service.updateSalesOrderOrStage(
+        so.id,
+        { header: {}, lines: [gateLine(so.lines[0]!.id, { remarks: 'new note' })] },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('an unchanged resend (blank Remarks vs stored null) is no line change — the header stages', async () => {
+    const so = await liveSo('GT3');
+    const res = (await service.updateSalesOrderOrStage(
+      so.id,
+      {
+        header: { remarks: 'header note' },
+        lines: [gateLine(so.lines[0]!.id, { remarks: '' })],
+        expectedUpdatedAt: so.updatedAt,
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(res.staged).toBe(true);
   });
 });

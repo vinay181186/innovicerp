@@ -306,6 +306,7 @@ export function EditPartyGrnModal({
                   <tr>
                     <th className="th-num">Ln</th>
                     <th>JWSO Line</th>
+                    <th style={{ color: 'var(--purple)' }}>POL</th>
                     <th>Customer RM</th>
                     <th className="th-num">Received Qty</th>
                     <th>Remarks</th>
@@ -315,7 +316,7 @@ export function EditPartyGrnModal({
                 <tbody>
                   {lines.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="empty-state" style={{ padding: 14 }}>
+                      <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
                         No lines.
                       </td>
                     </tr>
@@ -330,6 +331,9 @@ export function EditPartyGrnModal({
                             <span className="mono fw-700" style={{ color: 'var(--text)' }}>
                               {l.jwLineNoText ? `L${l.jwLineNoText}` : '—'}
                             </span>
+                          </td>
+                          <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                            {l.clientPoLineNo ?? '—'}
                           </td>
                           <td title={l.partyMaterialName ?? ''}>
                             <span className="mono fw-700" style={{ color: 'var(--text)' }}>

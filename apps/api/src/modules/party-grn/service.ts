@@ -21,7 +21,14 @@ import type {
   PartyGrnLine,
   PartyGrnListItem,
 } from '@innovic/shared';
-import { clients, jobWorkOrders, partyGrn, partyGrnLines, partyMaterials } from '../../db/schema';
+import {
+  clients,
+  jobWorkOrderLines,
+  jobWorkOrders,
+  partyGrn,
+  partyGrnLines,
+  partyMaterials,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { ActivityAction } from '@innovic/shared';
@@ -286,9 +293,14 @@ export async function loadPartyGrnDetail(
   const hRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
   if (!hRow) throw new NotFoundError('Party GRN not found. Refresh the page.');
 
-  const lineRows = await tx
-    .select()
+  // ADR-236: POL off the JWSO line each GRN line was received against.
+  // LEFT JOIN on the JWSO line's primary key (pgl.jw_line_id is a single FK),
+  // so it can never multiply the GRN lines; no deleted_at filter, matching the
+  // QC register's read of the same line (qc-history/register-party.ts).
+  const joined = await tx
+    .select({ line: partyGrnLines, clientPoLineNo: jobWorkOrderLines.clientPoLineNo })
     .from(partyGrnLines)
+    .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, partyGrnLines.jwLineId))
     .where(
       and(
         eq(partyGrnLines.partyGrnId, id),
@@ -297,8 +309,9 @@ export async function loadPartyGrnDetail(
       ),
     )
     .orderBy(partyGrnLines.lineNo);
+  const lineRows = joined.map((r) => r.line);
 
-  const lines: PartyGrnLine[] = lineRows.map(rowToLine);
+  const lines: PartyGrnLine[] = joined.map((r) => rowToLine(r.line, r.clientPoLineNo ?? null));
   return {
     ...toListItem(hRow),
     totalReceivedQty: lines.reduce((s, l) => s + l.receivedQty, 0),
@@ -315,7 +328,10 @@ export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<
   return withUserContext(user, (tx) => loadPartyGrnDetail(tx, companyId, id));
 }
 
-function rowToLine(row: typeof partyGrnLines.$inferSelect): PartyGrnLine {
+function rowToLine(
+  row: typeof partyGrnLines.$inferSelect,
+  clientPoLineNo: string | null,
+): PartyGrnLine {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -328,6 +344,7 @@ function rowToLine(row: typeof partyGrnLines.$inferSelect): PartyGrnLine {
     jwLineNoText: row.jwLineNoText,
     // R2 + R4 (ADR-194): real FK to the JWSO line + incoming-QC split.
     jwLineId: row.jwLineId,
+    clientPoLineNo,
     acceptedQty: row.acceptedQty,
     rejectedQty: row.rejectedQty,
     rejectReason: row.rejectReason,

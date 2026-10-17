@@ -25,6 +25,9 @@ export const customerMaterialReturnLineSchema = z.object({
   jwLineId: z.string().uuid(),
   /** JWSO line no. + the finished part's code, for display. */
   jwLineNo: z.number().int().positive().nullable(),
+  /** POL — the JWSO line's customer PO line number (ADR-236); null on
+   *  lines saved before migration 0210. */
+  clientPoLineNo: z.string().nullable().default(null),
   partCode: z.string().nullable(),
   partyMaterialId: z.string().uuid(),
   partyMaterialCode: z.string().nullable(),
@@ -66,6 +69,9 @@ export const customerMaterialReturnableRowSchema = z.object({
   kind: customerMaterialReturnKindSchema,
   jwLineId: z.string().uuid(),
   jwLineNo: z.number().int().positive(),
+  /** POL — the JWSO line's customer PO line number (ADR-236); null on
+   *  lines saved before migration 0210. */
+  clientPoLineNo: z.string().nullable().default(null),
   partCode: z.string().nullable(),
   partyMaterialId: z.string().uuid(),
   partyMaterialCode: z.string(),

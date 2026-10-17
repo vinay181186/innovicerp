@@ -62,6 +62,9 @@ const PGRN_COMMON = sql`
   pgl.id AS "partyGrnLineId", pg.id AS "partyGrnId", pg.code AS "partyGrnNo",
   pg.grn_date AS "grnDate", ${CUSTOMER} AS "customerName", ${JW_CODE} AS "jwCode",
   jwl.line_no AS "jwLineNo", ${PART_CODE} AS "partCode", jwl.revision::text AS "partRevision",
+  -- POL: the JWSO line's customer PO line no. (ADR-236). A Party GRN line has
+  -- no SO line, so the JW line is the only source.
+  jwl.client_po_line_no AS "clientPoLineNo",
   rm.code AS "rmItemCode", COALESCE(rm.name, pgl.party_material_name) AS "rmItemName",
   ${PM_CODE} AS "partyMaterialCode",
   pgl.received_qty AS "receivedQty", pgl.accepted_qty AS "acceptedQty",
@@ -76,12 +79,21 @@ export const PGRN_COMPLETED_SELECT = sql`${PGRN_COMMON},
   0 AS "pendingQty", ${QC_DAY} AS "qcDate",
   GREATEST(0, (${QC_DAY} - pg.grn_date))::int AS "waitDays"`;
 
-/** `AND (… ILIKE …)` over PGRN no., JWSO code, part code, RM code, customer. */
+/** `AND (… ILIKE …)` over PGRN no., JWSO code, part code, RM code, customer,
+ *  POL (ADR-236 — the other two register halves search POL too). */
 export function pgrnSearchWhere(term: string | undefined): SQL {
   const q = (term ?? '').trim().replace(/\s+/g, ' ');
   if (q === '') return sql``;
   const p = `%${likeEscape(q)}%`;
-  const cols = [sql`pg.code`, JW_CODE, PART_CODE, sql`rm.code`, CUSTOMER, PM_CODE];
+  const cols = [
+    sql`pg.code`,
+    JW_CODE,
+    PART_CODE,
+    sql`rm.code`,
+    CUSTOMER,
+    PM_CODE,
+    sql`jwl.client_po_line_no`,
+  ];
   return sql`AND (${sql.join(
     cols.map((col) => sql`${col} ILIKE ${p} ESCAPE '\\'`),
     sql` OR `,
@@ -108,6 +120,7 @@ export function toPgrnRow(r: Raw): PartyGrnQcRow {
     jwLineNo: r['jwLineNo'] != null ? Number(r['jwLineNo']) : null,
     partCode: s(r['partCode']),
     partRevision: s(r['partRevision']),
+    clientPoLineNo: s(r['clientPoLineNo']),
     rmItemCode: s(r['rmItemCode']),
     rmItemName: s(r['rmItemName']),
     partyMaterialCode: s(r['partyMaterialCode']),

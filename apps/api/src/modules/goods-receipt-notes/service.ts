@@ -41,6 +41,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { polSql } from '../../lib/pol';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
@@ -881,11 +882,10 @@ async function getGoodsReceiptNoteInternal(
         -- the fallback. Null when nothing traces. ::text for the same pre-0119
         -- reason as delivery-challans (the column was integer before then).
         COALESCE(rev_sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- The customer's own PO line number, off the SAME rev_sol join the
-        -- revision above already resolves. Only the SO side: a job-work line
-        -- belongs to a job-work order, not to a customer PO, so there is no
-        -- client PO line number on that fallback and the field stays null.
-        rev_sol.client_po_line_no AS "clientPoLineNo",
+        -- The customer's own PO line number, off the SAME rev_sol / rev_jwl
+        -- joins the revision above already resolves: SO line first, else the
+        -- Job Work SO line (ADR-236).
+        ${polSql('rev_sol', 'rev_jwl')} AS "clientPoLineNo",
         -- "PO Qty" / "Received Earlier" — DISPLAY ONLY (nothing below writes
         -- them). The CREATE screen can show the receipt account (PO Qty ->
         -- Received Earlier -> Received -> Balance) because it reads the PO

@@ -52,6 +52,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { polOf, polSql } from '../../lib/pol';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
@@ -451,13 +452,25 @@ export async function listNcRegister(
           -- Written as EXISTS on the job card's source SO line rather than
           -- sol.client_po_line_no, because this same fragment is handed to the
           -- COUNT query below, which deliberately does not repeat the
-          -- sales_order_lines join.
+          -- sales_order_lines join. ADR-236: the JW-line branch matches the
+          -- POL a JWSO-sourced card shows (a card has one source, so OR-ing
+          -- the two finds exactly the rows whose shown POL matches).
           OR EXISTS (
             SELECT 1
             FROM public.sales_order_lines ssol
             WHERE ssol.id = jc.source_so_line_id
               AND ssol.deleted_at IS NULL
               AND ssol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+          )
+          -- ADR-236: SO POL else JWSO POL (the rule in lib/pol.ts), written as two
+          -- EXISTS because this fragment also runs on the count query, which has
+          -- no line joins for polSql to use. A card has one source, so OR = COALESCE.
+          OR EXISTS (
+            SELECT 1
+            FROM public.job_work_order_lines sjwl
+            WHERE sjwl.id = jc.source_jw_line_id
+              AND sjwl.deleted_at IS NULL
+              AND sjwl.client_po_line_no ILIKE ${term} ESCAPE '\\'
           )
           -- Linked CAPA code, printed in the Actions cell (cap is the LATERAL
           -- join below).
@@ -564,11 +577,9 @@ export async function listNcRegister(
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        -- The customer's own PO line number, off the SAME sol join as the
-        -- revision above. Only the SO side: a job-work line belongs to a
-        -- job-work order, not to a customer PO, so it has no client PO line
-        -- number and the field correctly stays null there.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- The customer's own PO line number, off the SAME sol / rev_jwl joins
+        -- as the revision above: SO line first, else the JWSO line (ADR-236).
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         i.name AS "itemName",
         cap.code AS "linkedCapaCode",
         -- Material source (Tier A, WI3): the vendor/PO/GRN the rejected pieces
@@ -892,11 +903,9 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
       itemRevision: sql<
         string | null
       >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
-      // The customer's own PO line number, off the SAME SO line join as the
-      // revision above, and only that side: a job-work line belongs to a
-      // job-work order, not to a customer PO, so it has no client PO line
-      // number to offer.
-      clientPoLineNo: salesOrderLines.clientPoLineNo,
+      // The customer's own PO line number, off the SAME two line joins as the
+      // revision above: SO line first, else the JWSO line (ADR-236).
+      clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
       // The child card and the challan live in tables joined by their own FK
       // on the NC row, so both are plain scalar subqueries — no alias juggling
       // on job_cards, which is already joined once for the SO line.

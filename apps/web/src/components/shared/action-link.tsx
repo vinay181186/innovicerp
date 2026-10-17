@@ -43,7 +43,11 @@ type ActionLinkProps = LinkComponentProps<'a'> & {
 };
 
 /** A router <Link> that renders nothing when the user cannot open its page. */
-export function ActionLink({ check, fallback, ...props }: ActionLinkProps): React.JSX.Element | null {
+export function ActionLink({
+  check,
+  fallback,
+  ...props
+}: ActionLinkProps): React.JSX.Element | null {
   const canOpen = useCanOpen();
   const target = check ?? String(props.to ?? '');
   if (!canOpen(target)) {

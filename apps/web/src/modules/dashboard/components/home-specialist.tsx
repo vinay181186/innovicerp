@@ -29,30 +29,59 @@ export function HomeSpecialist({ home }: { home: HomeResponse }): React.JSX.Elem
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns:
-            s.panels.length > 1 ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
+          gridTemplateColumns: s.panels.length > 1 ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
           gap: 14,
         }}
       >
         {s.panels.map((p, pi) => (
           <div key={pi} className="panel" style={{ padding: 0 }}>
             <div className="panel-hdr">
-              <span className="panel-title" style={p.titleColor ? { color: p.titleColor } : undefined}>{p.title}</span>
+              <span
+                className="panel-title"
+                style={p.titleColor ? { color: p.titleColor } : undefined}
+              >
+                {p.title}
+              </span>
             </div>
             <div className="tbl-wrap" style={{ maxHeight: '40vh' }}>
               <table className="innovic-table">
                 <thead>
-                  <tr>{p.headers.map((h, hi) => <th key={hi}>{h}</th>)}</tr>
+                  <tr>
+                    {p.headers.map((h, hi) => (
+                      <th key={hi}>{h}</th>
+                    ))}
+                  </tr>
                 </thead>
                 <tbody>
                   {p.rows.length === 0 ? (
-                    <tr><td colSpan={p.headers.length} className="empty-state" style={{ color: 'var(--sig-ok)', fontWeight: 700 }}>{p.emptyText}</td></tr>
+                    <tr>
+                      <td
+                        colSpan={p.headers.length}
+                        className="empty-state"
+                        style={{ color: 'var(--sig-ok)', fontWeight: 700 }}
+                      >
+                        {p.emptyText}
+                      </td>
+                    </tr>
                   ) : (
                     p.rows.map((r, ri) => (
                       <tr key={ri} style={{ cursor: 'pointer' }}>
                         {r.cells.map((c, ci) => (
-                          <td key={ci} className={ci === 0 ? 'td-code' : undefined} style={ci === 0 ? { color: 'var(--cyan)' } : { fontSize: 11 }}>
-                            {ci === 0 && canOpen(r.navPage) ? <Link {...(hrefLink(r.navPage) as { to: string })} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>{c}</Link> : c}
+                          <td
+                            key={ci}
+                            className={ci === 0 ? 'td-code' : undefined}
+                            style={ci === 0 ? { color: 'var(--cyan)' } : { fontSize: 11 }}
+                          >
+                            {ci === 0 && canOpen(r.navPage) ? (
+                              <Link
+                                {...(hrefLink(r.navPage) as { to: string })}
+                                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                              >
+                                {c}
+                              </Link>
+                            ) : (
+                              c
+                            )}
                           </td>
                         ))}
                       </tr>

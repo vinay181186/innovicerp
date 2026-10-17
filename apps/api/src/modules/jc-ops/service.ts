@@ -17,6 +17,7 @@ import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
+import { polSql } from '../../lib/pol';
 import { emitActivityLog } from '../activity-log/service';
 import { jcOpRef } from '../op-entry/audit';
 import { JC_OPS_SF_COLUMNS } from './sf-columns';
@@ -46,8 +47,9 @@ export async function listJcOpsBoard(
           OR op.operation ILIKE ${term}
           OR i.code ILIKE ${term}
           -- POL, the customer's own PO line number, now a column on this board.
-          -- sol is the SO-line join the SELECT below already makes.
-          OR sol.client_po_line_no ILIKE ${term}
+          -- sol / rev_jwl are the line joins the SELECT below already makes
+          -- (ADR-236: SO line's POL, else the Job Work SO line's).
+          OR ${polSql('sol', 'rev_jwl')} ILIKE ${term}
         )`
       : sql``;
     // Sort & Filter (ADR-200/201): the screen's column filters + sort, through
@@ -95,9 +97,9 @@ export async function listJcOpsBoard(
         -- no-op once 0119 is applied.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced ops are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- off the same SO line as the revision above, else the Job Work SO
+        -- line's POL for a JW-sourced op (ADR-236).
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         i.name AS "jcItemName",
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",

@@ -65,6 +65,7 @@ export function MaterialGradePicker({
       }}
       onSearch={setTerm}
       loading={list.isFetching}
+      error={list.error}
       options={options}
       // The saved value is the grade itself ("EN24"), not "GRD-001 — EN24".
       selectedLabel={(o) => o.name}
@@ -107,6 +108,7 @@ export function MaterialSizePicker({
       }}
       onSearch={setTerm}
       loading={list.isFetching}
+      error={list.error}
       options={options}
       selectedLabel={(o) => o.name}
       valueLabel={valueText ?? undefined}

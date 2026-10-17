@@ -7,12 +7,13 @@
 import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 const isOsp = sql`op.op_type = 'outsource'`;
 
 export const JC_OPS_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
-  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {
     sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,

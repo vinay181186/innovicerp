@@ -37,6 +37,12 @@ export async function fillInternalSoNo(page: Page): Promise<string> {
   return v;
 }
 
+/** ADR-236 — POL (the customer's PO line number) is compulsory on every SO
+ *  and JWSO line. Fills the first line's POL box. */
+export async function fillFirstPol(page: Page, value = '1'): Promise<void> {
+  await page.getByPlaceholder('POL', { exact: true }).first().fill(value);
+}
+
 /** ADR-207 — the SO No. is "Auto on save" (empty on create); read it off the
  *  detail page after save (its header reads "IN-SO-x · SO-y"). */
 export async function soNoFromDetail(page: Page): Promise<string> {
@@ -53,6 +59,7 @@ export async function createSO(page: Page, qty: number, poTag: string): Promise<
   await page.getByPlaceholder(/Client PO reference/i).fill(`${poTag}-${Date.now()}`);
   await pick(page, /Search item code or name/i, ITEM_CODE, ITEM_LABEL);
   await page.getByPlaceholder('Qty', { exact: true }).first().fill(String(qty));
+  await fillFirstPol(page);
   await fillInternalSoNo(page);
   await page.waitForTimeout(400);
   await page.getByRole('button', { name: /Save SO/i }).click();

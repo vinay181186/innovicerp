@@ -105,6 +105,8 @@ export const IMPORT_TEMPLATES: Record<string, ImportTemplateSpec> = {
       { label: 'Order Qty', samples: ['100'], width: 12 },
       { label: 'Rate', samples: ['250'], width: 12 },
       { label: 'Due Date', samples: ['2026-07-01'], width: 14 },
+      // ADR-236: optional note about this one line.
+      { label: 'Remarks', samples: ['Urgent'], width: 30 },
     ],
   },
   'jw-lines': {
@@ -116,9 +118,13 @@ export const IMPORT_TEMPLATES: Record<string, ImportTemplateSpec> = {
       { label: 'Material', samples: ['EN8'] },
       { label: 'Drawing No.', samples: ['DRG-001'] },
       { label: 'Drawing Rev', samples: ['A'], width: 12 },
+      // ADR-236: the customer's PO line number — compulsory on a JWSO line.
+      { label: 'POL', samples: ['1'], width: 10 },
       { label: 'Order Qty', samples: ['10'], width: 12 },
       { label: 'Rate', samples: ['35.50'], width: 12 },
       { label: 'Due Date', samples: ['2026-07-01'], width: 14 },
+      // ADR-236: optional note about this one line.
+      { label: 'Remarks', samples: ['Urgent'], width: 30 },
     ],
   },
   'stock-count': {

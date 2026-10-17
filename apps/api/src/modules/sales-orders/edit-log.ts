@@ -51,7 +51,8 @@ export const SO_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'bomMasterId', label: 'BOM' },
   { key: 'bomStatus', label: 'BOM Status' },
   { key: 'costCenter', label: 'Cost Centre' },
-  { key: 'remarks', label: 'Remarks' },
+  // ADR-236: the header note is "SO Remarks"; "Remarks" is the line note.
+  { key: 'remarks', label: 'SO Remarks' },
 ];
 export const SO_MONEY_HEADER_FIELDS: readonly DiffField[] = [{ key: 'gstPercent', label: 'GST %' }];
 
@@ -63,6 +64,7 @@ const SO_LINE_FIELDS: readonly DiffField[] = [
   { key: 'material', label: 'Material' },
   { key: 'drawingNo', label: 'Drawing No.' },
   { key: 'clientPoLineNo', label: 'POL' },
+  { key: 'remarks', label: 'Remarks' },
   { key: 'uom', label: 'UOM' },
   { key: 'orderQty', label: 'Order Qty' },
   { key: 'dueDate', label: 'Due Date', format: day },

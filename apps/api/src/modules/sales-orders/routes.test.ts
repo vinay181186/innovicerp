@@ -121,6 +121,7 @@ describe('sales-orders routes', () => {
         lines: [
           {
             partName: 'Routed Part',
+            clientPoLineNo: '1',
             revision: 'A',
             itemId: firstItemId,
             uom: 'NOS',
@@ -151,7 +152,15 @@ describe('sales-orders routes', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          {
+            partName: 'X',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
         ],
       },
     });
@@ -177,11 +186,79 @@ describe('sales-orders routes', () => {
           gstPercent: 18,
         },
         lines: [
-          { partName: 'X', revision: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
+          {
+            partName: 'X',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
         ],
       },
     });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ error: 'forbidden' });
+  });
+
+  // ── ADR-236: POL compulsory on every SO line, optional line Remarks ──
+  const postSo = (suffix: string, line: Record<string, unknown>) =>
+    app.inject({
+      method: 'POST',
+      url: '/sales-orders',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        header: {
+          internalSoNo: `SO-${TEST_PREFIX}${suffix}`,
+          soDate: '2026-05-02',
+          clientId: testClientId,
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
+        lines: [
+          {
+            partName: 'X',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+            ...line,
+          },
+        ],
+      },
+    });
+
+  it('POST /sales-orders refuses a line without a POL (400 "POL is required")', async () => {
+    app = await buildApp(admin);
+    const res = await postSo('NOPOL', {});
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'validation_error' });
+    expect(JSON.stringify(res.json())).toContain('POL is required');
+  });
+
+  it('POST /sales-orders refuses a spaces-only POL', async () => {
+    app = await buildApp(admin);
+    const res = await postSo('SPPOL', { clientPoLineNo: '   ' });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('POL is required');
+  });
+
+  it('POST /sales-orders refuses line Remarks over 500 characters', async () => {
+    app = await buildApp(admin);
+    const res = await postSo('LONGRM', { clientPoLineNo: '1', remarks: 'x'.repeat(501) });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.stringify(res.json())).toContain('Remarks can be at most 500 characters');
+  });
+
+  it('POST /sales-orders stores the POL and line Remarks and returns them', async () => {
+    app = await buildApp(admin);
+    const res = await postSo('POLOK', { clientPoLineNo: '20', remarks: 'urgent' });
+    expect(res.statusCode).toBe(201);
+    const line = res.json().lines[0];
+    expect(line.clientPoLineNo).toBe('20');
+    expect(line.remarks).toBe('urgent');
   });
 });

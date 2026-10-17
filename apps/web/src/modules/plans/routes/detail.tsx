@@ -261,7 +261,10 @@ function PlanDetailPage(): React.JSX.Element {
                 primary action read as a footnote. */}
             {/* ADR-234 — gated on the page it OPENS (Production Order Entry),
                 not on this page's Plan tick. */}
-            {fromRouteCard && canOpen('/production-orders/new') && plan.planStatus === 'planned' && !plan.jcId ? (
+            {fromRouteCard &&
+            canOpen('/production-orders/new') &&
+            plan.planStatus === 'planned' &&
+            !plan.jcId ? (
               <Link
                 to="/production-orders/new"
                 search={{ planId: plan.id, planCode: plan.code }}

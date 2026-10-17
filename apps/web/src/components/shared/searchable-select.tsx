@@ -55,6 +55,10 @@ export interface SearchableSelectProps {
    *  not read as the field's name. */
   ariaLabel?: string | undefined;
   emptyText?: string | undefined;
+  /** The list hook's error (TanStack `query.error`). When set, the dropdown shows
+   *  the server's reason instead of `emptyText`, so a refused list (403) no longer
+   *  reads as "No matches". */
+  error?: unknown;
 }
 
 function optionLabel(o: SearchableOption): string {
@@ -83,6 +87,7 @@ export function SearchableSelect({
   className,
   ariaLabel,
   emptyText = 'No matches',
+  error,
 }: SearchableSelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -366,10 +371,20 @@ export function SearchableSelect({
               }}
               className="overflow-y-auto rounded-md border py-1 shadow-md"
             >
+              {/* A refused or failed list says WHY, in place of the empty text.
+                  Shown above any rows the caller still passes (a fixed "None"
+                  row, or the last good page) so it is never hidden by them. */}
+              {!loading && error ? (
+                <li className="ss-muted" style={{ color: 'var(--red2)' }}>
+                  {error instanceof Error ? error.message : 'Could not load the list.'}
+                </li>
+              ) : null}
               {loading ? (
                 <li className="ss-muted">Loading…</li>
               ) : filtered.length === 0 ? (
-                <li className="ss-muted">{emptyText}</li>
+                error ? null : (
+                  <li className="ss-muted">{emptyText}</li>
+                )
               ) : (
                 filtered.map((o, i) => (
                   <li

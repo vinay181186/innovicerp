@@ -25,6 +25,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { polOf } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import type { ListOpLogQuery, ListOpLogResponse, OpLogListItem } from './schema';
 import { OP_LOG_SF_COLUMNS, plannedMachine } from './sf-columns';
@@ -126,10 +127,9 @@ export async function listOpLog(
             string | null
           >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
           // POL — the line number printed on the CUSTOMER'S own purchase order,
-          // off the same already-joined SO line as the revision above. No JW
-          // branch on purpose: a job-work line has no customer PO, so a
-          // JW-sourced or standalone card is correctly null.
-          clientPoLineNo: salesOrderLines.clientPoLineNo,
+          // off the same already-joined SO line as the revision above, else
+          // the JW line (ADR-236); a standalone card is null.
+          clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
           opSeq: jcOps.opSeq,
           operation: jcOps.operation,
           machineCode: machines.code,

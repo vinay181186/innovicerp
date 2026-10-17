@@ -13,6 +13,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -47,9 +48,9 @@ export async function getDailyReport(
         -- a database that has not had migration 0119 still holds an integer.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced cards are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- off the same SO line as the revision above, else the Job Work SO
+        -- line's POL for a JW-sourced card (ADR-236).
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         i.name AS "itemName",
         op.op_seq AS "opSeq",
         op.operation,

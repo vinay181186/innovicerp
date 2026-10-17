@@ -35,7 +35,8 @@ export function isReversalRow(r: OpLogListItem): boolean {
  *  addendum), else resolved from the JC number through search. */
 function jcLink(r: OpLogListItem, label: string): React.JSX.Element {
   return r.jobCardId ? (
-    <ActionLink fallback="text"
+    <ActionLink
+      fallback="text"
       to="/job-cards/$id"
       params={{ id: r.jobCardId }}
       className="mono fw-700"

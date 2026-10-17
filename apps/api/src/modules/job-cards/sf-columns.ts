@@ -8,10 +8,11 @@
 import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 export const JC_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
-  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev): the customer's drawing
   // revision off the SO / JWSO line, after a slash.
   itemCode: {

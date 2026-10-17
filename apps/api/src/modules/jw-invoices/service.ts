@@ -503,6 +503,9 @@ export async function listJwInvoices(
           // items.revision, which is about the item master, not the drawing.
           // Cast to text: the contract types it as a string.
           itemRevision: sql<string | null>`${jobWorkOrderLines.revision}::text`,
+          // POL — the customer's PO line no. typed on that SAME JWSO line
+          // (ADR-236). A JW invoice has no SO line, so this is the only source.
+          clientPoLineNo: jobWorkOrderLines.clientPoLineNo,
           partName: jobWorkOrderLines.partName,
           // The unit the JWSO line was booked in, for the printed UOM column.
           uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
@@ -542,12 +545,9 @@ export async function listJwInvoices(
           clientName: r.clientName ?? null,
           itemCode: r.itemCode ?? null,
           itemRevision: r.itemRevision ?? null,
-          // POL is a CUSTOMER PURCHASE ORDER line number, and a job-work order
-          // has no sales order behind it: job_work_order_lines carries no
-          // source_so_line_id and job_work_orders carries no sales_order_id.
-          // There is no SO line to read, so null is the only truthful answer —
-          // never the JWSO line number, which is a different number entirely.
-          clientPoLineNo: null,
+          // POL off the JWSO line (ADR-236) — never the JWSO line number,
+          // which is a different number entirely. Null on pre-0210 lines.
+          clientPoLineNo: r.clientPoLineNo ?? null,
           partName: r.partName ?? null,
           uom: r.uom ?? null,
           // The paper's own copy of the customer (0186) — the print reads it.

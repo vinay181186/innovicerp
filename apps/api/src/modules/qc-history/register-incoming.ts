@@ -8,6 +8,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 /** Pending qty of a GRN line (received − accepted − rejected). */
 export const INC_PENDING_QTY = sql`(l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty)`;
@@ -55,7 +56,7 @@ export const INC_PENDING_SELECT = sql`
   so.internal_so_no AS "soInternalNo",
   jc.code AS "jcCode", jco.op_seq AS "opSeq", jco.operation AS "opName",
   ${ITEM_CODE} AS "itemCode", ${ITEM_REV} AS "itemRevision",
-  sol.client_po_line_no AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
+  ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
   l.received_qty AS "receivedQty", ${INC_PENDING_QTY} AS "pendingQty",
   GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays"`;
 
@@ -64,7 +65,7 @@ export const INC_COMPLETED_SELECT = sql`
   l.qc_date AS "qcDate",
   CASE WHEN l.qc_date IS NOT NULL THEN (l.qc_date - h.grn_date)::int ELSE NULL END AS "respDays",
   ${VENDOR} AS "vendorName", ${ITEM_CODE} AS "itemCode", ${ITEM_REV} AS "itemRevision",
-  sol.client_po_line_no AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
+  ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
   l.received_qty AS "receivedQty",
   l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
   l.qc_remarks AS "qcRemarks", l.updated_at AS "qcAt",
@@ -81,7 +82,7 @@ export function incSearchWhere(term: string | undefined, pending: boolean): SQL 
   const p = `%${likeEscape(q)}%`;
   const cols = [
     sql`h.code`,
-    sql`sol.client_po_line_no`,
+    polSql('sol', 'rev_jwl'),
     ITEM_CODE,
     ITEM_REV,
     sql`COALESCE(i.name, l.item_name)`,

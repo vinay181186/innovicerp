@@ -9,6 +9,7 @@ import { sql } from 'drizzle-orm';
 import type { ListOspWipQuery, ListOspWipResponse, OspWipRow } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { OSP_WIP_SF_COLUMNS } from './sf-columns';
 
@@ -52,11 +53,11 @@ export async function listOspWip(
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
-      ? // POL (sol.client_po_line_no) is now a column on this register, so the
-        // box must find it. sol is the SO-line join the FROM below makes.
+      ? // POL is now a column on this register, so the box must find it. sol /
+        // rev_jwl are the line joins the FROM below makes (ADR-236).
         sql`AND (w.jc_code ILIKE ${term} ESCAPE '\\' OR w.item_code ILIKE ${term} ESCAPE '\\'
           OR w.item_name ILIKE ${term} ESCAPE '\\' OR w.so_code ILIKE ${term} ESCAPE '\\'
-          OR w.vendor_name ILIKE ${term} ESCAPE '\\' OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+          OR w.vendor_name ILIKE ${term} ESCAPE '\\' OR ${polSql('sol', 'rev_jwl')} ILIKE ${term} ESCAPE '\\'
           OR so.internal_so_no ILIKE ${term} ESCAPE '\\')`
       : sql``;
     // Sort & Filter (ADR-200): the register's column filters + sort.
@@ -114,10 +115,9 @@ export async function listOspWip(
         -- number wearing a string type.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision,
         -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line the revision above is read from. SO side only:
-        -- a job-work line has no customer PO, so JW-sourced ops are correctly
-        -- null. Never sol.line_no, which is OUR line number.
-        sol.client_po_line_no AS client_po_line_no,
+        -- off the same SO line the revision above is read from, else the JWSO
+        -- line's (ADR-236). Never sol.line_no, which is OUR line number.
+        ${polSql('sol', 'rev_jwl')} AS client_po_line_no,
         so.internal_so_no AS so_internal_no
       ${fromFrag}
         ${bucketFrag}

@@ -136,7 +136,8 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       header: 'JC No.',
       nowrap: true,
       render: (r) => (
-        <ActionLink fallback="text"
+        <ActionLink
+          fallback="text"
           to="/job-cards/$id"
           params={{ id: r.jcId }}
           className="td-code cyan"

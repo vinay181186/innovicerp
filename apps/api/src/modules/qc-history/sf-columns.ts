@@ -6,6 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 import { ITEM_CODE_REV, PEND_SINCE } from './sql';
 
 const LEAD: SfColumnMap = {
@@ -14,7 +15,7 @@ const LEAD: SfColumnMap = {
   // ADR-207 — the Internal SO No., off the `so` join BOTH feeds make
   // (pendingFrom / logsFrom), so either table can sort and filter on it.
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
-  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   itemCode: { sql: ITEM_CODE_REV, type: 'text' },
   itemName: { sql: sql`i.name`, type: 'text' },
   operation: { sql: sql`jo.operation`, type: 'text' },

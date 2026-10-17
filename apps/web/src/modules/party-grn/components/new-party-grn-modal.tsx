@@ -221,6 +221,7 @@ export function NewPartyGrnModal({
               onChange={onJwChange}
               onSearch={setJwSearch}
               loading={jwQuery.isFetching}
+              error={jwQuery.error}
               placeholder="🔍 Select JWSO — type number or customer…"
               options={jwHeaders.map((j) => ({
                 id: j.jwId,
@@ -307,6 +308,7 @@ export function NewPartyGrnModal({
             <thead>
               <tr>
                 <th className="th-num">Ln</th>
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
                 <th>Customer RM</th>
                 <th className="th-num">Order Qty</th>
@@ -320,19 +322,31 @@ export function NewPartyGrnModal({
             <tbody>
               {!jwId ? (
                 <tr>
-                  <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
                     Pick the JWSO first.
                   </td>
                 </tr>
               ) : jwDetailQ.isLoading ? (
                 <tr>
-                  <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
                     <Loader2 size={13} className="inline animate-spin" /> Loading lines…
+                  </td>
+                </tr>
+              ) : jwDetailQ.isError ? (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="empty-state"
+                    style={{ color: 'var(--red2)', padding: 14 }}
+                  >
+                    {jwDetailQ.error instanceof Error
+                      ? jwDetailQ.error.message
+                      : 'Could not load the JWSO lines.'}
                   </td>
                 </tr>
               ) : jwLines.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
                     No open lines on this JWSO.
                   </td>
                 </tr>
@@ -343,6 +357,9 @@ export function NewPartyGrnModal({
                   return (
                     <tr key={l.id} style={noRm ? { opacity: 0.55 } : undefined}>
                       <td className="td-num mono">{l.lineNo}</td>
+                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        {l.clientPoLineNo ?? '—'}
+                      </td>
                       <td title={l.partName}>
                         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
                           {itemCodeWithRev(l.itemCodeText, l.revision)}

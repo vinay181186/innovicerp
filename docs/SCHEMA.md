@@ -940,7 +940,8 @@ Per-line items on a sales order.
 | `order_qty`          | `integer`       | not null, check `> 0`                                                           |
 | `rate`               | `numeric(12,2)` | not null, default `0`                                                           |
 | `due_date`           | `date`          | nullable                                                                        |
-| `client_po_line_no`  | `text`          | nullable                                                                        |
+| `client_po_line_no`  | `text`          | nullable. POL — COMPULSORY on input since ADR-236 (`packages/shared/src/lib/pol.ts`); every live row has one |
+| `remarks`            | `text`          | nullable. ADR-236 (0211) — the line's own optional Remarks (max 500 on input). Not the header's `SO Remarks` |
 | `status`             | `so_status`     | not null, default `'open'`. Per-line status (auto-closed when JCs satisfy line) |
 | `short_closed_at`    | `timestamptz`   | nullable. ADR-196 (0177) — line closed short (ERPNext "Close"): status set `'closed'`, undelivered qty (order − dispatched) dropped from every Pending / to-plan / dispatchable figure |
 | `short_closed_by`    | `uuid`          | nullable, FK → `users(id)`. ADR-196                                             |
@@ -995,6 +996,8 @@ RLS: same pattern as `sales_orders`.
 | `part_name`              | `text`          | not null                                                                 |
 | `material`               | `text`          | nullable                                                                 |
 | `drawing_no`             | `text`          | nullable                                                                 |
+| `client_po_line_no`      | `text`          | nullable. ADR-236 (0210) — POL, same column as the SO line's; COMPULSORY on input; null only on lines saved before 0210 |
+| `remarks`                | `text`          | nullable. ADR-236 (0211) — the line's own optional Remarks. Not the header's `JWSO Remarks` |
 | `uom`                    | `uom`           | not null, default `'NOS'`                                                |
 | `order_qty`              | `integer`       | not null, check `> 0`                                                    |
 | `due_date`               | `date`          | nullable                                                                 |
@@ -1904,3 +1907,5 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-10-08 | `0202_ml_boms.sql` (hand-written, idempotent, additive) | **Multi-Level BOM (ADR-225 phase 1).** New `ml_boms` (code `IN-MLB-#####`, item_id, revision, is_default; unique (id,item_id); one live Default per item), `ml_bom_lines` (child_item_id, qty_per_set numeric(14,3) > 0, bom_type reuses enum `bom_line_type`, child_ml_bom_id with composite FK (child_ml_bom_id, child_item_id) → ml_boms(id,item_id) so a sub-assembly link can only point at that child's own BOM; CHECK link only on manufacture; RM grade/size; unique (ml_bom_id, child_item_id) live), `ml_bom_revisions` (append-only lines_snapshot jsonb). RLS company_read + manager_write; revisions insert-only. BOM Master tables untouched. Apply to BOTH databases. |
 | 2026-10-09 | `0203_ml_plans.sql` (hand-written, idempotent, additive) | **Multi-Level Plan (ADR-225 phase 3).** New `ml_plans` (IN-MLP-#####, SO + SO line + item + pinned ml_bom_id/revision, plan_qty > 0, status draft/released/cancelled, snapshot_at, cancel fields; one live plan per SO line — partial unique index) and `ml_plan_nodes` (tree copy: parent_node_id, depth, seq, item, bom_type, is_sub_assembly, ml_bom_id/revision, qty_per_set, gross_need / from_stock / on_po_pr / net_need numeric(14,3) ≥ 0, RM text). RLS company_read + manager_write. Guards in SO / plan services read these tables, so 0203 must precede the code on every database. |
 | 2026-10-09 | `0204_ml_plan_orders.sql` (hand-written, idempotent, additive) | **Multi-Level Plan raises orders (ADR-225 phase 4).** `plans` += `ml_plan_node_id uuid → ml_plan_nodes`, `purchase_requests` += `ml_plan_node_id uuid → ml_plan_nodes`, partial index on each. Plan / PR / Job Card material / Production Order code reads these columns, so 0204 must precede the code on every database. |
+| 2026-10-16 | `0210_jwso_line_pol.sql` (hand-written, idempotent, additive) | **POL on JWSO lines (ADR-236).** `job_work_order_lines.client_po_line_no text` (nullable; compulsory on input). Downstream reads take SO POL else JWSO POL via `apps/api/src/lib/pol.ts`. Rollback: drop the column |
+| 2026-10-16 | `0211_so_jwso_line_remarks.sql` (hand-written, idempotent, additive) | **Line Remarks (ADR-236).** `sales_order_lines.remarks`, `job_work_order_lines.remarks` (text, nullable, optional). Rollback: drop both columns |

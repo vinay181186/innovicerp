@@ -43,6 +43,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import {
   canSeeFormPrice,
+  hasFormAccess,
   requireAnyFormAccess,
   requireDeleteRight,
   requireFormAccess,
@@ -340,13 +341,35 @@ function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+/** Who may READ a JWSO (list + detail). ADR-203 rule 8 put this on JWSO
+ *  Master view alone, which left the Store / Finance / JW DC screens that pick
+ *  a JWSO with a silent empty dropdown (Party GRN, Party Material Issue,
+ *  Customer Material Return, JW Invoice, JW DC outward). JWSO Master stays
+ *  first so a refusal names it. Money is still hidden — see jwShowMoney. */
+const JW_READ_PAIRS = [
+  ['jw_create', 'view'],
+  ['party_create', 'view'],
+  ['invoice_create', 'view'],
+  ['ospdc_create', 'view'],
+] as const;
+
+/** Rates / GST on a JWSO read. A user who can open JWSO Master gets JWSO
+ *  Master's see-price — the same rule the JWSO writes use, so its own Price
+ *  OFF switch still hides money there and an edit never posts a rate the save
+ *  would drop. Everyone reading from another screen gets Invoices' see-price
+ *  (a JW Invoice prefills its rate from the JWSO line); Store / JW DC readers
+ *  without it get no money. */
+async function jwShowMoney(user: AuthContext): Promise<boolean> {
+  if (await hasFormAccess(user, 'jw_create', 'view')) return canSeeFormPrice(user, 'jw_create');
+  return canSeeFormPrice(user, 'invoice_create');
+}
+
 export async function listJobWorkOrders(
   input: ListJobWorkOrdersQuery,
   user: AuthContext,
 ): Promise<ListJobWorkOrdersResponse> {
   const companyId = requireCompany(user);
-  // ADR-203 rule 8: reading the JWSO Master needs its view right.
-  await requireFormAccess(user, 'jw_create', 'view');
+  await requireAnyFormAccess(user, JW_READ_PAIRS);
   return withUserContext(user, async (tx) => {
     // Search covers every field the JWSO list card actually shows — band 1
     // (JWSO code, client name, status badge), band 2's meta line (JWSO date,
@@ -386,6 +409,8 @@ export async function listJobWorkOrders(
                        OR l2.part_name ILIKE ${term} ESCAPE '\\'
                        OR l2.material ILIKE ${term} ESCAPE '\\'
                        OR l2.drawing_no ILIKE ${term} ESCAPE '\\'
+                       -- ADR-236: the customer's PO line number (POL).
+                       OR l2.client_po_line_no ILIKE ${term} ESCAPE '\\'
                        OR l2.uom::text ILIKE ${term} ESCAPE '\\'
                        OR l2.status::text ILIKE ${term} ESCAPE '\\'
                        -- The card's "Due" is MIN(line due_date); matching any
@@ -576,8 +601,8 @@ async function loadJobWorkOrderDetail(
 
 export async function getJobWorkOrder(id: string, user: AuthContext): Promise<JobWorkOrderDetail> {
   const companyId = requireCompany(user);
-  await requireFormAccess(user, 'jw_create', 'view');
-  const showMoney = await canSeeFormPrice(user, 'jw_create');
+  await requireAnyFormAccess(user, JW_READ_PAIRS);
+  const showMoney = await jwShowMoney(user);
   return withUserContext(user, (tx) => loadJobWorkOrderDetail(tx, id, companyId, showMoney));
 }
 
@@ -955,6 +980,9 @@ function toJobWorkOrderLine(
     partName: row.partName,
     material: row.material,
     drawingNo: row.drawingNo,
+    // ADR-236: the customer's PO line number and the line's own note.
+    clientPoLineNo: row.clientPoLineNo ?? null,
+    remarks: row.remarks ?? null,
     // Migration 0120 — the customer's drawing Rev and the drawing FILE, read
     // back exactly as the sales-order line reads them.
     revision: row.revision,
@@ -1128,6 +1156,10 @@ export async function createJobWorkOrder(
           // the column's DB default. ADR-177: stored upper-cased.
           revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
           drawingFilePath: l.drawingFilePath ?? null,
+          // ADR-236: the CUSTOMER's PO line number (required) and the
+          // optional line note — stored on the JWSO line only.
+          clientPoLineNo: l.clientPoLineNo,
+          remarks: l.remarks ?? null,
           uom: l.uom ?? 'NOS',
           orderQty: l.orderQty,
           rate: showMoney ? (l.rate ?? 0).toFixed(2) : '0.00',
@@ -1379,6 +1411,8 @@ function jwLinesChanged(
     partName: string;
     material: string | null;
     drawingNo: string | null;
+    clientPoLineNo: string | null;
+    remarks: string | null;
     revision: string;
     drawingFilePath: string | null;
     uom: string;
@@ -1402,6 +1436,10 @@ function jwLinesChanged(
     if (!valuesEqual(p.partName, c.partName)) return true;
     if (p.material !== undefined && !valuesEqual(p.material, c.material)) return true;
     if (p.drawingNo !== undefined && !valuesEqual(p.drawingNo, c.drawingNo)) return true;
+    // ADR-236: POL (required on input) and the line Remarks are line changes
+    // too. valuesEqual treats null and '' alike, so a blank resend is no change.
+    if (!valuesEqual(p.clientPoLineNo, c.clientPoLineNo)) return true;
+    if (p.remarks !== undefined && !valuesEqual(p.remarks, c.remarks)) return true;
     if (p.revision !== undefined && !valuesEqual(p.revision, c.revision)) return true;
     if (p.drawingFilePath !== undefined && !valuesEqual(p.drawingFilePath, c.drawingFilePath))
       return true;
@@ -1463,6 +1501,8 @@ export async function updateJobWorkOrderOrStage(
           partName: jobWorkOrderLines.partName,
           material: jobWorkOrderLines.material,
           drawingNo: jobWorkOrderLines.drawingNo,
+          clientPoLineNo: jobWorkOrderLines.clientPoLineNo,
+          remarks: jobWorkOrderLines.remarks,
           revision: jobWorkOrderLines.revision,
           drawingFilePath: jobWorkOrderLines.drawingFilePath,
           uom: jobWorkOrderLines.uom,
@@ -1513,7 +1553,8 @@ export const JW_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'customerName', label: 'Customer' },
   { key: 'clientPoNo', label: 'Client PO No.' },
   { key: 'gstPercent', label: 'GST %' },
-  { key: 'remarks', label: 'Remarks' },
+  // ADR-236: the header note is "JWSO Remarks"; "Remarks" is the line note.
+  { key: 'remarks', label: 'JWSO Remarks' },
 ];
 
 /** JWSO line fields compared on Edit — labels as on the JWSO form's line grid. */
@@ -1527,6 +1568,9 @@ function jwLineFields(itemCode: (v: unknown) => string | null): readonly DiffFie
     { key: 'partName', label: 'Item Name' },
     { key: 'material', label: 'Material' },
     { key: 'drawingNo', label: 'Drawing No.' },
+    // ADR-236: the customer's PO line number and the line's own note.
+    { key: 'clientPoLineNo', label: 'POL' },
+    { key: 'remarks', label: 'Remarks' },
     { key: 'revision', label: 'Rev' },
     { key: 'drawingFilePath', label: 'Drawing File', format: fileName },
     { key: 'uom', label: 'UOM' },
@@ -1711,6 +1755,11 @@ async function mergeLines(
     // `null` clears; absent leaves the stored value.
     if (u.data.material !== undefined) lineUpdate['material'] = u.data.material ?? null;
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
+    // ADR-236: POL is required on every line, so it is always written; Remarks
+    // only when sent (`null` clears). Neither is locked by ADR-203 rule 4 — a
+    // line already on a Job Card may still have its POL / Remarks corrected.
+    lineUpdate['clientPoLineNo'] = u.data.clientPoLineNo;
+    if (u.data.remarks !== undefined) lineUpdate['remarks'] = u.data.remarks ?? null;
     // ADR-177: a Rev is stored upper-cased and may never go backwards on a
     // line (B → A, 2 → 1). A change of kind (1 → A) is allowed.
     if (u.data.revision !== undefined) {
@@ -1794,6 +1843,9 @@ async function mergeLines(
         // was asked. ADR-177: stored upper-cased.
         revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
         drawingFilePath: l.drawingFilePath ?? null,
+        // ADR-236: same as the create path.
+        clientPoLineNo: l.clientPoLineNo,
+        remarks: l.remarks ?? null,
         uom: l.uom ?? 'NOS',
         orderQty: l.orderQty,
         rate: showMoney ? (l.rate ?? 0).toFixed(2) : '0.00',

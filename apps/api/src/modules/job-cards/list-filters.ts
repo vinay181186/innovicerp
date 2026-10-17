@@ -6,6 +6,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { sfTodayIst } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { readSf, sfWhere } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 import type { JcStatusCountsQuery, JcStatusCountsResponse, ListJobCardsQuery } from './schema';
 import { JC_SF_COLUMNS } from './sf-columns';
 
@@ -93,7 +94,7 @@ export function jcListWhere(companyId: string, input: JcListFilterInput): SQL {
           OR COALESCE(s.computed_status, 'no_ops')::text ILIKE ${term} ESCAPE '\\'
           -- Band 2 meta line, in the order the card prints it.
           OR jc.jc_date::text ILIKE ${term} ESCAPE '\\'
-          OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\'
+          OR ${polSql('sol', 'jwl')} ILIKE ${term} ESCAPE '\\'
           -- Same COALESCE the SELECT uses for "dueDate", so what the card shows
           -- is what the search matches.
           OR COALESCE(jc.due_date, sol.due_date, jwl.due_date)::text ILIKE ${term} ESCAPE '\\'

@@ -56,6 +56,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { polOf } from '../../lib/pol';
 import { emitActivityLog } from '../activity-log/service';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
@@ -947,11 +948,9 @@ export async function getPurchaseOrder(
         itemRevision: sql<
           string | null
         >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
-        // The customer's own PO line number, off the SAME SO line the revision
-        // came from. No COALESCE with the job-work fallback: a JW line belongs
-        // to a job-work order, not to a customer PO, so it has no client PO
-        // line number to offer -- an OSP line sourced that way stays null.
-        clientPoLineNo: salesOrderLines.clientPoLineNo,
+        // The customer's own PO line number, off the SAME two line joins the
+        // revision came from: SO line first, else the JW line (ADR-236).
+        clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
         // The item's unit off the master, for the printed UOM column. A PO line
         // stores none of its own; null on a hand-typed line with no item.
         uom: sql<string | null>`${items.uom}::text`,
@@ -1101,9 +1100,9 @@ function toPurchaseOrderLine(
    *  freshly inserted row without the join. */
   itemRevision: string | null = null,
   /** The customer's PO line number, joined from sales_order_lines.client_po_line_no
-   *  on source_so_line_id -- the same join that supplies `itemRevision`. Null
-   *  when the line has no SO line behind it (a hand-typed line, or an OSP line
-   *  sourced from a job-work order), and on the write-back paths that return a
+   *  on source_so_line_id, else the JWSO line behind an OSP line (ADR-236) --
+   *  the same joins that supply `itemRevision`. Null on a hand-typed line,
+   *  and on the write-back paths that return a
    *  freshly inserted row without the join. */
   clientPoLineNo: string | null = null,
   /** items.uom joined on item_id -- detail read only, null elsewhere. */

@@ -26,7 +26,8 @@ export type RunningOpRow = RunningOp & { startedByName?: string | null };
  *  board. A JC number is short, so it stays on one line. */
 function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
   return (
-    <ActionLink fallback="text"
+    <ActionLink
+      fallback="text"
       to="/job-cards/$id"
       params={{ id }}
       title="View job card status"

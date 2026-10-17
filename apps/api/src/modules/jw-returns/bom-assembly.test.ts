@@ -93,6 +93,7 @@ async function makeJw(tag: string, orderQty: number, bomId: string | undefined) 
       lines: [
         {
           partName: 'ASSEMBLY',
+          clientPoLineNo: '1',
           itemId: parentId,
           orderQty,
           uom: 'NOS',

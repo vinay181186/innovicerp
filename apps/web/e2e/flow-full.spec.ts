@@ -58,6 +58,8 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.getByText('559918151000 — SPACER').first().click();
   await page.getByPlaceholder('Qty', { exact: true }).first().fill(QTY);
   await page.getByPlaceholder('₹ Rate', { exact: true }).first().fill('10').catch(() => {});
+  // ADR-236: POL is compulsory on every SO line.
+  await page.getByPlaceholder('POL', { exact: true }).first().fill('1');
   await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await expect(page, 'SO saved').toHaveURL(/sales-orders\/[0-9a-f]{8}-/, { timeout: 30_000 });

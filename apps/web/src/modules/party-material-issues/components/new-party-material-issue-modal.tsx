@@ -286,6 +286,7 @@ export function NewPartyMaterialIssueModal({
                 valueLabel={pickedJw?.code}
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
+                error={jwQuery.error}
                 placeholder="🔍 Select JWSO — type number or customer…"
                 options={jwHeaders.map((j) => ({
                   id: j.jwId,
@@ -351,6 +352,12 @@ export function NewPartyMaterialIssueModal({
                 ) : jwDetailQ.isLoading ? (
                   <span className="text3">
                     <Loader2 size={12} className="inline animate-spin" /> Loading…
+                  </span>
+                ) : jwDetailQ.isError ? (
+                  <span style={{ color: 'var(--red2)' }}>
+                    {jwDetailQ.error instanceof Error
+                      ? jwDetailQ.error.message
+                      : 'Could not load the JWSO lines.'}
                   </span>
                 ) : !line ? (
                   <span className="text3">—</span>

@@ -30,6 +30,7 @@ import {
 } from '@innovic/shared';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { polSql } from '../../lib/pol';
 import { AuthorizationError, ConflictError } from '../../lib/errors';
 import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 
@@ -125,7 +126,7 @@ export async function queryRtvCandidates(
       -- PO list's Return Challan Pending lateral, so the three agree. No cast
       -- to integer anywhere near it: a line may be in KGS or MTR (0172).
       GREATEST(0, nc.rejected_qty - nc.cleared_qty - nc.failed_qty)::text AS "openQty",
-      sol.client_po_line_no AS "clientPoLineNo",
+      ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
       nc.job_card_id AS "jobCardId",
       jc.code AS "jcCode",
       nc.op_seq AS "opSeq",

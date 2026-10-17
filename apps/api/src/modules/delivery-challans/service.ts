@@ -32,6 +32,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { polOf } from '../../lib/pol';
 import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
 import { lockPoLinesForSend, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { assertRowUpdated } from '../../lib/row-lock';
@@ -500,11 +501,9 @@ async function loadDeliveryChallanWithLines(
       itemRevision: sql<
         string | null
       >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
-      // The customer's own PO line number, off the SAME SO line join as the
-      // revision above, and only that side: a job-work line belongs to a
-      // job-work order, not to a customer PO, so it has no client PO line
-      // number to offer and the field stays null there.
-      clientPoLineNo: salesOrderLines.clientPoLineNo,
+      // The customer's own PO line number, off the SAME two line joins as the
+      // revision above: SO line first, else the Job Work SO line (ADR-236).
+      clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
     })
     .from(deliveryChallanLines)
     .leftJoin(items, and(eq(items.id, deliveryChallanLines.itemId), isNull(items.deletedAt)))

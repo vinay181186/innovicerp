@@ -267,9 +267,7 @@ describe('plans service — update + finalize', () => {
       },
       admin,
     );
-    await expect(service.finalizePlan(created.id, admin)).rejects.toBeInstanceOf(
-      ValidationError,
-    );
+    await expect(service.finalizePlan(created.id, admin)).rejects.toBeInstanceOf(ValidationError);
   });
 
   it('finalize direct_purchase plan without ops succeeds (no ops needed)', async () => {
@@ -339,7 +337,10 @@ describe('plans service — list + get', () => {
   });
 
   it('getPlan returns ops sorted by opSeq', async () => {
-    const list = await service.listPlans({ search: `${TEST_PREFIX}P-001`, limit: 1, offset: 0 }, admin);
+    const list = await service.listPlans(
+      { search: `${TEST_PREFIX}P-001`, limit: 1, offset: 0 },
+      admin,
+    );
     const id = list.items[0]!.id;
     const detail = await service.getPlan(id, admin);
     expect(detail.ops.map((o) => o.opSeq)).toEqual([1, 2]);
@@ -370,10 +371,7 @@ describe('plans service — softDelete + dashboard', () => {
     await expect(service.getPlan(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
 
     // Verify ops also soft-deleted
-    const opsLeft = await db
-      .select()
-      .from(planOps)
-      .where(eq(planOps.planId, created.id));
+    const opsLeft = await db.select().from(planOps).where(eq(planOps.planId, created.id));
     expect(opsLeft.every((o) => o.deletedAt !== null)).toBe(true);
   });
 
@@ -453,9 +451,7 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
       },
       admin,
     );
-    await expect(service.executePlan(created.id, admin)).rejects.toBeInstanceOf(
-      ValidationError,
-    );
+    await expect(service.executePlan(created.id, admin)).rejects.toBeInstanceOf(ValidationError);
   });
 
   it('executePlan(manufacture): creates JC + copies plan_ops, sets jc_id + status=jc_created', async () => {
@@ -482,11 +478,7 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     expect(result.plan.jcId).not.toBeNull();
 
     // Verify jc_ops were copied
-    const jc = await db
-      .select()
-      .from(jobCards)
-      .where(eq(jobCards.id, result.plan.jcId!))
-      .limit(1);
+    const jc = await db.select().from(jobCards).where(eq(jobCards.id, result.plan.jcId!)).limit(1);
     expect(jc[0]?.orderQty).toBe(20);
   });
 

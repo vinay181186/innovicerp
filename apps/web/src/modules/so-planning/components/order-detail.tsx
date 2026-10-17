@@ -281,25 +281,25 @@ export function OrderDetail({
           {savedPlan.derivedStatus === 'route_card_pending' ? (
             // ADR-234 — offer the next step only to a Route Card Entry holder.
             canCreateRouteCard ? (
-            <>
-              Next:{' '}
-              <Link
-                to="/route-cards/new"
-                search={
-                  savedPlan.itemId
-                    ? {
-                        itemId: savedPlan.itemId,
-                        itemCode: savedPlan.itemCode,
-                        itemName: savedPlan.itemName,
-                      }
-                    : {}
-                }
-                className="fw-700"
-                style={{ color: 'var(--blue)' }}
-              >
-                New Route Card →
-              </Link>
-            </>
+              <>
+                Next:{' '}
+                <Link
+                  to="/route-cards/new"
+                  search={
+                    savedPlan.itemId
+                      ? {
+                          itemId: savedPlan.itemId,
+                          itemCode: savedPlan.itemCode,
+                          itemName: savedPlan.itemName,
+                        }
+                      : {}
+                  }
+                  className="fw-700"
+                  style={{ color: 'var(--blue)' }}
+                >
+                  New Route Card →
+                </Link>
+              </>
             ) : null
           ) : canProductionOrder ? (
             <>

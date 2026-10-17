@@ -13779,3 +13779,96 @@ Edit, or a menu / Home link points at a path that is not a route.
   offering what the server refuses.
 - Not done: Production Dashboard QC rows still use the Op Entry tick — the
   dashboard data has no op type yet.
+
+## ADR-236: POL compulsory on SO and JWSO lines; JWSO lines carry their own POL; optional line Remarks
+
+**Date:** 2026-10-16
+**Status:** Accepted (owner, 2026-10-16)
+
+### Context
+
+POL (the customer's PO line number) lived only on `sales_order_lines`. The
+2026-09-23 POL rule assumed "a job-work line has no customer PO line", so every
+document raised from a Job Work Sales Order showed POL "—" and the JWSO create
+screen had no POL column. The owner asked for POL on JWSO creation like SO, made
+it compulsory on both, and asked for an optional free-text Remarks per line.
+
+### Decision
+
+1. `job_work_order_lines.client_po_line_no` (0210), same name/type as the SO column.
+2. POL is COMPULSORY on input for SO and JWSO lines — one rule,
+   `packages/shared/src/lib/pol.ts` (trim, 1–64 chars), used by the form and the API.
+   Not unique within an order. Blank is refused, which also ends the old SO bug
+   where emptying POL on edit silently kept the old value.
+3. Every document downstream of an order line reads POL as SO line's, else JWSO
+   line's — one helper, `apps/api/src/lib/pol.ts` (`polSql` / `polOf`). SO-sourced
+   rows are unchanged. JW-only documents (JW return challan, IN-CMR, Party GRN,
+   JW invoice) now show it; prints pick it up through sheet-print's `pol`.
+4. Optional line `remarks` on SO and JWSO lines (0211), max 500
+   (`packages/shared/src/lib/line-remarks.ts`). Shown on SO/JWSO only — not
+   carried downstream (§17: no blind propagation).
+5. The header notes are relabelled `SO Remarks` / `JWSO Remarks` so the line's
+   note can be bare `Remarks` (the GRN Remarks split, NAMING.md).
+
+### Alternatives Considered
+
+- POL optional — rejected by the owner.
+- DB CHECK / NOT NULL on POL now — deferred: the 3 PROD (2 TEST) JWSO lines
+  saved before 0210 are blank and a CHECK would block their counter updates
+  (returned / invoiced / short close); ~18 API test files insert SO lines directly
+  without POL. Add once old lines are filled.
+- Hand-written `COALESCE` at each of ~40 read sites — rejected (Section 21: one
+  place to change).
+
+### Consequences
+
+- Positive: one POL rule on both order types; JW paperwork finally carries the
+  customer's line number.
+- Negative: editing an old JWSO now asks for POL on its blank lines.
+- Risks: a downstream read missed → shows "—" for a JW row (cosmetic, no data loss).
+
+## ADR-237: Picker lists readable from the screen that hosts them
+
+**Date:** 2026-10-16
+**Status:** Accepted (owner approved 2026-10-16)
+
+### Context
+
+Deep (Store, Party Material rights) saw "No matches" in the JWSO No. dropdown on
+New Party GRN on PROD. The JWSO list and detail needed JWSO Master (Sales) View
+(ADR-203 rule 8); the 403 was swallowed by SearchableSelect. A read-only audit
+found the same fault on Party Material Issue, Customer Material Return, JW Invoice,
+JW DC outward (JWSO), RM Grade / RM Size (Route Card, BOM, JC, ML BOM), Machine
+Group (JC, Route Card, Op Entry, Edit Plan), a JC's own Production Order lookup,
+and CAPA's admin-only user list.
+
+### Decision
+
+1. JWSO list + detail: View on any of JWSO Master, Party Material, Invoices, OSP
+   Outward DC (`requireAnyFormAccess`, JWSO Master first so a refusal names it).
+   The JWSO trace (Related) and every write keep JWSO Master rights.
+2. JWSO money: a user who can open JWSO Master keeps JWSO Master's see-price (same
+   rule as the writes; its Price OFF still works). Other readers get Invoices'
+   see-price. A Store / JW DC reader gets rate and GST % blank.
+3. RM Grade, RM Size, Machine Group LIST reads: any login of the company, like
+   Items and Machines. Single-record reads and writes stay gated.
+4. Production Order list filtered by `jobCardId`: Production Order View or Job
+   Card View.
+5. SearchableSelect gets an optional `error` prop and shows the server's reason
+   instead of "No matches"; wired on the affected pickers.
+6. CAPA Responsible / Verified By use `/tasks/user-options` (login only).
+
+### Alternatives Considered
+
+- Tick JWSO Master View for every Store user — rejected: shows the Sales page and,
+  at L2+, JWSO prices.
+- New per-screen lookup endpoints — rejected (Section 21: reuse requireAnyFormAccess).
+
+### Consequences
+
+- Positive: Store / Finance / JW DC / Production users pick from these lists
+  without rights on the owning master; refusals are visible.
+- Negative: JWSO Master "Hide page" no longer hides JWSO reads for a user who holds
+  Party Material / Invoices / OSP DC View.
+- Open: from a JC, the Production Order link still needs Production Order View;
+  a 403 is retried once (global `retry: 1`) before the reason shows.

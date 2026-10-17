@@ -112,7 +112,7 @@ export const unplannedSoLinesReport: RegisteredReport = {
           NULL::text                                  AS so_internal_no,
           jwo.jw_date::text                                 AS order_date,
           COALESCE(cl.name, jwo.customer_name, '—')   AS client_name,
-          NULL::text                                  AS client_po_line_no,
+          jwl.client_po_line_no                       AS client_po_line_no, -- ADR-236
           COALESCE(it.code, jwl.item_code_text)  AS item_code,
           jwl.revision::text                          AS item_revision,
           jwl.order_qty                               AS order_qty,

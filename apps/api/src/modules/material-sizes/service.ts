@@ -62,7 +62,9 @@ export async function listMaterialSizes(
   input: ListMaterialSizesQuery,
   user: AuthContext,
 ): Promise<ListMaterialSizesResponse> {
-  await requireFormAccess(user, 'rawmat_create', 'view');
+  // Reading the list is open to every login, like Items and Machines: it feeds
+  // the RM Size picker on Route Card, BOM, Job Card and ML BOM, whose users
+  // need not hold Raw Material Master View. Adding / editing stays gated.
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [

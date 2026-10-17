@@ -57,6 +57,16 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
       title: (r) => r.clientName ?? '',
     },
     {
+      // POL — the customer's PO line number on the JWSO line (ADR-236).
+      id: 'client_po_line_no',
+      header: 'POL',
+      kind: 'code',
+      headColor: 'var(--purple)',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
+    },
+    {
       id: 'item_code',
       sortFilterField: 'itemCode',
       kind: 'code',

@@ -329,7 +329,8 @@ function OpEntryPage() {
                 thing as an op without a card. Same target and same underlined
                 treatment as the code on the Job Cards list. */}
                 {jcHead ? (
-                  <ActionLink fallback="text"
+                  <ActionLink
+                    fallback="text"
                     to="/job-cards/$id"
                     params={{ id: jcHead.jobCardId }}
                     className="mono fw-700"

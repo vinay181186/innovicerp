@@ -69,6 +69,7 @@ export function MachineGroupPicker({
       onChange={(picked) => onChange(picked === NONE_ID ? null : picked)}
       onSearch={setTerm}
       loading={list.isFetching}
+      error={list.error}
       options={options}
       // One value, so the input shows the group itself — 'VMC', not 'VMC — VMC'.
       selectedLabel={(o) => o.name}

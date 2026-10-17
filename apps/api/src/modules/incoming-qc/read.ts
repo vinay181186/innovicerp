@@ -24,6 +24,7 @@ import { incomingQcQuerySchema } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
+import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { IQC_COMPLETED_SF_COLUMNS, IQC_PENDING_SF_COLUMNS } from './sf-columns';
 
@@ -75,7 +76,7 @@ function searchFrag(term: string | undefined, fields: SQL[]): SQL {
 const COMMON_SEARCH = [
   sql`h.code`,
   sql`COALESCE(v.name, h.vendor_code_text)`,
-  sql`sol.client_po_line_no`,
+  polSql('sol', 'rev_jwl'),
   sql`COALESCE(i.code, l.item_code_text)`,
   sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
   sql`COALESCE(i.name, l.item_name)`,
@@ -132,7 +133,7 @@ export async function getIncomingQc(
         -- The customer's drawing revision off the SO / JWSO line (never
         -- items.revision); text cast for a pre-0119 database.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        sol.client_po_line_no AS "clientPoLineNo",
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) AS "pendingQty",
@@ -172,7 +173,7 @@ export async function getIncomingQc(
         COALESCE(v.name, h.vendor_code_text) AS "vendorName",
         COALESCE(i.code, l.item_code_text) AS "itemCode",
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-        sol.client_po_line_no AS "clientPoLineNo",
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",

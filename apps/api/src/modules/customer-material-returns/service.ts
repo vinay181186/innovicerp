@@ -200,6 +200,8 @@ async function loadDetail(
   const lineRows = (await tx.execute(sql`
     SELECT l.id, l.line_no AS "lineNo", l.kind, l.jw_line_id AS "jwLineId",
            jwl.line_no AS "jwLineNo",
+           -- POL: the customer's PO line no. on the JWSO line (ADR-236).
+           jwl.client_po_line_no AS "clientPoLineNo",
            COALESCE(i.code, jwl.item_code_text) AS "partCode",
            l.party_material_id AS "partyMaterialId", pm.code AS "partyMaterialCode",
            COALESCE(ri.code, pm.item_code_text) AS "rmItemCode",
@@ -225,6 +227,7 @@ async function loadDetail(
     kind: r['kind'] as CustomerMaterialReturnKind,
     jwLineId: r['jwLineId'] as string,
     jwLineNo: r['jwLineNo'] != null ? Number(r['jwLineNo']) : null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     partCode: (r['partCode'] as string | null) ?? null,
     partyMaterialId: r['partyMaterialId'] as string,
     partyMaterialCode: (r['partyMaterialCode'] as string | null) ?? null,
@@ -266,6 +269,7 @@ export async function listCustomerMaterialReturnable(
 
     const lineRows = (await tx.execute(sql`
       SELECT jwl.id AS "jwLineId", jwl.line_no AS "jwLineNo",
+             jwl.client_po_line_no AS "clientPoLineNo", -- POL (ADR-236)
              COALESCE(i.code, jwl.item_code_text) AS "partCode",
              pm.id AS "partyMaterialId", pm.code AS "partyMaterialCode",
              COALESCE(ri.code, pm.item_code_text) AS "rmItemCode",
@@ -281,6 +285,7 @@ export async function listCustomerMaterialReturnable(
     `)) as unknown as Array<{
       jwLineId: string;
       jwLineNo: number;
+      clientPoLineNo: string | null;
       partCode: string | null;
       partyMaterialId: string;
       partyMaterialCode: string;
@@ -297,6 +302,7 @@ export async function listCustomerMaterialReturnable(
         kind: 'good',
         jwLineId: l.jwLineId,
         jwLineNo: Number(l.jwLineNo),
+        clientPoLineNo: l.clientPoLineNo ?? null,
         partCode: l.partCode ?? null,
         partyMaterialId: l.partyMaterialId,
         partyMaterialCode: l.partyMaterialCode,
@@ -310,6 +316,7 @@ export async function listCustomerMaterialReturnable(
     const rejRows = (await tx.execute(sql`
       SELECT pgl.id AS "partyGrnLineId", pg.code AS "partyGrnCode",
              jwl.id AS "jwLineId", jwl.line_no AS "jwLineNo",
+             jwl.client_po_line_no AS "clientPoLineNo", -- POL (ADR-236)
              COALESCE(i.code, jwl.item_code_text) AS "partCode",
              pm.id AS "partyMaterialId", pm.code AS "partyMaterialCode",
              COALESCE(ri.code, pm.item_code_text) AS "rmItemCode",
@@ -331,6 +338,7 @@ export async function listCustomerMaterialReturnable(
       partyGrnCode: string;
       jwLineId: string;
       jwLineNo: number;
+      clientPoLineNo: string | null;
       partCode: string | null;
       partyMaterialId: string;
       partyMaterialCode: string;
@@ -342,6 +350,7 @@ export async function listCustomerMaterialReturnable(
         kind: 'rejected',
         jwLineId: r.jwLineId,
         jwLineNo: Number(r.jwLineNo),
+        clientPoLineNo: r.clientPoLineNo ?? null,
         partCode: r.partCode ?? null,
         partyMaterialId: r.partyMaterialId,
         partyMaterialCode: r.partyMaterialCode,

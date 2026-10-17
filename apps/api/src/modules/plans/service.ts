@@ -67,6 +67,7 @@ import {
 } from '../../lib/access';
 import { ownDraftPlanRefusal } from './own-draft';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { polOf } from '../../lib/pol';
 import { planSfColumns } from './sf-columns';
 import { resolveRmItem } from '../../lib/rm-item';
 import {
@@ -345,11 +346,14 @@ const SO_LINE_REVISION = sql<
 >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`;
 
 /** POL — the line number printed on the CUSTOMER's own purchase order, read off
- *  the same already-joined SO line as SO_LINE_REVISION above. No job-work
- *  branch on purpose: a JWSO line has no customer PO, so a JW-sourced or ad-hoc
+ *  the same already-joined SO line as SO_LINE_REVISION above, else the JWSO
+ *  line's (ADR-236; every use sits behind the same two LEFT JOINs). An ad-hoc
  *  plan is correctly null. Never sales_order_lines.line_no, which is OUR line
  *  number and a different fact entirely. */
-const SO_LINE_CLIENT_PO_LINE_NO = sql<string | null>`${salesOrderLines.clientPoLineNo}`;
+const SO_LINE_CLIENT_PO_LINE_NO = polOf(
+  salesOrderLines.clientPoLineNo,
+  jobWorkOrderLines.clientPoLineNo,
+);
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -447,7 +451,11 @@ export async function listPlans(
                        WHERE po.plan_id = ${plans.id} AND po.deleted_at IS NULL
                          AND po.code ILIKE ${term})
           OR EXISTS (SELECT 1 FROM ${jobCards} jc WHERE jc.id = ${plans.jcId} AND jc.code ILIKE ${term})
-          OR EXISTS (SELECT 1 FROM ${salesOrderLines} sol WHERE sol.id = ${plans.soLineId} AND sol.deleted_at IS NULL AND sol.client_po_line_no ILIKE ${term}))`,
+          OR EXISTS (SELECT 1 FROM ${salesOrderLines} sol WHERE sol.id = ${plans.soLineId} AND sol.deleted_at IS NULL AND sol.client_po_line_no ILIKE ${term})
+          -- ADR-236: SO POL else JWSO POL (the rule in lib/pol.ts) as two EXISTS —
+          -- this predicate also runs on the count query, which has no line joins.
+          -- A plan has one source, so OR finds the same rows as the COALESCE.
+          OR EXISTS (SELECT 1 FROM public.job_work_order_lines sjwl WHERE sjwl.id = ${plans.jwLineId} AND sjwl.deleted_at IS NULL AND sjwl.client_po_line_no ILIKE ${term}))`,
       );
     }
     // Sort & Filter (ADR-200): the screen's column filters, on list AND count.

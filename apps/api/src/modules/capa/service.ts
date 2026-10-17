@@ -16,6 +16,7 @@ import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { polSql } from '../../lib/pol';
 import { CAPA_NC_REFS_TEXT, CAPA_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
@@ -53,9 +54,8 @@ type Tx = Parameters<Parameters<typeof withUserContext>[1]>[0];
  *
  * A CAPA hangs off the NC → job card chain, so the facts come from the same
  * place nc-register reads them (service.ts ~L431): the SO line the card was
- * raised against, falling back to the JW line for the revision only. POL is
- * SO-side only — a job-work line belongs to a job-work order, not to a
- * customer PO, so it correctly stays null there.
+ * raised against, falling back to the JW line. POL follows the same rule
+ * (ADR-236): SO line's POL, else the Job Work SO line's POL.
  *
  * capa_records stores `jc_no` as free TEXT with no foreign key, so the hop is
  * by code inside the company; job_cards_company_code_uniq makes that one row.
@@ -74,7 +74,7 @@ async function lineFactsByJcNo(
       -- Cast to text: the contract types this as a string, and the column is
       -- only text on a database that has had migration 0119.
       COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-      sol.client_po_line_no AS "clientPoLineNo"
+      ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo"
     FROM public.job_cards jc
     LEFT JOIN public.sales_order_lines sol
       ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL

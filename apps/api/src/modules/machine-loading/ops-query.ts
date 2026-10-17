@@ -8,6 +8,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { MachineLoadOp, MachineLoadingQuery } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 /** CODE/REV exactly as the cell prints it (itemCodeWithRev). */
 const CODE_REV = sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`;
@@ -45,9 +46,9 @@ const SELECT_LIST = sql.raw(`
         -- board a number. The cast is a no-op once 0119 is applied.
         COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
-        -- off the same SO line as the revision above. SO side only: a job-work
-        -- line has no customer PO, so JW-sourced cards are correctly null.
-        sol.client_po_line_no AS "clientPoLineNo",
+        -- off the same SO line as the revision above, else the Job Work SO
+        -- line's POL for a JW-sourced card (ADR-236).
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         so.code AS "soCode",
         so.internal_so_no AS "soInternalNo",
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
@@ -129,7 +130,7 @@ function pagedWhere(input: MachineLoadingQuery): SQL {
     const pat = `%${likeEscape(term)}%`;
     parts.push(sql`AND (
       jc.code ILIKE ${pat} ESCAPE '\\'
-      OR sol.client_po_line_no ILIKE ${pat} ESCAPE '\\'
+      OR ${polSql('sol', 'rev_jwl')} ILIKE ${pat} ESCAPE '\\'
       OR ${CODE_REV} ILIKE ${pat} ESCAPE '\\'
       OR i.name ILIKE ${pat} ESCAPE '\\'
       OR so.code ILIKE ${pat} ESCAPE '\\'

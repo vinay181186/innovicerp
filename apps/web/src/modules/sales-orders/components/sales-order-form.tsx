@@ -37,9 +37,12 @@ import {
   INTERNAL_SO_NO_MAX,
   INTERNAL_SO_NO_PREFIX,
   internalSoNoError,
+  LINE_REMARKS_MAX,
   type ListItemsResponse,
   normaliseInternalSoNo,
   normalizeRevision,
+  POL_MAX,
+  polError,
   revisionBackwardsMessage,
   revisionGoesBackwards,
   type SalesOrderDetail,
@@ -99,7 +102,10 @@ interface LineFormValue {
   orderQty: number;
   rate: number;
   dueDate?: string | undefined;
+  /** POL — the CUSTOMER'S PO line number (ADR-236: compulsory). */
   clientPoLineNo?: string | undefined;
+  /** ADR-236: this line's own note (optional). Not the header's SO Remarks. */
+  remarks?: string | undefined;
   status?: SoStatus | undefined;
 }
 
@@ -155,6 +161,8 @@ const NEW_LINE: LineFormValue = {
   orderQty: 1,
   rate: 0,
   revision: '',
+  clientPoLineNo: '',
+  remarks: '',
 };
 const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
 
@@ -567,7 +575,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             `Please add ${uniq.length > 1 ? 'each' : 'it'} (item code + item name) in Item Master first, then re-import.`,
         );
       }
-      if (errs.length) parts.push(`${errs.length} row(s) skipped.`);
+      // Name the first reason, so a sheet without the (now compulsory, ADR-236)
+      // POL column says why its rows were skipped.
+      if (errs.length) parts.push(`${errs.length} row(s) skipped — ${errs[0]}`);
       setImportMsg(parts.join(' ') || 'No rows found in the sheet.');
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Could not import file. Try again.');
@@ -660,6 +670,18 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         }
       }
 
+      // ADR-236: POL (the customer's PO line number) is compulsory on every
+      // line — the equipment line included. Same rule and words as the API
+      // (shared polError), named by line like the checks above.
+      const polLines = equip ? values.lines.slice(0, 1) : values.lines;
+      for (let i = 0; i < polLines.length; i++) {
+        const msg = polError(polLines[i]?.clientPoLineNo);
+        if (msg) {
+          setLineError(`Line ${i + 1}: ${msg}`);
+          return;
+        }
+      }
+
       const headerOut = {
         ...values.header,
         status: asDraft
@@ -710,7 +732,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           orderQty: Number(l.orderQty),
           rate: Number(l.rate),
           dueDate: soDue,
-          clientPoLineNo: l.clientPoLineNo?.trim() || undefined,
+          // ADR-236: compulsory, always sent trimmed (checked non-blank above).
+          clientPoLineNo: String(l.clientPoLineNo ?? '').trim(),
+          // null, not undefined: a cleared Remarks must be sent as null to clear
+          // the stored note (an absent key leaves it as it was).
+          remarks: l.remarks?.trim() ? l.remarks.trim() : null,
           ...(l.status ? { status: l.status } : {}),
         };
       });
@@ -1070,7 +1096,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             </select>
           </FormField>
 
-          <FormField label="Remarks" size="full" htmlFor="remarks">
+          {/* ADR-236: the WHOLE-ORDER note is "SO Remarks"; a line's own note is
+              the bare "Remarks" in the line table (the GRN split). */}
+          <FormField label="SO Remarks" size="full" htmlFor="remarks">
             <textarea
               id="remarks"
               className="innovic-textarea"
@@ -1185,6 +1213,28 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   validate: (v) =>
                     !isEquip || (Number.isFinite(v) && v >= 0) || 'Rate cannot be negative.',
                 })}
+              />
+            </FormField>
+            {/* ADR-236: POL is compulsory on the equipment line too (onValid). */}
+            <FormField label="POL" required size="sm" htmlFor="so-equip-pol">
+              <input
+                id="so-equip-pol"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="POL"
+                maxLength={POL_MAX}
+                style={{ color: 'var(--purple)', fontWeight: 600 }}
+                {...register('lines.0.clientPoLineNo')}
+              />
+            </FormField>
+            <FormField label="Remarks" size="md" htmlFor="so-equip-remarks">
+              <input
+                id="so-equip-remarks"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="Remarks"
+                maxLength={LINE_REMARKS_MAX}
+                {...register('lines.0.remarks')}
               />
             </FormField>
             {/* Read-only, not a picker: the parent item decides the BOM
@@ -1308,39 +1358,43 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             {/* The table scrolls inside its own wrapper, never the page. The item
                 picker's dropdown is portalled, so the wrapper cannot clip it.
                 Visible: # · Item Code + Drawing Rev · Item Name · POL · UOM · Qty
-                · Rate · Amount. Material, Drawing No. and Drawing File sit in the
-                row's "▸ More" detail row. */}
+                · Rate · Amount · Remarks. Material, Drawing No. and Drawing File
+                sit in the row's "▸ More" detail row. Widths sum to 100:
+                4 + 22 + 14 + 7 + 5 + 7 + 8 + 9 + 12 + 12. */}
             <div className="tbl-wrap">
               <table
                 className="innovic-table tbl-ctr"
-                style={{ tableLayout: 'fixed', minWidth: 900 }}
+                style={{ tableLayout: 'fixed', minWidth: 1000 }}
               >
                 <thead>
                   <tr>
                     <th style={{ width: '4%' }}>Ln</th>
-                    <th style={{ width: '24%' }}>
+                    <th style={{ width: '22%' }}>
                       Item Code <span className="req">★</span> · Drawing Rev{' '}
                       <span className="req">★</span>
                     </th>
-                    <th style={{ width: '17%' }}>Item Name</th>
-                    <th style={{ width: '7%' }}>POL</th>
-                    <th style={{ width: '6%' }}>UOM</th>
-                    <th className="th-num" style={{ width: '8%' }}>
+                    <th style={{ width: '14%' }}>Item Name</th>
+                    <th style={{ width: '7%', color: 'var(--purple)' }}>
+                      POL <span className="req">★</span>
+                    </th>
+                    <th style={{ width: '5%' }}>UOM</th>
+                    <th className="th-num" style={{ width: '7%' }}>
                       Order Qty <span className="req">★</span>
                     </th>
-                    <th className="th-num" style={{ width: '9%' }}>
+                    <th className="th-num" style={{ width: '8%' }}>
                       Rate (₹)
                     </th>
-                    <th className="th-num" style={{ width: '10%' }}>
+                    <th className="th-num" style={{ width: '9%' }}>
                       Amount
                     </th>
-                    <th style={{ width: '15%' }} />
+                    <th style={{ width: '12%' }}>Remarks</th>
+                    <th style={{ width: '12%' }} />
                   </tr>
                 </thead>
                 <tbody>
                   {fields.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="empty-state">
+                      <td colSpan={10} className="empty-state">
                         No lines yet — click &ldquo;+ Add Line&rdquo;
                       </td>
                     </tr>
@@ -1411,6 +1465,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                 className="innovic-input"
                                 autoComplete="off"
                                 placeholder="POL"
+                                aria-label={`POL, line ${idx + 1}`}
+                                maxLength={POL_MAX}
                                 style={{ color: 'var(--purple)', fontWeight: 600 }}
                                 {...register(`lines.${idx}.clientPoLineNo` as const)}
                               />
@@ -1447,6 +1503,18 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             <td className="td-num mono fw-700 green">
                               {amt > 0 ? `₹${inrFormat(amt)}` : '—'}
                             </td>
+                            {/* ADR-236: this line's own note (optional). */}
+                            <td>
+                              <input
+                                className="innovic-input"
+                                autoComplete="off"
+                                placeholder="Remarks"
+                                aria-label={`Remarks, line ${idx + 1}`}
+                                maxLength={LINE_REMARKS_MAX}
+                                title={ln?.remarks || undefined}
+                                {...register(`lines.${idx}.remarks` as const)}
+                              />
+                            </td>
                             <td>
                               <div
                                 style={{
@@ -1477,7 +1545,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                           </tr>
                           {open ? (
                             <tr>
-                              <td colSpan={9} style={{ background: 'var(--bg3)' }}>
+                              <td colSpan={10} style={{ background: 'var(--bg3)' }}>
                                 <FormGrid>
                                   <FormField label="Material" size="md" htmlFor={`soln-mat-${idx}`}>
                                     <input
@@ -1539,7 +1607,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       Subtotal
                     </td>
                     <td className="td-num mono fw-700">₹{inrFormat(subtotal)}</td>
-                    <td />
+                    <td colSpan={2} />
                   </tr>
                   <tr>
                     <td colSpan={5} />
@@ -1547,7 +1615,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       GST {gstPercent}%
                     </td>
                     <td className="td-num mono fw-700 amber">₹{inrFormat(gstAmt)}</td>
-                    <td />
+                    <td colSpan={2} />
                   </tr>
                   <tr>
                     <td colSpan={5} />
@@ -1557,7 +1625,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     <td className="td-num mono fw-700 green" style={{ fontSize: 'var(--fs-md)' }}>
                       ₹{inrFormat(grand)}
                     </td>
-                    <td />
+                    <td colSpan={2} />
                   </tr>
                 </tfoot>
               </table>
@@ -1692,6 +1760,8 @@ function LineItemCascade({
       `lines.${idx}.orderQty`,
       `lines.${idx}.rate`,
       `lines.${idx}.clientPoLineNo`,
+      // ADR-236: the line's own note — typed, never from the item master.
+      `lines.${idx}.remarks`,
       `lines.${idx}.status`,
       `lines.${idx}.itemId`,
       `lines.${idx}.itemCodeText`,
@@ -1755,7 +1825,10 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
               orderQty: l.orderQty,
               rate: Number(l.rate),
               ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-              ...(l.clientPoLineNo ? { clientPoLineNo: l.clientPoLineNo } : {}),
+              // ADR-236: '' for an old line saved without one, so the
+              // compulsory check asks for it before the save.
+              clientPoLineNo: l.clientPoLineNo ?? '',
+              remarks: l.remarks ?? '',
               status: l.status,
             }),
           )

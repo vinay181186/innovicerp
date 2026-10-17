@@ -234,6 +234,7 @@ export function NewCmrModal({
               onChange={onPickJw}
               onSearch={setJwSearch}
               loading={jwQuery.isFetching}
+              error={jwQuery.error}
               placeholder="🔍 Select JWSO — type number or customer…"
               options={jwHeaders.map((j) => ({
                 id: j.jwId,
@@ -313,6 +314,7 @@ export function NewCmrModal({
                 <tr>
                   <th>Return Kind</th>
                   <th>JWSO Line</th>
+                  <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Customer RM</th>
                   <th>Party GRN No.</th>
@@ -332,6 +334,9 @@ export function NewCmrModal({
                       </td>
                       <td className="mono" style={{ color: 'var(--purple)' }}>
                         L{r.jwLineNo}
+                      </td>
+                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        {r.clientPoLineNo ?? '—'}
                       </td>
                       <td className="td-code">{r.partCode ?? '—'}</td>
                       <td className="td-code" style={{ color: 'var(--text)' }}>

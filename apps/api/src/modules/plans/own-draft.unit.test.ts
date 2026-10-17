@@ -8,7 +8,9 @@ const OTHER = '00000000-0000-4000-8000-0000000000bb';
 
 describe('ownDraftPlanRefusal', () => {
   it('allows the creator while the plan is In Planning', () => {
-    expect(ownDraftPlanRefusal({ code: 'PLN-1', createdBy: ME, planStatus: 'in_planning' }, ME)).toBeNull();
+    expect(
+      ownDraftPlanRefusal({ code: 'PLN-1', createdBy: ME, planStatus: 'in_planning' }, ME),
+    ).toBeNull();
   });
 
   it("refuses someone else's plan", () => {

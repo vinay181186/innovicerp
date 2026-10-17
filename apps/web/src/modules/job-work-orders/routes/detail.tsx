@@ -299,6 +299,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Ln</th>
+                {/* POL — the customer's PO line number (ADR-236), beside Ln as on
+                    the SO detail. Purple, mono, bold. */}
+                <th style={{ color: 'var(--purple)' }}>POL</th>
                 {/* Image · CODE/REV · Part name in one badge cell (user decision
                     2026-09-21) — the former separate Part name column folded in. */}
                 <th>Item</th>
@@ -323,6 +326,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                   </>
                 )}
                 <th>Due Date</th>
+                {/* ADR-236: the LINE's own note (the order's is JWSO Remarks). */}
+                <th>Remarks</th>
                 <th>JWSO Status</th>
                 {showLineMenu ? <th aria-label="Actions" /> : null}
               </tr>
@@ -331,7 +336,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               {detail.lines.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={priceHidden ? (showLineMenu ? 11 : 10) : showLineMenu ? 13 : 12}
+                    colSpan={priceHidden ? (showLineMenu ? 13 : 12) : showLineMenu ? 15 : 14}
                     className="empty-state"
                   >
                     No lines yet.
@@ -631,6 +636,9 @@ function LineRow(props: {
       <td className="mono" style={{ color: 'var(--blue)' }}>
         {l.lineNo}
       </td>
+      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        {l.clientPoLineNo ?? '—'}
+      </td>
       {/* Thumbnail · CODE/REV · part name, the same badge the Sales Order detail
           uses. The Rev is the client's drawing revision typed on this JWSO line,
           and it travels with the code (the badge formats it via itemCodeWithRev). */}
@@ -687,6 +695,10 @@ function LineRow(props: {
       )}
       <td className="text2" style={{ fontSize: 11 }}>
         {fmtDate(l.dueDate)}
+      </td>
+      {/* Long prose: one line, cut with "…", the full text on hover. */}
+      <td style={{ maxWidth: 240 }} title={l.remarks ?? undefined}>
+        {l.remarks ?? '—'}
       </td>
       <td>
         <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
@@ -789,7 +801,7 @@ function DetailGrid(props: {
         }
       />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
-        <span className="form-label">Remarks</span>
+        <span className="form-label">JWSO Remarks</span>
         <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
           {remarks === '' ? (
             '—'

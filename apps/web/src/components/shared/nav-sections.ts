@@ -75,9 +75,7 @@ export const SECTIONS: readonly NavSection[] = [
         // planning's own master, not the drawing office's. Moved out of Design
         // and listed here only (owner, 2026-10-03).
         label: 'Master',
-        items: [
-          { to: '/route-cards', label: 'Route Card Master', icon: '🗒' },
-        ],
+        items: [{ to: '/route-cards', label: 'Route Card Master', icon: '🗒' }],
       },
       {
         label: 'Report',

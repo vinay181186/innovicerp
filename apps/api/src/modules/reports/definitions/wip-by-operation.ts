@@ -6,6 +6,7 @@
 import { OP_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
+import { polSql } from '../../../lib/pol';
 import {
   enumFilter,
   likeFilter,
@@ -72,7 +73,7 @@ export const wipByOperationReport: RegisteredReport = {
       SELECT
         jc.code                                      AS jc_code,
         it.code                                 AS item_code,
-        sol.client_po_line_no                        AS client_po_line_no,
+        ${polSql('sol', 'jwl')} AS client_po_line_no, -- ADR-236
         COALESCE(sol.revision::text, jwl.revision::text) AS item_revision,
         COALESCE(so.code, jwo.code)                  AS order_code,
         so.internal_so_no                            AS so_internal_no,

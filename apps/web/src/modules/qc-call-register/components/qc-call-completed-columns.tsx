@@ -63,7 +63,7 @@ function itemNameOf(vm: CompletedVM): string {
   return vm.row.itemName ?? '—';
 }
 function polOf(vm: CompletedVM): string | null {
-  return vm.kind === 'pgrn' ? null : vm.row.clientPoLineNo;
+  return vm.row.clientPoLineNo;
 }
 function acceptedOf(vm: CompletedVM): number {
   return vm.kind === 'op' ? vm.row.accepted : vm.row.acceptedQty;

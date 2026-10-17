@@ -65,8 +65,8 @@ export const jwInvoiceListItemSchema = jwInvoiceSchema.extend({
   itemCode: z.string().nullable().default(null),
   /** The customer's drawing revision on that JWSO line. */
   itemRevision: z.string().nullable().default(null),
-  /** The customer's PO line number (`POL`) for the SO line behind the JWSO
-   *  line, when there is one. */
+  /** POL — the JWSO line's customer PO line number (ADR-236); null on lines
+   *  saved before migration 0210. */
   clientPoLineNo: z.string().nullable().default(null),
   partName: z.string().nullable(),
   /** Unit of the JWSO line being billed (job_work_order_lines.uom). Null only

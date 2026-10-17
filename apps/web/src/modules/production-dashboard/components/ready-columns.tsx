@@ -57,7 +57,8 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
       header: 'JC No.',
       className: 'td-code',
       render: (op) => (
-        <ActionLink fallback="text"
+        <ActionLink
+          fallback="text"
           to="/job-cards/$id"
           params={{ id: op.jobCardId }}
           style={{ color: 'var(--cyan)', textDecoration: 'none' }}

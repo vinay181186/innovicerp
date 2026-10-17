@@ -61,6 +61,8 @@ export function printJwReturnChallan(
     lines: [
       {
         itemCode: itemCodeWithRev(r.itemCode, r.itemRevision, ''),
+        // The customer's PO line number on the JWSO line (ADR-236).
+        pol: r.clientPoLineNo,
         itemName: r.partName,
         uom,
         hsn: r.hsnCode?.trim() || null,

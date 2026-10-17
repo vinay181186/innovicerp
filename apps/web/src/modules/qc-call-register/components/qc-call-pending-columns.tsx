@@ -76,7 +76,7 @@ function itemNameOf(vm: PendingVM): string {
   return vm.row.itemName ?? '—';
 }
 function polOf(vm: PendingVM): string | null {
-  return vm.kind === 'pgrn' ? null : vm.row.clientPoLineNo;
+  return vm.row.clientPoLineNo;
 }
 function calledDateOf(vm: PendingVM): string | null {
   return vm.kind === 'op' ? (vm.row.qcCallDate ?? vm.row.pendSince) : vm.row.grnDate;

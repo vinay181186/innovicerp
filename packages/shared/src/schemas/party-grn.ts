@@ -22,6 +22,9 @@ export const partyGrnLineSchema = z.object({
   jwLineNoText: z.string().nullable(),
   // R4 (ADR-194): real FK to the JWSO line (backfilled from jwLineNoText).
   jwLineId: z.string().uuid().nullable(),
+  /** POL — the JWSO line's customer PO line number (ADR-236); null on
+   *  lines saved before migration 0210. */
+  clientPoLineNo: z.string().nullable().default(null),
   // R2 (ADR-194): compulsory incoming QC. Only acceptedQty enters the party
   // store; rejectedQty is recorded with a reason and never becomes stock.
   acceptedQty: z.number().int().nonnegative(),

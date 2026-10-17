@@ -5,10 +5,11 @@
 import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`w.jc_code`, type: 'text' },
-  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {
     sql: sql`(w.item_code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,

@@ -4,7 +4,7 @@
 // the rightmost columns drop into the ▸ detail row when the screen is narrow.
 //
 // Columns (first pinned = Return No.): Return No. · Return Date · JWSO ·
-// Customer · Item Code · Item Name · Return Qty · Return Status. The ▸ detail
+// Customer · POL · Item Code · Item Name · Return Qty · Return Status. The ▸ detail
 // row reveals Transporter and Vehicle No. JW Return has no detail page, so the
 // row is NOT clickable; per-row ⋯ carries History / Print / Cancel. The qty
 // guard stays server-side (qty <= produced − already returned).

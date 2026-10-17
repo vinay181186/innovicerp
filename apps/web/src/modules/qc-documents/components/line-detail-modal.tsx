@@ -117,7 +117,7 @@ function LineDetailBody({
       >
         <div>
           {/* POL — the customer's own PO line number, read-only here; it is
-              typed only on the Sales Order. */}
+              typed on the Sales Order or JWSO line (ADR-236). */}
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>POL</span>
           <br />
           <b className="mono" style={{ color: 'var(--purple)' }}>

@@ -18,6 +18,7 @@ import type {
   TpiResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { polSql } from '../../lib/pol';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape } from '../../lib/list-query';
 
@@ -73,7 +74,7 @@ const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
   so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-  sol.client_po_line_no AS "clientPoLineNo", i.name AS "itemName",
+  ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, jc.order_qty AS "orderQty", vos.qc_pending AS "qcPending",
   jo.qc_call_date AS "callDate",
   GREATEST(0, (CURRENT_DATE - COALESCE(jo.qc_call_date, jc.jc_date)))::int AS "waitDays"`;
@@ -83,7 +84,7 @@ const COMPLETED_SELECT = sql`
   ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
   so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
-  sol.client_po_line_no AS "clientPoLineNo", i.name AS "itemName",
+  ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, ol.qty AS "accepted", ol.reject_qty AS "rejected",
   jo.qc_call_date AS "callDate", ol.log_date AS "attendedDate",
   CASE WHEN jo.qc_call_date IS NOT NULL THEN (ol.log_date - jo.qc_call_date)::int ELSE NULL END AS "respDays",
@@ -102,7 +103,7 @@ function searchWhere(term: string | undefined, completed: boolean): SQL {
     sql`so.code`,
     // ADR-207: the SO's Internal SO No. finds its rows too.
     sql`so.internal_so_no`,
-    sql`sol.client_po_line_no`,
+    polSql('sol', 'rev_jwl'),
     sql`i.code`,
     sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
     sql`i.name`,
