@@ -188,6 +188,15 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // "Dispatch" is offered as the next step, and whether Close is.
   const pendingDispatchQty = detail.lines.reduce((s, l) => s + closableQty(l), 0);
 
+
+  // The order this page already shows — printed as is (no refetch).
+  const printTarget = {
+    kind: 'so',
+    id: detail.id,
+    code: detail.code,
+    clientId: detail.clientId,
+    detail,
+  } as const;
   return (
     <div>
       <DetailHeader
@@ -229,10 +238,10 @@ function SalesOrderDetailPage(): React.JSX.Element {
             </ActionLink>
             <ActionMenu
               items={[
-                { label: 'Preview', onClick: () => orderPrint.preview('so', detail.id, isDraft) },
+                { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
                 {
                   label: '⬇ Download PDF',
-                  onClick: () => orderPrint.download('so', detail.id, isDraft),
+                  onClick: () => void orderPrint.download(printTarget, isDraft),
                 },
                 { label: 'Assign Task', hidden: !canAssign, onClick: () => setAssignOpen(true) },
                 {

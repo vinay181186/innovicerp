@@ -1,7 +1,15 @@
 // Preview / ⬇ Download for one SO or JWSO — the ONE entry point the SO and
-// JWSO lists (row ⋯) and detail pages (⋯) share. Loads the order (fresh from
-// the server) and its customer, builds the sheet (lib/print-order.ts), then either opens
-// the in-app preview or saves `<code>.pdf`.
+// JWSO lists (row ⋯) and detail pages (⋯) share. Builds the sheet
+// (lib/print-order.ts) from the order + its customer + company + print
+// templates, then either shows it in the in-app preview or saves `<code>.pdf`.
+//
+// Speed (owner 2026-10-17: list preview "not open", detail "too much time"):
+//   - the preview box opens AT THE CLICK, showing "Loading preview…";
+//   - company + templates are warmed when the page mounts;
+//   - every load runs in parallel — the caller passes the clientId it already
+//     has (list row / detail), so the customer never waits for the order;
+//   - the detail page passes the order it has already loaded (no refetch);
+//     a list fetches it fresh, so another user's edit is never printed stale.
 
 import type {
   Client,
@@ -10,8 +18,8 @@ import type {
   ListPrintTemplatesResponse,
   SalesOrderDetail,
 } from '@innovic/shared';
-import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { SheetPreviewModal } from '@/components/shared/sheet-preview-modal';
 import { apiFetch } from '@/lib/api';
 import { downloadSheetPdf } from '@/lib/print/sheet-pdf';
@@ -26,82 +34,103 @@ import { jwSalesOrderSheet, salesOrderSheet } from '../lib/print-order';
 
 export type OrderKind = 'so' | 'jwso';
 
+export type OrderPrintTarget =
+  | { kind: 'so'; id: string; code: string; clientId: string | null; detail?: SalesOrderDetail }
+  | {
+      kind: 'jwso';
+      id: string;
+      code: string;
+      clientId: string | null;
+      detail?: JobWorkOrderDetail;
+    };
+
+const companyQuery = {
+  queryKey: companyKeys.me(),
+  queryFn: () => apiFetch<Company>('/companies/me'),
+};
+const templatesQuery = {
+  queryKey: printTemplatesKeys.list(),
+  queryFn: () => apiFetch<ListPrintTemplatesResponse>('/print-templates'),
+};
+
+function fetchClient(qc: QueryClient, clientId: string | null): Promise<Client | null> {
+  if (!clientId) return Promise.resolve(null);
+  return qc
+    .fetchQuery({
+      queryKey: clientsKeys.detail(clientId),
+      queryFn: () => apiFetch<Client>(`/clients/${clientId}`),
+    })
+    .catch(() => null); // a customer the user may not read prints the order's own name
+}
+
 export function useOrderPrint(): {
-  preview: (kind: OrderKind, id: string, draft?: boolean) => void;
-  download: (kind: OrderKind, id: string, draft?: boolean) => void;
+  preview: (t: OrderPrintTarget, draft?: boolean) => void;
+  download: (t: OrderPrintTarget, draft?: boolean) => Promise<void>;
   modal: React.JSX.Element | null;
 } {
   const qc = useQueryClient();
   const { data: me } = useSession();
-  const [open, setOpen] = useState<{ model: SheetPrintModel; code: string } | null>(null);
+  const [open, setOpen] = useState<{
+    code: string;
+    title: string;
+    model: SheetPrintModel | null;
+    error: string | null;
+  } | null>(null);
 
-  // Detail first, then the customer. A customer the user may not read prints the order's own name.
-  const build = async (
-    kind: OrderKind,
-    id: string,
-    draft?: boolean,
-  ): Promise<{ model: SheetPrintModel; code: string }> => {
-    // staleTime 0: print what is saved NOW, not a cached copy from before
-    // someone else's edit. Company + templates are awaited too, so an early
-    // click from a list never prints without the letterhead or the terms.
-    const fresh = { staleTime: 0 } as const;
-    const [company, templates] = await Promise.all([
+  // Warm the two company-wide reads so the first click does not wait on them.
+  useEffect(() => {
+    void qc.prefetchQuery(companyQuery);
+    void qc.prefetchQuery(templatesQuery);
+  }, [qc]);
+
+  const build = async (t: OrderPrintTarget, draft?: boolean): Promise<SheetPrintModel> => {
+    const order =
+      t.detail ??
       qc.fetchQuery({
-        queryKey: companyKeys.me(),
-        queryFn: () => apiFetch<Company>('/companies/me'),
-      }),
-      qc.fetchQuery({
-        queryKey: printTemplatesKeys.list(),
-        queryFn: () => apiFetch<ListPrintTemplatesResponse>('/print-templates'),
-      }),
-    ]);
-    const base = {
-      company,
-      templates: templates.items,
-      currentUser: me?.email,
-      draft,
-    };
-    const clientOf = (clientId: string | null): Promise<Client | null> =>
-      clientId
-        ? qc
-            .fetchQuery({
-              queryKey: clientsKeys.detail(clientId),
-              queryFn: () => apiFetch<Client>(`/clients/${clientId}`),
-            })
-            .catch(() => null)
-        : Promise.resolve(null);
-    if (kind === 'so') {
-      const so = await qc.fetchQuery({
-        queryKey: salesOrdersKeys.detail(id),
-        queryFn: () => apiFetch<SalesOrderDetail>(`/sales-orders/${id}`),
-        ...fresh,
+        queryKey: t.kind === 'so' ? salesOrdersKeys.detail(t.id) : jobWorkOrdersKeys.detail(t.id),
+        queryFn: () =>
+          apiFetch<SalesOrderDetail | JobWorkOrderDetail>(
+            t.kind === 'so' ? `/sales-orders/${t.id}` : `/job-work-orders/${t.id}`,
+          ),
+        staleTime: 0,
       });
-      const client = await clientOf(so.clientId);
-      return { model: salesOrderSheet({ ...base, so, client }), code: so.code };
-    }
-    const jw = await qc.fetchQuery({
-      queryKey: jobWorkOrdersKeys.detail(id),
-      queryFn: () => apiFetch<JobWorkOrderDetail>(`/job-work-orders/${id}`),
-      ...fresh,
-    });
-    const client = await clientOf(jw.clientId);
-    return { model: jwSalesOrderSheet({ ...base, jw, client }), code: jw.code };
+    const [company, templates, client, detail] = await Promise.all([
+      qc.fetchQuery(companyQuery),
+      qc.fetchQuery(templatesQuery),
+      fetchClient(qc, t.clientId),
+      order,
+    ]);
+    const base = { company, templates: templates.items, client, currentUser: me?.email, draft };
+    return t.kind === 'so'
+      ? salesOrderSheet({ ...base, so: detail as SalesOrderDetail })
+      : jwSalesOrderSheet({ ...base, jw: detail as JobWorkOrderDetail });
   };
 
-  const fail = (e: unknown): void =>
-    window.alert(e instanceof Error ? e.message : 'Could not prepare the document. Try again.');
+  const message = (e: unknown): string =>
+    e instanceof Error ? e.message : 'Could not prepare the document. Try again.';
 
   return {
-    preview: (kind, id, draft) => {
-      build(kind, id, draft).then(setOpen, fail);
+    preview: (t, draft) => {
+      const title = t.kind === 'so' ? 'Sales Order' : 'JW Sales Order';
+      setOpen({ code: t.code, title, model: null, error: null });
+      build(t, draft).then(
+        (model) => setOpen((o) => (o?.code === t.code ? { ...o, model } : o)),
+        (e: unknown) => setOpen((o) => (o?.code === t.code ? { ...o, error: message(e) } : o)),
+      );
     },
-    download: (kind, id, draft) => {
-      build(kind, id, draft)
-        .then(({ model, code }) => downloadSheetPdf(model, code))
-        .catch(fail);
-    },
+    // Returned, not fired-and-forgotten: the row ⋯ shows busy until it is saved.
+    download: (t, draft) =>
+      build(t, draft)
+        .then((model) => downloadSheetPdf(model, t.code))
+        .catch((e: unknown) => window.alert(message(e))),
     modal: open ? (
-      <SheetPreviewModal model={open.model} fileName={open.code} onClose={() => setOpen(null)} />
+      <SheetPreviewModal
+        title={open.title}
+        fileName={open.code}
+        model={open.model}
+        error={open.error}
+        onClose={() => setOpen(null)}
+      />
     ) : null,
   };
 }

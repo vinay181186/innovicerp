@@ -358,8 +358,16 @@ function SalesOrdersListPage(): React.JSX.Element {
                 canAssign,
                 onAssign: setAssignSo,
                 onDelete: onDeleteSo,
-                onPreview: (s) => orderPrint.preview('so', s.id, draftIds.has(s.id)),
-                onDownload: (s) => orderPrint.download('so', s.id, draftIds.has(s.id)),
+                onPreview: (s) =>
+                  orderPrint.preview(
+                    { kind: 'so', id: s.id, code: s.code, clientId: s.clientId },
+                    draftIds.has(s.id),
+                  ),
+                onDownload: (s) =>
+                  orderPrint.download(
+                    { kind: 'so', id: s.id, code: s.code, clientId: s.clientId },
+                    draftIds.has(s.id),
+                  ),
               })
             }
             // Splits a `?query` off a ⋯ `to` (Plan BOM Items → /planning?soId=).

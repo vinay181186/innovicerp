@@ -178,6 +178,15 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const priceHidden = detail.priceVisible === false;
   const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
+
+  // The order this page already shows — printed as is (no refetch).
+  const printTarget = {
+    kind: 'jwso',
+    id: detail.id,
+    code: detail.code,
+    clientId: detail.clientId,
+    detail,
+  } as const;
   return (
     <div>
       {/* DetailHeader layout: Back link, code + status badges, customer name.
@@ -218,10 +227,10 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
-                { label: 'Preview', onClick: () => orderPrint.preview('jwso', detail.id, isDraft) },
+                { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
                 {
                   label: '⬇ Download PDF',
-                  onClick: () => orderPrint.download('jwso', detail.id, isDraft),
+                  onClick: () => void orderPrint.download(printTarget, isDraft),
                 },
                 ...nextSteps
                   .filter((n) => n.key !== primaryStep?.key)
