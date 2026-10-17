@@ -249,13 +249,27 @@ export function NewPartyGrnModal({
             <label className="form-label" htmlFor="pgrn-cpo">
               Client PO No.
             </label>
-            <input
+            {/* A second way to pick the SAME JWSO: by the customer's PO. Both
+                boxes set jwId, so they can never disagree; the shared search
+                already matches Client PO No. on the server. A JWSO with no
+                Client PO is left out here but stays in the JWSO No. picker. */}
+            <SearchableSelect
               id="pgrn-cpo"
-              type="text"
-              className="innovic-input"
-              readOnly
-              value={jwClientPoNo}
-              style={{ maxWidth: '24ch' }}
+              value={jwId}
+              onChange={onJwChange}
+              onSearch={setJwSearch}
+              loading={jwQuery.isFetching}
+              error={jwQuery.error}
+              placeholder="🔍 Select Client PO No.…"
+              options={jwHeaders
+                .filter((j) => (j.clientPoNo ?? '').trim() !== '')
+                .map((j) => ({
+                  id: j.jwId,
+                  code: j.clientPoNo,
+                  name: `${j.code} · ${j.customerName ?? ''}`,
+                }))}
+              selectedLabel={(o) => o.code ?? o.name}
+              valueLabel={jwClientPoNo || undefined}
             />
           </div>
           <div className="form-grp">
