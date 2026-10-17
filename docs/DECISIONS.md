@@ -13896,3 +13896,22 @@ old duplicate still saves while its number is unchanged.
 ### Consequences
 - Positive: one rule in one place; race-safe; no schema change.
 - Negative: an edit staged for approval (gate OFF today) is checked when approved, not when staged.
+
+## ADR-239: Sales Order and JW Sales Order print (preview / print / download)
+
+**Date:** 2026-10-17
+**Status:** Accepted (owner: "per so no. jwso, sono user can preview print download. refer to po print doc" — title "JW Sales Order" — "go")
+
+### Decision
+SO detail and JWSO detail get **⋯ → Print**, on the same sheet as the PO
+(`lib/print/sheet-print.ts`), built in one file
+`apps/web/src/modules/sales-orders/lib/print-order.ts`. Customer box from the
+Client Master (`partyForPrint`, name falls back to the order's customer name);
+Order box = No., Internal SO No./SO Type (SO), Client PO No., Date, Status, Our
+Contact Person (SO only — the JWSO read carries no raiser name). Lines =
+Code/Rev, POL, Item Name, UOM, Qty, Rate, Amount, line Remarks under the name
+(label "Remarks"). SO prints its saved totals; JWSO prints Σ qty × rate + GST.
+Price-hidden users get "—" and no money block. A pending edit prints the Draft
+mark. New print-template docs `SO` / `JWSO` (keys `so_*` / `jwso_*`, no DB change)
+so admins edit their Terms in Settings → Print Templates. The shared print
+toolbar now says "To download: press Print, then choose Save as PDF".

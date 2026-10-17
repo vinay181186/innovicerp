@@ -173,6 +173,9 @@ const DOC_TITLE: Record<PrintDocType, string> = {
   // by the whole union; the title is the one that document actually prints, so
   // the two can never disagree if it is ever routed through here.
   'JW INVOICE': 'JOB WORK INVOICE',
+  // SO / JWSO print on the shared sheet (modules/sales-orders/lib/print-order.ts).
+  SO: 'SALES ORDER',
+  JWSO: 'JW SALES ORDER',
 };
 
 const DOC_STYLE = `

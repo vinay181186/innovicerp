@@ -13,7 +13,16 @@
 import { z } from 'zod';
 
 // ── Document types with customisable templates ──
-export const PRINT_DOC_TYPES = ['PO', 'SERVICE PO', 'OSP DC', 'JW DC', 'GRN', 'JW INVOICE'] as const;
+export const PRINT_DOC_TYPES = [
+  'PO',
+  'SERVICE PO',
+  'OSP DC',
+  'JW DC',
+  'GRN',
+  'JW INVOICE',
+  'SO',
+  'JWSO',
+] as const;
 export type PrintDocType = (typeof PRINT_DOC_TYPES)[number];
 
 // ── The 4 editable blocks per document (in print order) ──
@@ -24,12 +33,7 @@ export type PrintDocType = (typeof PRINT_DOC_TYPES)[number];
 // still on the factory default, so no one had ever customised one. Rows for the
 // old `*_header_note` keys, if any ever appear, are simply no longer reachable;
 // isPrintTemplateKey() rejects them and no print renders them.
-export const PRINT_TEMPLATE_BLOCKS = [
-  'special_notes',
-  'terms',
-  'footer',
-  'signature',
-] as const;
+export const PRINT_TEMPLATE_BLOCKS = ['special_notes', 'terms', 'footer', 'signature'] as const;
 export type PrintTemplateBlock = (typeof PRINT_TEMPLATE_BLOCKS)[number];
 
 // docType → template-key prefix
@@ -43,6 +47,9 @@ export const PRINT_DOC_KEY_PREFIX: Record<PrintDocType, string> = {
   // document from the JW DC that carried the goods, so it gets its own blocks
   // rather than borrowing the challan's terms.
   'JW INVOICE': 'jwinv',
+  // The customer's order, printed from SO / JWSO detail (owner 2026-10-17).
+  SO: 'so',
+  JWSO: 'jwso',
 };
 
 // ── Per-block metadata (drives the editor list) ──
@@ -90,6 +97,8 @@ export function printTemplateDocType(key: string): PrintDocType | null {
   if (key.startsWith('jwdc_')) return 'JW DC';
   if (key.startsWith('grn_')) return 'GRN';
   if (key.startsWith('jwinv_')) return 'JW INVOICE';
+  if (key.startsWith('so_')) return 'SO';
+  if (key.startsWith('jwso_')) return 'JWSO';
   return null;
 }
 
@@ -144,11 +153,43 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
     '1. This invoice covers job-work charges against the JWSO and quantity stated above.\n2. Quantity billed is the quantity returned to the customer and accepted; rejected pieces are not billed.\n3. GST is charged on the job-work value only, at the rate shown.\n4. Payment is due within the terms agreed on the JWSO.\n5. Any discrepancy must be raised in writing within 7 days of the invoice date.',
   jwinv_footer: 'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction',
   jwinv_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
+
+  // SALES ORDER / JW SALES ORDER — the PO wording without its vendor-only
+  // lines (owner 2026-10-17); admins edit it in Print Templates.
+  so_special_notes: '',
+  so_terms:
+    '1. Payment as per agreed terms.\n2. Delivery as per the agreed schedule.\n3. Test certificates and inspection reports will accompany the supply where applicable.\n4. All disputes are subject to V.U. Nagar jurisdiction only.',
+  so_footer: 'E. & O.E.',
+  so_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
+  jwso_special_notes: '',
+  jwso_terms:
+    '1. Payment as per agreed terms.\n2. Delivery as per the agreed schedule.\n3. Test certificates and inspection reports will accompany the supply where applicable.\n4. All disputes are subject to V.U. Nagar jurisdiction only.',
+  jwso_footer: 'E. & O.E.',
+  jwso_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 };
 
 export function printTemplateDefault(key: string): string {
   return PRINT_TEMPLATE_DEFAULTS[key] ?? '';
 }
+
+const ORDER_VARS = [
+  'companyName',
+  'companyAddress',
+  'companyGSTIN',
+  'companyPhone',
+  'companyEmail',
+  'date',
+  'currentUser',
+  'orderNo',
+  'orderDate',
+  'clientPoNo',
+  'clientName',
+  'clientAddress',
+  'clientGSTIN',
+  'clientContact',
+  'totalQty',
+  'totalValue',
+] as const;
 
 // ── Variables available per document type (legacy _PT_VARS L14487) ──
 export const PRINT_TEMPLATE_VARS: Record<PrintDocType, readonly string[]> = {
@@ -269,6 +310,9 @@ export const PRINT_TEMPLATE_VARS: Record<PrintDocType, readonly string[]> = {
     'totalQty',
     'totalValue',
   ],
+  // The customer's order (SO / JWSO): its own number and date, the customer.
+  SO: ORDER_VARS,
+  JWSO: ORDER_VARS,
 };
 
 export function printTemplateVarsFor(key: string): readonly string[] {

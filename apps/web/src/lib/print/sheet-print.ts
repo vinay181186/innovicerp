@@ -758,6 +758,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   <div class="no-print toolbar">
     <button onclick="window.print()" style="padding:8px 24px;background:#1E4DB3;color:#fff;border:0;border-radius:5px;cursor:pointer">🖨 Print</button>
     <button onclick="window.close()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">✕ Close</button>
+    <span style="margin-left:10px;font-size:12px;color:#6b7280">To download: press Print, then choose “Save as PDF”.</span>
   </div>
   <article class="sheet">
     <table class="doc">

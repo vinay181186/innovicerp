@@ -18,6 +18,10 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
+import { useClient } from '@/modules/clients/api';
+import { usePrintTemplates } from '@/modules/print-templates/api';
+import { printJwSalesOrder } from '@/modules/sales-orders/lib/print-order';
+import { useMyCompany } from '@/modules/settings/api';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
@@ -60,6 +64,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'jw_create');
+  const { data: client } = useClient(detail?.clientId ?? undefined);
+  const { data: company } = useMyCompany();
+  const { data: templates } = usePrintTemplates();
   // ADR-202 — the edit(s) staged against this JWSO and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).
@@ -216,6 +223,20 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
+                {
+                  label: 'Print',
+                  onClick: () => {
+                    const ok = printJwSalesOrder({
+                      jw: detail,
+                      client,
+                      company,
+                      templates: templates?.items ?? [],
+                      currentUser: me?.email,
+                      draft: isDraft,
+                    });
+                    if (!ok) window.alert('Allow popups to print.');
+                  },
+                },
                 ...nextSteps
                   .filter((n) => n.key !== primaryStep?.key)
                   .map((n) => ({ label: n.label, hidden: !n.allowed, onClick: n.go })),

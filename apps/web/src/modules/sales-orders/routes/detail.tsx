@@ -40,6 +40,9 @@ import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { inrFormat } from '@/lib/print/doc-print';
+import { useClient } from '@/modules/clients/api';
+import { usePrintTemplates } from '@/modules/print-templates/api';
+import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -59,6 +62,7 @@ import { SoFulfilmentBadge } from '../components/so-fulfilment-badge';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
+import { printSalesOrder } from '../lib/print-order';
 import { MILESTONE_COLUMNS, lineColumns, lineRowMenu } from '../components/so-line-columns';
 
 /** ₹ with Indian grouping, to the paise — the SO totals strip. */
@@ -113,6 +117,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
+  const { data: client } = useClient(detail?.clientId ?? undefined);
+  const { data: company } = useMyCompany();
+  const { data: templates } = usePrintTemplates();
   const canAssign = perms.advance; // ADR-232: Assign Task = the page's Advance right
   // ADR-202 — the edit(s) staged against this SO and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
@@ -227,6 +234,20 @@ function SalesOrderDetailPage(): React.JSX.Element {
             </ActionLink>
             <ActionMenu
               items={[
+                {
+                  label: 'Print',
+                  onClick: () => {
+                    const ok = printSalesOrder({
+                      so: detail,
+                      client,
+                      company,
+                      templates: templates?.items ?? [],
+                      currentUser: me?.email,
+                      draft: isDraft,
+                    });
+                    if (!ok) window.alert('Allow popups to print.');
+                  },
+                },
                 { label: 'Assign Task', hidden: !canAssign, onClick: () => setAssignOpen(true) },
                 {
                   label: 'Status',
