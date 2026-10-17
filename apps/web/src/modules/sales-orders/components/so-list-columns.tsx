@@ -326,10 +326,20 @@ export function soRowMenu(
     canAssign: boolean;
     onAssign: (so: SalesOrderListItem) => void;
     onDelete: (so: SalesOrderListItem) => void;
+    /** The SO print (use-order-print.tsx): in-app preview, and ⬇ PDF. */
+    onPreview: (so: SalesOrderListItem) => void;
+    onDownload: (so: SalesOrderListItem) => Promise<void>;
   },
 ): RowMenuItem[] {
   const { canEdit, canDelete, canPlan, canAssign, onAssign, onDelete } = opts;
   return [
+    { key: 'preview', label: 'Preview', icon: 'eye', onSelect: () => opts.onPreview(so) },
+    {
+      key: 'download',
+      label: 'Download PDF',
+      icon: 'download',
+      onSelect: () => opts.onDownload(so),
+    },
     {
       key: 'edit',
       label: 'Edit',

@@ -141,6 +141,20 @@ export function SearchableSelect({
     }
   }, [open, valueLabel, query]);
 
+  // The caller cleared the value from OUTSIDE (e.g. a second picker bound to
+  // the same field was emptied): drop the label this box is still showing.
+  // Skipped while the box is open — that is the user typing here, and typing
+  // already clears the value itself (handleInput).
+  const prevValueRef = useRef(value);
+  useEffect(() => {
+    const had = prevValueRef.current;
+    prevValueRef.current = value;
+    if (had && !value && !open) {
+      shownLabelRef.current = undefined;
+      setQuery('');
+    }
+  }, [value, open]);
+
   // Close on outside mousedown. Use the CAPTURE phase so this still fires when the
   // component sits inside a container that stops mousedown propagation (e.g. the
   // planning Modal calls e.stopPropagation() on its body to avoid backdrop-close).

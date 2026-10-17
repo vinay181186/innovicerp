@@ -39,6 +39,7 @@ import {
   soRowMenu,
   soRowTint,
 } from '../components/so-list-columns';
+import { useOrderPrint } from '../components/use-order-print';
 import { SoExpandedPanel } from '../components/so-expanded-panel';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
@@ -185,6 +186,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   // ADR-202 — SO ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('SalesOrder');
+  const orderPrint = useOrderPrint();
   const columns = useMemo(
     () => soListColumns({ today, onPreviewClientPo: setPreviewPath, draftIds }),
     [today, draftIds],
@@ -356,6 +358,16 @@ function SalesOrdersListPage(): React.JSX.Element {
                 canAssign,
                 onAssign: setAssignSo,
                 onDelete: onDeleteSo,
+                onPreview: (s) =>
+                  orderPrint.preview(
+                    { kind: 'so', id: s.id, code: s.code, clientId: s.clientId },
+                    draftIds.has(s.id),
+                  ),
+                onDownload: (s) =>
+                  orderPrint.download(
+                    { kind: 'so', id: s.id, code: s.code, clientId: s.clientId },
+                    draftIds.has(s.id),
+                  ),
               })
             }
             // Splits a `?query` off a ⋯ `to` (Plan BOM Items → /planning?soId=).
@@ -371,6 +383,8 @@ function SalesOrdersListPage(): React.JSX.Element {
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
       />
+
+      {orderPrint.modal}
 
       {previewPath ? (
         <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />

@@ -59,6 +59,7 @@ import { SoFulfilmentBadge } from '../components/so-fulfilment-badge';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
+import { useOrderPrint } from '../components/use-order-print';
 import { MILESTONE_COLUMNS, lineColumns, lineRowMenu } from '../components/so-line-columns';
 
 /** ₹ with Indian grouping, to the paise — the SO totals strip. */
@@ -113,6 +114,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
+  const orderPrint = useOrderPrint();
   const canAssign = perms.advance; // ADR-232: Assign Task = the page's Advance right
   // ADR-202 — the edit(s) staged against this SO and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
@@ -186,6 +188,15 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // "Dispatch" is offered as the next step, and whether Close is.
   const pendingDispatchQty = detail.lines.reduce((s, l) => s + closableQty(l), 0);
 
+
+  // The order this page already shows — printed as is (no refetch).
+  const printTarget = {
+    kind: 'so',
+    id: detail.id,
+    code: detail.code,
+    clientId: detail.clientId,
+    detail,
+  } as const;
   return (
     <div>
       <DetailHeader
@@ -227,6 +238,11 @@ function SalesOrderDetailPage(): React.JSX.Element {
             </ActionLink>
             <ActionMenu
               items={[
+                { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () => void orderPrint.download(printTarget, isDraft),
+                },
                 { label: 'Assign Task', hidden: !canAssign, onClick: () => setAssignOpen(true) },
                 {
                   label: 'Status',
@@ -399,6 +415,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
           onClose={() => setCloseTarget(null)}
         />
       ) : null}
+
+      {orderPrint.modal}
 
       {assignOpen ? (
         <AssignTaskModal

@@ -123,6 +123,20 @@ export function sampleDataFor(doc: PrintDocType): Record<string, string> {
       totalQty: '10',
     };
   }
+  if (doc === 'SO' || doc === 'JWSO') {
+    return {
+      ...common,
+      orderNo: doc === 'SO' ? 'IN-SO-99999' : 'IN-JW-99999',
+      orderDate: today,
+      clientPoNo: 'CPO-99999',
+      clientName: 'Sample Customer Pvt Ltd',
+      clientAddress: 'Industrial Area, Phase 2, Vadodara',
+      clientGSTIN: '24AAACS1234D1Z5',
+      clientContact: 'Mr. Sample, +91 90000 00000',
+      totalValue: '1,18,000.00',
+      totalQty: '200',
+    };
+  }
   if (doc === 'PO') {
     return {
       ...common,
@@ -375,14 +389,51 @@ function openChallanTestPrint(
 // A SERVICE PO differs from a PO in wording only: its own title, its own
 // spo_* blocks and its own {spoNo}/{spoDate}/{expenseHead}/{costCenter}
 // vocabulary. The sheet, the columns and the money are identical.
-function openPoTestPrint(doc: 'PO' | 'SERVICE PO', templates: EffectivePrintTemplate[]): boolean {
+// The SO and the JW Sales Order print on the same 'po' sheet with a Customer
+// box (modules/sales-orders/lib/print-order.ts), so they reuse this sample.
+const PO_SHEET_TITLE = {
+  PO: 'Purchase Order',
+  'SERVICE PO': 'Service Purchase Order',
+  SO: 'Sales Order',
+  JWSO: 'JW Sales Order',
+} as const;
+
+function openPoTestPrint(
+  doc: keyof typeof PO_SHEET_TITLE,
+  templates: EffectivePrintTemplate[],
+): boolean {
   const isSpo = doc === 'SERVICE PO';
+  const isOrder = doc === 'SO' || doc === 'JWSO';
   const data = sampleDataFor(doc);
-  const recipient = poSampleRecipient(isSpo);
-  const order = poSampleOrder(isSpo);
+  const recipient = isOrder
+    ? poSampleRecipient().map((f) =>
+        f.label === 'Vendor Code'
+          ? { ...f, label: 'Customer Code', value: 'CL-999' }
+          : f.variant === 'name'
+            ? { ...f, value: 'Sample Customer Pvt Ltd' }
+            : f,
+      )
+    : poSampleRecipient(isSpo);
+  const order: SheetField[] = isOrder
+    ? [
+        {
+          label: doc === 'SO' ? 'SO No.' : 'JWSO No.',
+          value: doc === 'SO' ? 'IN-SO-99999' : 'IN-JW-99999',
+          variant: 'mono',
+          strong: true,
+        },
+        { label: 'Client PO No.', value: 'CPO-99999', variant: 'mono' },
+        {
+          label: doc === 'SO' ? 'SO Date' : 'JWSO Date',
+          value: data['orderDate'] ?? '',
+          variant: 'mono',
+        },
+        { label: doc === 'SO' ? 'SO Status' : 'JWSO Status', value: 'Open' },
+      ]
+    : poSampleOrder(isSpo);
   const model: SheetPrintModel = {
-    title: isSpo ? 'Service Purchase Order' : 'Purchase Order',
-    windowTitle: isSpo ? 'Service Purchase Order' : 'Purchase Order',
+    title: PO_SHEET_TITLE[doc],
+    windowTitle: PO_SHEET_TITLE[doc],
     columns: 'po',
     // Same foot as the real PO print (print-po.ts).
     hidePreparedBy: true,
@@ -395,7 +446,7 @@ function openPoTestPrint(doc: 'PO' | 'SERVICE PO', templates: EffectivePrintTemp
       email: SAMPLE_COMPANY.email ?? '',
       phone: SAMPLE_COMPANY.phone ?? '',
     },
-    recipient: { label: 'Vendor', fields: recipient },
+    recipient: { label: isOrder ? 'Customer' : 'Vendor', fields: recipient },
     document: { label: 'Order', fields: order },
     lines: PO_SAMPLE_LINES,
     totalQty: '200',
@@ -511,6 +562,7 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
 export function openTestPrint(doc: PrintDocType, templates: EffectivePrintTemplate[]): boolean {
   if (doc === 'GRN') return openGrnTestPrint(templates);
   if (doc === 'JW INVOICE') return openJwInvoiceTestPrint(templates);
-  if (doc === 'PO' || doc === 'SERVICE PO') return openPoTestPrint(doc, templates);
+  if (doc === 'PO' || doc === 'SERVICE PO' || doc === 'SO' || doc === 'JWSO')
+    return openPoTestPrint(doc, templates);
   return openChallanTestPrint(doc, templates);
 }

@@ -10,9 +10,9 @@ import {
 } from './print-template';
 
 describe('print-template helpers', () => {
-  it('exposes exactly 20 keys (5 docs × 4 blocks) with a default each', () => {
-    expect(PRINT_TEMPLATE_KEYS).toHaveLength(20);
-    expect(PRINT_TEMPLATE_META).toHaveLength(20);
+  it('exposes exactly 32 keys (8 docs × 4 blocks) with a default each', () => {
+    expect(PRINT_TEMPLATE_KEYS).toHaveLength(32);
+    expect(PRINT_TEMPLATE_META).toHaveLength(32);
     for (const key of PRINT_TEMPLATE_KEYS) {
       expect(PRINT_TEMPLATE_DEFAULTS).toHaveProperty(key);
     }
@@ -23,6 +23,8 @@ describe('print-template helpers', () => {
     expect(printTemplateDocType('spo_terms')).toBe('SERVICE PO');
     expect(printTemplateDocType('ospdc_footer')).toBe('OSP DC');
     expect(printTemplateDocType('jwdc_signature')).toBe('JW DC');
+    expect(printTemplateDocType('so_terms')).toBe('SO');
+    expect(printTemplateDocType('jwso_terms')).toBe('JWSO');
     expect(printTemplateDocType('nonsense')).toBeNull();
   });
 
@@ -32,9 +34,9 @@ describe('print-template helpers', () => {
   });
 
   it('substitutes known variables and blanks unknown ones (not the literal token)', () => {
-    expect(substituteTemplateVars('PO {poNo} dated {poDate}', { poNo: 'IN-PO-1', poDate: '01-01' })).toBe(
-      'PO IN-PO-1 dated 01-01',
-    );
+    expect(
+      substituteTemplateVars('PO {poNo} dated {poDate}', { poNo: 'IN-PO-1', poDate: '01-01' }),
+    ).toBe('PO IN-PO-1 dated 01-01');
     // unknown var → blank
     expect(substituteTemplateVars('Hello {missing} world', {})).toBe('Hello  world');
     // null value → blank

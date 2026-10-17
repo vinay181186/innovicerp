@@ -13872,3 +13872,68 @@ and CAPA's admin-only user list.
   Party Material / Invoices / OSP DC View.
 - Open: from a JC, the Production Order link still needs Production Order View;
   a 403 is retried once (global `retry: 1`) before the reason shows.
+
+## ADR-238: Client PO No. is unique within its own list (SO list, JWSO list)
+
+**Date:** 2026-10-17
+**Status:** Accepted (owner: "in jwso creation client po no must be unique in jwso module means jwso list. in so creation client pono must be unique in so module means so list." — "go")
+
+### Context
+Only SO create checked the Client PO No., and against SOs AND JWSOs together (legacy
+addSO L12431). SO edit, JWSO create and JWSO edit did not check, and two saves at
+the same moment could both pass.
+
+### Decision
+One helper, `apps/api/src/lib/client-po-unique.ts` (`assertClientPoNoFree`), used by
+SO create/update and JWSO create/update (the edit-approval apply path runs the same
+update Tx). Scope: SO vs other live SOs; JWSO vs other live JWSOs; the same number on
+one SO and one JWSO is allowed. Whole list (any customer); cancelled documents count;
+deleted ones do not. Compared trimmed and case-insensitive; blank never checked. A
+transaction advisory lock on the number (lockDocSeries pattern) serialises two saves
+(§20). No unique index / migration, so legacy duplicates cannot fail a release; an
+old duplicate still saves while its number is unchanged.
+
+### Consequences
+- Positive: one rule in one place; race-safe; no schema change.
+- Negative: an edit staged for approval (gate OFF today) is checked when approved, not when staged.
+
+## ADR-239: Sales Order and JW Sales Order print (preview / print / download)
+
+**Date:** 2026-10-17
+**Status:** Accepted (owner: "per so no. jwso, sono user can preview print download. refer to po print doc" — title "JW Sales Order" — "go")
+
+### Decision
+SO detail and JWSO detail get **⋯ → Print**, on the same sheet as the PO
+(`lib/print/sheet-print.ts`), built in one file
+`apps/web/src/modules/sales-orders/lib/print-order.ts`. Customer box from the
+Client Master (`partyForPrint`, name falls back to the order's customer name);
+Order box = No., Internal SO No./SO Type (SO), Client PO No., Date, Status, Our
+Contact Person (SO only — the JWSO read carries no raiser name). Lines =
+Code/Rev, POL, Item Name, UOM, Qty, Rate, Amount, line Remarks under the name
+(label "Remarks"). SO prints its saved totals; JWSO prints Σ qty × rate + GST.
+Price-hidden users get "—" and no money block. A pending edit prints the Draft
+mark. New print-template docs `SO` / `JWSO` (keys `so_*` / `jwso_*`, no DB change)
+so admins edit their Terms in Settings → Print Templates. The shared print
+toolbar now says "To download: press Print, then choose Save as PDF".
+
+## ADR-240: SO / JWSO Preview + ⬇ Download PDF (jsPDF + html2canvas)
+
+**Date:** 2026-10-17
+**Status:** Accepted (owner: "i want that in master list. three dots also show. print choose then download is confusing" — "i want direct symbol for download" — option A "go")
+
+### Decision
+SO and JWSO, in the list row ⋯ and the detail ⋯: **Preview** (the print sheet in
+the same in-app box drawings use — `components/shared/sheet-preview-modal.tsx`,
+with 🖨 Print · ⬇ Download · ✕) and **Download PDF** (saves `<code>.pdf` in one
+click). One entry point: `modules/sales-orders/components/use-order-print.tsx`.
+The PDF is made in the browser by `lib/print/sheet-pdf.ts` from the same sheet
+HTML (letterhead repeats per page; cancelled SO lines left out, as in ADR-239).
+
+### Dependency
+jsPDF 2.5.2 + html2canvas 1.4.1 (the two halves of html2pdf.js, used directly so
+the PDF is taken from an iframe holding the sheet's own styles). Both load only
+on the ⬇ click (separate chunks, ~166 kB gzip), never at app start.
+
+### Consequences
+- A drawing downloads a stored file; an order is built from data, hence the library.
+- The PDF's text is an image (not selectable/searchable). Server-side PDF (option B) rejected: new infrastructure.

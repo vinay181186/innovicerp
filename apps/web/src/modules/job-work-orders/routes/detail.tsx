@@ -18,6 +18,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
+import { useOrderPrint } from '@/modules/sales-orders/components/use-order-print';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
@@ -60,6 +61,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'jw_create');
+  const orderPrint = useOrderPrint();
   // ADR-202 — the edit(s) staged against this JWSO and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).
@@ -176,6 +178,15 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const priceHidden = detail.priceVisible === false;
   const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
+
+  // The order this page already shows — printed as is (no refetch).
+  const printTarget = {
+    kind: 'jwso',
+    id: detail.id,
+    code: detail.code,
+    clientId: detail.clientId,
+    detail,
+  } as const;
   return (
     <div>
       {/* DetailHeader layout: Back link, code + status badges, customer name.
@@ -216,6 +227,11 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
+                { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () => void orderPrint.download(printTarget, isDraft),
+                },
                 ...nextSteps
                   .filter((n) => n.key !== primaryStep?.key)
                   .map((n) => ({ label: n.label, hidden: !n.allowed, onClick: n.go })),
@@ -251,6 +267,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           the Upload button in the Documents panel below.
         </Banner>
       ) : null}
+
+      {orderPrint.modal}
 
       {confirmDelete ? (
         <DeleteJwsoModal

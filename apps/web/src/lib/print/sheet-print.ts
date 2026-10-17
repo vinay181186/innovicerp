@@ -758,6 +758,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   <div class="no-print toolbar">
     <button onclick="window.print()" style="padding:8px 24px;background:#1E4DB3;color:#fff;border:0;border-radius:5px;cursor:pointer">🖨 Print</button>
     <button onclick="window.close()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">✕ Close</button>
+    <span style="margin-left:10px;font-size:12px;color:#6b7280">To download: press Print, then choose “Save as PDF”.</span>
   </div>
   <article class="sheet">
     <table class="doc">
@@ -810,13 +811,19 @@ export function openSheetHtmlWindow(
 ): boolean {
   const w = target ?? window.open('', '_blank', 'width=900,height=920');
   if (!w) return false;
+  w.document.write(sheetDocumentHtml(title, html, extraStyle));
+  w.document.close();
+  return true;
+}
+
+/** The whole print document (style + body + paginate script) — what the print
+ *  window shows, and what the in-app preview / PDF download load into an iframe. */
+export function sheetDocumentHtml(title: string, html: string, extraStyle = ''): string {
   // The closing tag is split so the bundler never emits the character sequence
   // that would end THIS module early if it were ever inlined into a page.
   const close = '</' + 'script>';
-  w.document.write(
+  return (
     `<!DOCTYPE html><html><head><title>${esc(title)}</title><style>${SHEET_STYLE}${extraStyle}</style></head>` +
-      `<body>${html}<script>${PAGINATE_SCRIPT}${close}</body></html>`,
+    `<body>${html}<script>${PAGINATE_SCRIPT}${close}</body></html>`
   );
-  w.document.close();
-  return true;
 }
