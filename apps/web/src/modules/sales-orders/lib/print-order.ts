@@ -46,7 +46,9 @@ export function printSalesOrder(args: OrderArgs & { so: SalesOrderDetail }): boo
     priceHidden: so.priceVisible === false,
     gstPercent: so.totals?.gstPercent ?? Number(so.gstPercent ?? 0),
     totals: so.totals ?? null,
-    lines: so.lines,
+    // The saved totals leave cancelled lines out (computeSoTotals), so the
+    // printed rows do too — rows, Total Qty and Subtotal must agree.
+    lines: so.lines.filter((l) => l.status !== 'cancelled'),
     fields: [
       { label: 'SO No.', value: so.code, variant: 'mono', strong: true },
       ...(so.internalSoNo
