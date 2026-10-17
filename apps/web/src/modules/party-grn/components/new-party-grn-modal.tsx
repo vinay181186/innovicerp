@@ -211,7 +211,34 @@ export function NewPartyGrnModal({
               style={{ maxWidth: '18ch' }}
             />
           </div>
-          <div className="form-grp form-full">
+          <div className="form-grp">
+            <label className="form-label" htmlFor="pgrn-cpo">
+              Client PO No.
+            </label>
+            {/* A second way to pick the SAME JWSO: by the customer's PO. Both
+                boxes set jwId, so they can never disagree; the shared search
+                already matches Client PO No. on the server. A JWSO with no
+                Client PO is left out here but stays in the JWSO No. picker. */}
+            <SearchableSelect
+              id="pgrn-cpo"
+              value={jwId}
+              onChange={onJwChange}
+              onSearch={setJwSearch}
+              loading={jwQuery.isFetching}
+              error={jwQuery.error}
+              placeholder="🔍 Select Client PO No.…"
+              options={jwHeaders
+                .filter((j) => (j.clientPoNo ?? '').trim() !== '')
+                .map((j) => ({
+                  id: j.jwId,
+                  code: j.clientPoNo,
+                  name: `${j.code} · ${j.customerName ?? ''}`,
+                }))}
+              selectedLabel={(o) => o.code ?? o.name}
+              valueLabel={jwClientPoNo || undefined}
+            />
+          </div>
+          <div className="form-grp">
             <label className="form-label" htmlFor="pgrn-jwso">
               JWSO No.<span className="req">★</span>
             </label>
@@ -243,33 +270,6 @@ export function NewPartyGrnModal({
               className="innovic-input"
               readOnly
               value={jwCustomerName}
-            />
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="pgrn-cpo">
-              Client PO No.
-            </label>
-            {/* A second way to pick the SAME JWSO: by the customer's PO. Both
-                boxes set jwId, so they can never disagree; the shared search
-                already matches Client PO No. on the server. A JWSO with no
-                Client PO is left out here but stays in the JWSO No. picker. */}
-            <SearchableSelect
-              id="pgrn-cpo"
-              value={jwId}
-              onChange={onJwChange}
-              onSearch={setJwSearch}
-              loading={jwQuery.isFetching}
-              error={jwQuery.error}
-              placeholder="🔍 Select Client PO No.…"
-              options={jwHeaders
-                .filter((j) => (j.clientPoNo ?? '').trim() !== '')
-                .map((j) => ({
-                  id: j.jwId,
-                  code: j.clientPoNo,
-                  name: `${j.code} · ${j.customerName ?? ''}`,
-                }))}
-              selectedLabel={(o) => o.code ?? o.name}
-              valueLabel={jwClientPoNo || undefined}
             />
           </div>
           <div className="form-grp">
@@ -337,7 +337,7 @@ export function NewPartyGrnModal({
               {!jwId ? (
                 <tr>
                   <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
-                    Pick the JWSO first.
+                    Select Client PO No. / JWSO No.
                   </td>
                 </tr>
               ) : jwDetailQ.isLoading ? (
