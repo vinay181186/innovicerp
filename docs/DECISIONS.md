@@ -13915,3 +13915,25 @@ Price-hidden users get "—" and no money block. A pending edit prints the Draft
 mark. New print-template docs `SO` / `JWSO` (keys `so_*` / `jwso_*`, no DB change)
 so admins edit their Terms in Settings → Print Templates. The shared print
 toolbar now says "To download: press Print, then choose Save as PDF".
+
+## ADR-240: SO / JWSO Preview + ⬇ Download PDF (jsPDF + html2canvas)
+
+**Date:** 2026-10-17
+**Status:** Accepted (owner: "i want that in master list. three dots also show. print choose then download is confusing" — "i want direct symbol for download" — option A "go")
+
+### Decision
+SO and JWSO, in the list row ⋯ and the detail ⋯: **Preview** (the print sheet in
+the same in-app box drawings use — `components/shared/sheet-preview-modal.tsx`,
+with 🖨 Print · ⬇ Download · ✕) and **Download PDF** (saves `<code>.pdf` in one
+click). One entry point: `modules/sales-orders/components/use-order-print.tsx`.
+The PDF is made in the browser by `lib/print/sheet-pdf.ts` from the same sheet
+HTML (letterhead repeats per page; cancelled SO lines left out, as in ADR-239).
+
+### Dependency
+jsPDF 2.5.2 + html2canvas 1.4.1 (the two halves of html2pdf.js, used directly so
+the PDF is taken from an iframe holding the sheet's own styles). Both load only
+on the ⬇ click (separate chunks, ~166 kB gzip), never at app start.
+
+### Consequences
+- A drawing downloads a stored file; an order is built from data, hence the library.
+- The PDF's text is an image (not selectable/searchable). Server-side PDF (option B) rejected: new infrastructure.

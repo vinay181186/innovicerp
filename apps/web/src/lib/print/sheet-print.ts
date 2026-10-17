@@ -811,13 +811,19 @@ export function openSheetHtmlWindow(
 ): boolean {
   const w = target ?? window.open('', '_blank', 'width=900,height=920');
   if (!w) return false;
+  w.document.write(sheetDocumentHtml(title, html, extraStyle));
+  w.document.close();
+  return true;
+}
+
+/** The whole print document (style + body + paginate script) — what the print
+ *  window shows, and what the in-app preview / PDF download load into an iframe. */
+export function sheetDocumentHtml(title: string, html: string, extraStyle = ''): string {
   // The closing tag is split so the bundler never emits the character sequence
   // that would end THIS module early if it were ever inlined into a page.
   const close = '</' + 'script>';
-  w.document.write(
+  return (
     `<!DOCTYPE html><html><head><title>${esc(title)}</title><style>${SHEET_STYLE}${extraStyle}</style></head>` +
-      `<body>${html}<script>${PAGINATE_SCRIPT}${close}</body></html>`,
+    `<body>${html}<script>${PAGINATE_SCRIPT}${close}</body></html>`
   );
-  w.document.close();
-  return true;
 }

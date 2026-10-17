@@ -38,6 +38,7 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { useOrderPrint } from '@/modules/sales-orders/components/use-order-print';
 import { useJobWorkOrdersList } from '../api';
 import { DeleteJwsoModal } from '../components/delete-jwso-modal';
 import { JwsoExpandedLines } from '../components/jwso-expanded-lines';
@@ -142,6 +143,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   // ADR-202 — JWSO ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('JobWorkOrder');
+  const orderPrint = useOrderPrint();
   const columns = useMemo(() => jwsoListColumns(today, draftIds), [today, draftIds]);
 
   const total = data?.total ?? 0;
@@ -162,6 +164,20 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       editTo={canEdit ? `/job-work-orders/${jw.jwId}/edit` : undefined}
       renderLink={(p) => <Link {...p} />}
       onDelete={canDelete ? () => setTrashTarget({ id: jw.jwId, code: jw.code }) : undefined}
+      items={[
+        {
+          key: 'preview',
+          label: 'Preview',
+          icon: 'eye',
+          onSelect: () => orderPrint.preview('jwso', jw.jwId, draftIds.has(jw.jwId)),
+        },
+        {
+          key: 'download',
+          label: 'Download PDF',
+          icon: 'download',
+          onSelect: () => orderPrint.download('jwso', jw.jwId, draftIds.has(jw.jwId)),
+        },
+      ]}
     />
   );
 
@@ -274,6 +290,8 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
       />
+
+      {orderPrint.modal}
 
       {trashTarget ? (
         <DeleteJwsoModal

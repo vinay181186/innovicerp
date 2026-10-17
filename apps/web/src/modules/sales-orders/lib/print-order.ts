@@ -17,12 +17,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company';
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import { partyForPrint } from '@/lib/print/party-copy';
-import {
-  type SheetField,
-  type SheetPrintModel,
-  challanDate,
-  openSheetPrintWindow,
-} from '@/lib/print/sheet-print';
+import { type SheetField, type SheetPrintModel, challanDate } from '@/lib/print/sheet-print';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from './so-status-label';
 
 type OrderArgs = {
@@ -34,9 +29,9 @@ type OrderArgs = {
   draft?: boolean | undefined;
 };
 
-export function printSalesOrder(args: OrderArgs & { so: SalesOrderDetail }): boolean {
+export function salesOrderSheet(args: OrderArgs & { so: SalesOrderDetail }): SheetPrintModel {
   const { so } = args;
-  return printOrder(args, {
+  return orderSheet(args, {
     doc: 'SO',
     title: 'Sales Order',
     code: so.code,
@@ -63,9 +58,9 @@ export function printSalesOrder(args: OrderArgs & { so: SalesOrderDetail }): boo
   });
 }
 
-export function printJwSalesOrder(args: OrderArgs & { jw: JobWorkOrderDetail }): boolean {
+export function jwSalesOrderSheet(args: OrderArgs & { jw: JobWorkOrderDetail }): SheetPrintModel {
   const { jw } = args;
-  return printOrder(args, {
+  return orderSheet(args, {
     doc: 'JWSO',
     title: 'JW Sales Order',
     code: jw.code,
@@ -97,7 +92,7 @@ type OrderLine = {
   remarks: string | null;
 };
 
-function printOrder(
+function orderSheet(
   args: OrderArgs,
   o: {
     doc: 'SO' | 'JWSO';
@@ -112,7 +107,7 @@ function printOrder(
     lines: OrderLine[];
     fields: SheetField[];
   },
-): boolean {
+): SheetPrintModel {
   const { client, company, templates } = args;
   const money = (n: number): string => (o.priceHidden ? '—' : inrFormat(n));
 
@@ -189,5 +184,5 @@ function printOrder(
           },
         }),
   };
-  return openSheetPrintWindow(model);
+  return model;
 }
