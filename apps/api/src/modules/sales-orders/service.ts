@@ -35,7 +35,6 @@ import {
   invoices,
   items,
   jobCards,
-  jobWorkOrders,
   plans,
   purchaseOrderLines,
   purchaseOrders,
@@ -48,6 +47,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { isUniqueViolation, withUniqueRetry } from '../../lib/db-retry';
+import { assertClientPoNoFree } from '../../lib/client-po-unique';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
@@ -1548,41 +1548,8 @@ function createSalesOrderOnce(
     const code = await nextSoCode(tx, companyId);
     await assertInternalSoNoFree(tx, companyId, internalSoNo);
 
-    // Duplicate Client PO No. guard (legacy addSO L12431): a client PO number
-    // must be unique across Sales Orders AND Job Work orders.
-    const poNo = input.header.clientPoNo?.trim();
-    if (poNo) {
-      const [soHit, jwHit] = await Promise.all([
-        tx
-          .select({ code: salesOrders.code })
-          .from(salesOrders)
-          .where(
-            and(
-              eq(salesOrders.companyId, companyId),
-              eq(salesOrders.clientPoNo, poNo),
-              isNull(salesOrders.deletedAt),
-            ),
-          )
-          .limit(1),
-        tx
-          .select({ code: jobWorkOrders.code })
-          .from(jobWorkOrders)
-          .where(
-            and(
-              eq(jobWorkOrders.companyId, companyId),
-              eq(jobWorkOrders.clientPoNo, poNo),
-              isNull(jobWorkOrders.deletedAt),
-            ),
-          )
-          .limit(1),
-      ]);
-      const hit = soHit[0]?.code ?? jwHit[0]?.code;
-      if (hit) {
-        throw new ConflictError(
-          `Client PO No. "${poNo}" already exists in ${hit}. Duplicate not allowed.`,
-        );
-      }
-    }
+    // Client PO No. is unique within the SO list (lib/client-po-unique.ts).
+    await assertClientPoNoFree(tx, 'so', companyId, input.header.clientPoNo);
 
     // Client master link is enforced by the create schema (route boundary).
     // Snapshot the master client name into customer_name when a client is set.
@@ -1850,7 +1817,13 @@ export async function updateSalesOrderTx(
     if (h.clientId !== undefined) updates['clientId'] = h.clientId ?? null;
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
-    if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
+    if (h.clientPoNo !== undefined) {
+      await assertClientPoNoFree(tx, 'so', companyId, h.clientPoNo, {
+        id,
+        currentPoNo: existingHdr.clientPoNo,
+      });
+      updates['clientPoNo'] = h.clientPoNo ?? null;
+    }
     // ADR-207 — Internal SO No.: absent = unchanged (an old SO without one is
     // never forced to get one). A changed number must be free among the other
     // live SOs (case-insensitive); the History row comes from logSoEdit

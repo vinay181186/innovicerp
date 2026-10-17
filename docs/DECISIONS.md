@@ -13872,3 +13872,27 @@ and CAPA's admin-only user list.
   Party Material / Invoices / OSP DC View.
 - Open: from a JC, the Production Order link still needs Production Order View;
   a 403 is retried once (global `retry: 1`) before the reason shows.
+
+## ADR-238: Client PO No. is unique within its own list (SO list, JWSO list)
+
+**Date:** 2026-10-17
+**Status:** Accepted (owner: "in jwso creation client po no must be unique in jwso module means jwso list. in so creation client pono must be unique in so module means so list." — "go")
+
+### Context
+Only SO create checked the Client PO No., and against SOs AND JWSOs together (legacy
+addSO L12431). SO edit, JWSO create and JWSO edit did not check, and two saves at
+the same moment could both pass.
+
+### Decision
+One helper, `apps/api/src/lib/client-po-unique.ts` (`assertClientPoNoFree`), used by
+SO create/update and JWSO create/update (the edit-approval apply path runs the same
+update Tx). Scope: SO vs other live SOs; JWSO vs other live JWSOs; the same number on
+one SO and one JWSO is allowed. Whole list (any customer); cancelled documents count;
+deleted ones do not. Compared trimmed and case-insensitive; blank never checked. A
+transaction advisory lock on the number (lockDocSeries pattern) serialises two saves
+(§20). No unique index / migration, so legacy duplicates cannot fail a release; an
+old duplicate still saves while its number is unchanged.
+
+### Consequences
+- Positive: one rule in one place; race-safe; no schema change.
+- Negative: an edit staged for approval (gate OFF today) is checked when approved, not when staged.

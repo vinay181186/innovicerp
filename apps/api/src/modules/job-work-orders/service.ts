@@ -52,6 +52,7 @@ import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { assertActiveParty } from '../../lib/active-party';
+import { assertClientPoNoFree } from '../../lib/client-po-unique';
 import {
   AuthorizationError,
   ConflictError,
@@ -1110,6 +1111,8 @@ export async function createJobWorkOrder(
         );
       }
       const clientName = await assertClientExists(tx, h.clientId, companyId);
+      // Client PO No. is unique within the JWSO list (lib/client-po-unique.ts).
+      await assertClientPoNoFree(tx, 'jwso', companyId, h.clientPoNo);
 
       const itemCodes = await loadOrderItems(
         tx,
@@ -1305,7 +1308,13 @@ export async function updateJobWorkOrderTx(
     if (h.clientId !== undefined) updates['clientId'] = nextClientId;
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
-    if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
+    if (h.clientPoNo !== undefined) {
+      await assertClientPoNoFree(tx, 'jwso', companyId, h.clientPoNo, {
+        id,
+        currentPoNo: existingHdr.clientPoNo,
+      });
+      updates['clientPoNo'] = h.clientPoNo ?? null;
+    }
     if (h.gstPercent !== undefined && showMoney)
       updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
