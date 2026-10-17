@@ -1,9 +1,15 @@
 // Preview / ⬇ Download for one SO or JWSO — the ONE entry point the SO and
-// JWSO lists (row ⋯) and detail pages (⋯) share. Loads the order (cache first)
-// and its customer, builds the sheet (lib/print-order.ts), then either opens
+// JWSO lists (row ⋯) and detail pages (⋯) share. Loads the order (fresh from
+// the server) and its customer, builds the sheet (lib/print-order.ts), then either opens
 // the in-app preview or saves `<code>.pdf`.
 
-import type { Client, JobWorkOrderDetail, SalesOrderDetail } from '@innovic/shared';
+import type {
+  Client,
+  Company,
+  JobWorkOrderDetail,
+  ListPrintTemplatesResponse,
+  SalesOrderDetail,
+} from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { SheetPreviewModal } from '@/components/shared/sheet-preview-modal';
@@ -13,8 +19,8 @@ import type { SheetPrintModel } from '@/lib/print/sheet-print';
 import { useSession } from '@/lib/session';
 import { clientsKeys } from '@/modules/clients/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
-import { usePrintTemplates } from '@/modules/print-templates/api';
-import { useMyCompany } from '@/modules/settings/api';
+import { printTemplatesKeys } from '@/modules/print-templates/api';
+import { companyKeys } from '@/modules/settings/api';
 import { salesOrdersKeys } from '../api';
 import { jwSalesOrderSheet, salesOrderSheet } from '../lib/print-order';
 
@@ -27,20 +33,31 @@ export function useOrderPrint(): {
 } {
   const qc = useQueryClient();
   const { data: me } = useSession();
-  const { data: company } = useMyCompany();
-  const { data: templates } = usePrintTemplates();
   const [open, setOpen] = useState<{ model: SheetPrintModel; code: string } | null>(null);
 
-  // Detail first (the cached one when the detail page already loaded it), then
-  // the customer. A customer the user may not read prints the order's own name.
+  // Detail first, then the customer. A customer the user may not read prints the order's own name.
   const build = async (
     kind: OrderKind,
     id: string,
     draft?: boolean,
   ): Promise<{ model: SheetPrintModel; code: string }> => {
+    // staleTime 0: print what is saved NOW, not a cached copy from before
+    // someone else's edit. Company + templates are awaited too, so an early
+    // click from a list never prints without the letterhead or the terms.
+    const fresh = { staleTime: 0 } as const;
+    const [company, templates] = await Promise.all([
+      qc.fetchQuery({
+        queryKey: companyKeys.me(),
+        queryFn: () => apiFetch<Company>('/companies/me'),
+      }),
+      qc.fetchQuery({
+        queryKey: printTemplatesKeys.list(),
+        queryFn: () => apiFetch<ListPrintTemplatesResponse>('/print-templates'),
+      }),
+    ]);
     const base = {
       company,
-      templates: templates?.items ?? [],
+      templates: templates.items,
       currentUser: me?.email,
       draft,
     };
@@ -57,6 +74,7 @@ export function useOrderPrint(): {
       const so = await qc.fetchQuery({
         queryKey: salesOrdersKeys.detail(id),
         queryFn: () => apiFetch<SalesOrderDetail>(`/sales-orders/${id}`),
+        ...fresh,
       });
       const client = await clientOf(so.clientId);
       return { model: salesOrderSheet({ ...base, so, client }), code: so.code };
@@ -64,6 +82,7 @@ export function useOrderPrint(): {
     const jw = await qc.fetchQuery({
       queryKey: jobWorkOrdersKeys.detail(id),
       queryFn: () => apiFetch<JobWorkOrderDetail>(`/job-work-orders/${id}`),
+      ...fresh,
     });
     const client = await clientOf(jw.clientId);
     return { model: jwSalesOrderSheet({ ...base, jw, client }), code: jw.code };
