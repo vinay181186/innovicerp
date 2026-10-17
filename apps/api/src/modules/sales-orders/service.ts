@@ -753,7 +753,10 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
   const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'so_create');
   return withUserContext(user, async (tx) => {
-    const headers = await tx
+    // Every read below depends only on the SO id, so they go to the database
+    // together (one pipelined round trip) rather than one after another — on a
+    // far API host each trip is ~0.5 s and the SO preview waited ~7 s.
+    const headersQ = tx
       .select()
       .from(salesOrders)
       .where(
@@ -764,10 +767,8 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         ),
       )
       .limit(1);
-    const header = headers[0];
-    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
 
-    const lineRows = await tx
+    const lineRowsQ = tx
       .select({
         row: salesOrderLines,
         itemCode: items.code,
@@ -782,7 +783,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       .orderBy(asc(salesOrderLines.lineNo));
 
     // Billed qty per SO line = Σ non-deleted invoice-line qty (ADR-042).
-    const billedRows = await tx
+    const billedRowsQ = tx
       .select({
         lineId: invoiceLines.salesOrderLineId,
         billed: sql<number>`coalesce(sum(${invoiceLines.qty}), 0)::int`,
@@ -799,15 +800,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         ),
       )
       .groupBy(invoiceLines.salesOrderLineId);
-    const billedByLine = new Map(
-      billedRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.billed)]),
-    );
-
-    // JC qty per SO line = Σ of each card's JC Qty (lib/jc-effective-qty.ts:
-    // a stopped order's card counts what it credited) whose source_so_line_id = line.
-    // Rework/repair children excluded — they re-make pieces the parent JC
-    // already covers (QC-NC audit 2026-09-21, gap 3; same rule as the list).
-    const jcRows = await tx
+    const jcRowsQ = tx
       .select({
         lineId: jobCards.sourceSoLineId,
         // ADR-185 — the shared JC Qty rule (stopped order → credited).
@@ -823,32 +816,50 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         ),
       )
       .groupBy(jobCards.sourceSoLineId);
+    const [headers, lineRows, billedRows, jcRows, milestones, clientPoFilePath] =
+      await Promise.all([
+        headersQ,
+        lineRowsQ,
+        billedRowsQ,
+        jcRowsQ,
+        readMilestones(tx, id),
+        readClientPoFilePath(tx, id),
+      ]);
+    const header = headers[0];
+    if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
+    const billedByLine = new Map(
+      billedRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.billed)]),
+    );
+
+    // JC qty per SO line = Σ of each card's JC Qty (lib/jc-effective-qty.ts:
+    // a stopped order's card counts what it credited) whose source_so_line_id = line.
+    // Rework/repair children excluded — they re-make pieces the parent JC
+    // already covers (QC-NC audit 2026-09-21, gap 3; same rule as the list).
     const jcByLine = new Map(
       jcRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.jcQty)]),
     );
 
-    const milestones = await readMilestones(tx, id);
-    const clientPoFilePath = await readClientPoFilePath(tx, id);
-
-    const createdByName = await resolveUserName(tx, header.createdBy);
-
     // BOM master NUMBER (bom_masters.bom_no) for the header's assigned BOM.
     // bom_master_id is stored as text; compare on id::text so a non-UUID legacy
     // value can never break the cast. Null when unassigned or not found.
-    let bomMasterCode: string | null = null;
-    if (header.bomMasterId) {
+    // Both need the header, so they are the second (and last) round trip.
+    const [createdByName, bomMasterCode] = await Promise.all([
+      resolveUserName(tx, header.createdBy),
+      header.bomMasterId ? readBomNo(header.bomMasterId) : Promise.resolve(null),
+    ]);
+    async function readBomNo(bomMasterId: string): Promise<string | null> {
       const bomRows = await tx
         .select({ bomNo: bomMasters.bomNo })
         .from(bomMasters)
         .where(
           and(
-            sql`${bomMasters.id}::text = ${header.bomMasterId}`,
+            sql`${bomMasters.id}::text = ${bomMasterId}`,
             eq(bomMasters.companyId, companyId),
             isNull(bomMasters.deletedAt),
           ),
         )
         .limit(1);
-      bomMasterCode = bomRows[0]?.bomNo ?? null;
+      return bomRows[0]?.bomNo ?? null;
     }
 
     const headerOut = toSalesOrder(header);

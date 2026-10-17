@@ -546,7 +546,9 @@ async function loadJobWorkOrderDetail(
   companyId: string,
   showMoney: boolean,
 ): Promise<JobWorkOrderDetail> {
-  const headers = await tx
+  // Header + lines in one pipelined round trip, then every per-line read in a
+  // second — not seven trips one after another (each ~0.5 s on a far API host).
+  const headersQ = tx
     .select()
     .from(jobWorkOrders)
     .where(
@@ -557,30 +559,32 @@ async function loadJobWorkOrderDetail(
       ),
     )
     .limit(1);
-  const header = headers[0];
-  if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
-
-  const lineRows = await tx
+  const lineRowsQ = tx
     .select()
     .from(jobWorkOrderLines)
     .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
     .orderBy(asc(jobWorkOrderLines.lineNo));
+  const [headers, lineRows] = await Promise.all([headersQ, lineRowsQ]);
+  const header = headers[0];
+  if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
   const lineIds = lineRows.map((l) => l.id);
 
-  // Order items and RM items share the items table — one lookup serves both.
-  const codeMap = await resolveItemCodesById(
-    tx,
-    [...lineRows.map((l) => l.itemId), ...lineRows.map((l) => l.rmItemId)],
-    companyId,
-  );
-  const pmCodes = await partyMaterialCodes(
-    tx,
-    lineRows.map((l) => l.partyMaterialId),
-    companyId,
-  );
-  const accepted = await rmAcceptedByLine(tx, lineIds);
-  const waitingQc = await rmWaitingQcByLine(tx, lineIds);
-  const usage = await jwLineUsage(tx, lineIds);
+  const [codeMap, pmCodes, accepted, waitingQc, usage] = await Promise.all([
+    // Order items and RM items share the items table — one lookup serves both.
+    resolveItemCodesById(
+      tx,
+      [...lineRows.map((l) => l.itemId), ...lineRows.map((l) => l.rmItemId)],
+      companyId,
+    ),
+    partyMaterialCodes(
+      tx,
+      lineRows.map((l) => l.partyMaterialId),
+      companyId,
+    ),
+    rmAcceptedByLine(tx, lineIds),
+    rmWaitingQcByLine(tx, lineIds),
+    jwLineUsage(tx, lineIds),
+  ]);
   // ADR-203 rule 9: Σ accepted by jw_line_id over THIS JWSO's live lines.
   const partyReceivedQty = lineIds.reduce((a, lid) => a + (accepted.get(lid) ?? 0), 0);
 
