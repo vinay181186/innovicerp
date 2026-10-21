@@ -36,6 +36,8 @@ export const MASTER_RULES_MODE_LABEL: Record<MasterRulesMode, string> = {
 export interface MasterRuleIssue {
   field: string;
   message: string;
+  /** Set on the GSTIN-vs-State clash so callers test a code, not the text. */
+  code?: 'gstin_state_clash';
 }
 
 /** The company settings the rules read (companies table, migration 0183). */
@@ -79,6 +81,23 @@ export interface PartyGstResult {
  *   - GST Category and State must be chosen (State is the invoice's Place of
  *     Supply, plan D2) — except an Overseas party needs no Indian State.
  */
+/** Start of the GSTIN-vs-State clash message (for screens that only hold the
+ *  text — use `isGstinStateClashMessage`, never a copy of the words). */
+const GSTIN_STATE_CLASH_PREFIX = 'GSTIN starts with';
+
+export function isGstinStateClashMessage(message: string | null | undefined): boolean {
+  return Boolean(
+    message?.startsWith(GSTIN_STATE_CLASH_PREFIX) && message.includes(' but State is '),
+  );
+}
+
+/** ADR-242 (owner rule 2026-10-21): the CUSTOMER issues that refuse a save in
+ *  every Master Rules Mode — GST Category, GSTIN (missing / invalid /
+ *  Unregistered with one) and a GSTIN that disagrees with the State. */
+export function isCustomerHardIssue(i: MasterRuleIssue): boolean {
+  return i.field === 'gstNumber' || i.field === 'gstCategory' || i.code === 'gstin_state_clash';
+}
+
 export function checkPartyGst(input: PartyGstInput): PartyGstResult {
   const issues: MasterRuleIssue[] = [];
   const gstNumber = normalizeGstin(input.gstNumber);
@@ -117,7 +136,8 @@ export function checkPartyGst(input: PartyGstInput): PartyGstResult {
       } else if (stateCode !== fromGstin) {
         issues.push({
           field: 'stateCode',
-          message: `GSTIN starts with ${fromGstin} (${stateNameForCode(fromGstin) ?? '?'}) but State is ${stateNameForCode(stateCode)} (${stateCode}).`,
+          code: 'gstin_state_clash',
+          message: `${GSTIN_STATE_CLASH_PREFIX} ${fromGstin} (${stateNameForCode(fromGstin) ?? '?'}) but State is ${stateNameForCode(stateCode)} (${stateCode}).`,
         });
       }
     }

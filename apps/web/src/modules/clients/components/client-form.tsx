@@ -17,10 +17,18 @@
 // problems show live under the fields — amber in Warn mode, red in Enforce
 // mode — and an enforce-mode refusal's field errors land under the same
 // fields. A valid GSTIN fills a blank State. See settings/master-rules-ui.
+//
+// ADR-242 (owner rule 2026-10-21): on a CUSTOMER the GSTIN rules are hard
+// whatever the mode — GST Category is required, GSTIN is required unless the
+// category is Unregistered / Overseas, and a GSTIN whose first two digits
+// disagree with the State is refused. So those problems show in red here even
+// in Warn mode (the server refuses them with fieldErrors on the same fields).
 
 import {
   type Client,
   type CreateClientInput,
+  GST_CATEGORIES_WITHOUT_GSTIN,
+  isGstinStateClashMessage,
   type UpdateClientInput,
   createClientInputSchema,
   updateClientInputSchema,
@@ -32,6 +40,7 @@ import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form
 import {
   GST_CATEGORY_OPTIONS,
   type PartyGstNotes,
+  type RuleNote,
   STATE_OPTIONS,
   type ServerFieldErrors,
   blankToNull,
@@ -187,6 +196,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
         register={register as unknown as UseFormRegister<UpdateClientInput>}
         errors={errors as unknown as FieldErrors<UpdateClientInput>}
         notes={notes}
+        gstCategory={watch('gstCategory')}
         oldState={null}
         stateChosen={!!stateCode}
         autoFocusName
@@ -254,6 +264,7 @@ function EditClientForm(props: EditMode): React.JSX.Element {
         register={register}
         errors={errors}
         notes={notes}
+        gstCategory={watch('gstCategory')}
         oldState={unmappedOldState(client.stateCode, client.state)}
         stateChosen={!!stateCode}
         codeField={
@@ -315,6 +326,23 @@ function ClientFormShell(props: {
   );
 }
 
+/** ADR-242: a customer's GSTIN / GST Category problem is an error in every
+ *  mode — the amber Warn-mode note is shown in red instead. */
+function hardNote(note: RuleNote): RuleNote {
+  return note.warning ? { error: note.warning } : note;
+}
+
+/** ADR-242: the State note is hard only when it is the GSTIN-vs-State clash
+ *  (the server refuses that one in every mode); other State notes keep the mode. */
+function stateNote(note: RuleNote): RuleNote {
+  return isGstinStateClashMessage(note.warning) ? hardNote(note) : note;
+}
+
+/** GSTIN is required unless the GST Category is Unregistered / Overseas. */
+function gstinRequiredFor(category: string | null | undefined): boolean {
+  return !(GST_CATEGORIES_WITHOUT_GSTIN as readonly string[]).includes(category ?? '');
+}
+
 /** The four sections. Every row sums to 12 on the grid:
  *    Identity  Code 3 · Customer 6 · GSTIN 3
  *    Address   Address 12 · City 4 · State 4 · Pincode 4
@@ -325,12 +353,20 @@ function ClientFields(props: {
   errors: FieldErrors<UpdateClientInput>;
   codeField: ReactNode;
   notes: PartyGstNotes;
+  /** The chosen GST Category — decides whether GSTIN carries the ★. */
+  gstCategory: string | null | undefined;
   /** Old free-text State with no list match (edit only), shown as a hint. */
   oldState: string | null;
   stateChosen: boolean;
   autoFocusName?: boolean;
 }): React.JSX.Element {
-  const { register, errors, notes } = props;
+  const { register, errors } = props;
+  const notes: PartyGstNotes = {
+    gstNumber: hardNote(props.notes.gstNumber),
+    gstCategory: hardNote(props.notes.gstCategory),
+    stateCode: stateNote(props.notes.stateCode),
+  };
+  const gstinRequired = gstinRequiredFor(props.gstCategory);
   const oldHint = props.stateChosen ? null : oldStateHint(props.oldState);
   const stateError = errors.stateCode?.message ?? notes.stateCode.error;
   return (
@@ -355,6 +391,7 @@ function ClientFields(props: {
           </FormField>
           <FormField
             label="GSTIN"
+            required={gstinRequired}
             size="sm"
             htmlFor="gstNumber"
             error={errors.gstNumber?.message ?? notes.gstNumber.error}
@@ -453,6 +490,7 @@ function ClientFields(props: {
         <FormGrid>
           <FormField
             label="GST Category"
+            required
             size="md"
             htmlFor="gstCategory"
             error={errors.gstCategory?.message ?? notes.gstCategory.error}

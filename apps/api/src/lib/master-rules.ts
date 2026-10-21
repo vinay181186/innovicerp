@@ -12,6 +12,7 @@
 import { eq } from 'drizzle-orm';
 import type { ZodError } from 'zod';
 import {
+  isCustomerHardIssue,
   MASTER_RULE_SETTINGS_DEFAULT,
   type MasterRuleIssue,
   type MasterRuleSettings,
@@ -110,4 +111,26 @@ export function zodRowReason(error: ZodError, labels: Readonly<Record<string, st
 /** "Customer" + issues → one skip reason / warning line per issue. */
 export function issueTexts(issues: readonly MasterRuleIssue[]): string[] {
   return issues.map((i) => i.message);
+}
+
+// ADR-242 — a CUSTOMER's GSTIN problems refuse whatever the mode; the rule
+// of which issues those are is the shared isCustomerHardIssue.
+
+/** The issues that stop a customer save (or an import row) in this mode. */
+export function customerBlockingIssues(
+  issues: readonly MasterRuleIssue[],
+  mode: MasterRulesMode,
+): MasterRuleIssue[] {
+  return mode === 'enforce' ? [...issues] : issues.filter(isCustomerHardIssue);
+}
+
+/** applyMasterRules for a customer: the GSTIN problems always refuse. */
+export function applyCustomerGstRules(
+  issues: readonly MasterRuleIssue[],
+  mode: MasterRulesMode,
+  what: string,
+): MasterRuleIssue[] {
+  const hard = issues.filter(isCustomerHardIssue);
+  if (hard.length > 0) applyMasterRules(hard, 'enforce', what);
+  return applyMasterRules(issues, mode, what);
 }

@@ -17,7 +17,9 @@ import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/erro
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { CLIENT_SF_COLUMNS } from './sf-columns';
 import {
+  applyCustomerGstRules,
   applyMasterRules,
+  customerBlockingIssues,
   dropBlankCells,
   issueTexts,
   loadMasterRuleSettings,
@@ -259,7 +261,7 @@ export async function createClient(
       // GST rules (plan v3 Step 2): warn mode → saved + `warnings`; enforce → 400.
       const settings = await loadMasterRuleSettings(tx, companyId);
       const gst = checkPartyGst(input);
-      const warnings = applyMasterRules(
+      const warnings = applyCustomerGstRules(
         gst.issues,
         settings.masterRulesMode,
         `Customer "${input.name.trim()}"`,
@@ -358,6 +360,21 @@ function clientGstUpdate(
     updates.state = gst.values.state;
   }
   return { issues: gst.issues, updates };
+}
+
+/** ADR-242: on an EDIT the GSTIN rule refuses only when the edit carries the
+ *  GST fields (the Customer form always does; an Excel row or an approved
+ *  staged edit of phone / address does not) and does not retire the customer
+ *  — an old customer without a GSTIN can still be set Inactive. A create
+ *  always applies it. */
+function customerGstinRuleApplies(input: UpdateClientInput): boolean {
+  if (input.isActive === false) return false;
+  return (
+    input.gstCategory !== undefined ||
+    input.gstNumber !== undefined ||
+    input.stateCode !== undefined ||
+    input.state !== undefined
+  );
 }
 
 /** Plain-field part of an update (everything but the GST fields). */
@@ -489,8 +506,12 @@ export async function createClientsBulk(
           } while (takenCodes.has(code.toLowerCase()));
         }
         const gst = checkPartyGst(c);
-        if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
-          skip(issueTexts(gst.issues).join(' '), code, name);
+        if (customerBlockingIssues(gst.issues, settings.masterRulesMode).length > 0) {
+          skip(
+            issueTexts(customerBlockingIssues(gst.issues, settings.masterRulesMode)).join(' '),
+            code,
+            name,
+          );
           continue;
         }
         takenCodes.add(code.toLowerCase());
@@ -559,8 +580,13 @@ export async function createClientsBulk(
         }
       }
       const gst = clientGstUpdate(before, patch);
-      if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
-        skip(issueTexts(gst.issues).join(' '), before.code, before.name);
+      const blocking = customerGstinRuleApplies(patch)
+        ? customerBlockingIssues(gst.issues, settings.masterRulesMode)
+        : settings.masterRulesMode === 'enforce'
+          ? gst.issues
+          : [];
+      if (blocking.length > 0) {
+        skip(issueTexts(blocking).join(' '), before.code, before.name);
         continue;
       }
       const set = { ...clientPlainUpdates(patch), ...gst.updates };
@@ -678,7 +704,9 @@ export async function updateClientTx(
 
   const settings = await loadMasterRuleSettings(tx, companyId);
   const gst = clientGstUpdate(before, input);
-  const warnings = applyMasterRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`);
+  const warnings = customerGstinRuleApplies(input)
+    ? applyCustomerGstRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`)
+    : applyMasterRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`);
 
   const updates: Record<string, unknown> = {
     updatedBy: user.id,
