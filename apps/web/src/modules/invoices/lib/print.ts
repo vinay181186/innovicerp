@@ -28,7 +28,8 @@ import {
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
 import { inrFormat } from '@/lib/print/doc-print';
-import { splitGst } from './gst-split';
+import { signedRoundOff } from '@/modules/sales-orders/lib/gst-rows';
+import { invoiceTaxSplit } from './gst-split';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -104,15 +105,21 @@ function invoiceSheetModel(
   const money = (n: number | null | undefined): string => (priceHidden ? '—' : inrFormat(n ?? 0));
   const gstPct = inv.gstPercent ?? 0;
   const gstAmount = inv.gstAmount ?? 0;
-  const taxRows =
-    inv.taxType === 'igst'
-      ? [{ label: `IGST @ ${gstPct}%`, value: money(gstAmount) }]
-      : inv.taxType === 'sgst_cgst'
-        ? [
-            { label: `SGST @ ${gstPct / 2}%`, value: money(splitGst(gstAmount).sgst) },
-            { label: `CGST @ ${gstPct / 2}%`, value: money(splitGst(gstAmount).cgst) },
-          ]
-        : [{ label: `GST @ ${gstPct}%`, value: money(gstAmount) }];
+  // ADR-248 — invoiceTaxSplit picks the rule: issued before round-off
+  // (roundOff null) prints exactly as issued; a new invoice prints CGST then
+  // SGST (or IGST) and a signed Round-off row before the Grand Total.
+  const split = invoiceTaxSplit({
+    gstPercent: gstPct,
+    gstAmount,
+    taxType: inv.taxType,
+    roundOff: inv.roundOff,
+  });
+  const taxRows = split.rows.map((l) => ({ label: l.label, value: money(l.amount) }));
+  // Round-off exists only on a new invoice, which the server never sends to a
+  // price-hidden viewer — so no em-dash case here.
+  if (split.roundOff != null) {
+    taxRows.push({ label: 'Round-off', value: signedRoundOff(split.roundOff) });
+  }
 
   const uoms = new Set(inv.lines.map((l) => l.uom?.trim() ?? ''));
   const totalQty = inv.lines.reduce((sum, l) => sum + l.qty, 0);
@@ -198,7 +205,8 @@ function invoiceSheetModel(
             subtotal: money(inv.subtotal),
             taxRows,
             grand: money(inv.grandTotal),
-            // Whole rupees, as legacy printed it (see numWords above).
+            // Whole rupees, as legacy printed it (see numWords above). A new
+            // invoice's stored Grand Total is already a whole rupee (ADR-248).
             amountInWords: `Indian Rupees ${numWords(Math.floor(inv.grandTotal ?? 0))} Only`,
           },
         }),

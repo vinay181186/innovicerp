@@ -55,7 +55,8 @@ import { useAddPayment, useInvoice } from '../api';
 import { CancelInvoiceModal } from '../components/cancel-invoice-modal';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { invoiceSheetHtml, printInvoice } from '../lib/print';
-import { splitGst } from '../lib/gst-split';
+import { signedRoundOff } from '@/modules/sales-orders/lib/gst-rows';
+import { invoiceTaxSplit } from '../lib/gst-split';
 
 /** Invoice status → the words the user reads; the stored codes are unchanged. */
 const INVOICE_STATUS_LABEL: Record<string, string> = {
@@ -178,44 +179,29 @@ function InvoiceDetailPage(): React.JSX.Element {
   // those users don't get the action, which is the safe default.
   const isCancelled = inv.status === 'cancelled';
   const canCancel = perms.edit && perms.approve && !isCancelled && (inv.totalPaid ?? 0) === 0;
+  const taxSplit = invoiceTaxSplit({
+    gstPercent: inv.gstPercent ?? 0,
+    gstAmount: inv.gstAmount ?? 0,
+    taxType: inv.taxType,
+    roundOff: inv.roundOff,
+  });
   const stats: { label: string; value: string; size: number; color?: string }[] = priceHidden
     ? []
     : [
         { label: 'Subtotal', value: inr(inv.subtotal ?? 0), size: 16 },
-        // The split follows the invoice's Tax Type; an invoice raised before it
-        // was recorded shows the single GST figure, as it always did.
-        ...(inv.taxType === 'igst'
-          ? [
-              {
-                label: `IGST ${inv.gstPercent}%`,
-                value: inr(inv.gstAmount ?? 0),
-                size: 16,
-                color: 'var(--amber2)',
-              },
-            ]
-          : inv.taxType === 'sgst_cgst'
-            ? [
-                {
-                  label: `SGST ${(inv.gstPercent ?? 0) / 2}%`,
-                  value: inr(splitGst(inv.gstAmount ?? 0).sgst),
-                  size: 16,
-                  color: 'var(--amber2)',
-                },
-                {
-                  label: `CGST ${(inv.gstPercent ?? 0) / 2}%`,
-                  value: inr(splitGst(inv.gstAmount ?? 0).cgst),
-                  size: 16,
-                  color: 'var(--amber2)',
-                },
-              ]
-            : [
-                {
-                  label: `GST ${inv.gstPercent}%`,
-                  value: inr(inv.gstAmount ?? 0),
-                  size: 16,
-                  color: 'var(--amber2)',
-                },
-              ]),
+        // ADR-248 — invoiceTaxSplit picks the rule: an invoice issued before
+        // round-off (roundOff null) shows exactly what it always did; a new one
+        // shows CGST then SGST (or IGST) and its Round-off.
+        // The stat label drops the print's "@" ("CGST 9%"), as it always has.
+        ...taxSplit.rows.map((l) => ({
+          label: l.label.replace(' @ ', ' '),
+          value: inr(l.amount),
+          size: 16,
+          color: 'var(--amber2)',
+        })),
+        ...(taxSplit.roundOff != null
+          ? [{ label: 'Round-off', value: signedRoundOff(taxSplit.roundOff), size: 16 }]
+          : []),
         { label: 'Grand Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
         { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
         ...((inv.totalTds ?? 0) > 0

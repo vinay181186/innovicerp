@@ -29,7 +29,7 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JW_INVOICE_SF_COLUMNS } from './sf-columns';
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, computeGstTotals } from '@innovic/shared';
 import {
   assertTaxTypeMatches,
   clientCopyValues,
@@ -88,6 +88,8 @@ function rowToInvoice(row: typeof jwInvoices.$inferSelect): JwInvoice {
     gstPercent: Number(row.gstPercent),
     gstAmount: Number(row.gstAmount),
     totalAmount: Number(row.totalAmount),
+    // ADR-248 (0214): NULL stored = issued before 0214 — stays null.
+    roundOff: row.roundOff === null ? null : Number(row.roundOff),
     // text column, CHECK-constrained to the two codes (migration 0148); any
     // other value is treated as "not recorded" so the print falls back to one
     // GST row instead of guessing a split.
@@ -177,9 +179,6 @@ export async function createJwInvoice(
     const rate = showMoney && input.rate != null ? input.rate : Number(line.rate);
     if (!(rate >= 0)) throw new ValidationError('Rate cannot be less than 0.');
     const gstPercent = Number(jw.gstPercent);
-    const taxable = input.qty * rate;
-    const gstAmount = (taxable * gstPercent) / 100;
-    const total = taxable + gstAmount;
 
     // Place of Supply → Tax Type (plan D2), same rule as the SO invoice: the
     // customer's State (else GSTIN prefix) vs the company's; SEZ / Overseas →
@@ -188,6 +187,13 @@ export async function createJwInvoice(
     const client = await loadClientForCopy(tx, jw.clientId, companyId);
     const supply = await decideSupply(tx, companyId, client, { forSave: true });
     const taxType = assertTaxTypeMatches(input.taxType, supply);
+    // ADR-248 — the ONE money roll-up (same as SO / JWSO / PO / Tax Invoice):
+    // paise maths, GST rounded to paise, Total to the rupee with a stored
+    // Round-off. Taxable = the paise-rounded subtotal, so Taxable + GST +
+    // Round-off = Total exactly.
+    const totals = computeGstTotals({ subtotal: input.qty * rate, gstPercent, taxType });
+    const taxable = totals.subtotal;
+    const total = totals.grandTotal;
     // Payment Terms + Due Date from the customer's Payment Days (plan D6).
     const paymentTermsDays =
       input.paymentTermsDays ?? client?.paymentDays ?? DEFAULT_PAYMENT_TERMS_DAYS;
@@ -215,8 +221,9 @@ export async function createJwInvoice(
         rate: money(rate),
         taxableAmount: money(taxable),
         gstPercent: money(gstPercent),
-        gstAmount: money(gstAmount),
+        gstAmount: money(totals.gstTotal),
         totalAmount: money(total),
+        roundOff: money(totals.roundOff),
         taxType,
         paymentTermsDays,
         dueDate,
@@ -424,6 +431,7 @@ function hideJwInvoiceMoney<
     gstPercent: number | null;
     gstAmount: number | null;
     totalAmount: number | null;
+    roundOff: number | null;
   },
 >(r: T): T {
   return {
@@ -433,6 +441,7 @@ function hideJwInvoiceMoney<
     gstPercent: null,
     gstAmount: null,
     totalAmount: null,
+    roundOff: null,
   };
 }
 

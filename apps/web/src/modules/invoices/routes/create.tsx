@@ -30,7 +30,7 @@ import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import { splitGst } from '../lib/gst-split';
+import { InvoiceTotals } from '../components/invoice-totals';
 import {
   useCreateInvoice,
   useFinanceSoOptions,
@@ -194,10 +194,6 @@ function InvoiceNewPage(): React.JSX.Element {
     const qty = Math.max(0, Math.min(l.availableQty, Number(c.qty) || 0));
     return s + qty * (Number(c.rate) || 0);
   }, 0);
-  const gstAmt = Math.round(((subtotal * Number(gstPercent || 0)) / 100) * 100) / 100;
-  const grand = subtotal + gstAmt;
-  // The split shown under the totals — the same rows the print carries.
-  const gstSplit = splitGst(gstAmt);
   const gstPctNum = Number(gstPercent || 0);
 
   async function submit(): Promise<void> {
@@ -661,35 +657,7 @@ function InvoiceNewPage(): React.JSX.Element {
           })}
 
           {/* Totals — right-aligned under the Amount column, one per row. */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'auto 140px',
-              justifyContent: 'end',
-              columnGap: 'var(--sp-3)',
-              rowGap: 'var(--sp-1)',
-              marginTop: 12,
-              textAlign: 'right',
-            }}
-          >
-            <span className="text3">Subtotal</span>
-            <b className="mono fw-700 text2">₹{inrFormat(subtotal)}</b>
-            {taxType === 'igst' ? (
-              <>
-                <span className="text3">IGST @ {gstPctNum}%</span>
-                <b className="mono fw-700 amber">₹{inrFormat(gstAmt)}</b>
-              </>
-            ) : (
-              <>
-                <span className="text3">SGST @ {gstPctNum / 2}%</span>
-                <b className="mono fw-700 amber">₹{inrFormat(gstSplit.sgst)}</b>
-                <span className="text3">CGST @ {gstPctNum / 2}%</span>
-                <b className="mono fw-700 amber">₹{inrFormat(gstSplit.cgst)}</b>
-              </>
-            )}
-            <span className="text3">Grand Total</span>
-            <b className="mono fw-700 green">₹{inrFormat(grand)}</b>
-          </div>
+          <InvoiceTotals subtotal={subtotal} gstPercent={gstPctNum} taxType={taxType} />
         </Panel>
       ) : null}
     </div>

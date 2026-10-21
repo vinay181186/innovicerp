@@ -1,6 +1,7 @@
 // What the ▸ row reveals under a JW Invoice (ADR-199 fit table). The register
 // row carries everything already, so no extra fetch: the expand just lays out
-// the fields that did not earn a column — Item Name, Rate, GST %, GST Amt — plus
+// the fields that did not earn a column — Item Name, Rate, GST %, GST Amt,
+// Round-off (ADR-248, new invoices only) — plus
 // the screen-only Place of Supply note when the invoice is missing it.
 //
 // Rate / GST% / GST Amt are money (or money-adjacent) and are shown only when the
@@ -9,6 +10,8 @@
 
 import type { JwInvoiceListItem } from '@innovic/shared';
 import { PLACE_OF_SUPPLY_UNKNOWN_NOTE } from '@innovic/shared';
+import { jwInvoiceTaxSplit } from '@/modules/invoices/lib/gst-split';
+import { signedRoundOff } from '@/modules/sales-orders/lib/gst-rows';
 
 function money(n: number): string {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -42,12 +45,23 @@ export function JwInvoiceExpand({
   r: JwInvoiceListItem;
   priceHidden: boolean;
 }): React.JSX.Element {
+  // ADR-248 — Round-off shows only on a JW invoice issued after round-off
+  // (jwInvoiceTaxSplit decides; it is null on a legacy invoice).
+  const roundOff = priceHidden
+    ? null
+    : jwInvoiceTaxSplit({
+        gstPercent: Number(r.gstPercent ?? 0),
+        gstAmount: r.gstAmount ?? 0,
+        taxType: r.taxType,
+        roundOff: r.roundOff,
+      }).roundOff;
+  const showRoundOff = roundOff != null;
   return (
     <div style={{ padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)' }}>
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))',
+          gridTemplateColumns: `repeat(${showRoundOff ? 5 : 4}, minmax(120px, 1fr))`,
           gap: 'var(--sp-4)',
         }}
       >
@@ -59,6 +73,7 @@ export function JwInvoiceExpand({
             <Cell label="GST Amt" value={money(r.gstAmount ?? 0)} />
           </>
         )}
+        {roundOff != null ? <Cell label="Round-off" value={signedRoundOff(roundOff)} /> : null}
       </div>
 
       {/* Screen-only (plan D2, 0186), never printed. */}

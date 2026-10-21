@@ -174,6 +174,10 @@ export const invoiceRowSchema = z.object({
   gstPercent: z.number().nonnegative().nullable(),
   gstAmount: z.number().nonnegative().nullable(),
   grandTotal: z.number().nonnegative().nullable(),
+  /** ADR-248 (0214) — Grand Total brought to the rupee. NULL = an invoice
+   *  issued before 0214: it prints exactly as issued (no Round-off line, the
+   *  old SGST/CGST split). Hidden (null) with the other money. */
+  roundOff: z.number().nullable().default(null),
   totalPaid: z.number().nonnegative().nullable(),
   /** Σ TDS / short amount on the payments (migration 0171). */
   totalTds: z.number().nonnegative().nullable().default(0),

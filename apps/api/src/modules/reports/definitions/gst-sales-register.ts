@@ -60,6 +60,8 @@ export const gstSalesRegisterReport: RegisteredReport = {
       { key: 'cgst', label: 'CGST', type: 'number' },
       { key: 'sgst', label: 'SGST', type: 'number' },
       { key: 'igst', label: 'IGST', type: 'number' },
+      // ADR-248: the stored round-off (0 for an invoice issued before 0214).
+      { key: 'round_off', label: 'Round-off', type: 'number' },
       { key: 'total', label: 'Invoice Total', type: 'number' },
     ],
   },
@@ -110,6 +112,10 @@ export const gstSalesRegisterReport: RegisteredReport = {
           inv.gst_percent                                            AS gst_percent,
           inv.gst_amount                                             AS gst_amount,
           inv.grand_total                                            AS total,
+          -- ADR-248: NULL = issued before 0214 (no Round-off; its print gives
+          -- the odd paisa to SGST, so the register follows the paper).
+          inv.round_off                                              AS round_off,
+          (inv.round_off IS NULL)                                    AS sgst_first,
           CASE inv.tax_type
             WHEN 'igst' THEN true
             WHEN 'sgst_cgst' THEN false
@@ -141,6 +147,8 @@ export const gstSalesRegisterReport: RegisteredReport = {
           ji.gst_percent                                             AS gst_percent,
           ji.gst_amount                                              AS gst_amount,
           ji.total_amount                                            AS total,
+          ji.round_off                                               AS round_off,
+          false                                                      AS sgst_first,
           CASE ji.tax_type
             WHEN 'igst' THEN true
             WHEN 'sgst_cgst' THEN false
@@ -168,9 +176,14 @@ export const gstSalesRegisterReport: RegisteredReport = {
         place_of_supply::text                                      AS place_of_supply,
         taxable_value::float                                       AS taxable_value,
         gst_percent::float                                         AS gst_percent,
-        CASE WHEN is_inter THEN 0 ELSE ROUND(gst_amount / 2, 2) END::float AS cgst,
-        CASE WHEN is_inter THEN 0 ELSE gst_amount - ROUND(gst_amount / 2, 2) END::float AS sgst,
+        CASE WHEN is_inter THEN 0
+             WHEN sgst_first THEN gst_amount - ROUND(gst_amount / 2, 2)
+             ELSE ROUND(gst_amount / 2, 2) END::float              AS cgst,
+        CASE WHEN is_inter THEN 0
+             WHEN sgst_first THEN ROUND(gst_amount / 2, 2)
+             ELSE gst_amount - ROUND(gst_amount / 2, 2) END::float AS sgst,
         CASE WHEN is_inter THEN gst_amount ELSE 0 END::float       AS igst,
+        COALESCE(round_off, 0)::float                              AS round_off,
         total::float                                               AS total
       FROM reg
       ORDER BY reg.invoice_date DESC, reg.invoice_code DESC
@@ -192,6 +205,7 @@ export const gstSalesRegisterReport: RegisteredReport = {
       cgst: numCell(r['cgst']),
       sgst: numCell(r['sgst']),
       igst: numCell(r['igst']),
+      round_off: numCell(r['round_off']),
       total: numCell(r['total']),
     }));
 

@@ -32,6 +32,9 @@ export const jwInvoiceSchema = z.object({
   gstPercent: z.number().nonnegative().nullable(),
   gstAmount: z.number().nonnegative().nullable(),
   totalAmount: z.number().nonnegative().nullable(),
+  /** ADR-248 (0214) — Total brought to the rupee. NULL = issued before 0214
+   *  (prints exactly as issued). Hidden (null) with the other money. */
+  roundOff: z.number().nullable().default(null),
   /** Migration 0148. Null on invoices raised before it — those print a single
    *  "GST @ n%" row, as they always did. */
   taxType: jwInvoiceTaxTypeSchema.nullable().default(null),

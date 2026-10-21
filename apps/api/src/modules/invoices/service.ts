@@ -15,7 +15,7 @@ import type {
   ListInvoicesQuery,
   ListInvoicesResponse,
 } from '@innovic/shared';
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, computeGstTotals } from '@innovic/shared';
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -97,6 +97,8 @@ function rowToInvoice(r: typeof invoices.$inferSelect): InvoiceRow {
     gstPercent: n(r.gstPercent),
     gstAmount: n(r.gstAmount),
     grandTotal,
+    // ADR-248 (0214): NULL stored = issued before 0214 — stays null.
+    roundOff: r.roundOff === null ? null : n(r.roundOff),
     totalPaid,
     totalTds,
     // Outstanding Amount — TDS / short amounts count toward settling.
@@ -116,6 +118,7 @@ function hideInvoiceRowMoney<
     gstPercent: number | null;
     gstAmount: number | null;
     grandTotal: number | null;
+    roundOff: number | null;
     totalPaid: number | null;
     totalTds: number | null;
     balance: number | null;
@@ -127,6 +130,7 @@ function hideInvoiceRowMoney<
     gstPercent: null,
     gstAmount: null,
     grandTotal: null,
+    roundOff: null,
     totalPaid: null,
     totalTds: null,
     balance: null,
@@ -374,7 +378,11 @@ async function getInvoiceInternal(
 
   // ADR-202 Phase 3 — the canceller's name for the cancelled banner.
   const cancellerRows = inv.cancelledBy
-    ? await tx.select({ name: users.fullName }).from(users).where(eq(users.id, inv.cancelledBy)).limit(1)
+    ? await tx
+        .select({ name: users.fullName })
+        .from(users)
+        .where(eq(users.id, inv.cancelledBy))
+        .limit(1)
     : [];
 
   return {
@@ -785,9 +793,15 @@ export async function createInvoice(
     const copy = clientCopyValues(client);
 
     const lineAmounts = input.lines.map((l) => l.qty * l.rate);
-    const subtotal = lineAmounts.reduce((s, v) => s + v, 0);
-    const gstAmount = Math.round(((subtotal * gstPercent) / 100) * 100) / 100;
-    const grand = subtotal + gstAmount;
+    // ADR-248 — the ONE money roll-up (same as SO / JWSO / PO): paise maths,
+    // CGST = GST / 2 rounded, SGST the rest, Grand Total to the rupee with a
+    // stored Round-off.
+    const totals = computeGstTotals({
+      subtotal: lineAmounts.reduce((s, v) => s + v, 0),
+      gstPercent,
+      taxType,
+    });
+    const grand = totals.grandTotal;
 
     const dueDate = dueDateFrom(input.invoiceDate, paymentTermsDays);
 
@@ -811,10 +825,11 @@ export async function createInvoice(
         clientPincode: copy.clientPincode,
         placeOfSupply: supply.placeOfSupply,
         clientCopyAt: copy.clientCopyAt,
-        subtotal: String(subtotal),
+        subtotal: String(totals.subtotal),
         gstPercent: String(gstPercent),
-        gstAmount: String(gstAmount),
+        gstAmount: String(totals.gstTotal),
         grandTotal: String(grand),
+        roundOff: String(totals.roundOff),
         totalPaid: '0',
         taxType,
         paymentTermsDays,
