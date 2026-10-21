@@ -758,11 +758,23 @@ export async function updateClientOrStage(
     if (!(await isDocEditApprovalOn(tx, companyId))) return false;
     // "Editable" mirrors clientEditRegistryEntry.isLive: any live (not-Trash) customer.
     const rows = await tx
-      .select({ id: clients.id })
+      .select()
       .from(clients)
       .where(and(eq(clients.id, id), eq(clients.companyId, companyId), isNull(clients.deletedAt)))
       .limit(1);
-    return rows.length > 0;
+    const before = rows[0];
+    if (!before) return false;
+    // ADR-244: a GSTIN problem is refused to the person who typed it, not
+    // held for an approver who would then hit the same refusal.
+    if (customerGstinRuleApplies(input)) {
+      const settings = await loadMasterRuleSettings(tx, companyId);
+      applyCustomerGstRules(
+        clientGstUpdate(before, input).issues,
+        settings.masterRulesMode,
+        `Customer ${before.code}`,
+      );
+    }
+    return true;
   });
   if (shouldStage) {
     const request = await requestDocumentEdit('Client', id, input, input.expectedUpdatedAt, user);
