@@ -1,5 +1,6 @@
 // Per-row ⋯ menu for the Purchase Request FIT table (ADR-199). Shared RowActions
 // `items`, in the menu's fixed order:
+//   Preview · Download PDF (the PR sheet, use-pr-print.ts)
 //   Workflow: Approve (L4 Approver, open PRs) · Create PO (while quantity is
 //             left and the PR is convertible)
 //   Assign Task (not for the read-only viewer role — POST /tasks refuses it)
@@ -27,6 +28,7 @@ export function PrListRowActions({
   onApprove,
   onReject,
   onAssign,
+  onPrint,
 }: {
   pr: PurchaseRequestListItem;
   canApprove: boolean;
@@ -38,12 +40,25 @@ export function PrListRowActions({
   onApprove: (pr: PurchaseRequestListItem) => void | Promise<void>;
   onReject: (pr: PurchaseRequestListItem) => void | Promise<void>;
   onAssign: (pr: PurchaseRequestListItem) => void;
+  onPrint: (action: 'preview' | 'download', pr: PurchaseRequestListItem) => Promise<void>;
 }): React.JSX.Element {
   const bal = prOrderBalance(pr);
   return (
     <RowActions
       renderLink={renderRowMenuLink}
       items={[
+        {
+          key: 'preview',
+          label: 'Preview',
+          icon: 'eye',
+          onSelect: () => void onPrint('preview', pr),
+        },
+        {
+          key: 'download',
+          label: 'Download PDF',
+          icon: 'download',
+          onSelect: () => onPrint('download', pr),
+        },
         {
           key: 'approve',
           label: 'Approve',
@@ -75,8 +90,7 @@ export function PrListRowActions({
           icon: 'x',
           group: 'danger',
           hidden: !canApprove || pr.status === 'cancelled',
-          disabledReason:
-            bal.ordered > 0 ? 'Already on a PO' : rejecting ? 'Working…' : undefined,
+          disabledReason: bal.ordered > 0 ? 'Already on a PO' : rejecting ? 'Working…' : undefined,
           onSelect: () => onReject(pr),
         },
       ]}

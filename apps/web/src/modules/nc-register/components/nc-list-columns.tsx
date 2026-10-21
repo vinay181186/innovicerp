@@ -302,10 +302,25 @@ export function ncRowMenu(
     canCreateCapa: boolean;
     canAssign: boolean;
     onAssign: (nc: NcRegisterListItem) => void;
+    /** NC Report Preview / Download PDF (use-nc-print). */
+    onPrint: (action: 'preview' | 'download', nc: NcRegisterListItem) => Promise<void>;
   },
 ): RowMenuItem[] {
-  const items: RowMenuItem[] = [];
   const to = `/nc-register/${nc.id}`;
+  const items: RowMenuItem[] = [
+    {
+      key: 'preview',
+      label: 'Preview',
+      icon: 'eye',
+      onSelect: () => void opts.onPrint('preview', nc),
+    },
+    {
+      key: 'download',
+      label: 'Download PDF',
+      icon: 'download',
+      onSelect: () => opts.onPrint('download', nc),
+    },
+  ];
 
   if (opts.canDispose && nc.status === 'pending') {
     items.push({ key: 'dispose', label: 'Dispose', icon: 'pencil', group: 'workflow', to });

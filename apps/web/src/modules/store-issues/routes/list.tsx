@@ -25,6 +25,7 @@ import {
 } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
+import { useStoreIssuePrint } from '../components/use-store-issue-print';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
 // TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
@@ -117,6 +118,8 @@ function StoreIssuesListPage(): React.JSX.Element {
   useClampPage(page, data?.total, setPage);
 
   const columns = useMemo(() => issueRegisterColumns(), []);
+  // Row ⋯ Preview / Download PDF — the Item Issue Slip (use-store-issue-print.ts).
+  const issuePrint = useStoreIssuePrint();
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   const toggleExpand = useCallback((id: string): void => {
@@ -245,7 +248,25 @@ function StoreIssuesListPage(): React.JSX.Element {
                 }
                 onToggleExpanded={(iss) => toggleExpand(iss.id)}
                 rowActionsWidth="1%"
-                rowActions={(iss) => <RowActions onView={() => setViewId(iss.id)} />}
+                rowActions={(iss) => (
+                  <RowActions
+                    onView={() => setViewId(iss.id)}
+                    items={[
+                      {
+                        key: 'preview',
+                        label: 'Preview',
+                        icon: 'eye',
+                        onSelect: () => void issuePrint('preview', iss),
+                      },
+                      {
+                        key: 'download',
+                        label: 'Download PDF',
+                        icon: 'download',
+                        onSelect: () => issuePrint('download', iss),
+                      },
+                    ]}
+                  />
+                )}
               />
             </Panel>
           )}
