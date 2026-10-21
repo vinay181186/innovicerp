@@ -360,19 +360,21 @@ export async function restoreFromTrash(
       }
     }
 
-    // ADR-238 — Client PO No. is unique within the SO list / the JWSO list. A
+    // ADR-238/245 — Client PO No. is unique per customer within the SO list /
+    // the JWSO list. A
     // deleted order may not come back while another live order now uses it.
     if (entity.type === 'Sales Order' || entity.type === 'Job Work Order') {
       const gone = (await tx.execute(sql`
-        SELECT client_po_no AS "clientPoNo" FROM ${sql.raw(`public.${entity.table}`)}
+        SELECT client_po_no AS "clientPoNo", client_id AS "clientId" FROM ${sql.raw(`public.${entity.table}`)}
         WHERE id = ${input.id}::uuid AND company_id = ${companyId}::uuid
-      `)) as unknown as Array<{ clientPoNo: string | null }>;
+      `)) as unknown as Array<{ clientPoNo: string | null; clientId: string | null }>;
       await assertClientPoNoFree(
         tx,
         entity.type === 'Sales Order' ? 'so' : 'jwso',
         companyId,
+        gone[0]?.clientId ?? null,
         gone[0]?.clientPoNo,
-        { id: input.id, currentPoNo: null },
+        { id: input.id, currentPoNo: null, currentClientId: null },
       );
     }
 

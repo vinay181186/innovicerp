@@ -40,6 +40,7 @@ import { apiDownload, apiFetch } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
+import { useClientPoCheck } from '@/lib/use-client-po-check';
 import { useClientsList } from '@/modules/clients/api';
 import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
@@ -50,6 +51,7 @@ import { useEnsureJwRmItem } from '../api';
 import { parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
 import {
+  CustomerAddressField,
   OrderSupplyFormFields,
   orderFormTotalRows,
   useOrderSupplyPreview,
@@ -363,6 +365,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const supply = useOrderSupplyPreview(selectedClientId);
+  // ADR-245 — live Client PO No. check (unique per customer in the JWSO list).
+  // On edit the server never flags the order's own unchanged number + customer.
+  const typedClientPoNo = watch('header.clientPoNo') ?? '';
+  const clientPoCheck = useClientPoCheck(
+    'jwso',
+    selectedClientId,
+    typedClientPoNo,
+    isEdit ? props.detail.id : undefined,
+  );
   const [clientLabel, setClientLabel] = useState<string>(
     props.mode === 'edit' ? (props.detail.customerName ?? '') : '',
   );
@@ -682,6 +693,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const onValid = async (values: FormValues): Promise<void> => {
     setPoEmailError(null);
     setLineError(null);
+    // ADR-245: the field already says which JWSO holds this Client PO No.
+    if (clientPoCheck.duplicate) return;
     // Require proof of the client order: a Client PO No. OR an attached email
     // reference (create form only; edit keeps whatever the JWSO already has).
     if (isCreate && !values.header.clientPoNo?.trim() && !emailFileName) {
@@ -831,7 +844,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     : { code: 18, name: 19, rm: 13 }; // 4+18+19+6+13+6+6+6+10+8+4 = 100
   const standalone = Boolean(props.pageTitle);
   // ADR-227: the number can no longer make a save invalid — it is not sent.
-  const saveDisabled = formState.isSubmitting;
+  // A Client PO No. already on another JWSO of this customer blocks Save (not
+  // a check still in flight — the server's 409 stays the real guard).
+  const saveDisabled = formState.isSubmitting || clientPoCheck.duplicate;
+  // Shown under the Client PO No. box: the live duplicate and the PO-or-Email
+  // rule (the server's 409 at save shows in the summary).
+  const clientPoFieldError =
+    [
+      clientPoCheck.duplicate
+        ? `Already used on ${clientPoCheck.code ?? 'another JWSO'} for this customer.`
+        : null,
+      poEmailError,
+    ]
+      .filter((m): m is string => Boolean(m))
+      .join(' ') || null;
   const submitForm = handleSubmit(onValid);
   // Ctrl+S runs the same Save as the header button.
   useSaveShortcut(() => void submitForm(), !saveDisabled);
@@ -887,8 +913,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           {errorBanners}
         </>
       ) : null}
-      {/* Header on the 12-column grid, in reading order: Customer + Client PO
-          first, then JWSO No. / dates, GST % and (edit) status, then Remarks.
+      {/* Header on the 12-column grid, in reading order: Customer + Customer
+          Address, then Client PO, then JWSO No. / dates, GST % and (edit) status, then Remarks.
           No material fields (ADR-203) — each line carries its Customer RM. */}
       <Section standalone={standalone} title="JWSO Details">
         <div className="form-grid-12">
@@ -944,6 +970,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <div className="form-error">{errors.header.clientId.message}</div>
             ) : null}
           </div>
+
+          <CustomerAddressField preview={supply} />
 
           <div className="form-grp f-lg">
             <div
@@ -1042,6 +1070,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               id="clientPoNo"
               className="innovic-input"
               autoComplete="off"
+              aria-invalid={clientPoCheck.duplicate || undefined}
               {...register('header.clientPoNo', {
                 onChange: (e) => {
                   if (e.target.value.trim()) setPoEmailError(null);
@@ -1085,9 +1114,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 {poFileError ? <div className="form-error">{poFileError}</div> : null}
               </div>
             ) : null}
-            {poEmailError ? (
+            {clientPoFieldError ? (
               <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red2)' }}>
-                ⚠ {poEmailError}
+                ⚠ {clientPoFieldError}
               </div>
             ) : null}
           </div>
@@ -1128,13 +1157,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               id="jwDueDate"
               type="date"
               className="innovic-input"
-              title="Fills every line's Due Date. Each line can then be changed on its own."
               {...register('header.dueDate', {
                 onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
                   applyDueDateToAllLines(e.target.value),
               })}
             />
-            <div className="form-help">Fills every line&apos;s Due Date</div>
           </div>
           {priceVisible ? (
             <div className="form-grp f-sm">

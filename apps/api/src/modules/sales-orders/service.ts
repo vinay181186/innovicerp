@@ -47,7 +47,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { isUniqueViolation, withUniqueRetry } from '../../lib/db-retry';
-import { assertClientPoNoFree } from '../../lib/client-po-unique';
+import { assertClientPoNoFree, checkClientPoNo } from '../../lib/client-po-unique';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
@@ -107,7 +107,11 @@ import type {
   SoMilestone,
   UpdateSalesOrderInput,
 } from './schema';
-import type { DocumentEditStagedResult } from '@innovic/shared';
+import type {
+  ClientPoCheckQuery,
+  ClientPoCheckResponse,
+  DocumentEditStagedResult,
+} from '@innovic/shared';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -1504,6 +1508,17 @@ async function nextSoCode(tx: DbTransaction, companyId: string): Promise<string>
   return `IN-SO-${String(max + 1).padStart(5, '0')}`;
 }
 
+/** ADR-245 — the live Client PO No. check the SO form runs while typing.
+ *  Read-only; the save re-checks under the lock. */
+export async function checkSoClientPoNo(
+  query: ClientPoCheckQuery,
+  user: AuthContext,
+): Promise<ClientPoCheckResponse> {
+  await requireFormAccess(user, 'so_create', 'view');
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => checkClientPoNo(tx, 'so', companyId, query));
+}
+
 /** The next suggested SO code (MAX+1 after the highest IN-SO-#####). Surfaced to
  *  the create form so it can prefill an editable, overridable suggestion. */
 export async function getNextSoCode(user: AuthContext): Promise<{ code: string }> {
@@ -1550,8 +1565,8 @@ function createSalesOrderOnce(
     const code = await nextSoCode(tx, companyId);
     await assertInternalSoNoFree(tx, companyId, internalSoNo);
 
-    // Client PO No. is unique within the SO list (lib/client-po-unique.ts).
-    await assertClientPoNoFree(tx, 'so', companyId, input.header.clientPoNo);
+    // Client PO No. is unique per customer within the SO list (ADR-245).
+    await assertClientPoNoFree(tx, 'so', companyId, input.header.clientId, input.header.clientPoNo);
 
     // Client master link is enforced by the create schema (route boundary).
     // Snapshot the master client name into customer_name when a client is set.
@@ -1823,13 +1838,18 @@ export async function updateSalesOrderTx(
     if (h.clientId !== undefined) updates['clientId'] = h.clientId ?? null;
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
-    if (h.clientPoNo !== undefined) {
-      await assertClientPoNoFree(tx, 'so', companyId, h.clientPoNo, {
-        id,
-        currentPoNo: existingHdr.clientPoNo,
-      });
-      updates['clientPoNo'] = h.clientPoNo ?? null;
+    // ADR-245 — re-checked when the number OR the customer changes.
+    if (h.clientPoNo !== undefined || h.clientId !== undefined) {
+      await assertClientPoNoFree(
+        tx,
+        'so',
+        companyId,
+        h.clientId !== undefined ? (h.clientId ?? null) : existingHdr.clientId,
+        h.clientPoNo !== undefined ? h.clientPoNo : existingHdr.clientPoNo,
+        { id, currentPoNo: existingHdr.clientPoNo, currentClientId: existingHdr.clientId },
+      );
     }
+    if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     // ADR-207 — Internal SO No.: absent = unchanged (an old SO without one is
     // never forced to get one). A changed number must be free among the other
     // live SOs (case-insensitive); the History row comes from logSoEdit

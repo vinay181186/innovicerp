@@ -14026,3 +14026,36 @@ GSTIN-vs-State clash carries `code: 'gstin_state_clash'`, not a text match.
 
 - Existing customers without a GSTIN are untouched until edited; the edit
   then asks for the GSTIN. Their SO / JWSO still save with the ADR-243 warning.
+
+## ADR-245: Client PO No. unique per customer, checked while typing
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved 2026-10-21). Narrows ADR-238.
+
+### Decision
+
+1. Client PO No. is unique per CUSTOMER within the SO list (and within the
+   JWSO list): the same number for a different customer is allowed — it is
+   the customer's own PO numbering. SO vs JWSO stays independent; cancelled
+   orders still count; legacy orders without a customer link compare only
+   with each other.
+2. One rule, `apps/api/src/lib/client-po-unique.ts`: white space (tabs, NBSP)
+   collapsed, trimmed, case-insensitive — identically in JS (`keyOf`) and SQL
+   (`SQL_KEY`). The save checks under an advisory lock keyed on list +
+   company + customer + number (§20.3), and re-checks when the number OR the
+   customer changes on edit. Trash restore passes the customer.
+3. Live check: `GET /sales-orders/client-po-check` and
+   `/job-work-orders/client-po-check` (`checkClientPoNo`, read-only, page view
+   right). The forms ask 500 ms after typing stops (`useClientPoCheck`), show
+   "Already used on IN-SO-… for this customer." under the box and block Save.
+   The order's own unchanged number + customer is never flagged (decided on
+   the server, not in the browser). The save is still the real guard.
+4. Same release: a read-only Customer Address next to Customer on SO / JWSO
+   create/edit (from the customer master, `partyAddressLines`); the JWSO
+   "Fills every line's Due Date" explanation removed (owner).
+
+### Consequences
+
+- No database change and no index; the check scans the company's live
+  orders (small today). Add an expression index if the lists grow large.
+- A failed live check is silent and does not block Save.

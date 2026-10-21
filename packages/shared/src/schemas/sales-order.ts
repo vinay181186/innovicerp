@@ -447,3 +447,19 @@ export interface ListSalesOrdersResponse {
   limit: number;
   offset: number;
 }
+
+/** ADR-245 — the live Client PO No. check (GET /sales-orders/client-po-check
+ *  and /job-work-orders/client-po-check): is this number already on another
+ *  live order of the SAME customer? `code` = that order's number. */
+export const clientPoCheckQuerySchema = z.object({
+  clientId: z.string().uuid().optional(),
+  clientPoNo: z.string().max(64),
+  /** On edit: the order being edited, so it never matches itself. */
+  excludeId: z.string().uuid().optional(),
+});
+export type ClientPoCheckQuery = z.infer<typeof clientPoCheckQuerySchema>;
+export const clientPoCheckResponseSchema = z.object({
+  taken: z.boolean(),
+  code: z.string().nullable(),
+});
+export type ClientPoCheckResponse = z.infer<typeof clientPoCheckResponseSchema>;

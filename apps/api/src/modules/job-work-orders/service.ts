@@ -52,7 +52,8 @@ import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { assertActiveParty } from '../../lib/active-party';
-import { assertClientPoNoFree } from '../../lib/client-po-unique';
+import { assertClientPoNoFree, checkClientPoNo } from '../../lib/client-po-unique';
+import type { ClientPoCheckQuery, ClientPoCheckResponse } from '@innovic/shared';
 import { decideOrderTax, orderTotals, taxTypeText } from '../../lib/order-totals';
 import {
   AuthorizationError,
@@ -85,6 +86,17 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+/** ADR-245 — the live Client PO No. check the JWSO form runs while typing.
+ *  Read-only; the save re-checks under the lock. */
+export async function checkJwClientPoNo(
+  query: ClientPoCheckQuery,
+  user: AuthContext,
+): Promise<ClientPoCheckResponse> {
+  await requireFormAccess(user, 'jw_create', 'view');
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => checkClientPoNo(tx, 'jwso', companyId, query));
+}
 
 function jwDetail(code: string, customerName: string | null | undefined): string {
   return customerName ? `${code} — ${customerName}` : code;
@@ -1128,8 +1140,8 @@ export async function createJobWorkOrder(
         );
       }
       const clientName = await assertClientExists(tx, h.clientId, companyId);
-      // Client PO No. is unique within the JWSO list (lib/client-po-unique.ts).
-      await assertClientPoNoFree(tx, 'jwso', companyId, h.clientPoNo);
+      // Client PO No. is unique per customer within the JWSO list (ADR-245).
+      await assertClientPoNoFree(tx, 'jwso', companyId, h.clientId, h.clientPoNo);
 
       const itemCodes = await loadOrderItems(
         tx,
@@ -1329,13 +1341,18 @@ export async function updateJobWorkOrderTx(
     if (h.clientId !== undefined) updates['clientId'] = nextClientId;
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
-    if (h.clientPoNo !== undefined) {
-      await assertClientPoNoFree(tx, 'jwso', companyId, h.clientPoNo, {
-        id,
-        currentPoNo: existingHdr.clientPoNo,
-      });
-      updates['clientPoNo'] = h.clientPoNo ?? null;
+    // ADR-245 — re-checked when the number OR the customer changes.
+    if (h.clientPoNo !== undefined || h.clientId !== undefined) {
+      await assertClientPoNoFree(
+        tx,
+        'jwso',
+        companyId,
+        nextClientId,
+        h.clientPoNo !== undefined ? h.clientPoNo : existingHdr.clientPoNo,
+        { id, currentPoNo: existingHdr.clientPoNo, currentClientId: existingHdr.clientId },
+      );
     }
+    if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.gstPercent !== undefined && showMoney)
       updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;

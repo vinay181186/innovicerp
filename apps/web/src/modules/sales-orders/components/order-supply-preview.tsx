@@ -12,6 +12,7 @@ import {
   taxTypeForSupply,
 } from '@innovic/shared';
 import { inrFormat } from '@/lib/print/doc-print';
+import { partyAddressLines } from '@/lib/print/company';
 import { useClient } from '@/modules/clients/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { Banner } from '@/ui/feedback';
@@ -28,6 +29,9 @@ export interface OrderSupplyPreview {
   taxType: ServicePoTaxType | null;
   /** A customer is chosen and loaded, but its State is unknown. */
   customerStateMissing: boolean;
+  /** The chosen customer's master address (line, city, state, pincode joined
+   *  with ", ", blanks skipped); null when none / not loaded. Read-only. */
+  customerAddress: string | null;
 }
 
 /** Place of Supply + Tax Type for the chosen customer, worked out live. */
@@ -43,7 +47,36 @@ export function useOrderSupplyPreview(clientId: string | null | undefined): Orde
         gstCategory: picked.gstCategory,
       })
     : null;
-  return { placeOfSupply, taxType, customerStateMissing: picked != null && taxType == null };
+  const customerAddress = picked ? partyAddressLines(picked).join(', ') || null : null;
+  return {
+    placeOfSupply,
+    taxType,
+    customerStateMissing: picked != null && taxType == null,
+    customerAddress,
+  };
+}
+
+/** Read-only Customer Address beside the Customer picker — from the customer
+ *  master, never typed. Same client query as the preview above (no extra fetch). */
+export function CustomerAddressField(props: { preview: OrderSupplyPreview }): React.JSX.Element {
+  const address = props.preview.customerAddress;
+  return (
+    <FormField label="Customer Address" size="lg">
+      <div
+        className="text2"
+        title={address ?? undefined}
+        style={{
+          fontSize: 'var(--fs-sm)',
+          fontWeight: 600,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {address ?? '—'}
+      </div>
+    </FormField>
+  );
 }
 
 /** The two read-only header fields beside the customer, plus the orange note. */

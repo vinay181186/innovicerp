@@ -73,6 +73,7 @@ import { apiDownload, apiFetch } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useCanOpen } from '@/components/shared/action-link';
 import { cascadeField, useFieldCascade } from '@/lib/use-field-cascade';
+import { useClientPoCheck } from '@/lib/use-client-po-check';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList } from '@/modules/clients/api';
@@ -82,6 +83,7 @@ import { parseSoLineFile } from '../lib/import-export';
 import { SO_TYPE_LABEL } from '../lib/so-status-label';
 import { SoLineDrawingCell } from './so-line-drawing-cell';
 import {
+  CustomerAddressField,
   OrderSupplyFormFields,
   orderFormTotalRows,
   useOrderSupplyPreview,
@@ -305,6 +307,18 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const supply = useOrderSupplyPreview(selectedClientId);
+  // ADR-245 — live Client PO No. check (unique per customer in the SO list).
+  // On edit the server never flags the order's own unchanged number + customer.
+  const typedClientPoNo = watch('header.clientPoNo') ?? '';
+  const clientPoCheck = useClientPoCheck(
+    'so',
+    selectedClientId,
+    typedClientPoNo,
+    isEdit ? props.detail.id : undefined,
+  );
+  const clientPoDuplicateMsg = clientPoCheck.duplicate
+    ? `Already used on ${clientPoCheck.code ?? 'another SO'} for this customer.`
+    : null;
   // Keep a stable label for the selected client even when it scrolls out of the
   // current search page (edit mode / after typing a different term).
   const [clientLabel, setClientLabel] = useState<string>(
@@ -623,6 +637,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     async (values: FormValues): Promise<void> => {
       setLineError(null);
       setPoEmailError(null);
+      // ADR-245: the field already says which SO holds this Client PO No.
+      if (clientPoCheck.duplicate) return;
       // Require proof of the client order: either a Client PO No. or an attached
       // email reference. Enforced on the create form (edit keeps whatever the SO
       // already has). At least one must be present.
@@ -786,8 +802,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // ── Page chrome: sticky PageHeader (Cancel · Save as Draft · Save), dirty
   // pill, Ctrl+S, and ONE error summary right under the header so the person
   // sees what blocked the save where the Save button is. ──
-  const saveDisabled = formState.isSubmitting;
-  const draftDisabled = formState.isSubmitting;
+  // A Client PO No. already on another SO of this customer blocks Save (not a
+  // check still in flight — the server's 409 stays the real guard).
+  const saveDisabled = formState.isSubmitting || clientPoCheck.duplicate;
+  const draftDisabled = formState.isSubmitting || clientPoCheck.duplicate;
   const isDirty = formState.isDirty || poFileName !== null || emailFileName !== null;
   useSaveShortcut(() => void handleSubmit(onValid(false))(), !saveDisabled);
 
@@ -795,6 +813,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const internalSoNoServerError = props.submitError?.startsWith('Internal SO No.')
     ? props.submitError
     : undefined;
+  // The server's 409 at save shows in the summary; under the field the live
+  // check speaks, so a corrected number clears at once.
+  const clientPoFieldError =
+    [clientPoDuplicateMsg, poEmailError].filter((m): m is string => Boolean(m)).join(' ') ||
+    undefined;
   const summaryErrors = [lineError, poEmailError, props.submitError ?? null].filter(
     (m): m is string => Boolean(m),
   );
@@ -963,8 +986,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       </PageHeader>
 
       {/* Header — customer first, then the document no. / dates / type, then
-          remarks. Row 1: Customer 6 + Client PO 4 + GST 2; row 2: SO No. +
-          Internal SO No. + SO Date + Due Date + SO Type; Remarks full width. */}
+          remarks. Row 1: Customer 6 + Customer Address 6; then Client PO 4 + GST 2
+          + Place of Supply / Tax Type, SO No. + Internal SO No. + SO Date +
+          Due Date + SO Type; Remarks full width. */}
       <Panel title="Order Details" actions={canAttach ? attachButtons : undefined}>
         <FormGrid>
           <FormField label="Customer" required size="lg" error={errors.header?.clientId?.message}>
@@ -1006,13 +1030,21 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             />
           </FormField>
 
+          <CustomerAddressField preview={supply} />
+
           {/* No ★: clientPoNo is schema-optional (max(64).optional()) and legacy
               stars neither mode — an attached Email Ref satisfies the rule. */}
-          <FormField label="Client PO No." size="md" htmlFor="clientPoNo" error={poEmailError}>
+          <FormField
+            label="Client PO No."
+            size="md"
+            htmlFor="clientPoNo"
+            error={clientPoFieldError}
+          >
             <input
               id="clientPoNo"
               className="innovic-input"
               autoComplete="off"
+              aria-invalid={clientPoCheck.duplicate || undefined}
               {...register('header.clientPoNo', {
                 onChange: (e) => {
                   if (e.target.value.trim()) setPoEmailError(null);

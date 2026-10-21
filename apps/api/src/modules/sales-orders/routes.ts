@@ -1,4 +1,4 @@
-import { activityReasonSchema } from '@innovic/shared';
+import { activityReasonSchema, clientPoCheckQuerySchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -25,6 +25,12 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listSalesOrdersQuerySchema.parse(req.query);
     return service.listSalesOrders(query, req.user);
+  });
+
+  // ADR-245 — live Client PO No. check (per customer) while the form is typed.
+  app.get('/sales-orders/client-po-check', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.checkSoClientPoNo(clientPoCheckQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/sales-orders/next-code', async (req) => {
