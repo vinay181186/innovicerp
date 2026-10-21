@@ -96,9 +96,12 @@ export function printJwInvoice(args: {
   // before the column existed has no tax type, and keeps the single GST row it
   // always printed — a split the data does not state is not invented for it.
   // The total GST is the same number in every case.
-  // Split once so the two halves always add back to the stored GST (odd paisa goes to SGST).
-  const cgstAmount = Math.round(gstAmount * 50) / 100;
-  const sgstAmount = Math.round((gstAmount - cgstAmount) * 100) / 100;
+  // Split once, in whole paise, so the two halves always add back to the stored
+  // GST: CGST = half rounded (the odd paisa), SGST = the rest — the same paise
+  // as the SO / JWSO (computeGstTotals) and the GST Sales Register (ADR-241).
+  const gstPaise = Math.round(gstAmount * 100);
+  const cgstAmount = Math.round(gstPaise / 2) / 100;
+  const sgstAmount = (gstPaise - Math.round(gstPaise / 2)) / 100;
   const taxRows =
     gstPct <= 0
       ? []

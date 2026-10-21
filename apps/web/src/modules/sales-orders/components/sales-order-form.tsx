@@ -81,6 +81,11 @@ import { useItemsList } from '@/modules/items/api';
 import { parseSoLineFile } from '../lib/import-export';
 import { SO_TYPE_LABEL } from '../lib/so-status-label';
 import { SoLineDrawingCell } from './so-line-drawing-cell';
+import {
+  OrderSupplyFormFields,
+  orderFormTotalRows,
+  useOrderSupplyPreview,
+} from './order-supply-preview';
 
 interface LineFormValue {
   id?: string | undefined;
@@ -299,6 +304,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const internalSoNoOptional = isEdit && !savedInternalSoNo;
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
+  const supply = useOrderSupplyPreview(selectedClientId);
   // Keep a stable label for the selected client even when it scrolls out of the
   // current search page (edit mode / after typing a different term).
   const [clientLabel, setClientLabel] = useState<string>(
@@ -592,8 +598,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const subtotal = (watchedLines ?? [])
     .filter((l) => l.status !== 'cancelled')
     .reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
-  const gstAmt = subtotal * (gstPercent / 100);
-  const grand = subtotal + gstAmt;
+  // ADR-241 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
+  // the tax type here is a preview from the chosen customer's State.
+  const money = orderFormTotalRows({ subtotal, gstPercent, taxType: supply.taxType });
 
   // `asDraft` (#3): the "Save as draft" button submits with status 'draft'.
   //
@@ -1027,6 +1034,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               ))}
             </select>
           </FormField>
+
+          <OrderSupplyFormFields preview={supply} />
 
           {/* ADR-207 — SO No. is system-only: "Auto on save" on create, the
               saved number on edit. Never editable, never sent. */}
@@ -1596,8 +1605,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     })
                   )}
                 </tbody>
-                {/* SO Totals (legacy _soTotalsHtml L12366): Subtotal · GST · Grand
-                    Total under the Amount column, right-aligned. */}
+                {/* SO Totals (legacy _soTotalsHtml L12366, ADR-241): Subtotal ·
+                    SGST + CGST or IGST · Round-off · Grand Total under the Amount
+                    column, right-aligned. */}
                 <tfoot>
                   <tr>
                     <td colSpan={5} className="text3">
@@ -1606,15 +1616,25 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     <td colSpan={2} className="td-num text3">
                       Subtotal
                     </td>
-                    <td className="td-num mono fw-700">₹{inrFormat(subtotal)}</td>
+                    <td className="td-num mono fw-700">{money.subtotal}</td>
                     <td colSpan={2} />
                   </tr>
+                  {money.taxRows.map((r) => (
+                    <tr key={r.label}>
+                      <td colSpan={5} />
+                      <td colSpan={2} className="td-num text3">
+                        {r.label}
+                      </td>
+                      <td className="td-num mono fw-700 amber">{r.value}</td>
+                      <td colSpan={2} />
+                    </tr>
+                  ))}
                   <tr>
                     <td colSpan={5} />
                     <td colSpan={2} className="td-num text3">
-                      GST {gstPercent}%
+                      Round-off
                     </td>
-                    <td className="td-num mono fw-700 amber">₹{inrFormat(gstAmt)}</td>
+                    <td className="td-num mono fw-700">{money.roundOff}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr>
@@ -1623,7 +1643,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       Grand Total
                     </td>
                     <td className="td-num mono fw-700 green" style={{ fontSize: 'var(--fs-md)' }}>
-                      ₹{inrFormat(grand)}
+                      {money.grand}
                     </td>
                     <td colSpan={2} />
                   </tr>

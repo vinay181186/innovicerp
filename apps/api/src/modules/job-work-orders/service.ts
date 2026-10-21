@@ -53,6 +53,7 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { assertActiveParty } from '../../lib/active-party';
 import { assertClientPoNoFree } from '../../lib/client-po-unique';
+import { decideOrderTax, orderTotals, taxTypeText } from '../../lib/order-totals';
 import {
   AuthorizationError,
   ConflictError,
@@ -592,6 +593,16 @@ async function loadJobWorkOrderDetail(
   return {
     ...(showMoney ? headerOut : hideJwHeaderMoney(headerOut)),
     partyReceivedQty,
+    // ADR-241 — the same roll-up as the SO; null when prices are hidden.
+    totals: showMoney
+      ? await orderTotals(tx, companyId, {
+          lines: lineRows,
+          gstPercent: header.gstPercent,
+          taxType: header.taxType,
+          placeOfSupply: header.placeOfSupply,
+          clientId: header.clientId,
+        })
+      : null,
     lines: lineRows.map((l) => {
       const line = toJobWorkOrderLine(l, codeMap, {
         partyMaterialCode: l.partyMaterialId ? (pmCodes.get(l.partyMaterialId) ?? null) : null,
@@ -942,6 +953,8 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
     clientPoNo: row.clientPoNo,
     status: row.status,
     gstPercent: row.gstPercent,
+    taxType: row.taxType ?? null,
+    placeOfSupply: row.placeOfSupply ?? null,
     remarks: row.remarks,
     clientMaterial: row.clientMaterial,
     clientMaterialQty: row.clientMaterialQty,
@@ -1124,6 +1137,8 @@ export async function createJobWorkOrder(
         companyId,
       );
       const resolveRm = makeRmResolver(tx, companyId, h.clientId, user.id);
+      // ADR-241 — tax type from the customer's State (unknown only warns).
+      const tax = await decideOrderTax(tx, companyId, h.clientId);
 
       const inserted = await tx
         .insert(jobWorkOrders)
@@ -1137,6 +1152,8 @@ export async function createJobWorkOrder(
           // ADR-203 rule 6: a new JWSO is always open (status is server-owned).
           status: 'open',
           gstPercent: (showMoney ? (h.gstPercent ?? 18) : 18).toFixed(2),
+          taxType: tax.taxType,
+          placeOfSupply: tax.placeOfSupply,
           remarks: h.remarks ?? null,
           createdBy: user.id,
           updatedBy: user.id,
@@ -1322,6 +1339,13 @@ export async function updateJobWorkOrderTx(
     if (h.gstPercent !== undefined && showMoney)
       updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
+
+    // ADR-241 — re-decided on EVERY save (the customer or its State may have
+    // changed), whatever the caller may see of prices; never from the browser.
+    // Set before the diff so a flip shows in History.
+    const tax = await decideOrderTax(tx, companyId, nextClientId);
+    updates['taxType'] = tax.taxType;
+    updates['placeOfSupply'] = tax.placeOfSupply;
 
     // ADR-197: before → after of the header, read BEFORE the update.
     const headerChanges = diffFields(existingHdr, updates, JW_HEADER_FIELDS);
@@ -1566,6 +1590,9 @@ export const JW_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'customerName', label: 'Customer' },
   { key: 'clientPoNo', label: 'Client PO No.' },
   { key: 'gstPercent', label: 'GST %' },
+  // ADR-241: server-decided on save; shown so a flip is never silent.
+  { key: 'taxType', label: 'Tax Type', format: taxTypeText },
+  { key: 'placeOfSupply', label: 'Place of Supply' },
   // ADR-236: the header note is "JWSO Remarks"; "Remarks" is the line note.
   { key: 'remarks', label: 'JWSO Remarks' },
 ];

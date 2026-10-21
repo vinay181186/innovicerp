@@ -24,6 +24,7 @@ import {
   polError,
   revisionBackwardsMessage,
   revisionGoesBackwards,
+  SO_GST_PERCENTS,
   type SoStatus,
   type UpdateJobWorkOrderInput,
   type Uom,
@@ -48,6 +49,11 @@ import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useEnsureJwRmItem } from '../api';
 import { parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
+import {
+  OrderSupplyFormFields,
+  orderFormTotalRows,
+  useOrderSupplyPreview,
+} from '@/modules/sales-orders/components/order-supply-preview';
 
 interface LineFormValue {
   id?: string | undefined;
@@ -84,6 +90,9 @@ interface LineFormValue {
   /** ADR-203: a downstream document uses this line — Item / UOM / BOM locked,
    *  Remove disabled. Read from the detail; never sent. */
   inUse?: boolean | undefined;
+  /** The saved line's status, read from the detail; never sent. A cancelled
+   *  line adds nothing to the totals (ADR-241, the server's rule). */
+  status?: SoStatus | undefined;
 }
 
 interface FormValues {
@@ -353,6 +362,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // ── Client select label + inline quick-add ──
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
+  const supply = useOrderSupplyPreview(selectedClientId);
   const [clientLabel, setClientLabel] = useState<string>(
     props.mode === 'edit' ? (props.detail.customerName ?? '') : '',
   );
@@ -462,12 +472,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   useEffect(() => {
     for (const itemId of lineItemIdsKey.split(',')) if (itemId) requestRm(itemId);
   }, [lineItemIdsKey]);
-  const subtotal = (watchedLines ?? []).reduce(
-    (s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0),
-    0,
-  );
-  const gstAmt = subtotal * (gstPercent / 100);
-  const grand = subtotal + gstAmt;
+  // A cancelled line adds nothing — the same rule as the server's JWSO totals.
+  const subtotal = (watchedLines ?? [])
+    .filter((l) => l.status !== 'cancelled')
+    .reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
+  // ADR-241 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
+  // the tax type here is a preview from the chosen customer's State.
+  const money = orderFormTotalRows({ subtotal, gstPercent, taxType: supply.taxType });
   const lineCount = (watchedLines ?? []).length;
   const totalPcs = (watchedLines ?? []).reduce((s, l) => s + (Number(l.orderQty) || 0), 0);
 
@@ -1135,7 +1146,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 className="innovic-select"
                 {...register('header.gstPercent', { valueAsNumber: true })}
               >
-                {[0, 5, 12, 18, 28].map((g) => (
+                {SO_GST_PERCENTS.map((g) => (
                   <option key={g} value={g}>
                     {g}%
                   </option>
@@ -1143,6 +1154,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               </select>
             </div>
           ) : null}
+          <OrderSupplyFormFields preview={supply} />
           {isEdit ? (
             <div className="form-grp f-sm">
               <label className="form-label" htmlFor="status">
@@ -1605,9 +1617,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         {/* Money only for a user who may see prices; the count stays. */}
         {priceVisible ? (
           <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Tot label="Subtotal" value={subtotal} />
-            <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
-            <Tot label="Grand Total" value={grand} bold />
+            <Tot label="Subtotal" value={money.subtotal} />
+            {money.taxRows.map((r) => (
+              <Tot key={r.label} label={r.label} value={r.value} />
+            ))}
+            <Tot label="Round-off" value={money.roundOff} />
+            <Tot label="Grand Total" value={money.grand} bold />
           </div>
         ) : null}
         <div className="text3" style={{ fontSize: 11, textAlign: 'right', marginTop: 4 }}>
@@ -1640,7 +1655,8 @@ function Tot({
   bold,
 }: {
   label: string;
-  value: number;
+  /** Already formatted (₹ amount, or the signed Round-off). */
+  value: string;
   bold?: boolean;
 }): React.JSX.Element {
   return (
@@ -1656,7 +1672,7 @@ function Tot({
           color: bold ? 'var(--green)' : 'var(--text)',
         }}
       >
-        ₹{inrFormat(value)}
+        {value}
       </div>
     </div>
   );
@@ -1704,6 +1720,7 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
               clientPoLineNo: l.clientPoLineNo ?? '',
               remarks: l.remarks ?? '',
               inUse: l.inUse,
+              status: l.status,
             }),
           )
         : [{ ...NEW_LINE }],

@@ -16,6 +16,7 @@
 // the editor may see prices — a price-blind save never moves it anyway.
 
 import { ActivityAction, type ActivityChange, type ActivityChangeValue } from '@innovic/shared';
+import { taxTypeText } from '../../lib/order-totals';
 import type { salesOrderLines, salesOrders } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { diffFields, type DiffField } from '../../lib/audit-trail';
@@ -51,6 +52,9 @@ export const SO_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'bomMasterId', label: 'BOM' },
   { key: 'bomStatus', label: 'BOM Status' },
   { key: 'costCenter', label: 'Cost Centre' },
+  // ADR-241: server-decided on save; shown so a flip is never silent.
+  { key: 'taxType', label: 'Tax Type', format: taxTypeText },
+  { key: 'placeOfSupply', label: 'Place of Supply' },
   // ADR-236: the header note is "SO Remarks"; "Remarks" is the line note.
   { key: 'remarks', label: 'SO Remarks' },
 ];

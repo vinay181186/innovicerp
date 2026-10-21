@@ -28,6 +28,8 @@
 //   - JWs always require ≥ 1 line (no Equipment exception).
 
 import { z } from 'zod';
+import { servicePoTaxTypeSchema } from './service-po';
+import { soTotalsSchema } from './sales-order';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { polInputSchema } from '../lib/pol';
@@ -116,6 +118,9 @@ export const jobWorkOrderSchema = z.object({
   clientPoNo: z.string().nullable(),
   status: jwStatusSchema,
   gstPercent: z.string().nullable(), // NULL when prices hidden (parity with sales_order)
+  /** ADR-241 — same as sales_orders: server-decided on every save. */
+  taxType: servicePoTaxTypeSchema.nullable().default(null),
+  placeOfSupply: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   // Client material details (header-level, per legacy CLIENT MATERIAL DETAILS
   // L12839). Client supplies raw material → we process → deliver finished parts.
@@ -142,6 +147,9 @@ export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
    *  (Σ party_grn_lines.accepted_qty by jw_line_id). Rejected pieces never count. */
   partyReceivedQty: z.number().int().nonnegative(),
   lines: z.array(jobWorkOrderLineSchema),
+  /** ADR-241 — the same money roll-up as the SO (soTotalsSchema). Null when
+   *  prices are hidden from the viewer. Only the detail read fills it. */
+  totals: soTotalsSchema.nullable().optional(),
 });
 export type JobWorkOrderDetail = z.infer<typeof jobWorkOrderDetailSchema>;
 
