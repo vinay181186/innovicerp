@@ -40,6 +40,8 @@ import { addMonths, format, parseISO } from 'date-fns';
 import { fmtDate } from '../date';
 import { COMPANY_PAN, type DocCompany, esc, nl2br } from './doc-print';
 import { INNOVIC_LOGO_DATA_URI } from './letterhead-logo';
+import { presentPrint } from './preview-host';
+import { SHEET_EMBED_STYLE } from './sheet-pdf';
 
 // How long the material may stay with the job worker. There is no stored
 // "challan end date" field anywhere in the contract, so it is computed:
@@ -792,7 +794,10 @@ export function buildSheetHtml(model: SheetPrintModel): string {
 /** Opens the sheet print window. Returns false if the popup was blocked. */
 export function openSheetPrintWindow(model: SheetPrintModel): boolean {
   const title = model.opts?.testBanner ? `Test Print — ${model.windowTitle}` : model.windowTitle;
-  return openSheetHtmlWindow(title, buildSheetHtml(model));
+  // The document's number names the PDF: the first Order/Document box field
+  // (PO No., GRN No., DC No., Invoice No. …).
+  const docNo = model.document.fields[0]?.value?.trim();
+  return openSheetHtmlWindow(title, buildSheetHtml(model), '', undefined, docNo || title);
 }
 
 /** Opens a print window around ready-made sheet-family HTML (an `<article
@@ -805,11 +810,18 @@ export function openSheetHtmlWindow(
   title: string,
   html: string,
   extraStyle = '',
-  /** A window the click already opened (so a print that loads data first is
-   *  not blocked as a popup). Omitted → a new window, as before. */
+  /** A window the click already opened for the old pop-up print. The print
+   *  now shows in the in-app Preview box, so it is simply closed. */
   target?: Window,
+  /** Names the box and the downloaded PDF; the title when omitted. */
+  fileName?: string,
 ): boolean {
-  const w = target ?? window.open('', '_blank', 'width=900,height=920');
+  target?.close();
+  // In-app Preview box (lib/print/preview-host.tsx): 🖨 Print · ⬇ Download · ✕.
+  // The pop-up stays only as the fallback outside the signed-in shell.
+  const doc = sheetDocumentHtml(title, html, extraStyle + SHEET_EMBED_STYLE);
+  if (presentPrint({ title, fileName: fileName ?? title, html: doc })) return true;
+  const w = window.open('', '_blank', 'width=900,height=920');
   if (!w) return false;
   w.document.write(sheetDocumentHtml(title, html, extraStyle));
   w.document.close();

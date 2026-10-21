@@ -40,6 +40,7 @@ import { GrnDetailLines } from '../components/grn-detail-lines';
 import { grnTypeLabel } from '../components/grn-list-columns';
 import { QcStatusBadge } from '../components/qc-status-badge';
 import { printGrn } from '../lib/print-grn';
+import { runPrint } from '@/lib/print/preview-host';
 
 export const goodsReceiptNoteDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -127,17 +128,25 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
 
   // Print follows the page's existing VIEW permission — if you can read the
   // GRN you may put it on paper. No new gate is introduced.
+  const printArgs = {
+    grn: detail,
+    vendor,
+    company,
+    templates: templates?.items ?? [],
+    currentUser: me?.email,
+    draft: isDraft,
+  };
   const onPrint = (): void => {
-    const ok = printGrn({
-      grn: detail,
-      vendor,
-      company,
-      templates: templates?.items ?? [],
-      currentUser: me?.email,
-      draft: isDraft,
-    });
+    const ok = printGrn(printArgs);
     if (!ok) window.alert('Allow popups to print.');
   };
+  // ⬇ Download PDF — the same sheet as Preview, saved as `<GRN code>.pdf`.
+  const onDownload = (): Promise<void> =>
+    runPrint(
+      'download',
+      { title: 'Goods Receipt Note', fileName: detail.code },
+      async () => () => printGrn(printArgs),
+    );
 
   const canEdit = perms.edit;
   // ADR-234 — Assign Task: the same Advance gate as the GRN list ⋯.
@@ -264,10 +273,18 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 {
-                  label: 'Print',
+                  label: 'Preview',
                   onClick: onPrint,
                   disabled: templatesLoading,
-                  title: templatesLoading ? 'Loading print templates…' : 'Print this GRN',
+                  title: templatesLoading ? 'Loading print templates…' : 'Preview this GRN',
+                },
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () => void onDownload(),
+                  disabled: templatesLoading,
+                  title: templatesLoading
+                    ? 'Loading print templates…'
+                    : 'Download this GRN as a PDF',
                 },
                 {
                   label: 'Edit',

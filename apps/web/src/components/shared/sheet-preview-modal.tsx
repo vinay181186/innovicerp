@@ -3,37 +3,36 @@
 // ⬇ Download beside ✕. The sheet is built from data, so the preview is the
 // sheet itself in an iframe and Download makes the PDF at the click
 // (@/lib/print/sheet-pdf). The box opens at once; until the sheet is ready
-// it says "Loading preview…" (`model` null), exactly as a drawing does.
+// it says "Loading preview…" (`html` null), exactly as a drawing does.
+// Every document print reaches it through lib/print/preview-host.tsx.
 
 import { Download, Loader2, Printer, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { downloadSheetPdf, sheetEmbedHtml } from '@/lib/print/sheet-pdf';
-import type { SheetPrintModel } from '@/lib/print/sheet-print';
+import { downloadHtmlPdf } from '@/lib/print/sheet-pdf';
 
 export function SheetPreviewModal(props: {
   title: string;
   /** Saved as `<fileName>.pdf` — the document number. */
   fileName: string;
-  /** Null while the data is still loading. */
-  model: SheetPrintModel | null;
+  /** The whole print document; null while the data is still loading. */
+  html: string | null;
   /** The load failed: said in the box instead of the sheet. */
   error?: string | null;
   onClose: () => void;
 }): React.JSX.Element {
-  const { title, fileName, model, onClose } = props;
+  const { title, fileName, html, onClose } = props;
   const frame = useRef<HTMLIFrameElement>(null);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
-  const html = useMemo(() => (model ? sheetEmbedHtml(model) : ''), [model]);
   const err = props.error ?? saveErr;
 
   const onDownload = async (): Promise<void> => {
-    if (!model) return;
+    if (!html) return;
     setSaving(true);
     setSaveErr(null);
     try {
-      await downloadSheetPdf(model, fileName);
+      await downloadHtmlPdf(html, fileName);
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : 'Could not download the PDF. Try again.');
     } finally {
@@ -57,7 +56,7 @@ export function SheetPreviewModal(props: {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              disabled={!model}
+              disabled={!html}
               onClick={() => frame.current?.contentWindow?.print()}
             >
               <Printer size={13} /> Print
@@ -66,7 +65,7 @@ export function SheetPreviewModal(props: {
               type="button"
               className="btn btn-primary btn-sm"
               onClick={() => void onDownload()}
-              disabled={!model || saving}
+              disabled={!html || saving}
             >
               {saving ? (
                 <Loader2 size={13} className="inline animate-spin" />
@@ -90,7 +89,7 @@ export function SheetPreviewModal(props: {
             <div className="empty-state" style={{ color: 'var(--red2)', padding: 40 }}>
               {err}
             </div>
-          ) : !model ? (
+          ) : !html ? (
             <div className="empty-state" style={{ padding: 40 }}>
               <Loader2 className="inline animate-spin" size={16} /> Loading preview…
             </div>

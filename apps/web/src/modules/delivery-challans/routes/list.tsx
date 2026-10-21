@@ -40,6 +40,7 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
 import { DC_LIST_DEFAULT_HIDDEN, dcListColumns } from '../components/dc-list-columns';
+import { useOspDcPrint } from '../components/use-ospdc-print';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
 import { OspAtVendorRegister } from '@/modules/osp-wip/components/osp-at-vendor-register';
@@ -122,6 +123,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
   // ADR-202 — DC ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('DeliveryChallan');
   const columns = useMemo(() => dcListColumns(draftIds), [draftIds]);
+  const ospDcPrint = useOspDcPrint();
 
   function onPrintRegister(): void {
     if (!data) return;
@@ -341,6 +343,30 @@ function DeliveryChallansListPage(): React.JSX.Element {
                     viewTo={`/delivery-challans/${dc.id}`}
                     renderLink={(p) => <Link {...p} />}
                     items={[
+                      {
+                        key: 'preview',
+                        label: 'Preview',
+                        icon: 'eye',
+                        onSelect: () =>
+                          ospDcPrint('preview', {
+                            id: dc.id,
+                            code: dc.code,
+                            vendorId: dc.vendorId,
+                            draft: draftIds.has(dc.id),
+                          }),
+                      },
+                      {
+                        key: 'download',
+                        label: 'Download PDF',
+                        icon: 'download',
+                        onSelect: () =>
+                          ospDcPrint('download', {
+                            id: dc.id,
+                            code: dc.code,
+                            vendorId: dc.vendorId,
+                            draft: draftIds.has(dc.id),
+                          }),
+                      },
                       {
                         // Receive material back from the vendor. Server rule
                         // (receiveAgainstDeliveryChallan): DC entry OR GRN

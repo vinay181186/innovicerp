@@ -2,7 +2,8 @@
 // Edit + Actions) with the header facts, then ONE tab strip — Plan · Orders ·
 // History. Same composition as the Multi-Level BOM detail page. Phase 4 adds
 // Raise Orders (Draft / Released, mlplan_create entry) and the Orders tab.
-// Phase 5 adds Actions → Print: the header facts + the plan rows, on the
+// Phase 5 adds Actions → Preview / ⬇ Download PDF (use-ml-plan-print, shared
+// with the list row ⋯): the header facts + the plan rows, on the
 // Innovic Sheet, from what this page already loaded.
 
 import { ML_PLAN_STATUS_LABEL } from '@innovic/shared';
@@ -19,13 +20,12 @@ import { Banner } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { TabStrip, type TabStripTab } from '@/ui/navigation';
 import { useMlBom } from '@/modules/ml-bom/api';
-import { useMyCompany } from '@/modules/settings/api';
 import { useMlPlan, useRefreshMlPlan } from '../api';
 import { CancelMlPlanDialog } from '../components/cancel-ml-plan-dialog';
 import { MlPlanNodesTable } from '../components/ml-plan-nodes-table';
 import { MlPlanOrdersTable } from '../components/ml-plan-orders-table';
 import { RaiseOrdersModal } from '../components/raise-orders-modal';
-import { printMlPlan } from '../lib/print-ml-plan';
+import { useMlPlanPrint } from '../components/use-ml-plan-print';
 
 export const mlPlanDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -48,7 +48,7 @@ function MlPlanDetailPage(): React.JSX.Element {
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   // The BOM's current BOM Rev, read only when the copy is out of date.
-  const { data: company } = useMyCompany();
+  const mlPlanPrint = useMlPlanPrint();
   const currentBom = useMlBom(detail?.bomChanged ? detail.mlBomId : undefined);
   const history = useDocumentHistory({
     entity: 'MlPlan',
@@ -132,13 +132,13 @@ function MlPlanDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 {
-                  label: 'Print',
-                  onClick: () => {
-                    setActionError(null);
-                    if (!printMlPlan({ detail, company })) {
-                      setActionError('Allow popups to print.');
-                    }
-                  },
+                  label: 'Preview',
+                  onClick: () => mlPlanPrint.preview({ id: detail.id, code: detail.code, detail }),
+                },
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () =>
+                    void mlPlanPrint.download({ id: detail.id, code: detail.code, detail }),
                 },
                 {
                   label: 'Raise Orders',

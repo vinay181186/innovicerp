@@ -32,17 +32,17 @@ const COLUMNS: MlSheetColumn<MlBomTreeNode>[] = [
   { header: 'RM Size', cell: (n) => esc(n.rawMaterialSizeText ?? '') },
 ];
 
-/** Returns false when the popup was blocked. */
+/** Returns false when nothing could show it. */
 export function printMlBom(args: {
   detail: MlBomDetail;
   tree: MlBomTreeResponse;
   company: Company | null | undefined;
-  target?: Window | undefined;
 }): boolean {
   const { detail, tree } = args;
   return printMlSheet({
     title: 'Multi-Level BOM',
     windowTitle: `Multi-Level BOM ${detail.code}`,
+    fileName: detail.code,
     company: args.company,
     facts: [
       { label: 'BOM No.', value: detail.code, strong: true },
@@ -55,6 +55,5 @@ export function printMlBom(args: {
     ],
     columns: COLUMNS,
     rows: tree.nodes,
-    target: args.target,
   });
 }

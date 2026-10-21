@@ -26,6 +26,7 @@ import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useCreateCustomerMaterialReturn, useCustomerMaterialReturnable } from '../api';
 import { CMR_KIND_LABEL } from './cmr-columns';
+import type { CmrPrint } from './use-print-cmr';
 
 /** One returnable row's identity: kind + JWSO line (+ Party GRN line). */
 function rowKey(r: CustomerMaterialReturnableRow): string {
@@ -53,11 +54,11 @@ const cardStyle: React.CSSProperties = {
 
 export function NewCmrModal({
   onClose,
-  onPrint,
+  docPrint,
 }: {
   onClose: () => void;
-  /** Print the saved return (the list's ⋯ Print logic). */
-  onPrint: (id: string) => Promise<void>;
+  /** Preview / Download PDF of the saved return (the list's ⋯ logic). */
+  docPrint: CmrPrint;
 }): React.JSX.Element {
   const [returnDate, setReturnDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
@@ -68,7 +69,7 @@ export function NewCmrModal({
   const [qtys, setQtys] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState<CustomerMaterialReturn | null>(null);
-  const [printing, setPrinting] = useState(false);
+  const [printing, setPrinting] = useState<'preview' | 'download' | null>(null);
 
   // No status filter: a JWSO that has closed still has the customer's spare
   // or rejected material sitting in the store.
@@ -159,7 +160,8 @@ export function NewCmrModal({
           </div>
           <div style={{ fontSize: 13, marginBottom: 16 }}>
             <span className="mono fw-700">{saved.code}</span> — {saved.totalQty} pcs back to the
-            customer on {saved.jwCode ?? 'the JWSO'}. Print the return to send with the material.
+            customer on {saved.jwCode ?? 'the JWSO'}. Preview or download the return to send with
+            the material.
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -168,13 +170,30 @@ export function NewCmrModal({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={printing}
+              disabled={printing !== null}
               onClick={() => {
-                setPrinting(true);
-                void onPrint(saved.id).finally(() => setPrinting(false));
+                setPrinting('preview');
+                void docPrint.preview(saved.id, saved.code).finally(() => setPrinting(null));
               }}
             >
-              {printing ? <Loader2 size={14} className="inline animate-spin" /> : null} Print
+              {printing === 'preview' ? (
+                <Loader2 size={14} className="inline animate-spin" />
+              ) : null}{' '}
+              Preview
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={printing !== null}
+              onClick={() => {
+                setPrinting('download');
+                void docPrint.download(saved.id, saved.code).finally(() => setPrinting(null));
+              }}
+            >
+              {printing === 'download' ? (
+                <Loader2 size={14} className="inline animate-spin" />
+              ) : null}{' '}
+              ⬇ Download PDF
             </button>
           </div>
         </div>
