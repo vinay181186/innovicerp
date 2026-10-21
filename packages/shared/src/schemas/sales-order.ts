@@ -150,7 +150,7 @@ export const salesOrderSchema = z.object({
   status: soStatusSchema,
   // numeric stored as string; NULL when the viewer's access hides prices.
   gstPercent: z.string().nullable(),
-  /** ADR-241 — decided by the SERVER on every save from the customer's State
+  /** ADR-243 — decided by the SERVER on every save from the customer's State
    *  Code / GSTIN vs our own (never sent by the browser). Null = State unknown
    *  or an order not saved since 0212. */
   taxType: servicePoTaxTypeSchema.nullable().default(null),
@@ -167,7 +167,7 @@ export const salesOrderSchema = z.object({
 });
 export type SalesOrder = z.infer<typeof salesOrderSchema>;
 
-/** The order's money, worked out on the server (ADR-190, ADR-241) with the
+/** The order's money, worked out on the server (ADR-190, ADR-243) with the
  *  ONE roll-up computeGstTotals (lib/gst-totals.ts): Subtotal = Σ line Order
  *  Qty × Rate over the non-cancelled lines → GST at the order's GST %, split
  *  SGST + CGST (customer in our State) or IGST (other State / SEZ / Overseas)

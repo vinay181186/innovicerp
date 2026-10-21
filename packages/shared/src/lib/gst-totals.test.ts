@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeGstTotals, halfGstRate } from './gst-totals';
 
-describe('computeGstTotals (ADR-241)', () => {
+describe('computeGstTotals (ADR-243)', () => {
   it('in Gujarat: CGST + SGST, round-off to the rupee', () => {
     const t = computeGstTotals({ subtotal: 10000.55, gstPercent: 18, taxType: 'sgst_cgst' });
     expect(t).toMatchObject({

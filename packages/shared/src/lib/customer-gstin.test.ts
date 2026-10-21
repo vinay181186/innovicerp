@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { checkPartyGst, isCustomerHardIssue, isGstinStateClashMessage } from './master-rules';
 
-// ADR-242 — which customer GST problems refuse a save in every mode.
+// ADR-244 — which customer GST problems refuse a save in every mode.
 const hard = (input: Parameters<typeof checkPartyGst>[0]) =>
   checkPartyGst(input).issues.filter(isCustomerHardIssue);
 
-describe('customer GSTIN compulsory (ADR-242)', () => {
+describe('customer GSTIN compulsory (ADR-244)', () => {
   it('Registered with no GSTIN is refused', () => {
     expect(
       hard({ gstCategory: 'registered_regular', stateCode: '24' }).map((i) => i.field),

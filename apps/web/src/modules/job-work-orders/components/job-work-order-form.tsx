@@ -91,7 +91,7 @@ interface LineFormValue {
    *  Remove disabled. Read from the detail; never sent. */
   inUse?: boolean | undefined;
   /** The saved line's status, read from the detail; never sent. A cancelled
-   *  line adds nothing to the totals (ADR-241, the server's rule). */
+   *  line adds nothing to the totals (ADR-243, the server's rule). */
   status?: SoStatus | undefined;
 }
 
@@ -476,7 +476,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const subtotal = (watchedLines ?? [])
     .filter((l) => l.status !== 'cancelled')
     .reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
-  // ADR-241 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
+  // ADR-243 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
   // the tax type here is a preview from the chosen customer's State.
   const money = orderFormTotalRows({ subtotal, gstPercent, taxType: supply.taxType });
   const lineCount = (watchedLines ?? []).length;

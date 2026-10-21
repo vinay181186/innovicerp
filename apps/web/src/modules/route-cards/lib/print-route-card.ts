@@ -67,5 +67,10 @@ export function printRouteCard(args: {
       <div class="sign-box">Approved By</div>
     </div>`;
 
-  return printWindow({ title: `Route Card ${rc.code || itemCode}`, body, company });
+  return printWindow({
+    title: `Route Card ${rc.code || itemCode}`,
+    fileName: rc.code || itemCode,
+    body,
+    company,
+  });
 }

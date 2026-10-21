@@ -52,7 +52,7 @@ export const SO_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'bomMasterId', label: 'BOM' },
   { key: 'bomStatus', label: 'BOM Status' },
   { key: 'costCenter', label: 'Cost Centre' },
-  // ADR-241: server-decided on save; shown so a flip is never silent.
+  // ADR-243: server-decided on save; shown so a flip is never silent.
   { key: 'taxType', label: 'Tax Type', format: taxTypeText },
   { key: 'placeOfSupply', label: 'Place of Supply' },
   // ADR-236: the header note is "SO Remarks"; "Remarks" is the line note.

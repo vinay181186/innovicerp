@@ -1,4 +1,4 @@
-// The ONE order/invoice money roll-up (ADR-241): Subtotal → CGST + SGST or
+// The ONE order/invoice money roll-up (ADR-243): Subtotal → CGST + SGST or
 // IGST → Round-off → Grand Total. Used by the SO and JWSO server totals, their
 // create/edit forms, detail pages and prints, so every place shows the same
 // paise. (Invoices keep their own stored GST; their round-off is a later step.)

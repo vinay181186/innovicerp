@@ -91,7 +91,7 @@ export function isGstinStateClashMessage(message: string | null | undefined): bo
   );
 }
 
-/** ADR-242 (owner rule 2026-10-21): the CUSTOMER issues that refuse a save in
+/** ADR-244 (owner rule 2026-10-21): the CUSTOMER issues that refuse a save in
  *  every Master Rules Mode — GST Category, GSTIN (missing / invalid /
  *  Unregistered with one) and a GSTIN that disagrees with the State. */
 export function isCustomerHardIssue(i: MasterRuleIssue): boolean {

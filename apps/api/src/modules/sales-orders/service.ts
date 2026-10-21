@@ -863,7 +863,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         soFulfilmentFactsFromLines(header.status, linesOut),
       ),
       // ADR-190 — totals are the server's arithmetic, never the browser's.
-      // ADR-241 — SGST + CGST or IGST by the customer's State, round-off.
+      // ADR-243 — SGST + CGST or IGST by the customer's State, round-off.
       totals: showMoney
         ? await orderTotals(tx, companyId, {
             lines: lineRows.map((r) => r.row),
@@ -1584,7 +1584,7 @@ function createSalesOrderOnce(
       if (bomId) await assertBomLinkable(tx, companyId, bomId);
     }
     const headerType = input.header.type ?? 'component_manufacturing';
-    // ADR-241 — tax type from the customer's State (unknown only warns).
+    // ADR-243 — tax type from the customer's State (unknown only warns).
     const tax = await decideOrderTax(tx, companyId, input.header.clientId);
     const inserted = await tx
       .insert(salesOrders)
@@ -1886,7 +1886,7 @@ export async function updateSalesOrderTx(
     if (h.bomStatus !== undefined) updates['bomStatus'] = h.bomStatus ?? null;
     if (h.costCenter !== undefined) updates['costCenter'] = h.costCenter ?? null;
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
-    // ADR-241 — re-decided on EVERY save (the customer or its State may have
+    // ADR-243 — re-decided on EVERY save (the customer or its State may have
     // changed), whatever the caller may see of prices; never from the browser.
     const tax = await decideOrderTax(
       tx,

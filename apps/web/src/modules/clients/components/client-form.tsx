@@ -18,7 +18,7 @@
 // mode — and an enforce-mode refusal's field errors land under the same
 // fields. A valid GSTIN fills a blank State. See settings/master-rules-ui.
 //
-// ADR-242 (owner rule 2026-10-21): on a CUSTOMER the GSTIN rules are hard
+// ADR-244 (owner rule 2026-10-21): on a CUSTOMER the GSTIN rules are hard
 // whatever the mode — GST Category is required, GSTIN is required unless the
 // category is Unregistered / Overseas, and a GSTIN whose first two digits
 // disagree with the State is refused. So those problems show in red here even
@@ -326,13 +326,13 @@ function ClientFormShell(props: {
   );
 }
 
-/** ADR-242: a customer's GSTIN / GST Category problem is an error in every
+/** ADR-244: a customer's GSTIN / GST Category problem is an error in every
  *  mode — the amber Warn-mode note is shown in red instead. */
 function hardNote(note: RuleNote): RuleNote {
   return note.warning ? { error: note.warning } : note;
 }
 
-/** ADR-242: the State note is hard only when it is the GSTIN-vs-State clash
+/** ADR-244: the State note is hard only when it is the GSTIN-vs-State clash
  *  (the server refuses that one in every mode); other State notes keep the mode. */
 function stateNote(note: RuleNote): RuleNote {
   return isGstinStateClashMessage(note.warning) ? hardNote(note) : note;

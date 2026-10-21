@@ -251,7 +251,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         }
       >
         <DetailGrid detail={detail} pendingChanges={pendingChanges} />
-        {/* ADR-241 — the JWSO's money from the server (SGST + CGST or IGST,
+        {/* ADR-243 — the JWSO's money from the server (SGST + CGST or IGST,
             Round-off), the same roll-up as the SO. Null when prices are hidden. */}
         <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />
       </DetailHeader>
@@ -827,7 +827,7 @@ function DetailGrid(props: {
           </>
         }
       />
-      {/* ADR-241 — decided by the server from the customer's State. */}
+      {/* ADR-243 — decided by the server from the customer's State. */}
       <StripItem
         label="Place of Supply"
         value={supplyCode ? placeOfSupplyLabel(supplyCode) : '—'}

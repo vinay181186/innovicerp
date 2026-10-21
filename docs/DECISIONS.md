@@ -13938,7 +13938,26 @@ on the ⬇ click (separate chunks, ~166 kB gzip), never at app start.
 - A drawing downloads a stored file; an order is built from data, hence the library.
 - The PDF's text is an image (not selectable/searchable). Server-side PDF (option B) rejected: new infrastructure.
 
-## ADR-241: SO / JWSO GST split (SGST + CGST or IGST) and round-off
+## ADR-241: Every document print opens the in-app Preview box (Print · Download · ✕)
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner: audit "where this feature is necessary" → "go A+B")
+
+### Decision
+`openSheetPrintWindow` / `openSheetHtmlWindow` / `printWindow` no longer open a
+pop-up: they hand the finished document to `apps/web/src/lib/print/preview-host.tsx`
+(host mounted once in `routes/_authenticated.tsx`), which shows the SO/JWSO
+Preview box. `runPrint('preview'|'download', …)` is the one entry point for list
+and detail ⋯: preview opens the box at the click with "Loading preview…"; download
+saves `<document number>.pdf` (`asDownload` runs the same builder in download mode).
+List row ⋯ Preview + Download PDF added for PO, GRN, OSP DC, JW DC, Tax Invoice,
+ML BOM, ML Plan; "Print" became Preview + Download PDF on Dispatch DC, JW Invoice,
+JW Return, CMR, Job Card, Route Card. One hook per module loads the document fresh
+(staleTime 0). Register prints (dispatch/DC registers, daily report, machine queue)
+also open the box. A late or superseded preview load is dropped (sequence token).
+Not covered: PR, Party GRN, Store Issue, NC (no print exists — owner to decide).
+
+## ADR-243: SO / JWSO GST split (SGST + CGST or IGST) and round-off
 
 **Date:** 2026-10-21
 **Status:** Accepted (owner approved 2026-10-17; decisions 2026-10-21)
@@ -13984,7 +14003,7 @@ Tax Invoice.
   round-off step. A legacy order (tax_type NULL) costs 2 extra reads per
   detail load until it is saved.
 
-## ADR-242: Customer GSTIN compulsory
+## ADR-244: Customer GSTIN compulsory
 
 **Date:** 2026-10-21
 **Status:** Accepted (owner approved 2026-10-21)
@@ -14006,4 +14025,4 @@ GSTIN-vs-State clash carries `code: 'gstin_state_clash'`, not a text match.
 ### Consequences
 
 - Existing customers without a GSTIN are untouched until edited; the edit
-  then asks for the GSTIN. Their SO / JWSO still save with the ADR-241 warning.
+  then asks for the GSTIN. Their SO / JWSO still save with the ADR-243 warning.

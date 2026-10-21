@@ -1,4 +1,4 @@
-// ADR-241 — the SO / JWSO create/edit forms' Place of Supply + Tax Type
+// ADR-243 — the SO / JWSO create/edit forms' Place of Supply + Tax Type
 // PREVIEW and live money rows. A preview only: the server decides the tax type
 // on save from the same shared rule (placeOfSupplyFor / taxTypeForSupply) and
 // the browser never sends it. One file so the SO and JWSO forms cannot drift.

@@ -113,7 +113,7 @@ export function issueTexts(issues: readonly MasterRuleIssue[]): string[] {
   return issues.map((i) => i.message);
 }
 
-// ADR-242 — a CUSTOMER's GSTIN problems refuse whatever the mode; the rule
+// ADR-244 — a CUSTOMER's GSTIN problems refuse whatever the mode; the rule
 // of which issues those are is the shared isCustomerHardIssue.
 
 /** The issues that stop a customer save (or an import row) in this mode. */

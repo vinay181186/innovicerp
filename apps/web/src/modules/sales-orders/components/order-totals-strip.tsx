@@ -1,4 +1,4 @@
-// ADR-241 — the SO / JWSO money strip and supply facts on the DETAIL pages.
+// ADR-243 — the SO / JWSO money strip and supply facts on the DETAIL pages.
 // Figures are the server's `totals` (Subtotal → SGST + CGST or IGST →
 // Round-off → Grand Total); nothing is worked out here. One component so the
 // SO and JWSO detail pages cannot drift.

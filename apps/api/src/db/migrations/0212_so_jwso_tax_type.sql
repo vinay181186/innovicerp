@@ -1,5 +1,5 @@
 -- ============================================================
--- 0212_so_jwso_tax_type  (ADR-241)
+-- 0212_so_jwso_tax_type  (ADR-243)
 --
 -- A Sales Order / Job Work Sales Order showed one GST line and no
 -- round-off. They now split GST into SGST + CGST (customer in our own

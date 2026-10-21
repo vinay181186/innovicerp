@@ -286,7 +286,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <SoReadGrid detail={detail} pendingChanges={pendingChanges} />
-        {/* ADR-190 / ADR-241 — the SO's money, summed on the server (SGST +
+        {/* ADR-190 / ADR-243 — the SO's money, summed on the server (SGST +
             CGST or IGST, Round-off). Null when this user's access hides
             prices, and then the strip is not shown. */}
         <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />
@@ -682,7 +682,7 @@ function SoReadGrid(props: {
           )}
         />
       )}
-      {/* ADR-241 — decided by the server from the customer's State. */}
+      {/* ADR-243 — decided by the server from the customer's State. */}
       <OrderSupplyFields
         placeOfSupply={detail.totals?.placeOfSupply ?? detail.placeOfSupply}
         taxType={detail.totals?.taxType ?? detail.taxType}

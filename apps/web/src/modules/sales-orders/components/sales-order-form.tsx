@@ -598,7 +598,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const subtotal = (watchedLines ?? [])
     .filter((l) => l.status !== 'cancelled')
     .reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
-  // ADR-241 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
+  // ADR-243 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
   // the tax type here is a preview from the chosen customer's State.
   const money = orderFormTotalRows({ subtotal, gstPercent, taxType: supply.taxType });
 
@@ -1605,7 +1605,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     })
                   )}
                 </tbody>
-                {/* SO Totals (legacy _soTotalsHtml L12366, ADR-241): Subtotal ·
+                {/* SO Totals (legacy _soTotalsHtml L12366, ADR-243): Subtotal ·
                     SGST + CGST or IGST · Round-off · Grand Total under the Amount
                     column, right-aligned. */}
                 <tfoot>

@@ -27,6 +27,10 @@ type HostState =
 let show: ((d: HostState) => void) | null = null;
 let downloading: Promise<void> | null = null;
 let mode: 'preview' | 'download' = 'preview';
+/** The preview the box is waiting for. Closing the box or asking for another
+ *  document moves it on, so a slow load that lands late is dropped instead of
+ *  re-opening the box or showing the wrong document. */
+let awaited = 0;
 
 /** Show the document in the Preview box — or, inside asDownload, save it. */
 export function presentPrint(d: PrintDocument): boolean {
@@ -35,6 +39,7 @@ export function presentPrint(d: PrintDocument): boolean {
     return true;
   }
   if (!show) return false; // no host mounted (outside the signed-in shell)
+  awaited++; // a document shown now replaces any preview still loading
   show(d);
   return true;
 }
@@ -74,13 +79,19 @@ export function runPrint(
       .then((build) => asDownload(build))
       .catch((e: unknown) => window.alert(message(e)));
   }
+  const mine = ++awaited;
   show?.({ ...label, html: null });
-  return load().then(
-    (build) => {
+  const fail = (e: unknown): void => {
+    if (mine === awaited) show?.({ ...label, html: null, error: message(e) });
+  };
+  return load().then((build) => {
+    if (mine !== awaited) return; // closed, or another document asked for since
+    try {
       build();
-    },
-    (e: unknown) => show?.({ ...label, html: null, error: message(e) }),
-  );
+    } catch (e) {
+      fail(e);
+    }
+  }, fail);
 }
 
 /** Mounted once in the signed-in shell (routes/_authenticated.tsx). */
@@ -99,7 +110,10 @@ export function PrintPreviewHost(): React.JSX.Element | null {
       fileName={doc.fileName}
       html={doc.html}
       error={doc.error ?? null}
-      onClose={() => setDoc(null)}
+      onClose={() => {
+        awaited++;
+        setDoc(null);
+      }}
     />
   );
 }

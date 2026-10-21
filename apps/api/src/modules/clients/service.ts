@@ -362,7 +362,7 @@ function clientGstUpdate(
   return { issues: gst.issues, updates };
 }
 
-/** ADR-242: on an EDIT the GSTIN rule refuses only when the edit carries the
+/** ADR-244: on an EDIT the GSTIN rule refuses only when the edit carries the
  *  GST fields (the Customer form always does; an Excel row or an approved
  *  staged edit of phone / address does not) and does not retire the customer
  *  — an old customer without a GSTIN can still be set Inactive. A create

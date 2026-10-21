@@ -15,7 +15,7 @@
 //     which selects it on the order instead of creating a duplicate.
 //   - optional Address / City / State / Pincode, so a quick-added customer's
 //     invoice and challan prints are not blank until the master is edited.
-//   - ADR-242: GST Category is required, and GSTIN is required unless the
+//   - ADR-244: GST Category is required, and GSTIN is required unless the
 //     category is Unregistered / Overseas. The shared checkPartyGst (the same
 //     rule the server runs) is checked before sending; a server refusal's
 //     fieldErrors land under the same fields. The State fills from the GSTIN
@@ -59,7 +59,7 @@ function existingClientFrom(e: unknown): ExistingClient | null {
 type FieldKey = 'name' | 'gstNumber' | 'gstCategory' | 'state';
 type FieldErrs = Partial<Record<FieldKey, string>>;
 
-/** ADR-242: the customer GST problems the server refuses in every mode, from
+/** ADR-244: the customer GST problems the server refuses in every mode, from
  *  the shared rule — GSTIN, GST Category, and a GSTIN that disagrees with the
  *  State. Other State notes (an unlisted free-text State) are not blocking. */
 function gstErrors(gstNumber: string, gstCategory: string, state: string): FieldErrs {
@@ -138,7 +138,7 @@ export function QuickAddClient({
         setExisting(dup);
         return;
       }
-      // A refusal naming fields (ADR-242 GSTIN rules, …) lands under them;
+      // A refusal naming fields (ADR-244 GSTIN rules, …) lands under them;
       // anything not shown in this box stays in the line at the bottom.
       const server = serverFieldErrorsOf(e);
       if (server) {

@@ -2,7 +2,7 @@
 // user can preview, print, download — refer to PO print"). Same sheet as the
 // PO (`@/lib/print/sheet-print`); the party is the CUSTOMER, and the money is
 // the order's one GST %. Presentation only — SO and JWSO both print the
-// SERVER's `totals` (ADR-241: Subtotal → SGST + CGST or IGST → Round-off →
+// SERVER's `totals` (ADR-243: Subtotal → SGST + CGST or IGST → Round-off →
 // Grand Total), the same figures the detail page shows. No totals (prices
 // hidden) → no money block.
 

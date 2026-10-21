@@ -45,6 +45,7 @@ export function usePrintJwReturn(): {
               .fetchQuery({
                 queryKey: jwReturnsKeys.detail(t.id),
                 queryFn: () => apiFetch<JwReturnChallanListItem>(`/jw-returns/${t.id}`),
+                staleTime: 0, // print what is saved now, not a cached copy
               })
               .catch(() => {
                 throw new Error('Could not load the JW Return to print. Try again.');

@@ -593,7 +593,7 @@ async function loadJobWorkOrderDetail(
   return {
     ...(showMoney ? headerOut : hideJwHeaderMoney(headerOut)),
     partyReceivedQty,
-    // ADR-241 — the same roll-up as the SO; null when prices are hidden.
+    // ADR-243 — the same roll-up as the SO; null when prices are hidden.
     totals: showMoney
       ? await orderTotals(tx, companyId, {
           lines: lineRows,
@@ -1137,7 +1137,7 @@ export async function createJobWorkOrder(
         companyId,
       );
       const resolveRm = makeRmResolver(tx, companyId, h.clientId, user.id);
-      // ADR-241 — tax type from the customer's State (unknown only warns).
+      // ADR-243 — tax type from the customer's State (unknown only warns).
       const tax = await decideOrderTax(tx, companyId, h.clientId);
 
       const inserted = await tx
@@ -1340,7 +1340,7 @@ export async function updateJobWorkOrderTx(
       updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
 
-    // ADR-241 — re-decided on EVERY save (the customer or its State may have
+    // ADR-243 — re-decided on EVERY save (the customer or its State may have
     // changed), whatever the caller may see of prices; never from the browser.
     // Set before the diff so a flip shows in History.
     const tax = await decideOrderTax(tx, companyId, nextClientId);
@@ -1590,7 +1590,7 @@ export const JW_HEADER_FIELDS: readonly DiffField[] = [
   { key: 'customerName', label: 'Customer' },
   { key: 'clientPoNo', label: 'Client PO No.' },
   { key: 'gstPercent', label: 'GST %' },
-  // ADR-241: server-decided on save; shown so a flip is never silent.
+  // ADR-243: server-decided on save; shown so a flip is never silent.
   { key: 'taxType', label: 'Tax Type', format: taxTypeText },
   { key: 'placeOfSupply', label: 'Place of Supply' },
   // ADR-236: the header note is "JWSO Remarks"; "Remarks" is the line note.

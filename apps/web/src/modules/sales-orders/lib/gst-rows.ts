@@ -1,4 +1,4 @@
-// ADR-241 — the tax rows of an SO / JWSO money roll-up, shared by the SO and
+// ADR-243 — the tax rows of an SO / JWSO money roll-up, shared by the SO and
 // JWSO forms, detail pages and prints so all of them label the same figures
 // the same way. The figures themselves come from computeGstTotals
 // (@innovic/shared lib/gst-totals.ts) or the server's `totals`.

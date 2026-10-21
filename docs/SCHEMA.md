@@ -879,7 +879,7 @@ Eleven binding sub-decisions; the most consequential first.
 
 11. **`gst_percent` is header-level on `sales_orders`** (matches legacy data — same value across all lines of SO-436). If a future SO has per-line GST, we promote to lines; current data doesn't need it.
 
-12. **`tax_type` + `place_of_supply` on `sales_orders` and `job_work_orders`** (migration 0212, ADR-241). `tax_type text NULL` CHECK `'sgst_cgst' | 'igst'` (`sales_orders_tax_type_check` / `job_work_orders_tax_type_check`); `place_of_supply char(2) NULL` (GST State Code, 96 = overseas). Set by the server on every save from the customer's State / GSTIN; NULL = State unknown or not saved since 0212. No amount columns — totals are computed on read (`apps/api/src/lib/order-totals.ts`).
+12. **`tax_type` + `place_of_supply` on `sales_orders` and `job_work_orders`** (migration 0212, ADR-243). `tax_type text NULL` CHECK `'sgst_cgst' | 'igst'` (`sales_orders_tax_type_check` / `job_work_orders_tax_type_check`); `place_of_supply char(2) NULL` (GST State Code, 96 = overseas). Set by the server on every save from the customer's State / GSTIN; NULL = State unknown or not saved since 0212. No amount columns — totals are computed on read (`apps/api/src/lib/order-totals.ts`).
 
 ### Phase 4 Enums
 
