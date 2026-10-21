@@ -169,7 +169,8 @@ export function PartyGrnQcModal({
         <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
           JWSO <span className="mono fw-700">{row.jwCodeText ?? '—'}</span> ·{' '}
           {row.clientName ?? row.clientCodeText ?? '—'}. Only the accepted qty enters customer
-          stock; deviated pieces are held for return to the customer.
+          stock. Deviated pieces raise an NC automatically — QC Head decides Use As Is, Return to
+          Customer or Scrap in the NC Register.
         </div>
 
         {detailQ.isError ? (

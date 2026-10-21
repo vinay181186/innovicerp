@@ -10,6 +10,7 @@
 import {
   type DisposeNcInput,
   type DisposeNcResult,
+  NC_CUSTOMER_MATERIAL_DISPOSITIONS,
   NC_DISPOSITION_LABELS,
   NC_STATUS_LABELS,
   type NcDisposition,
@@ -63,10 +64,16 @@ const ACTION_ORDER: readonly NcDisposition[] = [
   'rework',
   'repair',
   'return_to_vendor',
+  // ADR-247 — offered only on a customer-material (Party GRN) NC.
+  'return_to_customer',
   'scrap',
   'use_as_is',
   'make_fresh',
 ];
+
+/** ADR-247 — the client message when Scrap of customer material has no note. */
+const CUSTOMER_SCRAP_NOTE_MSG =
+  "Write the customer's approval in Remarks to scrap customer material.";
 
 export function DisposeNcPanel(props: Props): React.JSX.Element {
   const { nc, jcOps, canSeePrice, canApprove, onSubmit, onCancel, pending, error, result } = props;
@@ -79,6 +86,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   const [reworkOpSeq, setReworkOpSeq] = useState<number | ''>(nc.reworkOpSeq ?? nc.opSeq ?? '');
   const [scrapCost, setScrapCost] = useState<number | ''>('');
   const [remarks, setRemarks] = useState<string>('');
+  const [remarksErr, setRemarksErr] = useState<string | null>(null);
   // ADR-217 phase 3 — which OUTWARD challan the rejected pieces went out on.
   // ASKED, never computed: this system has no piece, lot or batch tracking, so
   // when one order went out on two challans NO query can say which one carried
@@ -179,16 +187,28 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   // ADR-189 — a bought-material reject (no job card) can only be scrapped or
   // returned to the vendor; the server refuses anything else.
   const isMaterialNc = nc.jobCardId == null;
+  // ADR-247 — customer material deviated at Party GRN Incoming QC: exactly
+  // Use As Is / Return to Customer / Scrap (Scrap still needs Approve), whole
+  // pieces only, and Scrap needs the customer's approval written in Remarks.
+  const isPartyNc = nc.partyGrnLineId != null;
   const availableActions = useMemo<readonly NcDisposition[]>(
     () =>
       ACTION_ORDER.filter((a) => {
+        if (isPartyNc) {
+          if (!(NC_CUSTOMER_MATERIAL_DISPOSITIONS as readonly NcDisposition[]).includes(a)) {
+            return false;
+          }
+          return a !== 'scrap' || canApprove;
+        }
+        if (a === 'return_to_customer') return false;
         if (isMaterialNc && a !== 'scrap' && a !== 'return_to_vendor') return false;
         if (a === 'scrap' && !canApprove) return false;
         if (a === 'use_as_is' && !hasOp) return false;
         return isVendorSourced ? a !== 'rework' && a !== 'repair' : a !== 'return_to_vendor';
       }),
-    [isVendorSourced, canApprove, hasOp, isMaterialNc],
+    [isPartyNc, isVendorSourced, canApprove, hasOp, isMaterialNc],
   );
+  const needsCustomerNote = isPartyNc && action === 'scrap';
 
   const reworkOps = useMemo<JcOpOption[]>(() => {
     if (jcOps.length > 0) return jcOps;
@@ -198,7 +218,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   // S9 — decimals: a bought-material (KG) reject may be split to 3 places; a
   // disposition that works on the job card (rework / repair / make fresh /
   // use as is) counts whole pieces. The item's own unit rule is the server's.
-  const needsWhole = !isMaterialNc && action !== '' && action !== 'scrap';
+  const needsWhole = isPartyNc || (!isMaterialNc && action !== '' && action !== 'scrap');
   const qtyStep = needsWhole ? '1' : QTY_STEP;
   const qtyNum = qty === '' ? 0 : Number(qty);
   const qtyValid =
@@ -214,6 +234,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   const submit = (e: React.FormEvent): void => {
     e.preventDefault();
     if (!action || !qtyValid) return;
+    if (needsCustomerNote && remarks.trim().length === 0) {
+      setRemarksErr(CUSTOMER_SCRAP_NOTE_MSG);
+      return;
+    }
     const payload: DisposeNcInput = { action, qty: qtyNum };
     if (remarks.trim().length > 0) payload.remarks = remarks.trim();
     if (action === 'rework' && isLegacyRework && reworkOpSeq !== '') {
@@ -400,15 +424,30 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
 
               <div className="form-grp form-full">
                 <label className="form-label" htmlFor="dispRemarks">
-                  Remarks
+                  {needsCustomerNote ? (
+                    <>
+                      Customer approval (who approved, how)<span className="req">★</span>
+                    </>
+                  ) : (
+                    'Remarks'
+                  )}
                 </label>
                 <textarea
                   id="dispRemarks"
                   className="innovic-textarea"
                   rows={2}
                   value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder={
+                    needsCustomerNote ? 'Customer approval (who approved, how)' : undefined
+                  }
+                  onChange={(e) => {
+                    setRemarks(e.target.value);
+                    setRemarksErr(null);
+                  }}
                 />
+                {needsCustomerNote && remarksErr ? (
+                  <div className="form-error">{remarksErr}</div>
+                ) : null}
               </div>
             </div>
 
@@ -424,6 +463,13 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
               <Note tone="blue">
                 Next: raise the return challan from this deviation, to send the pieces back. (The
                 field above records the challan they originally went OUT on.)
+              </Note>
+            ) : null}
+
+            {action === 'return_to_customer' ? (
+              <Note tone="blue">
+                Send the pieces back with a Customer Material Return (IN-CMR). The NC closes when
+                they are returned.
               </Note>
             ) : null}
 

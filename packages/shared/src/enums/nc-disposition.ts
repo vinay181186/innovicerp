@@ -13,7 +13,17 @@ export const NC_DISPOSITIONS = [
   'use_as_is',
   'return_to_vendor',
   'make_fresh',
+  // ADR-247: customer material deviated at Party GRN QC goes back through IN-CMR.
+  'return_to_customer',
 ] as const;
+
+/** ADR-247: the only dispositions a customer-material (Party GRN) NC takes.
+ *  No rework (owner, 2026-10-21); scrap needs Approve + a customer-approval note. */
+export const NC_CUSTOMER_MATERIAL_DISPOSITIONS = [
+  'use_as_is',
+  'return_to_customer',
+  'scrap',
+] as const satisfies readonly NcDisposition[];
 
 /** The dispositions that raise a child recovery Job Card (design §4). */
 export const NC_RECOVERY_DISPOSITIONS = ['rework', 'repair'] as const;

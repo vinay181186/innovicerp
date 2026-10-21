@@ -92,6 +92,14 @@ export const ncRegisterSchema = z.object({
   qcLogId: z.string().uuid().nullable().default(null),
   /** The GRN line for an Incoming-QC-raised NC. */
   grnLineId: z.string().uuid().nullable().default(null),
+  /** ADR-247 — the Party GRN line for customer material deviated at Party GRN
+   *  Incoming QC. Set ⇒ this is a customer-material NC: dispositions are
+   *  NC_CUSTOMER_MATERIAL_DISPOSITIONS only. Source fields below are derived on
+   *  read from that line (Party GRN → JWSO → Customer). */
+  partyGrnLineId: z.string().uuid().nullable().default(null),
+  sourcePartyGrnCode: z.string().nullable().default(null),
+  sourceJwCode: z.string().nullable().default(null),
+  sourceCustomerName: z.string().nullable().default(null),
   /** SOURCE of the rejected material, derived on read (Tier A) so the NC and its
    *  return-to-vendor challan show — and default to — the ACTUAL supplier, not a
    *  free-typed one. Resolved from grnLineId → GRN vendor, or the origin op's
@@ -381,4 +389,5 @@ export const NC_DISPOSITION_LABELS: Record<NcDisposition, string> = {
   scrap: 'Scrap',
   use_as_is: 'Use As Is',
   make_fresh: 'Make Fresh',
+  return_to_customer: 'Return to Customer',
 };

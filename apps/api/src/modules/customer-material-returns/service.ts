@@ -11,14 +11,18 @@
 //   rejected — pieces Incoming QC rejected on a Party GRN line and held since.
 //              They never entered the register, so nothing is posted; the GRN
 //              line's rejected_returned_qty rises (conditional UPDATE with the
-//              cap in its WHERE).
+//              cap in its WHERE). ADR-247: only pieces NOT held back by an NC
+//              are returnable (HELD_RETURNABLE_SQL) — an NC still pending or
+//              scrapped keeps its pieces; a Return to Customer NC releases them
+//              and is rebalanced (rtv_sent_qty, closed when fully sent) after
+//              every create and cancel here.
 // Every cap is checked under the JWSO line's row lock (lockJwLine). Returns
 // are allowed on closed / short-closed lines — returning the customer's
 // material is not new work.
 // Cancel (edit + approve) is a conditional status flip, then every line is
 // reversed. Counters never clamp — a counter that would go negative throws.
 
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import type {
   CreateCustomerMaterialReturnInput,
   CustomerMaterialReturn,
@@ -29,7 +33,7 @@ import type {
   ListCustomerMaterialReturnsQuery,
   ListCustomerMaterialReturnsResponse,
 } from '@innovic/shared';
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, NC_STATUS_LABELS } from '@innovic/shared';
 import { customerMaterialReturnLines, customerMaterialReturns } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -43,6 +47,7 @@ import {
 import { type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
+import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { jwLineRegister } from '../party-material-issues/register';
 import { CUSTOMER_MATERIAL_RETURN_SF_COLUMNS } from './sf-columns';
@@ -78,6 +83,132 @@ async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<str
   `)) as unknown as Array<{ next_num: number }>;
   const next = Number(rows[0]?.next_num ?? 1);
   return `${CODE_PREFIX}${String(next).padStart(CODE_PAD, '0')}`;
+}
+
+// ── ADR-247: deviated pieces an NC holds back ──────────────────────────────
+
+/** Σ rejected_qty of the live NCs on one Party GRN line that keep their pieces
+ *  OFF a Customer Material Return: still pending (undecided) or decided as
+ *  anything but Return to Customer / Use As Is (i.e. Scrap). Use As Is pieces
+ *  have already left rejected_qty (party-grn/deviation.ts); Return to Customer
+ *  pieces are exactly what a return sends. `pglIdSql` is the line id. */
+function ncHeldBackQtySql(pglIdSql: SQL): SQL {
+  return sql`(
+    SELECT COALESCE(SUM(nb.rejected_qty), 0)
+      FROM public.nc_register nb
+     WHERE nb.party_grn_line_id = ${pglIdSql}
+       AND nb.deleted_at IS NULL
+       AND COALESCE(nb.disposition::text, '') NOT IN ('return_to_customer', 'use_as_is')
+  )::int`;
+}
+
+/** Returnable deviated pieces on a Party GRN line (alias pgl):
+ *  rejected − already returned − held back by an NC. Legacy deviated pieces
+ *  with no NC stay returnable. */
+const HELD_RETURNABLE_SQL = sql`(pgl.rejected_qty - pgl.rejected_returned_qty - ${ncHeldBackQtySql(sql`pgl.id`)})`;
+
+/** ADR-247 — THE one writer of rtv_sent_qty / closed-ness on a Party GRN
+ *  line's Return to Customer NCs, run after every IN-CMR create AND cancel so
+ *  both end in the same state (no oldest-first credit / newest-first uncredit
+ *  pair to drift apart). Deterministic:
+ *    R = the line's live rejected_returned_qty;
+ *    for each live NC on the line with disposition 'return_to_customer',
+ *    oldest first (nc_date, code, id), locked FOR UPDATE:
+ *      x = min(nc.rejected_qty, R); rtv_sent_qty = x;
+ *      x = rejected_qty → 'closed', failed_qty = rejected_qty, closed_at/by set
+ *      else             → 'disposed', failed_qty 0, closed_at/by NULL;
+ *      R -= x.
+ *  Whatever R is left over are legacy deviated pieces with no NC. Only rows
+ *  whose values change are written; each status flip writes a NonConformance
+ *  activity row naming the IN-CMR. Reopening a closed NC (closed → disposed,
+ *  when an IN-CMR is cancelled) is a documented exception to NC_STATUS_MOVES:
+ *  the close was this function's own bookkeeping, and the return it rested on
+ *  no longer exists. Returns the codes of the NCs it changed. */
+async function rebalanceReturnToCustomerNcs(
+  tx: DbTransaction,
+  partyGrnLineId: string,
+  cmrCode: string,
+  companyId: string,
+  user: AuthContext,
+): Promise<string[]> {
+  const lineRows = (await tx.execute(sql`
+    SELECT rejected_returned_qty::int AS returned
+      FROM public.party_grn_lines
+     WHERE id = ${partyGrnLineId}::uuid
+  `)) as unknown as Array<{ returned: number }>;
+  let left = Number(lineRows[0]?.returned ?? 0);
+  const ncs = (await tx.execute(sql`
+    SELECT id, code, status::text AS status, rejected_qty::int AS rejected,
+           rtv_sent_qty::int AS sent, failed_qty::int AS failed
+      FROM public.nc_register
+     WHERE party_grn_line_id = ${partyGrnLineId}::uuid
+       AND company_id = ${companyId}::uuid
+       AND deleted_at IS NULL
+       AND disposition = 'return_to_customer'
+       AND status IN ('disposed', 'closed')
+     ORDER BY nc_date, code, id
+     FOR UPDATE
+  `)) as unknown as Array<{
+    id: string;
+    code: string;
+    status: string;
+    rejected: number;
+    sent: number;
+    failed: number;
+  }>;
+  const changed: string[] = [];
+  for (const nc of ncs) {
+    const rejected = Number(nc.rejected);
+    const x = Math.max(0, Math.min(rejected, left));
+    left -= x;
+    const full = x === rejected;
+    const status = full ? 'closed' : 'disposed';
+    const failed = full ? rejected : 0;
+    if (status === nc.status && x === Number(nc.sent) && failed === Number(nc.failed)) continue;
+    const upd = (await tx.execute(sql`
+      UPDATE public.nc_register
+         SET rtv_sent_qty = ${x},
+             status = ${status}::nc_status,
+             -- B1: open qty = rejected - cleared - failed, so a fully returned NC reads 0 open.
+             failed_qty = ${failed},
+             closed_at = ${full ? sql`COALESCE(closed_at, now())` : sql`NULL`},
+             closed_by = ${full ? sql`COALESCE(closed_by, ${user.id}::uuid)` : sql`NULL`},
+             updated_at = now(), updated_by = ${user.id}::uuid
+       WHERE id = ${nc.id}::uuid AND status::text = ${nc.status}
+      RETURNING id
+    `)) as unknown as Array<{ id: string }>;
+    if (upd.length === 0) {
+      throw new ConflictError(`${nc.code} changed a moment ago. Refresh the page.`);
+    }
+    changed.push(nc.code);
+    if (status !== nc.status) {
+      const closing = status === 'closed';
+      await emitActivityLog(
+        tx,
+        {
+          action: closing ? ActivityAction.Close : ActivityAction.Reopen,
+          entity: 'NonConformance',
+          entityId: nc.id,
+          refId: nc.code,
+          qty: rejected,
+          changes: [
+            {
+              field: 'status',
+              label: 'Status',
+              before: labelOf(NC_STATUS_LABELS, nc.status),
+              after: labelOf(NC_STATUS_LABELS, status),
+            },
+          ],
+          detail: closing
+            ? `${nc.code} — closed: returned on ${cmrCode}`
+            : `${nc.code} — reopened: ${cmrCode} cancelled`,
+        },
+        companyId,
+        user,
+      );
+    }
+  }
+  return changed;
 }
 
 // ── Reads ──────────────────────────────────────────────────────────────────
@@ -320,7 +451,7 @@ export async function listCustomerMaterialReturnable(
              COALESCE(i.code, jwl.item_code_text) AS "partCode",
              pm.id AS "partyMaterialId", pm.code AS "partyMaterialCode",
              COALESCE(ri.code, pm.item_code_text) AS "rmItemCode",
-             (pgl.rejected_qty - pgl.rejected_returned_qty)::int AS held
+             ${HELD_RETURNABLE_SQL}::int AS held
         FROM public.party_grn_lines pgl
         JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
         JOIN public.job_work_order_lines jwl ON jwl.id = pgl.jw_line_id AND jwl.deleted_at IS NULL
@@ -331,7 +462,7 @@ export async function listCustomerMaterialReturnable(
          AND pgl.company_id = ${companyId}::uuid
          AND pgl.deleted_at IS NULL
          AND pgl.qc_at IS NOT NULL
-         AND pgl.rejected_qty - pgl.rejected_returned_qty > 0
+         AND ${HELD_RETURNABLE_SQL} > 0
        ORDER BY jwl.line_no, pg.code, pgl.line_no
     `)) as unknown as Array<{
       partyGrnLineId: string;
@@ -528,6 +659,7 @@ export async function createCustomerMaterialReturn(
           SELECT pgl.id, pgl.jw_line_id AS "jwLineId", pgl.qc_at AS "qcAt",
                  pgl.rejected_qty::int AS "rejectedQty",
                  pgl.rejected_returned_qty::int AS "rejectedReturnedQty",
+                 ${ncHeldBackQtySql(sql`pgl.id`)} AS "ncHeldQty",
                  pg.code AS "grnCode"
             FROM public.party_grn_lines pgl
             JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
@@ -541,6 +673,7 @@ export async function createCustomerMaterialReturn(
           qcAt: unknown;
           rejectedQty: number;
           rejectedReturnedQty: number;
+          ncHeldQty: number;
           grnCode: string;
         }>;
         const g = grnRows[0];
@@ -560,23 +693,28 @@ export async function createCustomerMaterialReturn(
           );
         }
         // Cap in the WHERE: 0 rows = the held pieces were taken by someone else.
+        // ADR-247: pieces an NC holds back (pending or scrapped) are not returnable.
         const bumped = (await tx.execute(sql`
           UPDATE public.party_grn_lines
              SET rejected_returned_qty = rejected_returned_qty + ${ln.qty},
                  updated_at = now(), updated_by = ${userId}::uuid
            WHERE id = ${g.id}::uuid
              AND deleted_at IS NULL
-             AND rejected_returned_qty + ${ln.qty} <= rejected_qty
+             AND rejected_returned_qty + ${ln.qty} + ${ncHeldBackQtySql(sql`${g.id}::uuid`)} <= rejected_qty
           RETURNING id
         `)) as unknown as Array<{ id: string }>;
         if (bumped.length === 0) {
-          const held = Number(g.rejectedQty) - Number(g.rejectedReturnedQty);
+          const ncHeld = Number(g.ncHeldQty);
+          const held = Number(g.rejectedQty) - Number(g.rejectedReturnedQty) - ncHeld;
           throw new ConflictError(
             `Row #${idx + 1}: Qty (${ln.qty}) cannot be more than the deviated pieces still held on ` +
               `${g.grnCode} for ${where} (${Math.max(0, held)}) — Deviated ${g.rejectedQty}, ` +
-              `already returned ${g.rejectedReturnedQty}.`,
+              `already returned ${g.rejectedReturnedQty}` +
+              (ncHeld > 0 ? `, ${ncHeld} under an NC not decided as Return to Customer` : '') +
+              `.`,
           );
         }
+        const ncCodes = await rebalanceReturnToCustomerNcs(tx, g.id, code, companyId, user);
         await tx.insert(customerMaterialReturnLines).values({
           companyId,
           returnId: header.id,
@@ -589,7 +727,11 @@ export async function createCustomerMaterialReturn(
           createdBy: userId,
           updatedBy: userId,
         });
-        summary.push(`${where} deviated ${ln.qty} (${g.grnCode})`);
+        summary.push(
+          `${where} deviated ${ln.qty} (${g.grnCode}` +
+            (ncCodes.length > 0 ? `, ${ncCodes.join(', ')}` : '') +
+            `)`,
+        );
       }
       totalQty += ln.qty;
     }
@@ -720,6 +862,7 @@ export async function cancelCustomerMaterialReturn(
               `Ask an administrator to check this GRN.`,
           );
         }
+        await rebalanceReturnToCustomerNcs(tx, l.partyGrnLineId, head.code, companyId, user);
       }
       reversedQty += qty;
     }

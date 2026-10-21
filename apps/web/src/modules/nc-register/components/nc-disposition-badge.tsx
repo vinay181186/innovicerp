@@ -11,6 +11,8 @@ const CLASSES: Record<NcDisposition, string> = {
   scrap: 'b-red',
   use_as_is: 'b-green',
   return_to_vendor: 'b-orange',
+  // ADR-247 — same mechanics as return to vendor (pieces go back out), same tone.
+  return_to_customer: 'b-orange',
   make_fresh: 'b-blue',
 };
 

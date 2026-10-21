@@ -2836,6 +2836,8 @@ export const ncRegister = pgTable(
     grnLineId: uuid('grn_line_id').references((): AnyPgColumn => goodsReceiptNoteLines.id, {
       onDelete: 'set null',
     }),
+    // ADR-247 (0213): customer material deviated at Party GRN Incoming QC.
+    partyGrnLineId: uuid('party_grn_line_id').references((): AnyPgColumn => partyGrnLines.id),
     // Sibling on a partial disposition: this row holds the remainder that is
     // still pending, and points at the row whose disposition split it.
     splitFromNcId: uuid('split_from_nc_id').references((): AnyPgColumn => ncRegister.id, {
@@ -2893,9 +2895,10 @@ export const ncRegister = pgTable(
   },
   (t) => [
     // ADR-189 (0151) — a bought-material NC has no job card but a GRN line.
+    // ADR-247 (0213) — a customer-material NC has a Party GRN line instead.
     check(
       'nc_register_job_card_or_grn_line',
-      sql`${t.jobCardId} is not null or ${t.grnLineId} is not null`,
+      sql`${t.jobCardId} is not null or ${t.grnLineId} is not null or ${t.partyGrnLineId} is not null`,
     ),
     uniqueIndex('nc_register_company_code_uniq')
       .on(t.companyId, t.code)
@@ -2909,6 +2912,10 @@ export const ncRegister = pgTable(
     index('nc_register_company_date_idx')
       .on(t.companyId, t.ncDate)
       .where(sql`${t.deletedAt} is null`),
+    // ADR-247 (0213): customer-material NCs by their Party GRN line.
+    index('nc_register_party_grn_line_idx')
+      .on(t.partyGrnLineId)
+      .where(sql`${t.partyGrnLineId} is not null and ${t.deletedAt} is null`),
     index('nc_register_jc_op_idx')
       .on(t.jcOpId)
       .where(sql`${t.jcOpId} is not null`),

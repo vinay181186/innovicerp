@@ -81,7 +81,7 @@ import type {
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JWSO_SF_COLUMNS } from './sf-columns';
-import { PENDING_QC_SQL } from '../party-grn/service';
+import { partyCommittedQtySql } from '../party-grn/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -440,9 +440,8 @@ export async function listJobWorkOrders(
     const toFrag = input.toDate ? sql`AND jw.jw_date <= ${input.toDate}::date` : sql``;
     // Party GRN picker: only JWSOs that can still receive customer material —
     // at least one live, open, not short-closed line with a customer RM whose
-    // order qty is above what is already committed. "Committed" is the SAME
-    // rule as jwLineCommittedQty (party-grn/service.ts): Σ received on lines
-    // waiting for Incoming QC + Σ accepted on QC'd lines, live GRNs only.
+    // order qty is above what is already committed. "Committed" is THE one
+    // rule, partyCommittedQtySql (party-grn/service.ts, ADR-247).
     const receivableFrag =
       input.receivable === true
         ? sql`AND EXISTS (
@@ -452,13 +451,7 @@ export async function listJobWorkOrders(
                AND l.status = 'open'
                AND l.short_closed_at IS NULL
                AND l.party_material_id IS NOT NULL
-               AND l.order_qty > (
-                 SELECT COALESCE(SUM(CASE WHEN ${PENDING_QC_SQL} THEN pgl.received_qty
-                                          ELSE pgl.accepted_qty END), 0)
-                   FROM public.party_grn_lines pgl
-                   JOIN public.party_grn pgh ON pgh.id = pgl.party_grn_id AND pgh.deleted_at IS NULL
-                  WHERE pgl.jw_line_id = l.id AND pgl.deleted_at IS NULL
-               )
+               AND l.order_qty > ${partyCommittedQtySql(sql`l.id`)}
           )`
         : sql``;
 
@@ -1680,14 +1673,11 @@ async function orderQtyFloor(
        AND deleted_at IS NULL AND recovery_kind IS NULL
   `)) as unknown as Array<{ qty: number }>;
   const jcQty = Number(rows[0]?.qty ?? 0);
-  // Code review fix: customer material already accepted, or received and
-  // waiting for QC, on this line also holds the qty up (1 RM piece per part).
+  // Code review fix: customer material already committed on this line (the
+  // one rule, partyCommittedQtySql — accepted, waiting for QC, or under a
+  // pending NC, ADR-247) also holds the qty up (1 RM piece per part).
   const mat = (await tx.execute(sql`
-    SELECT COALESCE(SUM(CASE WHEN pgl.qc_at IS NULL AND pgl.accepted_qty = 0 AND pgl.rejected_qty = 0
-                             THEN pgl.received_qty ELSE pgl.accepted_qty END), 0)::int AS qty
-      FROM public.party_grn_lines pgl
-      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
-     WHERE pgl.jw_line_id = ${line.id}::uuid AND pgl.deleted_at IS NULL
+    SELECT ${partyCommittedQtySql(sql`${line.id}::uuid`)} AS qty
   `)) as unknown as Array<{ qty: number }>;
   const matQty = Number(mat[0]?.qty ?? 0);
   return { floor: Math.max(line.returnedQty, line.invoicedQty, jcQty, matQty), jcQty };

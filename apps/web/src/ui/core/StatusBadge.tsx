@@ -139,6 +139,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     scrap: 'red',
     use_as_is: 'green',
     return_to_vendor: 'orange',
+    return_to_customer: 'orange',
     make_fresh: 'blue',
   },
   txn: { in: 'green', out: 'amber', adjust: 'grey' },

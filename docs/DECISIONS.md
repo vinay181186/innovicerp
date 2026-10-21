@@ -14101,3 +14101,63 @@ CGST 9 + SGST 5. No round-off. PR has no GST (Est. Cost only) — unchanged.
 - New POs carry a Round-off line; old POs keep their stored totals.
 - Open: the api test harness global-setup sweep fails on TEST data
   (route_cards → T-prefixed items FK), so api tests could not be run.
+
+## ADR-247: Customer material deviated at Party GRN Incoming QC raises an NC
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved the plan 2026-10-21; "no rework"; TEST first, PROD on "push to main")
+
+### Context
+
+A vendor GRN reject raises a material NC automatically
+(`autoCreateMaterialNcFromIqcReject`). A Party GRN deviation raised nothing:
+the pieces sat "held" on the line until an IN-CMR returned them. The NC
+Register could not point at a Party GRN line, and after a deviation the JWSO
+line's Pending reopened at once, so replacements plus a later "use as is"
+could take a line above its order qty. 0 Party GRN lines were ever deviated on
+PROD, so no data needed converting.
+
+### Decision
+
+1. Migration 0213: `nc_register.party_grn_line_id`, the source CHECK accepts
+   it, `nc_disposition` gains `return_to_customer`.
+2. Party GRN QC raises the NC in the same transaction (item = the JWSO line's
+   customer RM item). One numbering/insert helper serves vendor and Party GRN.
+3. A customer-material NC takes only Use As Is, Return to Customer, Scrap
+   (`NC_CUSTOMER_MATERIAL_DISPOSITIONS`); whole pieces; Scrap needs Approve
+   and the customer's approval in Remarks. No rework (owner).
+   - Use As Is: the one writer `applyPartyGrnUseAsIs` (party-grn/deviation.ts)
+     moves rejected→accepted under the JWSO-line + line locks, caps Σ accepted
+     at order qty, posts the customer-material stock "in".
+   - Return to Customer: NC `disposed`; IN-CMR (kind rejected) fills
+     `rtv_sent_qty` and closes the NC when all went back (see point 7).
+4. One committed-qty rule `partyCommittedQtySql` (was copied 3×): waiting QC +
+   accepted + pieces under a PENDING NC. Used by the GRN create/edit cap, the
+   receivable JWSO picker and the JWSO order-qty floor.
+5. IN-CMR rejected returnable = rejected − returned − pieces under NCs that are
+   pending or scrapped (legacy pieces with no NC stay returnable).
+6. Party GRN cancel closes every NC on it that is not already closed ("Party
+   GRN <code> cancelled"); use-as-is pieces are reversed with the accepted qty
+   by the normal cancel reversal. (A first draft refused the cancel — review
+   found no NC undo exists, so a GRN would be stuck for good.) IN-CMR still
+   blocks a cancel while returned pieces exist.
+7. IN-CMR create/cancel run ONE deterministic rebalance of the line's
+   Return-to-Customer NCs (oldest first, from rejected_returned_qty), logging
+   every close/reopen in the NC History. Reopening a closed NC there is the one
+   documented exception to NC_STATUS_MOVES.
+8. A customer-material NC cannot be soft-deleted — it must be disposed.
+
+### Alternatives Considered
+
+- A separate "deviation" record outside the NC Register — rejected: a second
+  quality register, and every Σ-accepted reader would need to learn it.
+- Use As Is tracked on the NC only (not moving into accepted) — rejected:
+  issue, IN-CMR good, JWSO and report figures all read accepted.
+
+### Consequences
+
+- Positive: one quality flow for vendor and customer material; no 12-of-10.
+- Negative: a pending NC blocks replacements for its pieces until decided.
+- Risks: Party GRN cancel and IN-CMR create on the same GRN at the same moment
+  can deadlock (Postgres aborts one; retry). Vendor NC path refactored onto the
+  shared helper — behaviour kept.

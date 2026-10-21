@@ -167,10 +167,14 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // it keeps the old "Close rework" path. Every new row closes through the
   // gate (design §3, interlock 6).
   const isLegacyRework = detail.reworkOpSeq != null;
+  // ADR-247 — a customer-material NC (Party GRN Incoming QC) is never reworked
+  // and never goes back to a vendor; its return is an IN-CMR, not a vendor DC.
+  const isPartyNc = detail.partyGrnLineId != null;
   const isReworkDisposed =
-    isLegacyRework && detail.status === 'disposed' && detail.disposition === 'rework';
+    !isPartyNc && isLegacyRework && detail.status === 'disposed' && detail.disposition === 'rework';
   // Return-to-vendor, chosen but the challan not yet issued (design §5).
   const awaitingDc =
+    !isPartyNc &&
     detail.disposition === 'return_to_vendor' &&
     mayMoveTo('sent_to_vendor') &&
     !detail.deliveryChallanId;
@@ -681,7 +685,23 @@ function DetailGrid(props: {
             present, e.g. a GRN/OSP reject) shows the original vendor and its
             PO/GRN so the return-to-vendor route is clear. An in-house NC keeps
             the Rework-Machine XOR Operation display it always had. */}
-        {detail.sourceVendorId ? (
+        {/* ADR-247 — customer material deviated at Party GRN Incoming QC. */}
+        {detail.partyGrnLineId ? (
+          <>
+            <InlinePair label="Source:">Customer material</InlinePair>
+            <InlinePair label="Customer:">{detail.sourceCustomerName ?? '—'}</InlinePair>
+            <InlinePair label="JWSO No.:">
+              <span className="td-code" style={{ color: 'var(--text)' }}>
+                {detail.sourceJwCode ?? '—'}
+              </span>
+            </InlinePair>
+            <InlinePair label="Party GRN No.:">
+              <span className="td-code" style={{ color: 'var(--text)' }}>
+                {detail.sourcePartyGrnCode ?? '—'}
+              </span>
+            </InlinePair>
+          </>
+        ) : detail.sourceVendorId ? (
           <>
             <InlinePair label="Source Vendor:">
               <span className="td-code" style={{ color: 'var(--text)' }}>
