@@ -28,6 +28,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
 import { Panel } from '@/ui/data';
+import { ActionMenu } from '@/ui/layout';
 import { ConfirmDialog } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
@@ -55,6 +56,7 @@ import { NcDispositionBadge } from '../components/nc-disposition-badge';
 import { NcLinksBlock } from '../components/nc-links-block';
 import { Note } from '../components/nc-note';
 import { NcStatusBadge } from '../components/nc-status-badge';
+import { useNcPrint } from '../components/use-nc-print';
 import { ncOpenQty } from '../nc-qty';
 import { NcTimelinePanel } from '@/modules/flow-views/components/nc-timeline-panel';
 
@@ -91,6 +93,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const saveKey = useSaveKey();
   const createDc = useCreateNcDc(id, saveKey);
   const createCapa = useCreateCapa();
+  // ⋯ Preview / ⬇ Download PDF — the NC Report (use-nc-print).
+  const ncPrint = useNcPrint();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [showDispose, setShowDispose] = useState(false);
@@ -311,6 +315,20 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 navPage: `/nc-register/${detail.id}`,
               }}
               suggestedTitle={`Action NC ${detail.code}`}
+            />
+            <ActionMenu
+              items={[
+                {
+                  label: 'Preview',
+                  onClick: () =>
+                    void ncPrint('preview', { id: detail.id, code: detail.code, jcCode }, isDraft),
+                },
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () =>
+                    void ncPrint('download', { id: detail.id, code: detail.code, jcCode }, isDraft),
+                },
+              ]}
             />
             {isPending && canAdvance ? (
               <button

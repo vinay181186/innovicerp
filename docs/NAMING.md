@@ -364,6 +364,19 @@ one hyphen, five zero-padded digits.
 | Multi-Level BOM (ADR-225)          | `Multi-Level BOM`               | `IN-MLB-#####`                            | yes                                                |
 | Multi-Level Plan (ADR-225)       | `Multi-Level Plan` / `MLP No.`  | `IN-MLP-#####`                            | yes                                                |
 
+**Printed sheet titles** (the heading on the Preview / PDF — ADR-239/241). The PDF file
+is named after the document number.
+
+| Document                 | Printed title       |
+| ------------------------ | ------------------- |
+| Sales Order              | `Sales Order`       |
+| Job Work Sales Order     | `JW Sales Order`    |
+| Purchase Request         | `Purchase Request`  |
+| Party GRN                | `Party GRN`         |
+| Item Issue               | `Item Issue Slip`   |
+| Non-Conformance          | `NC Report`         |
+
+
 ---
 
 ## C. What is still ambiguous — ranked, with the verdict

@@ -9,6 +9,7 @@ import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { Panel } from '@/ui/data';
 import { useReturnStoreIssue, useReverseStoreIssue, useStoreIssue } from '../api';
+import { useStoreIssuePrint } from './use-store-issue-print';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
 
@@ -33,6 +34,7 @@ export function IssueViewModal({
   const [msg, setMsg] = useState<string | null>(null);
   const returnMut = useReturnStoreIssue();
   const reverseMut = useReverseStoreIssue();
+  const issuePrint = useStoreIssuePrint();
 
   const anyReturned = (iss?.lines ?? []).some((l) => l.returnedQty > 0);
   const anyUnused = (iss?.lines ?? []).some((l) => l.qty - l.returnedQty > 0);
@@ -260,6 +262,24 @@ export function IssueViewModal({
               <button type="button" className="btn btn-ghost" onClick={onClose}>
                 Close
               </button>
+              {iss ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => void issuePrint('preview', iss)}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => void issuePrint('download', iss)}
+                  >
+                    Download PDF
+                  </button>
+                </>
+              ) : null}
               {iss && !iss.reversedAt && canReverse && !anyReturned ? (
                 <button type="button" className="btn btn-ghost" onClick={() => start('reverse')}>
                   Reverse

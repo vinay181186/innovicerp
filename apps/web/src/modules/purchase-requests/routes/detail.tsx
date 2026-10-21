@@ -54,6 +54,7 @@ import {
 } from '../api';
 import { CloseBalanceModal } from '../components/close-balance-modal';
 import { PrStatusBadge } from '../components/pr-status-badge';
+import { usePrPrint } from '../components/use-pr-print';
 import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
 import { prConvertible, usePrApprovalOn } from '../lib/pr-convertible';
 import { PR_TYPE_LABELS } from '../lib/pr-labels';
@@ -103,6 +104,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  // Preview / ⬇ Download PDF — the PR sheet, loaded fresh (use-pr-print.ts).
+  const prPrint = usePrPrint();
 
   if (isLoading) {
     return (
@@ -249,6 +252,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
+                { label: 'Preview', onClick: () => void prPrint('preview', detail) },
+                { label: '⬇ Download PDF', onClick: () => void prPrint('download', detail) },
                 {
                   // Once a PO exists this PR is locked — surface the PO to view,
                   // and hide Edit below.
