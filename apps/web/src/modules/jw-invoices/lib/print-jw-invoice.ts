@@ -34,6 +34,8 @@ import {
   challanDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import { jwInvoiceTaxSplit } from '@/modules/invoices/lib/gst-split';
+import { signedRoundOff } from '@/modules/sales-orders/lib/gst-rows';
 
 // The unit comes off the JWSO line being billed (`uom` on the register row).
 // NOS — the unit the whole system assumes — only when that is blank.
@@ -91,28 +93,23 @@ export function printJwInvoice(args: {
   const gstAmount = invoice.gstAmount ?? (taxable * gstPct) / 100;
   const grand = invoice.totalAmount ?? taxable + gstAmount;
 
-  // Split by the invoice's tax type (migration 0148): same-state prints SGST +
-  // CGST at half the rate each, inter-state prints IGST. An invoice raised
-  // before the column existed has no tax type, and keeps the single GST row it
-  // always printed — a split the data does not state is not invented for it.
-  // The total GST is the same number in every case.
-  // Split once, in whole paise, so the two halves always add back to the stored
-  // GST: CGST = half rounded (the odd paisa), SGST = the rest — the same paise
-  // as the SO / JWSO (computeGstTotals) and the GST Sales Register (ADR-243).
-  const gstPaise = Math.round(gstAmount * 100);
-  const cgstAmount = Math.round(gstPaise / 2) / 100;
-  const sgstAmount = (gstPaise - Math.round(gstPaise / 2)) / 100;
-  const taxRows =
-    gstPct <= 0
-      ? []
-      : invoice.taxType === 'igst'
-        ? [{ label: `IGST @ ${gstPct}%`, value: money(gstAmount) }]
-        : invoice.taxType === 'sgst_cgst'
-          ? [
-              { label: `SGST @ ${gstPct / 2}%`, value: money(sgstAmount) },
-              { label: `CGST @ ${gstPct / 2}%`, value: money(cgstAmount) },
-            ]
-          : [{ label: `GST @ ${gstPct}%`, value: money(gstAmount) }];
+  // ADR-248 — jwInvoiceTaxSplit picks the rule. Issued before round-off: the
+  // rows exactly as this print always carried them (SGST + CGST at half the
+  // rate each, or IGST; no tax type → the single GST row). Issued after: CGST
+  // then SGST (or IGST) in whole paise and a signed Round-off row; the total
+  // is the stored, rupee-rounded total. The total GST is the same in every case.
+  const split = jwInvoiceTaxSplit({
+    gstPercent: gstPct,
+    gstAmount,
+    taxType: invoice.taxType,
+    roundOff: invoice.roundOff,
+  });
+  const taxRows = split.rows.map((l) => ({ label: l.label, value: money(l.amount) }));
+  // Round-off exists only on a new invoice, which the server never sends to a
+  // price-hidden viewer — so no em-dash case here.
+  if (split.roundOff != null) {
+    taxRows.push({ label: 'Round-off', value: signedRoundOff(split.roundOff) });
+  }
   // Blank when there is no unit — never an invented 'NOS' (A29).
   const uom = invoice.uom?.trim() ?? '';
 

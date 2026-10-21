@@ -90,7 +90,9 @@ describe('jw-invoices service', () => {
     createdInvoiceIds.push(inv.id);
     expect(inv.taxableAmount).toBe(225); // 5 x 45
     expect(inv.gstAmount).toBe(40.5); // 18%
-    expect(inv.totalAmount).toBe(265.5);
+    // ADR-248: total to the rupee, 0.50 up.
+    expect(inv.roundOff).toBe(0.5);
+    expect(inv.totalAmount).toBe(266);
 
     const line = (
       await db.select().from(jobWorkOrderLines).where(eq(jobWorkOrderLines.id, jwLineId))

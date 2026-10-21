@@ -4,12 +4,14 @@
 // files clear the 400-line rule; behaviour, hooks, validation and money display
 // are identical to the original screen.
 
-import { type CreateJwInvoiceInput } from '@innovic/shared';
+import { computeGstTotals, type CreateJwInvoiceInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSaveKey } from '@/lib/use-save-key';
+import { roundedRuleTaxRows } from '@/modules/invoices/lib/gst-split';
+import { signedRoundOff } from '@/modules/sales-orders/lib/gst-rows';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoiceableLines } from '../api';
 import { Field, PreviewCell } from './jw-invoice-form-fields';
@@ -79,9 +81,21 @@ export function NewJwInvoiceModal({
 
   const qtyNum = Number(qty);
   const rateNum = Number(rate);
-  const taxable = Number.isFinite(qtyNum) && Number.isFinite(rateNum) ? qtyNum * rateNum : 0;
-  const gstAmount = Number.isFinite(gstPct) ? taxable * (gstPct / 100) : 0;
-  const total = taxable + gstAmount;
+  // ADR-248 — the same roll-up the server stores: Taxable in whole paise, GST
+  // rounded to paise, Total brought to the rupee — so Taxable + tax rows +
+  // Round-off = Total exactly. The split needs the tax type: a manual choice,
+  // else the JWSO's own stored Tax Type (ADR-243, decided by the same customer
+  // State rule the save uses). Only when neither is known does the preview keep
+  // one GST cell; the server splits it by the customer's State on save.
+  const previewTaxType = taxType || jwDetailQ.data?.taxType || null;
+  const totals = computeGstTotals({
+    subtotal: Number.isFinite(qtyNum) && Number.isFinite(rateNum) ? qtyNum * rateNum : 0,
+    gstPercent: gstPct,
+    taxType: previewTaxType,
+  });
+  const taxCells = previewTaxType
+    ? roundedRuleTaxRows(totals.gstPercent, totals.gstTotal, previewTaxType)
+    : [{ label: `GST (${totals.gstPercent}%)`, amount: totals.gstTotal }];
 
   const onSave = (): void => {
     setErr(null);
@@ -296,17 +310,19 @@ export function NewJwInvoiceModal({
             padding: 12,
             background: 'var(--bg3)',
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: `repeat(${taxCells.length + 3}, 1fr)`,
             gap: 12,
           }}
         >
-          <PreviewCell label="Taxable" value={money(taxable)} />
-          <PreviewCell label={`GST (${gstPct}%)`} value={money(gstAmount)} />
-          <PreviewCell label="Total" value={money(total)} accent />
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div className="text3" style={{ fontSize: 11 }}>
-              qty × rate = taxable · + GST from JWSO
-            </div>
+          <PreviewCell label="Taxable" value={money(totals.subtotal)} />
+          {taxCells.map((c) => (
+            <PreviewCell key={c.label} label={c.label} value={money(c.amount)} />
+          ))}
+          <PreviewCell label="Round-off" value={signedRoundOff(totals.roundOff)} />
+          <PreviewCell label="Total" value={money(totals.grandTotal)} accent />
+          <div className="text3" style={{ fontSize: 11, gridColumn: '1 / -1' }}>
+            qty × rate = taxable · + GST from JWSO
+            {previewTaxType ? null : ' · Split by customer state on save'}
           </div>
         </div>
 

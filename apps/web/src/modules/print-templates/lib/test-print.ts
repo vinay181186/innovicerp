@@ -522,7 +522,9 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     gstPercent: 18,
     gstAmount: 900,
     totalAmount: 5900,
-    // Same-state sample: the sheet prints SGST 9% + CGST 9%.
+    // ADR-248: a new-style invoice (Round-off line, CGST before SGST).
+    roundOff: 0,
+    // Same-state sample: the sheet prints CGST 9% + SGST 9%.
     taxType: 'sgst_cgst',
     paymentTermsDays: 45,
     dueDate: null,

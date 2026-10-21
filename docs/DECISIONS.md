@@ -14161,3 +14161,32 @@ PROD, so no data needed converting.
 - Risks: Party GRN cancel and IN-CMR create on the same GRN at the same moment
   can deadlock (Postgres aborts one; retry). Vendor NC path refactored onto the
   shared helper — behaviour kept.
+
+## ADR-248: Round-off on Tax Invoice and JW Invoice
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved 2026-10-21)
+
+### Decision
+
+1. Both create services use `computeGstTotals` (GST to paise; CGST = rounded
+   half, SGST = rest; total to the rupee, 0.50 up). Stored: subtotal / taxable,
+   gst_amount, grand_total / total_amount (rounded) and the new `round_off`
+   (migration 0214). Payments, Receivable Ageing, Pending SO Value read the
+   stored total unchanged — "Paid" means the rounded figure is settled.
+2. `round_off` NULL = invoice issued before 0214: it renders and prints
+   exactly as issued (no Round-off line, its old SGST/CGST split). The one
+   switch is apps/web/src/modules/invoices/lib/gst-split.ts
+   (`invoiceTaxSplit` / `jwInvoiceTaxSplit`). Invoices have no edit path, so
+   an issued figure is never re-worked.
+3. GST Sales Register gains a Round-off column from the stored value (0 for
+   legacy) and splits a legacy Tax Invoice the way its paper did (odd paisa
+   to SGST), so register = paper for every invoice.
+4. The JW Invoice create preview splits by the JWSO's stored tax type when
+   Auto; the save still decides from the customer master.
+
+### Consequences
+
+- A legacy Tax Invoice whose old float split went wrong (e.g. GST 2.01 →
+  SGST 1.00) can still differ from the register by a paisa; new invoices
+  cannot.

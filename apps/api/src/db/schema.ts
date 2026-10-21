@@ -5621,6 +5621,8 @@ export const jwInvoices = pgTable(
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     totalAmount: numeric('total_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    // ADR-248 (0214): Total brought to the rupee. NULL = issued before 0214.
+    roundOff: numeric('round_off', { precision: 14, scale: 2 }),
     // 'sgst_cgst' | 'igst' (same codes as purchase_orders.tax_type), migration
     // 0148. NULL on rows raised before it: those print a single GST row.
     taxType: text('tax_type'),
@@ -6396,6 +6398,8 @@ export const invoices = pgTable(
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
     gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull().default('0'),
+    // ADR-248 (0214): Grand Total brought to the rupee. NULL = issued before 0214.
+    roundOff: numeric('round_off', { precision: 14, scale: 2 }),
     totalPaid: numeric('total_paid', { precision: 14, scale: 2 }).notNull().default('0'),
     // Σ invoice_payments.tds_amount (migration 0171) — TDS / short amount the
     // customer deducted; counts toward settling. Outstanding = grand − paid − tds.
