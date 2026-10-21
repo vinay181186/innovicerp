@@ -36,6 +36,7 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useGoodsReceiptNotesList } from '../api';
 import { GrnExpandedLines } from '../components/grn-expanded-lines';
 import { goodsReceiptNoteListColumns } from '../components/grn-list-columns';
+import { useGrnPrint } from '../components/use-grn-print';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
 // Pagination is KEPT here (unlike SO Master): the GRN API is paginated and the
@@ -173,21 +174,36 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   // Advance right.
   const canAssign = perms.advance;
   const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteListItem | null>(null);
-  const rowActions = (grn: GoodsReceiptNoteListItem): React.JSX.Element | undefined =>
-    grn.qcPendingCount > 0 && canAssign ? (
-      <RowActions
-        renderLink={(p) => <Link {...p} />}
-        items={[
-          {
-            key: 'assign',
-            label: 'Assign Task',
-            icon: 'user-round',
-            group: 'assign',
-            onSelect: () => setAssignGrn(grn),
-          },
-        ]}
-      />
-    ) : undefined;
+  // Preview / Download PDF print the same sheet the detail page does
+  // (use-grn-print.ts) — on every row, since printing follows View.
+  const grnPrint = useGrnPrint();
+  const rowActions = (grn: GoodsReceiptNoteListItem): React.JSX.Element => (
+    <RowActions
+      renderLink={(p) => <Link {...p} />}
+      items={[
+        {
+          key: 'preview',
+          label: 'Preview',
+          icon: 'eye',
+          onSelect: () => void grnPrint('preview', grn, draftIds.has(grn.id)),
+        },
+        {
+          key: 'download',
+          label: 'Download PDF',
+          icon: 'download',
+          onSelect: () => grnPrint('download', grn, draftIds.has(grn.id)),
+        },
+        {
+          key: 'assign',
+          label: 'Assign Task',
+          icon: 'user-round',
+          group: 'assign',
+          hidden: !(grn.qcPendingCount > 0 && canAssign),
+          onSelect: () => setAssignGrn(grn),
+        },
+      ]}
+    />
+  );
 
   const total = data?.total ?? 0;
 

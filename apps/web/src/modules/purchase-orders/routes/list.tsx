@@ -51,6 +51,7 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { usePurchaseOrdersList } from '../api';
 import { PoExpandedLines } from '../components/po-expanded-lines';
 import { purchaseOrderListColumns } from '../components/po-list-columns';
+import { usePoPrint } from '../components/use-po-print';
 import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 
 // ADR-201 (2026-10-02): 25 POs per page, loaded from the SERVER (was one
@@ -178,13 +179,27 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     [perms.price, draftIds],
   );
 
-  // Row ⋯ menu — Edit · Create DC · Assign Task. No View: the row click opens
-  // the PO.
+  // Row ⋯ menu — Preview · Download PDF · Edit · Create DC · Assign Task. No
+  // View: the row click opens the PO. Preview / Download print the same sheet
+  // the detail page does (use-po-print.ts).
+  const poPrint = usePoPrint();
   const rowActions = (po: PurchaseOrderListItem): React.JSX.Element => (
     <RowActions
       editTo={canEdit && po.status !== 'closed' ? `/purchase-orders/${po.id}/edit` : undefined}
       renderLink={renderRowMenuLink}
       items={[
+        {
+          key: 'preview',
+          label: 'Preview',
+          icon: 'eye',
+          onSelect: () => void poPrint('preview', po, draftIds.has(po.id)),
+        },
+        {
+          key: 'download',
+          label: 'Download PDF',
+          icon: 'download',
+          onSelect: () => poPrint('download', po, draftIds.has(po.id)),
+        },
         {
           // Job Work AND Service both send material out — same DC lane. The
           // server (createDeliveryChallan) refuses a draft, closed or

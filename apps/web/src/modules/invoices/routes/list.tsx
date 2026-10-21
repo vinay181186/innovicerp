@@ -24,6 +24,7 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
 import { invoiceListColumns } from '../components/invoice-list-columns';
+import { useInvoicePrint } from '../components/use-invoice-print';
 
 // Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
 // JW tab with its box pre-filled. Read ONCE into local state — tab clicks and
@@ -92,6 +93,7 @@ function InvoiceListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
+  const invoicePrint = useInvoicePrint();
   // ADR-232: Add Payment is the Entry tick on Invoices alone.
 
   if (eff && !perms.view) return <PageState as="page" state="noaccess" />;
@@ -237,6 +239,18 @@ function InvoiceListPage(): React.JSX.Element {
               // the same invoice, where the payment form lives.
               renderLink={(p) => <Link {...p} />}
               rowMenu={(inv) => [
+                {
+                  key: 'preview',
+                  label: 'Preview',
+                  icon: 'eye',
+                  onSelect: () => invoicePrint('preview', { id: inv.id, code: inv.code }),
+                },
+                {
+                  key: 'download',
+                  label: 'Download PDF',
+                  icon: 'download',
+                  onSelect: () => invoicePrint('download', { id: inv.id, code: inv.code }),
+                },
                 {
                   key: 'add-payment',
                   label: 'Add Payment',

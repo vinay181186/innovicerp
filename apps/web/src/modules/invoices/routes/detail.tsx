@@ -44,6 +44,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayIst } from '@/lib/date';
+import { runPrint } from '@/lib/print/preview-host';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
@@ -262,10 +263,20 @@ function InvoiceDetailPage(): React.JSX.Element {
           <ActionMenu
             items={[
               {
-                label: 'Print',
+                // Opens the in-app Preview box (lib/print/preview-host.tsx).
+                label: 'Preview',
                 onClick: () => {
                   if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
                 },
+              },
+              {
+                label: '⬇ Download PDF',
+                onClick: () =>
+                  void runPrint(
+                    'download',
+                    { title: 'Tax Invoice', fileName: inv.code },
+                    async () => () => printInvoice(inv, company),
+                  ),
               },
               {
                 label: 'Cancel Invoice',

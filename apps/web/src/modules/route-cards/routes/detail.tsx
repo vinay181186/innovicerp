@@ -14,11 +14,12 @@
 
 import type { RouteCardDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react';
+import { ArrowLeft, Download, Eye, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { runPrint } from '@/lib/print/preview-host';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -70,6 +71,13 @@ function RouteCardDetailPage(): React.JSX.Element {
     if (!printRouteCard({ rc: detail, item, company })) {
       setNotice('Allow popups to print.');
     }
+  };
+  const onDownload = (): void => {
+    if (!detail) return;
+    setNotice(null);
+    void runPrint('download', { title: 'Route Card', fileName: detail.code }, () =>
+      Promise.resolve(() => printRouteCard({ rc: detail, item, company })),
+    );
   };
 
   if (eff && !perms.view) {
@@ -133,7 +141,10 @@ function RouteCardDetailPage(): React.JSX.Element {
         <span className="badge b-blue">Route Card Rev {detail.currentRevision}</span>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn btn-ghost" onClick={onPrint}>
-          <Printer size={13} /> Print
+          <Eye size={13} /> Preview
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onDownload}>
+          <Download size={13} /> Download PDF
         </button>
         <ActionMenu
           label="⋯"

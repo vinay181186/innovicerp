@@ -1,11 +1,11 @@
 // The Job Cards sheet's ⋯ row menu (owner-approved spec 2026-10-01):
-//   Edit · Print · Download Excel · Assign Task · ─ · Move to Trash
+//   Edit · Preview · Download PDF · Download Excel · Assign Task · ─ · Move to Trash
 // No View — the row click already opens the Job Card. The card view keeps its
 // own text buttons (RowActions `labelled` in routes/list.tsx).
 //
-// Print and Download Excel run the SAME click logic as the old row buttons
-// (usePrintJc / useExcelJc: lazy fetch, spinner, popup-blocked alert, one
-// print per click); their Promise keeps the ⋯ busy until the job has fired.
+// Preview / Download PDF (usePrintJc → the in-app Preview box or a saved PDF)
+// and Download Excel (useExcelJc) fetch lazily on the click; their Promise
+// keeps the ⋯ busy until the job has fired.
 // Assign Task opens the same modal the old button did; it shows only to a
 // user holding the Job Card page's Advance right (ADR-232).
 
@@ -49,7 +49,13 @@ export function JcRowMenu({
         editTo={canEdit ? `/job-cards/${jc.id}/edit` : undefined}
         renderLink={(p) => <Link {...p} />}
         items={[
-          { key: 'print', label: 'Print', icon: 'printer', onSelect: print.start },
+          { key: 'preview', label: 'Preview', icon: 'eye', onSelect: print.preview },
+          {
+            key: 'download',
+            label: 'Download PDF',
+            icon: 'download',
+            onSelect: print.download,
+          },
           { key: 'excel', label: 'Download Excel', icon: 'download', onSelect: excel.start },
           {
             key: 'assign',

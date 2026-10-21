@@ -32,6 +32,7 @@ import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { useOpFlow } from '@/modules/flow-views/api';
 import { ReworkTreePanel } from '@/modules/flow-views/components/jc-flow-panels';
 import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
+import { runPrint } from '@/lib/print/preview-host';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
@@ -156,6 +157,15 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 
   const openOpEntry = (): void => void navigate({ to: '/op-entry', search: { jc: jc.code } });
   const openDrawing = (): void => setDrawingPreviewOpen(true);
+  // Preview opens the in-app box; Download PDF runs the same build through runPrint.
+  const printJc = (): boolean =>
+    printJobCard({
+      jc,
+      ops,
+      company,
+      actualSize: productionOrder?.actualSize ?? null,
+      draft: isDraft,
+    });
 
   return (
     <div className="page-fill jc-detail">
@@ -178,21 +188,23 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
               type="button"
               className="btn btn-ghost btn-sm"
               disabled={opsLoading}
-              title="Print Job Card"
-              onClick={() => {
-                if (
-                  !printJobCard({
-                    jc,
-                    ops,
-                    company,
-                    actualSize: productionOrder?.actualSize ?? null,
-                    draft: isDraft,
-                  })
-                )
-                  window.alert('Allow popups to print.');
-              }}
+              title="Preview Job Card"
+              onClick={printJc}
             >
-              Print
+              Preview
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={opsLoading}
+              title="Download Job Card as PDF"
+              onClick={() =>
+                void runPrint('download', { title: 'Job Card', fileName: jc.code }, () =>
+                  Promise.resolve(printJc),
+                )
+              }
+            >
+              ⬇ Download PDF
             </button>
             {/* ADR-182 — a stopped order's card takes no more edits. The
                 server refuses them anyway. */}

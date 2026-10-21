@@ -23,7 +23,7 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  // Set once Save succeeds — the popup then offers Print challan.
+  // Set once Save succeeds — the popup then offers Preview / Download PDF.
   const [saved, setSaved] = useState<JwReturnChallan | null>(null);
 
   // ADR-104: NO status filter. A JWSO closes automatically the moment its Job
@@ -126,13 +126,14 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
           </div>
           <div style={{ fontSize: 13, marginBottom: 16 }}>
             <span className="mono fw-700">{saved.code}</span> — {saved.qty} pcs back to the customer
-            on {saved.jwCodeText ?? 'the JWSO'}. Print the challan to send with the goods.
+            on {saved.jwCodeText ?? 'the JWSO'}. Preview or download the challan to send with the
+            goods.
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Close
             </button>
-            <PrintJwReturnButton returnId={saved.id} primary />
+            <PrintJwReturnButton returnId={saved.id} code={saved.code} primary />
           </div>
         </div>
       </div>

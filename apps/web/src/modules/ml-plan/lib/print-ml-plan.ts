@@ -46,7 +46,7 @@ const COLUMNS: MlSheetColumn<MlPlanNode>[] = [
   { header: 'UOM', cell: (n) => esc(n.uom ?? '') },
 ];
 
-/** Returns false when the popup was blocked. */
+/** Returns false when nothing could show it. */
 export function printMlPlan(args: {
   detail: MlPlanDetail;
   company: Company | null | undefined;
@@ -55,6 +55,7 @@ export function printMlPlan(args: {
   return printMlSheet({
     title: 'Multi-Level Plan',
     windowTitle: `Multi-Level Plan ${detail.code}`,
+    fileName: detail.code,
     company: args.company,
     facts: [
       { label: 'MLP No.', value: detail.code, strong: true },

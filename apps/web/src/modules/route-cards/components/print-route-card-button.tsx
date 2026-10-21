@@ -1,44 +1,54 @@
-// Per-row 🖨 Print action for the Route Card list (Print Templates P3, ADR-034).
+// Per-row Preview / ⬇ Download PDF for the Route Card list (Print Templates
+// P3, ADR-034; owner rule 2026-10-21: every document offers Preview and
+// Download PDF instead of Print).
 //
-// Legacy renders a 🖨 button on every Route Card Master row (renderRouteCards
-// L10117 → printRouteCard L10629). The print needs the RC's ops plus the item's
-// drawing / revision / material — neither is on the list row, which carries only
-// `opCount` (RouteCardListItem). To avoid fetching a detail for every row
-// up-front, this button lazily arms both queries on first click, then fires the
-// print once they resolve.
+// The print needs the RC's ops plus the item's drawing / revision / material —
+// neither is on the list row, which carries only `opCount` (RouteCardListItem).
+// To avoid fetching a detail for every row up-front, the hook lazily arms both
+// queries on the click, then hands the print to runPrint
+// (lib/print/preview-host.tsx) once they resolve: Preview opens the box AT THE
+// CLICK with "Loading preview…", Download saves `<RC No.>.pdf`.
 //
-// Mirrors the PrintJcButton precedent (job-cards/components/print-jc-button.tsx).
+// Mirrors usePrintJc (job-cards/components/print-jc-button.tsx).
 
 import type { RouteCardListItem } from '@innovic/shared';
-import { Loader2, Printer } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { runPrint } from '@/lib/print/preview-host';
 import { useItem } from '@/modules/items/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { useRouteCard } from '../api';
 import { printRouteCard } from '../lib/print-route-card';
 
+type Waiter = {
+  promise: Promise<void>;
+  ready: (build: () => unknown) => void;
+  fail: (e: Error) => void;
+};
+
 /**
- * The Print click logic, shared by the row button and the sheet's ⋯ menu
- * item. `start()` arms the lazy fetches and prints once they resolve; its
- * Promise settles when the print has fired (or failed), so the ⋯ menu shows
- * busy and cannot fire a second print meanwhile.
+ * The Preview / Download click logic for the sheet's ⋯ menu. Each arms the
+ * lazy fetches and prints once they resolve; its Promise settles when the box
+ * shows / the PDF is saved (or failed), so the ⋯ menu shows busy and cannot
+ * fire a second print meanwhile.
  */
 export function usePrintRouteCard(rc: RouteCardListItem): {
-  start: () => Promise<void>;
-  loading: boolean;
+  preview: () => Promise<void>;
+  download: () => Promise<void>;
 } {
-  // `armed` gates the on-demand fetches; `pending` means "print as soon as the
-  // queries resolve". A ref guards against printing twice if a query re-settles.
+  // `armed` gates the on-demand fetches; `pending` means "build as soon as the
+  // queries resolve". The waiter ref guards against building twice if a query
+  // re-settles.
   const [armed, setArmed] = useState(false);
   const [pending, setPending] = useState(false);
-  const printedRef = useRef(false);
-  const waitRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
-  const settle = useCallback((): void => {
-    waitRef.current?.resolve();
-    waitRef.current = null;
-  }, []);
+  const waitRef = useRef<Waiter | null>(null);
   // A row that unmounts mid-fetch must not leave the ⋯ busy for ever.
-  useEffect(() => settle, [settle]);
+  useEffect(
+    () => () => {
+      waitRef.current?.fail(new Error('The Route Card closed before it loaded. Try again.'));
+      waitRef.current = null;
+    },
+    [],
+  );
 
   const { data: company } = useMyCompany();
   // useRouteCard / useItem enable themselves off Boolean(id), so passing
@@ -47,70 +57,45 @@ export function usePrintRouteCard(rc: RouteCardListItem): {
   const itemQuery = useItem(armed ? rc.itemId : undefined);
 
   useEffect(() => {
-    if (!pending || printedRef.current) return;
+    const w = waitRef.current;
+    if (!pending || !w) return;
     if (rcQuery.isError) {
       setPending(false);
-      settle();
-      window.alert('Could not load Route Card. Try again.');
+      waitRef.current = null;
+      w.fail(new Error('Could not load Route Card. Try again.'));
       return;
     }
     if (!rcQuery.data) return; // ops still loading
     // The item only supplies drawing / rev / material. If it 404s (soft-deleted)
     // print anyway — printRouteCard renders those as '—'.
     if (!itemQuery.data && !itemQuery.isError) return;
-    printedRef.current = true;
     setPending(false);
-    settle();
-    const ok = printRouteCard({ rc: rcQuery.data, item: itemQuery.data, company });
-    if (!ok) window.alert('Allow popups to print.');
-  }, [
-    pending,
-    rcQuery.data,
-    rcQuery.isError,
-    rcQuery.error,
-    itemQuery.data,
-    itemQuery.isError,
-    company,
-    settle,
-  ]);
+    waitRef.current = null;
+    const detail = rcQuery.data;
+    const item = itemQuery.data;
+    w.ready(() => printRouteCard({ rc: detail, item, company }));
+  }, [pending, rcQuery.data, rcQuery.isError, itemQuery.data, itemQuery.isError, company]);
 
-  const start = useCallback((): Promise<void> => {
-    if (waitRef.current) return waitRef.current.promise;
-    let resolve: () => void = () => undefined;
-    const promise = new Promise<void>((r) => {
-      resolve = r;
-    });
-    waitRef.current = { promise, resolve };
-    printedRef.current = false;
-    setArmed(true);
-    setPending(true);
-    return promise;
-  }, []);
-
-  return { start, loading: pending && (rcQuery.isFetching || itemQuery.isFetching) };
-}
-
-export function PrintRouteCardButton({ rc }: { rc: RouteCardListItem }): React.JSX.Element {
-  const { start, loading } = usePrintRouteCard(rc);
-
-  const onClick = (e: React.MouseEvent): void => {
-    e.stopPropagation();
-    void start();
-  };
-
-  // Icon-only, like the other Action-column buttons on the Route Card sheet
-  // (Eye / Pencil / Trash2): same trim, hover names the action.
-  return (
-    <button
-      type="button"
-      className="btn btn-ghost btn-sm btn-icon"
-      style={{ padding: '2px 3px' }}
-      onClick={onClick}
-      disabled={loading}
-      title="Print"
-      aria-label="Print"
-    >
-      {loading ? <Loader2 size={13} className="inline animate-spin" /> : <Printer size={13} />}
-    </button>
+  const start = useCallback(
+    (action: 'preview' | 'download'): Promise<void> => {
+      if (waitRef.current) return waitRef.current.promise;
+      const waiter = {} as Waiter;
+      const load = (): Promise<() => unknown> =>
+        new Promise<() => unknown>((resolve, reject) => {
+          waiter.ready = resolve;
+          waiter.fail = reject;
+        });
+      waiter.promise = runPrint(action, { title: 'Route Card', fileName: rc.code }, load);
+      waitRef.current = waiter;
+      setArmed(true);
+      setPending(true);
+      return waiter.promise;
+    },
+    [rc.code],
   );
+
+  return {
+    preview: useCallback(() => start('preview'), [start]),
+    download: useCallback(() => start('download'), [start]),
+  };
 }
