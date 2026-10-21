@@ -18,12 +18,23 @@ export function sheetEmbedHtml(model: SheetPrintModel): string {
   return sheetDocumentHtml(model.windowTitle, buildSheetHtml(model), SHEET_EMBED_STYLE);
 }
 
+/** `IN-PO-00123` → a safe file name (no slashes or other path characters). */
+export function pdfFileName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'document';
+}
+
 const PAGE_W = 210;
 const PAGE_H = 297;
 const MARGIN = 9;
 
 /** Render the sheet off-screen and save it as `<fileName>.pdf`. */
-export async function downloadSheetPdf(model: SheetPrintModel, fileName: string): Promise<void> {
+export function downloadSheetPdf(model: SheetPrintModel, fileName: string): Promise<void> {
+  return downloadHtmlPdf(sheetEmbedHtml(model), fileName);
+}
+
+/** Render a whole print document (as the preview shows it) off-screen and save
+ *  it as `<fileName>.pdf`. */
+export async function downloadHtmlPdf(html: string, fileName: string): Promise<void> {
   const [{ jsPDF }, { default: html2canvas }] = await Promise.all([
     import('jspdf'),
     import('html2canvas'),
@@ -36,38 +47,54 @@ export async function downloadSheetPdf(model: SheetPrintModel, fileName: string)
   const loaded = new Promise<void>((resolve) => {
     frame.onload = () => resolve();
   });
-  frame.srcdoc = sheetEmbedHtml(model);
+  frame.srcdoc = html;
   document.body.appendChild(frame);
   try {
     await loaded;
     const doc = frame.contentDocument;
-    if (!doc?.querySelector('.sheet'))
-      throw new Error('Could not prepare the document. Try again.');
+    if (!doc?.body) throw new Error('Could not prepare the document. Try again.');
     await doc.fonts?.ready;
 
-    // The paginator split the rows into one `.page` per sheet of paper (each
-    // with its own letterhead); each one becomes one PDF page, so no row is cut
-    // and the count matches the "1 of N" in the Order box. An un-paginated
-    // document (paginator skipped) is one page: the whole sheet.
+    // The sheet paginator split the rows into one `.page` per sheet of paper
+    // (each with its own letterhead); each becomes one PDF page, so no row is
+    // cut and the count matches the "1 of N" in the document box. A document
+    // without pages is one picture, sliced into A4 pages.
     const pages = [...doc.querySelectorAll<HTMLElement>('.page')];
-    const parts = pages.length > 0 ? pages : [doc.querySelector<HTMLElement>('.sheet')!];
     const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-    for (let i = 0; i < parts.length; i++) {
-      const canvas = await html2canvas(parts[i]!, { scale: 2, backgroundColor: '#ffffff' });
-      const maxW = PAGE_W - 2 * MARGIN;
-      const maxH = PAGE_H - 2 * MARGIN;
-      const ratio = Math.min(maxW / canvas.width, maxH / canvas.height);
-      if (i > 0) pdf.addPage();
-      pdf.addImage(
-        canvas.toDataURL('image/jpeg', 0.95),
-        'JPEG',
-        MARGIN,
-        MARGIN,
-        canvas.width * ratio,
-        canvas.height * ratio,
-      );
+    const maxW = PAGE_W - 2 * MARGIN;
+    const maxH = PAGE_H - 2 * MARGIN;
+    if (pages.length > 0) {
+      for (let i = 0; i < pages.length; i++) {
+        const canvas = await html2canvas(pages[i]!, { scale: 2, backgroundColor: '#ffffff' });
+        const ratio = Math.min(maxW / canvas.width, maxH / canvas.height);
+        if (i > 0) pdf.addPage();
+        pdf.addImage(
+          canvas.toDataURL('image/jpeg', 0.95),
+          'JPEG',
+          MARGIN,
+          MARGIN,
+          canvas.width * ratio,
+          canvas.height * ratio,
+        );
+      }
+    } else {
+      const whole = doc.querySelector<HTMLElement>('.sheet') ?? doc.body;
+      // A long register drawn at 2× can pass the browser's canvas limit
+      // (~16k px) and come out blank: shrink the scale to stay under it.
+      const scale = Math.max(0.5, Math.min(2, 15000 / Math.max(1, whole.scrollHeight)));
+      const canvas = await html2canvas(whole, { scale, backgroundColor: '#ffffff' });
+      const imgH = (canvas.height * maxW) / canvas.width;
+      const img = canvas.toDataURL('image/jpeg', 0.95);
+      for (let y = 0, page = 0; y < imgH - 0.5; y += maxH, page++) {
+        if (page > 0) pdf.addPage();
+        pdf.addImage(img, 'JPEG', MARGIN, MARGIN - y, maxW, imgH);
+        // Mask what falls into the margins of this page.
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, PAGE_W, MARGIN, 'F');
+        pdf.rect(0, PAGE_H - MARGIN, PAGE_W, MARGIN, 'F');
+      }
     }
-    pdf.save(`${fileName}.pdf`);
+    pdf.save(`${pdfFileName(fileName)}.pdf`);
   } finally {
     frame.remove();
   }

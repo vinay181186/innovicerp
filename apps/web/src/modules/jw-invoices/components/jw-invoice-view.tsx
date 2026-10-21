@@ -111,7 +111,7 @@ export function JwInvoiceView({
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
   const columns = useMemo(() => jwInvoiceColumns(priceHidden), [priceHidden]);
-  // Print: no permission gate — anyone who can see the row can print it, as on
+  // Preview / Download PDF: no permission gate — anyone who can see the row can print it, as on
   // the DC detail page. Money a viewer may not see is already gone from the row
   // AND the printed sheet.
   const printInvoice = usePrintJwInvoice(!priceHidden);
@@ -152,7 +152,7 @@ export function JwInvoiceView({
         // THE shared FIT table (ADR-199). First column (Invoice No.) is pinned.
         // There is no detail page for a JW invoice, so a row is not clickable;
         // the ▸ reveals Item Name / Rate / GST % / GST Amt. A cancelled invoice
-        // is tinted and offers no Cancel again. The row actions — Print ·
+        // is tinted and offers no Cancel again. The row actions — Preview · Download PDF ·
         // History · Cancel Invoice — keep their existing permission gating.
         <Panel bodyPadding="none">
           <DataTable
@@ -170,10 +170,16 @@ export function JwInvoiceView({
             onToggleExpanded={(r) => toggleExpand(r.id)}
             rowMenu={(r) => [
               {
-                key: 'print',
-                label: 'Print',
-                icon: 'printer',
-                onSelect: () => printInvoice(r),
+                key: 'preview',
+                label: 'Preview',
+                icon: 'eye',
+                onSelect: () => printInvoice.preview(r),
+              },
+              {
+                key: 'download',
+                label: 'Download PDF',
+                icon: 'download',
+                onSelect: () => printInvoice.download(r),
               },
               {
                 key: 'history',

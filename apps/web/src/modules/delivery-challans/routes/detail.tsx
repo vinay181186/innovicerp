@@ -14,7 +14,7 @@
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Inbox, Loader2, Pencil, Printer } from 'lucide-react';
+import { ArrowLeft, Ban, Download, Eye, Inbox, Loader2, Pencil } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
@@ -28,6 +28,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
+import { runPrint } from '@/lib/print/preview-host';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -190,17 +191,25 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
     }
   };
 
+  const printArgs = {
+    dc,
+    vendor,
+    company,
+    templates: templates?.items ?? [],
+    currentUser: me?.email,
+    draft: isDraft,
+  };
+  // Preview: the print now opens the in-app Preview box.
   const onPrint = (): void => {
-    const ok = printOspDc({
-      dc,
-      vendor,
-      company,
-      templates: templates?.items ?? [],
-      currentUser: me?.email,
-      draft: isDraft,
-    });
+    const ok = printOspDc(printArgs);
     if (!ok) window.alert('Allow popups to print.');
   };
+  const onDownload = (): Promise<void> =>
+    runPrint(
+      'download',
+      { title: 'OSP Delivery Challan', fileName: dc.code },
+      async () => () => printOspDc(printArgs),
+    );
 
   return (
     <div>
@@ -266,7 +275,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
-              <Printer size={13} /> Print
+              <Eye size={13} /> Preview
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => void onDownload()}
+            >
+              <Download size={13} /> Download PDF
             </button>
             {canEdit ? (
               <Link

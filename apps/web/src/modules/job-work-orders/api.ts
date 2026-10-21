@@ -30,6 +30,7 @@ function toQueryString(q: ListJobWorkOrdersQuery): string {
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
   if (q.sf) params.set('sf', q.sf);
+  if (q.receivable) params.set('receivable', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

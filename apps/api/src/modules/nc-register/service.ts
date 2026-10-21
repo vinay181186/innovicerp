@@ -218,6 +218,11 @@ interface NcJoins {
   sourceVendorName?: string | null;
   sourcePoCode?: string | null;
   sourceGrnCode?: string | null;
+  // ADR-247 — customer material (Party GRN Incoming QC): the Party GRN, its
+  // JWSO and the customer. Null on every other NC.
+  sourcePartyGrnCode?: string | null;
+  sourceJwCode?: string | null;
+  sourceCustomerName?: string | null;
   // ADR-217 — the two documents the NC points AT: the zero-value job-work order
   // a return to vendor raised, and the outward challan the pieces went out on.
   // Both ids are stored columns; both codes are resolved on read.
@@ -316,6 +321,12 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     sourceVendorName: joins.sourceVendorName ?? null,
     sourcePoCode: joins.sourcePoCode ?? null,
     sourceGrnCode: joins.sourceGrnCode ?? null,
+    // ADR-247 — the Party GRN line a customer-material NC was raised on, and
+    // its Party GRN / JWSO / customer, resolved on read.
+    partyGrnLineId: row.partyGrnLineId ?? null,
+    sourcePartyGrnCode: joins.sourcePartyGrnCode ?? null,
+    sourceJwCode: joins.sourceJwCode ?? null,
+    sourceCustomerName: joins.sourceCustomerName ?? null,
     // ADR-217 — the outward challan the rejected pieces went out on: the id
     // stored on this row when somebody recorded it, else the one derived from
     // the GRN behind an Incoming-QC reject. The code comes from the same read.
@@ -544,6 +555,8 @@ export async function listNcRegister(
         -- QC–NC handling ledger and links (design §3).
         nc.qc_log_id AS "qcLogId",
         nc.grn_line_id AS "grnLineId",
+        -- ADR-247: customer material deviated at Party GRN Incoming QC.
+        nc.party_grn_line_id AS "partyGrnLineId",
         nc.split_from_nc_id AS "splitFromNcId",
         -- G8: the NC this row continues (second trip of the same pieces).
         nc.parent_nc_id AS "parentNcId",
@@ -587,6 +600,11 @@ export async function listNcRegister(
         -- origin op's outsource PO line. All null on a pure in-house reject.
         ncsrc."sourceVendorId", ncsrc."sourceVendorCode", ncsrc."sourceVendorName",
         ncsrc."sourcePoCode", ncsrc."sourceGrnCode",
+        -- ADR-247: the Party GRN, its JWSO and the customer for a customer-
+        -- material NC. Mirrors resolveNcSource (0); all null on every other NC.
+        ppg.code AS "sourcePartyGrnCode",
+        COALESCE(pjw.code, ppg.jw_code_text) AS "sourceJwCode",
+        COALESCE(pcl.name, pjw.customer_name) AS "sourceCustomerName",
         -- ADR-217: the zero-value job-work order this return raised, and the
         -- outward challan the rejected pieces went out on.
         rpo.id AS "replacementPoId",
@@ -643,6 +661,18 @@ export async function listNcRegister(
       LEFT JOIN public.delivery_challans sdc
         ON sdc.id = COALESCE(nc.source_delivery_challan_id, sgrn.delivery_challan_id)
           AND sdc.company_id = nc.company_id AND sdc.deleted_at IS NULL
+      -- ADR-247: Party GRN line → Party GRN → JWSO / customer. Every hop is an
+      -- id-to-id FK, one row per NC, so none can multiply rows; the COUNT query
+      -- deliberately does not repeat them. No deleted_at on the Party GRN: a
+      -- cancelled GRN is still the source of the NCs it closed (resolveNcSource).
+      LEFT JOIN public.party_grn_lines ppgl
+        ON ppgl.id = nc.party_grn_line_id AND ppgl.company_id = nc.company_id
+      LEFT JOIN public.party_grn ppg
+        ON ppg.id = ppgl.party_grn_id
+      LEFT JOIN public.job_work_orders pjw
+        ON pjw.id = ppg.job_work_order_id AND pjw.deleted_at IS NULL
+      LEFT JOIN public.clients pcl
+        ON pcl.id = ppg.client_id AND pcl.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT c.code
         FROM public.capa_records c
@@ -830,6 +860,11 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     sourceVendorName: str('sourceVendorName'),
     sourcePoCode: str('sourcePoCode'),
     sourceGrnCode: str('sourceGrnCode'),
+    // ADR-247 — from the party_grn joins above.
+    partyGrnLineId: str('partyGrnLineId'),
+    sourcePartyGrnCode: str('sourcePartyGrnCode'),
+    sourceJwCode: str('sourceJwCode'),
+    sourceCustomerName: str('sourceCustomerName'),
     // ADR-217 — the replacement order and the outward challan, from the joins
     // above (both resolved exactly as readNc resolves them).
     sourceDeliveryChallanId: str('sourceDeliveryChallanId'),
@@ -988,6 +1023,8 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
   const source = await resolveNcSource(tx, companyId, {
     grnLineId: row.grnLineId,
     jcOpId: row.jcOpId,
+    // ADR-247 — a customer-material NC resolves its Party GRN / JWSO / customer.
+    partyGrnLineId: row.partyGrnLineId,
     // ADR-217 — the same resolve fills the replacement order and the source
     // challan, so the detail screen can name both.
     replacementPoId: row.replacementPoId,
@@ -1009,6 +1046,9 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     sourceVendorName: source.sourceVendorName,
     sourcePoCode: source.sourcePoCode,
     sourceGrnCode: source.sourceGrnCode,
+    sourcePartyGrnCode: source.sourcePartyGrnCode,
+    sourceJwCode: source.sourceJwCode,
+    sourceCustomerName: source.sourceCustomerName,
     // ADR-217 document links.
     replacementPoId: source.replacementPoId,
     replacementPoCode: source.replacementPoCode,
@@ -2459,6 +2499,7 @@ export async function softDeleteNcRegister(
         itemCodeText: ncRegister.itemCodeText,
         rejectedQty: ncRegister.rejectedQty,
         status: ncRegister.status,
+        partyGrnLineId: ncRegister.partyGrnLineId,
       })
       .from(ncRegister)
       .where(
@@ -2472,6 +2513,13 @@ export async function softDeleteNcRegister(
     const row = existing[0];
     if (!row) {
       throw new NotFoundError('NC not found. It may have been moved to Trash.');
+    }
+    // ADR-247: a customer-material NC holds the Party GRN line's deviated
+    // pieces — deleting it would release them with no decision.
+    if (row.partyGrnLineId) {
+      throw new ValidationError(
+        'Customer-material NCs cannot be deleted — dispose them (Use As Is, Return to Customer or Scrap).',
+      );
     }
     if (row.status !== 'pending') {
       throw new ConflictError(

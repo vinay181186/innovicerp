@@ -94,7 +94,7 @@ export function JwDispatchView({
   // ADR-197: the return whose History is open, or null. JW Return has no
   // detail page, so its History opens over the list.
   const [historyTarget, setHistoryTarget] = useState<{ id: string; code: string } | null>(null);
-  // ⋯ Print — the row's old Print challan button's logic, as a hook.
+  // ⋯ Preview / Download PDF of the return challan (usePrintJwReturn).
   const printReturn = usePrintJwReturn();
 
   const columns = useMemo(() => jwReturnColumns(), []);
@@ -156,15 +156,22 @@ export function JwDispatchView({
             renderExpanded={(r) => (expanded.has(r.id) ? <ExpandedReturn row={r} /> : null)}
             onToggleExpanded={(r) => toggleExpand(r.id)}
             rowActionsWidth="1%"
-            // ⋯ Print · History · ─ · Cancel. A cancelled return offers no
-            // Print; its Cancel is greyed.
+            // ⋯ Preview · Download PDF · History · ─ · Cancel. A cancelled
+            // return offers no Preview / Download; its Cancel is greyed.
             rowMenu={(r: JwReturnChallanListItem) => [
               {
-                key: 'print',
-                label: 'Print challan',
-                icon: 'printer',
+                key: 'preview',
+                label: 'Preview',
+                icon: 'eye',
                 hidden: r.status === 'cancelled',
-                onSelect: () => printReturn(r),
+                onSelect: () => printReturn.preview({ row: r }),
+              },
+              {
+                key: 'download',
+                label: 'Download PDF',
+                icon: 'download',
+                hidden: r.status === 'cancelled',
+                onSelect: () => printReturn.download({ row: r }),
               },
               {
                 key: 'history',

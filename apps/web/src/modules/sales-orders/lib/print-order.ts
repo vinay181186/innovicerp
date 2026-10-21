@@ -1,16 +1,19 @@
 // Sales Order / JW Sales Order print (owner 2026-10-17: "per SO no. / JWSO no.
 // user can preview, print, download — refer to PO print"). Same sheet as the
 // PO (`@/lib/print/sheet-print`); the party is the CUSTOMER, and the money is
-// the order's one GST %. Presentation only — the SO prints its SAVED totals
-// (the detail page's figures); a JWSO has no stored roll-up, so it prints
-// Σ qty × rate + GST, the same sum its detail page shows as Value.
+// the order's one GST %. Presentation only — SO and JWSO both print the
+// SERVER's `totals` (ADR-243: Subtotal → SGST + CGST or IGST → Round-off →
+// Grand Total), the same figures the detail page shows. No totals (prices
+// hidden) → no money block.
 
-import type {
-  Client,
-  Company,
-  EffectivePrintTemplate,
-  JobWorkOrderDetail,
-  SalesOrderDetail,
+import {
+  type Client,
+  type Company,
+  type EffectivePrintTemplate,
+  type JobWorkOrderDetail,
+  type SalesOrderDetail,
+  type SoTotals,
+  placeOfSupplyLabel,
 } from '@innovic/shared';
 import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -18,6 +21,7 @@ import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import { partyForPrint } from '@/lib/print/party-copy';
 import { type SheetField, type SheetPrintModel, challanDate } from '@/lib/print/sheet-print';
+import { gstTaxRows, signedRoundOff } from './gst-rows';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from './so-status-label';
 
 type OrderArgs = {
@@ -39,8 +43,8 @@ export function salesOrderSheet(args: OrderArgs & { so: SalesOrderDetail }): She
     clientPoNo: so.clientPoNo,
     customerName: so.customerName,
     priceHidden: so.priceVisible === false,
-    gstPercent: so.totals?.gstPercent ?? Number(so.gstPercent ?? 0),
     totals: so.totals ?? null,
+    placeOfSupply: so.totals?.placeOfSupply ?? so.placeOfSupply,
     // The saved totals leave cancelled lines out (computeSoTotals), so the
     // printed rows do too — rows, Total Qty and Subtotal must agree.
     lines: so.lines.filter((l) => l.status !== 'cancelled'),
@@ -68,9 +72,10 @@ export function jwSalesOrderSheet(args: OrderArgs & { jw: JobWorkOrderDetail }):
     clientPoNo: jw.clientPoNo,
     customerName: jw.customerName,
     priceHidden: jw.priceVisible === false,
-    gstPercent: Number(jw.gstPercent ?? 0),
-    totals: null,
-    lines: jw.lines,
+    totals: jw.totals ?? null,
+    placeOfSupply: jw.totals?.placeOfSupply ?? jw.placeOfSupply,
+    // The server's totals leave cancelled lines out, so the printed rows do too.
+    lines: jw.lines.filter((l) => l.status !== 'cancelled'),
     fields: [
       { label: 'JWSO No.', value: jw.code, variant: 'mono', strong: true },
       { label: 'Client PO No.', value: jw.clientPoNo ?? '', variant: 'mono' },
@@ -102,8 +107,8 @@ function orderSheet(
     clientPoNo: string | null;
     customerName: string | null;
     priceHidden: boolean;
-    gstPercent: number;
-    totals: { subtotal: number; gstAmount: number; grandTotal: number } | null;
+    totals: SoTotals | null;
+    placeOfSupply: string | null;
     lines: OrderLine[];
     fields: SheetField[];
   },
@@ -111,10 +116,7 @@ function orderSheet(
   const { client, company, templates } = args;
   const money = (n: number): string => (o.priceHidden ? '—' : inrFormat(n));
 
-  const lineSubtotal = o.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
-  const subtotal = o.totals?.subtotal ?? Number(lineSubtotal.toFixed(2));
-  const tax = o.totals?.gstAmount ?? Number(((subtotal * o.gstPercent) / 100).toFixed(2));
-  const grand = o.totals?.grandTotal ?? subtotal + tax;
+  const t = o.priceHidden ? null : o.totals;
   const totalQty = o.lines.reduce((s, l) => s + l.orderQty, 0);
   const uoms = [...new Set(o.lines.map((l) => l.uom))];
 
@@ -129,6 +131,9 @@ function orderSheet(
     },
     { label: 'GSTIN', value: party.gstNumber, variant: 'mono' },
   ];
+  if (party.stateLine) recipientFields.push({ label: 'State', value: party.stateLine });
+  if (o.placeOfSupply)
+    recipientFields.push({ label: 'Place of Supply', value: placeOfSupplyLabel(o.placeOfSupply) });
   if (party.contact) recipientFields.push({ label: 'Contact', value: party.contact });
 
   const model: SheetPrintModel = {
@@ -154,7 +159,7 @@ function orderSheet(
       clientGSTIN: party.gstNumber,
       clientContact: party.contact,
       totalQty: String(totalQty),
-      totalValue: money(grand),
+      totalValue: t ? money(t.grandTotal) : '—',
     },
     company: { ...buildDocCompany(company), addressLines: [...COMPANY_CARD_ADDRESS_LINES] },
     recipient: { label: 'Customer', fields: recipientFields },
@@ -172,17 +177,19 @@ function orderSheet(
     })),
     totalQty: String(totalQty),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
-    ...(o.priceHidden
-      ? {}
-      : {
+    ...(t
+      ? {
           money: {
-            subtotal: money(subtotal),
-            taxRows:
-              o.gstPercent > 0 ? [{ label: `GST @ ${o.gstPercent}%`, value: money(tax) }] : [],
-            grand: money(grand),
-            amountInWords: amountInWords(grand),
+            subtotal: money(t.subtotal),
+            taxRows: [
+              ...gstTaxRows(t).map((r) => ({ label: r.label, value: money(r.amount) })),
+              { label: 'Round-off', value: signedRoundOff(t.roundOff) },
+            ],
+            grand: money(t.grandTotal),
+            amountInWords: amountInWords(t.grandTotal),
           },
-        }),
+        }
+      : {}),
   };
   return model;
 }

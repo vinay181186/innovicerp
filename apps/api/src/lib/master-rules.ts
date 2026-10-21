@@ -12,6 +12,7 @@
 import { eq } from 'drizzle-orm';
 import type { ZodError } from 'zod';
 import {
+  isCustomerHardIssue,
   MASTER_RULE_SETTINGS_DEFAULT,
   type MasterRuleIssue,
   type MasterRuleSettings,
@@ -110,4 +111,49 @@ export function zodRowReason(error: ZodError, labels: Readonly<Record<string, st
 /** "Customer" + issues → one skip reason / warning line per issue. */
 export function issueTexts(issues: readonly MasterRuleIssue[]): string[] {
   return issues.map((i) => i.message);
+}
+
+// ADR-244 — a CUSTOMER's GSTIN problems refuse whatever the mode; the rule
+// of which issues those are is the shared isCustomerHardIssue. ADR-246 applies
+// the SAME rule to VENDORS: the "customer" helpers below are the party rule,
+// used by modules/clients and modules/vendors alike (names kept from ADR-244).
+
+/** ADR-244 / ADR-246: on an EDIT the GSTIN rule refuses only when the edit
+ *  carries the GST fields (the Customer / Vendor form always does; an Excel row
+ *  or an approved staged edit of phone / address does not) and does not retire
+ *  the party — an old customer / vendor without a GSTIN can still be set
+ *  Inactive. A create always applies it. */
+export function partyGstinRuleApplies(input: {
+  isActive?: boolean | undefined;
+  gstCategory?: unknown;
+  gstNumber?: unknown;
+  stateCode?: unknown;
+  state?: unknown;
+}): boolean {
+  if (input.isActive === false) return false;
+  return (
+    input.gstCategory !== undefined ||
+    input.gstNumber !== undefined ||
+    input.stateCode !== undefined ||
+    input.state !== undefined
+  );
+}
+
+/** The issues that stop a customer / vendor save (or an import row) in this mode. */
+export function customerBlockingIssues(
+  issues: readonly MasterRuleIssue[],
+  mode: MasterRulesMode,
+): MasterRuleIssue[] {
+  return mode === 'enforce' ? [...issues] : issues.filter(isCustomerHardIssue);
+}
+
+/** applyMasterRules for a customer / vendor: the GSTIN problems always refuse. */
+export function applyCustomerGstRules(
+  issues: readonly MasterRuleIssue[],
+  mode: MasterRulesMode,
+  what: string,
+): MasterRuleIssue[] {
+  const hard = issues.filter(isCustomerHardIssue);
+  if (hard.length > 0) applyMasterRules(hard, 'enforce', what);
+  return applyMasterRules(issues, mode, what);
 }

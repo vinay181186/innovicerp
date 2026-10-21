@@ -128,6 +128,14 @@ export function ncCloseBlockedReason(nc: NcGateInput): string | null {
     if (nc.disposition === 'return_to_vendor' && !nc.deliveryChallanId) {
       return 'Return-to-vendor challan not yet issued';
     }
+    // ADR-247 — customer material closes when every piece has gone back on a
+    // Customer Material Return (IN-CMR raises rtv_sent_qty), not by hand before.
+    if (nc.disposition === 'return_to_customer') {
+      const notBack = roundQty(rejected - sent);
+      if (notBack > 0) {
+        return `${notBack} of ${rejected} pcs not yet returned to the customer (Customer Material Return)`;
+      }
+    }
     // Legacy in-route rework (rework_op_seq set) and rework_done rows close on
     // the operator's say-so, as they always have — the old closeNcRework path.
     return null;

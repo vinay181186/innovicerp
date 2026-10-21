@@ -7,18 +7,28 @@
 // two QC users on the same line cannot both book it. Only the accepted qty is
 // posted to the customer-material register (receive / in, carrying the JWSO
 // line) through lib/party-stock-ledger, and party_materials.received_qty is
-// raised by the same amount. Rejected pieces are HELD on the line until a
-// Customer Material Return sends them back.
+// raised by the same amount. ADR-247: deviated pieces raise a material NC on
+// the line (nc-register/cascades autoCreatePartyGrnMaterialNc), in the same
+// transaction. While that NC is pending the pieces stay committed to the JWSO
+// line; it is decided as Use As Is (./deviation.ts moves them into Accepted),
+// Return to Customer (a Customer Material Return sends them back) or Scrap.
 
-import { ActivityAction, type PartyGrnDetail, type PartyGrnQcInput } from '@innovic/shared';
+import {
+  ActivityAction,
+  type PartyGrnDetail,
+  type PartyGrnQcInput,
+  sfTodayIst,
+} from '@innovic/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { partyGrnLines } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockJwLine } from '../../lib/jw-line-state';
-import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { autoCreatePartyGrnMaterialNc } from '../nc-register/cascades';
+import { userDisplayName } from '../nc-register/recovery';
+import { bookPartyAccepted } from './deviation';
 import { isPendingQc, loadPartyGrnDetail, requireCompany } from './service';
 
 export async function qcPartyGrn(
@@ -109,11 +119,51 @@ export async function qcPartyGrn(
       return la < lb ? -1 : la > lb ? 1 : 0;
     });
 
+    // ADR-247: the NC for deviated pieces names the line's customer material
+    // item — party_materials.item_id (what a Customer Material Return shows),
+    // else the JWSO line's RM item. ONE read for every deviated line, before
+    // anything is booked, so a line with neither refuses cleanly.
+    const deviatedIds = input.lines.filter((q) => q.rejectedQty > 0).map((q) => q.lineId);
+    const ncItemRows =
+      deviatedIds.length > 0
+        ? ((await tx.execute(sql`
+            SELECT pgl.id AS "lineId", i.id, i.code, i.name
+              FROM public.party_grn_lines pgl
+              LEFT JOIN public.party_materials pm ON pm.id = pgl.party_material_id
+              LEFT JOIN public.job_work_order_lines jwl ON jwl.id = pgl.jw_line_id
+              JOIN public.items i
+                ON i.id = COALESCE(pm.item_id, jwl.rm_item_id) AND i.company_id = ${companyId}::uuid
+             WHERE pgl.company_id = ${companyId}::uuid
+               AND pgl.id IN (${sql.join(
+                 deviatedIds.map((d) => sql`${d}::uuid`),
+                 sql`, `,
+               )})
+          `)) as unknown as Array<{
+            lineId: string;
+            id: string;
+            code: string;
+            name: string | null;
+          }>)
+        : [];
+    const ncItemByLine = new Map(ncItemRows.map((r) => [r.lineId, r]));
+    for (const lineId of deviatedIds) {
+      if (!ncItemByLine.has(lineId)) {
+        const l = byId.get(lineId)!;
+        throw new ValidationError(
+          `${head.code} Ln ${l.lineNo}: its customer material (${l.partyMaterialCodeText}) has no item, so ` +
+            `the deviated pieces cannot be raised as an NC. Open and save the JWSO, then QC again.`,
+        );
+      }
+    }
+
     const now = new Date();
+    const qcDate = sfTodayIst(now);
+    const reportedBy = userDisplayName(user);
     for (const q of ordered) {
       const l = byId.get(q.lineId)!;
       const jwLine = await lockJwLine(tx, companyId, l.jwLineId!);
       const at = `${head.code} Ln ${l.lineNo}`;
+      const rmItem = q.rejectedQty > 0 ? (ncItemByLine.get(l.id) ?? null) : null;
 
       // §20.2: conditional — only a line still waiting for QC is booked.
       const booked = await tx
@@ -148,42 +198,43 @@ export async function qcPartyGrn(
         throw new ConflictError(`${at} was QC'd${by} a moment ago. Refresh the page.`);
       }
 
-      // Re-check the order cap under the JWSO line lock: Σ accepted on the
-      // line (this booking included) ≤ order qty.
-      const acc = (await tx.execute(sql`
-        SELECT COALESCE(SUM(pgl.accepted_qty), 0)::int AS accepted
-          FROM public.party_grn_lines pgl
-          JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
-         WHERE pgl.jw_line_id = ${jwLine.id}::uuid AND pgl.deleted_at IS NULL
-      `)) as unknown as Array<{ accepted: number }>;
-      const accepted = Number(acc[0]?.accepted ?? 0);
-      if (accepted > jwLine.orderQty) {
-        throw new ConflictError(
+      // Re-check the order cap under the JWSO line lock (Σ accepted on the
+      // line, this booking included, ≤ order qty), then post the accepted
+      // pieces — the one writer (./deviation.ts bookPartyAccepted).
+      await bookPartyAccepted(tx, {
+        companyId,
+        jwLine,
+        partyMaterialId: l.partyMaterialId!,
+        partyGrnId: head.id,
+        qty: q.acceptedQty,
+        remarks: `${head.code} Ln ${l.lineNo} · ${l.partyMaterialCodeText} accepted at Incoming QC`,
+        userId,
+        overCapMessage: (accepted) =>
           `${at}: accepting ${q.acceptedQty} would take ${jwLine.jwCode} Ln ${jwLine.lineNo} to ` +
-            `${accepted} accepted against an Order Qty of ${jwLine.orderQty}. Mark the extra pieces Deviated.`,
-        );
-      }
+          `${accepted} accepted against an Order Qty of ${jwLine.orderQty}. Mark the extra pieces Deviated.`,
+      });
 
-      if (q.acceptedQty > 0) {
-        await postPartyStockMove(tx, {
-          companyId,
-          partyMaterialId: l.partyMaterialId!,
-          jwLineId: jwLine.id,
-          movement: 'receive',
-          direction: 'in',
-          qty: q.acceptedQty,
-          sourceDocType: 'party_grn',
-          sourceDocId: head.id,
-          remarks: `${head.code} Ln ${l.lineNo} · ${l.partyMaterialCodeText} accepted at Incoming QC`,
-          userId,
-          qtyLabel: 'Accepted Qty',
-        });
-        await tx.execute(sql`
-          UPDATE public.party_materials
-             SET received_qty = received_qty + ${q.acceptedQty}, updated_at = now(),
-                 updated_by = ${userId}::uuid
-           WHERE id = ${l.partyMaterialId}::uuid
-        `);
+      // ADR-247: deviated pieces → a material NC on this Party GRN line.
+      let ncCode: string | null = null;
+      if (q.rejectedQty > 0 && rmItem) {
+        const nc = await autoCreatePartyGrnMaterialNc(
+          tx,
+          {
+            companyId,
+            partyGrnLineId: l.id,
+            partyGrnCode: head.code,
+            lineNo: l.lineNo,
+            itemId: rmItem.id,
+            itemCodeText: rmItem.code,
+            itemNameText: rmItem.name,
+            rejectedQty: q.rejectedQty,
+            ncDate: qcDate,
+            reportedByText: reportedBy,
+            reason: (q.rejectReason ?? '').trim(),
+          },
+          user,
+        );
+        ncCode = nc.code;
       }
 
       await emitActivityLog(
@@ -198,7 +249,8 @@ export async function qcPartyGrn(
           detail:
             `${l.partyMaterialCodeText} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${l.receivedQty}, ` +
             `${q.acceptedQty} accepted, ${q.rejectedQty} deviated` +
-            (q.rejectedQty > 0 ? ` (${(q.rejectReason ?? '').trim()})` : ''),
+            (q.rejectedQty > 0 ? ` (${(q.rejectReason ?? '').trim()})` : '') +
+            (ncCode ? ` — ${ncCode} raised` : ''),
         },
         companyId,
         user,

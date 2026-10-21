@@ -57,6 +57,12 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { polOf } from '../../lib/pol';
+import {
+  decideVendorTax,
+  splitGstPercent,
+  taxTypeText,
+  vendorPlaceOfSupply,
+} from '../../lib/order-totals';
 import { emitActivityLog } from '../activity-log/service';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
@@ -67,6 +73,7 @@ import {
   type ItemType,
   type PoType,
   bumpDocRevision,
+  computeGstTotals,
   opSrNo,
   parseDocRevision,
   poCodePrefix,
@@ -75,6 +82,8 @@ import {
 import type {
   ActivityChange,
   DocumentEditStagedResult,
+  ServicePoTaxType,
+  SoTotals,
   DocumentTraceability,
   ShortClosePurchaseOrderInput,
 } from '@innovic/shared';
@@ -450,30 +459,162 @@ function pctToString(p: number): string {
   return p.toFixed(2);
 }
 
-/** Header money roll-up — mirror of the PO form's `_poUpdateTotal()` preview
- *  (purchase-order-form.tsx L118-135) and the invoices header. Returns 2dp
- *  numeric strings ready for the DB:
- *    subtotal   = Σ(qty × rate)
- *    taxAmount  = subtotal × (sgstPct + cgstPct + igstPct) / 100
- *    totalAmount = subtotal + taxAmount
- *  Internal roll-up only — NOT the legal CGST/SGST/IGST split (out of scope).
- *  Rounds subtotal and taxAmount to 2dp first, matching migration 0078's
- *  backfill so create/update and the backfill agree to the paisa. */
+/** ADR-246 — the header money roll-up, the ONE rule shared with the SO / JWSO
+ *  (computeGstTotals, packages/shared lib/gst-totals.ts). Returns 2dp numeric
+ *  strings ready for the DB:
+ *    subtotal    = Σ(qty × rate), rounded to paise
+ *    taxAmount   = the GST (subtotal × GST% / 100, paise) — CGST + SGST or IGST
+ *    totalAmount = the GRAND TOTAL, brought to the nearest rupee (round-off)
+ *  taxType null (vendor's / our State unknown) is figured as CGST + SGST. */
 function computePoTotals(
-  lines: Array<{ qty: number; rate: string | number }>,
-  sgstPct: number,
-  cgstPct: number,
-  igstPct: number,
+  lines: Array<{ qty: number | string; rate: string | number }>,
+  gstPercent: number,
+  taxType: ServicePoTaxType | null,
 ): { subtotal: string; taxAmount: string; totalAmount: string } {
   const rawSubtotal = lines.reduce((s, l) => s + Number(l.qty) * Number(l.rate), 0);
-  const subtotal = Number(rawSubtotal.toFixed(2));
-  const taxAmount = Number(((subtotal * (sgstPct + cgstPct + igstPct)) / 100).toFixed(2));
-  const totalAmount = subtotal + taxAmount;
+  const t = computeGstTotals({
+    subtotal: Number(rawSubtotal.toFixed(2)),
+    gstPercent,
+    taxType,
+  });
   return {
-    subtotal: subtotal.toFixed(2),
-    taxAmount: taxAmount.toFixed(2),
-    totalAmount: totalAmount.toFixed(2),
+    subtotal: t.subtotal.toFixed(2),
+    taxAmount: t.gstTotal.toFixed(2),
+    totalAmount: t.grandTotal.toFixed(2),
   };
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** ADR-246 — the GST % a PO already carries: the sum of its three stored %. */
+function storedGstPercent(row: {
+  sgstPct: string | null;
+  cgstPct: string | null;
+  igstPct: string | null;
+}): number {
+  return round2(Number(row.sgstPct ?? 0) + Number(row.cgstPct ?? 0) + Number(row.igstPct ?? 0));
+}
+
+/** ADR-246 — the ONE GST % a save carries: the header's gstPercent when sent;
+ *  else (legacy callers) the three % summed, each one not sent falling back to
+ *  what is stored (update) or 0 (create). */
+function sentGstPercent(
+  h: {
+    gstPercent?: number | undefined;
+    sgstPct?: number | undefined;
+    cgstPct?: number | undefined;
+    igstPct?: number | undefined;
+  },
+  stored?: { sgstPct: string | null; cgstPct: string | null; igstPct: string | null },
+): number {
+  if (h.gstPercent !== undefined) return round2(h.gstPercent);
+  const pick = (v: number | undefined, st: string | null | undefined): number =>
+    v !== undefined ? v : Number(st ?? 0);
+  return round2(
+    pick(h.sgstPct, stored?.sgstPct) +
+      pick(h.cgstPct, stored?.cgstPct) +
+      pick(h.igstPct, stored?.igstPct),
+  );
+}
+
+/** ADR-246 — tax type + the three stored % for a new PO: decided from the
+ *  VENDOR's State vs ours (decideVendorTax); the browser's taxType is ignored.
+ *  Unknown → tax_type NULL, % stored as CGST + SGST halves (warn only). */
+async function decidePoGst(
+  tx: DbTransaction,
+  companyId: string,
+  vendorId: string | null | undefined,
+  gstPercent: number,
+): Promise<{
+  taxType: ServicePoTaxType | null;
+  gstPercent: number;
+  sgstPct: string;
+  cgstPct: string;
+  igstPct: string;
+}> {
+  const { taxType } = await decideVendorTax(tx, companyId, vendorId);
+  const split = splitGstPercent(gstPercent, taxType);
+  return {
+    taxType,
+    gstPercent,
+    sgstPct: pctToString(split.sgstPct),
+    cgstPct: pctToString(split.cgstPct),
+    igstPct: pctToString(split.igstPct),
+  };
+}
+
+/** ADR-246 — a PO's money roll-up read from its STORED figures, never
+ *  re-figured, so the detail, the list, the reports and the approval ceiling
+ *  all show the same numbers for every PO, old or new:
+ *    subtotal / gstAmount / grandTotal = stored subtotal / tax_amount /
+ *    total_amount; roundOff = total − subtotal − tax (0 on a pre-ADR-246 PO).
+ *  Tax type comes from the stored %: IGST only → 'igst'; CGST and SGST only
+ *  and equal (within 0.01, which is how splitGstPercent halves an odd rate:
+ *  0.25 → 0.13 + 0.12) → 'sgst_cgst'; all three 0 → the stored tax_type.
+ *  Anything else (an old mixed PO, e.g. 9 + 5, or IGST beside CGST) → null:
+ *  the screen then prints the stored % rows as it always has.
+ *  The stored tax_amount is split in whole paise like computeGstTotals:
+ *  CGST = the rounded half, SGST = the rest; IGST = all of it.
+ *  placeOfSupply is display only — it never decides the tax type here. */
+export function poTotalsFromStored(
+  row: {
+    subtotal: string | number | null;
+    taxAmount: string | number | null;
+    totalAmount: string | number | null;
+    sgstPct: string | number | null;
+    cgstPct: string | number | null;
+    igstPct: string | number | null;
+    taxType: string | null;
+  },
+  placeOfSupply: string | null,
+): SoTotals | null {
+  const paise = (v: string | number | null): number => Math.round(Number(v ?? 0) * 100);
+  const sgstP = paise(row.sgstPct);
+  const cgstP = paise(row.cgstPct);
+  const igstP = paise(row.igstPct);
+  let taxType: ServicePoTaxType | null;
+  if (igstP > 0 && sgstP === 0 && cgstP === 0) {
+    taxType = 'igst';
+  } else if (igstP === 0 && sgstP > 0 && cgstP > 0 && Math.abs(sgstP - cgstP) <= 1) {
+    taxType = 'sgst_cgst';
+  } else if (igstP === 0 && sgstP === 0 && cgstP === 0) {
+    taxType = row.taxType === 'igst' || row.taxType === 'sgst_cgst' ? row.taxType : null;
+  } else {
+    return null;
+  }
+  const sub = paise(row.subtotal);
+  const tax = paise(row.taxAmount);
+  const total = paise(row.totalAmount);
+  const isIgst = taxType === 'igst';
+  const cgst = isIgst ? 0 : Math.round(tax / 2);
+  const sgst = isIgst ? 0 : tax - cgst;
+  const igst = isIgst ? tax : 0;
+  return {
+    subtotal: sub / 100,
+    gstPercent: (sgstP + cgstP + igstP) / 100,
+    gstAmount: tax / 100,
+    taxType,
+    placeOfSupply,
+    cgst: cgst / 100,
+    sgst: sgst / 100,
+    igst: igst / 100,
+    roundOff: (total - sub - tax) / 100,
+    grandTotal: total / 100,
+  };
+}
+
+/** ADR-246 — poTotalsFromStored for a PO row, with the vendor's live Place of
+ *  Supply (one vendor read). Null when the viewer may not see prices — the
+ *  same rule for the detail read and every write-back response. */
+async function loadPoTotals(
+  tx: DbTransaction,
+  companyId: string,
+  row: typeof purchaseOrders.$inferSelect,
+  showMoney: boolean,
+): Promise<SoTotals | null> {
+  if (!showMoney) return null;
+  const placeOfSupply = await vendorPlaceOfSupply(tx, companyId, row.vendorId);
+  return poTotalsFromStored(row, placeOfSupply);
 }
 
 function dateLike(v: unknown): string {
@@ -1021,6 +1162,11 @@ export async function getPurchaseOrder(
     }
 
     const header = toPurchaseOrder(headerRow.row);
+    // ADR-246 — the money roll-up, same shape as the SO / JWSO, read from the
+    // STORED figures (poTotalsFromStored) so it matches the list, reports and
+    // approval. Null when the viewer may not see prices, or on an old PO with
+    // mixed percentages.
+    const totals = await loadPoTotals(tx, companyId, headerRow.row, showMoney);
     const lines = lineRows.map((r) =>
       toPurchaseOrderLine(
         r.row,
@@ -1035,6 +1181,7 @@ export async function getPurchaseOrder(
     );
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
+      totals,
       vendorName: headerRow.vendorName,
       vendorCode: headerRow.vendorCode,
       soCode,
@@ -1233,6 +1380,8 @@ export async function createPurchaseOrder(
   // Raising a PO is the `entry` action — L2 Data Entry and up.
   await requireFormAccess(user, 'po_create', 'entry');
   const companyId = requireCompany(user);
+  // ADR-246 — the response's `totals`, same money gate as the detail read.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
     // ADR-189 — approval switches, read once for the whole create.
@@ -1373,12 +1522,14 @@ export async function createPurchaseOrder(
     // default) a new PO is born 'draft' and goes through approvePurchaseOrder
     // (amount ceiling, not self); with it off it opens straight away.
     const headerStatus = switches.poApproval ? ('draft' as const) : ('open' as const);
-    const totals = computePoTotals(
-      input.lines,
-      input.header.sgstPct ?? 0,
-      input.header.cgstPct ?? 0,
-      input.header.igstPct ?? 0,
+    // ADR-246 — ONE GST %, split by the vendor's State (browser taxType ignored).
+    const gst = await decidePoGst(
+      tx,
+      companyId,
+      input.header.vendorId,
+      sentGstPercent(input.header),
     );
+    const totals = computePoTotals(input.lines, gst.gstPercent, gst.taxType);
     const inserted = await tx
       .insert(purchaseOrders)
       .values({
@@ -1390,10 +1541,10 @@ export async function createPurchaseOrder(
         vendorCodeText: input.header.vendorCodeText ?? null,
         status: headerStatus,
         dueDate: input.header.dueDate ?? null,
-        taxType: input.header.taxType ?? null,
-        sgstPct: pctToString(input.header.sgstPct ?? 0),
-        cgstPct: pctToString(input.header.cgstPct ?? 0),
-        igstPct: pctToString(input.header.igstPct ?? 0),
+        taxType: gst.taxType,
+        sgstPct: gst.sgstPct,
+        cgstPct: gst.cgstPct,
+        igstPct: gst.igstPct,
         subtotal: totals.subtotal,
         taxAmount: totals.taxAmount,
         totalAmount: totals.totalAmount,
@@ -1542,6 +1693,7 @@ export async function createPurchaseOrder(
     const prCodeById = new Map(sourcePrs.map((p) => [p.id, p.code]));
     return {
       ...toPurchaseOrder(header),
+      totals: await loadPoTotals(tx, companyId, header, showMoney),
       vendorName: null,
       lines: insertedLines.map((row) =>
         toPurchaseOrderLine(
@@ -1711,8 +1863,9 @@ async function loadStoredPoLines(
 
 /** The header fields a REVISION hangs on: everything the vendor reads off the
  *  printed order. Anything not in this list is not the document changing —
- *  `updated_by`, the recomputed totals (which follow the lines and the tax
- *  percentages that ARE listed), the approval remarks and the PR reference. */
+ *  `updated_by`, the recomputed totals (which follow the lines and the GST
+ *  %), the approval remarks and the PR reference. The tax fields are judged
+ *  in updatePurchaseOrderTx (ADR-246 taxChanged). */
 const REVISION_HEADER_FIELDS = [
   'vendorId',
   // The free-text vendor counts too: a PO raised against a vendor that has no
@@ -1722,18 +1875,11 @@ const REVISION_HEADER_FIELDS = [
   'poDate',
   'dueDate',
   'poType',
-  'taxType',
-  'sgstPct',
-  'cgstPct',
-  'igstPct',
+  // ADR-246 — taxType / SGST / CGST / IGST % are no longer compared here: the
+  // server writes them on every save, so updatePurchaseOrderTx judges them
+  // itself (taxChanged: the GST % moved, or a real CGST+SGST ↔ IGST switch).
   'remarks',
 ] as const;
-
-/** The ones stored as numeric. Compared with Number(): the column comes back as
- *  '10.00' where the form posts 10 — identical figures, and a plain compare
- *  would read them as an edit and bump the revision on a save that changed
- *  nothing. */
-const REVISION_NUMERIC_FIELDS: ReadonlySet<string> = new Set(['sgstPct', 'cgstPct', 'igstPct']);
 
 /** Does this save ACTUALLY change the purchase order?
  *
@@ -1757,11 +1903,7 @@ async function poEditWouldChange(
     if (!(f in updates)) continue;
     const next = updates[f];
     const current = existingHdr[f];
-    if (REVISION_NUMERIC_FIELDS.has(f)) {
-      if (Number(next ?? 0) !== Number(current ?? 0)) return true;
-    } else if ((next ?? null) !== (current ?? null)) {
-      return true;
-    }
+    if ((next ?? null) !== (current ?? null)) return true;
   }
   if (inputLines === undefined) return false; // header-only save, header unchanged
   return poLinesWouldChange(tx, companyId, inputLines, storedLines, showMoney, true);
@@ -2016,6 +2158,10 @@ export async function updatePurchaseOrderTx(
   // A cancelled PO stays locked too — it is a dead document, and its figures
   // should not be edited after the fact.
   const goodsDoc = await poGoodsMovementDoc(tx, companyId, id);
+  // ADR-246 — the ONE GST % this save asks for. A price-blind editor's payload
+  // carries zod defaults, never a real figure, so what is stored stands.
+  const storedGst = storedGstPercent(existingHdr);
+  const nextGst = showMoney ? sentGstPercent(input.header, existingHdr) : storedGst;
   const lockReason = goodsDoc
     ? `already has goods moved against it (${goodsDoc})`
     : existingHdr.status === 'cancelled'
@@ -2035,16 +2181,9 @@ export async function updatePurchaseOrderTx(
     }
     if (h0.poType !== undefined && h0.poType !== existingHdr.poType) lockedChanges.push('PO Type');
     if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate) lockedChanges.push('PO Date');
-    if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
-      lockedChanges.push('Tax Type');
-    }
-    for (const [label, next, current] of [
-      ['SGST %', h0.sgstPct, existingHdr.sgstPct],
-      ['CGST %', h0.cgstPct, existingHdr.cgstPct],
-      ['IGST %', h0.igstPct, existingHdr.igstPct],
-    ] as const) {
-      if (next !== undefined && Number(next) !== Number(current)) lockedChanges.push(label);
-    }
+    // ADR-246 — the tax type is the server's (vendor's State), so only the
+    // GST % itself can be "changed" by the user here.
+    if (nextGst !== storedGst) lockedChanges.push('GST %');
     if (lockedChanges.length > 0) {
       throw new ValidationError(
         `Cannot change ${lockedChanges.join(', ')} on PO ${existingHdr.code}: it ${lockReason}. ` +
@@ -2072,10 +2211,41 @@ export async function updatePurchaseOrderTx(
   // reason + rejectedBy/rejectedAt stamps). Silently ignore input.status.
   updates['status'] = existingHdr.status;
   if (h.dueDate !== undefined) updates['dueDate'] = h.dueDate ?? null;
-  if (h.taxType !== undefined) updates['taxType'] = h.taxType ?? null;
-  if (h.sgstPct !== undefined && showMoney) updates['sgstPct'] = pctToString(h.sgstPct);
-  if (h.cgstPct !== undefined && showMoney) updates['cgstPct'] = pctToString(h.cgstPct);
-  if (h.igstPct !== undefined && showMoney) updates['igstPct'] = pctToString(h.igstPct);
+  // ADR-246 — owner rule: nothing about a PO's tax or money changes unless the
+  // user changes something that drives it. The tax type is re-decided from
+  // the vendor's State, the ONE GST % re-split (CGST + SGST halves — also when
+  // the State is unknown → tax_type NULL — or all IGST) and the stored totals
+  // recomputed ONLY when (a) the GST % actually changes (2 dp), (b) the vendor
+  // changes, or (c) the lines change (item / qty / rate / added / removed —
+  // poLinesWouldChange without paperwork). Otherwise tax_type, the three %,
+  // subtotal, tax_amount and total_amount stay exactly as stored: no blank
+  // tax type filled in, no re-split, no round-off put on an untouched old PO.
+  // A locked PO (goods moved / cancelled) never reaches a recompute: every one
+  // of the three triggers is refused above. A price-blind editor's nextGst is
+  // the stored figure, so for them only (b) / (c) can trigger it.
+  const storedTaxType: ServicePoTaxType | null = existingHdr.taxType ?? null;
+  const nextVendorId = h.vendorId !== undefined ? (h.vendorId ?? null) : existingHdr.vendorId;
+  const gstPctChanged = Math.round(nextGst * 100) !== Math.round(storedGst * 100);
+  const vendorChanged = (nextVendorId ?? null) !== (existingHdr.vendorId ?? null);
+  const linesChanged =
+    input.lines !== undefined &&
+    (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false));
+  const recomputeTax = lockReason === null && (gstPctChanged || vendorChanged || linesChanged);
+  let nextTaxType: ServicePoTaxType | null = storedTaxType;
+  if (recomputeTax) {
+    const gst = await decidePoGst(tx, companyId, nextVendorId, nextGst);
+    nextTaxType = gst.taxType;
+    updates['taxType'] = gst.taxType;
+    updates['sgstPct'] = gst.sgstPct;
+    updates['cgstPct'] = gst.cgstPct;
+    updates['igstPct'] = gst.igstPct;
+  }
+  // What counts as a change to the document (revision bump / back to Draft):
+  // the GST % moving, or a vendor change that brings a different tax type.
+  // A tax type re-decided only because the lines changed rides on the line
+  // change itself.
+  const taxChanged =
+    recomputeTax && (gstPctChanged || (vendorChanged && nextTaxType !== storedTaxType));
   if (h.prCodeText !== undefined) updates['prCodeText'] = h.prCodeText ?? null;
   if (h.approvalRemarks !== undefined) updates['approvalRemarks'] = h.approvalRemarks ?? null;
   if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
@@ -2093,15 +2263,17 @@ export async function updatePurchaseOrderTx(
   // may already own. Only the /R goes up — which is equally true of the legacy
   // IN-PO- rows, which keep their old prefix for life.
   const oldCode = existingHdr.code;
-  const bumpRevision = await poEditWouldChange(
-    tx,
-    companyId,
-    existingHdr,
-    updates,
-    input.lines,
-    storedLines,
-    showMoney,
-  );
+  const bumpRevision =
+    taxChanged ||
+    (await poEditWouldChange(
+      tx,
+      companyId,
+      existingHdr,
+      updates,
+      input.lines,
+      storedLines,
+      showMoney,
+    ));
   const newCode = bumpRevision ? bumpDocRevision(oldCode) : oldCode;
   if (bumpRevision) updates['code'] = newCode;
 
@@ -2116,13 +2288,9 @@ export async function updatePurchaseOrderTx(
   const commercialChange =
     bumpRevision &&
     !goodsDoc &&
-    ((input.lines !== undefined &&
-      (await poLinesWouldChange(tx, companyId, input.lines, storedLines, showMoney, false))) ||
+    (linesChanged ||
       (h.vendorId !== undefined && (h.vendorId ?? null) !== (existingHdr.vendorId ?? null)) ||
-      (showMoney &&
-        ((h.sgstPct !== undefined && pctToString(h.sgstPct) !== existingHdr.sgstPct) ||
-          (h.cgstPct !== undefined && pctToString(h.cgstPct) !== existingHdr.cgstPct) ||
-          (h.igstPct !== undefined && pctToString(h.igstPct) !== existingHdr.igstPct))));
+      taxChanged);
   if (commercialChange && existingHdr.status === 'open') {
     const switches = await readApprovalSwitches(tx, companyId);
     if (switches.poApproval) {
@@ -2186,29 +2354,30 @@ export async function updatePurchaseOrderTx(
     .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
     .orderBy(asc(purchaseOrderLines.lineNo));
 
-  // Recompute stored totals from the FINAL state (post header-pct update +
-  // line merge), regardless of whether pcts or lines changed. Persist and
-  // reflect the same figures on the returned header.
-  const totals = computePoTotals(
-    lineRows.map((r) => r.row),
-    Number(updatedHdr.sgstPct),
-    Number(updatedHdr.cgstPct),
-    Number(updatedHdr.igstPct),
-  );
-  await tx
-    .update(purchaseOrders)
-    .set({
+  // ADR-246 — recompute the stored totals from the FINAL state (post header-%
+  // update + line merge) ONLY when a driver changed (recomputeTax above).
+  // Otherwise the stored figures stand exactly as they are.
+  if (recomputeTax) {
+    const totals = computePoTotals(
+      lineRows.map((r) => r.row),
+      storedGstPercent(updatedHdr),
+      updatedHdr.taxType ?? null,
+    );
+    await tx
+      .update(purchaseOrders)
+      .set({
+        subtotal: totals.subtotal,
+        taxAmount: totals.taxAmount,
+        totalAmount: totals.totalAmount,
+      })
+      .where(eq(purchaseOrders.id, id));
+    updatedHdr = {
+      ...updatedHdr,
       subtotal: totals.subtotal,
       taxAmount: totals.taxAmount,
       totalAmount: totals.totalAmount,
-    })
-    .where(eq(purchaseOrders.id, id));
-  updatedHdr = {
-    ...updatedHdr,
-    subtotal: totals.subtotal,
-    taxAmount: totals.taxAmount,
-    totalAmount: totals.totalAmount,
-  };
+    };
+  }
   await logPoEdit(tx, companyId, user, {
     before: existingHdr,
     after: updatedHdr,
@@ -2219,6 +2388,7 @@ export async function updatePurchaseOrderTx(
 
   return {
     ...toPurchaseOrder(updatedHdr),
+    totals: await loadPoTotals(tx, companyId, updatedHdr, showMoney),
     vendorName: null,
     lines: lineRows.map((r) =>
       toPurchaseOrderLine(
@@ -2260,7 +2430,9 @@ const PO_HEADER_FIELDS: readonly DiffField[] = [
     format: (v) => (v == null ? null : (PO_TYPE_LABEL[String(v)] ?? String(v))),
   },
   { key: 'dueDate', label: 'Due Date' },
-  { key: 'taxType', label: 'Tax Type' },
+  // ADR-246 — set by the server from the vendor's State; shown as the screens
+  // name it.
+  { key: 'taxType', label: 'Tax Type', format: taxTypeText },
   { key: 'prCodeText', label: 'PR No.' },
   { key: 'remarks', label: 'Remarks' },
 ];
@@ -3021,6 +3193,8 @@ export async function createPurchaseOrderFromPr(
   // Converting a PR raises a NEW PO — the `entry` action, same as create.
   await requireFormAccess(user, 'po_create', 'entry');
   const companyId = requireCompany(user);
+  // ADR-246 — the response's `totals`, same money gate as the detail read.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
     // Same lock ORDER as create / batch: PO series first, then the PR rows —
@@ -3118,11 +3292,17 @@ export async function createPurchaseOrderFromPr(
     }
 
     // Stored totals from the single PR-derived line (qty × est cost) + header tax.
+    // ADR-246 — ONE GST %, split by the PO's vendor's State.
+    const fromPrGst = await decidePoGst(
+      tx,
+      companyId,
+      overrideVendorId ?? pr.vendorId,
+      sentGstPercent(input.header),
+    );
     const fromPrTotals = computePoTotals(
       [{ qty: convertQty, rate: pr.estCost }],
-      Number(input.header.sgstPct ?? 0),
-      Number(input.header.cgstPct ?? 0),
-      Number(input.header.igstPct ?? 0),
+      fromPrGst.gstPercent,
+      fromPrGst.taxType,
     );
     // Insert PO header (vendor + audit-snapshot of PR code).
     const insertedPos = await tx
@@ -3145,10 +3325,10 @@ export async function createPurchaseOrderFromPr(
         // ADR-189 — draft while PO approval is on, like every other new PO.
         status: switches.poApproval ? ('draft' as const) : ('open' as const),
         dueDate: input.header.dueDate ?? pr.requiredDate ?? null,
-        taxType: input.header.taxType ?? null,
-        sgstPct: pctToString(input.header.sgstPct ?? 0),
-        cgstPct: pctToString(input.header.cgstPct ?? 0),
-        igstPct: pctToString(input.header.igstPct ?? 0),
+        taxType: fromPrGst.taxType,
+        sgstPct: fromPrGst.sgstPct,
+        cgstPct: fromPrGst.cgstPct,
+        igstPct: fromPrGst.igstPct,
         subtotal: fromPrTotals.subtotal,
         taxAmount: fromPrTotals.taxAmount,
         totalAmount: fromPrTotals.totalAmount,
@@ -3267,6 +3447,7 @@ export async function createPurchaseOrderFromPr(
 
     return {
       ...toPurchaseOrder(header),
+      totals: await loadPoTotals(tx, companyId, header, showMoney),
       vendorName: null,
       lines: insertedLines.map((row) => toPurchaseOrderLine(row, null, pr.code)),
     };
@@ -3348,6 +3529,9 @@ async function getPurchaseOrderInternal(
   tx: DbTransaction,
   id: string,
   companyId: string,
+  /** ADR-246 — the caller's money gate (canSeeFormPrice 'po_create'): the
+   *  response's `totals` is null when false, same rule as the detail read. */
+  showMoney: boolean,
 ): Promise<PurchaseOrderDetail> {
   const rows = await tx
     .select({ header: purchaseOrders, vendorName: vendors.name })
@@ -3391,6 +3575,7 @@ async function getPurchaseOrderInternal(
 
   return {
     ...toPurchaseOrder(row.header),
+    totals: await loadPoTotals(tx, companyId, row.header, showMoney),
     vendorName: row.vendorName,
     lines: lineRows.map((r) =>
       toPurchaseOrderLine(
@@ -3415,6 +3600,8 @@ export async function approvePurchaseOrder(
   // ADR-232: the Access Control tick alone decides — Approve on Purchase Orders.
   await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
+  // ADR-246 — the response's `totals`, same money gate as the detail read.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
     const { isApprover, isAdmin, approvalCeiling } = await loadApprovalContext(
@@ -3503,7 +3690,7 @@ export async function approvePurchaseOrder(
     // delivery follow-up ("Follow up on PO …"), not an approval request, and
     // nothing on the task tells the two apart.
 
-    return getPurchaseOrderInternal(tx, id, companyId);
+    return getPurchaseOrderInternal(tx, id, companyId, showMoney);
   });
 }
 
@@ -3515,6 +3702,8 @@ export async function rejectPurchaseOrder(
   // ADR-232: rejecting is the other half of approving — same tick, nothing else.
   await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
+  // ADR-246 — the response's `totals`, same money gate as the detail read.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
 
   if (!reason || !reason.trim()) {
     throw new ValidationError('Reason is required to Reject.');
@@ -3579,7 +3768,7 @@ export async function rejectPurchaseOrder(
       user,
     );
 
-    return getPurchaseOrderInternal(tx, id, companyId);
+    return getPurchaseOrderInternal(tx, id, companyId, showMoney);
   });
 }
 
@@ -3685,6 +3874,8 @@ export async function shortClosePurchaseOrder(
   // Approve tick alone decides.
   await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
+  // ADR-246 — the response's `totals`, same money gate as the detail read.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
   const reason = input.reason.trim();
   // The route's schema checks this too; the service is the guard for every
   // other caller (imports, scripts), so it checks again.
@@ -3785,7 +3976,7 @@ export async function shortClosePurchaseOrder(
       companyId,
       user,
     );
-    return getPurchaseOrderInternal(tx, id, companyId);
+    return getPurchaseOrderInternal(tx, id, companyId, showMoney);
   });
 }
 
@@ -3806,6 +3997,7 @@ export async function createPurchaseOrderFromPrBatch(
       poDate: string;
       poType?: 'standard' | 'job_work' | 'outsource' | 'service' | undefined;
       dueDate?: string | undefined;
+      gstPercent?: number | undefined;
       taxType?: 'sgst_cgst' | 'igst' | undefined;
       sgstPct?: number | undefined;
       cgstPct?: number | undefined;
@@ -3819,6 +4011,8 @@ export async function createPurchaseOrderFromPrBatch(
   // Batch conversion raises one NEW PO — the `entry` action, same as create.
   await requireFormAccess(user, 'po_create', 'entry');
   const companyId = requireCompany(user);
+  // ADR-246 — the response's `totals`, same money gate as the detail read.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
     // Load vendor (exists + in caller's company).
@@ -3908,11 +4102,12 @@ export async function createPurchaseOrderFromPrBatch(
     const batchRates = new Map(
       sortedPrs.map((pr) => [pr.id, String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost))]),
     );
+    // ADR-246 — ONE GST %, split by the vendor's State.
+    const batchGst = await decidePoGst(tx, companyId, input.vendorId, sentGstPercent(input.header));
     const batchTotals = computePoTotals(
       sortedPrs.map((pr) => ({ qty: batchQtyByPr.get(pr.id)!, rate: batchRates.get(pr.id)! })),
-      Number(input.header.sgstPct ?? 0),
-      Number(input.header.cgstPct ?? 0),
-      Number(input.header.igstPct ?? 0),
+      batchGst.gstPercent,
+      batchGst.taxType,
     );
 
     const insertedPos = await tx
@@ -3934,10 +4129,10 @@ export async function createPurchaseOrderFromPrBatch(
         // ADR-189 — draft while PO approval is on.
         status: switches.poApproval ? ('draft' as const) : ('open' as const),
         dueDate: input.header.dueDate ?? null,
-        taxType: input.header.taxType ?? null,
-        sgstPct: String(input.header.sgstPct ?? 0),
-        cgstPct: String(input.header.cgstPct ?? 0),
-        igstPct: String(input.header.igstPct ?? 0),
+        taxType: batchGst.taxType,
+        sgstPct: batchGst.sgstPct,
+        cgstPct: batchGst.cgstPct,
+        igstPct: batchGst.igstPct,
         subtotal: batchTotals.subtotal,
         taxAmount: batchTotals.taxAmount,
         totalAmount: batchTotals.totalAmount,
@@ -4053,6 +4248,7 @@ export async function createPurchaseOrderFromPrBatch(
     const batchPrCodeById = new Map(sortedPrs.map((pr) => [pr.id, pr.code]));
     return {
       ...toPurchaseOrder(header),
+      totals: await loadPoTotals(tx, companyId, header, showMoney),
       vendorName: vendorRow?.name ?? null,
       lines: insertedLines.map((row) =>
         toPurchaseOrderLine(

@@ -17,10 +17,13 @@ import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/erro
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { CLIENT_SF_COLUMNS } from './sf-columns';
 import {
+  applyCustomerGstRules,
   applyMasterRules,
+  customerBlockingIssues,
   dropBlankCells,
   issueTexts,
   loadMasterRuleSettings,
+  partyGstinRuleApplies,
   rawRowText,
   withWarnings,
   zodRowReason,
@@ -259,7 +262,7 @@ export async function createClient(
       // GST rules (plan v3 Step 2): warn mode → saved + `warnings`; enforce → 400.
       const settings = await loadMasterRuleSettings(tx, companyId);
       const gst = checkPartyGst(input);
-      const warnings = applyMasterRules(
+      const warnings = applyCustomerGstRules(
         gst.issues,
         settings.masterRulesMode,
         `Customer "${input.name.trim()}"`,
@@ -489,8 +492,12 @@ export async function createClientsBulk(
           } while (takenCodes.has(code.toLowerCase()));
         }
         const gst = checkPartyGst(c);
-        if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
-          skip(issueTexts(gst.issues).join(' '), code, name);
+        if (customerBlockingIssues(gst.issues, settings.masterRulesMode).length > 0) {
+          skip(
+            issueTexts(customerBlockingIssues(gst.issues, settings.masterRulesMode)).join(' '),
+            code,
+            name,
+          );
           continue;
         }
         takenCodes.add(code.toLowerCase());
@@ -559,8 +566,13 @@ export async function createClientsBulk(
         }
       }
       const gst = clientGstUpdate(before, patch);
-      if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
-        skip(issueTexts(gst.issues).join(' '), before.code, before.name);
+      const blocking = partyGstinRuleApplies(patch)
+        ? customerBlockingIssues(gst.issues, settings.masterRulesMode)
+        : settings.masterRulesMode === 'enforce'
+          ? gst.issues
+          : [];
+      if (blocking.length > 0) {
+        skip(issueTexts(blocking).join(' '), before.code, before.name);
         continue;
       }
       const set = { ...clientPlainUpdates(patch), ...gst.updates };
@@ -678,7 +690,9 @@ export async function updateClientTx(
 
   const settings = await loadMasterRuleSettings(tx, companyId);
   const gst = clientGstUpdate(before, input);
-  const warnings = applyMasterRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`);
+  const warnings = partyGstinRuleApplies(input)
+    ? applyCustomerGstRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`)
+    : applyMasterRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`);
 
   const updates: Record<string, unknown> = {
     updatedBy: user.id,
@@ -730,11 +744,23 @@ export async function updateClientOrStage(
     if (!(await isDocEditApprovalOn(tx, companyId))) return false;
     // "Editable" mirrors clientEditRegistryEntry.isLive: any live (not-Trash) customer.
     const rows = await tx
-      .select({ id: clients.id })
+      .select()
       .from(clients)
       .where(and(eq(clients.id, id), eq(clients.companyId, companyId), isNull(clients.deletedAt)))
       .limit(1);
-    return rows.length > 0;
+    const before = rows[0];
+    if (!before) return false;
+    // ADR-244: a GSTIN problem is refused to the person who typed it, not
+    // held for an approver who would then hit the same refusal.
+    if (partyGstinRuleApplies(input)) {
+      const settings = await loadMasterRuleSettings(tx, companyId);
+      applyCustomerGstRules(
+        clientGstUpdate(before, input).issues,
+        settings.masterRulesMode,
+        `Customer ${before.code}`,
+      );
+    }
+    return true;
   });
   if (shouldStage) {
     const request = await requestDocumentEdit('Client', id, input, input.expectedUpdatedAt, user);

@@ -1,100 +1,75 @@
-// The Print DC click logic, used by the ⋯
-// menu's Print item on the Customer Dispatch list.
+// Preview / ⬇ Download PDF for one Delivery Challan — used by the ⋯ menu on the
+// Customer Dispatch list (owner rule 2026-10-21: every document offers the
+// same two actions, Preview and Download PDF, instead of Print).
 //
 // The list is built from register rows, which carry no customer address, so
-// `start()` lazily reads the one dispatch (lines + clientId) and then the one
-// client, and prints once both have landed — the same shape as the JW invoice
-// register's print button. It returns a Promise that settles when the print
-// has fired, failed, or the row unmounted, so the ⋯ menu shows busy and cannot
-// fire a second print meanwhile (mirrors usePrintJc in job-cards).
+// the load reads the one dispatch (lines + clientId) and then the one client,
+// and builds the challan once both have landed. Both actions go through
+// runPrint (lib/print/preview-host.tsx): Preview opens the box AT THE CLICK
+// with "Loading preview…"; Download saves `<DC No.>.pdf`. The returned Promise
+// keeps the ⋯ busy, so a second click cannot fire meanwhile.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useClient } from '@/modules/clients/api';
-import { useMyCompany } from '@/modules/settings/api';
-import { useDispatchDetail } from '../api';
+import type { Client, Company, CustomerDispatchDetail } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { apiFetch } from '@/lib/api';
+import { runPrint } from '@/lib/print/preview-host';
+import { clientsKeys } from '@/modules/clients/api';
+import { companyKeys } from '@/modules/settings/api';
+import { dispatchKeys } from '../api';
 import { printDispatchChallan } from '../lib/print-dc';
 
-/** The dispatch to print: its id, or any row carrying `id` / `dispatchId`. */
-export type PrintDcTarget = string | { id: string } | { dispatchId: string };
+const TITLE = 'Delivery Challan';
 
-function targetId(t: PrintDcTarget): string {
-  if (typeof t === 'string') return t;
-  return 'dispatchId' in t ? t.dispatchId : t.id;
-}
-
-export function usePrintDc(target: PrintDcTarget): {
-  start: () => Promise<void>;
-  loading: boolean;
+export function usePrintDc(): {
+  preview: (dispatchId: string, code: string) => Promise<void>;
+  download: (dispatchId: string, code: string) => Promise<void>;
 } {
-  const dispatchId = targetId(target);
-  // `armed` gates the on-demand reads; `pending` means "print as soon as the
-  // data is in". The ref guards against printing twice if a query re-settles.
-  const [armed, setArmed] = useState(false);
-  const [pending, setPending] = useState(false);
-  const printedRef = useRef(false);
-  const waitRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
-  const settle = useCallback((): void => {
-    waitRef.current?.resolve();
-    waitRef.current = null;
-  }, []);
-  // A row that unmounts mid-fetch must not leave the ⋯ busy for ever.
-  useEffect(() => settle, [settle]);
+  const qc = useQueryClient();
 
-  const companyQuery = useMyCompany();
-  const detailQuery = useDispatchDetail(armed ? dispatchId : undefined);
-  const clientId = detailQuery.data?.clientId ?? undefined;
-  const clientQuery = useClient(clientId);
+  const load = useCallback(
+    async (dispatchId: string): Promise<() => unknown> => {
+      const [company, d] = await Promise.all([
+        qc
+          .fetchQuery({
+            queryKey: companyKeys.me(),
+            queryFn: () => apiFetch<Company>('/companies/me'),
+          })
+          .catch(() => undefined),
+        qc
+          .fetchQuery({
+            queryKey: dispatchKeys.detail(dispatchId),
+            queryFn: () => apiFetch<CustomerDispatchDetail>(`/customer-dispatches/${dispatchId}`),
+            staleTime: 0, // print what is saved now, not a cached copy
+          })
+          .catch(() => {
+            throw new Error('Could not load the dispatch to print. Try again.');
+          }),
+      ]);
+      // The client read is an enrichment: print with the customer name the
+      // dispatch carries if it failed.
+      const client = d.clientId
+        ? await qc
+            .fetchQuery({
+              queryKey: clientsKeys.detail(d.clientId),
+              queryFn: () => apiFetch<Client>(`/clients/${d.clientId}`),
+            })
+            .catch(() => undefined)
+        : undefined;
+      return () => printDispatchChallan(d, client, company);
+    },
+    [qc],
+  );
 
-  useEffect(() => {
-    if (!pending || printedRef.current) return;
-    if (companyQuery.isLoading) return;
-    if (detailQuery.isError) {
-      setPending(false);
-      settle();
-      window.alert('Could not load the dispatch to print. Try again.');
-      return;
-    }
-    const d = detailQuery.data;
-    if (!d) return;
-    // The client read is an enrichment: wait while it is in flight, print with
-    // the customer name the dispatch carries if it failed.
-    if (d.clientId && !clientQuery.isError && !clientQuery.data) return;
-
-    printedRef.current = true;
-    setPending(false);
-    settle();
-    if (!printDispatchChallan(d, clientQuery.data, companyQuery.data)) {
-      window.alert('Allow popups to print.');
-    }
-  }, [
-    pending,
-    detailQuery.data,
-    detailQuery.isError,
-    clientQuery.data,
-    clientQuery.isError,
-    companyQuery.data,
-    companyQuery.isLoading,
-    settle,
-  ]);
-
-  const start = useCallback((): Promise<void> => {
-    if (waitRef.current) return waitRef.current.promise;
-    let resolve: () => void = () => undefined;
-    const promise = new Promise<void>((r) => {
-      resolve = r;
-    });
-    waitRef.current = { promise, resolve };
-    printedRef.current = false;
-    setArmed(true);
-    // A previous load failed: the cached error would refuse this print at
-    // once (and every later one). Re-read first, then wait on the fresh result.
-    if (detailQuery.isError) {
-      void detailQuery.refetch().finally(() => setPending(true));
-    } else {
-      setPending(true);
-    }
-    return promise;
-  }, [detailQuery]);
-
-  return { start, loading: pending && (detailQuery.isFetching || clientQuery.isFetching) };
+  const preview = useCallback(
+    (dispatchId: string, code: string) =>
+      runPrint('preview', { title: TITLE, fileName: code }, () => load(dispatchId)),
+    [load],
+  );
+  const download = useCallback(
+    (dispatchId: string, code: string) =>
+      runPrint('download', { title: TITLE, fileName: code }, () => load(dispatchId)),
+    [load],
+  );
+  return { preview, download };
 }

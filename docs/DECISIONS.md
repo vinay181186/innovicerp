@@ -13937,3 +13937,227 @@ on the ⬇ click (separate chunks, ~166 kB gzip), never at app start.
 ### Consequences
 - A drawing downloads a stored file; an order is built from data, hence the library.
 - The PDF's text is an image (not selectable/searchable). Server-side PDF (option B) rejected: new infrastructure.
+
+## ADR-241: Every document print opens the in-app Preview box (Print · Download · ✕)
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner: audit "where this feature is necessary" → "go A+B")
+
+### Decision
+`openSheetPrintWindow` / `openSheetHtmlWindow` / `printWindow` no longer open a
+pop-up: they hand the finished document to `apps/web/src/lib/print/preview-host.tsx`
+(host mounted once in `routes/_authenticated.tsx`), which shows the SO/JWSO
+Preview box. `runPrint('preview'|'download', …)` is the one entry point for list
+and detail ⋯: preview opens the box at the click with "Loading preview…"; download
+saves `<document number>.pdf` (`asDownload` runs the same builder in download mode).
+List row ⋯ Preview + Download PDF added for PO, GRN, OSP DC, JW DC, Tax Invoice,
+ML BOM, ML Plan; "Print" became Preview + Download PDF on Dispatch DC, JW Invoice,
+JW Return, CMR, Job Card, Route Card. One hook per module loads the document fresh
+(staleTime 0). Register prints (dispatch/DC registers, daily report, machine queue)
+also open the box. A late or superseded preview load is dropped (sequence token).
+Not covered: PR, Party GRN, Store Issue, NC (no print exists — owner to decide).
+
+## ADR-243: SO / JWSO GST split (SGST + CGST or IGST) and round-off
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved 2026-10-17; decisions 2026-10-21)
+
+### Context
+
+The Sales Order and the Job Work Sales Order showed one "GST x%" line. The
+customer's State was never looked at, nothing was rounded to the rupee, the
+JWSO had no server total at all (only the browser summed it, cancelled lines
+included), and the JW Invoice print split CGST / SGST the opposite way to the
+Tax Invoice.
+
+### Decision
+
+1. ONE money roll-up, `computeGstTotals` (packages/shared/src/lib/gst-totals.ts),
+   in whole paise: GST = Subtotal × GST% rounded to paise; CGST = GST/2
+   rounded (the odd paisa), SGST = the rest — the GST Sales Register and JW
+   Invoice print split; IGST = all of it; Round-off = Grand
+   Total to the nearest rupee, 0.50 up, shown as its own line.
+2. The tax type comes from the existing Place-of-Supply rule
+   (`taxTypeForSupply`): customer State Code, else its GSTIN prefix, vs the
+   company's GSTIN; SEZ / Overseas → IGST. Nothing hard-codes Gujarat.
+3. Migration 0212 adds `tax_type` + `place_of_supply` to `sales_orders` and
+   `job_work_orders`. The SERVER sets them on every save
+   (apps/api/src/lib/order-totals.ts `decideOrderTax`); the browser never
+   sends them. Unknown State only WARNS on an order (owner decision 3), it
+   never refuses. No backfill: an order not saved since 0212 works its split
+   out live on read.
+4. SO and JWSO detail return `totals` (soTotalsSchema) from `orderTotals`;
+   forms, detail pages and prints show the same figures.
+5. Round-off on the Tax Invoice / JW Invoice: NOT in this change (owner
+   decision 1 — later; it changes the stored amount due).
+
+### Consequences
+
+- An old order shows the new split as soon as it is opened; it is saved on
+  the next edit.
+- Editing a customer's State later does not change a saved order until that
+  order is saved again (owner decision 2). A change of tax type / Place of
+  Supply on save is written to the order's History.
+- Open: the Tax Invoice print/detail (invoices/lib/gst-split.ts) still gives
+  the odd paisa to SGST and rounds in floats — align it in the invoice
+  round-off step. A legacy order (tax_type NULL) costs 2 extra reads per
+  detail load until it is saved.
+
+## ADR-244: Customer GSTIN compulsory
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved 2026-10-21)
+
+### Decision
+
+A customer's GST Category is required, and its GSTIN is required and must be
+valid unless the category is Unregistered or Overseas (and its first two
+digits must match the State). These problems REFUSE the save in every Master
+Rules Mode (`applyCustomerGstRules` / `customerBlockingIssues`,
+apps/api/src/lib/master-rules.ts) — create, edit, Excel import and the
+quick-add box on SO / JWSO. Other master-rule notes still follow the setting;
+vendors are unchanged. On an EDIT the hard stop applies only when the edit
+carries the GST fields (the Customer form always does; an Excel row or an
+approved staged edit of phone / address does not) and does not set the
+customer Inactive. The issue list is the shared `isCustomerHardIssue`; the
+GSTIN-vs-State clash carries `code: 'gstin_state_clash'`, not a text match.
+
+### Consequences
+
+- Existing customers without a GSTIN are untouched until edited; the edit
+  then asks for the GSTIN. Their SO / JWSO still save with the ADR-243 warning.
+
+## ADR-245: Client PO No. unique per customer, checked while typing
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved 2026-10-21). Narrows ADR-238.
+
+### Decision
+
+1. Client PO No. is unique per CUSTOMER within the SO list (and within the
+   JWSO list): the same number for a different customer is allowed — it is
+   the customer's own PO numbering. SO vs JWSO stays independent; cancelled
+   orders still count; legacy orders without a customer link compare only
+   with each other.
+2. One rule, `apps/api/src/lib/client-po-unique.ts`: white space (tabs, NBSP)
+   collapsed, trimmed, case-insensitive — identically in JS (`keyOf`) and SQL
+   (`SQL_KEY`). The save checks under an advisory lock keyed on list +
+   company + customer + number (§20.3), and re-checks when the number OR the
+   customer changes on edit. Trash restore passes the customer.
+3. Live check: `GET /sales-orders/client-po-check` and
+   `/job-work-orders/client-po-check` (`checkClientPoNo`, read-only, page view
+   right). The forms ask 500 ms after typing stops (`useClientPoCheck`), show
+   "Already used on IN-SO-… for this customer." under the box and block Save.
+   The order's own unchanged number + customer is never flagged (decided on
+   the server, not in the browser). The save is still the real guard.
+4. Same release: a read-only Customer Address next to Customer on SO / JWSO
+   create/edit (from the customer master, `partyAddressLines`); the JWSO
+   "Fills every line's Due Date" explanation removed (owner).
+
+### Consequences
+
+- No database change and no index; the check scans the company's live
+  orders (small today). Add an expression index if the lists grow large.
+- A failed live check is silent and does not block Save.
+
+## ADR-246: PO GST split by vendor State, one GST %, round-off; vendor GSTIN compulsory; Vendor Address
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved 2026-10-21; decisions 1-3 = recommendations)
+
+### Context
+
+The PO form only SUGGESTED SGST + CGST / IGST from the vendor and let the
+buyer override it; the server never checked. Three free % boxes accepted
+CGST 9 + SGST 5. No round-off. PR has no GST (Est. Cost only) — unchanged.
+
+### Decision
+
+1. One "GST %" (SO_GST_PERCENTS) on the PO form; the SERVER decides the tax
+   type from the vendor's State / GSTIN vs ours (`decideVendorTax`,
+   apps/api/src/lib/order-totals.ts) and stores the split itself
+   (`splitGstPercent`: CGST = half, SGST = rest; or IGST) in the existing
+   sgst/cgst/igst_pct columns. Browser taxType is ignored. Unknown State warns.
+2. Stored totals via `computeGstTotals`: tax_amount = GST, total_amount =
+   Grand Total rounded to the rupee (decision 1). All four save paths:
+   create, update, from PR, from PR batch. The auto zero-value OSP/RTV JW PO
+   is untouched.
+3. Nothing changes on a PO unless a user changes what drives it: on edit the
+   tax type / % / totals are recomputed ONLY when the GST %, the vendor or the
+   lines change, never on a locked PO. A remarks-only edit, or a later
+   vendor-master State change, never moves a saved PO.
+4. Detail / save responses return `totals` from the STORED figures
+   (`poTotalsFromStored`), so detail = list = reports = approval for old and
+   new POs; an old PO with mixed % gets totals = null and prints its stored
+   rows as before.
+5. Vendor GSTIN compulsory exactly like customers (ADR-244, decision 3),
+   sharing `applyCustomerGstRules` / `customerBlockingIssues` /
+   `partyGstinRuleApplies`; web rule helpers in settings/master-rules-ui.
+6. Read-only "Vendor Address" next to Vendor on the PO form.
+7. Approval limit unchanged: it compares Σ qty × rate (before tax).
+
+### Consequences
+
+- New POs carry a Round-off line; old POs keep their stored totals.
+- Open: the api test harness global-setup sweep fails on TEST data
+  (route_cards → T-prefixed items FK), so api tests could not be run.
+
+## ADR-247: Customer material deviated at Party GRN Incoming QC raises an NC
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved the plan 2026-10-21; "no rework"; TEST first, PROD on "push to main")
+
+### Context
+
+A vendor GRN reject raises a material NC automatically
+(`autoCreateMaterialNcFromIqcReject`). A Party GRN deviation raised nothing:
+the pieces sat "held" on the line until an IN-CMR returned them. The NC
+Register could not point at a Party GRN line, and after a deviation the JWSO
+line's Pending reopened at once, so replacements plus a later "use as is"
+could take a line above its order qty. 0 Party GRN lines were ever deviated on
+PROD, so no data needed converting.
+
+### Decision
+
+1. Migration 0213: `nc_register.party_grn_line_id`, the source CHECK accepts
+   it, `nc_disposition` gains `return_to_customer`.
+2. Party GRN QC raises the NC in the same transaction (item = the JWSO line's
+   customer RM item). One numbering/insert helper serves vendor and Party GRN.
+3. A customer-material NC takes only Use As Is, Return to Customer, Scrap
+   (`NC_CUSTOMER_MATERIAL_DISPOSITIONS`); whole pieces; Scrap needs Approve
+   and the customer's approval in Remarks. No rework (owner).
+   - Use As Is: the one writer `applyPartyGrnUseAsIs` (party-grn/deviation.ts)
+     moves rejected→accepted under the JWSO-line + line locks, caps Σ accepted
+     at order qty, posts the customer-material stock "in".
+   - Return to Customer: NC `disposed`; IN-CMR (kind rejected) fills
+     `rtv_sent_qty` and closes the NC when all went back (see point 7).
+4. One committed-qty rule `partyCommittedQtySql` (was copied 3×): waiting QC +
+   accepted + pieces under a PENDING NC. Used by the GRN create/edit cap, the
+   receivable JWSO picker and the JWSO order-qty floor.
+5. IN-CMR rejected returnable = rejected − returned − pieces under NCs that are
+   pending or scrapped (legacy pieces with no NC stay returnable).
+6. Party GRN cancel closes every NC on it that is not already closed ("Party
+   GRN <code> cancelled"); use-as-is pieces are reversed with the accepted qty
+   by the normal cancel reversal. (A first draft refused the cancel — review
+   found no NC undo exists, so a GRN would be stuck for good.) IN-CMR still
+   blocks a cancel while returned pieces exist.
+7. IN-CMR create/cancel run ONE deterministic rebalance of the line's
+   Return-to-Customer NCs (oldest first, from rejected_returned_qty), logging
+   every close/reopen in the NC History. Reopening a closed NC there is the one
+   documented exception to NC_STATUS_MOVES.
+8. A customer-material NC cannot be soft-deleted — it must be disposed.
+
+### Alternatives Considered
+
+- A separate "deviation" record outside the NC Register — rejected: a second
+  quality register, and every Σ-accepted reader would need to learn it.
+- Use As Is tracked on the NC only (not moving into accepted) — rejected:
+  issue, IN-CMR good, JWSO and report figures all read accepted.
+
+### Consequences
+
+- Positive: one quality flow for vendor and customer material; no 12-of-10.
+- Negative: a pending NC blocks replacements for its pieces until decided.
+- Risks: Party GRN cancel and IN-CMR create on the same GRN at the same moment
+  can deadlock (Postgres aborts one; retry). Vendor NC path refactored onto the
+  shared helper — behaviour kept.

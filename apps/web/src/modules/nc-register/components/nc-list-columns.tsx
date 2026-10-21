@@ -7,7 +7,8 @@
 // Rejected is the one number column (align 'right' -> the num kind); Item Name
 // is the one left-aligned text column that shares the spare width.
 //
-// ▸ expand (NcExpanded): POL · JC No. · Op · Rework done · CAPA No. — the extra
+// ▸ expand (NcExpanded): POL · JC No. (Party GRN No. on a customer-material
+// NC, ADR-247) · Op · Rework done · CAPA No. — the extra
 // facts the retired card showed on its meta line, shown in the fit table's one
 // detail row.
 
@@ -232,15 +233,22 @@ export function NcExpanded({
           '—'
         )}
       </Field>
-      <Field label="JC No.">
-        {nc.jcCode ? (
-          <span className="mono" style={{ color: 'var(--cyan)' }}>
-            {nc.jcCode}
-          </span>
-        ) : (
-          '—'
-        )}
-      </Field>
+      {/* ADR-247 — a customer-material NC has no JC; its source is the Party GRN. */}
+      {nc.partyGrnLineId && !nc.jcCode ? (
+        <Field label="Party GRN No.">
+          <span className="mono">{nc.sourcePartyGrnCode ?? '—'}</span>
+        </Field>
+      ) : (
+        <Field label="JC No.">
+          {nc.jcCode ? (
+            <span className="mono" style={{ color: 'var(--cyan)' }}>
+              {nc.jcCode}
+            </span>
+          ) : (
+            '—'
+          )}
+        </Field>
+      )}
       <Field label="Op">{opText ?? '—'}</Field>
       <Field label="Rework done">{reworkDone}</Field>
       <Field label="CAPA No.">
@@ -302,10 +310,25 @@ export function ncRowMenu(
     canCreateCapa: boolean;
     canAssign: boolean;
     onAssign: (nc: NcRegisterListItem) => void;
+    /** NC Report Preview / Download PDF (use-nc-print). */
+    onPrint: (action: 'preview' | 'download', nc: NcRegisterListItem) => Promise<void>;
   },
 ): RowMenuItem[] {
-  const items: RowMenuItem[] = [];
   const to = `/nc-register/${nc.id}`;
+  const items: RowMenuItem[] = [
+    {
+      key: 'preview',
+      label: 'Preview',
+      icon: 'eye',
+      onSelect: () => void opts.onPrint('preview', nc),
+    },
+    {
+      key: 'download',
+      label: 'Download PDF',
+      icon: 'download',
+      onSelect: () => opts.onPrint('download', nc),
+    },
+  ];
 
   if (opts.canDispose && nc.status === 'pending') {
     items.push({ key: 'dispose', label: 'Dispose', icon: 'pencil', group: 'workflow', to });

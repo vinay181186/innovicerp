@@ -19,6 +19,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useJwDcOutwardDetail, useJwDcOutwardList } from '../api';
 import { outwardColumns } from './outward-columns';
+import { useJwDcPrint } from './use-jwdc-print';
 import { NewOutwardModal } from './new-outward-modal';
 
 const TABLE_KEY = TABLE_KEYS.jwDcOutward;
@@ -32,6 +33,7 @@ export function OutwardView({
   initialSearch?: string | undefined;
 }): React.JSX.Element {
   const navigate = useNavigate();
+  const jwDcPrint = useJwDcPrint();
   // Same right the server checks (ADR-193): OSP Outward DC entry.
   const { data: eff } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'ospdc_create').entry;
@@ -137,7 +139,26 @@ export function OutwardView({
             onToggleExpanded={(dc) => toggleExpand(dc.id)}
             rowActionsWidth="1%"
             rowActions={(dc: JwDcOutwardListItem) => (
-              <RowActions viewTo={`/jw-dc/${dc.id}`} renderLink={(p) => <Link {...p} />} />
+              <RowActions
+                viewTo={`/jw-dc/${dc.id}`}
+                renderLink={(p) => <Link {...p} />}
+                items={[
+                  {
+                    key: 'preview',
+                    label: 'Preview',
+                    icon: 'eye',
+                    onSelect: () =>
+                      jwDcPrint('preview', { id: dc.id, code: dc.code, vendorId: dc.vendorId }),
+                  },
+                  {
+                    key: 'download',
+                    label: 'Download PDF',
+                    icon: 'download',
+                    onSelect: () =>
+                      jwDcPrint('download', { id: dc.id, code: dc.code, vendorId: dc.vendorId }),
+                  },
+                ]}
+              />
             )}
           />
         </Panel>

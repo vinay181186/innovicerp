@@ -212,7 +212,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
-      // Land on the new dispatch — Print DC and Create Invoice are right there,
+      // Land on the new dispatch — Preview / Download PDF and Create Invoice are right there,
       // instead of hunting for the new DSP on the list.
       exit.leave(() => void navigate({ to: '/customer-dispatches/$id', params: { id: saved.id } }));
     } catch (e) {

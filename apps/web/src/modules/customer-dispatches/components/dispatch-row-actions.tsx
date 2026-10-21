@@ -1,6 +1,7 @@
 // Per-row ⋯ menu for the Customer Dispatch FIT table (ADR-199). Carries the
-// controls the old DispatchCard had: Print DC (usePrintDc — lazily reads the
-// dispatch + client, prints once; the ⋯ stays busy until it has fired),
+// controls the old DispatchCard had: Preview / Download PDF of the DC
+// (usePrintDc — reads the dispatch + client on the click; the ⋯ stays busy
+// until the box shows / the PDF is saved),
 // Invoice (open the pre-filled Create Invoice form) and Cancel (reverse the
 // dispatch, via the caller's CancelDispatchModal). All in the one ⋯ row menu
 // (RowActions / RowMenu, owner spec 2026-10-01). A cancelled dispatch was
@@ -28,8 +29,8 @@ export function DispatchRowActions(props: {
   const cancelled = g.status === 'cancelled';
   const viewTo = `/customer-dispatches/${g.dispatchId}`;
   // Called before the early return so the hook order never changes; it reads
-  // nothing until Print DC is picked.
-  const printDc = usePrintDc(g.dispatchId);
+  // nothing until Preview / Download PDF is picked.
+  const printDc = usePrintDc();
 
   // Cancelled dispatch: nothing to print, bill or reverse — just View.
   if (cancelled) {
@@ -37,7 +38,18 @@ export function DispatchRowActions(props: {
   }
 
   const items: RowMenuItem[] = [
-    { key: 'print', label: 'Print DC', icon: 'printer', onSelect: printDc.start },
+    {
+      key: 'preview',
+      label: 'Preview',
+      icon: 'eye',
+      onSelect: () => printDc.preview(g.dispatchId, g.code),
+    },
+    {
+      key: 'download',
+      label: 'Download PDF',
+      icon: 'download',
+      onSelect: () => printDc.download(g.dispatchId, g.code),
+    },
   ];
   // Fully invoiced — nothing left to bill, so no Invoice entry (card's gate).
   if (props.canInvoice && props.billedStatus !== 'full') {

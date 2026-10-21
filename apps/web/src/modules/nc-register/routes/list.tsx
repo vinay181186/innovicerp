@@ -30,6 +30,7 @@ import { ListFooter, PageState } from '@/ui/layout';
 import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
 import { NcListHeader } from '../components/nc-list-header';
+import { useNcPrint } from '../components/use-nc-print';
 import {
   NC_LIST_HIDDEN_COLUMNS,
   NcExpanded,
@@ -156,6 +157,8 @@ function NcRegisterListPage(): React.JSX.Element {
   // ADR-202 — NC ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('NonConformance');
   const columns = useMemo(() => ncListColumns(draftIds), [draftIds]);
+  // ⋯ Preview / Download PDF — the NC Report, fetched fresh per click.
+  const ncPrint = useNcPrint();
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -295,6 +298,7 @@ function NcRegisterListPage(): React.JSX.Element {
                     canCreateCapa,
                     canAssign: ncPerms.advance,
                     onAssign: setAssignTarget,
+                    onPrint: (action, nc) => ncPrint(action, nc, draftIds.has(nc.id)),
                   })
                 }
                 renderLink={(p) => <Link {...p} />}

@@ -93,6 +93,10 @@ export function EditPartyGrnModal({
   const onSave = (): void => {
     setErr(null);
     if (!d) return;
+    if (!dcNo.trim()) {
+      setErr('Customer Challan No. is required.');
+      return;
+    }
 
     const payloadLines: UpdatePartyGrnInput['lines'] = [];
     for (const l of lines) {
@@ -110,7 +114,8 @@ export function EditPartyGrnModal({
 
     const input: UpdatePartyGrnInput = {
       grnDate,
-      dcNo: dcNo.trim() || undefined,
+      // Never null / blank — the server refuses it. Sent only when changed.
+      dcNo: dcNo.trim() !== (d.dcNo ?? '') ? dcNo.trim() : undefined,
       receivedBy: receivedBy.trim() || undefined,
       remarks: remarks.trim() || undefined,
       lines: payloadLines,
@@ -243,13 +248,14 @@ export function EditPartyGrnModal({
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="epgrn-dc">
-                  Customer Challan No.
+                  Customer Challan No.<span className="req">★</span>
                 </label>
                 <input
                   id="epgrn-dc"
                   type="text"
                   className="innovic-input"
                   autoComplete="off"
+                  maxLength={64}
                   value={dcNo}
                   onChange={(e) => setDcNo(e.target.value)}
                   style={{ maxWidth: '24ch' }}
@@ -271,7 +277,7 @@ export function EditPartyGrnModal({
               </div>
               <div className="form-grp form-full">
                 <label className="form-label" htmlFor="epgrn-remarks">
-                  Remarks
+                  GRN Remarks
                 </label>
                 <input
                   id="epgrn-remarks"

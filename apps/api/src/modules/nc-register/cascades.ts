@@ -50,6 +50,7 @@
 
 import {
   ActivityAction,
+  NC_CUSTOMER_MATERIAL_DISPOSITIONS,
   NC_DISPOSITION_LABELS,
   NC_STATUS_LABELS,
   NC_STATUS_MOVES,
@@ -80,6 +81,8 @@ import { assertRowUpdated } from '../../lib/row-lock';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
+// ADR-247 — the one writer that moves Party GRN deviated qty back to accepted.
+import { applyPartyGrnUseAsIs } from '../party-grn/deviation';
 import { reinjectLogType } from './reinject-log-type';
 import { cascadeJcCompleteUpChain } from '../op-entry/sales-cascade';
 import { climbRecoveryToAncestors, createRecoveryJobCard, ncOpenQty } from './recovery';
@@ -117,6 +120,13 @@ export interface NcSource {
   sourcePoCode: string | null;
   sourceGrnCode: string | null;
   isVendorSourced: boolean;
+  // ─── ADR-247 customer material (Party GRN Incoming QC) ──────────────────────
+  /** party_grn.code of the Party GRN line the NC was raised on. */
+  sourcePartyGrnCode: string | null;
+  /** The JWSO the customer material came in against (live code, else snapshot). */
+  sourceJwCode: string | null;
+  /** The customer who owns the material (clients.name, else the JWSO's name). */
+  sourceCustomerName: string | null;
   // ─── ADR-217 document links ────────────────────────────────────────────────
   /** The zero-value job-work order this return raised (nc.replacement_po_id).
    *  Null on every NC disposed before ADR-217, on every disposition that is not
@@ -155,6 +165,9 @@ const EMPTY_NC_SOURCE: NcSource = {
   sourcePoCode: null,
   sourceGrnCode: null,
   isVendorSourced: false,
+  sourcePartyGrnCode: null,
+  sourceJwCode: null,
+  sourceCustomerName: null,
   ...EMPTY_NC_DOC_LINKS,
 };
 
@@ -224,6 +237,8 @@ export async function resolveNcSource(
   nc: {
     grnLineId: string | null;
     jcOpId: string | null;
+    /** ADR-247. Optional for the same reason as the two ADR-217 links. */
+    partyGrnLineId?: string | null;
     /** ADR-217. Optional so the callers that only need `isVendorSourced` (the
      *  dispose guard, the flow view) can keep passing the two links they have. */
     replacementPoId?: string | null;
@@ -233,6 +248,33 @@ export async function resolveNcSource(
   // ADR-217 — the two documents this NC points at, independent of which source
   // branch below answers.
   const links = await resolveNcDocLinks(tx, companyId, nc);
+  // (0) ADR-247 — customer material deviated at Party GRN Incoming QC. The
+  // customer owns it: NOT vendor-sourced, so the vendor fields stay null. Same
+  // joins as the NC list reader's party_grn hop; keep the two in step. No
+  // deleted_at filter on the Party GRN: a cancelled GRN closes its NCs and must
+  // still be shown as their source.
+  if (nc.partyGrnLineId) {
+    const rows = (await tx.execute(sql`
+      SELECT pg.code AS "partyGrnCode",
+             COALESCE(jw.code, pg.jw_code_text) AS "jwCode",
+             COALESCE(cl.name, jw.customer_name) AS "customerName"
+      FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id
+      LEFT JOIN public.job_work_orders jw
+        ON jw.id = pg.job_work_order_id AND jw.deleted_at IS NULL
+      LEFT JOIN public.clients cl ON cl.id = pg.client_id AND cl.deleted_at IS NULL
+      WHERE pgl.id = ${nc.partyGrnLineId}::uuid AND pgl.company_id = ${companyId}::uuid
+      LIMIT 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    const r = rows[0];
+    return {
+      ...EMPTY_NC_SOURCE,
+      sourcePartyGrnCode: (r?.['partyGrnCode'] as string | null) ?? null,
+      sourceJwCode: (r?.['jwCode'] as string | null) ?? null,
+      sourceCustomerName: (r?.['customerName'] as string | null) ?? null,
+      ...links,
+    };
+  }
   // (a) Incoming-QC reject: the GRN line names the vendor directly.
   if (nc.grnLineId) {
     const rows = (await tx.execute(sql`
@@ -255,6 +297,9 @@ export async function resolveNcSource(
       sourcePoCode: (r?.['poCode'] as string | null) ?? null,
       sourceGrnCode: (r?.['grnCode'] as string | null) ?? null,
       isVendorSourced: true,
+      sourcePartyGrnCode: null,
+      sourceJwCode: null,
+      sourceCustomerName: null,
       ...links,
     };
   }
@@ -284,6 +329,9 @@ export async function resolveNcSource(
         sourcePoCode: (r['poCode'] as string | null) ?? null,
         sourceGrnCode: null,
         isVendorSourced: true,
+        sourcePartyGrnCode: null,
+        sourceJwCode: null,
+        sourceCustomerName: null,
         ...links,
       };
     }
@@ -391,6 +439,23 @@ export async function disposeNcCascade(
     );
   }
 
+  // ADR-247 — customer material (raised at Party GRN Incoming QC) belongs to
+  // the customer: it is used as is, sent back on a Customer Material Return, or
+  // scrapped with the customer's say-so. Nothing else applies to it, and
+  // nothing else may be "returned to customer".
+  const isCustomerMaterial = loaded.partyGrnLineId != null;
+  if (
+    isCustomerMaterial &&
+    !(NC_CUSTOMER_MATERIAL_DISPOSITIONS as readonly string[]).includes(input.action)
+  ) {
+    throw new ValidationError(
+      'Customer material can only be Used As Is, Returned to Customer or Scrapped.',
+    );
+  }
+  if (!isCustomerMaterial && input.action === 'return_to_customer') {
+    throw new ValidationError('Return to Customer is only for customer material (Party GRN).');
+  }
+
   // Interlock 2: never disposition more than the NC still owes.
   const open = ncOpenQty(loaded);
   const qty = roundQty(input.qty ?? open);
@@ -411,6 +476,13 @@ export async function disposeNcCascade(
     .limit(1);
   const uomProblem = qtyUomProblem(qty, itemRows[0]?.uom ?? null, 'Disposition Qty');
   if (uomProblem) throw new ValidationError(uomProblem);
+  // ADR-247 — customer material is received, held and returned in whole pieces
+  // (party_grn_lines quantities are integers), whatever the item's unit says.
+  if (isCustomerMaterial && !Number.isInteger(qty)) {
+    throw new ValidationError(
+      `Customer material is counted in whole pieces — enter a whole Qty (not ${qty}).`,
+    );
+  }
   // Rework / repair / make fresh raise a job card, and Use As Is books the
   // pieces back onto a job-card operation — both count whole pieces. Refuse a
   // fraction rather than round it silently.
@@ -434,6 +506,13 @@ export async function disposeNcCascade(
   // including the split below.
   if (input.action === 'scrap') {
     await requireFormAccess(ctx.user, 'nc_dispose', 'approve');
+    // ADR-247 — the pieces are the customer's: scrapping them needs the
+    // customer's agreement, written down where the NC keeps it.
+    if (isCustomerMaterial && !input.remarks?.trim()) {
+      throw new ValidationError(
+        "Write the customer's approval in Remarks to scrap customer material.",
+      );
+    }
   }
 
   // WI5: match the disposition to where the material CAME FROM. Vendor-sourced
@@ -528,6 +607,8 @@ export async function disposeNcCascade(
         timeLogged: loaded.timeLogged,
         qcLogId: loaded.qcLogId,
         grnLineId: loaded.grnLineId,
+        // ADR-247: the remainder is the same customer material on the same line.
+        partyGrnLineId: loaded.partyGrnLineId,
         // ADR-217: which challan the pieces went out on cannot be re-derived —
         // there is no piece tracking in this system — so the remainder must
         // inherit it or the fact is lost for that half of the rejection.
@@ -588,6 +669,67 @@ export async function disposeNcCascade(
 
   // Whole for a job-card NC (checked above); up to 3 decimals for a bought KG reject.
   const rejectedQtyNow = roundQty(Number(nc.rejectedQty));
+
+  // ADR-247 — CUSTOMER material deviated at Party GRN Incoming QC. No job card
+  // stands behind it, so this runs before the bought-material branch below
+  // (which would otherwise claim every card-less NC). The action is already
+  // one of the three (checked above, before the split).
+  if (nc.partyGrnLineId) {
+    const disposed = {
+      disposition: input.action,
+      dispositionDate: today,
+      dispositionByText: ctx.userName,
+      // ADR-197 — the live user behind the text snapshot.
+      dispositionBy: ctx.userId,
+      dispositionAt: new Date(),
+      dispositionRemarks: input.remarks ?? null,
+      updatedBy: ctx.userId,
+    } as const;
+    if (input.action === 'use_as_is') {
+      // The pieces join the accepted customer stock: the Party GRN line's
+      // rejected → accepted move, the JWSO cap re-check and the stock 'in' all
+      // belong to that line's one writer (it locks the JWSO line, then the
+      // Party GRN line — nothing here has locked either).
+      await applyPartyGrnUseAsIs(
+        tx,
+        {
+          companyId: ctx.companyId,
+          partyGrnLineId: nc.partyGrnLineId,
+          qty: rejectedQtyNow,
+          ncCode: nc.code,
+        },
+        ctx.user,
+      );
+      await setPendingNc(tx, ncId, loaded.code, {
+        ...disposed,
+        status: 'closed',
+        clearedQty: rejectedQtyNow.toFixed(3),
+        closedAt: new Date(),
+        closedBy: ctx.userId,
+      });
+      result.status = 'closed';
+      return result;
+    }
+    if (input.action === 'scrap') {
+      // Written off with the customer's approval (Remarks, checked above). The
+      // pieces never entered the party store, so nothing is posted.
+      await setPendingNc(tx, ncId, loaded.code, {
+        ...disposed,
+        status: 'closed',
+        failedQty: rejectedQtyNow.toFixed(3),
+        scrapCost: Math.max(0, input.scrapCost ?? 0).toFixed(2),
+        closedAt: new Date(),
+        closedBy: ctx.userId,
+      });
+      result.status = 'closed';
+      return result;
+    }
+    // return_to_customer — 'disposed' until the pieces go back on a Customer
+    // Material Return (IN-CMR), which raises rtv_sent_qty and closes the NC.
+    await setPendingNc(tx, ncId, loaded.code, { ...disposed, status: 'disposed' });
+    result.status = 'disposed';
+    return result;
+  }
 
   // ADR-189 — a BOUGHT-MATERIAL reject: raised by Incoming QC on a GRN line
   // that no job card stands behind (job_card_id NULL, grn_line_id set). The
@@ -1259,14 +1401,102 @@ export async function autoCreateMaterialNcFromIqcReject(
     .limit(1);
   const itemCode = itemRows[0]?.code ?? line.itemCodeText ?? '';
 
-  let code = await nextNcCode(tx, ctx.companyId);
+  const reason =
+    ctx.remarks && ctx.remarks.length > 0
+      ? `Auto-created from Incoming QC: ${ctx.remarks}`
+      : `Auto-created from Incoming QC on ${ctx.grnCode} Row #${ctx.lineNo}`;
+  return insertJobCardlessMaterialNc(
+    tx,
+    {
+      companyId: ctx.companyId,
+      ncDate: ctx.ncDate,
+      itemId: line.itemId,
+      itemCodeText: itemCode,
+      itemNameText: line.itemName,
+      rejectedQty: ctx.rejectedQty,
+      reason,
+      reportedByText: ctx.reportedByText,
+      source: { grnLineId: ctx.grnLineId },
+      detail: `bought material deviated at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo}`,
+    },
+    user,
+  );
+}
+
+/**
+ * ADR-247 — the NC for CUSTOMER material deviated at Party GRN Incoming QC.
+ * Same shape as the bought-material NC above (no job card, the receipt line is
+ * the trail) but the line is a Party GRN line, so party_grn_line_id is set and
+ * grn_line_id stays NULL. The caller (party-grn/qc.ts) runs this inside its QC
+ * transaction and resolves the item itself (the JWSO line's RM item). The NC is
+ * disposed Use As Is / Return to Customer / Scrap only (disposeNcCascade).
+ */
+export async function autoCreatePartyGrnMaterialNc(
+  tx: DbTransaction,
+  input: {
+    companyId: string;
+    partyGrnLineId: string;
+    partyGrnCode: string;
+    lineNo: number;
+    itemId: string;
+    itemCodeText: string;
+    itemNameText: string | null;
+    rejectedQty: number;
+    ncDate: string;
+    reportedByText: string | null;
+    reason: string;
+  },
+  user: AuthContext,
+): Promise<{ id: string; code: string }> {
+  return insertJobCardlessMaterialNc(
+    tx,
+    {
+      companyId: input.companyId,
+      ncDate: input.ncDate,
+      itemId: input.itemId,
+      itemCodeText: input.itemCodeText,
+      itemNameText: input.itemNameText,
+      rejectedQty: input.rejectedQty,
+      reason: `Auto-created from Party GRN Incoming QC: ${input.reason} on ${input.partyGrnCode} Ln ${input.lineNo}`,
+      reportedByText: input.reportedByText,
+      source: { partyGrnLineId: input.partyGrnLineId },
+      detail: `customer material deviated at Party GRN Incoming QC, ${input.partyGrnCode} Ln ${input.lineNo}`,
+    },
+    user,
+  );
+}
+
+/**
+ * The ONE writer of a job-card-less material NC (vendor GRN line or Party GRN
+ * line): takes the next NC-##### number, steps past a taken one, inserts the
+ * row as 'pending' and writes its CREATE audit row. `source` names exactly one
+ * receipt line, so the CHECK nc_register_job_card_or_grn_line holds.
+ */
+async function insertJobCardlessMaterialNc(
+  tx: DbTransaction,
+  row: {
+    companyId: string;
+    ncDate: string;
+    itemId: string;
+    itemCodeText: string;
+    itemNameText: string | null;
+    rejectedQty: number;
+    reason: string;
+    reportedByText: string | null;
+    source: { grnLineId: string } | { partyGrnLineId: string };
+    /** The tail of the audit detail, after the item and qty. */
+    detail: string;
+  },
+  user: AuthContext,
+): Promise<{ id: string; code: string }> {
+  let code = await nextNcCode(tx, row.companyId);
   for (let attempt = 0; attempt < 5; attempt++) {
     const dup = await tx
       .select({ id: ncRegister.id })
       .from(ncRegister)
       .where(
         and(
-          eq(ncRegister.companyId, ctx.companyId),
+          eq(ncRegister.companyId, row.companyId),
           eq(ncRegister.code, code),
           isNull(ncRegister.deletedAt),
         ),
@@ -1276,25 +1506,21 @@ export async function autoCreateMaterialNcFromIqcReject(
     code = nextNcCodeFrom([code]);
   }
 
-  const reason =
-    ctx.remarks && ctx.remarks.length > 0
-      ? `Auto-created from Incoming QC: ${ctx.remarks}`
-      : `Auto-created from Incoming QC on ${ctx.grnCode} Row #${ctx.lineNo}`;
   const inserted = await tx
     .insert(ncRegister)
     .values({
-      companyId: ctx.companyId,
+      companyId: row.companyId,
       code,
-      ncDate: ctx.ncDate,
+      ncDate: row.ncDate,
       jobCardId: null,
-      itemId: line.itemId,
-      itemCodeText: itemCode,
-      itemNameText: line.itemName,
-      rejectedQty: ctx.rejectedQty.toFixed(3),
-      reason,
+      itemId: row.itemId,
+      itemCodeText: row.itemCodeText,
+      itemNameText: row.itemNameText,
+      rejectedQty: row.rejectedQty.toFixed(3),
+      reason: row.reason,
       status: 'pending',
-      reportedByText: ctx.reportedByText,
-      grnLineId: ctx.grnLineId,
+      reportedByText: row.reportedByText,
+      ...row.source,
       createdBy: user.id,
       updatedBy: user.id,
     })
@@ -1309,11 +1535,11 @@ export async function autoCreateMaterialNcFromIqcReject(
       entity: 'NonConformance',
       entityId: nc.id,
       refId: nc.code,
-      qty: ctx.rejectedQty,
-      operatorName: ctx.reportedByText,
-      detail: `${nc.code} — ${itemCode} qty=${ctx.rejectedQty.toFixed(3)} (bought material deviated at Incoming QC, ${ctx.grnCode} Row #${ctx.lineNo})`,
+      qty: row.rejectedQty,
+      operatorName: row.reportedByText,
+      detail: `${nc.code} — ${row.itemCodeText} qty=${row.rejectedQty.toFixed(3)} (${row.detail})`,
     },
-    ctx.companyId,
+    row.companyId,
     user,
   );
   return nc;

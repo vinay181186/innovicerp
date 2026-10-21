@@ -85,6 +85,9 @@ beforeAll(async () => {
       companyId: u.companyId,
       code: `${TEST_PREFIX}VEND`,
       name: 'RC test vendor',
+      // ADR-244 / ADR-246 — a valid vendor: Unregistered (no GSTIN), Gujarat.
+      gstCategory: 'unregistered',
+      stateCode: '24',
       createdBy: admin.id,
       updatedBy: admin.id,
     })

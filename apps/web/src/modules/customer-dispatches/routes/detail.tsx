@@ -1,5 +1,5 @@
 // Customer Dispatch — one dispatch as a record: what went, on which SO, and
-// the Delivery Challan that travels with the truck (Print DC). Save on
+// the Delivery Challan that travels with the truck (Preview / Download PDF). Save on
 // /customer-dispatches/new lands here, so the DC can be printed and the
 // invoice raised without hunting for the new DSP on the list.
 //
@@ -21,6 +21,7 @@ import {
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
+import { runPrint } from '@/lib/print/preview-host';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { useClient } from '@/modules/clients/api';
 import { useMyCompany } from '@/modules/settings/api';
@@ -123,13 +124,20 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => {
-                if (!printDispatchChallan(d, client, company)) {
-                  window.alert('Allow popups to print.');
-                }
-              }}
+              onClick={() => printDispatchChallan(d, client, company)}
             >
-              🖨 Print DC
+              Preview
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() =>
+                void runPrint('download', { title: 'Delivery Challan', fileName: d.code }, () =>
+                  Promise.resolve(() => printDispatchChallan(d, client, company)),
+                )
+              }
+            >
+              ⬇ Download PDF
             </button>
             {/* ADR-234 — shown only to an Invoice Entry holder. */}
             {!cancelled && d.billedStatus !== 'full' ? (

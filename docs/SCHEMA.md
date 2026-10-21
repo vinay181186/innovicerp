@@ -879,6 +879,8 @@ Eleven binding sub-decisions; the most consequential first.
 
 11. **`gst_percent` is header-level on `sales_orders`** (matches legacy data — same value across all lines of SO-436). If a future SO has per-line GST, we promote to lines; current data doesn't need it.
 
+12. **`tax_type` + `place_of_supply` on `sales_orders` and `job_work_orders`** (migration 0212, ADR-243). `tax_type text NULL` CHECK `'sgst_cgst' | 'igst'` (`sales_orders_tax_type_check` / `job_work_orders_tax_type_check`); `place_of_supply char(2) NULL` (GST State Code, 96 = overseas). Set by the server on every save from the customer's State / GSTIN; NULL = State unknown or not saved since 0212. No amount columns — totals are computed on read (`apps/api/src/lib/order-totals.ts`).
+
 ### Phase 4 Enums
 
 ```sql
@@ -1492,10 +1494,16 @@ Indexes:
 - `(company_id, nc_date) where deleted_at is null`
 - `(jc_op_id) where jc_op_id is not null`
 - `(item_id)`
+- `nc_register_party_grn_line_idx (party_grn_line_id) where party_grn_line_id is not null and deleted_at is null` (0213)
+
+`party_grn_line_id uuid → party_grn_lines(id)` (0213, ADR-247): set on an NC raised for
+customer material deviated at Party GRN Incoming QC. Such an NC takes only `use_as_is`,
+`return_to_customer` (enum value added by 0213) or `scrap`.
 
 CHECK constraints:
 
 - `nc_register_rejected_qty_positive` — `rejected_qty > 0`
+- `nc_register_job_card_or_grn_line` — `job_card_id IS NOT NULL OR grn_line_id IS NOT NULL OR party_grn_line_id IS NOT NULL` (third source added by 0213)
 - `nc_register_rework_done_qty_check` — `rework_done_qty IS NULL OR rework_done_qty >= 0`
 
 RLS:

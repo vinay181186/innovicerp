@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { activityReasonSchema } from '@innovic/shared';
+import { activityReasonSchema, clientPoCheckQuerySchema } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
@@ -21,6 +21,12 @@ export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listJobWorkOrdersQuerySchema.parse(req.query);
     return service.listJobWorkOrders(query, req.user);
+  });
+
+  // ADR-245 — live Client PO No. check (per customer) while the form is typed.
+  app.get('/job-work-orders/client-po-check', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.checkJwClientPoNo(clientPoCheckQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/job-work-orders/:id', async (req) => {

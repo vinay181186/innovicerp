@@ -168,11 +168,18 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
             onToggleExpanded={(r) => toggleExpand(r.id)}
             rowMenu={(r) => [
               {
-                key: 'print',
-                label: 'Print',
-                icon: 'printer',
+                key: 'preview',
+                label: 'Preview',
+                icon: 'eye',
                 hidden: r.status === 'cancelled',
-                onSelect: () => printCmr(r.id),
+                onSelect: () => printCmr.preview(r.id, r.code),
+              },
+              {
+                key: 'download',
+                label: 'Download PDF',
+                icon: 'download',
+                hidden: r.status === 'cancelled',
+                onSelect: () => printCmr.download(r.id, r.code),
               },
               {
                 key: 'cancel',
@@ -199,7 +206,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
       ) : null}
 
       {showModal && canCreate ? (
-        <NewCmrModal onClose={() => setShowModal(false)} onPrint={printCmr} />
+        <NewCmrModal onClose={() => setShowModal(false)} docPrint={printCmr} />
       ) : null}
       {cancelRow ? <CancelCmrModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
     </div>

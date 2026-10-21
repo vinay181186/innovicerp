@@ -23,6 +23,7 @@ import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company
 import { amountInWords, fmtDate, inrFormat, templatesToBlocks } from '@/lib/print/doc-print';
 import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { gstTaxRows, signedRoundOff } from '@/modules/sales-orders/lib/gst-rows';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -91,25 +92,37 @@ export function printPurchaseOrder(args: {
   // worked out (subtotal × (SGST + CGST + IGST) / 100). The line sum is only a
   // fallback for a PO whose roll-up was never stored.
   const lineSubtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
-  const subtotal = po.subtotal ?? Number(lineSubtotal.toFixed(2));
+  const subtotal = po.totals?.subtotal ?? po.subtotal ?? Number(lineSubtotal.toFixed(2));
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
   const sgstPct = Number(po.sgstPct) || 0;
   const cgstPct = Number(po.cgstPct) || 0;
   const igstPct = Number(po.igstPct) || 0;
 
+  // ADR-246 — the server's `totals` (sent on the detail read and on the
+  // create / update / approve responses): CGST then SGST (or IGST) from the ONE
+  // GST %, then the signed Round-off, and the grand total is the rounded
+  // figure. `totals` is null for an old PO whose stored percentages are mixed
+  // (and when prices are hidden) → the stored per-% rows below print exactly
+  // as before.
+  const t = po.totals ?? null;
   const taxRows: { label: string; value: string }[] = [];
-  if (igstPct > 0) {
-    taxRows.push({ label: `IGST @ ${igstPct}%`, value: money((subtotal * igstPct) / 100) });
-  }
-  if (sgstPct > 0) {
-    taxRows.push({ label: `SGST @ ${sgstPct}%`, value: money((subtotal * sgstPct) / 100) });
-  }
-  if (cgstPct > 0) {
-    taxRows.push({ label: `CGST @ ${cgstPct}%`, value: money((subtotal * cgstPct) / 100) });
+  if (t) {
+    for (const r of gstTaxRows(t)) taxRows.push({ label: r.label, value: money(r.amount) });
+    taxRows.push({ label: 'Round-off', value: priceHidden ? '—' : signedRoundOff(t.roundOff) });
+  } else {
+    if (igstPct > 0) {
+      taxRows.push({ label: `IGST @ ${igstPct}%`, value: money((subtotal * igstPct) / 100) });
+    }
+    if (sgstPct > 0) {
+      taxRows.push({ label: `SGST @ ${sgstPct}%`, value: money((subtotal * sgstPct) / 100) });
+    }
+    if (cgstPct > 0) {
+      taxRows.push({ label: `CGST @ ${cgstPct}%`, value: money((subtotal * cgstPct) / 100) });
+    }
   }
   const tax = po.taxAmount ?? Number(((subtotal * (sgstPct + cgstPct + igstPct)) / 100).toFixed(2));
-  const grand = po.totalAmount ?? subtotal + tax;
+  const grand = t ? t.grandTotal : (po.totalAmount ?? subtotal + tax);
 
   const vendorName = vendor?.name ?? po.vendorName ?? po.vendorCodeText ?? '';
   // Full postal address for the party box — line 1 plus city / state / pincode,

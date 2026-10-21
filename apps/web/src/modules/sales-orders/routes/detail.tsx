@@ -60,12 +60,8 @@ import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api'
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { useOrderPrint } from '../components/use-order-print';
+import { OrderSupplyFields, OrderTotalsStrip } from '../components/order-totals-strip';
 import { MILESTONE_COLUMNS, lineColumns, lineRowMenu } from '../components/so-line-columns';
-
-/** ₹ with Indian grouping, to the paise — the SO totals strip. */
-function fmtInr(n: number): string {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 /** The file the user asked to look at, or null when nothing is open.
  *
@@ -182,12 +178,13 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
-  const totalValue = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
+  const totalValue = detail.lines
+    .filter((l) => l.status !== 'cancelled')
+    .reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
   // Still to ship = ordered − already dispatched, per line (never below zero);
   // a line closed short (ADR-196) ships nothing more. Drives whether
   // "Dispatch" is offered as the next step, and whether Close is.
   const pendingDispatchQty = detail.lines.reduce((s, l) => s + closableQty(l), 0);
-
 
   // The order this page already shows — printed as is (no refetch).
   const printTarget = {
@@ -289,21 +286,10 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <SoReadGrid detail={detail} pendingChanges={pendingChanges} />
-        {/* ADR-190 — the SO's money, summed on the server. Null when this
-            user's access hides prices, and then the strip is not shown. */}
-        {detail.totals ? (
-          <QtyStrip
-            style={{ marginTop: 'var(--sp-3)' }}
-            items={[
-              { label: 'Subtotal', value: fmtInr(detail.totals.subtotal) },
-              {
-                label: `GST ${detail.totals.gstPercent}%`,
-                value: fmtInr(detail.totals.gstAmount),
-              },
-              { label: 'Grand Total', value: fmtInr(detail.totals.grandTotal) },
-            ]}
-          />
-        ) : null}
+        {/* ADR-190 / ADR-243 — the SO's money, summed on the server (SGST +
+            CGST or IGST, Round-off). Null when this user's access hides
+            prices, and then the strip is not shown. */}
+        <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />
       </DetailHeader>
 
       {uploadFailed ? (
@@ -696,6 +682,11 @@ function SoReadGrid(props: {
           )}
         />
       )}
+      {/* ADR-243 — decided by the server from the customer's State. */}
+      <OrderSupplyFields
+        placeOfSupply={detail.totals?.placeOfSupply ?? detail.placeOfSupply}
+        taxType={detail.totals?.taxType ?? detail.taxType}
+      />
       <ReadField
         label="Cost Centre"
         size="md"

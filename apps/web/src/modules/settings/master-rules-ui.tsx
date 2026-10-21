@@ -13,6 +13,7 @@
 
 import {
   GST_CATEGORIES,
+  GST_CATEGORIES_WITHOUT_GSTIN,
   GST_CATEGORY_LABEL,
   INDIAN_STATES,
   MASTER_RULE_SETTINGS_DEFAULT,
@@ -21,6 +22,7 @@ import {
   checkItemHsn,
   checkPartyGst,
   gstinProblem,
+  isGstinStateClashMessage,
   normalizeGstin,
   resolveStateCode,
 } from '@innovic/shared';
@@ -92,6 +94,12 @@ export function RuleWarning(props: { children: React.ReactNode }): React.JSX.Ele
   );
 }
 
+/** ADR-244/246 — a party (customer / vendor) GSTIN problem refuses the save in
+ *  every mode, so its Warn-mode note is shown as an error. */
+export function hardNote(note: RuleNote): RuleNote {
+  return note.warning ? { error: note.warning } : note;
+}
+
 /** For <FormField help>: the amber warning in place of the quiet help, else
  *  the field's usual help. (FormField shows `error` itself, in red.) */
 export function ruleHelp(note: RuleNote, fallback?: React.ReactNode): React.ReactNode {
@@ -150,6 +158,26 @@ export interface PartyGstNotes {
   gstNumber: RuleNote;
   gstCategory: RuleNote;
   stateCode: RuleNote;
+}
+
+/** ADR-244 (customer) / ADR-246 (vendor) — the ONE party GSTIN rule on the
+ *  screen. GSTIN + GST Category notes are hard in every mode; the State note is
+ *  hard only when it is the GSTIN-vs-State clash (the server refuses that one in
+ *  every mode) — other State notes keep the mode. */
+export function hardPartyNotes(notes: PartyGstNotes): PartyGstNotes {
+  return {
+    gstNumber: hardNote(notes.gstNumber),
+    gstCategory: hardNote(notes.gstCategory),
+    stateCode: isGstinStateClashMessage(notes.stateCode.warning)
+      ? hardNote(notes.stateCode)
+      : notes.stateCode,
+  };
+}
+
+/** ADR-244/246 — a party's GSTIN is required (★) unless the GST Category is
+ *  Unregistered / Overseas. */
+export function gstinRequiredFor(category: string | null | undefined): boolean {
+  return !(GST_CATEGORIES_WITHOUT_GSTIN as readonly string[]).includes(category ?? '');
 }
 
 /**

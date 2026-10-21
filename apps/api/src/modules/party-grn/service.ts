@@ -10,7 +10,7 @@
 // The customer material of a line is the JWSO line's own `<item>-RM` party
 // material (lib/jw-rm) — it is never picked separately, so it cannot mismatch.
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { type SQL, and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePartyGrnInput,
   DocumentEditStagedResult,
@@ -31,7 +31,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
-import { ActivityAction } from '@innovic/shared';
+import { ActivityAction, NC_STATUS_LABELS } from '@innovic/shared';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import type { UpdatePartyGrnInput } from './schema';
 import {
@@ -41,9 +41,11 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertPartyGrnDcNoFree } from '../../lib/party-grn-dc-unique';
 import { assertJwLineOpenForWork, type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
+import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { PARTY_GRN_SF_COLUMNS } from './sf-columns';
 
@@ -361,17 +363,42 @@ function rowToLine(
   };
 }
 
-/** What a JWSO line has already taken in from the customer, for the ADR-203
- *  receipt cap: Σ accepted on QC'd lines + Σ received on lines still waiting
- *  for QC. Rejected pieces do not use up the order (the customer re-sends).
- *  Call ONLY under lockJwLine for that line (CLAUDE.md §20.3). */
+/** THE committed-qty rule (ADR-203, widened by ADR-247) — what a JWSO line has
+ *  already taken in from the customer, as ONE scalar SQL expression over the
+ *  line id `jwLineIdSql` (a bound `${id}::uuid` or a correlated column such as
+ *  `l.id`). Every reader uses this — the Party GRN receipt cap, the JWSO
+ *  "receivable" picker filter and the Order Qty floor — so they cannot drift:
+ *    Σ received on live lines still waiting for Incoming QC
+ *  + Σ accepted on live QC'd lines
+ *  + Σ rejected_qty of live NCs still 'pending' raised on a live line of a
+ *    live Party GRN for this JWSO line (ADR-247: deviated pieces stay
+ *    committed until the NC is decided; Return to Customer / Scrap reopen the
+ *    line, Use As Is moves the pieces into accepted).
+ *  Other deviated pieces do not use up the order (the customer re-sends). */
+export function partyCommittedQtySql(jwLineIdSql: SQL): SQL {
+  return sql`((
+      SELECT COALESCE(SUM(CASE WHEN ${PENDING_QC_SQL} THEN pgl.received_qty
+                               ELSE pgl.accepted_qty END), 0)
+        FROM public.party_grn_lines pgl
+        JOIN public.party_grn pgc ON pgc.id = pgl.party_grn_id AND pgc.deleted_at IS NULL
+       WHERE pgl.jw_line_id = ${jwLineIdSql} AND pgl.deleted_at IS NULL
+    ) + (
+      SELECT COALESCE(SUM(ncc.rejected_qty), 0)
+        FROM public.nc_register ncc
+        JOIN public.party_grn_lines pglc ON pglc.id = ncc.party_grn_line_id
+             AND pglc.deleted_at IS NULL
+        JOIN public.party_grn pgn ON pgn.id = pglc.party_grn_id AND pgn.deleted_at IS NULL
+       WHERE pglc.jw_line_id = ${jwLineIdSql}
+         AND ncc.deleted_at IS NULL
+         AND ncc.status = 'pending'
+    ))::int`;
+}
+
+/** The committed qty of one JWSO line (partyCommittedQtySql). Call ONLY under
+ *  lockJwLine for that line (CLAUDE.md §20.3). */
 export async function jwLineCommittedQty(tx: DbTransaction, jwLineId: string): Promise<number> {
   const rows = (await tx.execute(sql`
-    SELECT COALESCE(SUM(CASE WHEN ${PENDING_QC_SQL} THEN pgl.received_qty
-                             ELSE pgl.accepted_qty END), 0)::int AS qty
-      FROM public.party_grn_lines pgl
-      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
-     WHERE pgl.jw_line_id = ${jwLineId}::uuid AND pgl.deleted_at IS NULL
+    SELECT ${partyCommittedQtySql(sql`${jwLineId}::uuid`)} AS qty
   `)) as unknown as Array<{ qty: number }>;
   return Number(rows[0]?.qty ?? 0);
 }
@@ -499,7 +526,9 @@ export async function createPartyGrn(
       }
     }
 
-    // 5) Header.
+    // 5) Header. Customer Challan No. must be free for this customer (§20 lock
+    //    inside the helper serialises two saves of the same number).
+    await assertPartyGrnDcNoFree(tx, companyId, jw.clientId ?? null, input.dcNo);
     const code = await nextPartyGrnCode(tx, companyId);
     const headerInserted = await tx
       .insert(partyGrn)
@@ -606,7 +635,11 @@ async function jwLineRegisterBalance(
 // carrying its JWSO line); lines still waiting for QC never entered it and are
 // just cancelled. Refused when rejected pieces were already sent back to the
 // customer, or when the accepted pieces have moved on (issued to a Job Card or
-// returned) — reverse those first. One transaction; nothing partly applied.
+// returned) — reverse those first. ADR-247: every live NC raised on its lines
+// that is not already closed is closed with the GRN (an already-closed one —
+// scrapped — stays as it is). Use As Is pieces were moved into accepted_qty, so
+// the register reversal below (with its balance check) takes them back too.
+// One transaction; nothing partly applied.
 export async function cancelPartyGrn(
   id: string,
   reason: string,
@@ -638,6 +671,21 @@ export async function cancelPartyGrn(
     if (head.deletedAt != null) {
       throw new ConflictError(`${head.code} is already cancelled. Refresh the page.`);
     }
+
+    // ADR-247: the NCs raised on its lines, locked BEFORE the lines (an NC
+    // disposition locks the NC first too, so the two queue instead of crossing).
+    const ncs = (await tx.execute(sql`
+      SELECT nc.id, nc.code, nc.status::text AS status, nc.rejected_qty::int AS "rejectedQty"
+        FROM public.nc_register nc
+        JOIN public.party_grn_lines pgl ON pgl.id = nc.party_grn_line_id
+       WHERE pgl.party_grn_id = ${id}::uuid
+         AND pgl.deleted_at IS NULL
+         AND nc.company_id = ${companyId}::uuid
+         AND nc.deleted_at IS NULL
+         AND nc.status <> 'closed'
+       ORDER BY nc.id
+       FOR UPDATE OF nc
+    `)) as unknown as Array<{ id: string; code: string; status: string; rejectedQty: number }>;
 
     const lines = await tx
       .select({
@@ -746,6 +794,47 @@ export async function cancelPartyGrn(
       }
     }
 
+    // ADR-247: close every still-open NC on its lines (§20.2 — conditional on
+    // the status read under the lock above; 0 rows = it moved, stop the cancel).
+    const ncNote = `Party GRN ${head.code} cancelled`;
+    for (const nc of ncs) {
+      const closed = (await tx.execute(sql`
+        UPDATE public.nc_register
+           SET status = 'closed',
+               -- Nothing left open on it: the receipt it came from is void.
+               failed_qty = rejected_qty - cleared_qty,
+               disposition_remarks = ${ncNote},
+               closed_at = now(), closed_by = ${user.id}::uuid,
+               updated_at = now(), updated_by = ${user.id}::uuid
+         WHERE id = ${nc.id}::uuid AND status::text = ${nc.status} AND deleted_at IS NULL
+        RETURNING id
+      `)) as unknown as Array<{ id: string }>;
+      if (closed.length === 0) {
+        throw new ConflictError(`NC ${nc.code} changed a moment ago. Refresh the page.`);
+      }
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Close,
+          entity: 'NonConformance',
+          entityId: nc.id,
+          refId: nc.code,
+          qty: nc.rejectedQty,
+          changes: [
+            {
+              field: 'status',
+              label: 'Status',
+              before: labelOf(NC_STATUS_LABELS, nc.status),
+              after: labelOf(NC_STATUS_LABELS, 'closed'),
+            },
+          ],
+          detail: `${nc.code} — Closed: ${ncNote}`,
+        },
+        companyId,
+        user,
+      );
+    }
+
     const stamp = softDeleteStamp(user);
     await tx
       .update(partyGrnLines)
@@ -773,7 +862,9 @@ export async function cancelPartyGrn(
         refId: head.code,
         qty: reversedQty,
         reason: trimmed,
-        detail: `${head.code} cancelled — reversed ${reversedQty} from the customer material register`,
+        detail:
+          `${head.code} cancelled — reversed ${reversedQty} from the customer material register` +
+          (ncs.length > 0 ? `; closed ${ncs.map((n) => n.code).join(', ')}` : ''),
       },
       companyId,
       user,
@@ -827,6 +918,7 @@ export async function updatePartyGrnTx(
   // Lock the header, then confirm it is live (not cancelled).
   const headRows = (await tx.execute(sql`
     SELECT id, code, grn_date AS "grnDate", dc_no AS "dcNo", remarks,
+           client_id AS "clientId",
            received_by_text AS "receivedByText", deleted_at AS "deletedAt"
       FROM public.party_grn
      WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
@@ -837,6 +929,7 @@ export async function updatePartyGrnTx(
     grnDate: unknown;
     dcNo: string | null;
     remarks: string | null;
+    clientId: string | null;
     receivedByText: string | null;
     deletedAt: unknown;
   }>;
@@ -865,7 +958,19 @@ export async function updatePartyGrnTx(
   };
   const headerSet: Record<string, unknown> = {};
   if (input.grnDate !== undefined) headerSet['grnDate'] = input.grnDate;
-  if (input.dcNo !== undefined) headerSet['dcNo'] = input.dcNo ?? null;
+  if (input.dcNo !== undefined) {
+    // A challan cannot be blanked. The schema refuses null/blank; this also
+    // catches a staged payload saved before that rule (edit-approval replay).
+    const dcNo = typeof input.dcNo === 'string' ? input.dcNo.trim() : '';
+    if (!dcNo) throw new ValidationError('Customer Challan No. is required.');
+    // Unique per customer — runs on direct edit AND on approval replay
+    // (applyEdit → updatePartyGrnTx). Unchanged value is skipped.
+    await assertPartyGrnDcNoFree(tx, companyId, head.clientId, dcNo, {
+      id: head.id,
+      currentDcNo: head.dcNo,
+    });
+    headerSet['dcNo'] = dcNo;
+  }
   if (input.remarks !== undefined) headerSet['remarks'] = input.remarks ?? null;
   if (input.receivedByText !== undefined) {
     headerSet['receivedByText'] = input.receivedByText ?? null;

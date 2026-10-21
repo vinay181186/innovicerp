@@ -44,13 +44,24 @@ const PO_HEADER_DIFF_FIELDS: readonly DiffField[] = [
     format: (v) => (v == null ? null : (PO_TYPE_LABEL[String(v)] ?? String(v))),
   },
   { key: 'dueDate', label: 'Due Date' },
-  { key: 'taxType', label: 'Tax Type' },
   { key: 'prCodeText', label: 'PR No.' },
   { key: 'remarks', label: 'Remarks' },
-  { key: 'sgstPct', label: 'SGST %' },
-  { key: 'cgstPct', label: 'CGST %' },
-  { key: 'igstPct', label: 'IGST %' },
+  // ADR-246 — the buyer picks ONE GST %; the tax type and the SGST / CGST /
+  // IGST split are the server's (vendor's State), decided when the approved
+  // edit is applied, so they are not changes anyone approves.
+  { key: 'gstPercent', label: 'GST %' },
 ];
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** ADR-246 — the GST % a proposed header asks for: gstPercent, else (legacy
+ *  payload) the three % summed; undefined when it carries none of them. */
+function proposedGstPercent(h: Record<string, unknown>): number | undefined {
+  if (h['gstPercent'] !== undefined) return round2(Number(h['gstPercent']));
+  const parts = ['sgstPct', 'cgstPct', 'igstPct'].map((k) => h[k]);
+  if (parts.every((v) => v === undefined)) return undefined;
+  return round2(parts.reduce<number>((sum, v) => sum + Number(v ?? 0), 0));
+}
 
 // The three editable attrs of an existing line, each with the NAMING.md label.
 const LINE_ATTRS = ['item', 'qty', 'rate'] as const;
@@ -205,12 +216,11 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
       vendorId: d['vendorCode'] ?? null,
       poType: d['poType'],
       dueDate: d['dueDate'],
-      taxType: d['taxType'],
       prCodeText: d['prCodeText'],
       remarks: d['remarks'],
-      sgstPct: d['sgstPct'],
-      cgstPct: d['cgstPct'],
-      igstPct: d['igstPct'],
+      gstPercent: round2(
+        Number(d['sgstPct'] ?? 0) + Number(d['cgstPct'] ?? 0) + Number(d['igstPct'] ?? 0),
+      ),
     };
     const lines = (d['lines'] as PoEditLine[] | undefined) ?? [];
     for (const l of lines) {
@@ -229,7 +239,6 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
     if (h.poDate !== undefined) out['poDate'] = h.poDate;
     if (h.poType !== undefined) out['poType'] = h.poType;
     if (h.dueDate !== undefined) out['dueDate'] = h.dueDate ?? null;
-    if (h.taxType !== undefined) out['taxType'] = h.taxType ?? null;
     if (h.prCodeText !== undefined) out['prCodeText'] = h.prCodeText ?? null;
     if (h.remarks !== undefined) out['remarks'] = h.remarks ?? null;
     if (h.vendorId !== undefined) {
@@ -239,9 +248,8 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
     // Money fields only when the actor may see prices — a price-blind payload
     // carries zod defaults that would otherwise read as a tax change.
     if (showMoney) {
-      if (h.sgstPct !== undefined) out['sgstPct'] = h.sgstPct;
-      if (h.cgstPct !== undefined) out['cgstPct'] = h.cgstPct;
-      if (h.igstPct !== undefined) out['igstPct'] = h.igstPct;
+      const gst = proposedGstPercent(h as Record<string, unknown>);
+      if (gst !== undefined) out['gstPercent'] = gst;
     }
 
     // Line changes on EXISTING lines, keyed by the proposed line's id. A proposed
@@ -277,6 +285,11 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
       } else if (field === 'vendorId') {
         if (h['vendorId'] !== undefined) fh['vendorId'] = h['vendorId'];
         if (h['vendorCodeText'] !== undefined) fh['vendorCodeText'] = h['vendorCodeText'];
+      } else if (field === 'gstPercent') {
+        // ADR-246 — replayed as the ONE GST %, even from a legacy three-%
+        // payload; the server splits it by the vendor's State on apply.
+        const gst = proposedGstPercent(h);
+        if (gst !== undefined) fh['gstPercent'] = gst;
       } else if (field in h) {
         fh[field] = h[field];
       }

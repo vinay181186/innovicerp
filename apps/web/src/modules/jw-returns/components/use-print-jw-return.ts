@@ -1,50 +1,82 @@
-// Print one JW Return challan from the register's ⋯ row menu.
+// Preview / ⬇ Download PDF for one JW Return challan — the register's ⋯ row
+// menu and the New Return popup after Save (owner rule 2026-10-21: every
+// document offers Preview and Download PDF instead of Print).
 //
-// The same click logic as PrintJwReturnButton (the row's old button): the
-// register row carries everything but the customer's address, so the one
-// client is read only when Print is chosen, and the challan prints once it
-// lands (or without the address if that read failed). The returned function
-// gives back a Promise that settles once the print window was opened (or
-// refused by the popup blocker), so the ⋯ shows busy meanwhile and ignores a
-// second click. One print at a time — the shape of usePrintJwInvoice.
+// The register row carries everything but the customer's address, so the one
+// client is read on the click (and, after Save, the one return by id), and the
+// challan is built once it lands — without the address if that read failed.
+// Both actions go through runPrint (lib/print/preview-host.tsx): Preview opens
+// the box AT THE CLICK with "Loading preview…"; Download saves `<code>.pdf`.
+// The returned Promise keeps the ⋯ / button busy meanwhile.
 
-import type { JwReturnChallanListItem } from '@innovic/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useClient } from '@/modules/clients/api';
-import { useMyCompany } from '@/modules/settings/api';
+import type { Client, Company, JwReturnChallanListItem } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { apiFetch } from '@/lib/api';
+import { runPrint } from '@/lib/print/preview-host';
+import { clientsKeys } from '@/modules/clients/api';
+import { companyKeys } from '@/modules/settings/api';
+import { jwReturnsKeys } from '../api';
 import { printJwReturnChallan } from '../lib/print-jw-return';
 
-export function usePrintJwReturn(): (row: JwReturnChallanListItem) => Promise<void> {
-  // The return waiting to print, or null. `done` settles its Promise and is
-  // the "already printed" guard.
-  const [target, setTarget] = useState<JwReturnChallanListItem | null>(null);
-  const done = useRef<(() => void) | null>(null);
+const TITLE = 'JW Return Challan';
 
-  const companyQuery = useMyCompany();
-  // Passing undefined leaves the query disabled.
-  const clientQuery = useClient(target?.clientId ?? undefined);
+/** The register row when the caller has it; otherwise the return's id. */
+export type PrintJwReturnTarget = { row: JwReturnChallanListItem } | { id: string; code: string };
 
-  useEffect(() => {
-    if (!target || !done.current) return;
-    if (companyQuery.isLoading) return;
-    // The client read is an enrichment: wait while in flight, print with the
-    // customer name on the return if it failed.
-    if (target.clientId && !clientQuery.isError && !clientQuery.data) return;
+export function usePrintJwReturn(): {
+  preview: (t: PrintJwReturnTarget) => Promise<void>;
+  download: (t: PrintJwReturnTarget) => Promise<void>;
+} {
+  const qc = useQueryClient();
 
-    const settle = done.current;
-    done.current = null;
-    setTarget(null);
-    if (!printJwReturnChallan(target, clientQuery.data, companyQuery.data)) {
-      window.alert('Allow popups to print.');
-    }
-    settle();
-  }, [target, clientQuery.data, clientQuery.isError, companyQuery.data, companyQuery.isLoading]);
+  const load = useCallback(
+    async (t: PrintJwReturnTarget): Promise<() => unknown> => {
+      const [company, ret] = await Promise.all([
+        qc
+          .fetchQuery({
+            queryKey: companyKeys.me(),
+            queryFn: () => apiFetch<Company>('/companies/me'),
+          })
+          .catch(() => undefined),
+        'row' in t
+          ? Promise.resolve(t.row)
+          : qc
+              .fetchQuery({
+                queryKey: jwReturnsKeys.detail(t.id),
+                queryFn: () => apiFetch<JwReturnChallanListItem>(`/jw-returns/${t.id}`),
+                staleTime: 0, // print what is saved now, not a cached copy
+              })
+              .catch(() => {
+                throw new Error('Could not load the JW Return to print. Try again.');
+              }),
+      ]);
+      // The client read is an enrichment: print with the customer name on the
+      // return if it failed.
+      const client = ret.clientId
+        ? await qc
+            .fetchQuery({
+              queryKey: clientsKeys.detail(ret.clientId),
+              queryFn: () => apiFetch<Client>(`/clients/${ret.clientId}`),
+            })
+            .catch(() => undefined)
+        : undefined;
+      return () => printJwReturnChallan(ret, client, company);
+    },
+    [qc],
+  );
 
-  return useCallback((row: JwReturnChallanListItem): Promise<void> => {
-    if (done.current) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      done.current = resolve;
-      setTarget(row);
-    });
-  }, []);
+  const label = (t: PrintJwReturnTarget): { title: string; fileName: string } => ({
+    title: TITLE,
+    fileName: 'row' in t ? t.row.code : t.code,
+  });
+  const preview = useCallback(
+    (t: PrintJwReturnTarget) => runPrint('preview', label(t), () => load(t)),
+    [load],
+  );
+  const download = useCallback(
+    (t: PrintJwReturnTarget) => runPrint('download', label(t), () => load(t)),
+    [load],
+  );
+  return { preview, download };
 }

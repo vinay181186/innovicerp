@@ -100,29 +100,14 @@ function tableHtml<T>(columns: MlSheetColumn<T>[], rows: T[]): string {
   return `<table class="mt"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
-/** Opens the print window NOW, inside the click (so no pop-up blocker can
- *  stop it), showing "Loading…" until the sheet is written in with
- *  `printMlSheet({ target })`. Null when the pop-up was blocked. */
-export function openMlPrintWindow(): Window | null {
-  const w = window.open('', '_blank', 'width=900,height=920');
-  if (!w) return null;
-  w.document.write(
-    '<!DOCTYPE html><html><head><title>Loading…</title></head><body>Loading…</body></html>',
-  );
-  w.document.close();
-  return w;
-}
-
 /** Writes the sheet through openSheetHtmlWindow — the ONE writer of the sheet
- *  style + paginator — into `target` when given. That function always calls
- *  window.open itself and takes no target (lib/print/sheet-print.ts is a
- *  frozen shared file), so for its one synchronous call window.open is pointed
- *  at the window already opened by the click, then put back. */
-function writeSheet(title: string, html: string, style: string, target?: Window): boolean {
-  return openSheetHtmlWindow(title, html, style, target);
+ *  style + paginator. It shows the in-app Preview box (or, inside
+ *  runPrint('download', …), saves `<fileName>.pdf`). */
+function writeSheet(title: string, html: string, style: string, fileName: string): boolean {
+  return openSheetHtmlWindow(title, html, style, undefined, fileName);
 }
 
-/** Writes the print. Returns false when the popup was blocked. */
+/** Writes the print. Returns false when nothing could show it. */
 export function printMlSheet<T>(args: {
   title: string;
   windowTitle: string;
@@ -130,8 +115,8 @@ export function printMlSheet<T>(args: {
   facts: MlSheetFact[];
   columns: MlSheetColumn<T>[];
   rows: T[];
-  /** A window already opened by the click (openMlPrintWindow). */
-  target?: Window | undefined;
+  /** Names the box and the downloaded PDF (the document number); windowTitle when omitted. */
+  fileName?: string | undefined;
 }): boolean {
   const company = buildDocCompany(args.company);
   const letterhead = sheetLetterheadHtml({ name: company.name, title: args.title });
@@ -150,5 +135,5 @@ export function printMlSheet<T>(args: {
       </tbody>
     </table>
   </article>`;
-  return writeSheet(args.windowTitle, html, ML_STYLE, args.target);
+  return writeSheet(args.windowTitle, html, ML_STYLE, args.fileName ?? args.windowTitle);
 }

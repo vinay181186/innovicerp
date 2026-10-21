@@ -56,7 +56,7 @@ import {
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
@@ -76,7 +76,9 @@ import {
 } from '../api';
 import { PoHeaderBand } from '../components/po-header-band';
 import { PoStatusBadge } from '../components/po-status-badge';
+import { PO_VENDOR_STATE_MISSING_NOTE } from '../lib/po-labels';
 import { printPurchaseOrder } from '../lib/print-po';
+import { runPrint } from '@/lib/print/preview-host';
 
 export const purchaseOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -183,17 +185,25 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     await navigate({ to: '/purchase-orders', replace: true });
   };
 
+  const printArgs = {
+    po: detail,
+    vendor,
+    company,
+    templates: templates?.items ?? [],
+    currentUser: me?.email,
+    draft: isDraft,
+  };
   const onPrint = (): void => {
-    const ok = printPurchaseOrder({
-      po: detail,
-      vendor,
-      company,
-      templates: templates?.items ?? [],
-      currentUser: me?.email,
-      draft: isDraft,
-    });
+    const ok = printPurchaseOrder(printArgs);
     if (!ok) window.alert('Allow popups to print.');
   };
+  // ⬇ Download PDF — the same sheet as Preview, saved as `<PO code>.pdf`.
+  const onDownload = (): Promise<void> =>
+    runPrint(
+      'download',
+      { title: 'Purchase Order', fileName: detail.code },
+      async () => () => printPurchaseOrder(printArgs),
+    );
 
   // Tier-driven, per department (po_create sits in Purchase). Replaces the old
   // admin-or-manager flag, which collapsed all seven tiers into two.
@@ -368,7 +378,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
-                { label: 'Print', onClick: onPrint },
+                { label: 'Preview', onClick: onPrint },
+                { label: '⬇ Download PDF', onClick: () => void onDownload() },
                 // ADR-232: Assign Task = the page's Advance right.
                 {
                   label: 'Assign Task',
@@ -433,6 +444,15 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           qcAcceptedQty={qcAcceptedQty}
           pendingChanges={pendingChanges}
         />
+        {/* ADR-246 — the server could not decide CGST + SGST vs IGST: the
+            vendor's State (or ours) is unknown. Same orange note as SO. */}
+        {detail.totals && detail.totals.taxType == null && detail.vendorId ? (
+          <div style={{ marginTop: 'var(--sp-3)' }}>
+            <Banner tone="warn" flush>
+              {PO_VENDOR_STATE_MISSING_NOTE}
+            </Banner>
+          </div>
+        ) : null}
       </div>
 
       <div className="panel">

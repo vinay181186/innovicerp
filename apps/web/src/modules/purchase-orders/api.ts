@@ -93,6 +93,9 @@ export function useUpdatePurchaseOrder(id: string, saveKey?: SaveKey) {
         return;
       }
       qc.setQueryData(purchaseOrdersKeys.detail(id), updated);
+      // ADR-246 — belt and braces: the write-back carries `totals` now, but
+      // refetch the detail so it is the full read shape (priceVisible, joins).
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(id) });
     },
   });
 }
@@ -135,6 +138,9 @@ export function useCreatePurchaseOrder(saveKey?: SaveKey) {
       // ADR-197 — the document's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
+      // ADR-246 — belt and braces: the write-back carries `totals` now, but
+      // refetch the detail so it is the full read shape (priceVisible, joins).
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(created.id) });
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       const prIds = new Set(
         vars.lines.map((l) => l.sourcePrId).filter((x): x is string => Boolean(x)),
@@ -161,6 +167,9 @@ export function useCreatePurchaseOrderFromPr() {
       // ADR-197 — the document's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
+      // ADR-246 — belt and braces: the write-back carries `totals` now, but
+      // refetch the detail so it is the full read shape (priceVisible, joins).
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(created.id) });
       // Refresh the PR detail + list (status flipped to po_created, poId set).
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(vars.prId) });
@@ -181,6 +190,9 @@ export function useApprovePurchaseOrder() {
       // ADR-197 — the document's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
+      // ADR-246 — belt and braces: the write-back carries `totals` now, but
+      // refetch the detail so it is the full read shape (priceVisible, joins).
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(po.id) });
     },
   });
 }
@@ -198,6 +210,9 @@ export function useRejectPurchaseOrder() {
       // ADR-197 — the document's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
+      // ADR-246 — belt and braces: the write-back carries `totals` now, but
+      // refetch the detail so it is the full read shape (priceVisible, joins).
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(po.id) });
     },
   });
 }
@@ -216,6 +231,9 @@ export function useShortClosePurchaseOrder() {
       // ADR-197 — the document's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
+      // ADR-246 — belt and braces: the write-back carries `totals` now, but
+      // refetch the detail so it is the full read shape (priceVisible, joins).
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.detail(po.id) });
       // Its PRs' Pending changes too.
       void qc.invalidateQueries({ queryKey: ['purchase-requests'] });
     },

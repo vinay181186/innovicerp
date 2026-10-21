@@ -5,6 +5,13 @@
 // GST Category problems show live under the fields — amber in Warn mode, red
 // in Enforce mode — and an enforce-mode refusal's field errors land under the
 // same fields. A valid GSTIN fills a blank State. See settings/master-rules-ui.
+//
+// ADR-246 (owner rule, the vendor twin of ADR-244 on the customer): GST
+// Category is required, GSTIN is required unless the category is Unregistered /
+// Overseas, and a GSTIN whose first two digits disagree with the State is
+// refused — so those problems show in red here even in Warn mode (the server
+// refuses them with fieldErrors on the same fields). Same rule and same look
+// as clients/components/client-form.tsx.
 
 import {
   type CreateVendorInput,
@@ -25,6 +32,8 @@ import {
   STATE_OPTIONS,
   type ServerFieldErrors,
   blankToNull,
+  gstinRequiredFor,
+  hardPartyNotes,
   initialStateCode,
   oldStateHint,
   unmappedOldState,
@@ -117,15 +126,17 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
     [setValue],
   );
   const stateCode = watch('stateCode');
-  const notes = usePartyGstNotes({
-    gstNumber: watch('gstNumber'),
-    gstCategory: watch('gstCategory'),
-    stateCode,
-    setStateCode,
-    // An untouched new form does not open covered in amber.
-    show: formState.isDirty || formState.isSubmitted,
-    serverFieldErrors: props.serverFieldErrors,
-  });
+  const notes = hardPartyNotes(
+    usePartyGstNotes({
+      gstNumber: watch('gstNumber'),
+      gstCategory: watch('gstCategory'),
+      stateCode,
+      setStateCode,
+      // An untouched new form does not open covered in amber.
+      show: formState.isDirty || formState.isSubmitted,
+      serverFieldErrors: props.serverFieldErrors,
+    }),
+  );
   const oldState = null;
 
   // Show the next server-assigned VND-### before save.
@@ -184,12 +195,7 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="name">
             Vendor Name<span className="req">★</span>
           </label>
-          <input
-            id="name"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('name')}
-          />
+          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -231,19 +237,12 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
           />
           {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="gstNumber">
-            GSTIN
-          </label>
-          <input
-            id="gstNumber"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="24XXXXX1234X1Z5"
-            {...register('gstNumber')}
-          />
-          <RuleNoteLine note={notes.gstNumber} />
-        </div>
+        <VendorGstinField
+          register={fieldRegister}
+          errors={fieldErrors}
+          notes={notes}
+          gstCategory={watch('gstCategory')}
+        />
         <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
 
         <div className="form-grp form-full">
@@ -276,7 +275,12 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="pincode">
             Pincode
           </label>
-          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
+          <input
+            id="pincode"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('pincode')}
+          />
         </div>
 
         <div className="form-grp form-full">
@@ -345,14 +349,16 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
     [setValue],
   );
   const stateCode = watch('stateCode');
-  const notes = usePartyGstNotes({
-    gstNumber: watch('gstNumber'),
-    gstCategory: watch('gstCategory'),
-    stateCode,
-    setStateCode,
-    show: true,
-    serverFieldErrors: props.serverFieldErrors,
-  });
+  const notes = hardPartyNotes(
+    usePartyGstNotes({
+      gstNumber: watch('gstNumber'),
+      gstCategory: watch('gstCategory'),
+      stateCode,
+      setStateCode,
+      show: true,
+      serverFieldErrors: props.serverFieldErrors,
+    }),
+  );
   const oldState = unmappedOldState(vendor.stateCode, vendor.state);
 
   return (
@@ -375,12 +381,7 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="name">
             Vendor Name<span className="req">★</span>
           </label>
-          <input
-            id="name"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('name')}
-          />
+          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -422,19 +423,12 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
           />
           {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="gstNumber">
-            GSTIN
-          </label>
-          <input
-            id="gstNumber"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="24XXXXX1234X1Z5"
-            {...register('gstNumber')}
-          />
-          <RuleNoteLine note={notes.gstNumber} />
-        </div>
+        <VendorGstinField
+          register={fieldRegister}
+          errors={fieldErrors}
+          notes={notes}
+          gstCategory={watch('gstCategory')}
+        />
         <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
 
         <div className="form-grp form-full">
@@ -467,7 +461,12 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="pincode">
             Pincode
           </label>
-          <input id="pincode" className="innovic-input" autoComplete="off" {...register('pincode')} />
+          <input
+            id="pincode"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('pincode')}
+          />
         </div>
 
         <div className="form-grp form-full">
@@ -521,6 +520,37 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
   );
 }
 
+/** GSTIN — ★ unless the GST Category is Unregistered / Overseas. The schema's
+ *  own message wins, else the rule note (red), else nothing. */
+function VendorGstinField(props: {
+  register: UseFormRegister<UpdateVendorInput>;
+  errors: FieldErrors<UpdateVendorInput>;
+  notes: PartyGstNotes;
+  gstCategory: string | null | undefined;
+}): React.JSX.Element {
+  const { register, errors, notes } = props;
+  const required = gstinRequiredFor(props.gstCategory);
+  return (
+    <div className="form-grp">
+      <label className="form-label" htmlFor="gstNumber">
+        GSTIN{required ? <span className="req">★</span> : null}
+      </label>
+      <input
+        id="gstNumber"
+        className="innovic-input"
+        autoComplete="off"
+        placeholder="24XXXXX1234X1Z5"
+        {...register('gstNumber')}
+      />
+      {errors.gstNumber?.message ? (
+        <div className="form-error">{errors.gstNumber.message}</div>
+      ) : (
+        <RuleNoteLine note={notes.gstNumber} />
+      )}
+    </div>
+  );
+}
+
 /** GST Category + Payment Terms (days) — one row of the two-column grid,
  *  right under GSTIN. Payment Terms (days) copies the customer's Payment Days
  *  box: optional, blank saves as null, the 0–365 range is the shared schema's. */
@@ -534,7 +564,7 @@ function VendorTermsFields(props: {
     <>
       <div className="form-grp">
         <label className="form-label" htmlFor="gstCategory">
-          GST Category
+          GST Category<span className="req">★</span>
         </label>
         <select
           id="gstCategory"

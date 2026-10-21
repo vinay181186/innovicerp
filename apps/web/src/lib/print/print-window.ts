@@ -16,6 +16,7 @@ import { fmtDateTime } from '../date';
 import { companyAddressLines } from './company';
 import { esc } from './doc-print';
 import { letterheadLogoHtml } from './letterhead';
+import { presentPrint } from './preview-host';
 
 const PRINT_STYLE = `
   *{margin:0;padding:0;box-sizing:border-box}
@@ -69,7 +70,17 @@ export function printWindow(args: {
   title: string;
   body: string;
   company: Company | null | undefined;
+  /** Names the downloaded PDF (the document number); the title when omitted. */
+  fileName?: string;
 }): boolean {
+  // In-app Preview box first (lib/print/preview-host.tsx); the pop-up is only
+  // the fallback outside the signed-in shell.
+  const doc =
+    `<!DOCTYPE html><html><head><title>${esc(args.title)}</title><style>${PRINT_STYLE}` +
+    `.no-print{display:none!important}body{background:#fff}</style></head><body>` +
+    `${companyHeader(args.company)}${args.body}</body></html>`;
+  if (presentPrint({ title: args.title, fileName: args.fileName ?? args.title, html: doc }))
+    return true;
   const w = window.open('', '_blank', 'width=980,height=740');
   if (!w) return false;
   w.document.write(

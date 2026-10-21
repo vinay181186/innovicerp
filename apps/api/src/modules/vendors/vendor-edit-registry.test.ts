@@ -60,7 +60,9 @@ afterAll(async () => {
   } else {
     await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
   }
-  await db.delete(documentEditRequests).where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
+  await db
+    .delete(documentEditRequests)
+    .where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
   await db.delete(vendors).where(like(vendors.code, `${TEST_PREFIX}%`));
 }, 180_000);
@@ -69,7 +71,15 @@ describe('Vendor Master — edit-approval (ADR-202)', () => {
   it('stages a record-level edit and applies the approved change', async () => {
     const code = `${TEST_PREFIX}${Date.now()}`;
     const created = await createVendor(
-      { code, name: 'Edit-approval vendor', city: 'Pune', isActive: true },
+      // ADR-244 / ADR-246 — GST Category required; GSTIN unless Unregistered.
+      {
+        code,
+        name: 'Edit-approval vendor',
+        city: 'Pune',
+        isActive: true,
+        gstCategory: 'unregistered',
+        stateCode: '27',
+      },
       admin,
     );
     const expectedUpdatedAt = new Date(created.updatedAt as unknown as string).toISOString();

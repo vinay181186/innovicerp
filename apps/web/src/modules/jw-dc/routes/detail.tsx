@@ -14,12 +14,13 @@
 
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Printer } from 'lucide-react';
+import { ArrowLeft, Download, Eye, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { runPrint } from '@/lib/print/preview-host';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -69,16 +70,24 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
     );
   }
 
+  const printArgs = {
+    dc,
+    vendor,
+    company,
+    templates: templates?.items ?? [],
+    currentUser: me?.email,
+  };
+  // Preview: the print now opens the in-app Preview box.
   const onPrint = (): void => {
-    const ok = printJwDc({
-      dc,
-      vendor,
-      company,
-      templates: templates?.items ?? [],
-      currentUser: me?.email,
-    });
+    const ok = printJwDc(printArgs);
     setPrintBlocked(!ok);
   };
+  const onDownload = (): Promise<void> =>
+    runPrint(
+      'download',
+      { title: 'JW Delivery Challan', fileName: dc.code },
+      async () => () => printJwDc(printArgs),
+    );
 
   // Returned = done (green); Partly Returned / At Vendor = under way (amber).
   const statusClass = dc.returnStatus === 'fully_returned' ? 'b-green' : 'b-amber';
@@ -114,7 +123,14 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
-              <Printer size={13} /> Print
+              <Eye size={13} /> Preview
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => void onDownload()}
+            >
+              <Download size={13} /> Download PDF
             </button>
           </div>
         </div>

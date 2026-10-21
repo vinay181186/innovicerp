@@ -20,6 +20,7 @@ import {
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
 import { EditPartyGrnModal } from './edit-party-grn-modal';
+import { waitingQc } from '../lib/print-party-grn';
 
 function lineColumns(): DataTableColumn<PartyGrnLine>[] {
   return [
@@ -94,7 +95,7 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       nowrap: true,
       // ADR-203: 0 until Incoming QC — show a dash rather than a false zero.
       render: (l) =>
-        l.qcAt == null ? (
+        waitingQc(l) ? (
           <span className="text3">—</span>
         ) : (
           <span style={{ color: 'var(--green2)' }}>{l.acceptedQty}</span>
@@ -141,7 +142,13 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       className: 'mono',
       nowrap: true,
       render: (l) =>
-        l.qcAt == null ? <span className="badge b-amber">Waiting QC</span> : fmtDateTime(l.qcAt),
+        waitingQc(l) ? (
+          <span className="badge b-amber">Waiting QC</span>
+        ) : l.qcAt ? (
+          fmtDateTime(l.qcAt)
+        ) : (
+          'QC done'
+        ),
     },
   ];
 }
@@ -183,7 +190,7 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
           <b>Received By:</b> {g.receivedByText ?? '—'}
         </span>
         <span>
-          <b>Remarks:</b> {g.remarks ?? '—'}
+          <b>GRN Remarks:</b> {g.remarks ?? '—'}
         </span>
         {canEdit && isLive ? (
           <button
@@ -220,7 +227,7 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
             { field: 'grnDate', label: 'GRN Date' },
             { field: 'dcNo', label: 'Customer Challan No.' },
             { field: 'receivedBy', label: 'Received By' },
-            { field: 'remarks', label: 'Remarks' },
+            { field: 'remarks', label: 'GRN Remarks' },
           ].map(({ field, label }) => {
             const c = headerPendingChange(pendingChanges, field);
             if (!c) return null;

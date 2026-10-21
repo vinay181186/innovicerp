@@ -1,7 +1,8 @@
 // Multi-Level Plan list (ADR-225 phase 3). Composed exactly like the
 // Multi-Level BOM list: ListHeader · Panel + DataTable (fit table, server Sort
 // & Filter, 25 rows a page) · ListFooter · PageState. Row actions live in the
-// ⋯ menu (Open, Edit, Refresh, Cancel).
+// ⋯ menu (Open, Preview, Download PDF, Edit, Refresh, Cancel). Preview /
+// Download print the same sheet as the detail ⋯ (use-ml-plan-print).
 
 import type { MlPlanListItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -20,6 +21,7 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMlPlansList, useRefreshMlPlan } from '../api';
 import { CancelMlPlanDialog } from '../components/cancel-ml-plan-dialog';
 import { mlPlanListColumns } from '../components/ml-plan-list-columns';
+import { useMlPlanPrint } from '../components/use-ml-plan-print';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -78,6 +80,7 @@ function MlPlansListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
 
   const refresh = useRefreshMlPlan();
+  const mlPlanPrint = useMlPlanPrint();
   const [toCancel, setToCancel] = useState<MlPlanListItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -145,6 +148,18 @@ function MlPlansListPage(): React.JSX.Element {
             renderLink={(p) => <Link {...p} />}
             rowMenu={(p) => [
               { key: 'open', label: 'Open', icon: 'eye', to: `/ml-plans/${p.id}` },
+              {
+                key: 'preview',
+                label: 'Preview',
+                icon: 'eye',
+                onSelect: () => mlPlanPrint.preview({ id: p.id, code: p.code }),
+              },
+              {
+                key: 'download',
+                label: 'Download PDF',
+                icon: 'download',
+                onSelect: () => mlPlanPrint.download({ id: p.id, code: p.code }),
+              },
               {
                 key: 'edit',
                 label: 'Edit',

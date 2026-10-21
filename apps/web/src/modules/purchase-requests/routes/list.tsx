@@ -37,6 +37,7 @@ import { prListColumns } from '../components/pr-list-columns';
 import { PrListExpand } from '../components/pr-list-expand';
 import { PrListRowActions } from '../components/pr-list-row-actions';
 import { PrListTabs, type PrListTab } from '../components/pr-list-tabs';
+import { usePrPrint } from '../components/use-pr-print';
 import { prOrderBalance } from '../lib/pr-balance';
 import { usePrApprovalOn } from '../lib/pr-convertible';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
@@ -237,6 +238,9 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const canAssign = perms.advance;
   const [assignPr, setAssignPr] = useState<PurchaseRequestListItem | null>(null);
 
+  // Preview / Download PDF in the row ⋯ — the same sheet as the detail ⋯.
+  const prPrint = usePrPrint();
+
   // Per-row ⋯ menu — reuses the module's existing handlers / targets.
   const rowActionsFor = useCallback(
     (pr: PurchaseRequestListItem): React.ReactNode => (
@@ -251,9 +255,11 @@ function PurchaseRequestsListPage(): React.JSX.Element {
         onApprove={handleApprove}
         onReject={handleReject}
         onAssign={setAssignPr}
+        onPrint={prPrint}
       />
     ),
     [
+      prPrint,
       perms.approve,
       canCreatePo,
       canAssign,

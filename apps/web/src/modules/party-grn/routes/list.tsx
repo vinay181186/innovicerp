@@ -39,6 +39,7 @@ import { NewPartyGrnModal } from '../components/new-party-grn-modal';
 import { PARTY_GRN_HIDDEN_COLUMNS, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
+import { usePartyGrnPrint } from '../components/use-party-grn-print';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
@@ -105,6 +106,9 @@ function PartyGrnListPage(): React.JSX.Element {
   );
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
   const [qcRow, setQcRow] = useState<PartyGrnListItem | null>(null);
+  // Preview / Download PDF (use-party-grn-print.ts) — on every row, since
+  // printing follows View.
+  const partyGrnPrint = usePartyGrnPrint();
   // Receive | Issue tabs — Issue is the former standalone Party Material Issue screen.
   const [tab, setTab] = useState<'receive' | 'issue'>(() => routeSearch.tab ?? 'receive');
 
@@ -260,6 +264,18 @@ function PartyGrnListPage(): React.JSX.Element {
                 renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
                 onToggleExpanded={(g) => toggleExpand(g.id)}
                 rowMenu={(g) => [
+                  {
+                    key: 'preview',
+                    label: 'Preview',
+                    icon: 'eye',
+                    onSelect: () => partyGrnPrint('preview', g),
+                  },
+                  {
+                    key: 'download',
+                    label: 'Download PDF',
+                    icon: 'download',
+                    onSelect: () => partyGrnPrint('download', g),
+                  },
                   {
                     key: 'incoming-qc',
                     label: 'Incoming QC',

@@ -47,7 +47,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { isUniqueViolation, withUniqueRetry } from '../../lib/db-retry';
-import { assertClientPoNoFree } from '../../lib/client-po-unique';
+import { assertClientPoNoFree, checkClientPoNo } from '../../lib/client-po-unique';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
   AuthorizationError,
@@ -59,6 +59,7 @@ import { readStockPositionLocked, reconcileLineReservations } from '../../lib/st
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { assertActiveParty } from '../../lib/active-party';
+import { decideOrderTax, orderTotals } from '../../lib/order-totals';
 import { emitActivityLog } from '../activity-log/service';
 import {
   assertNoLiveMlPlanOnSo,
@@ -106,7 +107,11 @@ import type {
   SoMilestone,
   UpdateSalesOrderInput,
 } from './schema';
-import type { DocumentEditStagedResult, SoTotals } from '@innovic/shared';
+import type {
+  ClientPoCheckQuery,
+  ClientPoCheckResponse,
+  DocumentEditStagedResult,
+} from '@innovic/shared';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -445,26 +450,6 @@ function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
   return { ...h, gstPercent: null, priceVisible: false };
 }
 
-const round2 = (n: number): number => Math.round(n * 100) / 100;
-
-/** Σ Order Qty × Rate over the lines, GST at the SO's GST % (ADR-190). A
- *  cancelled line is no longer part of the order (the line editor treats it as
- *  removed), so it adds nothing. Closed / dispatched lines were ordered and
- *  still count. */
-function computeSoTotals(
-  lines: ReadonlyArray<{ orderQty: number; rate: string | null; status: string }>,
-  gstPercentRaw: string | null,
-): SoTotals {
-  const subtotal = round2(
-    lines
-      .filter((l) => l.status !== 'cancelled')
-      .reduce((sum, l) => sum + Number(l.orderQty) * Number(l.rate ?? 0), 0),
-  );
-  const gstPercent = Number(gstPercentRaw ?? 0);
-  const gstAmount = round2((subtotal * gstPercent) / 100);
-  return { subtotal, gstPercent, gstAmount, grandTotal: round2(subtotal + gstAmount) };
-}
-
 function hideSoLineMoney<T extends { rate: string | null }>(l: T): T {
   return { ...l, rate: null };
 }
@@ -560,6 +545,7 @@ export async function listSalesOrders(
         so.client_id AS "clientId", so.customer_name AS "customerName",
         so.client_po_no AS "clientPoNo", so.type, so.status,
         so.gst_percent::text AS "gstPercent",
+        so.tax_type AS "taxType", so.place_of_supply AS "placeOfSupply",
         so.bom_master_id AS "bomMasterId", so.bom_status AS "bomStatus",
         so.cost_center AS "costCenter", so.remarks,
         so.created_at AS "createdAt", so.created_by AS "createdBy",
@@ -702,6 +688,8 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     type: r['type'] as SalesOrder['type'],
     status: r['status'] as SalesOrder['status'],
     gstPercent: r['gstPercent'] as string,
+    taxType: (r['taxType'] as SalesOrder['taxType'] | null) ?? null,
+    placeOfSupply: (r['placeOfSupply'] as string | null) ?? null,
     bomMasterId: (r['bomMasterId'] as string | null) ?? null,
     bomStatus: (r['bomStatus'] as string | null) ?? null,
     costCenter: (r['costCenter'] as string | null) ?? null,
@@ -816,15 +804,16 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         ),
       )
       .groupBy(jobCards.sourceSoLineId);
-    const [headers, lineRows, billedRows, jcRows, milestones, clientPoFilePath] =
-      await Promise.all([
+    const [headers, lineRows, billedRows, jcRows, milestones, clientPoFilePath] = await Promise.all(
+      [
         headersQ,
         lineRowsQ,
         billedRowsQ,
         jcRowsQ,
         readMilestones(tx, id),
         readClientPoFilePath(tx, id),
-      ]);
+      ],
+    );
     const header = headers[0];
     if (!header) throw new NotFoundError('SO not found. It may have been moved to Trash.');
     const billedByLine = new Map(
@@ -878,11 +867,15 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         soFulfilmentFactsFromLines(header.status, linesOut),
       ),
       // ADR-190 — totals are the server's arithmetic, never the browser's.
+      // ADR-243 — SGST + CGST or IGST by the customer's State, round-off.
       totals: showMoney
-        ? computeSoTotals(
-            lineRows.map((r) => r.row),
-            header.gstPercent,
-          )
+        ? await orderTotals(tx, companyId, {
+            lines: lineRows.map((r) => r.row),
+            gstPercent: header.gstPercent,
+            taxType: header.taxType,
+            placeOfSupply: header.placeOfSupply,
+            clientId: header.clientId,
+          })
         : null,
       lines: showMoney ? linesOut : linesOut.map(hideSoLineMoney),
       milestones,
@@ -1341,6 +1334,8 @@ function toSalesOrder(row: typeof salesOrders.$inferSelect): SalesOrder {
     type: row.type,
     status: row.status,
     gstPercent: row.gstPercent,
+    taxType: row.taxType ?? null,
+    placeOfSupply: row.placeOfSupply ?? null,
     bomMasterId: row.bomMasterId,
     bomStatus: row.bomStatus,
     costCenter: row.costCenter,
@@ -1513,6 +1508,17 @@ async function nextSoCode(tx: DbTransaction, companyId: string): Promise<string>
   return `IN-SO-${String(max + 1).padStart(5, '0')}`;
 }
 
+/** ADR-245 — the live Client PO No. check the SO form runs while typing.
+ *  Read-only; the save re-checks under the lock. */
+export async function checkSoClientPoNo(
+  query: ClientPoCheckQuery,
+  user: AuthContext,
+): Promise<ClientPoCheckResponse> {
+  await requireFormAccess(user, 'so_create', 'view');
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => checkClientPoNo(tx, 'so', companyId, query));
+}
+
 /** The next suggested SO code (MAX+1 after the highest IN-SO-#####). Surfaced to
  *  the create form so it can prefill an editable, overridable suggestion. */
 export async function getNextSoCode(user: AuthContext): Promise<{ code: string }> {
@@ -1559,8 +1565,8 @@ function createSalesOrderOnce(
     const code = await nextSoCode(tx, companyId);
     await assertInternalSoNoFree(tx, companyId, internalSoNo);
 
-    // Client PO No. is unique within the SO list (lib/client-po-unique.ts).
-    await assertClientPoNoFree(tx, 'so', companyId, input.header.clientPoNo);
+    // Client PO No. is unique per customer within the SO list (ADR-245).
+    await assertClientPoNoFree(tx, 'so', companyId, input.header.clientId, input.header.clientPoNo);
 
     // Client master link is enforced by the create schema (route boundary).
     // Snapshot the master client name into customer_name when a client is set.
@@ -1593,6 +1599,8 @@ function createSalesOrderOnce(
       if (bomId) await assertBomLinkable(tx, companyId, bomId);
     }
     const headerType = input.header.type ?? 'component_manufacturing';
+    // ADR-243 — tax type from the customer's State (unknown only warns).
+    const tax = await decideOrderTax(tx, companyId, input.header.clientId);
     const inserted = await tx
       .insert(salesOrders)
       .values({
@@ -1606,6 +1614,8 @@ function createSalesOrderOnce(
         type: headerType,
         status: headerStatus,
         gstPercent: gstToString(input.header.gstPercent ?? 18),
+        taxType: tax.taxType,
+        placeOfSupply: tax.placeOfSupply,
         bomMasterId: headerBomId,
         bomStatus: input.header.bomStatus ?? null,
         costCenter: input.header.costCenter ?? null,
@@ -1828,13 +1838,18 @@ export async function updateSalesOrderTx(
     if (h.clientId !== undefined) updates['clientId'] = h.clientId ?? null;
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
-    if (h.clientPoNo !== undefined) {
-      await assertClientPoNoFree(tx, 'so', companyId, h.clientPoNo, {
-        id,
-        currentPoNo: existingHdr.clientPoNo,
-      });
-      updates['clientPoNo'] = h.clientPoNo ?? null;
+    // ADR-245 — re-checked when the number OR the customer changes.
+    if (h.clientPoNo !== undefined || h.clientId !== undefined) {
+      await assertClientPoNoFree(
+        tx,
+        'so',
+        companyId,
+        h.clientId !== undefined ? (h.clientId ?? null) : existingHdr.clientId,
+        h.clientPoNo !== undefined ? h.clientPoNo : existingHdr.clientPoNo,
+        { id, currentPoNo: existingHdr.clientPoNo, currentClientId: existingHdr.clientId },
+      );
     }
+    if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     // ADR-207 — Internal SO No.: absent = unchanged (an old SO without one is
     // never forced to get one). A changed number must be free among the other
     // live SOs (case-insensitive); the History row comes from logSoEdit
@@ -1891,6 +1906,15 @@ export async function updateSalesOrderTx(
     if (h.bomStatus !== undefined) updates['bomStatus'] = h.bomStatus ?? null;
     if (h.costCenter !== undefined) updates['costCenter'] = h.costCenter ?? null;
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
+    // ADR-243 — re-decided on EVERY save (the customer or its State may have
+    // changed), whatever the caller may see of prices; never from the browser.
+    const tax = await decideOrderTax(
+      tx,
+      companyId,
+      h.clientId !== undefined ? h.clientId : existingHdr.clientId,
+    );
+    updates['taxType'] = tax.taxType;
+    updates['placeOfSupply'] = tax.placeOfSupply;
 
     await tx.update(salesOrders).set(updates).where(eq(salesOrders.id, id));
 
@@ -2043,7 +2067,10 @@ function soChildRowsChanged(
       // ADR-236: the line Remarks — valuesEqual reads null and '' as the same.
       if (p.remarks !== undefined && !valuesEqual(p.remarks, c.remarks)) return true;
       if (p.status !== undefined && !valuesEqual(p.status, c.status)) return true;
-      if (p.sourceBomMasterId !== undefined && !valuesEqual(p.sourceBomMasterId, c.sourceBomMasterId))
+      if (
+        p.sourceBomMasterId !== undefined &&
+        !valuesEqual(p.sourceBomMasterId, c.sourceBomMasterId)
+      )
         return true;
     }
     for (const c of currentLines) if (!seen.has(c.id)) return true; // a removed line
@@ -2146,9 +2173,7 @@ export async function updateSalesOrderOrStage(
           sourceBomMasterId: salesOrderLines.sourceBomMasterId,
         })
         .from(salesOrderLines)
-        .where(
-          and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)),
-        );
+        .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
       const currentMilestones = await tx
         .select({
           id: soMilestones.id,

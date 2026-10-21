@@ -28,6 +28,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
 import { Panel } from '@/ui/data';
+import { ActionMenu } from '@/ui/layout';
 import { ConfirmDialog } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
@@ -55,6 +56,7 @@ import { NcDispositionBadge } from '../components/nc-disposition-badge';
 import { NcLinksBlock } from '../components/nc-links-block';
 import { Note } from '../components/nc-note';
 import { NcStatusBadge } from '../components/nc-status-badge';
+import { useNcPrint } from '../components/use-nc-print';
 import { ncOpenQty } from '../nc-qty';
 import { NcTimelinePanel } from '@/modules/flow-views/components/nc-timeline-panel';
 
@@ -91,6 +93,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const saveKey = useSaveKey();
   const createDc = useCreateNcDc(id, saveKey);
   const createCapa = useCreateCapa();
+  // ⋯ Preview / ⬇ Download PDF — the NC Report (use-nc-print).
+  const ncPrint = useNcPrint();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [showDispose, setShowDispose] = useState(false);
@@ -163,10 +167,14 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // it keeps the old "Close rework" path. Every new row closes through the
   // gate (design §3, interlock 6).
   const isLegacyRework = detail.reworkOpSeq != null;
+  // ADR-247 — a customer-material NC (Party GRN Incoming QC) is never reworked
+  // and never goes back to a vendor; its return is an IN-CMR, not a vendor DC.
+  const isPartyNc = detail.partyGrnLineId != null;
   const isReworkDisposed =
-    isLegacyRework && detail.status === 'disposed' && detail.disposition === 'rework';
+    !isPartyNc && isLegacyRework && detail.status === 'disposed' && detail.disposition === 'rework';
   // Return-to-vendor, chosen but the challan not yet issued (design §5).
   const awaitingDc =
+    !isPartyNc &&
     detail.disposition === 'return_to_vendor' &&
     mayMoveTo('sent_to_vendor') &&
     !detail.deliveryChallanId;
@@ -311,6 +319,20 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 navPage: `/nc-register/${detail.id}`,
               }}
               suggestedTitle={`Action NC ${detail.code}`}
+            />
+            <ActionMenu
+              items={[
+                {
+                  label: 'Preview',
+                  onClick: () =>
+                    void ncPrint('preview', { id: detail.id, code: detail.code, jcCode }, isDraft),
+                },
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () =>
+                    void ncPrint('download', { id: detail.id, code: detail.code, jcCode }, isDraft),
+                },
+              ]}
             />
             {isPending && canAdvance ? (
               <button
@@ -663,7 +685,23 @@ function DetailGrid(props: {
             present, e.g. a GRN/OSP reject) shows the original vendor and its
             PO/GRN so the return-to-vendor route is clear. An in-house NC keeps
             the Rework-Machine XOR Operation display it always had. */}
-        {detail.sourceVendorId ? (
+        {/* ADR-247 — customer material deviated at Party GRN Incoming QC. */}
+        {detail.partyGrnLineId ? (
+          <>
+            <InlinePair label="Source:">Customer material</InlinePair>
+            <InlinePair label="Customer:">{detail.sourceCustomerName ?? '—'}</InlinePair>
+            <InlinePair label="JWSO No.:">
+              <span className="td-code" style={{ color: 'var(--text)' }}>
+                {detail.sourceJwCode ?? '—'}
+              </span>
+            </InlinePair>
+            <InlinePair label="Party GRN No.:">
+              <span className="td-code" style={{ color: 'var(--text)' }}>
+                {detail.sourcePartyGrnCode ?? '—'}
+              </span>
+            </InlinePair>
+          </>
+        ) : detail.sourceVendorId ? (
           <>
             <InlinePair label="Source Vendor:">
               <span className="td-code" style={{ color: 'var(--text)' }}>

@@ -32,6 +32,7 @@ import { lineRemarksInputSchema } from '../lib/line-remarks';
 import { internalSoNoError, normaliseInternalSoNo } from '../lib/internal-so-no';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { sfRawParamSchema } from './list-query';
+import { servicePoTaxTypeSchema } from './service-po';
 import { SO_STATUSES } from '../enums/so-status';
 import { SO_TYPES } from '../enums/so-type';
 import { uomSchema } from './item';
@@ -149,6 +150,11 @@ export const salesOrderSchema = z.object({
   status: soStatusSchema,
   // numeric stored as string; NULL when the viewer's access hides prices.
   gstPercent: z.string().nullable(),
+  /** ADR-243 — decided by the SERVER on every save from the customer's State
+   *  Code / GSTIN vs our own (never sent by the browser). Null = State unknown
+   *  or an order not saved since 0212. */
+  taxType: servicePoTaxTypeSchema.nullable().default(null),
+  placeOfSupply: z.string().nullable().default(null),
   bomMasterId: z.string().nullable(),
   bomStatus: z.string().nullable(),
   costCenter: z.string().nullable(),
@@ -161,14 +167,27 @@ export const salesOrderSchema = z.object({
 });
 export type SalesOrder = z.infer<typeof salesOrderSchema>;
 
-/** The order's money, worked out on the server (ADR-190): Subtotal = Σ line
- *  Order Qty × Rate over every line, GST at the SO's GST %, Grand Total =
- *  Subtotal + GST. Rounded to paise. The same sums the SO form shows while
- *  typing, so the saved order and the form never disagree. */
+/** The order's money, worked out on the server (ADR-190, ADR-243) with the
+ *  ONE roll-up computeGstTotals (lib/gst-totals.ts): Subtotal = Σ line Order
+ *  Qty × Rate over the non-cancelled lines → GST at the order's GST %, split
+ *  SGST + CGST (customer in our State) or IGST (other State / SEZ / Overseas)
+ *  → Round-off to the nearest rupee → Grand Total. Shared by SO and JWSO; the
+ *  form, detail and print all show these same figures. */
 export const soTotalsSchema = z.object({
   subtotal: z.number(),
   gstPercent: z.number(),
+  /** Total GST (SGST + CGST, or IGST). */
   gstAmount: z.number(),
+  /** The order's saved tax type; null = customer's State unknown (figures
+   *  then worked out as SGST + CGST and the screen warns). */
+  taxType: servicePoTaxTypeSchema.nullable(),
+  /** Place of Supply state code (2 digits; 96 = overseas); null = unknown. */
+  placeOfSupply: z.string().nullable(),
+  cgst: z.number(),
+  sgst: z.number(),
+  igst: z.number(),
+  roundOff: z.number(),
+  /** Rounded to the whole rupee. */
   grandTotal: z.number(),
 });
 export type SoTotals = z.infer<typeof soTotalsSchema>;
@@ -428,3 +447,19 @@ export interface ListSalesOrdersResponse {
   limit: number;
   offset: number;
 }
+
+/** ADR-245 — the live Client PO No. check (GET /sales-orders/client-po-check
+ *  and /job-work-orders/client-po-check): is this number already on another
+ *  live order of the SAME customer? `code` = that order's number. */
+export const clientPoCheckQuerySchema = z.object({
+  clientId: z.string().uuid().optional(),
+  clientPoNo: z.string().max(64),
+  /** On edit: the order being edited, so it never matches itself. */
+  excludeId: z.string().uuid().optional(),
+});
+export type ClientPoCheckQuery = z.infer<typeof clientPoCheckQuerySchema>;
+export const clientPoCheckResponseSchema = z.object({
+  taken: z.boolean(),
+  code: z.string().nullable(),
+});
+export type ClientPoCheckResponse = z.infer<typeof clientPoCheckResponseSchema>;

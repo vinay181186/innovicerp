@@ -127,7 +127,9 @@ export type CancelPartyGrnInput = z.infer<typeof cancelPartyGrnInputSchema>;
 export const createPartyGrnInputSchema = z.object({
   grnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   jobWorkOrderId: z.string().uuid(),
-  dcNo: z.string().trim().max(64).optional(),
+  /** The customer's challan number — required, and not already on another live
+   *  Party GRN of the same customer (server check; a cancelled GRN frees it). */
+  dcNo: z.string().trim().min(1, 'Customer Challan No. is required.').max(64),
   remarks: z.string().trim().max(500).optional(),
   lines: z.array(createPartyGrnLineInputSchema).min(1),
 });

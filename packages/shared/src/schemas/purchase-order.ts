@@ -31,6 +31,7 @@ import { servicePoTaxTypeSchema } from './service-po';
 import { PO_STATUSES } from '../enums/po-status';
 import { PO_TYPES } from '../enums/po-type';
 import { sfRawParamSchema } from './list-query';
+import { soTotalsSchema } from './sales-order';
 
 /** PO Tax Type — the same fixed list as invoices / JW invoices / Service POs
  *  (S1): 'sgst_cgst' = SGST + CGST (same state), 'igst' = IGST. Null = None. */
@@ -187,6 +188,13 @@ export const purchaseOrderDetailSchema = purchaseOrderSchema.extend({
    *  update / approve) return this shape without passing the money gate, and
    *  they always carry real figures. */
   priceVisible: z.boolean().optional(),
+  /** ADR-246 — the PO money roll-up (same shape and rule as the SO / JWSO,
+   *  computeGstTotals): CGST + SGST or IGST by the VENDOR's State vs ours,
+   *  round-off, grand total = the stored totalAmount. Null when prices are
+   *  hidden, and for an old PO whose stored percentages are mixed (e.g. CGST 9 +
+   *  SGST 5) — the screens then show the stored % rows as before. Figures are
+   *  always the STORED subtotal / tax / total, so detail = list = reports. */
+  totals: soTotalsSchema.nullable().optional(),
   // Live vendor name joined from vendors.name when vendorId is set; null
   // otherwise (free-text vendor stays in vendorCodeText). Same pattern as
   // salesOrderLine.itemCode (per ISSUE-005 fix).
@@ -310,6 +318,10 @@ const _poHeaderInputBase = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
     .optional(),
+  /** ADR-246 — the ONE GST % the buyer picks; the server splits it by the
+   *  vendor's State and ignores taxType / the three % below. Omitted = the
+   *  legacy three % summed (old callers). */
+  gstPercent: z.coerce.number().nonnegative().max(99.99).optional(),
   taxType: poTaxTypeSchema.optional(),
   sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
   cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
@@ -389,6 +401,9 @@ export const createPurchaseOrderFromPrInputSchema = z.object({
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
       .optional(),
+    /** ADR-246 — the ONE GST % the buyer picks; the server splits it by the
+     *  vendor's State. Omitted = the legacy three % below, summed. */
+    gstPercent: z.coerce.number().nonnegative().max(99.99).optional(),
     taxType: poTaxTypeSchema.optional(),
     sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
@@ -413,6 +428,9 @@ export const createPurchaseOrderFromPrBatchInputSchema = z.object({
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
       .optional(),
+    /** ADR-246 — the ONE GST % the buyer picks; the server splits it by the
+     *  vendor's State. Omitted = the legacy three % below, summed. */
+    gstPercent: z.coerce.number().nonnegative().max(99.99).optional(),
     taxType: poTaxTypeSchema.optional(),
     sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
     cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),

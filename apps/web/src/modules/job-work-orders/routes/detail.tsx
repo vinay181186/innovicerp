@@ -6,6 +6,7 @@ import {
   type JobWorkOrderLine,
   type JwDocumentFile,
   SO_DOC_CATEGORY_LABELS,
+  placeOfSupplyLabel,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
@@ -19,6 +20,8 @@ import {
 import { fmtDate } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useOrderPrint } from '@/modules/sales-orders/components/use-order-print';
+import { OrderTotalsStrip } from '@/modules/sales-orders/components/order-totals-strip';
+import { taxTypeLabel } from '@/modules/sales-orders/lib/gst-rows';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
@@ -176,8 +179,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
-  const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
-
+  const lineValueTotal = detail.lines
+    .filter((l) => l.status !== 'cancelled')
+    .reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
   // The order this page already shows — printed as is (no refetch).
   const printTarget = {
@@ -247,6 +251,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         }
       >
         <DetailGrid detail={detail} pendingChanges={pendingChanges} />
+        {/* ADR-243 — the JWSO's money from the server (SGST + CGST or IGST,
+            Round-off), the same roll-up as the SO. Null when prices are hidden. */}
+        <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />
       </DetailHeader>
 
       {uploadFailed ? (
@@ -777,6 +784,8 @@ function DetailGrid(props: {
   pendingChanges: readonly DocumentEditChange[];
 }): React.JSX.Element {
   const { detail, pendingChanges } = props;
+  const supplyCode = detail.totals?.placeOfSupply ?? detail.placeOfSupply;
+  const supplyTax = detail.totals?.taxType ?? detail.taxType;
   // Remarks can be long; collapse to one line with a "more"/"less" toggle so the
   // strip stays one compact band. Presentation only — no data change.
   const [showAllRemarks, setShowAllRemarks] = useState(false);
@@ -818,6 +827,12 @@ function DetailGrid(props: {
           </>
         }
       />
+      {/* ADR-243 — decided by the server from the customer's State. */}
+      <StripItem
+        label="Place of Supply"
+        value={supplyCode ? placeOfSupplyLabel(supplyCode) : '—'}
+      />
+      <StripItem label="Tax Type" value={supplyCode || supplyTax ? taxTypeLabel(supplyTax) : '—'} />
       <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">JWSO Remarks</span>
         <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>

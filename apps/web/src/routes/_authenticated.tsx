@@ -13,6 +13,7 @@ import { useUiSettings } from '@/lib/use-ui-settings';
 import { SortFilterScope } from '@/ui/data/sort-filter/scope';
 import { ToastProvider } from '@/ui/feedback';
 import { PageState } from '@/ui/layout/PageState';
+import { PrintPreviewHost } from '@/lib/print/preview-host';
 import { rootRoute } from './__root';
 
 export const authenticatedRoute = createRoute({
@@ -92,6 +93,8 @@ function AuthenticatedLayout(): React.JSX.Element {
             </div>
           </div>
         </div>
+        {/* Every document print opens here (lib/print/preview-host.tsx). */}
+        <PrintPreviewHost />
       </LiveUpdatesProvider>
     </ToastProvider>
   );

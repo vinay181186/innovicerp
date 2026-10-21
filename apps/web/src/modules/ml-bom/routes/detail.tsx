@@ -2,33 +2,25 @@
 // Actions) with the header facts, then ONE tab strip — Lines · Tree ·
 // Exploded Items · Cost · Used In · History. Cost (phase 6) shows only to a
 // user who may see prices on mlbom_create (the web twin of canSeeFormPrice);
-// Actions → Print (phase 5) prints the tree for the Qty on the Tree tab.
+// Actions → Preview / ⬇ Download PDF (phase 5) print the tree for the Qty on
+// the Tree tab, through the same hook as the list row ⋯ (use-ml-bom-print).
 //
 // The tabs use <TabStrip> directly, not RelatedDocsTabs: that wrapper reads
 // GET /<module>/:id/related, which this document does not have, and hides
 // itself entirely when the request fails.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDocumentHistory } from '@/modules/activity-log/api';
-import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { Panel } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { TabStrip, type TabStripTab } from '@/ui/navigation';
-import {
-  fetchMlBomTree,
-  useDeleteMlBom,
-  useMakeDefaultMlBom,
-  useMlBom,
-  useMlBomCost,
-  useMlBomTree,
-} from '../api';
+import { useDeleteMlBom, useMakeDefaultMlBom, useMlBom, useMlBomCost, useMlBomTree } from '../api';
 import { MlBomCostTab } from '../components/ml-bom-cost-tab';
 import {
   MlBomExplodedTab,
@@ -36,8 +28,7 @@ import {
   MlBomTreeTab,
   MlBomUsedInTab,
 } from '../components/ml-bom-detail-tabs';
-import { openMlPrintWindow } from '../lib/ml-sheet-print';
-import { printMlBom } from '../lib/print-ml-bom';
+import { useMlBomPrint } from '../components/use-ml-bom-print';
 
 export const mlBomDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -82,8 +73,7 @@ function MlBomDetailPage(): React.JSX.Element {
   const [printing, setPrinting] = useState(false);
   const tree = useMlBomTree(detail?.id, qty, treeOpen);
   const cost = useMlBomCost(detail?.id, qty, costOpen);
-  const { data: company } = useMyCompany();
-  const queryClient = useQueryClient();
+  const mlBomPrint = useMlBomPrint();
   const history = useDocumentHistory({
     entity: 'MlBom',
     entityId: detail?.id,
@@ -128,34 +118,22 @@ function MlBomDetailPage(): React.JSX.Element {
     );
   };
 
-  // Print the Qty shown in the box, exactly. The window opens here, inside
-  // the click, so no pop-up blocker stops it; the tree is then asked fresh
-  // and written into it. A failure closes it and shows in the Banner.
-  const onPrint = (): void => {
+  // Print the Qty shown in the box, exactly — the tree is asked fresh. The
+  // Preview box opens at the click; a failure shows there (or, for a
+  // download, as an alert) — runPrint in lib/print/preview-host.tsx.
+  const onPrint = (action: 'preview' | 'download'): void => {
     setActionError(null);
     if (qtyBad) {
       setActionError('Fix Qty first.');
       return;
     }
-    const printQty = Number(qtyInput);
-    const w = openMlPrintWindow();
-    if (!w) {
-      setActionError('Allow popups to print.');
+    const target = { id: detail.id, code: detail.code, qty: Number(qtyInput), detail };
+    if (action === 'preview') {
+      mlBomPrint.preview(target);
       return;
     }
     setPrinting(true);
-    fetchMlBomTree(queryClient, detail.id, printQty)
-      .then((data) => {
-        if (!printMlBom({ detail, tree: data, company, target: w })) {
-          w.close();
-          setActionError('Allow popups to print.');
-        }
-      })
-      .catch((e: unknown) => {
-        w.close();
-        setActionError(e instanceof Error ? e.message : 'Could not load the BOM tree.');
-      })
-      .finally(() => setPrinting(false));
+    void mlBomPrint.download(target).finally(() => setPrinting(false));
   };
 
   const onDelete = async (): Promise<void> => {
@@ -207,10 +185,11 @@ function MlBomDetailPage(): React.JSX.Element {
             ) : null}
             <ActionMenu
               items={[
+                { label: 'Preview', onClick: () => onPrint('preview') },
                 {
-                  label: 'Print',
+                  label: printing ? 'Preparing PDF…' : '⬇ Download PDF',
                   disabled: printing,
-                  onClick: onPrint,
+                  onClick: () => onPrint('download'),
                 },
                 {
                   label: 'Make Default',

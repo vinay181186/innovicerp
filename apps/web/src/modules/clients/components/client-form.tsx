@@ -17,6 +17,12 @@
 // problems show live under the fields — amber in Warn mode, red in Enforce
 // mode — and an enforce-mode refusal's field errors land under the same
 // fields. A valid GSTIN fills a blank State. See settings/master-rules-ui.
+//
+// ADR-244 (owner rule 2026-10-21): on a CUSTOMER the GSTIN rules are hard
+// whatever the mode — GST Category is required, GSTIN is required unless the
+// category is Unregistered / Overseas, and a GSTIN whose first two digits
+// disagree with the State is refused. So those problems show in red here even
+// in Warn mode (the server refuses them with fieldErrors on the same fields).
 
 import {
   type Client,
@@ -35,6 +41,8 @@ import {
   STATE_OPTIONS,
   type ServerFieldErrors,
   blankToNull,
+  gstinRequiredFor,
+  hardPartyNotes,
   initialStateCode,
   oldStateHint,
   ruleHelp,
@@ -187,6 +195,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
         register={register as unknown as UseFormRegister<UpdateClientInput>}
         errors={errors as unknown as FieldErrors<UpdateClientInput>}
         notes={notes}
+        gstCategory={watch('gstCategory')}
         oldState={null}
         stateChosen={!!stateCode}
         autoFocusName
@@ -254,6 +263,7 @@ function EditClientForm(props: EditMode): React.JSX.Element {
         register={register}
         errors={errors}
         notes={notes}
+        gstCategory={watch('gstCategory')}
         oldState={unmappedOldState(client.stateCode, client.state)}
         stateChosen={!!stateCode}
         codeField={
@@ -325,12 +335,16 @@ function ClientFields(props: {
   errors: FieldErrors<UpdateClientInput>;
   codeField: ReactNode;
   notes: PartyGstNotes;
+  /** The chosen GST Category — decides whether GSTIN carries the ★. */
+  gstCategory: string | null | undefined;
   /** Old free-text State with no list match (edit only), shown as a hint. */
   oldState: string | null;
   stateChosen: boolean;
   autoFocusName?: boolean;
 }): React.JSX.Element {
-  const { register, errors, notes } = props;
+  const { register, errors } = props;
+  const notes = hardPartyNotes(props.notes);
+  const gstinRequired = gstinRequiredFor(props.gstCategory);
   const oldHint = props.stateChosen ? null : oldStateHint(props.oldState);
   const stateError = errors.stateCode?.message ?? notes.stateCode.error;
   return (
@@ -355,6 +369,7 @@ function ClientFields(props: {
           </FormField>
           <FormField
             label="GSTIN"
+            required={gstinRequired}
             size="sm"
             htmlFor="gstNumber"
             error={errors.gstNumber?.message ?? notes.gstNumber.error}
@@ -453,6 +468,7 @@ function ClientFields(props: {
         <FormGrid>
           <FormField
             label="GST Category"
+            required
             size="md"
             htmlFor="gstCategory"
             error={errors.gstCategory?.message ?? notes.gstCategory.error}

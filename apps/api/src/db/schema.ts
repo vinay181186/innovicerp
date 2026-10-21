@@ -1651,6 +1651,12 @@ export const salesOrders = pgTable(
     type: soTypeEnum('type').notNull(),
     status: soStatusEnum('status').notNull().default('open'),
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18.00'),
+    // ADR-243 (migration 0212): SGST + CGST or IGST, decided by the server from
+    // the customer's State on every save. NULL = state unknown (warn only) or
+    // an SO not saved since 0212. CHECK sales_orders_tax_type_check.
+    taxType: text('tax_type').$type<'sgst_cgst' | 'igst'>(),
+    // ADR-243 (0212): Place of Supply (GST State Code) the tax type came from.
+    placeOfSupply: char('place_of_supply', { length: 2 }),
     // 0184: uuid FK (was text holding a uuid). Only an Active BOM may be
     // linked — checked by the SO service when the link is set or changed.
     bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id),
@@ -1935,6 +1941,10 @@ export const jobWorkOrders = pgTable(
     // GST % on the JWSO header (migration 0061) — parity with sales_orders so
     // the JWSO form shows subtotal / GST / grand totals.
     gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
+    // ADR-243 (migration 0212): same two facts as sales_orders.tax_type /
+    // place_of_supply. CHECK job_work_orders_tax_type_check.
+    taxType: text('tax_type').$type<'sgst_cgst' | 'igst'>(),
+    placeOfSupply: char('place_of_supply', { length: 2 }),
     remarks: text('remarks'),
     // Client material details (header-level, migration 0053).
     clientMaterial: text('client_material'),
@@ -2826,6 +2836,8 @@ export const ncRegister = pgTable(
     grnLineId: uuid('grn_line_id').references((): AnyPgColumn => goodsReceiptNoteLines.id, {
       onDelete: 'set null',
     }),
+    // ADR-247 (0213): customer material deviated at Party GRN Incoming QC.
+    partyGrnLineId: uuid('party_grn_line_id').references((): AnyPgColumn => partyGrnLines.id),
     // Sibling on a partial disposition: this row holds the remainder that is
     // still pending, and points at the row whose disposition split it.
     splitFromNcId: uuid('split_from_nc_id').references((): AnyPgColumn => ncRegister.id, {
@@ -2883,9 +2895,10 @@ export const ncRegister = pgTable(
   },
   (t) => [
     // ADR-189 (0151) — a bought-material NC has no job card but a GRN line.
+    // ADR-247 (0213) — a customer-material NC has a Party GRN line instead.
     check(
       'nc_register_job_card_or_grn_line',
-      sql`${t.jobCardId} is not null or ${t.grnLineId} is not null`,
+      sql`${t.jobCardId} is not null or ${t.grnLineId} is not null or ${t.partyGrnLineId} is not null`,
     ),
     uniqueIndex('nc_register_company_code_uniq')
       .on(t.companyId, t.code)
@@ -2899,6 +2912,10 @@ export const ncRegister = pgTable(
     index('nc_register_company_date_idx')
       .on(t.companyId, t.ncDate)
       .where(sql`${t.deletedAt} is null`),
+    // ADR-247 (0213): customer-material NCs by their Party GRN line.
+    index('nc_register_party_grn_line_idx')
+      .on(t.partyGrnLineId)
+      .where(sql`${t.partyGrnLineId} is not null and ${t.deletedAt} is null`),
     index('nc_register_jc_op_idx')
       .on(t.jcOpId)
       .where(sql`${t.jcOpId} is not null`),

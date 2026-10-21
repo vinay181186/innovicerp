@@ -1,7 +1,9 @@
 // Multi-Level BOM list (ADR-225). Composed exactly like the BOM Master list
 // (modules/bom-master/routes/list.tsx): ListHeader · Panel + DataTable (fit
 // table, server Sort & Filter, 25 rows a page) · ListFooter · PageState.
-// Row actions live in the ⋯ menu (Open, Edit, Make Default, Delete).
+// Row actions live in the ⋯ menu (Open, Preview, Download PDF, Edit, Make
+// Default, Delete). Preview / Download print the same sheet as the detail ⋯
+// (use-ml-bom-print), for Qty 1.
 
 import type { MlBomListItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -20,6 +22,7 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteMlBom, useMakeDefaultMlBom, useMlBomsList } from '../api';
 import { downloadMlBomTemplate } from '../components/ml-bom-import-template';
 import { mlBomListColumns } from '../components/ml-bom-list-columns';
+import { useMlBomPrint } from '../components/use-ml-bom-print';
 
 // ADR-225 phase 2: the import dialog (and the Excel reader it pulls in) loads
 // only when Import is pressed.
@@ -84,6 +87,7 @@ function MlBomsListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
 
   const makeDefault = useMakeDefaultMlBom();
+  const mlBomPrint = useMlBomPrint();
   const del = useDeleteMlBom();
   const [toDelete, setToDelete] = useState<MlBomListItem | null>(null);
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
@@ -206,6 +210,18 @@ function MlBomsListPage(): React.JSX.Element {
             renderLink={(p) => <Link {...p} />}
             rowMenu={(b) => [
               { key: 'open', label: 'Open', icon: 'eye', to: `/ml-boms/${b.id}` },
+              {
+                key: 'preview',
+                label: 'Preview',
+                icon: 'eye',
+                onSelect: () => mlBomPrint.preview({ id: b.id, code: b.code }),
+              },
+              {
+                key: 'download',
+                label: 'Download PDF',
+                icon: 'download',
+                onSelect: () => mlBomPrint.download({ id: b.id, code: b.code }),
+              },
               {
                 key: 'edit',
                 label: 'Edit',
