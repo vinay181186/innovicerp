@@ -4,6 +4,7 @@
 // production rows: one client, one JWSO with TWO lines carrying DIFFERENT
 // items, each line pointing at its own party material (the line's customer RM).
 
+import { randomUUID } from 'node:crypto';
 import { and, asc, eq, inArray, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
@@ -190,7 +191,13 @@ async function pmStock(id: string): Promise<{ stockQty: number; receivedQty: num
 }
 
 function receipt(jwLineId: string, receivedQty: number) {
-  return { grnDate: '2026-08-04', jobWorkOrderId: jwId, lines: [{ jwLineId, receivedQty }] };
+  // Customer Challan No. is required and unique per customer — a fresh one per receipt.
+  return {
+    grnDate: '2026-08-04',
+    jobWorkOrderId: jwId,
+    dcNo: `DC-${randomUUID()}`,
+    lines: [{ jwLineId, receivedQty }],
+  };
 }
 
 /** Receive, then pass Incoming QC with everything accepted. */

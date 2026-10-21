@@ -7,9 +7,17 @@
 // Incoming QC (row ⋯ "Incoming QC" on the list → party-grn-qc-modal.tsx).
 //
 // Lines with no Customer RM yet (a JWSO saved before ADR-203) are shown greyed
-// and cannot be received until the JWSO is saved again.
+// and cannot be received until the JWSO is saved again. Lines with nothing
+// Pending are greyed too, with the reason (Waiting QC / Fully received).
+//
+// Every receivable line must carry a Received Qty; a line not on this challan
+// is Deleted from the list (same button as SO creation) and can be restored.
 
-import type { CreatePartyGrnInput, CreatePartyGrnLineInput } from '@innovic/shared';
+import {
+  LINE_REMARKS_MAX,
+  type CreatePartyGrnInput,
+  type CreatePartyGrnLineInput,
+} from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -37,12 +45,16 @@ export function NewPartyGrnModal({
   const [dcNo, setDcNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [entries, setEntries] = useState<Record<string, LineEntry>>({});
+  // JWSO line ids the user Deleted — not rendered, not sent.
+  const [removed, setRemoved] = useState<Set<string>>(() => new Set());
   const [err, setErr] = useState<string | null>(null);
 
   const nextCodeQ = useNextPartyGrnCode();
   const jwQuery = useJobWorkOrdersList({
     search: jwSearch.trim() || undefined,
     status: 'open',
+    // Only JWSOs with at least one line still to receive.
+    receivable: true,
     limit: 50,
     offset: 0,
   });
@@ -74,6 +86,16 @@ export function NewPartyGrnModal({
     jwLines.find((x) => x.id === lineId)?.rmWaitingQcQty ?? 0;
   const pendingOf = (l: { id: string; orderQty: number; rmAcceptedQty: number }): number =>
     Math.max(0, l.orderQty - l.rmAcceptedQty - waitingOf(l.id));
+  // A line can take material only with a Customer RM and something Pending.
+  const canReceive = (l: {
+    id: string;
+    orderQty: number;
+    rmAcceptedQty: number;
+    partyMaterialId: string | null;
+  }): boolean => Boolean(l.partyMaterialId) && pendingOf(l) > 0;
+  const receivableCount = jwLines.filter(canReceive).length;
+  const nothingToReceive = jwDetail !== null && receivableCount === 0;
+  const visibleLines = jwLines.filter((l) => !removed.has(l.id));
 
   // R2 — one idempotency key per open modal, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
@@ -81,6 +103,7 @@ export function NewPartyGrnModal({
 
   const dirty =
     jwId !== (initialJwId ?? null) ||
+    removed.size > 0 ||
     Boolean(dcNo.trim() || remarks.trim()) ||
     Object.values(entries).some((e) => Boolean(e.receivedQty.trim() || e.remarks.trim()));
   const guard = useDiscardGuard(dirty, onClose);
@@ -89,6 +112,13 @@ export function NewPartyGrnModal({
     setJwId(id);
     // The typed quantities belong to the old JWSO's lines — never carry them over.
     setEntries({});
+    setRemoved(new Set());
+  };
+
+  const onDeleteLine = (lineId: string): void => {
+    setRemoved((prev) => new Set(prev).add(lineId));
+    // A deleted line's typed qty + remarks go with it.
+    setEntries((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== lineId)));
   };
 
   const setEntry = (lineId: string, patch: Partial<LineEntry>): void => {
@@ -104,18 +134,19 @@ export function NewPartyGrnModal({
       setErr('JWSO No. is required.');
       return;
     }
+    if (!dcNo.trim()) {
+      setErr('Customer Challan No. is required.');
+      return;
+    }
     const validLines: CreatePartyGrnLineInput[] = [];
     for (const l of jwLines) {
+      // Greyed lines take nothing; Deleted lines were not on this challan.
+      if (!canReceive(l) || removed.has(l.id)) continue;
       const e = entries[l.id];
       const raw = e?.receivedQty.trim() ?? '';
-      if (!raw) continue; // blank = this line did not arrive on this challan
-      if (!l.partyMaterialId) {
-        setErr(`JWSO line ${l.lineNo}: no customer RM — save the JWSO first.`);
-        return;
-      }
       const q = Number(raw);
-      if (!Number.isInteger(q) || q <= 0) {
-        setErr(`JWSO line ${l.lineNo}: Received Qty must be a whole number, 1 or more.`);
+      if (!raw || !Number.isInteger(q) || q <= 0) {
+        setErr(`JWSO line ${l.lineNo}: enter Received Qty (1 or more), or Delete the line.`);
         return;
       }
       const pending = pendingOf(l);
@@ -131,15 +162,15 @@ export function NewPartyGrnModal({
       validLines.push(ln);
     }
     if (validLines.length === 0) {
-      setErr('Enter the Received Qty on at least one line.');
+      setErr('Keep at least one line with a Received Qty.');
       return;
     }
     const input: CreatePartyGrnInput = {
       grnDate: date,
       jobWorkOrderId: jwId,
+      dcNo: dcNo.trim(),
       lines: validLines,
     };
-    if (dcNo.trim()) input.dcNo = dcNo.trim();
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
@@ -274,13 +305,14 @@ export function NewPartyGrnModal({
           </div>
           <div className="form-grp">
             <label className="form-label" htmlFor="pgrn-dc">
-              Customer Challan No.
+              Customer Challan No.<span className="req">★</span>
             </label>
             <input
               id="pgrn-dc"
               type="text"
               className="innovic-input"
               autoComplete="off"
+              maxLength={64}
               value={dcNo}
               onChange={(e) => setDcNo(e.target.value)}
               style={{ maxWidth: '24ch' }}
@@ -288,7 +320,7 @@ export function NewPartyGrnModal({
           </div>
           <div className="form-grp">
             <label className="form-label" htmlFor="pgrn-remarks">
-              Remarks
+              GRN Remarks
             </label>
             <input
               id="pgrn-remarks"
@@ -308,13 +340,28 @@ export function NewPartyGrnModal({
             color: 'var(--cyan)',
             fontFamily: 'var(--mono)',
             fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
           }}
         >
-          Line Items
-          <span className="text3" style={{ fontWeight: 400, marginLeft: 8 }}>
-            Enter Received Qty for the lines on this challan — leave blank to skip. Accepted /
-            Deviated are entered later by Incoming QC.
+          <span>
+            Line Items
+            <span className="text3" style={{ fontWeight: 400, marginLeft: 8 }}>
+              Delete the lines not on this challan. Accepted / Deviated are entered later by
+              Incoming QC.
+            </span>
           </span>
+          {removed.size > 0 ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setRemoved(new Set())}
+            >
+              ↺ Restore deleted lines ({removed.size})
+            </button>
+          ) : null}
         </div>
 
         <div className="tbl-wrap">
@@ -329,27 +376,30 @@ export function NewPartyGrnModal({
                 <th className="th-num">Accepted</th>
                 <th className="th-num">Waiting QC</th>
                 <th className="th-num">Pending</th>
-                <th className="th-num">Received Qty</th>
+                <th className="th-num">
+                  Received Qty <span className="req">★</span>
+                </th>
                 <th>Remarks</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {!jwId ? (
                 <tr>
-                  <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
                     Select Client PO No. / JWSO No.
                   </td>
                 </tr>
               ) : jwDetailQ.isLoading ? (
                 <tr>
-                  <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
                     <Loader2 size={13} className="inline animate-spin" /> Loading lines…
                   </td>
                 </tr>
               ) : jwDetailQ.isError ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="empty-state"
                     style={{ color: 'var(--red2)', padding: 14 }}
                   >
@@ -358,77 +408,114 @@ export function NewPartyGrnModal({
                       : 'Could not load the JWSO lines.'}
                   </td>
                 </tr>
-              ) : jwLines.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="empty-state" style={{ padding: 14 }}>
-                    No open lines on this JWSO.
-                  </td>
-                </tr>
               ) : (
-                jwLines.map((l) => {
-                  const noRm = !l.partyMaterialId;
-                  const e = entries[l.id];
-                  return (
-                    <tr key={l.id} style={noRm ? { opacity: 0.55 } : undefined}>
-                      <td className="td-num mono">{l.lineNo}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                        {l.clientPoLineNo ?? '—'}
-                      </td>
-                      <td title={l.partName}>
-                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                          {itemCodeWithRev(l.itemCodeText, l.revision)}
-                        </span>
-                      </td>
-                      <td>
-                        {noRm ? (
-                          <span className="text3" style={{ fontSize: 11 }}>
-                            No customer RM — save the JWSO first
-                          </span>
-                        ) : (
-                          <span
-                            className="mono fw-700"
-                            style={{ color: 'var(--text)' }}
-                            title={l.partyMaterialCode ?? ''}
-                          >
-                            {l.rmItemCode ?? l.partyMaterialCode ?? '—'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="td-num mono">
-                        {l.orderQty} {l.uom}
-                      </td>
-                      <td className="td-num mono">{l.rmAcceptedQty}</td>
-                      <td className="td-num mono">{waitingReady ? waitingOf(l.id) : '…'}</td>
-                      <td className="td-num mono fw-700">{waitingReady ? pendingOf(l) : '…'}</td>
-                      <td className="td-num">
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
-                          {...(waitingReady ? { max: pendingOf(l) } : {})}
-                          className="innovic-input"
-                          aria-label={`Received Qty, line ${l.lineNo}`}
-                          disabled={noRm || (waitingReady && pendingOf(l) === 0)}
-                          value={e?.receivedQty ?? ''}
-                          onChange={(ev) => setEntry(l.id, { receivedQty: ev.target.value })}
-                          placeholder="—"
-                          style={{ maxWidth: '12ch' }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          className="innovic-input"
-                          aria-label={`Remarks, line ${l.lineNo}`}
-                          disabled={noRm}
-                          autoComplete="off"
-                          value={e?.remarks ?? ''}
-                          onChange={(ev) => setEntry(l.id, { remarks: ev.target.value })}
-                        />
+                <>
+                  {nothingToReceive && jwDetail ? (
+                    <tr>
+                      <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
+                        Nothing left to receive on {jwDetail.code}. All customer material is
+                        received or waiting QC.
                       </td>
                     </tr>
-                  );
-                })
+                  ) : null}
+                  {jwLines.length > 0 && visibleLines.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
+                        All lines deleted — use Restore deleted lines.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {visibleLines.map((l) => {
+                    const noRm = !l.partyMaterialId;
+                    const receivable = canReceive(l);
+                    const e = entries[l.id];
+                    return (
+                      <tr key={l.id} style={receivable ? undefined : { opacity: 0.55 }}>
+                        <td className="td-num mono">{l.lineNo}</td>
+                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                          {l.clientPoLineNo ?? '—'}
+                        </td>
+                        <td title={l.partName}>
+                          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                            {itemCodeWithRev(l.itemCodeText, l.revision)}
+                          </span>
+                        </td>
+                        <td>
+                          {noRm ? (
+                            <span className="text3" style={{ fontSize: 11 }}>
+                              No customer RM — save the JWSO first
+                            </span>
+                          ) : (
+                            <span
+                              className="mono fw-700"
+                              style={{ color: 'var(--text)' }}
+                              title={l.partyMaterialCode ?? ''}
+                            >
+                              {l.rmItemCode ?? l.partyMaterialCode ?? '—'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="td-num mono">
+                          {l.orderQty} {l.uom}
+                        </td>
+                        <td className="td-num mono">{l.rmAcceptedQty}</td>
+                        <td className="td-num mono">{waitingReady ? waitingOf(l.id) : '…'}</td>
+                        <td className="td-num mono fw-700">{waitingReady ? pendingOf(l) : '…'}</td>
+                        <td className="td-num">
+                          {receivable ? (
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              {...(waitingReady ? { max: pendingOf(l) } : {})}
+                              className="innovic-input"
+                              aria-label={`Received Qty, line ${l.lineNo}`}
+                              value={e?.receivedQty ?? ''}
+                              onChange={(ev) => setEntry(l.id, { receivedQty: ev.target.value })}
+                              placeholder="—"
+                              style={{ maxWidth: '12ch' }}
+                            />
+                          ) : noRm ? (
+                            '—'
+                          ) : (
+                            <span className="text3" style={{ fontSize: 11 }}>
+                              {waitingOf(l.id) > 0 ? 'Waiting QC' : 'Fully received'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {receivable ? (
+                            <input
+                              type="text"
+                              className="innovic-input"
+                              aria-label={`Remarks, line ${l.lineNo}`}
+                              autoComplete="off"
+                              placeholder="Remarks"
+                              maxLength={LINE_REMARKS_MAX}
+                              title={e?.remarks || undefined}
+                              value={e?.remarks ?? ''}
+                              onChange={(ev) => setEntry(l.id, { remarks: ev.target.value })}
+                            />
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>
+                          {receivable ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm red"
+                              onClick={() => onDeleteLine(l.id)}
+                              aria-label={`Remove line ${l.lineNo}`}
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </>
               )}
             </tbody>
           </table>
@@ -457,7 +544,7 @@ export function NewPartyGrnModal({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={createMut.isPending}
+            disabled={createMut.isPending || nothingToReceive}
             onClick={onSave}
           >
             {createMut.isPending ? (

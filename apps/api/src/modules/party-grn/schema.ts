@@ -27,7 +27,7 @@ export const updatePartyGrnInputSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  dcNo: z.string().trim().max(64).nullable().optional(),
+  dcNo: z.string().trim().min(1, 'Customer Challan No. is required.').max(64).optional(),
   remarks: z.string().trim().max(500).nullable().optional(),
   receivedByText: z.string().trim().max(200).nullable().optional(),
   lines: z.array(updatePartyGrnLineInputSchema).optional(),
