@@ -83,12 +83,11 @@ export function printNcReport(args: {
   opt(ncFields, 'Disposition Date', fmtDate(nc.dispositionDate, ''), true);
   opt(ncFields, 'Disposition By', nc.dispositionByText);
   opt(ncFields, 'Reported By', nc.reportedByText);
-  opt(
-    ncFields,
-    nc.disposition === 'repair' ? 'Repair JC' : 'Rework JC',
-    nc.childJobCardCode ?? (nc.disposition === 'make_fresh' ? nc.reworkJcCodeText : null),
-    true,
-  );
+  opt(ncFields, nc.disposition === 'repair' ? 'Repair JC' : 'Rework JC', nc.childJobCardCode, true);
+  // A Make Fresh job card is a NEW card, not rework — the detail screen's "New JC".
+  if (!nc.childJobCardCode && nc.disposition === 'make_fresh') {
+    opt(ncFields, 'New JC', nc.reworkJcCodeText, true);
+  }
   opt(ncFields, 'DC No.', nc.deliveryChallanCode, true);
   opt(ncFields, 'Replacement PO No.', nc.replacementPoCode, true);
   opt(ncFields, 'CAPA No.', nc.linkedCapaCode, true);

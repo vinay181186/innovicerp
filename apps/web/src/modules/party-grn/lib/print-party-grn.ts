@@ -61,7 +61,7 @@ export function printPartyGrn(args: {
 
   const sorted = [...grn.lines].filter((l) => !l.deletedAt).sort((a, b) => a.lineNo - b.lineNo);
   const lines: SheetLine[] = sorted.map((l) => {
-    const waiting = l.qcAt == null;
+    const waiting = waitingQc(l);
     return {
       // Customer RM code; Party GRN lines carry no revision of their own.
       itemCode: itemCodeWithRev(l.partyMaterialCodeText, null, ''),
@@ -78,8 +78,8 @@ export function printPartyGrn(args: {
     };
   });
   const totalReceived = sorted.reduce((s, l) => s + l.receivedQty, 0);
-  const totalAccepted = sorted.reduce((s, l) => s + (l.qcAt == null ? 0 : l.acceptedQty), 0);
-  const totalRejected = sorted.reduce((s, l) => s + (l.qcAt == null ? 0 : l.rejectedQty), 0);
+  const totalAccepted = sorted.reduce((s, l) => s + (waitingQc(l) ? 0 : l.acceptedQty), 0);
+  const totalRejected = sorted.reduce((s, l) => s + (waitingQc(l) ? 0 : l.rejectedQty), 0);
 
   return openSheetPrintWindow({
     title: 'Party GRN',
@@ -97,4 +97,15 @@ export function printPartyGrn(args: {
     totalUom: PARTY_GRN_UOM,
     receiverCell: 'Received By — Store<br>Name, Sign &amp; Date',
   });
+}
+
+/** Still waiting for Incoming QC — the server's rule (party-grn service
+ *  isPendingQc): no QC stamp AND nothing accepted or rejected yet. Lines from
+ *  before migration 0193 carry their split with no qc_at; they are QC done. */
+export function waitingQc(l: {
+  qcAt: string | null;
+  acceptedQty: number;
+  rejectedQty: number;
+}): boolean {
+  return l.qcAt == null && l.acceptedQty === 0 && l.rejectedQty === 0;
 }
