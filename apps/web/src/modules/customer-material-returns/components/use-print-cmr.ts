@@ -43,6 +43,7 @@ export function usePrintCmr(): CmrPrint {
             queryKey: customerMaterialReturnKeys.detail(id),
             queryFn: () =>
               apiFetch<CustomerMaterialReturnDetail>(`/customer-material-returns/${id}`),
+            staleTime: 0, // print what is saved now, not a cached copy
           })
           .catch(() => {
             throw new Error('Could not load the return to print. Try again.');

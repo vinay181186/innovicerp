@@ -13937,3 +13937,22 @@ on the ⬇ click (separate chunks, ~166 kB gzip), never at app start.
 ### Consequences
 - A drawing downloads a stored file; an order is built from data, hence the library.
 - The PDF's text is an image (not selectable/searchable). Server-side PDF (option B) rejected: new infrastructure.
+
+## ADR-241: Every document print opens the in-app Preview box (Print · Download · ✕)
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner: audit "where this feature is necessary" → "go A+B")
+
+### Decision
+`openSheetPrintWindow` / `openSheetHtmlWindow` / `printWindow` no longer open a
+pop-up: they hand the finished document to `apps/web/src/lib/print/preview-host.tsx`
+(host mounted once in `routes/_authenticated.tsx`), which shows the SO/JWSO
+Preview box. `runPrint('preview'|'download', …)` is the one entry point for list
+and detail ⋯: preview opens the box at the click with "Loading preview…"; download
+saves `<document number>.pdf` (`asDownload` runs the same builder in download mode).
+List row ⋯ Preview + Download PDF added for PO, GRN, OSP DC, JW DC, Tax Invoice,
+ML BOM, ML Plan; "Print" became Preview + Download PDF on Dispatch DC, JW Invoice,
+JW Return, CMR, Job Card, Route Card. One hook per module loads the document fresh
+(staleTime 0). Register prints (dispatch/DC registers, daily report, machine queue)
+also open the box. A late or superseded preview load is dropped (sequence token).
+Not covered: PR, Party GRN, Store Issue, NC (no print exists — owner to decide).

@@ -246,5 +246,5 @@ export function printJobCard(args: {
     </table>
   </article>`;
 
-  return openSheetHtmlWindow(`Job Card ${jc.code}`, html, JC_STYLE);
+  return openSheetHtmlWindow(`Job Card ${jc.code}`, html, JC_STYLE, undefined, jc.code);
 }

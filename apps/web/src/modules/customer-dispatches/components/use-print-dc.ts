@@ -40,6 +40,7 @@ export function usePrintDc(): {
           .fetchQuery({
             queryKey: dispatchKeys.detail(dispatchId),
             queryFn: () => apiFetch<CustomerDispatchDetail>(`/customer-dispatches/${dispatchId}`),
+            staleTime: 0, // print what is saved now, not a cached copy
           })
           .catch(() => {
             throw new Error('Could not load the dispatch to print. Try again.');

@@ -79,7 +79,10 @@ export async function downloadHtmlPdf(html: string, fileName: string): Promise<v
       }
     } else {
       const whole = doc.querySelector<HTMLElement>('.sheet') ?? doc.body;
-      const canvas = await html2canvas(whole, { scale: 2, backgroundColor: '#ffffff' });
+      // A long register drawn at 2× can pass the browser's canvas limit
+      // (~16k px) and come out blank: shrink the scale to stay under it.
+      const scale = Math.max(0.5, Math.min(2, 15000 / Math.max(1, whole.scrollHeight)));
+      const canvas = await html2canvas(whole, { scale, backgroundColor: '#ffffff' });
       const imgH = (canvas.height * maxW) / canvas.width;
       const img = canvas.toDataURL('image/jpeg', 0.95);
       for (let y = 0, page = 0; y < imgH - 0.5; y += maxH, page++) {
