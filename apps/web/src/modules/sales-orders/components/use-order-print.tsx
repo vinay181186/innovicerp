@@ -22,7 +22,7 @@ import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { SheetPreviewModal } from '@/components/shared/sheet-preview-modal';
 import { apiFetch } from '@/lib/api';
-import { downloadSheetPdf } from '@/lib/print/sheet-pdf';
+import { downloadSheetPdf, sheetEmbedHtml } from '@/lib/print/sheet-pdf';
 import type { SheetPrintModel } from '@/lib/print/sheet-print';
 import { useSession } from '@/lib/session';
 import { clientsKeys } from '@/modules/clients/api';
@@ -127,7 +127,7 @@ export function useOrderPrint(): {
       <SheetPreviewModal
         title={open.title}
         fileName={open.code}
-        model={open.model}
+        html={open.model ? sheetEmbedHtml(open.model) : null}
         error={open.error}
         onClose={() => setOpen(null)}
       />
