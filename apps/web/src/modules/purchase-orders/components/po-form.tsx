@@ -33,17 +33,18 @@ import {
   type PurchaseOrderDetail,
   type PurchaseOrderLineInput,
   type PurchaseRequestDetail,
+  SO_GST_PERCENTS,
   taxTypeForSupply,
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
-import { inrFormat } from '@/lib/print/doc-print';
+import { partyAddressLines } from '@/lib/print/company';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useLiveChangeNotice } from '@/lib/use-live-change-notice';
 import { useOpenedVersion } from '@/lib/use-opened-version';
@@ -55,8 +56,12 @@ import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { isStagedResult } from '@/modules/document-edits/api';
+import {
+  OrderSupplyFormFields,
+  orderFormTotalRows,
+} from '@/modules/sales-orders/components/order-supply-preview';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
-import { PO_TYPE_LABELS, toPoTaxType } from '../lib/po-labels';
+import { PO_TYPE_LABELS, PO_VENDOR_STATE_MISSING_NOTE } from '../lib/po-labels';
 import { PoFormLine } from './po-form-line';
 import { NEW_PO_LINE, type PoFormLineValue, type PoFormValues } from './po-form-types';
 
@@ -89,8 +94,14 @@ function initialLinesFor(prIds: string[] | undefined, prId: string | undefined):
   return ids.map((id) => ({ ...NEW_PO_LINE, sourcePrId: id }));
 }
 
-/** A tax % box the chosen Tax Type does not use: dimmed, still editable. */
-const DIM: React.CSSProperties = { opacity: 0.45 };
+/** ADR-246 — the GST % choices: the fixed list, plus an old PO's stored
+ *  SGST + CGST + IGST sum when that sum is not on it (so editing never
+ *  silently changes the rate). */
+function gstPercentChoices(current: number): number[] {
+  const list: number[] = [...SO_GST_PERCENTS];
+  if (Number.isFinite(current) && !list.includes(current)) list.push(current);
+  return list.sort((a, b) => a - b);
+}
 
 export type PoFormProps =
   | {
@@ -150,9 +161,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
               // No PR yet → a plain buy (IN-MPO-), the same default the API
               // applies. The first PR picked re-seeds it — see onPrLoaded.
               poType: 'standard',
-              sgstPct: 0,
-              cgstPct: 0,
-              igstPct: 0,
+              gstPercent: 0,
               ...(props.initialVendorId ? { vendorId: props.initialVendorId } : {}),
             },
             lines: initialLinesFor(props.initialPrIds, props.initialPrId),
@@ -298,75 +307,39 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
   // ── Live money. Subtotal is the sum of the LINES, not the source PR.
   const lines = watch('lines') ?? [];
-  const taxType = watch('header.taxType') ?? '';
-  const isSplit = taxType === 'sgst_cgst';
-  const isIgst = taxType === 'igst';
   const subtotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
   // 3 places: line qtys may be decimal (KGS / MTR, 0172) — no 0.1 + 0.2 drift.
   const totalQty = Math.round(lines.reduce((s, l) => s + (Number(l.qty) || 0), 0) * 1000) / 1000;
-  const taxPct = isSplit
-    ? (Number(watch('header.cgstPct')) || 0) + (Number(watch('header.sgstPct')) || 0)
-    : isIgst
-      ? Number(watch('header.igstPct')) || 0
-      : 0;
-  const taxAmt = (subtotal * taxPct) / 100;
-  const poTotal = subtotal + taxAmt;
-
-  // ── Tax Type is a controller too, and its dependents are the three percentage
-  //    boxes. Switching to IGST used to leave a CGST of 9 sitting there, dimmed
-  //    and excluded from the maths on screen — but still SENT on save, so the
-  //    stored document disagreed with the one the buyer signed off. Whatever the
-  //    chosen mode does not govern goes back to zero, and Tax / PO Total follow
-  //    because they are computed from the watched values, not held in state.
-  //
-  //    Not `useFieldCascade`: there is no source record to fill FROM here. The
-  //    rule is purely "blank what this mode does not use", and inventing a fake
-  //    source to express that would be harder to read, not easier.
-  const seenTaxType = useRef<string | null>(null);
-  useEffect(() => {
-    // First run is a baseline: an edit form arrives with saved percentages that
-    // are the document's own history, not ours to clear.
-    if (seenTaxType.current === null) {
-      seenTaxType.current = taxType;
-      return;
-    }
-    if (seenTaxType.current === taxType) return;
-    seenTaxType.current = taxType;
-    if (taxType !== 'sgst_cgst') {
-      setValue('header.cgstPct', 0, { shouldDirty: true });
-      setValue('header.sgstPct', 0, { shouldDirty: true });
-    }
-    if (taxType !== 'igst') setValue('header.igstPct', 0, { shouldDirty: true });
-  }, [taxType, setValue]);
+  const gstPercent = Number(watch('header.gstPercent')) || 0;
 
   const vendorId = watch('header.vendorId') ?? null;
   const vendorCodeText = watch('header.vendorCodeText') ?? '';
 
-  // ── Tax Type SUGGESTED from the vendor's State (plan v3 Step 3, D2): the
-  //    shared Place-of-Supply rule — vendor State Code (else GSTIN prefix) vs
-  //    the company's State; SEZ / Overseas → IGST. Filled only while the buyer
-  //    has not picked a Tax Type himself on this form; the buyer can always
-  //    override. Unknown State → no suggestion (never a guessed state).
+  // ── ADR-246 — Place of Supply + Tax Type are DECIDED by the server from the
+  //    vendor's State (vendor State Code, else GSTIN prefix) vs ours; SEZ /
+  //    Overseas → IGST. Shown here as a read-only preview from the same shared
+  //    rule — nothing to pick, nothing sent. Unknown State → no tax type (the
+  //    figures then read CGST + SGST and the orange note says why).
   const { data: pickedVendor } = useVendor(vendorId ?? undefined);
   const { data: myCompany } = useMyCompany();
-  const suggestedTaxType =
-    pickedVendor && pickedVendor.id === vendorId && myCompany
-      ? taxTypeForSupply({
-          placeOfSupply: placeOfSupplyFor(pickedVendor),
-          companyStateCode: companyStateCodeFor(myCompany),
-          gstCategory: pickedVendor.gstCategory,
-        })
-      : null;
-  const taxTypeTouched = useRef(false);
-  const lastSuggestedFor = useRef<string | null>(isEdit ? (vendorId ?? null) : null);
-  useEffect(() => {
-    if (!suggestedTaxType || !vendorId || taxTypeTouched.current) return;
-    if (lastSuggestedFor.current === vendorId) return;
-    lastSuggestedFor.current = vendorId;
-    if (getValues('header.taxType') !== suggestedTaxType) {
-      setValue('header.taxType', suggestedTaxType, { shouldDirty: true });
-    }
-  }, [suggestedTaxType, vendorId, getValues, setValue]);
+  const vendor = pickedVendor && pickedVendor.id === vendorId ? pickedVendor : null;
+  const placeOfSupply = vendor ? placeOfSupplyFor(vendor) : null;
+  const taxType = vendor
+    ? taxTypeForSupply({
+        placeOfSupply,
+        companyStateCode: myCompany ? companyStateCodeFor(myCompany) : null,
+        gstCategory: vendor.gstCategory,
+      })
+    : null;
+  const vendorStateMissing = vendor != null && myCompany != null && taxType == null;
+  // Read-only Vendor Address beside the Vendor box — from the vendor master,
+  // the same vendor query as the preview above (no extra fetch).
+  const vendorAddress = vendor ? partyAddressLines(vendor).join(', ') || null : null;
+  const money = orderFormTotalRows({ subtotal, gstPercent, taxType });
+  // Keyed on the value the form OPENED with, so an old PO's odd rate stays on
+  // the list after the buyer moves off it (and can be picked back).
+  const openedGst = useRef(getValues('header.gstPercent')).current;
+  const gstChoices = useMemo(() => gstPercentChoices(Number(openedGst) || 0), [openedGst]);
   const poDate = watch('header.poDate') ?? '';
   const deliveryDate = watch('header.dueDate') ?? '';
 
@@ -567,10 +540,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       vendorId: values.header.vendorId || undefined,
       vendorCodeText: values.header.vendorCodeText?.trim() || undefined,
       dueDate: values.header.dueDate || undefined,
-      taxType: toPoTaxType(values.header.taxType),
-      sgstPct: Number(values.header.sgstPct) || 0,
-      cgstPct: Number(values.header.cgstPct) || 0,
-      igstPct: Number(values.header.igstPct) || 0,
+      // ADR-246 — ONE GST %; the server splits it by the vendor's State.
+      gstPercent: Number(values.header.gstPercent) || 0,
       // The contract stores the covered PRs' codes comma-joined here (max 500).
       prCodeText: prCodes ? prCodes.slice(0, 500) : undefined,
       remarks: values.header.remarks?.trim() || undefined,
@@ -603,9 +574,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
     try {
       if (props.mode === 'edit') {
-        // None on edit must CLEAR the stored tax type, so send null (not omit).
         const payload: UpdatePurchaseOrderInput = {
-          header: { ...header, taxType: header.taxType ?? null },
+          header,
           lines: outLines,
           expectedUpdatedAt: opened.expected(),
         };
@@ -754,6 +724,23 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             }
             carriedText={vendorCodeText}
           />
+
+          {/* ADR-246 — from the vendor master, never typed. */}
+          <FormField label="Vendor Address" size="lg">
+            <div
+              className="text2"
+              title={vendorAddress ?? undefined}
+              style={{
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 600,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {vendorAddress ?? '—'}
+            </div>
+          </FormField>
 
           {/* standard (a buy) / job work (material out to a vendor) / service.
               'outsource' is dead — it behaves like standard — so it stays
@@ -938,65 +925,36 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       {/* ── Tax + running totals. */}
       <Panel title="Taxes and Totals">
         <FormGrid>
-          <FormField
-            label="Tax Type"
-            size="md"
-            htmlFor="pof-taxtype"
-            help={
-              suggestedTaxType && suggestedTaxType !== taxType
-                ? `Vendor's State suggests ${suggestedTaxType === 'igst' ? 'IGST' : 'SGST + CGST'}.`
-                : undefined
-            }
-          >
+          <FormField label="GST %" size="xs" htmlFor="pof-gst">
             <select
-              id="pof-taxtype"
+              id="pof-gst"
               className="innovic-select"
-              {...register('header.taxType', {
-                onChange: () => {
-                  taxTypeTouched.current = true;
-                },
-              })}
+              {...register('header.gstPercent', { valueAsNumber: true })}
             >
-              <option value="">None</option>
-              <option value="sgst_cgst">SGST + CGST</option>
-              <option value="igst">IGST</option>
+              {gstChoices.map((g) => (
+                <option key={g} value={g}>
+                  {g}%
+                </option>
+              ))}
             </select>
           </FormField>
-          {/* The percentages the chosen Tax Type does not use are dimmed, never
-              disabled: a disabled registered input drops out of the form values. */}
-          <FormField label="CGST %" size="xs" htmlFor="pof-cgst">
-            <input
-              id="pof-cgst"
-              type="number"
-              step="0.01"
-              min={0}
-              className="innovic-input mono"
-              style={isSplit ? undefined : DIM}
-              {...register('header.cgstPct', { valueAsNumber: true })}
-            />
-          </FormField>
-          <FormField label="SGST %" size="xs" htmlFor="pof-sgst">
-            <input
-              id="pof-sgst"
-              type="number"
-              step="0.01"
-              min={0}
-              className="innovic-input mono"
-              style={isSplit ? undefined : DIM}
-              {...register('header.sgstPct', { valueAsNumber: true })}
-            />
-          </FormField>
-          <FormField label="IGST %" size="xs" htmlFor="pof-igst">
-            <input
-              id="pof-igst"
-              type="number"
-              step="0.01"
-              min={0}
-              className="innovic-input mono"
-              style={isIgst ? undefined : DIM}
-              {...register('header.igstPct', { valueAsNumber: true })}
-            />
-          </FormField>
+          {/* Place of Supply + Tax Type (auto). The customer-worded note is
+              off here; the vendor-worded one follows. */}
+          <OrderSupplyFormFields
+            preview={{
+              placeOfSupply,
+              taxType,
+              customerStateMissing: false,
+              customerAddress: null,
+            }}
+          />
+          {vendorStateMissing ? (
+            <div className="f-full">
+              <Banner tone="warn" flush>
+                {PO_VENDOR_STATE_MISSING_NOTE}
+              </Banner>
+            </div>
+          ) : null}
         </FormGrid>
 
         {/* Preview of unsaved input: the server recomputes and stores the
@@ -1014,12 +972,18 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           }}
         >
           <span className="form-label">Subtotal</span>
-          <span className="mono">₹{inrFormat(subtotal)}</span>
-          <span className="form-label">Tax</span>
-          <span className="mono">₹{inrFormat(taxAmt)}</span>
+          <span className="mono">{money.subtotal}</span>
+          {money.taxRows.map((r) => (
+            <Fragment key={r.label}>
+              <span className="form-label">{r.label}</span>
+              <span className="mono">{r.value}</span>
+            </Fragment>
+          ))}
+          <span className="form-label">Round-off</span>
+          <span className="mono">{money.roundOff}</span>
           <span className="form-label fw-700">PO Total</span>
           <span className="mono fw-700" style={{ fontSize: 'var(--fs-md)' }}>
-            ₹{inrFormat(poTotal)}
+            {money.grand}
           </span>
         </div>
       </Panel>
@@ -1037,10 +1001,14 @@ function detailToFormValues(detail: PurchaseOrderDetail): PoFormValues {
       ...(detail.vendorId ? { vendorId: detail.vendorId } : {}),
       ...(detail.vendorCodeText ? { vendorCodeText: detail.vendorCodeText } : {}),
       ...(detail.dueDate ? { dueDate: detail.dueDate } : {}),
-      ...(detail.taxType ? { taxType: detail.taxType } : {}),
-      sgstPct: Number(detail.sgstPct ?? 0),
-      cgstPct: Number(detail.cgstPct ?? 0),
-      igstPct: Number(detail.igstPct ?? 0),
+      // ADR-246 — the stored three % summed (to 2 places) is the PO's GST %.
+      gstPercent:
+        Math.round(
+          (Number(detail.sgstPct ?? 0) +
+            Number(detail.cgstPct ?? 0) +
+            Number(detail.igstPct ?? 0)) *
+            100,
+        ) / 100,
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
     },
     lines: detail.lines.map(

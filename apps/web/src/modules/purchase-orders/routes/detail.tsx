@@ -56,7 +56,7 @@ import {
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
@@ -76,6 +76,7 @@ import {
 } from '../api';
 import { PoHeaderBand } from '../components/po-header-band';
 import { PoStatusBadge } from '../components/po-status-badge';
+import { PO_VENDOR_STATE_MISSING_NOTE } from '../lib/po-labels';
 import { printPurchaseOrder } from '../lib/print-po';
 import { runPrint } from '@/lib/print/preview-host';
 
@@ -443,6 +444,15 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           qcAcceptedQty={qcAcceptedQty}
           pendingChanges={pendingChanges}
         />
+        {/* ADR-246 — the server could not decide CGST + SGST vs IGST: the
+            vendor's State (or ours) is unknown. Same orange note as SO. */}
+        {detail.totals && detail.totals.taxType == null && detail.vendorId ? (
+          <div style={{ marginTop: 'var(--sp-3)' }}>
+            <Banner tone="warn" flush>
+              {PO_VENDOR_STATE_MISSING_NOTE}
+            </Banner>
+          </div>
+        ) : null}
       </div>
 
       <div className="panel">

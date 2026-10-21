@@ -17,10 +17,13 @@ import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/erro
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { VENDOR_SF_COLUMNS } from './sf-columns';
 import {
+  applyCustomerGstRules,
   applyMasterRules,
+  customerBlockingIssues,
   dropBlankCells,
   issueTexts,
   loadMasterRuleSettings,
+  partyGstinRuleApplies,
   rawRowText,
   withWarnings,
   zodRowReason,
@@ -223,9 +226,10 @@ export async function createVendor(
   return withUniqueRetry(() =>
     withUserContext(user, async (tx) => {
       // GST rules (plan v3 Step 2): warn mode → saved + `warnings`; enforce → 400.
+      // ADR-246: GSTIN problems refuse in every mode — the customer rule (ADR-244).
       const settings = await loadMasterRuleSettings(tx, companyId);
       const gst = checkPartyGst(input);
-      const warnings = applyMasterRules(
+      const warnings = applyCustomerGstRules(
         gst.issues,
         settings.masterRulesMode,
         `Vendor "${input.name.trim()}"`,
@@ -461,8 +465,10 @@ export async function createVendorsBulk(
           } while (takenCodes.has(code.toLowerCase()));
         }
         const gst = checkPartyGst(c);
-        if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
-          skip(issueTexts(gst.issues).join(' '), code, name);
+        // ADR-246: GSTIN problems skip the row in every mode (customer rule).
+        const blockingNew = customerBlockingIssues(gst.issues, settings.masterRulesMode);
+        if (blockingNew.length > 0) {
+          skip(issueTexts(blockingNew).join(' '), code, name);
           continue;
         }
         takenCodes.add(code.toLowerCase());
@@ -529,8 +535,15 @@ export async function createVendorsBulk(
         }
       }
       const gst = vendorGstUpdate(before, patch);
-      if (settings.masterRulesMode === 'enforce' && gst.issues.length > 0) {
-        skip(issueTexts(gst.issues).join(' '), before.code, before.name);
+      // ADR-246: a row that carries GST fields (and does not retire the vendor)
+      // is skipped on a GSTIN problem in every mode; otherwise only enforce skips.
+      const blocking = partyGstinRuleApplies(patch)
+        ? customerBlockingIssues(gst.issues, settings.masterRulesMode)
+        : settings.masterRulesMode === 'enforce'
+          ? gst.issues
+          : [];
+      if (blocking.length > 0) {
+        skip(issueTexts(blocking).join(' '), before.code, before.name);
         continue;
       }
       const set = { ...vendorPlainUpdates(patch), ...gst.updates };
@@ -647,7 +660,11 @@ export async function updateVendorTx(
 
   const settings = await loadMasterRuleSettings(tx, companyId);
   const gst = vendorGstUpdate(before, input);
-  const warnings = applyMasterRules(gst.issues, settings.masterRulesMode, `Vendor ${before.code}`);
+  // ADR-246: the customer rule (ADR-244) — GSTIN problems refuse in every mode
+  // when the edit carries the GST fields and does not set the vendor Inactive.
+  const warnings = partyGstinRuleApplies(input)
+    ? applyCustomerGstRules(gst.issues, settings.masterRulesMode, `Vendor ${before.code}`)
+    : applyMasterRules(gst.issues, settings.masterRulesMode, `Vendor ${before.code}`);
 
   const updates: Record<string, unknown> = {
     updatedBy: user.id,
@@ -699,11 +716,23 @@ export async function updateVendorOrStage(
     if (!(await isDocEditApprovalOn(tx, companyId))) return false;
     // "Editable" mirrors vendorEditRegistryEntry.isLive: any live (not-Trash) vendor.
     const rows = await tx
-      .select({ id: vendors.id })
+      .select()
       .from(vendors)
       .where(and(eq(vendors.id, id), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)))
       .limit(1);
-    return rows.length > 0;
+    const before = rows[0];
+    if (!before) return false;
+    // ADR-246 (customer rule ADR-244): a GSTIN problem is refused to the person
+    // who typed it, not held for an approver who would then hit the same refusal.
+    if (partyGstinRuleApplies(input)) {
+      const settings = await loadMasterRuleSettings(tx, companyId);
+      applyCustomerGstRules(
+        vendorGstUpdate(before, input).issues,
+        settings.masterRulesMode,
+        `Vendor ${before.code}`,
+      );
+    }
+    return true;
   });
   if (shouldStage) {
     const request = await requestDocumentEdit('Vendor', id, input, input.expectedUpdatedAt, user);

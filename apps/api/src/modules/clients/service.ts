@@ -23,6 +23,7 @@ import {
   dropBlankCells,
   issueTexts,
   loadMasterRuleSettings,
+  partyGstinRuleApplies,
   rawRowText,
   withWarnings,
   zodRowReason,
@@ -362,21 +363,6 @@ function clientGstUpdate(
   return { issues: gst.issues, updates };
 }
 
-/** ADR-244: on an EDIT the GSTIN rule refuses only when the edit carries the
- *  GST fields (the Customer form always does; an Excel row or an approved
- *  staged edit of phone / address does not) and does not retire the customer
- *  — an old customer without a GSTIN can still be set Inactive. A create
- *  always applies it. */
-function customerGstinRuleApplies(input: UpdateClientInput): boolean {
-  if (input.isActive === false) return false;
-  return (
-    input.gstCategory !== undefined ||
-    input.gstNumber !== undefined ||
-    input.stateCode !== undefined ||
-    input.state !== undefined
-  );
-}
-
 /** Plain-field part of an update (everything but the GST fields). */
 function clientPlainUpdates(input: UpdateClientInput): Record<string, unknown> {
   const updates: Record<string, unknown> = {};
@@ -580,7 +566,7 @@ export async function createClientsBulk(
         }
       }
       const gst = clientGstUpdate(before, patch);
-      const blocking = customerGstinRuleApplies(patch)
+      const blocking = partyGstinRuleApplies(patch)
         ? customerBlockingIssues(gst.issues, settings.masterRulesMode)
         : settings.masterRulesMode === 'enforce'
           ? gst.issues
@@ -704,7 +690,7 @@ export async function updateClientTx(
 
   const settings = await loadMasterRuleSettings(tx, companyId);
   const gst = clientGstUpdate(before, input);
-  const warnings = customerGstinRuleApplies(input)
+  const warnings = partyGstinRuleApplies(input)
     ? applyCustomerGstRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`)
     : applyMasterRules(gst.issues, settings.masterRulesMode, `Customer ${before.code}`);
 
@@ -766,7 +752,7 @@ export async function updateClientOrStage(
     if (!before) return false;
     // ADR-244: a GSTIN problem is refused to the person who typed it, not
     // held for an approver who would then hit the same refusal.
-    if (customerGstinRuleApplies(input)) {
+    if (partyGstinRuleApplies(input)) {
       const settings = await loadMasterRuleSettings(tx, companyId);
       applyCustomerGstRules(
         clientGstUpdate(before, input).issues,

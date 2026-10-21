@@ -14059,3 +14059,45 @@ GSTIN-vs-State clash carries `code: 'gstin_state_clash'`, not a text match.
 - No database change and no index; the check scans the company's live
   orders (small today). Add an expression index if the lists grow large.
 - A failed live check is silent and does not block Save.
+
+## ADR-246: PO GST split by vendor State, one GST %, round-off; vendor GSTIN compulsory; Vendor Address
+
+**Date:** 2026-10-21
+**Status:** Accepted (owner approved 2026-10-21; decisions 1-3 = recommendations)
+
+### Context
+
+The PO form only SUGGESTED SGST + CGST / IGST from the vendor and let the
+buyer override it; the server never checked. Three free % boxes accepted
+CGST 9 + SGST 5. No round-off. PR has no GST (Est. Cost only) — unchanged.
+
+### Decision
+
+1. One "GST %" (SO_GST_PERCENTS) on the PO form; the SERVER decides the tax
+   type from the vendor's State / GSTIN vs ours (`decideVendorTax`,
+   apps/api/src/lib/order-totals.ts) and stores the split itself
+   (`splitGstPercent`: CGST = half, SGST = rest; or IGST) in the existing
+   sgst/cgst/igst_pct columns. Browser taxType is ignored. Unknown State warns.
+2. Stored totals via `computeGstTotals`: tax_amount = GST, total_amount =
+   Grand Total rounded to the rupee (decision 1). All four save paths:
+   create, update, from PR, from PR batch. The auto zero-value OSP/RTV JW PO
+   is untouched.
+3. Nothing changes on a PO unless a user changes what drives it: on edit the
+   tax type / % / totals are recomputed ONLY when the GST %, the vendor or the
+   lines change, never on a locked PO. A remarks-only edit, or a later
+   vendor-master State change, never moves a saved PO.
+4. Detail / save responses return `totals` from the STORED figures
+   (`poTotalsFromStored`), so detail = list = reports = approval for old and
+   new POs; an old PO with mixed % gets totals = null and prints its stored
+   rows as before.
+5. Vendor GSTIN compulsory exactly like customers (ADR-244, decision 3),
+   sharing `applyCustomerGstRules` / `customerBlockingIssues` /
+   `partyGstinRuleApplies`; web rule helpers in settings/master-rules-ui.
+6. Read-only "Vendor Address" next to Vendor on the PO form.
+7. Approval limit unchanged: it compares Σ qty × rate (before tax).
+
+### Consequences
+
+- New POs carry a Round-off line; old POs keep their stored totals.
+- Open: the api test harness global-setup sweep fails on TEST data
+  (route_cards → T-prefixed items FK), so api tests could not be run.

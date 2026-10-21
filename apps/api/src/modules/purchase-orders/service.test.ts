@@ -131,7 +131,21 @@ describe('purchase-orders service', () => {
     expect(detail.companyId).toBe(admin.companyId);
     expect(detail.createdBy).toBe(admin.id);
     expect(detail.poType).toBe('standard');
-    expect(detail.sgstPct).toBe('9.00');
+    // ADR-246 — the server decides the tax type from the vendor's State (the
+    // payload's taxType is ignored) and splits the ONE 18% by it: all IGST, or
+    // CGST + SGST halves — also when the vendor's State is unknown.
+    const expectedSplit =
+      detail.taxType === 'igst'
+        ? { sgstPct: '0.00', cgstPct: '0.00', igstPct: '18.00' }
+        : { sgstPct: '9.00', cgstPct: '9.00', igstPct: '0.00' };
+    expect({
+      sgstPct: detail.sgstPct,
+      cgstPct: detail.cgstPct,
+      igstPct: detail.igstPct,
+    }).toEqual(expectedSplit);
+    // The response's totals are the STORED figures (poTotalsFromStored).
+    expect(detail.totals?.grandTotal).toBe(Number(detail.totalAmount));
+    expect(detail.totals?.gstAmount).toBe(Number(detail.taxAmount));
     expect(detail.lines).toHaveLength(2);
     expect(detail.lines[0]?.lineNo).toBe(1);
     expect(detail.lines[0]?.itemId).toBe(firstItemId);

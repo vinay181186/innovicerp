@@ -67,7 +67,14 @@ describe('vendors routes', () => {
       method: 'POST',
       url: '/vendors',
       headers: { 'content-type': 'application/json' },
-      payload: { code, name: 'Routes Alpha', isActive: true },
+      // ADR-244 / ADR-246 — GST Category required; GSTIN unless Unregistered.
+      payload: {
+        code,
+        name: 'Routes Alpha',
+        isActive: true,
+        gstCategory: 'unregistered',
+        stateCode: '24',
+      },
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().code).toBe(code);

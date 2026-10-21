@@ -43,10 +43,10 @@ export interface PoFormValues {
     vendorId?: string | undefined;
     vendorCodeText?: string | undefined;
     dueDate?: string | undefined;
-    taxType?: string | undefined;
-    sgstPct: number;
-    cgstPct: number;
-    igstPct: number;
+    /** ADR-246 — the ONE GST % the buyer picks (0 / 5 / 12 / 18 / 28, or an
+     *  old PO's stored SGST + CGST + IGST sum). The server splits it by the
+     *  vendor's State; the browser never sends a Tax Type or the three %. */
+    gstPercent: number;
     remarks?: string | undefined;
   };
   lines: PoFormLineValue[];

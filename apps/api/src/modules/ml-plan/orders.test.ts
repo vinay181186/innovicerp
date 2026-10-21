@@ -173,6 +173,9 @@ beforeAll(async () => {
       companyId,
       code: `${P}V1`,
       name: 'ML orders vendor',
+      // ADR-244 / ADR-246 — a valid vendor: Unregistered (no GSTIN), Gujarat.
+      gstCategory: 'unregistered',
+      stateCode: '24',
       createdBy: u.id,
       updatedBy: u.id,
     })

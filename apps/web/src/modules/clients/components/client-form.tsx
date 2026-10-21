@@ -27,8 +27,6 @@
 import {
   type Client,
   type CreateClientInput,
-  GST_CATEGORIES_WITHOUT_GSTIN,
-  isGstinStateClashMessage,
   type UpdateClientInput,
   createClientInputSchema,
   updateClientInputSchema,
@@ -40,10 +38,11 @@ import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form
 import {
   GST_CATEGORY_OPTIONS,
   type PartyGstNotes,
-  type RuleNote,
   STATE_OPTIONS,
   type ServerFieldErrors,
   blankToNull,
+  gstinRequiredFor,
+  hardPartyNotes,
   initialStateCode,
   oldStateHint,
   ruleHelp,
@@ -326,23 +325,6 @@ function ClientFormShell(props: {
   );
 }
 
-/** ADR-244: a customer's GSTIN / GST Category problem is an error in every
- *  mode — the amber Warn-mode note is shown in red instead. */
-function hardNote(note: RuleNote): RuleNote {
-  return note.warning ? { error: note.warning } : note;
-}
-
-/** ADR-244: the State note is hard only when it is the GSTIN-vs-State clash
- *  (the server refuses that one in every mode); other State notes keep the mode. */
-function stateNote(note: RuleNote): RuleNote {
-  return isGstinStateClashMessage(note.warning) ? hardNote(note) : note;
-}
-
-/** GSTIN is required unless the GST Category is Unregistered / Overseas. */
-function gstinRequiredFor(category: string | null | undefined): boolean {
-  return !(GST_CATEGORIES_WITHOUT_GSTIN as readonly string[]).includes(category ?? '');
-}
-
 /** The four sections. Every row sums to 12 on the grid:
  *    Identity  Code 3 · Customer 6 · GSTIN 3
  *    Address   Address 12 · City 4 · State 4 · Pincode 4
@@ -361,11 +343,7 @@ function ClientFields(props: {
   autoFocusName?: boolean;
 }): React.JSX.Element {
   const { register, errors } = props;
-  const notes: PartyGstNotes = {
-    gstNumber: hardNote(props.notes.gstNumber),
-    gstCategory: hardNote(props.notes.gstCategory),
-    stateCode: stateNote(props.notes.stateCode),
-  };
+  const notes = hardPartyNotes(props.notes);
   const gstinRequired = gstinRequiredFor(props.gstCategory);
   const oldHint = props.stateChosen ? null : oldStateHint(props.oldState);
   const stateError = errors.stateCode?.message ?? notes.stateCode.error;

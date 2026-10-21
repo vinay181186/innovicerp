@@ -2,7 +2,7 @@
 // the stored codes (`partial`, `job_work`, `sgst_cgst`, …) are unchanged; these
 // maps only decide what the user reads.
 
-import { type PoStatus, type PoTaxType, type PoType, poTaxTypeSchema } from '@innovic/shared';
+import type { PoStatus, PoType } from '@innovic/shared';
 
 /** ADR-222 — a purchase order has FOUR statuses on screen: Draft, Open, Closed,
  *  Cancelled. `partial` and `qc_pending` are retired codes that nothing writes
@@ -41,16 +41,15 @@ const TAX_TYPE_LABELS: Record<string, string> = {
   none: 'None',
 };
 
+/** ADR-246 — the orange note a PO screen shows when a vendor is chosen but its
+ *  State is unknown (the figures then come out as CGST + SGST). Screen only —
+ *  the vendor-worded twin of the SO / JWSO ORDER_STATE_MISSING_NOTE. */
+export const PO_VENDOR_STATE_MISSING_NOTE =
+  "Tax type not decided — fill the vendor's State / GSTIN in Vendor Master (or our GSTIN in Settings → Company). Worked out as CGST + SGST for now.";
+
 /** Status label for a value that may arrive as a plain string (form state). */
 export function poStatusLabel(status: string): string {
   return (PO_STATUS_LABELS as Record<string, string>)[status] ?? status.replaceAll('_', ' ');
-}
-
-/** The form's Tax Type select value as the fixed list the API accepts (S1):
- *  'sgst_cgst' | 'igst', or undefined for None / anything else. */
-export function toPoTaxType(v: string | null | undefined): PoTaxType | undefined {
-  const parsed = poTaxTypeSchema.safeParse(v?.trim());
-  return parsed.success ? parsed.data : undefined;
 }
 
 /** Tax Type — one fixed list since 0182; any other stored value shows as is.

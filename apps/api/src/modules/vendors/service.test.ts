@@ -31,10 +31,18 @@ afterAll(async () => {
   await db.delete(vendors).where(like(vendors.code, `${TEST_PREFIX}%`));
 });
 
+// ADR-244 / ADR-246 — a vendor save needs a GST Category, and a GSTIN unless
+// Unregistered / Overseas. These fixtures are not about GST, so they take the
+// simplest valid answer: Unregistered, State Gujarat (24).
+const NO_GSTIN = { gstCategory: 'unregistered', stateCode: '24' } as const;
+
 describe('vendors service', () => {
   it('createVendor inserts a row with audit columns + soft-delete null', async () => {
     const code = `${TEST_PREFIX}A1`;
-    const v = await service.createVendor({ code, name: 'Alpha Suppliers', isActive: true }, admin);
+    const v = await service.createVendor(
+      { code, name: 'Alpha Suppliers', isActive: true, ...NO_GSTIN },
+      admin,
+    );
     expect(v.code).toBe(code);
     expect(v.companyId).toBe(admin.companyId);
     expect(v.createdBy).toBe(admin.id);
@@ -44,8 +52,14 @@ describe('vendors service', () => {
   });
 
   it('createVendor auto-generates distinct sequential VND- codes (bug 2)', async () => {
-    const a = await service.createVendor({ name: 'Auto Vendor A', isActive: true }, admin);
-    const b = await service.createVendor({ name: 'Auto Vendor B', isActive: true }, admin);
+    const a = await service.createVendor(
+      { name: 'Auto Vendor A', isActive: true, ...NO_GSTIN },
+      admin,
+    );
+    const b = await service.createVendor(
+      { name: 'Auto Vendor B', isActive: true, ...NO_GSTIN },
+      admin,
+    );
     expect(a.code).toMatch(/^VND-\d{3,}$/);
     expect(b.code).toMatch(/^VND-\d{3,}$/);
     expect(a.code).not.toBe(b.code);
@@ -59,9 +73,9 @@ describe('vendors service', () => {
 
   it('createVendor rejects duplicate code in same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
-    await service.createVendor({ code, name: 'First', isActive: true }, admin);
+    await service.createVendor({ code, name: 'First', isActive: true, ...NO_GSTIN }, admin);
     await expect(
-      service.createVendor({ code, name: 'Second', isActive: true }, admin),
+      service.createVendor({ code, name: 'Second', isActive: true, ...NO_GSTIN }, admin),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
@@ -74,6 +88,7 @@ describe('vendors service', () => {
         materialsSupplied: 'EN8, EN24, EN31',
         rating: 'A',
         isActive: true,
+        ...NO_GSTIN,
       },
       admin,
     );
@@ -89,11 +104,11 @@ describe('vendors service', () => {
 
   it('listVendors filters by search', async () => {
     await service.createVendor(
-      { code: `${TEST_PREFIX}SEARCH-A`, name: 'Searchable A', isActive: true },
+      { code: `${TEST_PREFIX}SEARCH-A`, name: 'Searchable A', isActive: true, ...NO_GSTIN },
       admin,
     );
     await service.createVendor(
-      { code: `${TEST_PREFIX}SEARCH-B`, name: 'Other B', isActive: true },
+      { code: `${TEST_PREFIX}SEARCH-B`, name: 'Other B', isActive: true, ...NO_GSTIN },
       admin,
     );
     const result = await service.listVendors({ search: 'Searchable', limit: 50, offset: 0 }, admin);
@@ -103,7 +118,7 @@ describe('vendors service', () => {
 
   it('updateVendor changes fields', async () => {
     const created = await service.createVendor(
-      { code: `${TEST_PREFIX}U1`, name: 'Original', isActive: true },
+      { code: `${TEST_PREFIX}U1`, name: 'Original', isActive: true, ...NO_GSTIN },
       admin,
     );
     const updated = await service.updateVendor(created.id, { name: 'Renamed', rating: 'B' }, admin);
@@ -114,7 +129,7 @@ describe('vendors service', () => {
 
   it('softDeleteVendor sets deletedAt; row no longer visible', async () => {
     const created = await service.createVendor(
-      { code: `${TEST_PREFIX}D1`, name: 'Doomed', isActive: true },
+      { code: `${TEST_PREFIX}D1`, name: 'Doomed', isActive: true, ...NO_GSTIN },
       admin,
     );
     await service.softDeleteVendor(created.id, 'test cleanup', admin);

@@ -21,6 +21,11 @@ import {
   PendingChangeChip,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
+import {
+  gstTaxRows,
+  signedRoundOff,
+  taxTypeLabel as gstTaxTypeLabel,
+} from '@/modules/sales-orders/lib/gst-rows';
 import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
@@ -122,13 +127,18 @@ export function PoHeaderBand({
     .filter(Boolean)
     .join(', ');
   const rejected = Boolean(detail.rejectedAt ?? detail.rejectedBy ?? detail.rejectionReason);
-  const gstParts = (
-    [
-      ['SGST', detail.sgstPct],
-      ['CGST', detail.cgstPct],
-      ['IGST', detail.igstPct],
-    ] as const
-  ).filter(([, pct]) => Number(pct) > 0);
+  // ADR-246 — the server's money roll-up (CGST + SGST or IGST from ONE GST %,
+  // Round-off, rounded total). The server sends it on the detail read AND on
+  // the create / update / approve responses. It is null for an old PO whose
+  // stored percentages are mixed (and when prices are hidden) — then the
+  // stored Tax / Total rows show exactly as before.
+  const totals = detail.totals ?? null;
+  const gstPercent =
+    totals?.gstPercent ??
+    Math.round(
+      (Number(detail.sgstPct ?? 0) + Number(detail.cgstPct ?? 0) + Number(detail.igstPct ?? 0)) *
+        100,
+    ) / 100;
 
   return (
     <div style={{ display: 'flex', alignItems: 'stretch' }}>
@@ -229,9 +239,7 @@ export function PoHeaderBand({
               detail.soCode ? (
                 <span className="mono" style={{ color: 'var(--purple)' }}>
                   {soNoWithInternal(detail.soCode, detail.soInternalNo)}
-                  {detail.soLineNo ? (
-                    <span className="text3"> · Ln {detail.soLineNo}</span>
-                  ) : null}
+                  {detail.soLineNo ? <span className="text3"> · Ln {detail.soLineNo}</span> : null}
                 </span>
               ) : (
                 <span className="text3">—</span>
@@ -242,7 +250,11 @@ export function PoHeaderBand({
 
         {/* ── Totals ── */}
         <Col caption="Totals">
-          <Row label="Lines" value={<span className="mono">{detail.lines.length}</span>} align="right" />
+          <Row
+            label="Lines"
+            value={<span className="mono">{detail.lines.length}</span>}
+            align="right"
+          />
           <Row label="Total Qty" value={<span className="mono">{totalQty}</span>} align="right" />
           <Row
             label="GRN Received"
@@ -272,11 +284,29 @@ export function PoHeaderBand({
                 value={<span className="mono">₹{(detail.subtotal ?? 0).toFixed(2)}</span>}
                 align="right"
               />
-              <Row
-                label="Tax"
-                value={<span className="mono">₹{(detail.taxAmount ?? 0).toFixed(2)}</span>}
-                align="right"
-              />
+              {totals ? (
+                <>
+                  {gstTaxRows(totals).map((r) => (
+                    <Row
+                      key={r.label}
+                      label={r.label}
+                      value={<span className="mono">₹{r.amount.toFixed(2)}</span>}
+                      align="right"
+                    />
+                  ))}
+                  <Row
+                    label="Round-off"
+                    value={<span className="mono">{signedRoundOff(totals.roundOff)}</span>}
+                    align="right"
+                  />
+                </>
+              ) : (
+                <Row
+                  label="Tax"
+                  value={<span className="mono">₹{(detail.taxAmount ?? 0).toFixed(2)}</span>}
+                  align="right"
+                />
+              )}
               <div
                 style={{
                   display: 'flex',
@@ -292,7 +322,7 @@ export function PoHeaderBand({
               >
                 <span style={{ fontSize: 12, fontWeight: 700 }}>Total</span>
                 <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green2)' }}>
-                  ₹{detail.totalAmount.toFixed(2)}
+                  ₹{(totals?.grandTotal ?? detail.totalAmount).toFixed(2)}
                 </span>
               </div>
             </>
@@ -301,24 +331,16 @@ export function PoHeaderBand({
 
         {/* ── Tax & approval ── */}
         <Col caption="Tax & Approval">
-          <Row label="Tax Type" value={taxTypeLabel(detail.taxType)} />
-          <Row label="Due Date" value={<span className="mono">{fmtDate(detail.dueDate)}</span>} />
-          {/* Only the rates that apply — a 0% rate is not shown. */}
-          {detail.totalAmount == null || gstParts.length === 0 ? null : (
-            <div style={{ fontSize: 11, marginBottom: 6 }}>
-              <div className="text3" style={{ marginBottom: 2 }}>
-                GST split
-              </div>
-              <div className="mono">
-                {gstParts.map(([label, pct], i) => (
-                  <span key={label}>
-                    {i > 0 ? ' · ' : null}
-                    <span className="text2">{label}</span> {pct}%
-                  </span>
-                ))}
-              </div>
-            </div>
+          {/* ADR-246 — ONE GST %; the Tax Type is the server's, from the
+              vendor's State (null with totals = State unknown → CGST + SGST). */}
+          {detail.totalAmount == null ? null : (
+            <Row label="GST %" value={<span className="mono">{gstPercent}%</span>} />
           )}
+          <Row
+            label="Tax Type"
+            value={totals ? gstTaxTypeLabel(totals.taxType) : taxTypeLabel(detail.taxType)}
+          />
+          <Row label="Due Date" value={<span className="mono">{fmtDate(detail.dueDate)}</span>} />
           {detail.approvedAt ? (
             <Row
               label="Approved At"
