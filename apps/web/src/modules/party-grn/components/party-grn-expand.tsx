@@ -190,7 +190,7 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
           <b>Received By:</b> {g.receivedByText ?? '—'}
         </span>
         <span>
-          <b>Remarks:</b> {g.remarks ?? '—'}
+          <b>GRN Remarks:</b> {g.remarks ?? '—'}
         </span>
         {canEdit && isLive ? (
           <button
@@ -227,7 +227,7 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
             { field: 'grnDate', label: 'GRN Date' },
             { field: 'dcNo', label: 'Customer Challan No.' },
             { field: 'receivedBy', label: 'Received By' },
-            { field: 'remarks', label: 'Remarks' },
+            { field: 'remarks', label: 'GRN Remarks' },
           ].map(({ field, label }) => {
             const c = headerPendingChange(pendingChanges, field);
             if (!c) return null;

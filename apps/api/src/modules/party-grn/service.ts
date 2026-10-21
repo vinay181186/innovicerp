@@ -41,6 +41,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertPartyGrnDcNoFree } from '../../lib/party-grn-dc-unique';
 import { assertJwLineOpenForWork, type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
@@ -499,7 +500,9 @@ export async function createPartyGrn(
       }
     }
 
-    // 5) Header.
+    // 5) Header. Customer Challan No. must be free for this customer (§20 lock
+    //    inside the helper serialises two saves of the same number).
+    await assertPartyGrnDcNoFree(tx, companyId, jw.clientId ?? null, input.dcNo);
     const code = await nextPartyGrnCode(tx, companyId);
     const headerInserted = await tx
       .insert(partyGrn)
@@ -827,6 +830,7 @@ export async function updatePartyGrnTx(
   // Lock the header, then confirm it is live (not cancelled).
   const headRows = (await tx.execute(sql`
     SELECT id, code, grn_date AS "grnDate", dc_no AS "dcNo", remarks,
+           client_id AS "clientId",
            received_by_text AS "receivedByText", deleted_at AS "deletedAt"
       FROM public.party_grn
      WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
@@ -837,6 +841,7 @@ export async function updatePartyGrnTx(
     grnDate: unknown;
     dcNo: string | null;
     remarks: string | null;
+    clientId: string | null;
     receivedByText: string | null;
     deletedAt: unknown;
   }>;
@@ -865,7 +870,19 @@ export async function updatePartyGrnTx(
   };
   const headerSet: Record<string, unknown> = {};
   if (input.grnDate !== undefined) headerSet['grnDate'] = input.grnDate;
-  if (input.dcNo !== undefined) headerSet['dcNo'] = input.dcNo ?? null;
+  if (input.dcNo !== undefined) {
+    // A challan cannot be blanked. The schema refuses null/blank; this also
+    // catches a staged payload saved before that rule (edit-approval replay).
+    const dcNo = typeof input.dcNo === 'string' ? input.dcNo.trim() : '';
+    if (!dcNo) throw new ValidationError('Customer Challan No. is required.');
+    // Unique per customer — runs on direct edit AND on approval replay
+    // (applyEdit → updatePartyGrnTx). Unchanged value is skipped.
+    await assertPartyGrnDcNoFree(tx, companyId, head.clientId, dcNo, {
+      id: head.id,
+      currentDcNo: head.dcNo,
+    });
+    headerSet['dcNo'] = dcNo;
+  }
   if (input.remarks !== undefined) headerSet['remarks'] = input.remarks ?? null;
   if (input.receivedByText !== undefined) {
     headerSet['receivedByText'] = input.receivedByText ?? null;

@@ -81,6 +81,7 @@ import type {
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JWSO_SF_COLUMNS } from './sf-columns';
+import { PENDING_QC_SQL } from '../party-grn/service';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -437,6 +438,29 @@ export async function listJobWorkOrders(
     const clientFrag = input.clientId ? sql`AND jw.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND jw.jw_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND jw.jw_date <= ${input.toDate}::date` : sql``;
+    // Party GRN picker: only JWSOs that can still receive customer material —
+    // at least one live, open, not short-closed line with a customer RM whose
+    // order qty is above what is already committed. "Committed" is the SAME
+    // rule as jwLineCommittedQty (party-grn/service.ts): Σ received on lines
+    // waiting for Incoming QC + Σ accepted on QC'd lines, live GRNs only.
+    const receivableFrag =
+      input.receivable === true
+        ? sql`AND EXISTS (
+            SELECT 1 FROM public.job_work_order_lines l
+             WHERE l.job_work_order_id = jw.id
+               AND l.deleted_at IS NULL
+               AND l.status = 'open'
+               AND l.short_closed_at IS NULL
+               AND l.party_material_id IS NOT NULL
+               AND l.order_qty > (
+                 SELECT COALESCE(SUM(CASE WHEN ${PENDING_QC_SQL} THEN pgl.received_qty
+                                          ELSE pgl.accepted_qty END), 0)
+                   FROM public.party_grn_lines pgl
+                   JOIN public.party_grn pgh ON pgh.id = pgl.party_grn_id AND pgh.deleted_at IS NULL
+                  WHERE pgl.jw_line_id = l.id AND pgl.deleted_at IS NULL
+               )
+          )`
+        : sql``;
 
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own whitelist (sf-columns.ts). Applied to list AND count.
@@ -483,7 +507,7 @@ export async function listJobWorkOrders(
         GROUP BY l.job_work_order_id
       ) pg ON pg.job_work_order_id = jw.id
       WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
-        ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag} ${sfFrag}`;
+        ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag} ${receivableFrag} ${sfFrag}`;
 
     const result = await tx.execute(sql`
       SELECT

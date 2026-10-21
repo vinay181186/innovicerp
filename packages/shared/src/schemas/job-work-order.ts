@@ -34,6 +34,7 @@ import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { polInputSchema } from '../lib/pol';
 import { lineRemarksInputSchema } from '../lib/line-remarks';
+import { queryBoolean } from '../lib/query-boolean';
 import { SO_STATUSES } from '../enums/so-status';
 import { uomSchema } from './item';
 import { sfRawParamSchema } from './list-query';
@@ -327,6 +328,9 @@ export const listJobWorkOrdersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   status: jwStatusSchema.optional(),
   clientId: z.string().uuid().optional(),
+  /** New Party GRN pickers: only JWSOs with at least one open line whose
+   *  customer RM still has Pending > 0 (Order − Accepted − Waiting QC). */
+  receivable: queryBoolean().optional(),
   fromDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
