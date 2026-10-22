@@ -443,9 +443,24 @@ const PAGINATE_SCRIPT = `
       var avail = PAGE_H - headH - footH;
       if (!(avail > 0)) return;
 
+      // Opt-in repeated heading (the Job Card operations, ADR-034): a row
+      // marked data-carry-head="x" that starts a new page gets a copy of the
+      // row marked data-head-for="x" above it, so the columns stay named.
+      var heads = {};
+      for (var hi=0; hi<rows.length; hi++){
+        var hk = rows[hi].getAttribute('data-head-for');
+        if (hk) heads[hk] = { row: rows[hi], h: hs[hi] };
+      }
       var pages = [[]], used = 0;
       for (var k=0;k<rows.length;k++){
-        if (used > 0 && used + hs[k] > avail){ pages.push([]); used = 0; }
+        if (used > 0 && used + hs[k] > avail){
+          pages.push([]); used = 0;
+          var ck = rows[k].getAttribute('data-carry-head');
+          if (ck && heads[ck]){
+            pages[pages.length-1].push(heads[ck].row.cloneNode(true));
+            used += heads[ck].h;
+          }
+        }
         pages[pages.length-1].push(rows[k]);
         used += hs[k];
       }
@@ -473,6 +488,10 @@ const PAGINATE_SCRIPT = `
       // here means the page count is REAL -- until now the box said just "1".
       var slots = document.querySelectorAll('[data-pgof]');
       for (var si=0; si<slots.length; si++) slots[si].textContent = '1 of ' + total;
+      // A page number printed at the very END of a document (the Job Card
+      // foot) is on the last page: "N of N".
+      var lasts = document.querySelectorAll('[data-pglast]');
+      for (var li=0; li<lasts.length; li++) lasts[li].textContent = total + ' of ' + total;
     } catch(e) { /* un-paginated document stands */ }
   }
   if (document.readyState === 'complete') run();
@@ -664,12 +683,12 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         '<td class="colh ctr" style="width:22mm">Deviated</td>' +
         '<td class="colh ctr" style="width:24mm">QC Status</td>'
       : '<td class="colh ctr" style="width:11mm">Sr No</td>' +
-      polHead +
-      '<td class="colh">Item Code</td>' +
-      '<td class="colh ctr" style="width:14mm">UOM</td>' +
-      (showHsn ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
-      '<td class="colh ctr" style="width:20mm">Qty</td>' +
-      '<td class="colh" style="width:62mm">Remarks</td>';
+        polHead +
+        '<td class="colh">Item Code</td>' +
+        '<td class="colh ctr" style="width:14mm">UOM</td>' +
+        (showHsn ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
+        '<td class="colh ctr" style="width:20mm">Qty</td>' +
+        '<td class="colh" style="width:62mm">Remarks</td>';
 
   const itemRows = lines
     .map((l, i) => {
@@ -768,7 +787,9 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   ];
   const lone = signCells.length === 1;
   const signGridCols = lone ? 2 : signCells.length;
-  const signCellStyle = lone ? ' style="grid-column:2;border-left:1px solid var(--paper-rule)"' : '';
+  const signCellStyle = lone
+    ? ' style="grid-column:2;border-left:1px solid var(--paper-rule)"'
+    : '';
 
   return `
   ${model.opts?.testBanner ? '<div class="no-print test-banner">ⓘ TEST PRINT — Sample data shown. Real data is substituted on actual prints.</div>' : ''}
