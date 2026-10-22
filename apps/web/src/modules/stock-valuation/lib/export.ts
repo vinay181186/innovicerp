@@ -12,10 +12,11 @@ export function categoryLabel(c: string): string {
   return c ? itemTypeLabel(c) : '—';
 }
 
-export function exportStockValuation(rows: StockValuationRow[]): void {
+export function exportStockValuation(rows: StockValuationRow[], priceHidden: boolean): void {
   // Money hidden for L1 Viewers: the API nulls rate/value, so the exported
   // sheet drops the Rate + Stock Value columns and the Category Summary sheet.
-  const priceHidden = rows.some((r) => r.value == null);
+  // TOLD by the server (`priceVisible`), never inferred — a null value also
+  // means "no value yet", and must not hide money from an entitled user.
   const withStock = rows.filter((r) => r.stockQty > 0);
   const detail = withStock.map((r) => ({
     'Item Type': categoryLabel(r.category),
@@ -23,7 +24,8 @@ export function exportStockValuation(rows: StockValuationRow[]): void {
     'Item Name': r.name,
     UOM: r.uom,
     Physical: r.stockQty,
-    ...(priceHidden ? {} : { Rate: r.rate ?? 0, 'Stock Value': r.value ?? 0 }),
+    // A not-yet-valued item exports a blank, never a false ₹0.
+    ...(priceHidden ? {} : { Rate: r.rate ?? '', 'Stock Value': r.value ?? '' }),
     'Last GRN Date': r.lastGrnDate ?? '',
   }));
   const wb = XLSX.utils.book_new();

@@ -91,7 +91,7 @@ function StockValuationPage(): React.JSX.Element {
   const runExport = (): void => {
     setExporting(true);
     void fetchAllStockValuation(params)
-      .then((all) => exportStockValuation(all))
+      .then((all) => exportStockValuation(all.rows, !all.priceVisible))
       .catch((e: unknown) =>
         window.alert(e instanceof Error ? e.message : 'Could not export. Try again.'),
       )
@@ -105,6 +105,7 @@ function StockValuationPage(): React.JSX.Element {
   // Value columns (and their totals cell) drop. Told by the server, not inferred
   // from a null money field — a null also means "no value yet".
   const priceHidden = !data?.priceVisible;
+
   const columns = useMemo<DataTableColumn<StockValuationRow>[]>(() => {
     const cols: DataTableColumn<StockValuationRow>[] = [
       // Code first — it is the pinned column (owner rule, ADR-199). Item code

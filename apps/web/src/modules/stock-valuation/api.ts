@@ -35,9 +35,15 @@ export function useStockValuation(p: StockValuationParams, limit: number, offset
 }
 
 /** Every row matching the screen's filters — for the Excel export. */
-export function fetchAllStockValuation(p: StockValuationParams) {
-  return fetchAllPages(async (limit, offset) => {
+/** Every matching row, plus the server's own `priceVisible` from those same
+ *  responses — the export decides its money columns from the data it writes,
+ *  never from the (possibly stale) on-screen page. */
+export async function fetchAllStockValuation(p: StockValuationParams) {
+  let priceVisible = false;
+  const rows = await fetchAllPages(async (limit, offset) => {
     const res = await apiFetch<StockValuationResponse>(url(p, limit, offset));
+    priceVisible = res.priceVisible;
     return { items: res.rows, total: res.total };
   });
+  return { rows, priceVisible };
 }
