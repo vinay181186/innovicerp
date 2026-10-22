@@ -72,14 +72,15 @@ export function printPurchaseOrder(args: {
   const isSpo = doc === 'SERVICE PO';
 
   // Money is hidden for L1 Viewers: the API nulls the header total and line
-  // rates. A printed PO must not leak what the screen hides, so every rupee
-  // cell prints "—" and the amount-in-words is dropped.
+  // rates. A printed PO must not leak what the screen hides, so the sheet
+  // leaves the Rate / Amount columns, the money block and the amount in words
+  // off altogether (`hideMoney`) and `{totalValue}` prints blank.
   // TOLD, not inferred — same test the detail page makes (routes/detail.tsx
   // `priceVisible === false`). Probing `totalAmount == null` also caught POs
   // whose header roll-up was simply never filled, and printed "—" in every
   // rupee cell for a buyer fully entitled to see the price.
   const priceHidden = po.priceVisible === false;
-  const money = (n: number): string => (priceHidden ? '—' : inrFormat(n));
+  const money = (n: number): string => (priceHidden ? '' : inrFormat(n));
 
   const uomOf = (u: string | null | undefined): string => u?.trim() || PO_UOM_FALLBACK;
   const lineUoms = [...new Set(lines.map((l) => uomOf(l.uom)))];
@@ -109,7 +110,7 @@ export function printPurchaseOrder(args: {
   const taxRows: { label: string; value: string }[] = [];
   if (t) {
     for (const r of gstTaxRows(t)) taxRows.push({ label: r.label, value: money(r.amount) });
-    taxRows.push({ label: 'Round-off', value: priceHidden ? '—' : signedRoundOff(t.roundOff) });
+    taxRows.push({ label: 'Round-off', value: priceHidden ? '' : signedRoundOff(t.roundOff) });
   } else {
     if (igstPct > 0) {
       taxRows.push({ label: `IGST @ ${igstPct}%`, value: money((subtotal * igstPct) / 100) });
@@ -273,8 +274,9 @@ export function printPurchaseOrder(args: {
     })),
     totalQty: String(totalQty),
     totalUom,
-    // Viewers who may not see prices get the qty-only PO — the Rate and Amount
-    // cells print an em dash and no money block or amount-in-words follows.
+    // Viewers who may not see prices get the qty-only PO — no Rate / Amount
+    // columns, no money block, no amount-in-words.
+    hideMoney: priceHidden,
     ...(priceHidden
       ? {}
       : {

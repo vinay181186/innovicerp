@@ -24,6 +24,7 @@ export const receivableAgeingReport: RegisteredReport = {
     group: 'Finance',
     dept: 'finance',
     showsMoney: true,
+    priceForm: 'invoice_create',
     filters: [
       { key: 'customer', label: 'Customer', kind: 'text', placeholder: 'Customer name' },
       { key: 'asOn', label: 'As On Date', kind: 'date' },

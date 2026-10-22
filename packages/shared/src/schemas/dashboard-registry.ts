@@ -7,6 +7,8 @@
 // (legacy widget keys; our route paths for quick links) so a saved layout
 // survives. `navPage` is always our route path.
 
+import type { AccessFormKey } from '../enums/access-control';
+
 export interface DashboardWidgetDef {
   key: string;
   label: string;
@@ -15,6 +17,9 @@ export interface DashboardWidgetDef {
   color: string;
   dept: string | null; // null = no dept gate (visible to all)
   navPage: string;
+  /** A money widget: shown only to users who may see prices on this page
+   *  (same per-page rule as the screens, incl. the "price OFF" switch). */
+  priceForm?: AccessFormKey;
 }
 
 // Order matches legacy _dashWidgets. quick_links is special (full-width,
@@ -28,7 +33,7 @@ export const DASHBOARD_WIDGETS: readonly DashboardWidgetDef[] = [
   { key: 'stock_alerts', label: 'Stock Alerts', desc: 'Low stock items', icon: '📦', color: '#F59E0B', dept: 'store', navPage: '/store-inventory' },
   { key: 'pr_pending', label: 'PR Status', desc: 'Purchase request summary', icon: '📋', color: '#2563EB', dept: 'purchase', navPage: '/purchase-requests' },
   { key: 'po_status', label: 'PO Status', desc: 'Open purchase orders summary', icon: '🛒', color: '#2563EB', dept: 'purchase', navPage: '/purchase-orders' },
-  { key: 'cost_summary', label: 'Cost Summary', desc: 'Total costs across SOs', icon: '💰', color: '#0D9488', dept: 'finance', navPage: '/so-costing' },
+  { key: 'cost_summary', label: 'Cost Summary', desc: 'Total costs across SOs', icon: '💰', color: '#0D9488', dept: 'finance', navPage: '/so-costing', priceForm: 'po_create' },
   { key: 'my_tasks', label: 'My Tasks', desc: 'Your assigned tasks summary', icon: '📋', color: '#7C3AED', dept: 'tasks', navPage: '/task-board' },
   { key: 'so_progress', label: 'SO Progress', desc: 'Top 5 SOs by progress', icon: '📊', color: '#8B5CF6', dept: 'planning', navPage: '/so-overview' },
   { key: 'grn_pending', label: 'GRN QC Pending', desc: 'GRNs waiting for QC', icon: '📥', color: '#F59E0B', dept: 'store', navPage: '/goods-receipt-notes' },

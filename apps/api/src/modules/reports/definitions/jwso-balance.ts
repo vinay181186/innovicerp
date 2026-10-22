@@ -26,6 +26,7 @@ export const jwsoBalanceReport: RegisteredReport = {
     group: 'Sales',
     dept: 'sales',
     showsMoney: true,
+    priceForm: 'jw_create',
     filters: [
       { key: 'customer', label: 'Customer', kind: 'text', placeholder: 'Customer name' },
       { key: 'status', label: 'JWSO Line Status', kind: 'enum', options: [...STATUSES] },

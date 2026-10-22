@@ -17,6 +17,8 @@
 // Two column sets, one sheet:
 //   'challan'  Sr · Item detail · UOM · HSN (only when a line has one) · Qty · Remarks
 //   'po'       Sr · Item detail · UOM · Qty · Rate · Amount   (+ money totals)
+//              — Rate, Amount and the money totals are LEFT OFF when the
+//                viewer may not see prices (`hideMoney`), never dashed
 //   'grn'      Sr · Item detail · Received · Accepted · Rejected · QC status
 //              (no UOM: a GRN line does not carry one, so the column was blank
 //               on every row of every GRN)
@@ -136,6 +138,10 @@ export interface SheetPrintModel {
   totalUom: string;
   /** PO only. Subtotal / tax / grand rows under the quantity total. */
   money?: SheetMoney;
+  /** PO column set only: the viewer may not see prices (server `priceVisible:
+   *  false`). The Rate and Amount columns, the money rows and the amount in
+   *  words are left off the sheet altogether — never printed as dashes. */
+  hideMoney?: boolean;
   /** GRN only — the accepted / rejected columns of the total row. */
   totalAccepted?: string;
   totalRejected?: string;
@@ -437,9 +443,24 @@ const PAGINATE_SCRIPT = `
       var avail = PAGE_H - headH - footH;
       if (!(avail > 0)) return;
 
+      // Opt-in repeated heading (the Job Card operations, ADR-034): a row
+      // marked data-carry-head="x" that starts a new page gets a copy of the
+      // row marked data-head-for="x" above it, so the columns stay named.
+      var heads = {};
+      for (var hi=0; hi<rows.length; hi++){
+        var hk = rows[hi].getAttribute('data-head-for');
+        if (hk) heads[hk] = { row: rows[hi], h: hs[hi] };
+      }
       var pages = [[]], used = 0;
       for (var k=0;k<rows.length;k++){
-        if (used > 0 && used + hs[k] > avail){ pages.push([]); used = 0; }
+        if (used > 0 && used + hs[k] > avail){
+          pages.push([]); used = 0;
+          var ck = rows[k].getAttribute('data-carry-head');
+          if (ck && heads[ck]){
+            pages[pages.length-1].push(heads[ck].row.cloneNode(true));
+            used += heads[ck].h;
+          }
+        }
         pages[pages.length-1].push(rows[k]);
         used += hs[k];
       }
@@ -467,6 +488,10 @@ const PAGINATE_SCRIPT = `
       // here means the page count is REAL -- until now the box said just "1".
       var slots = document.querySelectorAll('[data-pgof]');
       for (var si=0; si<slots.length; si++) slots[si].textContent = '1 of ' + total;
+      // A page number printed at the very END of a document (the Job Card
+      // foot) is on the last page: "N of N".
+      var lasts = document.querySelectorAll('[data-pglast]');
+      for (var li=0; li<lasts.length; li++) lasts[li].textContent = total + ' of ' + total;
     } catch(e) { /* un-paginated document stands */ }
   }
   if (document.readyState === 'complete') run();
@@ -524,8 +549,8 @@ function boxHtml(
 // enough one that nobody would catch it.
 const PAGE_OF_ROW = '<dt>Page</dt><dd class="mono" data-pgof>1</dd>';
 
-// `cols` is COLS on every document, and one more on the three that carry a
-// POL column — see `showPol` in buildSheetHtml.
+// `cols` is COLS, plus one for a POL column, minus two on a price-hidden PO
+// sheet — always pass buildSheetHtml's own `cols`, never the default.
 function sectionRow(html: string, cols: number = COLS): string {
   return `<tr><td class="block" colspan="${cols}">${html}</td></tr>`;
 }
@@ -628,9 +653,13 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   // item's UOM (A26). Each earns its column only when a line has one, so a
   // purchase order / old GRN prints exactly as before.
   const showHsnPo = po && lines.some((l) => (l.hsn ?? '').trim() !== '');
+  // Rate + Amount: the PO column set's last two columns, gone when hidden.
+  // ONE flag; everything money-related below derives from it.
+  const hideMoney = po && model.hideMoney === true;
+  const priced = po && !hideMoney;
   const showUomGrn = grn && lines.some((l) => (l.uom ?? '').trim() !== '');
   const extra = (showHsnPo ? 1 : 0) + (showUomGrn ? 1 : 0);
-  const cols = (showPol ? COLS + 1 : COLS) - (hsnDropped ? 1 : 0) + extra;
+  const cols = (showPol ? COLS + 1 : COLS) - (hsnDropped ? 1 : 0) - (hideMoney ? 2 : 0) + extra;
   const polHead = showPol ? '<td class="colh ctr" style="width:13mm">POL</td>' : '';
 
   const columnHeads = po
@@ -640,8 +669,10 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
       (showHsnPo ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
-      '<td class="colh ctr" style="width:26mm">Rate</td>' +
-      '<td class="colh ctr" style="width:30mm">Amount</td>'
+      (priced
+        ? '<td class="colh ctr" style="width:26mm">Rate</td>' +
+          '<td class="colh ctr" style="width:30mm">Amount</td>'
+        : '')
     : grn
       ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
         polHead +
@@ -652,12 +683,12 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         '<td class="colh ctr" style="width:22mm">Deviated</td>' +
         '<td class="colh ctr" style="width:24mm">QC Status</td>'
       : '<td class="colh ctr" style="width:11mm">Sr No</td>' +
-      polHead +
-      '<td class="colh">Item Code</td>' +
-      '<td class="colh ctr" style="width:14mm">UOM</td>' +
-      (showHsn ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
-      '<td class="colh ctr" style="width:20mm">Qty</td>' +
-      '<td class="colh" style="width:62mm">Remarks</td>';
+        polHead +
+        '<td class="colh">Item Code</td>' +
+        '<td class="colh ctr" style="width:14mm">UOM</td>' +
+        (showHsn ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
+        '<td class="colh ctr" style="width:20mm">Qty</td>' +
+        '<td class="colh" style="width:62mm">Remarks</td>';
 
   const itemRows = lines
     .map((l, i) => {
@@ -672,8 +703,11 @@ export function buildSheetHtml(model: SheetPrintModel): string {
           lead +
           (showHsnPo ? `<td class="ctr">${esc(l.hsn ?? '')}</td>` : '') +
           `<td class="qty">${esc(l.qty)}</td>` +
-          `<td class="money">${esc(l.rate ?? '')}</td>` +
-          `<td class="money">${esc(l.amount ?? '')}</td></tr>`
+          (priced
+            ? `<td class="money">${esc(l.rate ?? '')}</td>` +
+              `<td class="money">${esc(l.amount ?? '')}</td>`
+            : '') +
+          '</tr>'
         );
       }
       if (grn) {
@@ -708,7 +742,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   const totalQtyText = esc([model.totalQty, model.totalUom].filter(Boolean).join(' '));
   const qtyTotalRow = po
     ? `<tr class="total"><td colspan="${lbl(3)}" class="sumlbl">${qtyLabel}</td>` +
-      `<td class="qty">${totalQtyText}</td><td></td><td></td></tr>`
+      `<td class="qty">${totalQtyText}</td>${priced ? '<td></td><td></td>' : ''}</tr>`
     : grn
       ? // Received / accepted / rejected each get their own total, because the
         // three are the whole point of the document.
@@ -720,7 +754,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       : `<tr class="total"><td colspan="${lbl(showHsn ? 4 : 3)}" class="sumlbl">${qtyLabel}</td>` +
         `<td class="qty">${totalQtyText}</td><td></td></tr>`;
 
-  const money = model.money;
+  const money = hideMoney ? undefined : model.money;
   const moneyRows = money
     ? `<tr><td colspan="${lbl(5)}" class="sumlbl">Subtotal</td><td class="money">${esc(money.subtotal)}</td></tr>` +
       money.taxRows
@@ -753,7 +787,9 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   ];
   const lone = signCells.length === 1;
   const signGridCols = lone ? 2 : signCells.length;
-  const signCellStyle = lone ? ' style="grid-column:2;border-left:1px solid var(--paper-rule)"' : '';
+  const signCellStyle = lone
+    ? ' style="grid-column:2;border-left:1px solid var(--paper-rule)"'
+    : '';
 
   return `
   ${model.opts?.testBanner ? '<div class="no-print test-banner">ⓘ TEST PRINT — Sample data shown. Real data is substituted on actual prints.</div>' : ''}

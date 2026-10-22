@@ -33,7 +33,7 @@ export async function savedReportsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/saved-reports/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.getSavedReport(id, req.user);
+    return service.readSavedReport(id, req.user);
   });
 
   app.put('/saved-reports/:id', async (req) => {

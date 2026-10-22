@@ -47,6 +47,16 @@ export function canSeeLink(a: DashAccess, dept: string | null, page: string): bo
   return hasDept(a, dept) && canOpenPage(a.eff, a.isAdmin || a.eff.fullAccess, page);
 }
 
+/** A widget = its link rule, plus — for a money widget (`priceForm`) — the
+ *  Price right on that page, the same per-page rule the screens use. */
+export function canSeeWidget(
+  a: DashAccess,
+  w: { dept: string | null; navPage: string; priceForm?: AccessFormKey },
+): boolean {
+  if (!canSeeLink(a, w.dept, w.navPage)) return false;
+  return !w.priceForm || a.isAdmin || effectiveFormPerms(a.eff, w.priceForm).price;
+}
+
 /** ADR-234: does the caller hold this tick? For work-list prompts — a prompt
  *  to act is shown only to someone who may do that act. */
 export function hasTick(a: DashAccess, form: AccessFormKey, action: AccessAction): boolean {

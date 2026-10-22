@@ -77,11 +77,12 @@ export function printJwInvoice(args: {
 
   // Money is hidden for viewers whose access removes prices: the API nulls
   // rate / taxable / GST / total on every row it sends them. A printed invoice
-  // must not leak what the screen hides, so every rupee cell prints an em dash,
-  // the subtotal / tax / grand block is dropped and no amount-in-words follows.
+  // must not leak what the screen hides, so the sheet leaves the Rate / Amount
+  // columns, the subtotal / tax / grand block and the amount-in-words off
+  // (`hideMoney`) and `{totalValue}` prints blank.
   // The document still prints, and still says who is billed for what quantity.
   const priceHidden = !args.priceVisible;
-  const money = (n: number): string => (priceHidden ? '—' : inrFormat(n));
+  const money = (n: number): string => (priceHidden ? '' : inrFormat(n));
 
   // Each figure prefers what the server computed and stored, and falls back to
   // the arithmetic the create form itself uses (qty × rate, + GST %). The
@@ -237,9 +238,9 @@ export function printJwInvoice(args: {
     ],
     totalQty: String(invoice.qty),
     totalUom: uom,
-    // Viewers who may not see prices get the qty-only invoice — the Rate and
-    // Amount cells print an em dash and no money block or amount-in-words
-    // follows it.
+    // Viewers who may not see prices get the qty-only invoice — no Rate /
+    // Amount columns, no money block, no amount-in-words.
+    hideMoney: priceHidden,
     ...(priceHidden
       ? {}
       : {

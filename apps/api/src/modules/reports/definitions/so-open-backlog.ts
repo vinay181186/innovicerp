@@ -18,6 +18,7 @@ export const soOpenBacklogReport: RegisteredReport = {
     group: 'Sales',
     dept: 'sales',
     showsMoney: true,
+    priceForm: 'so_create',
     filters: [
       { key: 'fromDueDate', label: 'Due Date From', kind: 'date' },
       { key: 'toDueDate', label: 'Due Date To', kind: 'date' },

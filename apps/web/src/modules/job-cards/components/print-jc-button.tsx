@@ -74,7 +74,16 @@ export function usePrintJc(
     setPending(false);
     waitRef.current = null;
     const ops = opsQuery.data;
-    w.ready(() => printJobCard({ jc, ops, company, actualSize: order?.actualSize ?? null, draft }));
+    w.ready(() =>
+      printJobCard({
+        jc,
+        ops,
+        company,
+        actualSize: order?.actualSize ?? null,
+        productionOrderCode: order?.code ?? null,
+        draft,
+      }),
+    );
   }, [pending, opsQuery.data, opsQuery.isError, jc, company, order, orderLoading, draft]);
 
   const start = useCallback(

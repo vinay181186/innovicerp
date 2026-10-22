@@ -17,6 +17,7 @@ export const hsnOutwardSummaryReport: RegisteredReport = {
     group: 'Finance',
     dept: 'finance',
     showsMoney: true,
+    priceForm: 'invoice_create',
     filters: [
       { key: 'fromDate', label: 'Invoice Date From', kind: 'date' },
       { key: 'toDate', label: 'Invoice Date To', kind: 'date' },

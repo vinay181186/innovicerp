@@ -164,6 +164,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       ops,
       company,
       actualSize: productionOrder?.actualSize ?? null,
+      productionOrderCode: productionOrder?.code ?? null,
       draft: isDraft,
     });
 
