@@ -10,7 +10,13 @@ import type { listSavedReportsQuerySchema } from '@innovic/shared';
 import type { z } from 'zod';
 import { savedReports, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { hasFormAccess, primeAccess, requireCanWrite, requireDeleteRight } from '../../lib/access';
+import {
+  canSeeFormPrice,
+  hasFormAccess,
+  primeAccess,
+  requireCanWrite,
+  requireDeleteRight,
+} from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -27,7 +33,7 @@ import type {
 } from './schema';
 import { adHocSpecSchema } from './schema';
 import { SAVED_REPORT_SF_COLUMNS } from './sf-columns';
-import { getSource, listSourceDescriptors } from './sources';
+import { getSource, listSourceDescriptors, type RegisteredSource } from './sources';
 import { softDeleteStamp } from '../../lib/audit-trail';
 
 const requireCompany = (user: AuthContext): string => {
@@ -48,10 +54,78 @@ async function canUseSource(user: AuthContext, sourceKey: string): Promise<boole
   return hasFormAccess(user, src.viewForm, 'view');
 }
 
+// The source's money fields this user may NOT see (empty when they may).
+async function hiddenPriceFields(user: AuthContext, src: RegisteredSource): Promise<Set<string>> {
+  if (!src.priceFields?.length) return new Set();
+  return (await canSeeFormPrice(user, src.viewForm)) ? new Set() : new Set(src.priceFields);
+}
+
 export async function listSources(user: AuthContext): Promise<ListSourcesResponse> {
   const all = listSourceDescriptors();
   const allowed = await Promise.all(all.map((d) => canUseSource(user, d.sourceKey)));
-  return { sources: all.filter((_, i) => allowed[i]) };
+  const sources = await Promise.all(
+    all
+      .filter((_, i) => allowed[i])
+      .map(async (d) => {
+        const src = getSource(d.sourceKey);
+        const hidden = src ? await hiddenPriceFields(user, src) : new Set<string>();
+        return hidden.size ? { ...d, fields: d.fields.filter((f) => !hidden.has(f.key)) } : d;
+      }),
+  );
+  return { sources };
+}
+
+function priceRefusal(src: RegisteredSource): AuthorizationError {
+  return new AuthorizationError(
+    `Your access hides prices on ${src.descriptor.label}, so this report cannot use Rate ` +
+      'or Amount. Remove them, or ask an admin for Price on that page in Access Control.',
+  );
+}
+
+// Fields whose VALUES shape the result even when no money column is shown:
+// filters, sort, group, and a money total (COUNT reveals nothing).
+function moneyShapesResult(spec: AdHocSpec, hidden: Set<string>): boolean {
+  const aggregated = spec.groupBy !== null && spec.sumFn !== 'COUNT' ? spec.sumCol : null;
+  return [
+    ...spec.filters.map((f) => f.field),
+    ...spec.sort.map((x) => x.field),
+    spec.groupBy,
+    aggregated,
+  ].some((k) => k !== null && hidden.has(k));
+}
+
+async function hiddenFor(spec: AdHocSpec, user: AuthContext) {
+  const src = getSource(spec.sourceKey);
+  return src ? { src, hidden: await hiddenPriceFields(user, src) } : null;
+}
+
+// Run / preview / Excel: a price-hidden user gets the report WITHOUT its money
+// columns; one that filters, sorts, groups or totals by money is refused — its
+// result would give the figures away even with the column gone.
+async function priceSafeSpec(spec: AdHocSpec, user: AuthContext): Promise<AdHocSpec> {
+  const h = await hiddenFor(spec, user);
+  if (!h?.hidden.size) return spec;
+  const columns = spec.columns.filter((c) => !h.hidden.has(c));
+  if (moneyShapesResult(spec, h.hidden) || columns.length === 0) throw priceRefusal(h.src);
+  return { ...spec, columns };
+}
+
+// Save: a price-hidden user may not store a report that uses money at all.
+async function assertSpecPriceSafe(spec: AdHocSpec, user: AuthContext): Promise<void> {
+  const h = await hiddenFor(spec, user);
+  if (!h?.hidden.size) return;
+  if (moneyShapesResult(spec, h.hidden) || spec.columns.some((c) => h.hidden.has(c))) {
+    throw priceRefusal(h.src);
+  }
+}
+
+// Reading a report: a price-hidden user never sees the VALUE of a money filter
+// (e.g. "Rate > 1250" gives the price away). Running it is refused anyway.
+async function maskPriceFilters(r: SavedReport, user: AuthContext): Promise<SavedReport> {
+  const h = await hiddenFor(r.spec, user);
+  if (!h?.hidden.size || !r.spec.filters.some((f) => h.hidden.has(f.field))) return r;
+  const filters = r.spec.filters.map((f) => (h.hidden.has(f.field) ? { ...f, value: '' } : f));
+  return { ...r, spec: { ...r.spec, filters } };
 }
 
 function rowToSavedReport(
@@ -80,6 +154,14 @@ type ListSavedReportsInput = z.infer<typeof listSavedReportsQuerySchema>;
 export async function listSavedReports(
   user: AuthContext,
   input: ListSavedReportsInput = { offset: 0 },
+): Promise<ListSavedReportsResponse> {
+  const res = await listSavedReportsRows(user, input);
+  return { ...res, reports: await Promise.all(res.reports.map((r) => maskPriceFilters(r, user))) };
+}
+
+async function listSavedReportsRows(
+  user: AuthContext,
+  input: ListSavedReportsInput,
 ): Promise<ListSavedReportsResponse> {
   const companyId = requireCompany(user);
   const sf = readSf(input.sf);
@@ -154,6 +236,11 @@ export async function listSavedReports(
   });
 }
 
+/** GET /saved-reports/:id — the report as the CALLER may see it. */
+export async function readSavedReport(id: string, user: AuthContext): Promise<SavedReport> {
+  return maskPriceFilters(await getSavedReport(id, user), user);
+}
+
 export async function getSavedReport(id: string, user: AuthContext): Promise<SavedReport> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -220,6 +307,7 @@ export async function createSavedReport(
     throw new ConflictError('spec.sourceKey must match input.sourceKey');
   }
   await assertSourceUsable(input.sourceKey, user);
+  await assertSpecPriceSafe(input.spec, user);
 
   return withUserContext(user, async (tx) => {
     const dup = await tx
@@ -334,6 +422,7 @@ export async function updateSavedReport(
       throw new ConflictError('spec.sourceKey must match the report sourceKey');
     }
     await assertSourceUsable(nextSourceKey, user);
+    if (input.spec) await assertSpecPriceSafe(nextSpec, user);
 
     if (input.name && input.name !== existing.name) {
       const dup = await tx
@@ -407,8 +496,9 @@ export async function runSavedReport(id: string, user: AuthContext): Promise<Run
   const report = await getSavedReport(id, user);
   // A shared report is run with the RUNNER's rights, not the owner's.
   await assertSourceUsable(report.sourceKey, user);
+  const spec = await priceSafeSpec(report.spec, user);
   return withUserContext(user, async (tx) => {
-    const result = await runAdHoc(report.spec, { tx, companyId: report.companyId });
+    const result = await runAdHoc(spec, { tx, companyId: report.companyId });
     return {
       id: report.id,
       title: report.name,
@@ -430,7 +520,7 @@ export async function previewAdHocSpec(
 ): Promise<RunAdHocResponse> {
   const companyId = requireCompany(user);
   await assertSourceUsable(spec.sourceKey, user);
-  const parsed = adHocSpecSchema.parse(spec);
+  const parsed = await priceSafeSpec(adHocSpecSchema.parse(spec), user);
   return withUserContext(user, async (tx) => {
     const result = await runAdHoc(parsed, { tx, companyId });
     return {

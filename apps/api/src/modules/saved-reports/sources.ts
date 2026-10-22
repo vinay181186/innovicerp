@@ -24,6 +24,10 @@ export interface RegisteredSource {
    *  report on this source. A report must never show SO rates or PO prices
    *  to someone Access Control keeps off those pages. */
   viewForm: AccessFormKey;
+  /** Money fields (rate / amount). Shown, filtered, sorted, grouped or totalled
+   *  only for users with the Price right on `viewForm` — the same
+   *  `canSeeFormPrice` the SO / PO screens use. */
+  priceFields?: readonly string[];
   /** Returns a parameterised SELECT that returns rows shaped exactly by
    *  descriptor.fields[]. Company isolation is applied here so the runner
    *  doesn't have to know table layouts. */
@@ -34,6 +38,7 @@ export interface RegisteredSource {
 
 const salesOrdersSource: RegisteredSource = {
   viewForm: 'so_create',
+  priceFields: ['rate', 'amount'],
   descriptor: {
     sourceKey: 'sales-orders',
     label: 'Sales Orders',
@@ -119,6 +124,7 @@ const salesOrdersSource: RegisteredSource = {
 
 const purchaseOrdersSource: RegisteredSource = {
   viewForm: 'po_create',
+  priceFields: ['rate'],
   descriptor: {
     sourceKey: 'purchase-orders',
     label: 'Purchase Orders',
