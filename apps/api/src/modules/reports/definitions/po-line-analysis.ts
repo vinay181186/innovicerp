@@ -27,6 +27,7 @@ export const poLineAnalysisReport: RegisteredReport = {
     group: 'Purchase',
     dept: 'purchase',
     showsMoney: true,
+    priceForm: 'po_create',
     filters: [
       { key: 'fromDate', label: 'PO Date From', kind: 'date' },
       { key: 'toDate', label: 'PO Date To', kind: 'date' },

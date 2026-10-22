@@ -24,6 +24,7 @@ export const procurementTrackerReport: RegisteredReport = {
     group: 'Purchase',
     dept: 'purchase',
     showsMoney: true,
+    priceForm: 'po_create',
     filters: [
       { key: 'fromDate', label: 'PR Date From', kind: 'date' },
       { key: 'toDate', label: 'PR Date To', kind: 'date' },

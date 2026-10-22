@@ -12,6 +12,7 @@
 // can ship their own filter shape via the /reports list response.
 
 import { z } from 'zod';
+import { type AccessFormKey, isAccessFormKey } from '../enums/access-control';
 
 export const reportColumnTypeSchema = z.enum(['text', 'number', 'date', 'datetime']);
 export type ReportColumnType = z.infer<typeof reportColumnTypeSchema>;
@@ -70,6 +71,10 @@ export const reportDefinitionSchema = z.object({
   /** True when any column is money (rate / value / amount). The catalogue then
    *  also needs the user's tier in `dept` to see prices (tierSeesPrice). */
   showsMoney: z.boolean().optional(),
+  /** Money reports: the Access Control page that owns these figures (e.g.
+   *  'so_create'). Its "price OFF" switch hides the report and its Price tick
+   *  opens it — see canSeeReport (lib/report-access.ts). */
+  priceForm: z.custom<AccessFormKey>((v) => typeof v === 'string' && isAccessFormKey(v)).optional(),
   /** Filter form rendered on the run page. Empty array = no filters (run-immediately). */
   filters: z.array(reportFilterFieldSchema),
   /** Output columns in display order. */

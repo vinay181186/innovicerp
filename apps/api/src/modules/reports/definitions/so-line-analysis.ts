@@ -27,6 +27,7 @@ export const soLineAnalysisReport: RegisteredReport = {
     group: 'Sales',
     dept: 'sales',
     showsMoney: true,
+    priceForm: 'so_create',
     filters: [
       { key: 'fromDate', label: 'SO Date From', kind: 'date' },
       { key: 'toDate', label: 'SO Date To', kind: 'date' },

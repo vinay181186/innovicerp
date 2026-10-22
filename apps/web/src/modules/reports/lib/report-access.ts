@@ -13,7 +13,7 @@ import { useSession } from '@/lib/session';
 
 export interface UseReportAccess {
   ready: boolean;
-  canSee: (r: Pick<ReportDefinition, 'dept' | 'showsMoney'>) => boolean;
+  canSee: (r: Pick<ReportDefinition, 'dept' | 'showsMoney' | 'priceForm'>) => boolean;
 }
 
 export function useReportAccess(): UseReportAccess {
@@ -21,7 +21,8 @@ export function useReportAccess(): UseReportAccess {
   const { data: eff, isLoading: effLoading } = useMyAccess();
 
   const canSee = useCallback(
-    (r: Pick<ReportDefinition, 'dept' | 'showsMoney'>): boolean => canSeeReport(me, eff, r),
+    (r: Pick<ReportDefinition, 'dept' | 'showsMoney' | 'priceForm'>): boolean =>
+      canSeeReport(me, eff, r),
     [me, eff],
   );
 
