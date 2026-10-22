@@ -1381,39 +1381,20 @@ export async function updatePurchaseRequestOrStage(
   user: AuthContext,
 ): Promise<PurchaseRequest | DocumentEditStagedResult> {
   await requireFormAccess(user, 'pr_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with pr-edit-registry
   // (which imports updatePurchaseRequestTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const rows = await tx
-      .select({ id: purchaseRequests.id, qty: purchaseRequests.qty, poId: purchaseRequests.poId })
-      .from(purchaseRequests)
-      .where(
-        and(
-          eq(purchaseRequests.id, id),
-          eq(purchaseRequests.companyId, companyId),
-          isNull(purchaseRequests.deletedAt),
-        ),
-      )
-      .limit(1);
-    const pr = rows[0];
-    if (!pr) return false;
-    // "Editable" mirrors prEditRegistryEntry.isLive: a PR with nothing on a live PO.
-    return (await loadOrderedQty(tx, pr)) === 0;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit(
-      'PurchaseRequest',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is prEditRegistryEntry's own rule (a PR with nothing on a live PO),
+  // read through the registry so the two can never drift.
+  const request = await requestDocumentEdit(
+    'PurchaseRequest',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+  );
+  if (request) return { staged: true, request };
 
   return updatePurchaseRequest(id, input, user);
 }

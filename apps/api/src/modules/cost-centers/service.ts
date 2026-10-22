@@ -263,37 +263,14 @@ export async function updateCostCenterOrStage(
   user: AuthContext,
 ): Promise<CostCenter | DocumentEditStagedResult> {
   await requireFormAccess(user, 'cc_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with
   // cost-center-edit-registry (which imports updateCostCenterTx from here).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors costCenterEditRegistryEntry.isLive: any live row.
-    const rows = await tx
-      .select({ id: costCenters.id })
-      .from(costCenters)
-      .where(
-        and(
-          eq(costCenters.id, id),
-          eq(costCenters.companyId, companyId),
-          isNull(costCenters.deletedAt),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit(
-      'CostCenter',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is costCenterEditRegistryEntry's own rule (any not-Trash row),
+  // read through the registry so the two can never drift.
+  const request = await requestDocumentEdit('CostCenter', id, input, input.expectedUpdatedAt, user);
+  if (request) return { staged: true, request };
 
   return updateCostCenter(id, input, user);
 }

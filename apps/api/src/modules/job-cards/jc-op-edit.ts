@@ -31,6 +31,16 @@
 import { fmtOpSrNo, isGeneratedTerminalQcOp } from '@innovic/shared';
 import { ConflictError } from '../../lib/errors';
 
+/** THE "is this Job Card still live?" rule for edit approval: editable while
+ *  not closed and its computed status (v_jc_status, 'no_ops' when none) is
+ *  neither complete nor closed. jobCardEditRegistryEntry.isLive is this, and so
+ *  are the two machine-change gates (jc-ops changeJcOpMachine, the production
+ *  schedule drag) — one rule, so the three can never disagree. Pure, so those
+ *  modules can import it without pulling in the edit-approval registry. */
+export function jobCardIsLive(card: { closedAt: unknown; status: string }): boolean {
+  return card.closedAt == null && card.status !== 'complete' && card.status !== 'closed';
+}
+
 // Outsource statuses that mean the op is committed on its own, independent of
 // the PR row: a PO has been issued, or material has physically moved to the
 // vendor. 'pending' / 'pr_raised' are pre-PO intent only — they commit the op

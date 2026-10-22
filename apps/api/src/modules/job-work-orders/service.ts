@@ -1541,67 +1541,51 @@ export async function updateJobWorkOrderOrStage(
   user: AuthContext,
 ): Promise<JobWorkOrderDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'jw_create', 'edit');
-  const companyId = requireCompany(user);
   const showMoney = await canSeeFormPrice(user, 'jw_create');
 
   // Engine imported dynamically to avoid a static import cycle with
   // jw-edit-registry (which imports updateJobWorkOrderTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const hdrRows = await tx
-      .select({ status: jobWorkOrders.status })
-      .from(jobWorkOrders)
-      .where(
-        and(
-          eq(jobWorkOrders.id, id),
-          eq(jobWorkOrders.companyId, companyId),
-          isNull(jobWorkOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    const status = hdrRows[0]?.status;
-    // "Live" mirrors jwEditRegistryEntry.isLive: past draft and not cancelled.
-    if (status === undefined || status === 'draft' || status === 'cancelled') return false;
-
-    if (input.lines !== undefined) {
-      const currentLines = await tx
-        .select({
-          id: jobWorkOrderLines.id,
-          itemId: jobWorkOrderLines.itemId,
-          partName: jobWorkOrderLines.partName,
-          material: jobWorkOrderLines.material,
-          drawingNo: jobWorkOrderLines.drawingNo,
-          clientPoLineNo: jobWorkOrderLines.clientPoLineNo,
-          remarks: jobWorkOrderLines.remarks,
-          revision: jobWorkOrderLines.revision,
-          drawingFilePath: jobWorkOrderLines.drawingFilePath,
-          uom: jobWorkOrderLines.uom,
-          orderQty: jobWorkOrderLines.orderQty,
-          rate: jobWorkOrderLines.rate,
-          dueDate: jobWorkOrderLines.dueDate,
-          sourceBomMasterId: jobWorkOrderLines.sourceBomMasterId,
-        })
-        .from(jobWorkOrderLines)
-        .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)));
-      if (jwLinesChanged(currentLines, input.lines, showMoney)) {
-        throw new ConflictError(
-          "Editing Job Work Order lines isn't available while Document Edit Approval is on yet — only the JWSO's own fields go for approval. Turn the gate off to edit lines.",
-        );
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is jwEditRegistryEntry's own rule (past draft and not cancelled),
+  // read through the registry so the two can never drift.
+  const request = await requestDocumentEdit(
+    'JobWorkOrder',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx) => {
+      if (input.lines !== undefined) {
+        const currentLines = await tx
+          .select({
+            id: jobWorkOrderLines.id,
+            itemId: jobWorkOrderLines.itemId,
+            partName: jobWorkOrderLines.partName,
+            material: jobWorkOrderLines.material,
+            drawingNo: jobWorkOrderLines.drawingNo,
+            clientPoLineNo: jobWorkOrderLines.clientPoLineNo,
+            remarks: jobWorkOrderLines.remarks,
+            revision: jobWorkOrderLines.revision,
+            drawingFilePath: jobWorkOrderLines.drawingFilePath,
+            uom: jobWorkOrderLines.uom,
+            orderQty: jobWorkOrderLines.orderQty,
+            rate: jobWorkOrderLines.rate,
+            dueDate: jobWorkOrderLines.dueDate,
+            sourceBomMasterId: jobWorkOrderLines.sourceBomMasterId,
+          })
+          .from(jobWorkOrderLines)
+          .where(
+            and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)),
+          );
+        if (jwLinesChanged(currentLines, input.lines, showMoney)) {
+          throw new ConflictError(
+            "Editing Job Work Order lines isn't available while Document Edit Approval is on yet — only the JWSO's own fields go for approval. Turn the gate off to edit lines.",
+          );
+        }
       }
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit(
-      'JobWorkOrder',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateJobWorkOrder(id, input, user);
 }

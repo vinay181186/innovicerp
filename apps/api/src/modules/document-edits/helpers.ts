@@ -14,13 +14,46 @@ import type {
 } from '@innovic/shared';
 import { documentEditRequests, users } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError, ValidationError } from '../../lib/errors';
+import { isPriceField } from './price-field';
 import { DOC_EDIT_REGISTRY, type DocEditRegistryEntry } from './registry';
 
 export const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+/**
+ * Price hiding for edit requests ("Can See Price"): a stored change that is a
+ * price (isPriceField, ./price-field.ts — the one list of price boxes) has its
+ * before → after replaced by null — the same null every document read hands a
+ * price-blind viewer — unless the viewer may see prices on that entry's form. The one place every returned DocumentEditRow
+ * passes through (inbox list, and the request / decide / withdraw answers). One
+ * canSeeFormPrice per entity type, not per row; it reads the per-request access
+ * memo (ADR-229). Mutates and returns the rows; isStale and everything else are
+ * untouched.
+ */
+export async function maskPriceChanges(
+  rows: DocumentEditRow[],
+  user: AuthContext,
+): Promise<DocumentEditRow[]> {
+  const mayByEntity = new Map<string, boolean>();
+  for (const row of rows) {
+    const entry = DOC_EDIT_REGISTRY[row.entity];
+    if (!entry || !row.changes.some((c) => isPriceField(c.field))) continue;
+    let may = mayByEntity.get(row.entity);
+    if (may === undefined) {
+      may = await canSeeFormPrice(user, entry.formKey);
+      mayByEntity.set(row.entity, may);
+    }
+    if (may) continue;
+    row.changes = row.changes.map((c) =>
+      isPriceField(c.field) ? { ...c, before: null, after: null } : c,
+    );
+  }
+  return rows;
+}
 
 export function getEntry(entity: string): DocEditRegistryEntry {
   const entry = DOC_EDIT_REGISTRY[entity as DocumentEditEntity];

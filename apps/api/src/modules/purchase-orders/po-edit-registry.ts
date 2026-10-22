@@ -1,10 +1,13 @@
 // PurchaseOrder entry for the edit-approval engine (ADR-202, Phase 1 + 1b).
 //
 // Phase 1 covered HEADER + tax + vendor changes. Phase 1b adds LINE-level changes
-// (item / qty / rate) on EXISTING lines, approved PER CHANGE: an approver may
-// approve a line's rate change and reject its qty change in the same request, and
-// only the approved attr is written. Adding or removing a line stays refused for
-// now (handled by the divert guard in service.ts).
+// on EXISTING lines, approved PER CHANGE: an approver may approve a line's rate
+// change and reject its qty change in the same request, and only the approved
+// attr is written. Every field the PO edit form can change on a line is a box
+// (Item, Item Name, Order Qty, Rate, Due Date, PR No., Ram Remark, Remarks) — a
+// field with no box would be dropped on approval without anyone being told.
+// Adding or removing a line, and changing a line's number or its SO line / Job
+// Card op / NC link, stay refused (the divert guard in service.ts).
 //
 // applyEdit replays the approved edit through updatePurchaseOrderTx, so every PO
 // §20 guard (money-lock, revision bump, line merge, optimistic lock) runs exactly
@@ -16,7 +19,13 @@ import type {
   PurchaseOrderLineInput,
   UpdatePurchaseOrderInput,
 } from '@innovic/shared';
-import { items, purchaseOrderLines, purchaseOrders, vendors } from '../../db/schema';
+import {
+  items,
+  purchaseOrderLines,
+  purchaseOrders,
+  purchaseRequests,
+  vendors,
+} from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import type { DiffField } from '../../lib/audit-trail';
@@ -46,6 +55,7 @@ const PO_HEADER_DIFF_FIELDS: readonly DiffField[] = [
   { key: 'dueDate', label: 'Due Date' },
   { key: 'prCodeText', label: 'PR No.' },
   { key: 'remarks', label: 'Remarks' },
+  { key: 'approvalRemarks', label: 'Approval Remarks' },
   // ADR-246 — the buyer picks ONE GST %; the tax type and the SGST / CGST /
   // IGST split are the server's (vendor's State), decided when the approved
   // edit is applied, so they are not changes anyone approves.
@@ -63,15 +73,34 @@ function proposedGstPercent(h: Record<string, unknown>): number | undefined {
   return round2(parts.reduce<number>((sum, v) => sum + Number(v ?? 0), 0));
 }
 
-// The three editable attrs of an existing line, each with the NAMING.md label.
-const LINE_ATTRS = ['item', 'qty', 'rate'] as const;
+// The editable attrs of an existing line, each with the PO form's own label
+// (NAMING.md where it has a row). 'pr' is the line's PR link, shown as its code.
+const LINE_ATTRS = [
+  'item',
+  'itemName',
+  'qty',
+  'rate',
+  'dueDate',
+  'pr',
+  'ramRemark',
+  'lineRemarks',
+] as const;
 type LineAttr = (typeof LINE_ATTRS)[number];
 const LINE_ATTR_LABEL: Record<LineAttr, string> = {
   item: 'Item',
+  itemName: 'Item Name',
   qty: 'Order Qty',
   rate: 'Rate',
+  dueDate: 'Due Date',
+  pr: 'PR No.',
+  ramRemark: 'Ram Remark',
+  lineRemarks: 'Remarks',
 };
 const lineFieldKey = (lineId: string, attr: LineAttr): string => `line:${lineId}:${attr}`;
+
+/** Text boxes compare trimmed on both sides, so stray spaces in a stored value
+ *  never make a box nobody asked for. Blank = empty. */
+const trimmed = (v: string | null | undefined): string | null => v?.trim() || null;
 
 /** A PO line projected into target.doc — just what diffFields / beforeSnapshot
  *  need. `itemCode` is the resolved master code (fallback: the free-text snapshot)
@@ -82,8 +111,19 @@ interface PoEditLine {
   itemId: string | null;
   itemCodeText: string | null;
   itemCode: string | null;
+  itemName: string;
   qty: string | number;
   rate: string | number;
+  dueDate: string | null;
+  ramRemark: string | null;
+  lineRemarks: string | null;
+  sourcePrId: string | null;
+  /** The PR's code (fallback: the id), so the PR No. box reads a code. */
+  sourcePrCode: string | null;
+  // Read by the divert guard in service.ts (refused there, never staged).
+  sourceSoLineId: string | null;
+  sourceJcOpId: string | null;
+  sourceNcId: string | null;
 }
 
 async function resolveVendorCode(
@@ -113,6 +153,25 @@ async function resolveItemCodesByIds(
     .select({ id: items.id, code: items.code })
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique)));
+  for (const r of rows) map.set(r.id, r.code);
+  return map;
+}
+
+/** PR codes for a set of PR ids (id → code), company-scoped. Not filtered on
+ *  deleted_at: a line may still point at a PR that was later removed, and its
+ *  code is still the readable name for it. */
+async function resolvePrCodesByIds(
+  tx: DbTransaction,
+  companyId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return map;
+  const rows = await tx
+    .select({ id: purchaseRequests.id, code: purchaseRequests.code })
+    .from(purchaseRequests)
+    .where(and(eq(purchaseRequests.companyId, companyId), inArray(purchaseRequests.id, unique)));
   for (const r of rows) map.set(r.id, r.code);
   return map;
 }
@@ -171,8 +230,16 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
         lineNo: purchaseOrderLines.lineNo,
         itemId: purchaseOrderLines.itemId,
         itemCodeText: purchaseOrderLines.itemCodeText,
+        itemName: purchaseOrderLines.itemName,
         qty: purchaseOrderLines.qty,
         rate: purchaseOrderLines.rate,
+        dueDate: purchaseOrderLines.dueDate,
+        ramRemark: purchaseOrderLines.ramRemark,
+        lineRemarks: purchaseOrderLines.lineRemarks,
+        sourcePrId: purchaseOrderLines.sourcePrId,
+        sourceSoLineId: purchaseOrderLines.sourceSoLineId,
+        sourceJcOpId: purchaseOrderLines.sourceJcOpId,
+        sourceNcId: purchaseOrderLines.sourceNcId,
       })
       .from(purchaseOrderLines)
       .where(
@@ -189,14 +256,28 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
       companyId,
       lineRows.flatMap((l) => (l.itemId ? [l.itemId] : [])),
     );
+    const prCodeById = await resolvePrCodesByIds(
+      tx,
+      companyId,
+      lineRows.flatMap((l) => (l.sourcePrId ? [l.sourcePrId] : [])),
+    );
     const lines: PoEditLine[] = lineRows.map((l) => ({
       id: l.id,
       lineNo: l.lineNo,
       itemId: l.itemId,
       itemCodeText: l.itemCodeText,
       itemCode: (l.itemId ? codeById.get(l.itemId) : null) ?? l.itemCodeText,
+      itemName: l.itemName,
       qty: l.qty,
       rate: l.rate,
+      dueDate: l.dueDate,
+      ramRemark: l.ramRemark,
+      lineRemarks: l.lineRemarks,
+      sourcePrId: l.sourcePrId,
+      sourcePrCode: l.sourcePrId ? (prCodeById.get(l.sourcePrId) ?? l.sourcePrId) : null,
+      sourceSoLineId: l.sourceSoLineId,
+      sourceJcOpId: l.sourceJcOpId,
+      sourceNcId: l.sourceNcId,
     }));
 
     return {
@@ -218,6 +299,7 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
       dueDate: d['dueDate'],
       prCodeText: d['prCodeText'],
       remarks: d['remarks'],
+      approvalRemarks: d['approvalRemarks'],
       gstPercent: round2(
         Number(d['sgstPct'] ?? 0) + Number(d['cgstPct'] ?? 0) + Number(d['igstPct'] ?? 0),
       ),
@@ -225,25 +307,42 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
     const lines = (d['lines'] as PoEditLine[] | undefined) ?? [];
     for (const l of lines) {
       out[lineFieldKey(l.id, 'item')] = l.itemCode ?? null;
+      out[lineFieldKey(l.id, 'itemName')] = trimmed(l.itemName);
       out[lineFieldKey(l.id, 'qty')] = l.qty;
       out[lineFieldKey(l.id, 'rate')] = l.rate;
+      out[lineFieldKey(l.id, 'dueDate')] = l.dueDate;
+      out[lineFieldKey(l.id, 'pr')] = l.sourcePrCode;
+      out[lineFieldKey(l.id, 'ramRemark')] = trimmed(l.ramRemark);
+      out[lineFieldKey(l.id, 'lineRemarks')] = trimmed(l.lineRemarks);
     }
     return out;
   },
 
-  async afterSnapshot(tx, companyId, input, user) {
+  async afterSnapshot(tx, companyId, input, user, target, opts) {
     const i = input as UpdatePurchaseOrderInput;
     const h = i.header ?? {};
-    const showMoney = await canSeeFormPrice(user, PO_FORM_KEY);
+    const showMoney = opts?.allPrices || (await canSeeFormPrice(user, PO_FORM_KEY));
     const out: Record<string, unknown> = {};
     if (h.poDate !== undefined) out['poDate'] = h.poDate;
     if (h.poType !== undefined) out['poType'] = h.poType;
     if (h.dueDate !== undefined) out['dueDate'] = h.dueDate ?? null;
     if (h.prCodeText !== undefined) out['prCodeText'] = h.prCodeText ?? null;
     if (h.remarks !== undefined) out['remarks'] = h.remarks ?? null;
-    if (h.vendorId !== undefined) {
-      out['vendorId'] =
-        (await resolveVendorCode(tx, companyId, h.vendorId ?? null)) ?? h.vendorCodeText ?? null;
+    if (h.approvalRemarks !== undefined) out['approvalRemarks'] = h.approvalRemarks ?? null;
+    // Vendor = the master code, else the typed text — the same read as
+    // loadForDiff. Each half moves only when sent (as in updatePurchaseOrderTx),
+    // so a free-text vendor change (vendorCodeText alone) is a change too.
+    if (h.vendorId !== undefined || h.vendorCodeText !== undefined) {
+      const d: Record<string, unknown> = target?.doc ?? {};
+      const nextId =
+        h.vendorId !== undefined
+          ? (h.vendorId ?? null)
+          : ((d['vendorId'] as string | null) ?? null);
+      const nextText =
+        h.vendorCodeText !== undefined
+          ? (h.vendorCodeText ?? null)
+          : ((d['vendorCodeText'] as string | null) ?? null);
+      out['vendorId'] = (await resolveVendorCode(tx, companyId, nextId)) ?? nextText;
     }
     // Money fields only when the actor may see prices — a price-blind payload
     // carries zod defaults that would otherwise read as a tax change.
@@ -264,11 +363,27 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
         companyId,
         lines.flatMap((l) => (l.id && l.itemId ? [l.itemId] : [])),
       );
+      const prCodeById = await resolvePrCodesByIds(
+        tx,
+        companyId,
+        lines.flatMap((l) => (l.id && l.sourcePrId ? [l.sourcePrId] : [])),
+      );
       for (const l of lines) {
         if (!l.id) continue;
         out[lineFieldKey(l.id, 'item')] = proposedItemCode(l, codeById);
+        out[lineFieldKey(l.id, 'itemName')] = trimmed(l.itemName);
         out[lineFieldKey(l.id, 'qty')] = l.qty;
         if (showMoney) out[lineFieldKey(l.id, 'rate')] = l.rate;
+        // Paperwork fields only when sent — mergeLines leaves an omitted one
+        // alone, so an omission is not a change.
+        if (l.dueDate !== undefined) out[lineFieldKey(l.id, 'dueDate')] = l.dueDate;
+        if (l.sourcePrId !== undefined) {
+          out[lineFieldKey(l.id, 'pr')] = prCodeById.get(l.sourcePrId) ?? l.sourcePrId;
+        }
+        if (l.ramRemark !== undefined) out[lineFieldKey(l.id, 'ramRemark')] = trimmed(l.ramRemark);
+        if (l.lineRemarks !== undefined) {
+          out[lineFieldKey(l.id, 'lineRemarks')] = trimmed(l.lineRemarks);
+        }
       }
     }
     return out;
@@ -370,8 +485,24 @@ export const poEditRegistryEntry: DocEditRegistryEntry = {
               line.itemCodeText = proposed.itemCodeText;
             }
           }
-          if (approvedLineFields.has(lineFieldKey(c.id, 'qty'))) line.qty = proposed.qty;
-          if (approvedLineFields.has(lineFieldKey(c.id, 'rate'))) line.rate = proposed.rate;
+          const approved = (attr: LineAttr): boolean =>
+            approvedLineFields.has(lineFieldKey(c.id, attr));
+          if (approved('itemName')) line.itemName = proposed.itemName;
+          if (approved('qty')) line.qty = proposed.qty;
+          if (approved('rate')) line.rate = proposed.rate;
+          // These four have a box only when the proposal sent the field.
+          if (approved('dueDate') && proposed.dueDate !== undefined) {
+            line.dueDate = proposed.dueDate;
+          }
+          if (approved('pr') && proposed.sourcePrId !== undefined) {
+            line.sourcePrId = proposed.sourcePrId;
+          }
+          if (approved('ramRemark') && proposed.ramRemark !== undefined) {
+            line.ramRemark = proposed.ramRemark;
+          }
+          if (approved('lineRemarks') && proposed.lineRemarks !== undefined) {
+            line.lineRemarks = proposed.lineRemarks;
+          }
         }
         return line;
       });

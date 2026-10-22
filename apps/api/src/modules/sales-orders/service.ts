@@ -2115,93 +2115,82 @@ export async function updateSalesOrderOrStage(
 
   // Engine imported dynamically to avoid a static import cycle with
   // so-edit-registry (which imports updateSalesOrderTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const hdrRows = await tx
-      .select({ status: salesOrders.status })
-      .from(salesOrders)
-      .where(
-        and(
-          eq(salesOrders.id, id),
-          eq(salesOrders.companyId, companyId),
-          isNull(salesOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    const status = hdrRows[0]?.status;
-    // "Live" mirrors soEditRegistryEntry.isLive: past draft and not cancelled.
-    if (status === undefined || status === 'draft' || status === 'cancelled') return false;
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is soEditRegistryEntry's own rule (past draft and not cancelled),
+  // read through the registry so the two can never drift.
+  // The route's separate edit reason rides WITH the frozen payload, so it lands
+  // on the REQUEST history row and, once approved, on the EDIT row the SO writer
+  // records (so-edit-registry applyEdit).
+  const note = reason?.trim();
+  const request = await requestDocumentEdit(
+    'SalesOrder',
+    id,
+    note ? { ...input, reason: note } : input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx, target) => {
+      const status = target.doc['status'] as string;
 
-    // ADR-207 — refuse a taken Internal SO No. now, not after approval.
-    if (input.header.internalSoNo !== undefined) {
-      await assertInternalSoNoFree(
-        tx,
-        companyId,
-        normaliseInternalSoNo(input.header.internalSoNo),
-        id,
-      );
-    }
-
-    // Status moves (cancel / back-to-draft / Draft↔Open) are NOT staged: a cancel
-    // needs a reason and a blocking-documents check that the approval flow cannot
-    // carry. Refuse clearly rather than drop the change unapproved.
-    if (input.header.status !== undefined && input.header.status !== status) {
-      throw new ConflictError(
-        "Changing the Sales Order status isn't available while Document Edit Approval is on — only the SO's own fields go for approval. Turn the gate off to change the status.",
-      );
-    }
-
-    if (input.lines !== undefined || input.milestones !== undefined) {
-      const currentLines = await tx
-        .select({
-          id: salesOrderLines.id,
-          itemId: salesOrderLines.itemId,
-          itemCodeText: salesOrderLines.itemCodeText,
-          partName: salesOrderLines.partName,
-          material: salesOrderLines.material,
-          drawingNo: salesOrderLines.drawingNo,
-          revision: salesOrderLines.revision,
-          drawingFilePath: salesOrderLines.drawingFilePath,
-          uom: salesOrderLines.uom,
-          orderQty: salesOrderLines.orderQty,
-          rate: salesOrderLines.rate,
-          dueDate: salesOrderLines.dueDate,
-          clientPoLineNo: salesOrderLines.clientPoLineNo,
-          remarks: salesOrderLines.remarks,
-          status: salesOrderLines.status,
-          sourceBomMasterId: salesOrderLines.sourceBomMasterId,
-        })
-        .from(salesOrderLines)
-        .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
-      const currentMilestones = await tx
-        .select({
-          id: soMilestones.id,
-          lotNo: soMilestones.lotNo,
-          qty: soMilestones.qty,
-          dueDate: soMilestones.dueDate,
-          remarks: soMilestones.remarks,
-        })
-        .from(soMilestones)
-        .where(and(eq(soMilestones.salesOrderId, id), isNull(soMilestones.deletedAt)));
-      if (soChildRowsChanged(currentLines, currentMilestones, input, showMoney)) {
-        throw new ConflictError(
-          "Editing Sales Order lines or milestones isn't available while Document Edit Approval is on yet — only the SO's own fields go for approval. Turn the gate off to edit lines or milestones.",
+      // ADR-207 — refuse a taken Internal SO No. now, not after approval.
+      if (input.header.internalSoNo !== undefined) {
+        await assertInternalSoNoFree(
+          tx,
+          companyId,
+          normaliseInternalSoNo(input.header.internalSoNo),
+          id,
         );
       }
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit(
-      'SalesOrder',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+
+      // Status moves (cancel / back-to-draft / Draft↔Open) are NOT staged: a cancel
+      // needs a reason and a blocking-documents check that the approval flow cannot
+      // carry. Refuse clearly rather than drop the change unapproved.
+      if (input.header.status !== undefined && input.header.status !== status) {
+        throw new ConflictError(
+          "Changing the Sales Order status isn't available while Document Edit Approval is on — only the SO's own fields go for approval. Turn the gate off to change the status.",
+        );
+      }
+
+      if (input.lines !== undefined || input.milestones !== undefined) {
+        const currentLines = await tx
+          .select({
+            id: salesOrderLines.id,
+            itemId: salesOrderLines.itemId,
+            itemCodeText: salesOrderLines.itemCodeText,
+            partName: salesOrderLines.partName,
+            material: salesOrderLines.material,
+            drawingNo: salesOrderLines.drawingNo,
+            revision: salesOrderLines.revision,
+            drawingFilePath: salesOrderLines.drawingFilePath,
+            uom: salesOrderLines.uom,
+            orderQty: salesOrderLines.orderQty,
+            rate: salesOrderLines.rate,
+            dueDate: salesOrderLines.dueDate,
+            clientPoLineNo: salesOrderLines.clientPoLineNo,
+            remarks: salesOrderLines.remarks,
+            status: salesOrderLines.status,
+            sourceBomMasterId: salesOrderLines.sourceBomMasterId,
+          })
+          .from(salesOrderLines)
+          .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
+        const currentMilestones = await tx
+          .select({
+            id: soMilestones.id,
+            lotNo: soMilestones.lotNo,
+            qty: soMilestones.qty,
+            dueDate: soMilestones.dueDate,
+            remarks: soMilestones.remarks,
+          })
+          .from(soMilestones)
+          .where(and(eq(soMilestones.salesOrderId, id), isNull(soMilestones.deletedAt)));
+        if (soChildRowsChanged(currentLines, currentMilestones, input, showMoney)) {
+          throw new ConflictError(
+            "Editing Sales Order lines or milestones isn't available while Document Edit Approval is on yet — only the SO's own fields go for approval. Turn the gate off to edit lines or milestones.",
+          );
+        }
+      }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateSalesOrder(id, input, user, reason);
 }

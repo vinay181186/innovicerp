@@ -2809,15 +2809,13 @@ export async function updateJobCardTx(
     .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
     .limit(1);
   // ADR-220 LOCK ORDER — deliberately NO `job_cards` FOR UPDATE here. ADR-220
-  // first added one so this path matched the approval entry (loadForDiff takes
-  // job_cards then jc_ops). Reverted: op-entry holds a key-share on jc_ops (the
-  // op_log FK) and THEN updates job_cards in finishJc, so locking job_cards
-  // first here is the opposite order and can deadlock (40P01) when someone
-  // completes an operation while another user saves the same card. This path
-  // writes jc_ops first, which agrees with op-entry. The approval-vs-direct
-  // inversion is real but DORMANT (it needs the edit-approval gate on) and is
-  // recorded as open on ADR-220 — fix it by making loadForDiff lock in THIS
-  // order, never by flipping this one.
+  // first added one so this path matched the approval entry. Reverted: op-entry
+  // holds a key-share on jc_ops (the op_log FK) and THEN updates job_cards in
+  // finishJc, so locking job_cards first here is the opposite order and can
+  // deadlock (40P01) when someone completes an operation while another user
+  // saves the same card. This path writes jc_ops first, which agrees with
+  // op-entry; since ADR-249 the approval entry's loadForDiff locks jc_ops first
+  // too. Never flip this one.
   const head = headRows[0];
   if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
   // ADR-226 / §20.4 — refuse the save if someone else changed this card after the
@@ -3596,99 +3594,92 @@ export async function updateJobCardOrStage(
 
   // Engine imported dynamically to avoid a static import cycle with
   // jobcard-edit-registry (which imports updateJobCardTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  // ADR-227 — the generated Final Inspection's id AS IT IS NOW, frozen into the
-  // payload below so the approval strips the payload with the id the payload
-  // actually carries (see JC_STAGED_TERMINAL_QC_KEY). Stays `undefined` when no
-  // routing was submitted (a header-only edit stages no operation box, so there
-  // is nothing to index) — and `undefined` is exactly what means "not carried".
-  let stagedTerminalQcOpId: string | null | undefined;
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Live" mirrors jobCardEditRegistryEntry.isLive: editable while not
-    // complete / closed. A completed/closed card edits directly (today's rule).
-    const headRows = (await tx.execute(sql`
-      SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt",
-             jc.recovery_kind AS "recoveryKind"
-      FROM public.job_cards jc
-      LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
-      WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
-      LIMIT 1
-    `)) as unknown as Array<{ status: string; closedAt: unknown; recoveryKind: string | null }>;
-    const head = headRows[0];
-    if (!head) return false;
-    const live = head.closedAt == null && head.status !== 'complete' && head.status !== 'closed';
-    if (!live) return false;
-    // ADR-220 — operation changes now go for approval too, one box per change.
-    // Whatever cannot be represented as a box (or that the writer would refuse
-    // at approval) is refused HERE, so a box the approver cannot act on never
-    // exists and nothing is ever silently dropped.
-    if (input.ops !== undefined) {
-      const currentAll = await loadJcOpsForEdit(tx, companyId, id);
-      const showMoney = await canSeeFormPrice(user, 'jc_create');
-      // ADR-227 — ONE id, read from the STORED routing, strips both lists, so
-      // "did the operations change?" and the pre-check below can never disagree
-      // about which operation the generated Final Inspection is.
-      const terminal = terminalQcOp(currentAll) ?? null;
-      // DECIDED FIRST, and deliberately OUTSIDE the jcOpsChanged gate below.
-      // That gate compares both lists with this very op stripped out, so an edit
-      // that touches ONLY the Final Inspection (renamed it, retyped it, deleted
-      // its row, dragged an op after it) compares EQUAL — the person was told
-      // "Nothing changed to approve" and the change was silently dropped. The
-      // refusals must therefore run whenever a routing was submitted at all.
-      assertTerminalQcUnchanged(terminal, input.ops, { recoveryKind: head.recoveryKind });
-      const terminalId = terminal?.id ?? null;
-      stagedTerminalQcOpId = terminalId;
-      const current = withoutOpId(currentAll, terminalId);
-      const proposed = withoutOpId(input.ops, terminalId);
-      const asComparable = current.map((c) => ({
-        id: c.id,
-        operation: c.operation,
-        opType: c.opType,
-        cycleTimeMin: c.cycleTimeMin,
-        machineCodeText: c.machineCode,
-        program: c.program,
-        toolNo: c.toolNo,
-        toolDetails: c.toolDetails,
-        qcRequired: c.qcRequired,
-        outsourceVendorText: c.outsourceVendorCode,
-        outsourceCost: c.outsourceCost,
-      }));
-      if (jcOpsChanged(asComparable, proposed, showMoney)) {
-        const codeRow = (await tx.execute(
-          sql`SELECT code FROM public.job_cards WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid LIMIT 1`,
-        )) as unknown as Array<{ code: string }>;
-        assertJcOpsStageable(
-          codeRow[0]?.code ?? 'This Job Card',
-          currentAll,
-          input.ops,
-          showMoney,
-          {
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is jobCardEditRegistryEntry's own rule (editable while not complete /
+  // closed), decided by the engine under its lock (jc_ops then job_cards — the
+  // writer's own order); a completed / closed card edits directly (today's rule).
+  // The checks below run only for a live card, under that same lock.
+  // ADR-226 — the staged route gets the same version check as the direct one.
+  const request = await requestDocumentEdit(
+    'JobCard',
+    id,
+    input,
+    input.expectedUpdatedAt ?? null,
+    user,
+    async (tx, target) => {
+      let stagedTerminalQcOpId: string | null | undefined;
+      const headRows = await tx
+        .select({
+          recoveryKind: jobCards.recoveryKind,
+          rawMaterialItemId: jobCards.rawMaterialItemId,
+          rmQtyPerPiece: jobCards.rmQtyPerPiece,
+        })
+        .from(jobCards)
+        .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId)))
+        .limit(1);
+      const head = headRows[0];
+      if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+      // ADR-218 — the raw material the payload sends is checked NOW with the
+      // writer's own resolver (grade / size must be on their masters, RM Item and
+      // RM Qty per piece go together), so a change the approval could only refuse
+      // is never staged. An omitted RM pair is not re-checked (review M2).
+      await resolveJcRawMaterial(tx, companyId, input, {
+        rawMaterialItemId: head.rawMaterialItemId,
+        rmQtyPerPiece: head.rmQtyPerPiece,
+      });
+      // ADR-220 — operation changes now go for approval too, one box per change.
+      // Whatever cannot be represented as a box (or that the writer would refuse
+      // at approval) is refused HERE, so a box the approver cannot act on never
+      // exists and nothing is ever silently dropped.
+      if (input.ops !== undefined) {
+        const currentAll = await loadJcOpsForEdit(tx, companyId, id);
+        const showMoney = await canSeeFormPrice(user, 'jc_create');
+        // ADR-227 — ONE id, read from the STORED routing, strips both lists, so
+        // "did the operations change?" and the pre-check below can never disagree
+        // about which operation the generated Final Inspection is.
+        const terminal = terminalQcOp(currentAll) ?? null;
+        // DECIDED FIRST, and deliberately OUTSIDE the jcOpsChanged gate below.
+        // That gate compares both lists with this very op stripped out, so an edit
+        // that touches ONLY the Final Inspection (renamed it, retyped it, deleted
+        // its row, dragged an op after it) compares EQUAL — the person was told
+        // "Nothing changed to approve" and the change was silently dropped. The
+        // refusals must therefore run whenever a routing was submitted at all.
+        assertTerminalQcUnchanged(terminal, input.ops, { recoveryKind: head.recoveryKind });
+        const terminalId = terminal?.id ?? null;
+        stagedTerminalQcOpId = terminalId;
+        const current = withoutOpId(currentAll, terminalId);
+        const proposed = withoutOpId(input.ops, terminalId);
+        const asComparable = current.map((c) => ({
+          id: c.id,
+          operation: c.operation,
+          opType: c.opType,
+          cycleTimeMin: c.cycleTimeMin,
+          machineCodeText: c.machineCode,
+          program: c.program,
+          toolNo: c.toolNo,
+          toolDetails: c.toolDetails,
+          qcRequired: c.qcRequired,
+          outsourceVendorText: c.outsourceVendorCode,
+          outsourceCost: c.outsourceCost,
+        }));
+        if (jcOpsChanged(asComparable, proposed, showMoney)) {
+          assertJcOpsStageable(target.docCode, currentAll, input.ops, showMoney, {
             recoveryKind: head.recoveryKind,
-          },
-        );
+          });
+        }
       }
-    }
-    return true;
-  });
-  if (shouldStage) {
-    // ADR-226 — the staged route gets the same version check as the direct one
-    // (the engine refuses to stage an edit raised against a stale version), which
-    // is what Delivery Challan and Dispatch already pass here.
-    const request = await requestDocumentEdit(
-      'JobCard',
-      id,
-      // ADR-227 — the Final Inspection id rides WITH the frozen payload (jsonb,
-      // so no schema change). Only when a routing was submitted; a header-only
-      // edit keeps the payload exactly as it is today.
-      stagedTerminalQcOpId === undefined
-        ? input
-        : withStagedTerminalQcOpId(input, stagedTerminalQcOpId),
-      input.expectedUpdatedAt ?? null,
-      user,
-    );
-    return { staged: true, request };
-  }
+      // ADR-227 — the generated Final Inspection's id AS IT IS NOW rides WITH the
+      // frozen payload (jsonb, so no schema change), so the approval strips the
+      // payload with the id the payload actually carries (see
+      // JC_STAGED_TERMINAL_QC_KEY). Only when a routing was submitted: a
+      // header-only edit stages no operation box, keeps the payload exactly as
+      // sent, and `undefined` is exactly what means "not carried".
+      return stagedTerminalQcOpId === undefined
+        ? undefined
+        : withStagedTerminalQcOpId(input, stagedTerminalQcOpId);
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateJobCard(id, input, user);
 }

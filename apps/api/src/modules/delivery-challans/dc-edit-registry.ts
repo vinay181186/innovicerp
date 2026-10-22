@@ -48,6 +48,8 @@ interface DcFilteredInput {
   header: Partial<Pick<UpdateDeliveryChallanInput, 'dcDate' | 'transport' | 'vehicleNo'>>;
   approvedLineKeys: string[];
   proposedLines: UpdateDeliveryChallanInput['lines'];
+  /** The requester's edit reason — kept on the EDIT history rows the approval writes. */
+  reason?: string;
   expectedUpdatedAt?: string;
 }
 
@@ -165,6 +167,7 @@ export const dcEditRegistryEntry: DocEditRegistryEntry = {
       header,
       approvedLineKeys,
       proposedLines: input.lines,
+      ...(input.reason ? { reason: input.reason } : {}),
       ...(input.expectedUpdatedAt !== undefined
         ? { expectedUpdatedAt: input.expectedUpdatedAt }
         : {}),
@@ -217,6 +220,7 @@ export const dcEditRegistryEntry: DocEditRegistryEntry = {
       {
         ...f.header,
         lines,
+        ...(f.reason ? { reason: f.reason } : {}),
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       },
       user,

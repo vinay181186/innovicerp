@@ -739,33 +739,30 @@ export async function updateClientOrStage(
 
   // Imported dynamically to avoid a static import cycle with client-edit-registry
   // (which imports updateClientTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors clientEditRegistryEntry.isLive: any live (not-Trash) customer.
-    const rows = await tx
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.companyId, companyId), isNull(clients.deletedAt)))
-      .limit(1);
-    const before = rows[0];
-    if (!before) return false;
-    // ADR-244: a GSTIN problem is refused to the person who typed it, not
-    // held for an approver who would then hit the same refusal.
-    if (partyGstinRuleApplies(input)) {
-      const settings = await loadMasterRuleSettings(tx, companyId);
-      applyCustomerGstRules(
-        clientGstUpdate(before, input).issues,
-        settings.masterRulesMode,
-        `Customer ${before.code}`,
-      );
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit('Client', id, input, input.expectedUpdatedAt, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is clientEditRegistryEntry's own rule (any not-Trash customer),
+  // read through the registry so the two can never drift. Its doc is the full row.
+  const request = await requestDocumentEdit(
+    'Client',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx, target) => {
+      const before = target.doc as typeof clients.$inferSelect;
+      // ADR-244: a GSTIN problem is refused to the person who typed it, not
+      // held for an approver who would then hit the same refusal.
+      if (partyGstinRuleApplies(input)) {
+        const settings = await loadMasterRuleSettings(tx, companyId);
+        applyCustomerGstRules(
+          clientGstUpdate(before, input).issues,
+          settings.masterRulesMode,
+          `Customer ${before.code}`,
+        );
+      }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateClient(id, input, user);
 }

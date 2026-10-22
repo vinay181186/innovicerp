@@ -1444,14 +1444,18 @@ export async function updatePlanTx(
     updates['rawMaterialItemId'] = rmItem.rawMaterialItemId;
     updates['rmQtyPerPiece'] = rmItem.rmQtyPerPiece;
   }
+  // Money in, same rule as money out (hidePlanMoney): a caller who may not see
+  // prices was never shown Unit Cost / Rate, and their form posts them back as
+  // null — which must not wipe the stored figures. What is stored stands.
+  const showMoney = await canSeeFormPrice(user, 'plan_create');
   if (input.dpVendorId !== undefined) updates['dpVendorId'] = input.dpVendorId;
   if (input.dpVendorCodeText !== undefined) updates['dpVendorCodeText'] = input.dpVendorCodeText;
-  if (input.dpCost !== undefined) updates['dpCost'] = numericToString(input.dpCost);
+  if (input.dpCost !== undefined && showMoney) updates['dpCost'] = numericToString(input.dpCost);
   if (input.dpRemarks !== undefined) updates['dpRemarks'] = input.dpRemarks;
   if (input.foVendorId !== undefined) updates['foVendorId'] = input.foVendorId;
   if (input.foVendorCodeText !== undefined) updates['foVendorCodeText'] = input.foVendorCodeText;
   if (input.foProcess !== undefined) updates['foProcess'] = input.foProcess;
-  if (input.foRate !== undefined) updates['foRate'] = numericToString(input.foRate);
+  if (input.foRate !== undefined && showMoney) updates['foRate'] = numericToString(input.foRate);
   if (input.foMaterialSrc !== undefined) updates['foMaterialSrc'] = input.foMaterialSrc;
   if (input.foDeliveryDate !== undefined) updates['foDeliveryDate'] = input.foDeliveryDate;
   if (input.foCostCenter !== undefined) updates['foCostCenter'] = input.foCostCenter;
@@ -1696,47 +1700,42 @@ export async function updatePlanOrStage(
   // directly — staging needs the Edit tick (requestDocumentEdit), and a draft
   // nobody else has seen is not a live-document edit.
   if (mode === 'own-draft') return updatePlan(id, input, user, mode);
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with plan-edit-registry
   // (which imports updatePlanTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const rows = await tx
-      .select({ planStatus: plans.planStatus })
-      .from(plans)
-      .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
-      .limit(1);
-    const status = rows[0]?.planStatus;
-    // "Editable" mirrors planEditRegistryEntry.isLive: In Planning or Planned.
-    if (status === undefined || !EDITABLE_STATUSES.includes(status)) return false;
-    if (input.ops !== undefined) {
-      const currentOps = await tx
-        .select({
-          opSeq: planOps.opSeq,
-          operation: planOps.operation,
-          machineId: planOps.machineId,
-          program: planOps.program,
-          toolNo: planOps.toolNo,
-          toolDetails: planOps.toolDetails,
-          outsourceVendorId: planOps.outsourceVendorId,
-          outsourceVendorText: planOps.outsourceVendorText,
-        })
-        .from(planOps)
-        .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
-      if (planOpsChanged(currentOps, input.ops)) {
-        throw new ConflictError(
-          "Editing plan operations isn't available while Document Edit Approval is on yet — only the plan's own fields go for approval. Turn the gate off to edit operations.",
-        );
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is planEditRegistryEntry's own rule (In Planning or Planned), read
+  // through the registry so the two can never drift.
+  const request = await requestDocumentEdit(
+    'Plan',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx) => {
+      if (input.ops !== undefined) {
+        const currentOps = await tx
+          .select({
+            opSeq: planOps.opSeq,
+            operation: planOps.operation,
+            machineId: planOps.machineId,
+            program: planOps.program,
+            toolNo: planOps.toolNo,
+            toolDetails: planOps.toolDetails,
+            outsourceVendorId: planOps.outsourceVendorId,
+            outsourceVendorText: planOps.outsourceVendorText,
+          })
+          .from(planOps)
+          .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
+        if (planOpsChanged(currentOps, input.ops)) {
+          throw new ConflictError(
+            "Editing plan operations isn't available while Document Edit Approval is on yet — only the plan's own fields go for approval. Turn the gate off to edit operations.",
+          );
+        }
       }
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit('Plan', id, input, input.expectedUpdatedAt, user);
-    return { staged: true, request };
-  }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updatePlan(id, input, user, mode);
 }

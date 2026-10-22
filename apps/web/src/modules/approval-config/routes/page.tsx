@@ -323,8 +323,8 @@ function ApprovalConfigPage(): React.JSX.Element {
       </div>
 
       {/* Document Edit Approval (ADR-202) — the owner's master on/off. On:
-          every edit to a LIVE enrolled document (Phase 1: Purchase Orders) is
-          staged and goes for per-change approval. Off: edits save straight
+          every edit to a saved enrolled document or master (DOCUMENT_EDIT_ENTITIES)
+          is staged and goes for per-change approval. Off: edits save straight
           through — the instant rollback lever. */}
       <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -332,8 +332,8 @@ function ApprovalConfigPage(): React.JSX.Element {
             <span style={{ fontSize: 14, fontWeight: 700 }}>Document Edit Approval</span>
             <div className="text3" style={{ fontSize: 11 }}>
               {draft.docEditApproval
-                ? 'Edits to a live Purchase Order are staged and go for per-change approval.'
-                : 'Document edit approval is off. Edits to a live document save straight away.'}
+                ? 'Edits to a saved document or master wait in Settings → Approvals until approved.'
+                : 'Document edit approval is off. Edits to a saved document or master save straight away.'}
             </div>
           </div>
           <OnOffSwitch

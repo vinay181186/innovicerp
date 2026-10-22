@@ -2028,56 +2028,63 @@ export async function updatePurchaseOrderOrStage(
   user: AuthContext,
 ): Promise<PurchaseOrderDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'po_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Engine imported dynamically to avoid a static import cycle with
   // po-edit-registry (which imports updatePurchaseOrderTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const rows = await tx
-      .select({ status: purchaseOrders.status })
-      .from(purchaseOrders)
-      .where(
-        and(
-          eq(purchaseOrders.id, id),
-          eq(purchaseOrders.companyId, companyId),
-          isNull(purchaseOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    const status = rows[0]?.status;
-    // "Live" mirrors poEditRegistryEntry.isLive: past draft and not cancelled.
-    if (status === undefined || status === 'draft' || status === 'cancelled') return false;
-    // Phase 1b stages HEADER changes and item/qty/rate changes on EXISTING lines.
-    // Adding or removing a line still cannot be staged, so refuse it clearly
-    // rather than let it ride along unapproved — a field change on an existing
-    // line falls through and is staged for per-change approval.
-    if (input.lines !== undefined) {
-      const current = await tx
-        .select({ id: purchaseOrderLines.id })
-        .from(purchaseOrderLines)
-        .where(
-          and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)),
-        );
-      if (poLinesAddedOrRemoved(current, input.lines)) {
-        throw new ConflictError(
-          "Adding or removing PO lines isn't available while Document Edit Approval is on — you can change an existing line's item, quantity or rate (it will go for approval). To add or remove lines, turn the gate off.",
-        );
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is poEditRegistryEntry's own rule (past draft and not cancelled),
+  // read through the registry so the two can never drift. Its projection
+  // carries the PO's current lines, locked by the engine for this whole pass.
+  const request = await requestDocumentEdit(
+    'PurchaseOrder',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (_tx, target) => {
+      // Phase 1b stages HEADER changes and field changes on EXISTING lines.
+      // Adding or removing a line still cannot be staged, so refuse it clearly
+      // rather than let it ride along unapproved — a field change on an existing
+      // line falls through and is staged for per-change approval.
+      if (input.lines !== undefined) {
+        const current = (target.doc['lines'] ?? []) as Array<{
+          id: string;
+          lineNo: number;
+          sourceSoLineId: string | null;
+          sourceJcOpId: string | null;
+          sourceNcId: string | null;
+        }>;
+        if (poLinesAddedOrRemoved(current, input.lines)) {
+          throw new ConflictError(
+            "Adding or removing PO lines isn't available while Document Edit Approval is on — you can change an existing line's item, item name, quantity, rate, due date, PR, Ram Remark or remarks (it will go for approval). To add or remove lines, turn the gate off.",
+          );
+        }
+        // No approval box carries a line's number or its SO line / Job Card op /
+        // NC link (the edit form never changes them), so a change to one is
+        // refused here rather than staged and dropped.
+        const storedById = new Map(current.map((c) => [c.id, c]));
+        const moved = (
+          sent: string | number | undefined,
+          stored: string | number | null,
+        ): boolean => sent !== undefined && sent !== stored;
+        for (const l of input.lines) {
+          const s = l.id ? storedById.get(l.id) : undefined;
+          if (!s) continue;
+          if (
+            moved(l.lineNo, s.lineNo) ||
+            moved(l.sourceSoLineId, s.sourceSoLineId) ||
+            moved(l.sourceJcOpId, s.sourceJcOpId) ||
+            moved(l.sourceNcId, s.sourceNcId)
+          ) {
+            throw new ConflictError(
+              `Line ${s.lineNo}: its line number or its Sales Order / Job Card / NC link can't be changed while Document Edit Approval is on. Turn the gate off to change it.`,
+            );
+          }
+        }
       }
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit(
-      'PurchaseOrder',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updatePurchaseOrder(id, input, user);
 }

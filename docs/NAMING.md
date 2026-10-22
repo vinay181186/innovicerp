@@ -332,6 +332,11 @@ with no live `xxx` to fall back from is a defect (C-13).
 | A user's right to CREATE a new record on a page (ADR-231 clarified) | `Entry`; OFF switch `No create` | `entry` / `entryOff` (`AccessFormPerms`) | `user_access.forms[<page>].entry`, or the department tier (L2, L3, L5) | `Add`, `Create right`; never read as "may finish a job" — that is `Advance` |
 | A user's right to move a SAVED record to its next step: close, short close, dispose, close rework, mark planned, create job card from a plan, assign, record a return, comment on a working document (ADR-231) | `Advance`; OFF switch `No advance` | `advance` / `advanceOff` (`AccessFormPerms`) | `user_access.forms[<page>].advance`, or the department tier (L2, L3, L4, L5); an `Edit` tick includes it | `Process` (already QC Process Master, OSP Process, the NC reason, the BOM field), `Execute` (Plan execute), `Action`, `Progress`, `Complete`, `Work` |
 | A user's right to CORRECT what was typed on a saved record, and to UNDO one (reverse, cancel) (ADR-231 narrowed) | `Edit`; OFF switch `No edit` | `edit` / `editOff` (`AccessFormPerms`) | `user_access.forms[<page>].edit`, or the department tier (L3, L5) | `Change`, `Modify`; never the right to close or dispose — that is `Advance` |
+| Settings → Approvals tab holding staged EDITS of a PO / PR (ADR-249) — the plain `PO` / `PR` tabs are the release (approve-the-document) inbox | `PO Edit` / `PR Edit` | `DOCUMENT_EDIT_LABEL` | `packages/shared/src/enums/document-edit-entity.ts` | `PO Changes`, `Edit PO` |
+| Settings → Approvals tab holding staged edits of the 12 masters, with a picker per master (ADR-249) | `Masters` | `DOCUMENT_EDIT_MASTER_ENTITIES` | same file | `Master Data`, `Master Edits` |
+| Approval box for a Plan's Buy cost per piece (`plans.dp_cost`) — the Plan form's own label (ADR-249). Same words as the ML-BOM computed cost row; context (Plan vs ML-BOM) separates them | `Unit Cost` | `dpCost` | `plans.dp_cost` | `DP Cost` |
+| Approval box for a Plan's Job Work rate (`plans.fo_rate`) — the Plan form's own label (ADR-249) | `Rate` | `foRate` | `plans.fo_rate` | `FO Rate` |
+| PO line's RAM remark — the PO form's own label, now an approval box `Line N · Ram Remark` (ADR-249) | `Ram Remark` | `ramRemark` | `purchase_order_lines.ram_remark` | `RAM Note` |
 
 ---
 

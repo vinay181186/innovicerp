@@ -13,6 +13,13 @@
 // overwrites ONLY the approved fields, then replays updateBomMasterTx — so every BOM
 // guard (optimistic lock, status-move check, line reconcile, revision bump, audit)
 // runs exactly as a direct edit, with no second writer.
+//
+// The requester's Revision Note is not a field change (it has no current value to
+// compare), so it is not a box; it rides WITH the approved change and becomes the
+// note on the revision the FIRST applying decide writes — the same as a direct
+// save. A request decided over several calls writes one revision per applying
+// call; the later ones get the writer's own diff note, so the note is never
+// repeated. Left blank, the writer generates its own diff note, as before.
 
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type {
@@ -261,7 +268,7 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
     return out;
   },
 
-  buildFilteredInput(proposedPayload, approvedFields) {
+  buildFilteredInput(proposedPayload, approvedFields, ctx) {
     const input = proposedPayload as UpdateBomMasterInput;
     const header: Record<string, unknown> = {};
     const approvedLineFields: string[] = [];
@@ -285,6 +292,8 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
       header,
       approvedLineFields,
       proposedLines: input.lines,
+      // Only on the first call of this request that applies a change.
+      revisionNote: ctx?.firstApply === false ? null : (input.revisionNote ?? null),
       expectedUpdatedAt: input.expectedUpdatedAt,
     };
   },
@@ -294,6 +303,7 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
       header: Record<string, unknown>;
       approvedLineFields: string[];
       proposedLines: CreateBomMasterLineInput[];
+      revisionNote: string | null;
       expectedUpdatedAt?: string | null;
     };
     const approvedLineFields = new Set(filtered.approvedLineFields);
@@ -368,7 +378,7 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
       parentItemId: ('parentItemId' in h ? h['parentItemId'] : header.parentItemId) as string,
       status: ('status' in h ? h['status'] : header.status) as UpdateBomMasterInput['status'],
       lines,
-      revisionNote: null,
+      revisionNote: filtered.revisionNote,
       // The engine resolved per-change drift under this tx's BOM row lock, so the
       // whole-row updated_at check inside updateBomMasterTx must see the CURRENT
       // token (a no-op match), not the request's original.

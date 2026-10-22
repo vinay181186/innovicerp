@@ -26,7 +26,7 @@ import type {
   UpdateInstrumentInput,
 } from '@innovic/shared';
 import { INSTRUMENT_STATUS_LABELS } from '@innovic/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { instrumentCalibrations, instruments, toolWriteoffs } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -244,33 +244,16 @@ export async function updateInstrumentOrStage(
   user: AuthContext,
 ): Promise<InstrumentListItem | DocumentEditStagedResult> {
   await requireFormAccess(user, FORM, 'entry');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with the registry entry
   // (which imports updateInstrumentTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors the registry's isLive: any live (not-Trash) instrument.
-    const rows = await tx
-      .select({ id: instruments.id })
-      .from(instruments)
-      .where(
-        and(
-          eq(instruments.id, id),
-          eq(instruments.companyId, companyId),
-          isNull(instruments.deletedAt),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  });
-  if (shouldStage) {
-    // No expectedUpdatedAt token — concurrency is the engine's (loadForDiff
-    // locks FOR UPDATE and rechecks field freshness).
-    const request = await requestDocumentEdit('Instrument', id, input, undefined, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is the registry entry's own rule (any not-Trash instrument), read
+  // through the registry so the two can never drift.
+  // No expectedUpdatedAt token — concurrency is the engine's (loadForDiff
+  // locks FOR UPDATE and rechecks field freshness).
+  const request = await requestDocumentEdit('Instrument', id, input, undefined, user);
+  if (request) return { staged: true, request };
 
   return updateInstrument(id, input, user);
 }

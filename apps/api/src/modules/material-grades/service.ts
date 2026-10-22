@@ -386,33 +386,16 @@ export async function updateMaterialGradeOrStage(
   user: AuthContext,
 ): Promise<MaterialGrade | DocumentEditStagedResult> {
   await requireFormAccess(user, 'rawmat_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with the registry entry
   // (which imports updateMaterialGradeTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors the registry's isLive: any live (not-Trash) grade.
-    const rows = await tx
-      .select({ id: materialGrades.id })
-      .from(materialGrades)
-      .where(
-        and(
-          eq(materialGrades.id, id),
-          eq(materialGrades.companyId, companyId),
-          isNull(materialGrades.deletedAt),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  });
-  if (shouldStage) {
-    // No expectedUpdatedAt token — concurrency is the engine's (loadForDiff
-    // locks FOR UPDATE and rechecks field freshness).
-    const request = await requestDocumentEdit('MaterialGrade', id, input, undefined, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is the registry entry's own rule (any not-Trash grade), read
+  // through the registry so the two can never drift.
+  // No expectedUpdatedAt token — concurrency is the engine's (loadForDiff
+  // locks FOR UPDATE and rechecks field freshness).
+  const request = await requestDocumentEdit('MaterialGrade', id, input, undefined, user);
+  if (request) return { staged: true, request };
 
   return updateMaterialGrade(id, input, user);
 }

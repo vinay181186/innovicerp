@@ -1557,85 +1557,56 @@ export async function updateGoodsReceiptNoteOrStage(
   user: AuthContext,
 ): Promise<GoodsReceiptNoteDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'grn_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Engine imported dynamically to avoid a static import cycle with
   // grn-edit-registry (which imports updateGoodsReceiptNoteTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const hdrRows = await tx
-      .select({ id: goodsReceiptNotes.id })
-      .from(goodsReceiptNotes)
-      .where(
-        and(
-          eq(goodsReceiptNotes.id, id),
-          eq(goodsReceiptNotes.companyId, companyId),
-          isNull(goodsReceiptNotes.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (hdrRows.length === 0) return false;
-    // "Live" mirrors grnEditRegistryEntry.isLive: at least one line still has QC
-    // qty remaining (grnStatus 'pending'). A fully QC-closed GRN edits directly.
-    const waiting = await tx
-      .select({ id: goodsReceiptNoteLines.id })
-      .from(goodsReceiptNoteLines)
-      .where(
-        and(
-          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
-          isNull(goodsReceiptNoteLines.deletedAt),
-          sql`(${goodsReceiptNoteLines.receivedQty} - ${goodsReceiptNoteLines.qcAcceptedQty} - ${goodsReceiptNoteLines.qcRejectedQty}) > 0`,
-        ),
-      )
-      .limit(1);
-    if (waiting.length === 0) return false;
-
-    if (input.lines !== undefined) {
-      const currentLines = await tx
-        .select({
-          id: goodsReceiptNoteLines.id,
-          purchaseOrderLineId: goodsReceiptNoteLines.purchaseOrderLineId,
-          itemId: goodsReceiptNoteLines.itemId,
-          itemCodeText: goodsReceiptNoteLines.itemCodeText,
-          itemName: goodsReceiptNoteLines.itemName,
-          receivedQty: goodsReceiptNoteLines.receivedQty,
-          dcRefNo: goodsReceiptNoteLines.dcRefNo,
-          qcStatus: goodsReceiptNoteLines.qcStatus,
-          qcAcceptedQty: goodsReceiptNoteLines.qcAcceptedQty,
-          qcRejectedQty: goodsReceiptNoteLines.qcRejectedQty,
-          qcDate: goodsReceiptNoteLines.qcDate,
-          qcRemarks: goodsReceiptNoteLines.qcRemarks,
-          remarks: goodsReceiptNoteLines.remarks,
-        })
-        .from(goodsReceiptNoteLines)
-        .where(
-          and(
-            eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
-            isNull(goodsReceiptNoteLines.deletedAt),
-          ),
-        );
-      if (grnChildRowsChanged(currentLines, input.lines)) {
-        throw new ConflictError(
-          "Editing GRN lines isn't available while Document Edit Approval is on yet — only the GRN's own fields go for approval. Turn the gate off to edit lines.",
-        );
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is grnEditRegistryEntry's own rule (at least one line still has QC
+  // qty remaining — grnStatus 'pending'), read through the registry so the two
+  // can never drift. A fully QC-closed GRN edits directly.
+  // ADR-226 — the staged route gets the same version check as the direct one
+  // (the engine refuses to stage an edit raised against a stale version), which
+  // is what Delivery Challan and Dispatch already pass here.
+  const request = await requestDocumentEdit(
+    'GoodsReceiptNote',
+    id,
+    input,
+    input.expectedUpdatedAt ?? null,
+    user,
+    async (tx) => {
+      if (input.lines !== undefined) {
+        const currentLines = await tx
+          .select({
+            id: goodsReceiptNoteLines.id,
+            purchaseOrderLineId: goodsReceiptNoteLines.purchaseOrderLineId,
+            itemId: goodsReceiptNoteLines.itemId,
+            itemCodeText: goodsReceiptNoteLines.itemCodeText,
+            itemName: goodsReceiptNoteLines.itemName,
+            receivedQty: goodsReceiptNoteLines.receivedQty,
+            dcRefNo: goodsReceiptNoteLines.dcRefNo,
+            qcStatus: goodsReceiptNoteLines.qcStatus,
+            qcAcceptedQty: goodsReceiptNoteLines.qcAcceptedQty,
+            qcRejectedQty: goodsReceiptNoteLines.qcRejectedQty,
+            qcDate: goodsReceiptNoteLines.qcDate,
+            qcRemarks: goodsReceiptNoteLines.qcRemarks,
+            remarks: goodsReceiptNoteLines.remarks,
+          })
+          .from(goodsReceiptNoteLines)
+          .where(
+            and(
+              eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
+              isNull(goodsReceiptNoteLines.deletedAt),
+            ),
+          );
+        if (grnChildRowsChanged(currentLines, input.lines)) {
+          throw new ConflictError(
+            "Editing GRN lines isn't available while Document Edit Approval is on yet — only the GRN's own fields go for approval. Turn the gate off to edit lines.",
+          );
+        }
       }
-    }
-    return true;
-  });
-  if (shouldStage) {
-    // ADR-226 — the staged route gets the same version check as the direct one
-    // (the engine refuses to stage an edit raised against a stale version), which
-    // is what Delivery Challan and Dispatch already pass here.
-    const request = await requestDocumentEdit(
-      'GoodsReceiptNote',
-      id,
-      input,
-      input.expectedUpdatedAt ?? null,
-      user,
-    );
-    return { staged: true, request };
-  }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateGoodsReceiptNote(id, input, user);
 }

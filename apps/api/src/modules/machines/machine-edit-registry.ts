@@ -65,7 +65,7 @@ export const machineEditRegistryEntry: DocEditRegistryEntry = {
     };
   },
 
-  async afterSnapshot(_tx, _companyId, input, user) {
+  async afterSnapshot(_tx, _companyId, input, user, _target, opts) {
     const i = input as UpdateMachineInput;
     const out: Record<string, unknown> = {};
     if (i.name !== undefined) out['name'] = i.name;
@@ -77,7 +77,10 @@ export const machineEditRegistryEntry: DocEditRegistryEntry = {
     if (i.status !== undefined) out['status'] = i.status;
     // Money field only when the actor may see prices — a price-blind payload
     // echoes back a rate the user was never shown, which must not read as a change.
-    if (i.hourRate !== undefined && (await canSeeFormPrice(user, MACHINE_FORM_KEY))) {
+    if (
+      i.hourRate !== undefined &&
+      (opts?.allPrices || (await canSeeFormPrice(user, MACHINE_FORM_KEY)))
+    ) {
       out['hourRate'] = i.hourRate;
     }
     return out;

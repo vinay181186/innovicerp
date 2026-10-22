@@ -122,6 +122,9 @@ export function PoHeaderBand({
   const poDatePending = headerPendingChange(pendingChanges, 'poDate');
   const vendorPending = headerPendingChange(pendingChanges, 'vendorId');
   const remarksPending = headerPendingChange(pendingChanges, 'remarks');
+  const approvalRemarksPending = headerPendingChange(pendingChanges, 'approvalRemarks');
+  const dueDatePending = headerPendingChange(pendingChanges, 'dueDate');
+  const prCodePending = headerPendingChange(pendingChanges, 'prCodeText');
   // Full address incl. pincode (A38 / A39) — street, city, state, pincode.
   const address = [vendor?.addressLine1, vendor?.city, vendor?.state, vendor?.pincode]
     .filter(Boolean)
@@ -221,13 +224,16 @@ export function PoHeaderBand({
           <Row
             label="PR No."
             value={
-              detail.prCodeText ? (
-                <span className="mono" style={{ color: 'var(--purple)' }}>
-                  {detail.prCodeText}
-                </span>
-              ) : (
-                <span className="text3">—</span>
-              )
+              <>
+                {detail.prCodeText ? (
+                  <span className="mono" style={{ color: 'var(--purple)' }}>
+                    {detail.prCodeText}
+                  </span>
+                ) : (
+                  <span className="text3">—</span>
+                )}
+                {prCodePending ? <PendingChangeChip after={prCodePending.after} /> : null}
+              </>
             }
           />
           {/* The customer order this PO ultimately serves, resolved through the
@@ -340,15 +346,33 @@ export function PoHeaderBand({
             label="Tax Type"
             value={totals ? gstTaxTypeLabel(totals.taxType) : taxTypeLabel(detail.taxType)}
           />
-          <Row label="Due Date" value={<span className="mono">{fmtDate(detail.dueDate)}</span>} />
+          <Row
+            label="Due Date"
+            value={
+              <>
+                <span className="mono">{fmtDate(detail.dueDate)}</span>
+                {dueDatePending ? <PendingChangeChip after={dueDatePending.after} /> : null}
+              </>
+            }
+          />
           {detail.approvedAt ? (
             <Row
               label="Approved At"
               value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}
             />
           ) : null}
-          {detail.approvalRemarks ? (
-            <Row label="Approval Remarks" value={detail.approvalRemarks} />
+          {detail.approvalRemarks || approvalRemarksPending ? (
+            <Row
+              label="Approval Remarks"
+              value={
+                <>
+                  {detail.approvalRemarks ?? '—'}
+                  {approvalRemarksPending ? (
+                    <PendingChangeChip after={approvalRemarksPending.after} />
+                  ) : null}
+                </>
+              }
+            />
           ) : null}
           {rejected ? (
             <>

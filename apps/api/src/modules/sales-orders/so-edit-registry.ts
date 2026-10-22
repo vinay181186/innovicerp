@@ -93,7 +93,7 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     };
   },
 
-  async afterSnapshot(tx, companyId, input, user) {
+  async afterSnapshot(tx, companyId, input, user, _target, opts) {
     const i = input as UpdateSalesOrderInput;
     const h = i.header ?? {};
     const out: Record<string, unknown> = {};
@@ -115,7 +115,10 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     }
     // Money only when the actor may see prices — a price-blind payload carries a
     // zod default (18) that would otherwise read as a GST change.
-    if (h.gstPercent !== undefined && (await canSeeFormPrice(user, SO_FORM_KEY))) {
+    if (
+      h.gstPercent !== undefined &&
+      (opts?.allPrices || (await canSeeFormPrice(user, SO_FORM_KEY)))
+    ) {
       out['gstPercent'] = h.gstPercent;
     }
     return out;
@@ -138,13 +141,21 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
       }
     }
     if (Object.keys(fh).length === 0) return null;
-    return { header: fh, expectedUpdatedAt: input.expectedUpdatedAt };
+    // The requester's edit reason (frozen into the payload by the SO OrStage)
+    // goes on the EDIT history row the writer records.
+    const reason = (proposedPayload as { reason?: unknown }).reason;
+    return {
+      header: fh,
+      expectedUpdatedAt: input.expectedUpdatedAt,
+      reason: typeof reason === 'string' ? reason : null,
+    };
   },
 
   async applyEdit(tx, _companyId, id, filteredInput, expectedUpdatedAt, user) {
     const filtered = filteredInput as {
       header: Record<string, unknown>;
       expectedUpdatedAt?: string;
+      reason?: string | null;
     };
     const header = filtered.header as UpdateSalesOrderInput['header'];
     try {
@@ -153,8 +164,9 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
         id,
         { header, expectedUpdatedAt: expectedUpdatedAt ?? undefined },
         user,
-        // Record-level only — never a cancel, so no reason is needed here.
-        null,
+        // Record-level only — never a cancel; the reason is the requester's edit
+        // note, written on the EDIT history row.
+        filtered.reason ?? null,
       );
     } catch (e) {
       // ADR-207 — another SO took this Internal SO No. between staging and
