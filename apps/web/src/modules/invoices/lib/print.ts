@@ -99,10 +99,10 @@ function invoiceSheetModel(
   const gst = inv.clientGst ?? '';
   // The invoice's own Tax Type (migration 0171) decides the split.
   // Money hidden for L1 Viewers: TOLD by the server (priceVisible), never
-  // inferred from a null money field. Rate / Amount print an em dash and no
-  // money block or amount-in-words follows.
+  // inferred from a null money field. The sheet leaves the Rate / Amount
+  // columns, the money block and the amount-in-words off (`hideMoney`).
   const priceHidden = inv.priceVisible === false;
-  const money = (n: number | null | undefined): string => (priceHidden ? '—' : inrFormat(n ?? 0));
+  const money = (n: number | null | undefined): string => (priceHidden ? '' : inrFormat(n ?? 0));
   const gstPct = inv.gstPercent ?? 0;
   const gstAmount = inv.gstAmount ?? 0;
   // ADR-248 — invoiceTaxSplit picks the rule: issued before round-off
@@ -115,10 +115,10 @@ function invoiceSheetModel(
     roundOff: inv.roundOff,
   });
   const taxRows = split.rows.map((l) => ({ label: l.label, value: money(l.amount) }));
-  // Round-off exists only on a new invoice, which the server never sends to a
-  // price-hidden viewer — so no em-dash case here.
+  // Round-off exists only on a new invoice; guarded by the told flag like
+  // every other rupee figure.
   if (split.roundOff != null) {
-    taxRows.push({ label: 'Round-off', value: signedRoundOff(split.roundOff) });
+    taxRows.push({ label: 'Round-off', value: priceHidden ? '' : signedRoundOff(split.roundOff) });
   }
 
   const uoms = new Set(inv.lines.map((l) => l.uom?.trim() ?? ''));
@@ -198,6 +198,7 @@ function invoiceSheetModel(
     })),
     totalQty: qtyText(totalQty),
     totalUom: uoms.size === 1 ? ([...uoms][0] ?? '') : '',
+    hideMoney: priceHidden,
     ...(priceHidden
       ? {}
       : {

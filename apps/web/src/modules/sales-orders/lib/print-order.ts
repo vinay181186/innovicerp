@@ -114,7 +114,9 @@ function orderSheet(
   },
 ): SheetPrintModel {
   const { client, company, templates } = args;
-  const money = (n: number): string => (o.priceHidden ? '—' : inrFormat(n));
+  // Price hidden: the sheet drops the Rate / Amount columns and the money
+  // block (`hideMoney`); `{totalValue}` prints blank, never a dash.
+  const money = (n: number): string => (o.priceHidden ? '' : inrFormat(n));
 
   const t = o.priceHidden ? null : o.totals;
   const totalQty = o.lines.reduce((s, l) => s + l.orderQty, 0);
@@ -159,7 +161,9 @@ function orderSheet(
       clientGSTIN: party.gstNumber,
       clientContact: party.contact,
       totalQty: String(totalQty),
-      totalValue: t ? money(t.grandTotal) : '—',
+      // Hidden → blank. Visible but no saved totals (an old order) → the dash
+      // that says "not worked out", as before.
+      totalValue: t ? money(t.grandTotal) : o.priceHidden ? '' : '—',
     },
     company: { ...buildDocCompany(company), addressLines: [...COMPANY_CARD_ADDRESS_LINES] },
     recipient: { label: 'Customer', fields: recipientFields },
@@ -177,6 +181,7 @@ function orderSheet(
     })),
     totalQty: String(totalQty),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
+    hideMoney: o.priceHidden,
     ...(t
       ? {
           money: {
