@@ -14325,7 +14325,7 @@ ignored the approver list and the limit, and pending QC missed party GRNs.
 - Open (separate changes, D4): `GET /activity-log` and the Alerts module still check
   only the company — to be fixed right after this.
 
-## ADR-251: Incoming QC lists Against PO + Party GRN calls, on the QC Call Register layout
+## ADR-251: Incoming QC lists Direct Purchase + Party GRN calls, on the QC Call Register layout
 
 **Date:** 2026-10-23
 **Status:** Accepted (owner "ok", 2026-10-23)
@@ -14340,13 +14340,13 @@ layout (tile strip, two-tab FIT tables) unlike the QC Call Register.
 
 ### Decision
 
-1. Incoming QC lists two GRN Types only: **Against PO** (direct purchase) and
+1. Incoming QC lists two GRN Types only: **Direct Purchase** (a GRN against a purchase PO; the label was "Against PO" until the owner found it unclear, 2026-10-23) and
    **Party GRN**. Against JW PO / DC and Against NC calls are inspected from the
    QC Call Register.
 2. GRN Type of an incoming call is derived on read, never stored, by one SQL
    expression (`register-incoming.ts` `GRN_TYPE_SQL`) in the NAMING.md order:
    `nc_id` → Against NC; `delivery_challan_id` →
-   Against JW PO / DC; otherwise Against PO (old GRNs with no PO/DC/NC included).
+   Against JW PO / DC; otherwise Direct Purchase (old GRNs with no PO/DC/NC included).
    A Party GRN line is its own type. Shared values: `QC_GRN_TYPES`.
 3. `GET /qc-history/register` takes `grnType` (comma list). When set, job-card
    calls drop out and the incoming halves are narrowed to those types. The summary

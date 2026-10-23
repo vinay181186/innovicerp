@@ -1,6 +1,6 @@
 // QC Call Register (legacy renderQCDashboard L4126, page `qcdashboard`). The
 // screen body is QcRegisterScreen in 'register' mode — shared with Incoming QC
-// (ADR-251), which is the same screen narrowed to GRNs Against PO + Party GRNs.
+// (ADR-251), which is the same screen narrowed to Direct Purchase GRNs + Party GRNs.
 
 import { createRoute } from '@tanstack/react-router';
 import { useCallback } from 'react';

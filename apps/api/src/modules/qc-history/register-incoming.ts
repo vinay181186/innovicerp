@@ -15,8 +15,8 @@ export type IncGrnType = Exclude<QcGrnType, 'party_grn'>;
 
 /** ADR-251 — THE rule for a saved GRN's type, exactly as NAMING.md "Which
  *  paper a receipt is against" and the web's grnTypeLabel decide it: NC first
- *  (an NC-return GRN carries a DC too), then a DC, else Against PO — which
- *  includes old GRNs with no PO / DC / NC. (A GRN Against PO cannot be booked
+ *  (an NC-return GRN carries a DC too), then a DC, else Direct Purchase — which
+ *  includes old GRNs with no PO / DC / NC. (A Direct Purchase GRN cannot be booked
  *  on a job-work / service PO — goods-receipt-notes/service.ts refuses it.)
  *  `h` = the GRN header alias, a fixed alias written in this code, never user
  *  input. Every caller (register filter, counts, row value, home tile) uses
@@ -33,7 +33,7 @@ export const GRN_TYPE_SQL = grnTypeSql('h');
 
 const INC_GRN_TYPES: readonly IncGrnType[] = ['purchase', 'job_work_return', 'nc_return'];
 
-/** A raw "grnType" value → the typed value (unknown reads as Against PO). */
+/** A raw "grnType" value → the typed value (unknown reads as Direct Purchase). */
 export function toIncGrnType(v: unknown): IncGrnType {
   return INC_GRN_TYPES.includes(v as IncGrnType) ? (v as IncGrnType) : 'purchase';
 }

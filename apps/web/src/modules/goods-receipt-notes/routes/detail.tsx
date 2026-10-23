@@ -202,7 +202,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // `receiptAccount` owns all four of its own terms and withholds the account
   // unless EVERY line traces to an ordered line — the same rule, from the same
   // function, that the create and edit screens obey.
-  const againstPo = grnType === 'Against PO';
+  const againstPo = grnType === 'Direct Purchase';
   const account = againstPo ? receiptAccount(detail.lines) : null;
 
   return (

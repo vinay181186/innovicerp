@@ -259,7 +259,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   // detail page (grn-list-columns) so the three surfaces cannot drift. It
   // answers null for a legacy row with no PO, DC or NC linked at all — that
   // row's source box is `PO No. (not linked)`, so Against PO is its type.
-  const typeLabel = (detail ? grnTypeLabel(detail) : null) ?? 'Against PO';
+  const typeLabel = (detail ? grnTypeLabel(detail) : null) ?? 'Direct Purchase';
   const isNc = Boolean(detail?.ncId);
   const isDc = !isNc && Boolean(detail?.deliveryChallanId);
   // The receipt account and the three account columns are AGAINST PO only.

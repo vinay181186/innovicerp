@@ -289,7 +289,7 @@ const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
     qc_pending: 'QC Pending',
     close: 'QC Cleared',
     qc_cleared: 'QC Cleared',
-    against_po: 'Against PO',
+    against_po: 'Direct Purchase',
     against_dc: 'Against DC',
     against_nc: 'Against NC',
   },

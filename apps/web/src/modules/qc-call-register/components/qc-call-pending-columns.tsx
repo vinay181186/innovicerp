@@ -60,7 +60,7 @@ const STAGE_LABEL = Object.fromEntries(QC_STAGES.map((s) => [s.key, s.label])) a
 >;
 
 /** ADR-251 — an incoming call's Stage cell names its GRN Type:
- *  "Incoming · Against PO", "Incoming · Party GRN". Plain "Incoming" when an
+ *  "Incoming · Direct Purchase", "Incoming · Party GRN". Plain "Incoming" when an
  *  older API build sent no type. */
 export function incomingStageLabel(grnType: QcGrnType | undefined): string {
   return grnType

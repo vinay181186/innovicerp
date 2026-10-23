@@ -174,15 +174,15 @@ export const QC_REGISTER_STAGES = ['incoming', 'inprocess', 'final'] as const;
 export type QcRegisterStage = (typeof QC_REGISTER_STAGES)[number];
 
 // ADR-251 — the GRN Type of an incoming call, named as NAMING.md names a GRN's
-// paper ("GRN Type": Against PO / Against JW PO / DC / Against NC), plus the
+// paper ("GRN Type": Direct Purchase / Against JW PO / DC / Against NC), plus the
 // Party GRN (customer material against a JWSO line). Derived on read from
-// nc_id → delivery_challan_id / job-work or service PO → otherwise Against PO
+// nc_id → delivery_challan_id → otherwise Direct Purchase
 // (register-incoming.ts GRN_TYPE_SQL), never stored. The Incoming QC screen is
 // the register narrowed to `purchase` + `party_grn`.
 export const QC_GRN_TYPES = ['purchase', 'party_grn', 'job_work_return', 'nc_return'] as const;
 export type QcGrnType = (typeof QC_GRN_TYPES)[number];
 export const QC_GRN_TYPE_LABELS: Record<QcGrnType, string> = {
-  purchase: 'Against PO',
+  purchase: 'Direct Purchase',
   party_grn: 'Party GRN',
   job_work_return: 'Against JW PO / DC',
   nc_return: 'Against NC',

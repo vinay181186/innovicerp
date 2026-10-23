@@ -6,7 +6,7 @@
 // mode 'register' (QC Call Register): every call — incoming, in-process, final
 // — with the Stage and GRN Type filters, "Mine", Full History and the TPI tab.
 // Page right: qc_submit · view.
-// mode 'incoming' (Incoming QC): only GRNs Against PO and Party GRNs (the query
+// mode 'incoming' (Incoming QC): only Direct Purchase GRNs and Party GRNs (the query
 // always carries grnType); no Stage / Mine / TPI / Full History, and no
 // Operation / Assigned To columns. Page right: qc_incoming · view; Inspect
 // needs qc_incoming · entry. OSP returns and NC returns stay on the register.

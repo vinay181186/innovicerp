@@ -5,7 +5,7 @@
 //
 // ADR-251: a GRN Type filter beside Stage, and an 'incoming' mode for the
 // Incoming QC screen (its own title, no Stage / Mine / Full History, and the
-// GRN Type choices narrowed to Against PO + Party GRN).
+// GRN Type choices narrowed to Direct Purchase + Party GRN).
 
 import {
   INCOMING_QC_GRN_TYPES,

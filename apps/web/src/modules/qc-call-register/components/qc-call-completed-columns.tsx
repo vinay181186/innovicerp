@@ -114,7 +114,7 @@ function operationOf(vm: CompletedVM): string {
     : `GRN ${vm.row.grnNo}`;
 }
 /** ADR-251 — the Stage cell: process calls by stage, incoming ones by GRN Type
- *  ("Incoming · Against PO"). */
+ *  ("Incoming · Direct Purchase"). */
 function stageLabelOf(vm: CompletedVM): string {
   if (vm.kind === 'op') {
     const k = processStage(vm.row.isLastOp);

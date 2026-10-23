@@ -1,6 +1,6 @@
 // Incoming QC (QC Wave 2; legacy renderIncomingQC HTML L23748). ADR-251: the
 // QC Call Register's own screen (QcRegisterScreen, mode 'incoming') narrowed to
-// the two kinds of incoming call — GRNs Against PO (direct purchase) and Party
+// the two kinds of incoming call — Direct Purchase GRNs and Party
 // GRNs (customer material on a JWSO). OSP returns (Against JW PO / DC) and NC
 // returns (Against NC) are inspected on the QC Call Register.
 

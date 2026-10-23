@@ -34,7 +34,7 @@ export interface QcCallData {
   completeCount: number;
   pcsPending: number;
   /** ADR-251: the same three totals over the Incoming QC screen's GRN Types
-   *  (Against PO + Party GRN) only — that screen's summary line. */
+   *  (Direct Purchase + Party GRN) only — that screen's summary line. */
   incomingTotals: { pendingCount: number; completeCount: number; pcsPending: number };
   loaded: boolean;
   isLoading: boolean;

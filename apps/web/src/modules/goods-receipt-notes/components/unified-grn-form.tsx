@@ -52,7 +52,7 @@ import { GRN_CREATE_FORM_ID, type GrnFormStatus } from './grn-create-contract';
 
 // Option text — the first two verbatim from legacy addGRN() L26533-26534.
 const TYPE_META: Record<GrnInwardType, { label: string }> = {
-  purchase: { label: 'Against PO' },
+  purchase: { label: 'Direct Purchase' },
   job_work_return: { label: 'Against JW PO / DC' },
   nc_return: { label: 'Against NC' },
 };

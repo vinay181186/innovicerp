@@ -36,7 +36,7 @@ export function grnTypeLabel(grn: {
 }): string | null {
   if (grn.ncId) return 'Against NC';
   if (grn.deliveryChallanId) return 'Against JW PO / DC';
-  if (grn.purchaseOrderId) return 'Against PO';
+  if (grn.purchaseOrderId) return 'Direct Purchase';
   return null;
 }
 
