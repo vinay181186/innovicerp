@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify';
-import { operatorReadyQuerySchema, saveDashboardConfigInputSchema } from '@innovic/shared';
+import {
+  homeQuerySchema,
+  homeResponseSchema,
+  markNotificationsSeenInputSchema,
+  saveDashboardConfigInputSchema,
+} from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
 import * as configService from './config-service';
 import * as homeService from './home-service';
 import * as service from './service';
 import * as widgetsService from './widgets-service';
-import * as workListService from './work-list-service';
 
 export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
   app.get('/dashboard/kpis', async (req) => {
@@ -13,20 +17,20 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
     return service.getDashboardKpis(req.user);
   });
 
+  // ADR-250 — the per-person home. The payload is checked against the shared
+  // contract before it leaves, so the web can never receive a shape it does
+  // not know.
   app.get('/dashboard/home', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return homeService.getHome(req.user);
+    const query = homeQuerySchema.parse(req.query);
+    return homeResponseSchema.parse(await homeService.getHome(req.user, query));
   });
 
-  // Operator home "Ready for You", pages 2+ (page 1 rides on /dashboard/home).
-  app.get('/dashboard/operator-ready', async (req) => {
+  // Moves the caller's own notifications "seen" time forward (never back).
+  app.post('/dashboard/notifications/seen', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return homeService.getOperatorReady(req.user, operatorReadyQuerySchema.parse(req.query));
-  });
-
-  app.get('/dashboard/work-list', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return { items: await workListService.getWorkList(req.user) };
+    const body = markNotificationsSeenInputSchema.parse(req.body);
+    return homeService.markNotificationsSeen(body, req.user);
   });
 
   app.get('/dashboard/widgets', async (req) => {

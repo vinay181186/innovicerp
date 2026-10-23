@@ -26,6 +26,11 @@ export const DOC_NAV_KINDS = [
   'invoice',
   'design-project',
   'qc-call',
+  // ADR-250 — documents the per-person home links to.
+  'plan',
+  'production-order',
+  'job-work-order',
+  'delivery-challan',
 ] as const;
 
 export type DocNavKind = (typeof DOC_NAV_KINDS)[number];
@@ -62,5 +67,13 @@ export function docNavPage(kind: DocNavKind, id: string): string {
       return `/design-projects/${id}`;
     case 'qc-call':
       return `/qc-call-register?op=${id}`;
+    case 'plan':
+      return `/plans/${id}`;
+    case 'production-order':
+      return `/production-orders/${id}`;
+    case 'job-work-order':
+      return `/job-work-orders/${id}`;
+    case 'delivery-challan':
+      return `/delivery-challans/${id}`;
   }
 }

@@ -6,7 +6,14 @@ import { DASHBOARD_QUICK_LINKS } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useCanOpen } from '@/components/shared/action-link';
 
-export function QuickLinks({ pages }: { pages: string[] }): React.JSX.Element {
+export function QuickLinks({
+  pages,
+  hideTitle,
+}: {
+  pages: string[];
+  /** The home's Shortcuts panel carries its own heading (ADR-250). */
+  hideTitle?: boolean | undefined;
+}): React.JSX.Element {
   const set = new Set(pages);
   // ADR-234 — and only the pages this user may open (the per-page tick, not
   // just the department the server filtered on).
@@ -14,9 +21,11 @@ export function QuickLinks({ pages }: { pages: string[] }): React.JSX.Element {
   const links = DASHBOARD_QUICK_LINKS.filter((l) => set.has(l.page) && canOpen(l.page));
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>
-        🚀 Quick Access
-      </div>
+      {hideTitle ? null : (
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>
+          🚀 Quick Access
+        </div>
+      )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {links.map((l) => (
           <Link

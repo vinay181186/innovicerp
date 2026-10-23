@@ -14271,3 +14271,56 @@ approval) follows separately. Plan own-draft direct save is kept (decision 3).
   since show as superseded on approval.
 - SO edit still uploads a picked file at once while the field edit waits (a file
   is its own record); holding it until approval needs a held-files store — not built.
+
+## ADR-250: One per-person home, every block decided by the caller's rights
+
+**Date:** 2026-10-22
+**Status:** Accepted (owner "approved", 2026-10-22; mockups for 4 PROD users signed off)
+
+### Context
+
+The home (ADR-044) picked one of three layouts from the role that `roleForAccess`
+derives from the highest tier, not from the person's work: every all-L2 user is
+"operator" (Parth, Purchase, saw machine operations), L3+ is "manager" (company-wide
+KPIs whose links skipped the rights check), QC-only is "qc". `main_dept` was never
+read. No layout showed the caller's own approvals, the work waiting on others, what
+they did today, or anything that had just happened for them. The PO-approval rule
+ignored the approver list and the limit, and pending QC missed party GRNs.
+
+### Decision
+
+1. One home for every user (`GET /dashboard/home`, shared `homeResponseSchema`).
+   Blocks: headline, one-line count strip, Approval inbox (To approve / Sent by
+   me), work lists, Waiting on others, Notifications, My to-do (Late / Today /
+   Planned), Done (Today / Yesterday), Shortcuts; My department / Mine switch.
+2. Rights decide everything, with the existing helpers only (`hasTick`,
+   `canSeeLink`, `effectiveFormPerms`, `canOpenPage`, `canSeeFormPrice`). A list
+   exists only for holders of its NEXT-step right; an action only when that right
+   and the target page both pass. No greyed buttons. Money is nulled on the server.
+3. Document numbers travel as `{code, href}` parts and render through
+   `<ActionLink fallback="text">` (ADR-234): a link when the caller may open the
+   page, plain text when not. Action symbols render through `<ActionLink>`.
+4. Notifications are dashboard-only (no email), derived at read time from
+   `activity_log` (last 3 IST days) mapped to the next-step right; the actor is
+   excluded; a note disappears when its next step is done; Full Access admins get
+   none (they still see every list). Seen time: `user_ui_settings`
+   `notifications_seen_at`, only ever moved forward. No new table, no migration.
+5. Block order: Access Control main department first; if blank, the department of
+   the highest tier, ties Purchase → Store → QC → Planning → Production → Sales →
+   Design → Finance.
+6. The approval inbox reuses `getApprovalInbox`; the operator "Ready for You" table
+   becomes the `ops_ready` list for Op Entry holders; Widgets and Customize stay.
+
+### Alternatives Considered
+
+- A notifications table filled by every writer — rejected: touches every emitter,
+  freezes rights at write time, no back-fill; read-time derivation needs nothing new.
+- Keep the operator layout — rejected: the derived "operator" role covers office
+  staff (7 PROD logins incl. Purchase).
+
+### Consequences
+
+- Positive: one page to maintain; every figure comes from the same query as its list.
+- Negative: notifications are "new since last seen", not per-item read/dismiss.
+- Open (separate changes, D4): `GET /activity-log` and the Alerts module still check
+  only the company — to be fixed right after this.

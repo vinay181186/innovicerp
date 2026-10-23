@@ -337,6 +337,14 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Approval box for a Plan's Buy cost per piece (`plans.dp_cost`) — the Plan form's own label (ADR-249). Same words as the ML-BOM computed cost row; context (Plan vs ML-BOM) separates them | `Unit Cost` | `dpCost` | `plans.dp_cost` | `DP Cost` |
 | Approval box for a Plan's Job Work rate (`plans.fo_rate`) — the Plan form's own label (ADR-249) | `Rate` | `foRate` | `plans.fo_rate` | `FO Rate` |
 | PO line's RAM remark — the PO form's own label, now an approval box `Line N · Ram Remark` (ADR-249) | `Ram Remark` | `ramRemark` | `purchase_order_lines.ram_remark` | `RAM Note` |
+| Home block: documents waiting for the caller to approve (ADR-250) | `Approval inbox` (tabs `To approve` / `Sent by me`) | `approvals` / `sentForApproval` | GET /dashboard/home — same rows as GET /approvals/inbox | `Pending Approvals`, `My Approvals` |
+| Home block: the caller's own documents whose next step is someone else's (ADR-250) | `Waiting on others` | `waiting` | GET /dashboard/home | `Pending with others`, `Follow-ups` |
+| Home block: events whose next step the caller holds the right for (ADR-250) | `Notifications` | `notifications` | activity_log + the caller's rights at read time; seen time = user_ui_settings `notifications_seen_at` | `Alerts` (that is the AL-xxx digest module), `Feed` |
+| Home block: tasks assigned to the caller (ADR-250) | `My to-do` (tabs `Late` / `Today` / `Planned`) | `todo` | tasks.assigned_to = caller, status todo/in_progress | `My Tasks`, `My Work` (retired label of the old home list) |
+| Home block: the caller's own entries for an IST day (ADR-250) | `Done` (tabs `Today` / `Yesterday`) | `done` | activity_log.user_id = caller | `My Activity`, `Today's Work` |
+| Home block: pages the caller can open (ADR-044, label kept) | `Shortcuts` | `quickLinks` | dashboard_config.quick_links filtered by canOpenPage | `Quick Access`, `Quick Links` |
+| Home rows filter (ADR-250) | `My department` / `Mine` | `mine` (row flag) | created / received / responsible = caller | `All` / `Self` |
+| Home count strip entry (ADR-250) | — (one per list) | `cues[]` (`count` = the list's `total`) | the same query as its list | `KPI`, `Tile` |
 
 ---
 

@@ -69,9 +69,7 @@ export function daysBetweenLocal(from: string, to: string): number | null {
   const a = parseYmd(from);
   const b = parseYmd(to);
   if (!a || !b) return null;
-  return Math.round(
-    (Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000,
-  );
+  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000);
 }
 
 // ── Display formatting ─────────────────────────────────────────────────────
@@ -136,6 +134,14 @@ export function fmtDateTime(v: string | null | undefined, empty = '—'): string
   const p = istParts(s);
   const mon = p ? MONTHS[p.m - 1] : undefined;
   return p && mon ? `${p.d}-${mon}-${p.y} ${p.hh}:${p.mi}` : s;
+}
+
+/** Timestamp → `14:05` in IST (24-hour) — the clock time alone, for a list
+ *  that is already grouped by day (home Done / Notifications, ADR-250). */
+export function fmtTime(v: string | number | null | undefined, empty = ''): string {
+  if (v == null || v === '' || (typeof v === 'number' && !Number.isFinite(v))) return empty;
+  const p = istParts(typeof v === 'number' ? new Date(v).toISOString() : v.trim());
+  return p ? `${p.hh}:${p.mi}` : empty;
 }
 
 /**
