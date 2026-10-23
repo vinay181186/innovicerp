@@ -50,6 +50,8 @@ export const DOCUMENT_EDIT_LINK: Readonly<Record<DocumentEditEntity, LinkRender>
   ),
   Instrument: (r, p) => <Link to="/instruments" search={{ search: r.docCode }} {...p} />,
   BOM: (r, p) => <Link to="/bom-masters/$id" params={byId(r)} {...p} />,
+  RouteCard: (r, p) => <Link to="/route-cards/$id" params={byId(r)} {...p} />,
+  MlBom: (r, p) => <Link to="/ml-boms/$id" params={byId(r)} {...p} />,
 };
 
 /** The Doc No. cell: the code, linked to where that document / master opens.

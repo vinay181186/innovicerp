@@ -83,7 +83,12 @@ export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 export const updateItemInputSchema = createItemInputSchema
   .partial()
   .omit({ code: true })
-  .extend({ expectedUpdatedAt: expectedUpdatedAtSchema });
+  .extend({
+    expectedUpdatedAt: expectedUpdatedAtSchema,
+    /** Store → Reorder (ADR-193 ph5) — staged like any Item edit (ADR-249 B2). */
+    minStockQty: z.number().nonnegative().multipleOf(0.001).optional(),
+    reorderQty: z.number().nonnegative().multipleOf(0.001).optional(),
+  });
 export type UpdateItemInput = z.infer<typeof updateItemInputSchema>;
 
 /** BULK IMPORT — the Excel importer's whole sheet in ONE request.

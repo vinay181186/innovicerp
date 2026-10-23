@@ -577,6 +577,9 @@ export const executePlanResultSchema = z.object({
   jcCode: z.string().optional(),
   primaryPrCode: z.string().optional(),
   materialPrCode: z.string().optional(),
+  routeCardSentForApproval: z.boolean().optional(),
+  /** The routing differed but was not sent for approval — plain reason. */
+  routeCardNotSentReason: z.string().optional(),
 });
 export type ExecutePlanResultShape = z.infer<typeof executePlanResultSchema>;
 

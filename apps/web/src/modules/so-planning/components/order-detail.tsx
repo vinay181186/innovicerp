@@ -73,6 +73,10 @@ export function OrderDetail({
   // logs a rejection, so the failure is caught here and named on screen with
   // the plan it belongs to.
   const [execError, setExecError] = useState<{ code: string; message: string } | null>(null);
+  // ADR-249 — the plan whose Execute held its Route Card write-back for approval.
+  const [rcStagedCode, setRcStagedCode] = useState<string | null>(null);
+  // ADR-249 — the routing differed but was NOT sent for approval: plan + reason.
+  const [rcNotSent, setRcNotSent] = useState<{ code: string; reason: string } | null>(null);
   // The plan just saved by "+ Plan" and its next step. A route-card plan's
   // only way on is a Production Order, so the page offers it right here
   // instead of the box just closing (the planner used to go to Production
@@ -132,8 +136,14 @@ export function OrderDetail({
   // onSuccess invalidates the planning queries, which refreshes these lines.
   const runExecutePlan = async (plan: PlanningPlanSummary): Promise<void> => {
     setExecError(null);
+    setRcStagedCode(null);
+    setRcNotSent(null);
     try {
-      await executePlan.mutateAsync(plan.id);
+      const res = await executePlan.mutateAsync(plan.id);
+      if (res.routeCardSentForApproval === true) setRcStagedCode(plan.code);
+      if (res.routeCardNotSentReason) {
+        setRcNotSent({ code: plan.code, reason: res.routeCardNotSentReason });
+      }
     } catch (err) {
       setExecError({
         code: plan.code,
@@ -331,6 +341,16 @@ export function OrderDetail({
           onDismiss={() => setExecError(null)}
         >
           {execError.message}
+        </Banner>
+      ) : null}
+      {rcStagedCode ? (
+        <Banner tone="info" role="status" onDismiss={() => setRcStagedCode(null)}>
+          <span className="mono">{rcStagedCode}</span>: Route Card change sent for approval — the card is unchanged until approved.
+        </Banner>
+      ) : null}
+      {rcNotSent ? (
+        <Banner tone="warn" role="status" onDismiss={() => setRcNotSent(null)}>
+          <span className="mono">{rcNotSent.code}</span>: {rcNotSent.reason}
         </Banner>
       ) : null}
 

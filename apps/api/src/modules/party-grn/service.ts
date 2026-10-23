@@ -900,6 +900,32 @@ const PARTY_GRN_LINE_FIELDS: readonly DiffField[] = [
 ];
 
 /**
+ * ADR-249 Step B1 — the Party GRN HEADER refusals, in ONE place: a Customer
+ * Challan No. cannot be blanked (the schema refuses null / blank; this also
+ * catches a staged payload saved before that rule) and must be unique for the
+ * customer (an unchanged value is skipped). Called by updatePartyGrnTx (every
+ * save, the approval replay included) and by the staging pre-check in
+ * updatePartyGrnOrStage, so an edit the writer would refuse never stages — a
+ * fully QC'd Party GRN's header edit goes for approval since B1. Returns the
+ * trimmed challan to save, or undefined when the edit does not touch it.
+ */
+export async function assertPartyGrnHeaderEditAllowed(
+  tx: DbTransaction,
+  companyId: string,
+  head: { id: string; clientId: string | null; dcNo: string | null },
+  input: Pick<UpdatePartyGrnInput, 'dcNo'>,
+): Promise<string | undefined> {
+  if (input.dcNo === undefined) return undefined;
+  const dcNo = typeof input.dcNo === 'string' ? input.dcNo.trim() : '';
+  if (!dcNo) throw new ValidationError('Customer Challan No. is required.');
+  await assertPartyGrnDcNoFree(tx, companyId, head.clientId, dcNo, {
+    id: head.id,
+    currentDcNo: head.dcNo,
+  });
+  return dcNo;
+}
+
+/**
  * The body of a Party GRN edit, inside a caller-supplied transaction. Called by
  * updatePartyGrn (which opens the tx and ran the access check) and by the
  * edit-approval engine's applyEdit, which already holds a tx with the GRN row
@@ -958,19 +984,8 @@ export async function updatePartyGrnTx(
   };
   const headerSet: Record<string, unknown> = {};
   if (input.grnDate !== undefined) headerSet['grnDate'] = input.grnDate;
-  if (input.dcNo !== undefined) {
-    // A challan cannot be blanked. The schema refuses null/blank; this also
-    // catches a staged payload saved before that rule (edit-approval replay).
-    const dcNo = typeof input.dcNo === 'string' ? input.dcNo.trim() : '';
-    if (!dcNo) throw new ValidationError('Customer Challan No. is required.');
-    // Unique per customer — runs on direct edit AND on approval replay
-    // (applyEdit → updatePartyGrnTx). Unchanged value is skipped.
-    await assertPartyGrnDcNoFree(tx, companyId, head.clientId, dcNo, {
-      id: head.id,
-      currentDcNo: head.dcNo,
-    });
-    headerSet['dcNo'] = dcNo;
-  }
+  const dcNo = await assertPartyGrnHeaderEditAllowed(tx, companyId, head, input);
+  if (dcNo !== undefined) headerSet['dcNo'] = dcNo;
   if (input.remarks !== undefined) headerSet['remarks'] = input.remarks ?? null;
   if (input.receivedByText !== undefined) {
     headerSet['receivedByText'] = input.receivedByText ?? null;
@@ -1140,9 +1155,10 @@ export async function updatePartyGrn(
 
 /**
  * The Party GRN edit entry point the PATCH route calls (ADR-202 Phase 3). When
- * the Document Edit Approval gate is ON and the GRN is LIVE (not cancelled and at
- * least one line still waiting for Incoming QC), the edit is staged for approval
- * and the request row is returned; otherwise it applies directly. A change to a
+ * the Document Edit Approval gate is ON and the GRN is LIVE (ADR-249 Step B1:
+ * not cancelled — a fully QC'd GRN included), the edit is staged for approval
+ * and the request row is returned; otherwise (gate off, or cancelled — whose
+ * writer refuses) it applies directly. A change to a
  * line that is not on the GRN or already QC'd is refused with a clear message
  * instead of being silently dropped (the registry only stages waiting-QC keys).
  */
@@ -1157,17 +1173,19 @@ export async function updatePartyGrnOrStage(
   // Engine imported dynamically to avoid a static import cycle with
   // party-grn-edit-registry (which imports updatePartyGrnTx from this file).
   const { requestDocumentEdit } = await import('../document-edits/service');
-  // "Live" is partyGrnEditRegistryEntry's own rule (at least one line still
-  // waiting for Incoming QC), read through the registry so the two can never
-  // drift. Gone / cancelled → the direct path reports it; a fully QC-closed GRN
-  // edits directly, like a draft (header-only, lines are frozen anyway).
+  // "Live" is partyGrnEditRegistryEntry's own rule (partyGrnIsLive — ADR-249
+  // Step B1: every Party GRN not cancelled, a fully QC'd one included), read
+  // through the registry so the two can never drift. Gone / cancelled → the
+  // direct path reports it. The pre-check below refuses whatever
+  // updatePartyGrnTx would refuse at approval, so nothing stages that cannot
+  // be applied.
   const request = await requestDocumentEdit(
     'PartyGrn',
     id,
     input,
     input.expectedUpdatedAt,
     user,
-    async (tx) => {
+    async (tx, target) => {
       const lines = await tx
         .select({
           id: partyGrnLines.id,
@@ -1186,6 +1204,18 @@ export async function updatePartyGrnOrStage(
             isNull(partyGrn.deletedAt),
           ),
         );
+      // ADR-249 Step B1 — the writer's header refusals, through the SAME helper
+      // updatePartyGrnTx calls, fed the header loadForDiff already locked.
+      await assertPartyGrnHeaderEditAllowed(
+        tx,
+        companyId,
+        {
+          id,
+          clientId: (target.doc['clientId'] as string | null | undefined) ?? null,
+          dcNo: (target.doc['dcNo'] as string | null | undefined) ?? null,
+        },
+        input,
+      );
       // Refuse a change to a line that is no longer editable, rather than drop it.
       const byId = new Map(lines.map((l) => [l.id, l]));
       for (const li of input.lines ?? []) {

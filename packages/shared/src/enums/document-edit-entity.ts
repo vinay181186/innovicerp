@@ -34,6 +34,9 @@ export const DOCUMENT_EDIT_ENTITIES = [
   'MaterialSize',
   'Instrument',
   'BOM',
+  // ADR-249 Step B — revision documents staged as one whole-routing / whole-tree box.
+  'RouteCard',
+  'MlBom',
 ] as const;
 
 export type DocumentEditEntity = (typeof DOCUMENT_EDIT_ENTITIES)[number];
@@ -68,6 +71,8 @@ export const DOCUMENT_EDIT_FORM_KEY: Readonly<Record<DocumentEditEntity, AccessF
   MaterialSize: 'rawmat_create',
   Instrument: 'toolissue_create',
   BOM: 'bom_create',
+  RouteCard: 'routecard_create',
+  MlBom: 'mlbom_create',
 };
 
 // The tab / row label each enrolled type shows in Settings → Approvals. A full
@@ -99,6 +104,8 @@ export const DOCUMENT_EDIT_LABEL: Readonly<Record<DocumentEditEntity, string>> =
   MaterialSize: 'Material Size',
   Instrument: 'Instrument',
   BOM: 'BOM',
+  RouteCard: 'Route Card',
+  MlBom: 'Multi-level BOM',
 };
 
 // The masters share ONE "Masters" tab (a picker inside it chooses the master);

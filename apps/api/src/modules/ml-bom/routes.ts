@@ -72,14 +72,15 @@ export async function mlBomRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const input = updateMlBomInputSchema.parse(req.body);
-    return service.updateMlBom(id, input, req.user);
+    // Gate on + live BOM → {staged:true, request} (ADR-249 Step B2).
+    return service.updateMlBomOrStage(id, input, req.user);
   });
 
   app.post('/ml-boms/:id/make-default', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const input = makeDefaultMlBomInputSchema.parse(req.body ?? {});
-    return service.makeDefaultMlBom(id, input, req.user);
+    return service.makeDefaultMlBomOrStage(id, input, req.user);
   });
 
   app.delete('/ml-boms/:id', async (req) => {

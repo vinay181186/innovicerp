@@ -86,18 +86,84 @@ export async function requestDocumentEdit(
   user: AuthContext,
   precheck?: DocEditPrecheck,
 ): Promise<DocumentEditRow | null> {
-  const entry = getEntry(entity);
   // Access is read now, outside the transaction below (see primeAccess): the
   // Edit-tick and price checks run while the document is locked.
   await primeAccess(user);
+  return withUserContext(user, (tx) =>
+    requestDocumentEditInTx(tx, entity, entityId, input, expectedUpdatedAt, user, precheck),
+  );
+}
+
+/**
+ * requestDocumentEdit inside a transaction the caller already holds (ADR-249
+ * Step B: a master Excel import staging one request per row, a Route Card
+ * rewrite from a JC create / Plan execute). Runs in a SAVEPOINT, so a refusal
+ * (nothing changed, already waiting, …) rolls back only this request and the
+ * caller's transaction carries on. The caller must have called primeAccess.
+ */
+export interface RequestDocumentEditOpts {
+  /** A save of ANOTHER document proposes this change (a JC / Plan bringing a
+   *  new routing for the item's Route Card): the proposer needs no Edit tick
+   *  on this page — they could not edit it directly either; the approver's
+   *  Approve tick decides. */
+  proposedBySourceDoc?: boolean;
+  /** The caller already read the gate as ON in this same transaction (a
+   *  master Excel import staging many rows) — skip re-reading it per row. */
+  gateKnownOn?: boolean;
+}
+
+export async function requestDocumentEditInTx(
+  outer: DbTransaction,
+  entity: string,
+  entityId: string,
+  input: unknown,
+  expectedUpdatedAt: string | null | undefined,
+  user: AuthContext,
+  precheck?: DocEditPrecheck,
+  opts?: RequestDocumentEditOpts,
+): Promise<DocumentEditRow | null> {
+  const requestId = await requestDocumentEditIdInTx(
+    outer,
+    entity,
+    entityId,
+    input,
+    expectedUpdatedAt,
+    user,
+    precheck,
+    opts,
+  );
+  if (requestId === null) return null;
+  const companyId = requireCompany(user);
+  const [row] = await selectDocumentEditRows(outer, companyId, { id: requestId });
+  // Access is already read for this request (memo), so no extra connection.
+  return (await maskPriceChanges([row!], user))[0]!;
+}
+
+/**
+ * requestDocumentEditInTx WITHOUT reading the request row back: returns the new
+ * request's id (or null — same rules). For callers that stage many rows and
+ * only need to know each was staged (a master / ML-BOM Excel import), so each
+ * row saves the re-select and the price masking.
+ */
+export async function requestDocumentEditIdInTx(
+  outer: DbTransaction,
+  entity: string,
+  entityId: string,
+  input: unknown,
+  expectedUpdatedAt: string | null | undefined,
+  user: AuthContext,
+  precheck?: DocEditPrecheck,
+  opts?: RequestDocumentEditOpts,
+): Promise<string | null> {
+  const entry = getEntry(entity);
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return null;
+  return outer.transaction(async (tx) => {
+    if (!opts?.gateKnownOn && !(await isDocEditApprovalOn(tx, companyId))) return null;
     // Locks the document (and its lines / ops) in the writer's own order.
     const target = await entry.loadForDiff(tx, companyId, entityId);
     if (!target?.isLive) return null;
-    await requireFormAccess(user, entry.formKey, 'edit');
+    if (!opts?.proposedBySourceDoc) await requireFormAccess(user, entry.formKey, 'edit');
     // R5 / §20.4 — refuse if the document moved after this form opened it.
     // FIRST, so a stale form is told to reload rather than given a business
     // refusal about a document it is not looking at any more.
@@ -163,9 +229,7 @@ export async function requestDocumentEdit(
       user,
     );
 
-    const [row] = await selectDocumentEditRows(tx, companyId, { id: requestId });
-    // Access is already read for this request (memo), so no extra connection.
-    return (await maskPriceChanges([row!], user))[0]!;
+    return requestId;
   });
 }
 
@@ -299,7 +363,8 @@ export async function decideDocumentEdit(
       const filtered = entry.buildFilteredInput(req.proposedPayload, approvedFields, {
         firstApply: !priorOutcomes.some((o) => o.outcome === 'approved'),
       });
-      if (filtered) await entry.applyEdit(tx, companyId, req.entityId, filtered, currentToken, user);
+      if (filtered)
+        await entry.applyEdit(tx, companyId, req.entityId, filtered, currentToken, user);
     }
 
     // Merge this call's outcomes with the earlier ones, then decide the request's

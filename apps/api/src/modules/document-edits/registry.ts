@@ -11,6 +11,8 @@ import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
 import { bomEditRegistryEntry } from '../bom-master/bom-edit-registry';
+import { mlBomEditRegistryEntry } from '../ml-bom/ml-bom-edit-registry';
+import { routeCardEditRegistryEntry } from '../route-cards/route-card-edit-registry';
 import { clientEditRegistryEntry } from '../clients/client-edit-registry';
 import { customerDispatchEditRegistryEntry } from '../customer-dispatches/customer-dispatch-edit-registry';
 import { dcEditRegistryEntry } from '../delivery-challans/dc-edit-registry';
@@ -141,4 +143,6 @@ export const DOC_EDIT_REGISTRY: Partial<Record<DocumentEditEntity, DocEditRegist
   MaterialSize: materialSizeEditRegistryEntry,
   Instrument: instrumentEditRegistryEntry,
   BOM: bomEditRegistryEntry,
+  MlBom: mlBomEditRegistryEntry,
+  RouteCard: routeCardEditRegistryEntry,
 };

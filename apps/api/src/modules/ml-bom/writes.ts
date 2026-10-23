@@ -160,8 +160,9 @@ export async function updateMlBomTx(
   input: UpdateMlBomInput,
   user: AuthContext,
 ): Promise<MlBomDetail> {
-  // Edit-approval gate (ADR-202) NOT wired in ADR-225 Phase 1 — the gate ships
-  // OFF; the registry entry for MlBom comes in a later phase.
+  // The direct writer. Edit-approval (ADR-249 Step B2) diverts BEFORE this —
+  // service.updateMlBomOrStage — and an approval replays through here
+  // (ml-bom-edit-registry.ts applyEdit), so there is one writer either way.
   await lockMlBomTree(tx, companyId);
   const revised = await reviseMlBomCore(tx, companyId, id, input, user);
   const { header } = revised;

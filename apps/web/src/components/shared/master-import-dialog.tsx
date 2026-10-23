@@ -14,6 +14,17 @@
 // The server's `index` is the 1-based position in the array sent; it is mapped
 // back to the SHEET row (rows the parser left out never reach the server, so
 // the two drift apart).
+//
+// ADR-249 Step B: with Document Edit Approval on, every Update Existing row
+// is staged for approval (Import Action "Sent for approval") and costs several
+// server round trips, so a big sheet would outrun one request's timeout.
+// So the REAL import of such a sheet — only when its preview came back with at
+// least one "Sent for approval" row (= the gate is on, and every row then
+// stands alone) — goes up in chunks of UPDATE_CHUNK rows, one request after
+// another, the answers added up (indexes re-based so they stay positions in
+// the whole array). Everything else is ONE request exactly as before: the
+// preview always (so it judges the whole sheet at once), Insert, and a
+// gate-off Update Existing (all-or-nothing, cross-row checks see every row).
 
 import {
   MASTER_IMPORT_MODE_LABEL,
@@ -22,7 +33,7 @@ import {
   type MasterImportResult,
   type MasterImportRowAction,
 } from '@innovic/shared';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   downloadImportErrors,
   type MasterImportParse,
@@ -35,6 +46,8 @@ import { Banner, Modal } from '@/ui/feedback';
 
 /** The server takes at most this many rows per request (bulkCreate*InputSchema). */
 const MAX_ROWS = 2000;
+/** Rows per request on a gate-on Update Existing import (see the header note). */
+const UPDATE_CHUNK = 200;
 
 export interface MasterImportDialogProps {
   /** e.g. "Import Customers from Excel". */
@@ -89,13 +102,47 @@ const MODE_HELP: Record<MasterImportMode, string> = {
 const ACTION_LABEL: Record<MasterImportRowAction, string> = {
   insert: 'Insert',
   update: 'Update',
+  // docs/NAMING.md "Import Action" — ADR-249: held for approval, nothing written.
+  approval: 'Sent for approval',
   skip: 'Skip',
 };
 const ACTION_TONE: Record<MasterImportRowAction, BadgeTone> = {
   insert: 'green',
   update: 'blue',
+  approval: 'amber',
   skip: 'red',
 };
+
+/** One finished chunk of a chunked import: where it starts in the whole
+ *  array (0-based) and the server's answer for it. */
+interface ChunkDone {
+  start: number;
+  result: MasterImportResult;
+}
+
+/** Add the chunk answers up into one result, re-basing each row's `index`
+ *  from "position in the chunk" to "position in the whole array sent". */
+function sumChunks(done: ChunkDone[], mode: MasterImportMode, dryRun: boolean): MasterImportResult {
+  const out: MasterImportResult = {
+    dryRun,
+    mode,
+    created: 0,
+    updated: 0,
+    sentForApproval: 0,
+    rows: [],
+  };
+  for (const { start, result } of done) {
+    out.created += result.created;
+    out.updated += result.updated;
+    out.sentForApproval += result.sentForApproval ?? 0;
+    for (const r of result.rows) out.rows.push({ ...r, index: start + r.index });
+  }
+  return out;
+}
+
+function rangeText(from: number, to: number, total: number): string {
+  return `rows ${from}–${to} of ${total}`;
+}
 
 function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
@@ -160,6 +207,11 @@ export function MasterImportDialog({
   const [finalResult, setFinalResult] = useState<MasterImportResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Chunked Update Existing: the progress line, and the chunks the REAL import
+  // has already written — a retry after a failed chunk resumes there instead
+  // of sending the finished rows again. Cleared on Back (a new batch).
+  const [progress, setProgress] = useState<string | null>(null);
+  const importedChunks = useRef<ChunkDone[]>([]);
 
   const rows = useMemo<ViewRow[]>(() => {
     if (!parsed) return [];
@@ -167,8 +219,47 @@ export function MasterImportDialog({
   }, [parsed, preview, finalResult, step]);
   const nInsert = countOf(rows, 'insert');
   const nUpdate = countOf(rows, 'update');
+  const nApproval = countOf(rows, 'approval');
   const nSkip = countOf(rows, 'skip');
-  const nGood = nInsert + nUpdate;
+  const nGood = nInsert + nUpdate + nApproval;
+
+  /** The REAL import: one request, or — gate-on Update Existing only — chunks
+   *  of UPDATE_CHUNK, sequentially, answers summed. `done` = chunks already
+   *  written by an earlier attempt of this same import (resume after a failure). */
+  async function sendImport(
+    payloads: unknown[],
+    chunked: boolean,
+    key: SaveKey,
+    done: ChunkDone[],
+  ): Promise<MasterImportResult> {
+    if (!chunked || payloads.length <= UPDATE_CHUNK) {
+      return submit(payloads, mode, false, key);
+    }
+    const total = payloads.length;
+    for (let start = 0; start < total; start += UPDATE_CHUNK) {
+      if (done.some((d) => d.start === start)) continue;
+      const end = Math.min(start + UPDATE_CHUNK, total);
+      setProgress(`Importing ${rangeText(start + 1, end, total)}…`);
+      try {
+        // The save key rotates after each answered chunk (withSaveKey), so
+        // every chunk is its own save; a timed-out chunk keeps its key and
+        // the retry is replayed by the server, never written twice.
+        const result = await submit(payloads.slice(start, end), mode, false, key);
+        done.push({ start, result });
+      } catch (e) {
+        if (done.length === 0) throw e;
+        const msg = e instanceof Error ? e.message : 'The request failed.';
+        throw new Error(
+          `Rows 1–${start} of ${total} went through; ${rangeText(start + 1, end, total)} failed: ${msg} Press Import again to continue from row ${start + 1}.`,
+        );
+      }
+    }
+    return sumChunks(
+      [...done].sort((a, b) => a.start - b.start),
+      mode,
+      false,
+    );
+  }
 
   function reset(): void {
     // Back = a different batch (new file or Import Type). The server replays a
@@ -181,6 +272,8 @@ export function MasterImportDialog({
     setPreview(null);
     setFinalResult(null);
     setError(null);
+    setProgress(null);
+    importedChunks.current = [];
   }
 
   async function runPreview(): Promise<void> {
@@ -218,6 +311,7 @@ export function MasterImportDialog({
       setError(e instanceof Error ? e.message : 'Could not check the file. Try again.');
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -226,11 +320,14 @@ export function MasterImportDialog({
     setBusy(true);
     setError(null);
     try {
-      const res = await submit(
+      // Gate on = the preview sent at least one row for approval.
+      const chunked =
+        mode === 'update' && (preview?.rows.some((r) => r.action === 'approval') ?? false);
+      const res = await sendImport(
         parsed.rows.map((r) => r.payload),
-        mode,
-        false,
+        chunked,
         saveKey,
+        importedChunks.current,
       );
       setFinalResult(res);
       setStep('done');
@@ -238,6 +335,7 @@ export function MasterImportDialog({
       setError(e instanceof Error ? e.message : 'Could not import the file. Try again.');
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -321,6 +419,11 @@ export function MasterImportDialog({
           <Banner tone="error" role="alert" flush>
             {error}
           </Banner>
+        </div>
+      ) : null}
+      {progress ? (
+        <div className="text3" role="status" style={{ marginBottom: 'var(--sp-3)' }}>
+          {progress}
         </div>
       ) : null}
 
@@ -417,8 +520,14 @@ export function MasterImportDialog({
           <div className="fw-700">
             {step === 'preview'
               ? `${MASTER_IMPORT_MODE_LABEL[mode]} — preview, nothing saved yet: ` +
-                `${nInsert} will be inserted · ${nUpdate} updated · ${nSkip} skipped`
-              : `Done: ${finalResult?.created ?? nInsert} inserted · ${finalResult?.updated ?? nUpdate} updated · ${nSkip} skipped`}
+                `${nInsert} will be inserted · ${nUpdate} updated · ` +
+                (nApproval > 0 ? `${nApproval} sent for approval · ` : '') +
+                `${nSkip} skipped`
+              : `Done: ${finalResult?.created ?? nInsert} inserted · ${finalResult?.updated ?? nUpdate} updated · ` +
+                ((finalResult?.sentForApproval ?? nApproval) > 0
+                  ? `${finalResult?.sentForApproval ?? nApproval} sent for approval · `
+                  : '') +
+                `${nSkip} skipped`}
           </div>
           <StatStrip
             items={[
@@ -435,6 +544,16 @@ export function MasterImportDialog({
                 count: nUpdate,
                 color: 'var(--blue2)',
               },
+              ...(mode === 'update'
+                ? [
+                    {
+                      key: 'approval',
+                      label: step === 'preview' ? 'Will send for approval' : 'Sent for approval',
+                      count: nApproval,
+                      color: 'var(--amber2)',
+                    },
+                  ]
+                : []),
               { key: 'skip', label: 'Skipped', count: nSkip, color: 'var(--red2)' },
             ]}
           />

@@ -5,6 +5,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useRouteCard, useUpdateRouteCard } from '../api';
 import {
@@ -62,6 +63,13 @@ function RouteCardEditPage(): React.JSX.Element {
         revisionNote,
         expectedUpdatedAt: opened.expected(),
       });
+      if (isStagedResult(updated)) {
+        // The edit-approval gate is on: nothing was changed on the card — the
+        // edit is now waiting for approval. Return to the card, whose
+        // "waiting for approval" notice says so.
+        exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id }, replace: true }));
+        return;
+      }
       opened.saved(updated.updatedAt);
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {

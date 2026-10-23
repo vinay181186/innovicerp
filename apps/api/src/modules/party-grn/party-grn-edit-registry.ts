@@ -1,5 +1,8 @@
 // PartyGrn entry for the edit-approval engine (ADR-202 Phase 3).
 //
+// LIVE (goes for approval) = any Party GRN not cancelled — ADR-249 Step B1
+// (partyGrnIsLive); a fully QC'd GRN's header edit stages too.
+//
 // RECORD/HEADER level + per waiting-QC line. Staged fields: the header's own
 // (GRN Date, Customer Challan No., Remarks, Received By) and, for each line still
 // WAITING for Incoming QC, its Received Qty and Remarks. A line already through
@@ -19,6 +22,16 @@ import type { UpdatePartyGrnInput } from './schema';
 import { isPendingQc, PARTY_GRN_HEADER_FIELDS, updatePartyGrnTx } from './service';
 
 const PARTY_GRN_FORM_KEY: AccessFormKey = 'party_create';
+
+/** THE "does an edit of this Party GRN go for approval?" rule (ADR-249 Step
+ *  B1): every Party GRN that is not cancelled. A cancelled Party GRN is
+ *  soft-deleted (cancelPartyGrn sets deleted_at — there is no status column),
+ *  is never loaded by loadForDiff, and its writer refuses the edit as before.
+ *  Before B1 only a GRN with a line still waiting for Incoming QC was live, so
+ *  a fully QC'd GRN's header edit saved straight through, unapproved. */
+export function partyGrnIsLive(pg: { deletedAt: unknown }): boolean {
+  return pg.deletedAt == null;
+}
 
 type LineAttr = 'qty' | 'remarks';
 const LINE_ATTR_LABEL: Record<LineAttr, string> = {
@@ -65,7 +78,8 @@ export const partyGrnEditRegistryEntry: DocEditRegistryEntry = {
     if (!pg) return null;
 
     // Lines locked under the same scope; only lines still WAITING for Incoming QC
-    // are editable, so only they become diffable keys (mirror of grn isLive).
+    // are editable, so only they become diffable keys. A fully QC'd GRN has
+    // none, so only its header fields can be staged.
     const lineRows = await tx
       .select()
       .from(partyGrnLines)
@@ -88,12 +102,16 @@ export const partyGrnEditRegistryEntry: DocEditRegistryEntry = {
         dcNo: pg.dcNo,
         remarks: pg.remarks,
         receivedByText: pg.receivedByText,
+        // Read by the staging pre-check (challan unique per customer); not a
+        // diff key — beforeSnapshot never emits it.
+        clientId: pg.clientId,
         lines: pending,
       },
       updatedAt: pg.updatedAt,
       docCode: pg.code,
-      // Live while any line still awaits QC; otherwise header edits apply direct.
-      isLive: pending.length > 0,
+      // ADR-249 Step B1 — every Party GRN not cancelled is live, fully QC'd
+      // ones included (see partyGrnIsLive).
+      isLive: partyGrnIsLive(pg),
     };
   },
 

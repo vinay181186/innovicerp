@@ -1,5 +1,8 @@
 // GoodsReceiptNote entry for the edit-approval engine (ADR-202).
 //
+// LIVE (goes for approval) = any GRN not deleted — ADR-249 Step B1; a fully
+// QC-inspected GRN's header edit stages too (grnIsLive).
+//
 // RECORD/HEADER level only: this pass stages the GRN's own header fields (the set
 // the module's EDIT diff emits — GRN_HEADER_FIELDS). A GRN's received lines are
 // NOT staged — a line change is refused by the divert guard in service.ts
@@ -10,20 +13,26 @@
 // direct edit. This entry is registered CENTRALLY in document-edits/registry.ts;
 // this file only exports it.
 
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { AccessFormKey, UpdateGoodsReceiptNoteInput } from '@innovic/shared';
-import {
-  goodsReceiptNoteLines,
-  goodsReceiptNotes,
-  purchaseOrders,
-  vendors,
-} from '../../db/schema';
+import { goodsReceiptNotes, purchaseOrders, vendors } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
 import { GRN_HEADER_FIELDS, readGrnAuditSnapshot, updateGoodsReceiptNoteTx } from './service';
 
 const GRN_FORM_KEY: AccessFormKey = 'grn_create';
+
+/** THE "does an edit of this GRN go for approval?" rule (ADR-249 Step B1):
+ *  every GRN that is not deleted. Before B1 only a GRN with a line still
+ *  waiting for Incoming QC was live, so a fully QC-inspected GRN's header edit
+ *  saved straight through, unapproved, with the gate on; the owner ruled that a
+ *  finished document's edit must go for approval too. A GRN has no cancelled
+ *  state — removal is the soft delete, and a deleted GRN is never loaded
+ *  (loadForDiff filters it), so its writer refuses as before. */
+export function grnIsLive(grn: { deletedAt: unknown }): boolean {
+  return grn.deletedAt == null;
+}
 
 /** The PO code a master purchaseOrderId resolves to, company-scoped — the GRN
  *  diff reads COALESCE(po.code, poCodeText) under the `poNo` key, so the proposed
@@ -83,25 +92,16 @@ export const grnEditRegistryEntry: DocEditRegistryEntry = {
     if (!grn) return null;
     // The display header (poNo / vendor resolved via COALESCE) the diff compares.
     const snap = await readGrnAuditSnapshot(tx, id);
-    // isLive mirrors grnStatus: 'pending' (live) while ANY line still has QC qty
-    // remaining; 'close' (fully QC-inspected) edits directly, like a draft. GRN
-    // has no cancelled state.
-    const waiting = await tx
-      .select({ id: goodsReceiptNoteLines.id })
-      .from(goodsReceiptNoteLines)
-      .where(
-        and(
-          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
-          isNull(goodsReceiptNoteLines.deletedAt),
-          sql`(${goodsReceiptNoteLines.receivedQty} - ${goodsReceiptNoteLines.qcAcceptedQty} - ${goodsReceiptNoteLines.qcRejectedQty}) > 0`,
-        ),
-      )
-      .limit(1);
     return {
-      doc: { ...snap.header },
+      // storedVendorId: the vendor as stored (the row locked above), read by
+      // the staging pre-check (assertGrnHeaderEditAllowed keeps it even if
+      // inactive). Not a diff key — beforeSnapshot never emits it.
+      doc: { ...snap.header, storedVendorId: grn.vendorId ?? null },
       updatedAt: grn.updatedAt,
       docCode: grn.code,
-      isLive: waiting.length > 0,
+      // ADR-249 Step B1 — every GRN that is not deleted is live, fully
+      // QC-inspected ones included (see grnIsLive).
+      isLive: grnIsLive(grn),
     };
   },
 

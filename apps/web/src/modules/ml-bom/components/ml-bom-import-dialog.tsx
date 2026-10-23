@@ -137,6 +137,21 @@ const ACTION_LABEL: Record<MlBomImportBom['action'], string> = {
   revise: 'Revised',
 };
 
+/** ADR-249 — with Document Edit Approval on, a revise is held for approval
+ *  (nothing changed yet) or refused; the row says which, not "Revised". */
+function bomActionLabel(b: MlBomImportBom): string {
+  if (b.outcome === 'sent_for_approval') return 'Sent for approval';
+  // The server's message already names the BOM and says "not sent for approval".
+  if (b.outcome === 'not_sent') return b.outcomeMessage || 'Not sent';
+  return ACTION_LABEL[b.action];
+}
+
+function bomActionColor(b: MlBomImportBom): string | undefined {
+  if (b.outcome === 'sent_for_approval') return 'var(--amber2)';
+  if (b.outcome === 'not_sent') return 'var(--red2)';
+  return undefined;
+}
+
 function bomColumns(onOpen: () => void): DataTableColumn<MlBomImportBom>[] {
   return [
     { header: 'Item Code', nowrap: true, render: (b) => strongCode(b.itemCode) },
@@ -164,7 +179,13 @@ function bomColumns(onOpen: () => void): DataTableColumn<MlBomImportBom>[] {
           dash
         ),
     },
-    { header: 'BOM Action', nowrap: true, render: (b) => ACTION_LABEL[b.action] },
+    {
+      header: 'BOM Action',
+      align: 'left',
+      ellipsis: true,
+      render: (b) => <span style={{ color: bomActionColor(b) }}>{bomActionLabel(b)}</span>,
+      title: (b) => bomActionLabel(b),
+    },
     { header: 'BOM Rev', align: 'right', className: 'mono', render: (b) => b.revision },
     { header: 'Lines', align: 'right', className: 'mono', render: (b) => b.lineCount },
     {
@@ -240,7 +261,20 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
   const nWarnings = preview?.rows.filter((r) => r.status === 'warning').length ?? 0;
   const shown = step === 'done' ? finalResult : preview;
   const nCreate = shown?.boms.filter((b) => b.action === 'create').length ?? 0;
-  const nRevise = shown?.boms.filter((b) => b.action === 'revise').length ?? 0;
+  // A revise held for approval or refused did not revise anything (ADR-249).
+  const nRevise =
+    shown?.boms.filter(
+      (b) =>
+        b.action === 'revise' && b.outcome !== 'sent_for_approval' && b.outcome !== 'not_sent',
+    ).length ?? 0;
+  const nSentForApproval =
+    finalResult?.sentForApprovalCount ??
+    finalResult?.boms.filter((b) => b.outcome === 'sent_for_approval').length ??
+    0;
+  const nNotSent =
+    finalResult?.notSentCount ??
+    finalResult?.boms.filter((b) => b.outcome === 'not_sent').length ??
+    0;
   const resultColumns = useMemo(() => bomColumns(onClose), [onClose]);
 
   function back(): void {
@@ -450,6 +484,19 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
                   color: 'var(--green2)',
                 },
                 { key: 'revise', label: 'BOMs revised', count: nRevise, color: 'var(--blue2)' },
+                ...(nSentForApproval > 0
+                  ? [
+                      {
+                        key: 'sent',
+                        label: 'Sent for approval',
+                        count: nSentForApproval,
+                        color: 'var(--amber2)',
+                      },
+                    ]
+                  : []),
+                ...(nNotSent > 0
+                  ? [{ key: 'notSent', label: 'Not sent', count: nNotSent, color: 'var(--red2)' }]
+                  : []),
                 { key: 'lines', label: 'Lines', count: rows.length },
                 { key: 'levels', label: 'Levels', count: finalResult.levels },
               ]}

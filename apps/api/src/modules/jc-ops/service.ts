@@ -19,7 +19,7 @@ import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { polSql } from '../../lib/pol';
 import { emitActivityLog } from '../activity-log/service';
-import { jobCardIsLive } from '../job-cards/jc-op-edit';
+import { jcMachineChangeGatedMessage, jobCardIsLive } from '../job-cards/jc-op-edit';
 import { jcOpRef } from '../op-entry/audit';
 import { JC_OPS_SF_COLUMNS } from './sf-columns';
 
@@ -266,7 +266,10 @@ async function assertMachineChangeNotGated(
   if (!(await isDocEditApprovalOn(tx, companyId))) return;
 
   // "Live" is THE Job Card rule (jobCardIsLive — what jobCardEditRegistryEntry.isLive
-  // uses), fed this op's card: closed_at and the computed status off v_jc_status.
+  // uses): since ADR-249 Step B1 every card that is not deleted, complete and
+  // closed included (the query below already keeps only live cards). closed_at
+  // and the computed status off v_jc_status are read for the wording only — a
+  // finished card is told so instead of being treated as still running.
   const headRows = (await tx.execute(sql`
     SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt"
     FROM public.jc_ops op
@@ -283,10 +286,7 @@ async function assertMachineChangeNotGated(
   if (!head) return;
   if (!jobCardIsLive(head)) return;
 
-  throw new ConflictError(
-    "Changing an operation's machine isn't available while Document Edit Approval is on — " +
-      'open the Job Card and edit it there, so the change goes for approval.',
-  );
+  throw new ConflictError(jcMachineChangeGatedMessage(head));
 }
 
 export async function changeJcOpMachine(

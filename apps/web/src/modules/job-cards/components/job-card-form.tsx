@@ -1179,20 +1179,33 @@ export function JobCardForm({
             </>
           }
         >
-          <Banner tone="info" flush>
-            {savedNote.rc.created ? (
-              <>
-                Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span> created
-                (Rev {savedNote.rc.routeCardRevision}) from this Job Card&apos;s operations.
-              </>
-            ) : (
-              <>
-                Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span> updated
-                to Rev {savedNote.rc.routeCardRevision} — this Job Card&apos;s operations are now
-                the item&apos;s standard routing.
-              </>
-            )}
-          </Banner>
+          {savedNote.rc.notSentReason ? (
+            // ADR-249 — the routing differed but could not be sent for
+            // approval: the card is unchanged, so no "updated" line.
+            <Banner tone="warn" flush>
+              {savedNote.rc.notSentReason}
+            </Banner>
+          ) : (
+            <Banner tone="info" flush>
+              {savedNote.rc.sentForApproval ? (
+                // ADR-249 — the routing change is waiting for approval; the
+                // Route Card itself has not moved.
+                <>Route Card change sent for approval — the card is unchanged until approved.</>
+              ) : savedNote.rc.created ? (
+                <>
+                  Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span>{' '}
+                  created (Rev {savedNote.rc.routeCardRevision}) from this Job Card&apos;s
+                  operations.
+                </>
+              ) : (
+                <>
+                  Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span>{' '}
+                  updated to Rev {savedNote.rc.routeCardRevision} — this Job Card&apos;s operations
+                  are now the item&apos;s standard routing.
+                </>
+              )}
+            </Banner>
+          )}
         </Modal>
       ) : null}
 

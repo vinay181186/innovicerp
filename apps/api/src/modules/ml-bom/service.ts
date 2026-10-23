@@ -12,9 +12,14 @@
 // Audit (ADR-197): CREATE / EDIT / DELETE rows land in activity_log with
 // entity 'MlBom' + entityId, so the BOM's History panel finds them.
 
+import type { DocumentEditStagedResult } from '@innovic/shared';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireCompany } from './helpers';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { ConflictError } from '../../lib/errors';
+import type { DocEditTarget } from '../document-edits/registry';
+import { requireCompany, validateItemAndLines } from './helpers';
+import { loadRawMaterialNames } from './lines';
+import type { MlBomEditPayload } from './ml-bom-edit-registry';
 import { listMlBomsTx, loadMlBomDetail, nextMlBomCode } from './reads';
 import { loadMlBomTree } from './tree';
 import { makeDefaultMlBomTx, softDeleteMlBomTx } from './default-delete';
@@ -88,6 +93,56 @@ export async function updateMlBom(
   return withUserContext(user, (tx) => updateMlBomTx(tx, companyId, id, input, user));
 }
 
+/**
+ * The checks a direct save would refuse with, run on a staged revise under the
+ * locks loadForDiff took — so a request that could never be applied is refused
+ * now, not at approval. (The loop / depth guard needs the lines written, so it
+ * runs when the approval applies them.) Shared with the Excel import.
+ */
+export async function precheckMlBomRevise(
+  tx: DbTransaction,
+  target: DocEditTarget,
+  input: UpdateMlBomInput,
+): Promise<undefined> {
+  const companyId = String(target.doc['companyId']);
+  const itemId = String(target.doc['itemId']);
+  if (input.itemId !== itemId) {
+    throw new ConflictError(
+      `${target.docCode}: the BOM item cannot be changed after save. Make a new ` +
+        `Multi-Level BOM for the other item.`,
+    );
+  }
+  await validateItemAndLines(tx, companyId, itemId, input.lines);
+  await loadRawMaterialNames(tx, input.lines, companyId);
+  return undefined;
+}
+
+/**
+ * PUT /ml-boms/:id. Edit-approval (ADR-202, ADR-249 Step B2): with the gate on,
+ * an edit of a live ML-BOM is staged (Remarks / BOM Lines boxes) and
+ * {staged:true, request} returned; gate off → updateMlBom, as before.
+ */
+export async function updateMlBomOrStage(
+  id: string,
+  input: UpdateMlBomInput,
+  user: AuthContext,
+): Promise<MlBomDetail | DocumentEditStagedResult> {
+  await requireFormAccess(user, FORM, 'edit');
+  // Dynamic import: the engine's registry imports this module's writers.
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  const payload: MlBomEditPayload = { op: 'revise', input };
+  const request = await requestDocumentEdit(
+    'MlBom',
+    id,
+    payload,
+    input.expectedUpdatedAt,
+    user,
+    (tx, target) => precheckMlBomRevise(tx, target, input),
+  );
+  if (request) return { staged: true, request };
+  return updateMlBom(id, input, user);
+}
+
 export async function makeDefaultMlBom(
   id: string,
   input: MakeDefaultMlBomInput,
@@ -96,6 +151,28 @@ export async function makeDefaultMlBom(
   await requireFormAccess(user, FORM, 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, (tx) => makeDefaultMlBomTx(tx, companyId, id, input, user));
+}
+
+/**
+ * POST /ml-boms/:id/make-default. With the gate on, moving the Default is
+ * staged as the "Default" box (approval moves BOTH rows in one transaction).
+ * Already the Default → the detail back, nothing written or staged (as the
+ * direct path does), never a "Nothing changed" refusal for a no-op click.
+ */
+export async function makeDefaultMlBomOrStage(
+  id: string,
+  input: MakeDefaultMlBomInput,
+  user: AuthContext,
+): Promise<MlBomDetail | DocumentEditStagedResult> {
+  await requireFormAccess(user, FORM, 'edit');
+  const companyId = requireCompany(user);
+  const current = await withUserContext(user, (tx) => loadMlBomDetail(tx, id, companyId));
+  if (current.isDefault) return current;
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  const payload: MlBomEditPayload = { op: 'makeDefault' };
+  const request = await requestDocumentEdit('MlBom', id, payload, input.expectedUpdatedAt, user);
+  if (request) return { staged: true, request };
+  return makeDefaultMlBom(id, input, user);
 }
 
 /** Same rule as BOM Master's delete: L6 Super Admin only (ADR-232). */

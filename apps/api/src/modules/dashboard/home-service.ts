@@ -80,15 +80,32 @@ async function guarded<T>(what: string, fallback: T, fn: () => Promise<T>): Prom
   }
 }
 
-/** The same, inside a savepoint — a failed query would otherwise abort the
- *  transaction every other block shares. */
-function safe<T>(
-  tx: DbTransaction,
+/** How many home blocks read at once. Each block is its own short transaction,
+ *  so one caller's home never holds more than this many pool connections. */
+const HOME_PARALLEL = 4;
+
+/** Run the tasks HOME_PARALLEL at a time; results keep the input order. */
+async function inParallel<T>(tasks: Array<() => Promise<T>>): Promise<T[]> {
+  const out = new Array<T>(tasks.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < tasks.length) {
+      const i = next++;
+      out[i] = await tasks[i]!();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(HOME_PARALLEL, tasks.length) }, worker));
+  return out;
+}
+
+/** One block in its own transaction, guarded: a failing query empties only it. */
+function own<T>(
+  user: AuthContext,
   what: string,
   fallback: T,
-  fn: (sp: DbTransaction) => Promise<T>,
-): Promise<T> {
-  return guarded(what, fallback, () => tx.transaction((sp) => fn(sp as unknown as DbTransaction)));
+  fn: (tx: DbTransaction) => Promise<T>,
+): () => Promise<T> {
+  return () => guarded(what, fallback, () => withUserContext(user, fn));
 }
 
 const MONEY_FORMS: readonly AccessFormKey[] = ['pr_create', 'po_create'];
@@ -99,102 +116,117 @@ export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise
   // applied INSIDE each list query, so a list's total and its cue are the
   // mine set too.
   const { scope } = homeQuerySchema.parse(query);
+  // The access read is remembered for the request (ADR-229), so it goes first
+  // and every check below reuses it. Everything after it is independent and
+  // reads at the same time: the home takes as long as its slowest block, not
+  // the sum of all of them.
   const a = await loadAccess(user);
   const today = istToday();
-  const cfg = await getConfig(user);
-  // Access reads open their own transactions — all of them before ours.
-  const showMoney = new Set<AccessFormKey>();
-  for (const f of MONEY_FORMS) if (await canSeeFormPrice(user, f)) showMoney.add(f);
-  const canRemind = await canWrite(user);
-  // Opens its own transactions, so it runs before ours — guarded the same way
-  // as every block: a failure empties only the approvals block.
-  const approvals = holdsAnyApprove(a)
-    ? await guarded('approvals', null, () => getApprovalInbox(user))
-    : null;
+  const [cfg, money, canRemind, approvals, me] = await Promise.all([
+    getConfig(user),
+    Promise.all(MONEY_FORMS.map((f) => canSeeFormPrice(user, f))),
+    canWrite(user),
+    // A failure empties only the approvals block.
+    holdsAnyApprove(a) ? guarded('approvals', null, () => getApprovalInbox(user)) : null,
+    withUserContext(
+      user,
+      async (tx) =>
+        (await tx.execute(sql`
+          SELECT u.full_name, ua.main_dept
+          FROM public.users u
+          LEFT JOIN public.user_access ua
+            ON ua.user_id = u.id AND ua.company_id = ${cid}::uuid AND ua.deleted_at IS NULL
+          WHERE u.id = ${user.id}::uuid
+          LIMIT 1
+        `)) as unknown as Array<{ full_name: string | null; main_dept: string | null }>,
+    ),
+  ]);
+  const showMoney = new Set<AccessFormKey>(MONEY_FORMS.filter((_, i) => money[i]));
+  const myName = me[0]?.full_name ?? '';
+  const mainDept = resolveMainDept(me[0]?.main_dept ?? null, a);
+  const c: ListCtx = { cid, today, myName };
+  const rc: RowCtx = { a, today, userId: user.id, showMoney };
 
-  return withUserContext(user, async (tx) => {
-    const me = (await tx.execute(sql`
-      SELECT u.full_name, ua.main_dept
-      FROM public.users u
-      LEFT JOIN public.user_access ua
-        ON ua.user_id = u.id AND ua.company_id = ${cid}::uuid AND ua.deleted_at IS NULL
-      WHERE u.id = ${user.id}::uuid
-      LIMIT 1
-    `)) as unknown as Array<{ full_name: string | null; main_dept: string | null }>;
-    const myName = me[0]?.full_name ?? '';
-    const mainDept = resolveMainDept(me[0]?.main_dept ?? null, a);
-
-    const c: ListCtx = { cid, today, myName };
-    const rc: RowCtx = { a, today, userId: user.id, showMoney };
-
-    const built: Array<ListWithLate & { dept: string }> = [];
-    for (const d of visibleListDefs(a)) {
-      const res = await safe<ListResult | null>(tx, d.key, null, (sp) =>
-        runList(sp, d.query(c, scope === 'mine' ? { createdBy: user.id } : {}), {
-          limit: HOME_PAGE_SIZE,
-        }),
-      );
-      if (!res) continue;
-      const list: DashList = {
-        key: d.key as DashList['key'],
-        title: d.title,
-        dept: defDept(d),
-        head: d.head,
-        total: res.total,
-        rows: res.rows.map((r) => toDashRow(d, r, rc)),
-        href: d.href,
-      };
-      built.push({ list, lateTotal: res.lateTotal, dept: list.dept });
-    }
-    const ordered = orderByDept(built, mainDept);
-
-    // ONE holders memo for the request (sent + waiting + remind targets).
-    const holders = makeHolders(tx, cid);
-    const sent = await safe<DashRow[]>(tx, 'sentForApproval', [], (sp) =>
-      sentForApproval(sp, c, rc, holders, canRemind),
-    );
-    const wait = await safe<OwnRows>(tx, 'waiting', { rows: [], total: 0 }, (sp) =>
-      waiting(sp, c, rc, holders, canRemind),
-    );
-    const todoBlock = await safe<HomeResponse['todo']>(
-      tx,
-      'todo',
-      { late: [], today: [], planned: [] },
-      (sp) => todo(sp, cid, user.id, today),
-    );
-    const doneBlock = await safe<HomeResponse['done']>(
-      tx,
+  const defs = visibleListDefs(a);
+  const listTasks = defs.map((d) =>
+    own<ListResult | null>(user, d.key, null, (tx) =>
+      runList(tx, d.query(c, scope === 'mine' ? { createdBy: user.id } : {}), {
+        limit: HOME_PAGE_SIZE,
+      }),
+    ),
+  );
+  const emptyPair = { sent: [] as DashRow[], wait: { rows: [], total: 0 } as OwnRows };
+  const blockTasks = [
+    // Sent + waiting share ONE holders memo (remind targets too), so they read
+    // in one transaction.
+    own(user, 'sentForApproval+waiting', emptyPair, async (tx) => {
+      const holders = makeHolders(tx, cid);
+      const sent = await sentForApproval(tx, c, rc, holders, canRemind);
+      const wait = await waiting(tx, c, rc, holders, canRemind);
+      return { sent, wait };
+    }),
+    own<HomeResponse['todo']>(user, 'todo', { late: [], today: [], planned: [] }, (tx) =>
+      todo(tx, cid, user.id, today),
+    ),
+    own<HomeResponse['done']>(
+      user,
       'done',
       { today: [], yesterday: [], todayTotal: 0, yesterdayTotal: 0 },
-      (sp) => done(sp, cid, user.id, today),
-    );
-    const notifications = await safe<HomeResponse['notifications']>(
-      tx,
+      (tx) => done(tx, cid, user.id, today),
+    ),
+    own<HomeResponse['notifications']>(
+      user,
       'notifications',
       { items: [], unseen: 0, seenAt: null },
-      (sp) => buildNotifications(sp, a, c, user.id, approvals),
-    );
+      (tx) => buildNotifications(tx, a, c, user.id, approvals),
+    ),
+  ];
+  const results = await inParallel<unknown>([...listTasks, ...blockTasks]);
+  const listResults = results.slice(0, defs.length) as Array<ListResult | null>;
+  const [pair, todoBlock, doneBlock, notifications] = results.slice(defs.length) as [
+    typeof emptyPair,
+    HomeResponse['todo'],
+    HomeResponse['done'],
+    HomeResponse['notifications'],
+  ];
+  const { sent, wait } = pair;
 
-    return {
-      userName: myName || user.email,
-      role: user.role,
-      dateLabel: dateLabel(),
-      greetingPart: greetingPart(),
-      isAdmin: a.isAdmin,
-      mainDept,
-      headline: buildHeadline(ordered, approvals),
-      cues: buildCues(ordered, approvals, wait.total, doneBlock.todayTotal),
-      approvals,
-      sentForApproval: sent,
-      lists: ordered.map((l) => l.list),
-      waiting: wait.rows,
-      waitingTotal: wait.total,
-      todo: todoBlock,
-      done: doneBlock,
-      notifications,
-      quickLinks: visibleQuickLinks(a, cfg.quickLinks),
+  const built: Array<ListWithLate & { dept: string }> = [];
+  defs.forEach((d, i) => {
+    const res = listResults[i];
+    if (!res) return;
+    const list: DashList = {
+      key: d.key as DashList['key'],
+      title: d.title,
+      dept: defDept(d),
+      head: d.head,
+      total: res.total,
+      rows: res.rows.map((r) => toDashRow(d, r, rc)),
+      href: d.href,
     };
+    built.push({ list, lateTotal: res.lateTotal, dept: list.dept });
   });
+  const ordered = orderByDept(built, mainDept);
+
+  return {
+    userName: myName || user.email,
+    role: user.role,
+    dateLabel: dateLabel(),
+    greetingPart: greetingPart(),
+    isAdmin: a.isAdmin,
+    mainDept,
+    headline: buildHeadline(ordered, approvals),
+    cues: buildCues(ordered, approvals, wait.total, doneBlock.todayTotal),
+    approvals,
+    sentForApproval: sent,
+    lists: ordered.map((l) => l.list),
+    waiting: wait.rows,
+    waitingTotal: wait.total,
+    todo: todoBlock,
+    done: doneBlock,
+    notifications,
+    quickLinks: visibleQuickLinks(a, cfg.quickLinks),
+  };
 }
 
 /** POST /dashboard/notifications/seen — the caller's own seen time, forward only. */

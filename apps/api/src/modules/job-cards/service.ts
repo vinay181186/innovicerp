@@ -66,6 +66,9 @@ import {
   jcLockedOpSubject,
   jcOpAttrApplies,
   jcOpAttrSnapshot,
+  JC_FINISHED_OPS_FROZEN_MESSAGE,
+  jcFinishedRoutingChanged,
+  jobCardIsFinished,
   terminalQcOp,
   withoutOpId,
   withStagedTerminalQcOpId,
@@ -2744,94 +2747,31 @@ export async function updateJobCard(
 }
 
 /**
- * The body of a Job Card edit, inside a caller-supplied transaction. Called by
- * updateJobCard (which opens the tx) and by the edit-approval engine's applyEdit
- * (which already holds one, plus the job_cards row FOR UPDATE lock taken in
- * jobCardEditRegistryEntry.loadForDiff).
- *
- * ADR-226 / §20.4 — the direct path now has its own guard: the caller sends the
- * `updatedAt` its form loaded and a save over someone else's newer edit is
- * refused 409 `edit_conflict`. It is a CONDITIONAL UPDATE, not a row lock,
- * because this path must not take a `job_cards` lock (see the ADR-220 lock-order
- * note further down). The engine's replay sends no token and keeps relying on
- * the lock it already holds. Every
- * existing business guard is preserved verbatim: the short-closed PO freeze, the
- * NC open-qty cap, item-frozen-after-logs, qty-vs-PO, qty >= completed, the
- * customer-material floor, line balance, the locked-op guards and the
- * complete/closed routing freeze. The caller performs the `edit` / `approve`
- * access check.
+ * ADR-249 Step B1 — the Job Card HEADER guards, in the writer's own order:
+ * the ADR-182 short-closed Production Order freeze, the rework/repair NC
+ * open-qty cap, the item code must exist, the ADR-185 freezes (item fixed once
+ * production is logged, a Production Order's card keeps the order's qty, qty
+ * never below what is completed), the ADR-203 customer-material floor, and the
+ * SO / JWSO line balance. Moved out of updateJobCardTx VERBATIM so the staging
+ * pre-check (updateJobCardOrStage) asks exactly the same questions: since
+ * Step B1 a COMPLETE or CLOSED card's edit also goes for approval, and those
+ * are the cards where "JC Qty below completed" and "item already has
+ * production logged" bite. Returns the resolved item the writer saves.
  */
-export async function updateJobCardTx(
+export async function assertJcHeaderEditAllowed(
   tx: DbTransaction,
+  companyId: string,
   id: string,
+  head: {
+    code: string;
+    recoveryKind: string | null;
+    parentNcId: string | null;
+    itemId: string | null;
+    orderQty: number;
+    productionOrderId: string | null;
+  },
   input: JobCardUpdateInput,
-  user: AuthContext,
-): Promise<JcRouteCardWriteBack | null> {
-  const companyId = requireCompany(user);
-  // Money-in rule (mirrors machines.updateMachine): a caller who cannot SEE the
-  // outsource cost cannot SET it — their blinded form posts 0, so we keep the
-  // stored value instead of letting it zero a cost they were never shown.
-  const showMoney = await canSeeFormPrice(user, 'jc_create');
-  let routeCardWriteBack: JcRouteCardWriteBack | null = null;
-  const headRows = await tx
-    .select({
-      code: jobCards.code,
-      sourceSoLineId: jobCards.sourceSoLineId,
-      sourceJwLineId: jobCards.sourceJwLineId,
-      closedAt: jobCards.closedAt,
-      // Rework / repair child (design §4): drives the always-on terminal QC
-      // and the NC-qty cap below.
-      recoveryKind: jobCards.recoveryKind,
-      parentNcId: jobCards.parentNcId,
-      // ADR-185 — what the card is for and how many, as stored, so the
-      // freeze below can tell a real change from a re-save.
-      itemId: jobCards.itemId,
-      orderQty: jobCards.orderQty,
-      productionOrderId: jobCards.productionOrderId,
-      // ADR-193 phase 3a — kept when the edit payload leaves them out.
-      rawMaterialItemId: jobCards.rawMaterialItemId,
-      rmQtyPerPiece: jobCards.rmQtyPerPiece,
-      // ADR-197 — the before image of every header field the form edits.
-      jcDate: jobCards.jcDate,
-      priority: jobCards.priority,
-      dueDate: jobCards.dueDate,
-      remarks: jobCards.remarks,
-      drawingFilePath: jobCards.drawingFilePath,
-      // ADR-226 — the version this row is at now, and who put it there, for the
-      // edit-conflict refusal below.
-      updatedAt: jobCards.updatedAt,
-      updatedBy: jobCards.updatedBy,
-      itemCode: sql<
-        string | null
-      >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
-    })
-    .from(jobCards)
-    .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
-    .limit(1);
-  // ADR-220 LOCK ORDER — deliberately NO `job_cards` FOR UPDATE here. ADR-220
-  // first added one so this path matched the approval entry. Reverted: op-entry
-  // holds a key-share on jc_ops (the op_log FK) and THEN updates job_cards in
-  // finishJc, so locking job_cards first here is the opposite order and can
-  // deadlock (40P01) when someone completes an operation while another user
-  // saves the same card. This path writes jc_ops first, which agrees with
-  // op-entry; since ADR-249 the approval entry's loadForDiff locks jc_ops first
-  // too. Never flip this one.
-  const head = headRows[0];
-  if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
-  // ADR-226 / §20.4 — refuse the save if someone else changed this card after the
-  // form loaded it, and say who. This read is NOT locked (see the note above), so
-  // this check alone is not atomic: it is the EARLY refusal, which stops the
-  // writes below from running at all and gives the user the readable notice. The
-  // header UPDATE at step 4 repeats the test as a conditional UPDATE, which is
-  // the part that actually closes the race. The name lookup runs only on the
-  // refusal path, so a normal save pays nothing for it.
-  if (editConflicts(head.updatedAt, input.expectedUpdatedAt)) {
-    assertUnchangedSinceOpened(
-      head.updatedAt,
-      input.expectedUpdatedAt,
-      await rowChangedByName(tx, head.updatedBy),
-    );
-  }
+): Promise<{ id: string; code: string }> {
   // ADR-182 — a short-closed Production Order's card is frozen: it records
   // what really happened before the order was stopped and must not be edited.
   await assertProductionOrderNotShortClosed(tx, id);
@@ -2928,6 +2868,102 @@ export async function updateJobCardTx(
   }
 
   await assertLineBalance(tx, input, companyId, id, item.id, { recoveryKind: head.recoveryKind });
+  return item;
+}
+
+/**
+ * The body of a Job Card edit, inside a caller-supplied transaction. Called by
+ * updateJobCard (which opens the tx) and by the edit-approval engine's applyEdit
+ * (which already holds one, plus the job_cards row FOR UPDATE lock taken in
+ * jobCardEditRegistryEntry.loadForDiff).
+ *
+ * ADR-226 / §20.4 — the direct path now has its own guard: the caller sends the
+ * `updatedAt` its form loaded and a save over someone else's newer edit is
+ * refused 409 `edit_conflict`. It is a CONDITIONAL UPDATE, not a row lock,
+ * because this path must not take a `job_cards` lock (see the ADR-220 lock-order
+ * note further down). The engine's replay sends no token and keeps relying on
+ * the lock it already holds. Every
+ * existing business guard is preserved verbatim: the short-closed PO freeze, the
+ * NC open-qty cap, item-frozen-after-logs, qty-vs-PO, qty >= completed, the
+ * customer-material floor, line balance, the locked-op guards and the
+ * complete/closed routing freeze. The caller performs the `edit` / `approve`
+ * access check.
+ */
+export async function updateJobCardTx(
+  tx: DbTransaction,
+  id: string,
+  input: JobCardUpdateInput,
+  user: AuthContext,
+): Promise<JcRouteCardWriteBack | null> {
+  const companyId = requireCompany(user);
+  // Money-in rule (mirrors machines.updateMachine): a caller who cannot SEE the
+  // outsource cost cannot SET it — their blinded form posts 0, so we keep the
+  // stored value instead of letting it zero a cost they were never shown.
+  const showMoney = await canSeeFormPrice(user, 'jc_create');
+  let routeCardWriteBack: JcRouteCardWriteBack | null = null;
+  const headRows = await tx
+    .select({
+      code: jobCards.code,
+      sourceSoLineId: jobCards.sourceSoLineId,
+      sourceJwLineId: jobCards.sourceJwLineId,
+      closedAt: jobCards.closedAt,
+      // Rework / repair child (design §4): drives the always-on terminal QC
+      // and the NC-qty cap below.
+      recoveryKind: jobCards.recoveryKind,
+      parentNcId: jobCards.parentNcId,
+      // ADR-185 — what the card is for and how many, as stored, so the
+      // freeze below can tell a real change from a re-save.
+      itemId: jobCards.itemId,
+      orderQty: jobCards.orderQty,
+      productionOrderId: jobCards.productionOrderId,
+      // ADR-193 phase 3a — kept when the edit payload leaves them out.
+      rawMaterialItemId: jobCards.rawMaterialItemId,
+      rmQtyPerPiece: jobCards.rmQtyPerPiece,
+      // ADR-197 — the before image of every header field the form edits.
+      jcDate: jobCards.jcDate,
+      priority: jobCards.priority,
+      dueDate: jobCards.dueDate,
+      remarks: jobCards.remarks,
+      drawingFilePath: jobCards.drawingFilePath,
+      // ADR-226 — the version this row is at now, and who put it there, for the
+      // edit-conflict refusal below.
+      updatedAt: jobCards.updatedAt,
+      updatedBy: jobCards.updatedBy,
+      itemCode: sql<
+        string | null
+      >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
+    })
+    .from(jobCards)
+    .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
+    .limit(1);
+  // ADR-220 LOCK ORDER — deliberately NO `job_cards` FOR UPDATE here. ADR-220
+  // first added one so this path matched the approval entry. Reverted: op-entry
+  // holds a key-share on jc_ops (the op_log FK) and THEN updates job_cards in
+  // finishJc, so locking job_cards first here is the opposite order and can
+  // deadlock (40P01) when someone completes an operation while another user
+  // saves the same card. This path writes jc_ops first, which agrees with
+  // op-entry; since ADR-249 the approval entry's loadForDiff locks jc_ops first
+  // too. Never flip this one.
+  const head = headRows[0];
+  if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+  // ADR-226 / §20.4 — refuse the save if someone else changed this card after the
+  // form loaded it, and say who. This read is NOT locked (see the note above), so
+  // this check alone is not atomic: it is the EARLY refusal, which stops the
+  // writes below from running at all and gives the user the readable notice. The
+  // header UPDATE at step 4 repeats the test as a conditional UPDATE, which is
+  // the part that actually closes the race. The name lookup runs only on the
+  // refusal path, so a normal save pays nothing for it.
+  if (editConflicts(head.updatedAt, input.expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      head.updatedAt,
+      input.expectedUpdatedAt,
+      await rowChangedByName(tx, head.updatedBy),
+    );
+  }
+  // ADR-249 Step B1 — the header guards live in ONE helper, called here (every
+  // save, the approval replay included) AND by the staging pre-check in
+  // updateJobCardOrStage, so an edit the writer would refuse never stages.
+  const item = await assertJcHeaderEditAllowed(tx, companyId, id, head, input);
   // The generated terminal QC op comes back on edit with an id. If the person
   // has since retyped an op to OSP, that op is stale (Rule B never gates an
   // outsource JC with a terminal QC) — drop it before anything else looks at
@@ -3098,26 +3134,20 @@ export async function updateJobCardTx(
 
   // Freeze guard: once the JC is complete/closed, its routing is frozen — no
   // add / remove / reorder / retype (mirrors the PO/JWSO status-immutable rule).
+  // ADR-249 Step B1 — the condition (jobCardIsFinished), the test
+  // (jcFinishedRoutingChanged) and the wording are shared with the staging
+  // pre-check in updateJobCardOrStage, which must refuse the same change BEFORE
+  // it stages now that a finished card's edit goes for approval.
   const statusRows = (await tx.execute(sql`
     SELECT COALESCE(computed_status, 'no_ops') AS s
     FROM public.v_jc_status WHERE job_card_id = ${id}::uuid
   `)) as unknown as Array<{ s: string }>;
   const computedStatus = statusRows[0]?.s ?? 'no_ops';
-  const finished =
-    head.closedAt != null || computedStatus === 'complete' || computedStatus === 'closed';
-  if (finished) {
-    const structurallyChanged =
-      existing.some((ex) => !payloadIds.has(ex.id)) ||
-      ops.some((o, i) => {
-        if (!o.id || !existingById.has(o.id)) return true; // added op
-        const ex = existingById.get(o.id)!;
-        return ex.opSeq !== i + 1 || o.opType !== ex.opType; // moved or retyped
-      });
-    if (structurallyChanged) {
-      throw new ValidationError(
-        'This JC is Completed, so its operations cannot change. Reopen it first.',
-      );
-    }
+  if (
+    jobCardIsFinished({ closedAt: head.closedAt, status: computedStatus }) &&
+    jcFinishedRoutingChanged(existing, ops)
+  ) {
+    throw new ValidationError(JC_FINISHED_OPS_FROZEN_MESSAGE);
   }
 
   // Machine swaps made through THIS form, collected for the activity log.
@@ -3576,10 +3606,10 @@ export function jcOpsChanged(
 
 /**
  * The Job Card edit entry point the HTTP route calls. Edit-approval (ADR-202):
- * when the company's gate is on, an edit to a LIVE Job Card is STAGED for
- * per-change approval and a {staged:true, request} result is returned; a
- * complete / closed card and a gate-off company fall through to updateJobCard
- * (today's behaviour). Header fields AND operation changes (edit / remove / add,
+ * when the company's gate is on, an edit to a LIVE Job Card — since ADR-249
+ * Step B1 every card that is not deleted, complete and closed included — is
+ * STAGED for per-change approval and a {staged:true, request} result is
+ * returned; a gate-off company falls through to updateJobCard. Header fields AND operation changes (edit / remove / add,
  * ADR-220) are staged, one box per change; an operation change that could not be
  * approved (started, committed, has an NC, re-ordered…) is refused HERE by
  * assertJcOpsStageable, never staged and never silently dropped.
@@ -3595,10 +3625,11 @@ export async function updateJobCardOrStage(
   // Engine imported dynamically to avoid a static import cycle with
   // jobcard-edit-registry (which imports updateJobCardTx from this file).
   const { requestDocumentEdit } = await import('../document-edits/service');
-  // "Live" is jobCardEditRegistryEntry's own rule (editable while not complete /
-  // closed), decided by the engine under its lock (jc_ops then job_cards — the
-  // writer's own order); a completed / closed card edits directly (today's rule).
-  // The checks below run only for a live card, under that same lock.
+  // "Live" is jobCardEditRegistryEntry's own rule (ADR-249 Step B1: every card
+  // not deleted — complete and closed cards go for approval too), decided by the
+  // engine under its lock (jc_ops then job_cards — the writer's own order). The
+  // checks below run under that same lock and must refuse whatever the writer
+  // would refuse at approval, so nothing stages that cannot be applied.
   // ADR-226 — the staged route gets the same version check as the direct one.
   const request = await requestDocumentEdit(
     'JobCard',
@@ -3610,7 +3641,12 @@ export async function updateJobCardOrStage(
       let stagedTerminalQcOpId: string | null | undefined;
       const headRows = await tx
         .select({
+          code: jobCards.code,
           recoveryKind: jobCards.recoveryKind,
+          parentNcId: jobCards.parentNcId,
+          itemId: jobCards.itemId,
+          orderQty: jobCards.orderQty,
+          productionOrderId: jobCards.productionOrderId,
           rawMaterialItemId: jobCards.rawMaterialItemId,
           rmQtyPerPiece: jobCards.rmQtyPerPiece,
         })
@@ -3619,6 +3655,15 @@ export async function updateJobCardOrStage(
         .limit(1);
       const head = headRows[0];
       if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+      // ADR-249 Step B1 — the writer's header guards, asked NOW through the very
+      // helper updateJobCardTx calls (short-closed Production Order freeze, NC
+      // open-qty cap, item code exists, item frozen once production is logged,
+      // a Production Order's card keeps the order's qty, qty never below what is
+      // completed or below the customer material issued, SO / JWSO line
+      // balance). A complete / closed card now stages too, and those are the
+      // cards these refusals bite on — staging one would only hand the approver
+      // an error inside applyEdit that rolls the whole decision back.
+      await assertJcHeaderEditAllowed(tx, companyId, id, head, input);
       // ADR-218 — the raw material the payload sends is checked NOW with the
       // writer's own resolver (grade / size must be on their masters, RM Item and
       // RM Qty per piece go together), so a change the approval could only refuse
@@ -3645,6 +3690,23 @@ export async function updateJobCardOrStage(
         // "Nothing changed to approve" and the change was silently dropped. The
         // refusals must therefore run whenever a routing was submitted at all.
         assertTerminalQcUnchanged(terminal, input.ops, { recoveryKind: head.recoveryKind });
+        // ADR-249 Step B1 — a complete / closed card's routing is frozen by the
+        // writer (no add / remove / move / retype). Its edit now goes for
+        // approval, so the same freeze is asked here, of the routing the writer
+        // would write (the same strip + Final Inspection append), through the
+        // same helper and in the same words. Attribute-only edits pass and
+        // stage as boxes; every approvable subset of them is attribute-only too.
+        if (target.doc['finished'] === true) {
+          const startedIds = new Set(currentAll.filter((c) => c.started).map((c) => c.id));
+          const userOps = stripStaleGeneratedTerminalQc(input.ops, {
+            recoveryKind: head.recoveryKind,
+            isStarted: (o) => !!o.id && startedIds.has(o.id),
+          });
+          const writtenOps = withTerminalQcOp(userOps, { recoveryKind: head.recoveryKind });
+          if (jcFinishedRoutingChanged(currentAll, writtenOps)) {
+            throw new ValidationError(JC_FINISHED_OPS_FROZEN_MESSAGE);
+          }
+        }
         const terminalId = terminal?.id ?? null;
         stagedTerminalQcOpId = terminalId;
         const current = withoutOpId(currentAll, terminalId);

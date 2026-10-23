@@ -30,18 +30,26 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
 
   // Access checks each open their own transaction, so they run first — never
   // inside the inbox transaction below (see clients/related.ts).
-  const prAccess = await loadPrInboxAccess(user);
-  const poAccess = await loadPoInboxAccess(user);
-  const canDecideLogEntry =
-    (await hasFormAccess(user, 'op_entry', 'approve')) ||
-    (await hasFormAccess(user, 'qc_submit', 'approve'));
+  // Independent reads, so they run together (the access row is remembered for
+  // the request, ADR-229).
+  const [prAccess, poAccess, opApprove, qcApprove] = await Promise.all([
+    loadPrInboxAccess(user),
+    loadPoInboxAccess(user),
+    hasFormAccess(user, 'op_entry', 'approve'),
+    hasFormAccess(user, 'qc_submit', 'approve'),
+  ]);
+  const canDecideLogEntry = opApprove || qcApprove;
   // ADR-232: only the rows this caller can decide (QC rows on QC Approve,
   // production rows on Op Entry Approve) — in the count AND the list.
   const logScope = canDecideLogEntry ? await decidableTimeChangeScope(user) : sql`AND false`;
-  const { pr, po } = await withUserContext(user, async (tx) => ({
+  // Started now, awaited after the log-entry reads, so they run together.
+  const prPo = withUserContext(user, async (tx) => ({
     pr: await listPrApprovalInbox(tx, companyId, user, prAccess),
     po: await listPoApprovalInbox(tx, companyId, user, poAccess),
   }));
+  // If the log-entry reads throw first, this must not become an unhandled
+  // rejection (it would crash the process); its own error surfaces at the await.
+  prPo.catch(() => undefined);
 
   let logEntry: ApprovalInboxRow[] = [];
   let logEntryCount = 0;
@@ -49,8 +57,9 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
     // The count is the whole waiting queue (ADR-201) — the list below stops at
     // LOG_ENTRY_LIMIT. Same rows selectTimeChangeRequests can return: its
     // inner joins (op_log, a live jc_op, its job card) are repeated here.
-    const [c] = (await withUserContext(user, (tx) =>
-      tx.execute(sql`
+    const [countRows, requests] = await Promise.all([
+      withUserContext(user, (tx) =>
+        tx.execute(sql`
         SELECT COUNT(*)::int AS n
         FROM public.op_log_time_change_requests r
         JOIN public.op_log l ON l.id = r.op_log_id
@@ -61,15 +70,17 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
           AND r.status = 'pending'
           ${logScope}
       `),
-    )) as unknown as Array<{ n: number }>;
+      ),
+      withUserContext(user, (tx) =>
+        selectTimeChangeRequests(tx, companyId, {
+          status: 'pending',
+          limit: LOG_ENTRY_LIMIT,
+          where: logScope,
+        }),
+      ),
+    ]);
+    const [c] = countRows as unknown as Array<{ n: number }>;
     logEntryCount = Number(c?.n ?? 0);
-    const requests = await withUserContext(user, (tx) =>
-      selectTimeChangeRequests(tx, companyId, {
-        status: 'pending',
-        limit: LOG_ENTRY_LIMIT,
-        where: logScope,
-      }),
-    );
     logEntry = requests.map((r) => ({
       id: r.id,
       docCode: `${r.jobCardCode} · Op #${opSrNo(r.opSeq)}`,
@@ -84,6 +95,7 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
     }));
   }
 
+  const { pr, po } = await prPo;
   return {
     counts: { pr: pr.length, po: po.length, logEntry: logEntryCount },
     pr,

@@ -1,5 +1,6 @@
 import type {
   AdjustStockInput,
+  DocumentEditStagedResult,
   ListStoreInventoryQuery,
   ListStoreInventoryResponse,
   ReorderListQuery,
@@ -53,18 +54,26 @@ export function useAdjustStock() {
   });
 }
 
+/** What PATCH /store-inventory/items/:id/reorder answers: the saved values,
+ *  or (ADR-249 Step B, edit-approval gate on) the change held for approval. */
+export type SetReorderResult =
+  | { ok: true; reorderLevel: number; reorderQty: number }
+  | DocumentEditStagedResult;
+
 /** ADR-193 phase 5 — Reorder Level + Reorder Qty of one item. */
 export function useSetReorder() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, SetReorderInput>({
+  return useMutation<SetReorderResult, Error, SetReorderInput>({
     mutationFn: ({ itemId, ...body }) =>
-      apiFetch(`/store-inventory/items/${itemId}/reorder`, {
+      apiFetch<SetReorderResult>(`/store-inventory/items/${itemId}/reorder`, {
         method: 'PATCH',
         json: { itemId, ...body },
       }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: storeInventoryKeys.all });
       void qc.invalidateQueries({ queryKey: ['items'] });
+      // Staged: nothing changed on the item — the inbox picks up the request.
+      if ('staged' in res) void qc.invalidateQueries({ queryKey: ['document-edits'] });
     },
   });
 }

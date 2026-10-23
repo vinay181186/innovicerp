@@ -31,14 +31,85 @@
 import { fmtOpSrNo, isGeneratedTerminalQcOp } from '@innovic/shared';
 import { ConflictError } from '../../lib/errors';
 
-/** THE "is this Job Card still live?" rule for edit approval: editable while
- *  not closed and its computed status (v_jc_status, 'no_ops' when none) is
- *  neither complete nor closed. jobCardEditRegistryEntry.isLive is this, and so
- *  are the two machine-change gates (jc-ops changeJcOpMachine, the production
- *  schedule drag) — one rule, so the three can never disagree. Pure, so those
- *  modules can import it without pulling in the edit-approval registry. */
-export function jobCardIsLive(card: { closedAt: unknown; status: string }): boolean {
-  return card.closedAt == null && card.status !== 'complete' && card.status !== 'closed';
+/** THE "does an edit of this Job Card go for approval?" rule (ADR-249 Step B1):
+ *  every Job Card that is not deleted. Before B1 a complete or closed card was
+ *  "not live" and its edit saved straight through, unapproved, even with the
+ *  Document Edit Approval gate on; the owner ruled that a FINISHED card's edit
+ *  must go for approval too. A Job Card has no cancelled state (a removed card
+ *  is soft-deleted), so "not deleted" is the whole rule. Callers that already
+ *  filtered `deleted_at IS NULL` in their own query pass a row without
+ *  `deletedAt` and get true.
+ *
+ *  jobCardEditRegistryEntry.isLive is this, and so are the two machine-change
+ *  gates (jc-ops changeJcOpMachine, the production schedule drag) — one rule, so
+ *  the three can never disagree. Pure, so those modules can import it without
+ *  pulling in the edit-approval registry. */
+export function jobCardIsLive(card: {
+  deletedAt?: unknown;
+  // Accepted (and ignored) so the machine-change gates can pass the row they
+  // read for the wording; neither decides liveness any more.
+  closedAt?: unknown;
+  status?: string;
+}): boolean {
+  return card.deletedAt == null;
+}
+
+/** A complete / closed Job Card: closed_at set, or its computed status
+ *  (v_jc_status, 'no_ops' when none) is complete or closed. This is the
+ *  writer's routing-freeze condition (updateJobCardTx) and, since ADR-249 Step
+ *  B1, the staging pre-check's too (updateJobCardOrStage) — no longer the
+ *  edit-approval "live" rule (see jobCardIsLive). */
+export function jobCardIsFinished(card: { closedAt: unknown; status: string }): boolean {
+  return card.closedAt != null || card.status === 'complete' || card.status === 'closed';
+}
+
+/** The one wording for the routing freeze on a finished card. Thrown by the
+ *  writer (every save, the approval replay included) and by the staging
+ *  pre-check, so the gate being on or off never changes what is said. */
+export const JC_FINISHED_OPS_FROZEN_MESSAGE =
+  'This JC is Completed, so its operations cannot change. Reopen it first.';
+
+/**
+ * True when `ops` (the routing about to be written, in payload order) changes
+ * the STRUCTURE of the stored routing `existing`: an operation removed, added,
+ * moved (its new position is not its stored op_seq) or retyped. Attribute
+ * edits (machine, cycle time, program, tool, vendor, cost) are not structural.
+ * On a finished card (jobCardIsFinished) a structural change is refused —
+ * the writer and the staging pre-check both ask THIS function, so nothing is
+ * staged that the approval could only refuse.
+ */
+export function jcFinishedRoutingChanged(
+  existing: readonly { id: string; opSeq: number; opType: string }[],
+  ops: readonly { id?: string | null | undefined; opType: string }[],
+): boolean {
+  const existingById = new Map(existing.map((e) => [e.id, e]));
+  const payloadIds = new Set(ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
+  return (
+    existing.some((ex) => !payloadIds.has(ex.id)) ||
+    ops.some((o, i) => {
+      if (!o.id || !existingById.has(o.id)) return true; // added op
+      const ex = existingById.get(o.id)!;
+      return ex.opSeq !== i + 1 || o.opType !== ex.opType; // moved or retyped
+    })
+  );
+}
+
+/** The refusal for a direct machine change (jc-ops changeJcOpMachine, the
+ *  production schedule drag) while Document Edit Approval is on. Since ADR-249
+ *  Step B1 a complete / closed card is gated too, so its wording names that
+ *  state instead of implying the card is still running. Shared so the two
+ *  call sites say the same thing. */
+export function jcMachineChangeGatedMessage(card: { closedAt: unknown; status: string }): string {
+  if (jobCardIsFinished(card)) {
+    return (
+      'This Job Card is Completed or Closed, and Document Edit Approval is on — a machine ' +
+      'change on it must go for approval. Open the Job Card and edit it there.'
+    );
+  }
+  return (
+    "Changing an operation's machine isn't available while Document Edit Approval is on — " +
+    'open the Job Card and edit it there, so the change goes for approval.'
+  );
 }
 
 // Outsource statuses that mean the op is committed on its own, independent of

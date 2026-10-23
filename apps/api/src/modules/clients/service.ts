@@ -9,7 +9,7 @@ import {
 import type { DocumentEditStagedResult } from '@innovic/shared';
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { primeAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -29,6 +29,12 @@ import {
   zodRowReason,
 } from '../../lib/master-rules';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  applyImportUpdates,
+  importCounts,
+  type ImportUpdateCandidate,
+  markGone,
+} from '../../lib/master-import-approval';
 import { createClientInputSchema, updateClientImportRowSchema } from './schema';
 import type {
   BulkClientSkip,
@@ -421,6 +427,8 @@ export async function createClientsBulk(
   // Insert raises customers (`entry`); Update Existing changes saved ones (`edit`).
   await requireFormAccess(user, 'client_create', mode === 'update' ? 'edit' : 'entry');
   const companyId = requireCompany(user);
+  // ADR-249 B2: staging a row checks access inside the transaction — read it now.
+  if (mode === 'update') await primeAccess(user);
 
   return withUserContext(user, async (tx) => {
     const settings = await loadMasterRuleSettings(tx, companyId);
@@ -451,11 +459,13 @@ export async function createClientsBulk(
     const rows: MasterImportRowResult[] = [];
     const inserts: Array<typeof clients.$inferInsert> = [];
     const codes: string[] = [];
-    const updates: Array<{
-      before: ClientRow;
-      set: Record<string, unknown>;
-      changes: ReturnType<typeof diffFields>;
-    }> = [];
+    const updates: Array<
+      ImportUpdateCandidate & {
+        before: ClientRow;
+        set: Record<string, unknown>;
+        changes: ReturnType<typeof diffFields>;
+      }
+    > = [];
     const seenCodes = new Set<string>();
 
     for (const [i, raw] of input.clients.entries()) {
@@ -581,16 +591,25 @@ export async function createClientsBulk(
         nameOwner.delete(before.name.trim().toLowerCase());
         nameOwner.set(patch.name.trim().toLowerCase(), key);
       }
-      if (changes.length > 0) updates.push({ before, set, changes });
-      rows.push({
+      const row: MasterImportRowResult = {
         index,
         code: before.code,
         name: patch.name?.trim() ?? before.name,
         action: 'update',
         changedFields: changes.length,
         ...(gst.issues.length ? { warnings: issueTexts(gst.issues) } : {}),
-      });
+      };
+      rows.push(row);
+      // The approval payload = the screen's PATCH shape, filled cells only.
+      if (changes.length > 0) updates.push({ before, set, changes, row, payload: patch });
     }
+
+    // ADR-249 B2: with Document Edit Approval on, changed rows are sent for
+    // approval (lib/master-import-approval.ts); the rest are written below.
+    const directUpdates = await applyImportUpdates(tx, 'Client', companyId, updates, {
+      dryRun,
+      user,
+    });
 
     if (!dryRun) {
       // Chunked: one INSERT carries one parameter per column per row and
@@ -613,11 +632,23 @@ export async function createClientsBulk(
         );
       }
       // Update Existing: one History row per customer, Before → After (ADR-197).
-      for (const u of updates) {
-        await tx
+      for (const u of directUpdates) {
+        // Backstop: never write a record that went to Trash meanwhile.
+        const written = await tx
           .update(clients)
           .set({ ...u.set, updatedBy: user.id })
-          .where(eq(clients.id, u.before.id));
+          .where(
+            and(
+              eq(clients.id, u.before.id),
+              eq(clients.companyId, companyId),
+              isNull(clients.deletedAt),
+            ),
+          )
+          .returning({ id: clients.id });
+        if (written.length === 0) {
+          markGone('Client', u.row, u.before.code);
+          continue;
+        }
         await emitActivityLog(
           tx,
           {
@@ -641,7 +672,7 @@ export async function createClientsBulk(
       dryRun,
       mode,
       created: inserts.length,
-      updated: rows.filter((r) => r.action === 'update').length,
+      ...importCounts(rows),
       rows,
       skipped,
       codes,

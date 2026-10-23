@@ -4,6 +4,7 @@
 import type {
   CreateMlBomInput,
   DeleteMlBomInput,
+  DocumentEditStagedResult,
   ListMlBomsQuery,
   ListMlBomsResponse,
   MakeDefaultMlBomInput,
@@ -142,10 +143,13 @@ export function useCreateMlBom(saveKey?: SaveKey) {
 
 export function useUpdateMlBom(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<MlBomDetail, Error, UpdateMlBomInput>({
+  // ADR-249 Step B — with the edit-approval gate on, the PUT returns a
+  // DocumentEditStagedResult (the whole tree is held for approval) instead of
+  // the updated BOM. The edit page reads the union to tell them apart.
+  return useMutation<MlBomDetail | DocumentEditStagedResult, Error, UpdateMlBomInput>({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<MlBomDetail>(`/ml-boms/${id}`, {
+        apiFetch<MlBomDetail | DocumentEditStagedResult>(`/ml-boms/${id}`, {
           method: 'PUT',
           json: input,
           ...(headers ? { headers } : {}),
@@ -153,6 +157,11 @@ export function useUpdateMlBom(id: string, saveKey?: SaveKey) {
       ),
     onSuccess: (updated) => {
       invalidateAll(qc);
+      if ('staged' in updated) {
+        // Nothing changed on the BOM — the inbox picks up the request.
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(mlBomsKeys.detail(updated.id), updated);
     },
   });
@@ -160,14 +169,24 @@ export function useUpdateMlBom(id: string, saveKey?: SaveKey) {
 
 export function useMakeDefaultMlBom() {
   const qc = useQueryClient();
-  return useMutation<MlBomDetail, Error, { id: string } & MakeDefaultMlBomInput>({
+  // ADR-249 Step B — with the gate on, moving the Default is staged for
+  // approval: the POST returns a DocumentEditStagedResult and nothing moves.
+  return useMutation<
+    MlBomDetail | DocumentEditStagedResult,
+    Error,
+    { id: string } & MakeDefaultMlBomInput
+  >({
     mutationFn: ({ id, expectedUpdatedAt }) =>
-      apiFetch<MlBomDetail>(`/ml-boms/${id}/make-default`, {
+      apiFetch<MlBomDetail | DocumentEditStagedResult>(`/ml-boms/${id}/make-default`, {
         method: 'POST',
         json: { expectedUpdatedAt },
       }),
     onSuccess: (updated) => {
       invalidateAll(qc);
+      if ('staged' in updated) {
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(mlBomsKeys.detail(updated.id), updated);
     },
   });

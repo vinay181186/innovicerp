@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDocumentHistory } from '@/modules/activity-log/api';
+import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { Panel } from '@/ui/data';
@@ -52,6 +53,12 @@ function MlBomDetailPage(): React.JSX.Element {
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
   const [deleteReason, setDeleteReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  // ADR-249 Step B — Make Default staged for approval (nothing moved yet).
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
+  // ADR-249 Step B — an edit / Make Default held for approval leaves the BOM
+  // as it was; say so here so the change does not read as lost.
+  const pendingEdit = usePendingEditForDoc('MlBom', id);
+  const hasPendingEdit = (pendingEdit.data?.rows.length ?? 0) > 0;
 
   // Tree qty: the box shows each keystroke; the query follows 300ms later.
   const [qtyInput, setQtyInput] = useState('1');
@@ -112,9 +119,15 @@ function MlBomDetailPage(): React.JSX.Element {
 
   const onMakeDefault = (): void => {
     setActionError(null);
+    setStagedNotice(null);
     makeDefault.mutate(
       { id: detail.id, expectedUpdatedAt: detail.updatedAt },
-      { onError: (e) => setActionError(e.message) },
+      {
+        onSuccess: (res) => {
+          if (isStagedResult(res)) setStagedNotice('Sent for approval — this BOM becomes the Default once an approver signs off.');
+        },
+        onError: (e) => setActionError(e.message),
+      },
     );
   };
 
@@ -231,6 +244,20 @@ function MlBomDetailPage(): React.JSX.Element {
           <ReadField label="BOM Rev" size="sm" mono value={detail.revision} />
           <ReadField label="Remarks" size="lg" pre value={detail.remarks} />
         </ReadGrid>
+        {hasPendingEdit && !stagedNotice ? (
+          <div style={{ marginTop: 'var(--sp-2)' }}>
+            <Banner tone="info" role="status" flush>
+              A change to this BOM is waiting for approval.
+            </Banner>
+          </div>
+        ) : null}
+        {stagedNotice ? (
+          <div style={{ marginTop: 'var(--sp-2)' }}>
+            <Banner tone="success" role="status" flush onDismiss={() => setStagedNotice(null)}>
+              {stagedNotice}
+            </Banner>
+          </div>
+        ) : null}
         {actionError ? (
           <div style={{ marginTop: 'var(--sp-2)' }}>
             <Banner tone="error" role="alert" flush onDismiss={() => setActionError(null)}>

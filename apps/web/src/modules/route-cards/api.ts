@@ -2,6 +2,7 @@
 
 import type {
   CreateRouteCardInput,
+  DocumentEditStagedResult,
   ListRouteCardsQuery,
   ListRouteCardsResponse,
   RouteCard,
@@ -113,10 +114,13 @@ export function useCreateRouteCard(saveKey?: SaveKey) {
 
 export function useUpdateRouteCard(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  return useMutation<RouteCardDetail, Error, UpdateRouteCardInput>({
+  // ADR-249 Step B — when the edit-approval gate is on, the PUT returns a
+  // DocumentEditStagedResult (the whole routing is held for approval) instead
+  // of the updated card. The edit page reads the union to tell them apart.
+  return useMutation<RouteCardDetail | DocumentEditStagedResult, Error, UpdateRouteCardInput>({
     mutationFn: (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<RouteCardDetail>(`/route-cards/${id}`, {
+        apiFetch<RouteCardDetail | DocumentEditStagedResult>(`/route-cards/${id}`, {
           method: 'PUT',
           json: input,
           ...(headers ? { headers } : {}),
@@ -125,6 +129,13 @@ export function useUpdateRouteCard(id: string, saveKey?: SaveKey) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      if ('staged' in updated) {
+        // Nothing changed on the card itself — refresh so the detail page
+        // shows the pending change, and the inbox picks up the request.
+        void qc.invalidateQueries({ queryKey: routeCardsKeys.detail(id) });
+        void qc.invalidateQueries({ queryKey: ['document-edits'] });
+        return;
+      }
       qc.setQueryData(routeCardsKeys.detail(updated.id), updated);
     },
   });

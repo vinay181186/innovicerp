@@ -38,7 +38,7 @@ import {
 import { polSql } from '../../lib/pol';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
-import { jobCardIsLive } from '../job-cards/jc-op-edit';
+import { jcMachineChangeGatedMessage, jobCardIsLive } from '../job-cards/jc-op-edit';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -336,7 +336,9 @@ export async function rescheduleJcOp(
       if (await isDocEditApprovalOn(tx, companyId)) {
         // "Live" is THE Job Card rule (jobCardIsLive — what
         // jobCardEditRegistryEntry.isLive uses), fed this op's card, so the three
-        // paths cannot disagree.
+        // paths cannot disagree. Since ADR-249 Step B1 that is every card not
+        // deleted (complete / closed included); closed_at and the computed status
+        // are read for the wording only.
         const cardRows = (await tx.execute(sql`
           SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt"
           FROM public.jc_ops o
@@ -351,10 +353,7 @@ export async function rescheduleJcOp(
         `)) as unknown as Array<{ status: string; closedAt: unknown }>;
         const card = cardRows[0];
         if (card && jobCardIsLive(card)) {
-          throw new ConflictError(
-            "Changing an operation's machine isn't available while Document Edit Approval is on — " +
-              'open the Job Card and edit it there, so the change goes for approval.',
-          );
+          throw new ConflictError(jcMachineChangeGatedMessage(card));
         }
       }
     }
