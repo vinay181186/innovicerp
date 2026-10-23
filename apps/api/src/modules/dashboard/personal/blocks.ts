@@ -61,12 +61,10 @@ export function makeHolders(tx: DbTransaction, cid: string): Holders {
   return {
     of,
     async poApproversFor(value) {
-      const out: RightHolder[] = [];
-      for (const h of await of('po_create', 'approve')) {
-        const c = await ceiling(h);
-        if (c.isApprover && value <= c.approvalCeiling) out.push(h);
-      }
-      return out;
+      const all = await of('po_create', 'approve');
+      // Every approver's limit at once (memoised), not one after another.
+      const ctx = await Promise.all(all.map(ceiling));
+      return all.filter((_, i) => ctx[i]!.isApprover && value <= ctx[i]!.approvalCeiling);
     },
   };
 }
