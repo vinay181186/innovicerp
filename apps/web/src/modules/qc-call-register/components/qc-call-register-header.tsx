@@ -2,7 +2,17 @@
 // summary line · search · Stage filter · Mine toggle · the Pending|Completed
 // switch · Full History · Export). Split out of routes/index.tsx so that file
 // stays under the 400-line ceiling. Presentational — every lever is a prop.
+//
+// ADR-251: a GRN Type filter beside Stage, and an 'incoming' mode for the
+// Incoming QC screen (its own title, no Stage / Mine / Full History, and the
+// GRN Type choices narrowed to Against PO + Party GRN).
 
+import {
+  INCOMING_QC_GRN_TYPES,
+  QC_GRN_TYPES,
+  QC_GRN_TYPE_LABELS,
+  type QcGrnType,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ListHeader } from '@/ui/layout';
 import { QC_STAGES, type QcStage, type QcView, type StageStat } from './qc-sheet';
@@ -35,7 +45,11 @@ function viewBtn(
   );
 }
 
+/** Which screen the register body is drawn for (ADR-251). */
+export type QcScreenMode = 'register' | 'incoming';
+
 export function QcCallRegisterHeader(props: {
+  mode: QcScreenMode;
   view: QcView;
   setView: (v: QcView) => void;
   stage: QcStage | null;
@@ -47,6 +61,9 @@ export function QcCallRegisterHeader(props: {
   setSearch: (s: string) => void;
   onClearFilters: () => void;
   stageStats: Record<QcStage, StageStat>;
+  grnType: QcGrnType | null;
+  setGrnType: (t: QcGrnType | null) => void;
+  grnTypeStats: Record<QcGrnType, StageStat>;
   shownCount: number;
   pendingCount: number;
   completeCount: number;
@@ -54,39 +71,69 @@ export function QcCallRegisterHeader(props: {
   isEmpty: boolean;
   onExport: () => void;
 }): React.JSX.Element {
-  const { view, stage, stageStats, mineOnly, search } = props;
+  const { mode, view, stage, stageStats, mineOnly, search, grnType, grnTypeStats } = props;
+  const incoming = mode === 'incoming';
+  // The GRN Types this screen offers, and the "All" count over them.
+  const types: readonly QcGrnType[] = incoming ? INCOMING_QC_GRN_TYPES : QC_GRN_TYPES;
+  const allTypesCount = types.reduce((n, t) => n + grnTypeStats[t].count, 0);
   return (
     <ListHeader
-      title="QC Call Register"
-      icon="📋"
+      title={incoming ? 'Incoming QC' : 'QC Call Register'}
+      icon={incoming ? '🔬' : '📋'}
       count={props.shownCount}
       noun={view === 'pending' ? 'pending call' : 'completed entry'}
       nounPlural={view === 'pending' ? 'pending calls' : 'completed entries'}
       filterNote={props.stageName ?? undefined}
       search={search}
       onSearch={props.setSearch}
-      searchPlaceholder="Search JC, GRN, SO, POL, item, part, vendor…"
+      searchPlaceholder={
+        incoming
+          ? 'Search GRN, Party GRN, vendor, customer, POL, item…'
+          : 'Search JC, GRN, SO, POL, item, part, vendor…'
+      }
       filters={
         <>
+          {incoming ? null : (
+            <select
+              className="innovic-select"
+              aria-label="QC stage"
+              title="QC stage"
+              value={stage ?? ''}
+              onChange={(e) =>
+                props.setStage(e.target.value === '' ? null : (e.target.value as QcStage))
+              }
+            >
+              <option value="">
+                {`All stages (${stageStats.incoming.count + stageStats.inprocess.count + stageStats.final.count})`}
+              </option>
+              {QC_STAGES.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {`${s.label} (${stageStats[s.key].count})`}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             className="innovic-select"
-            aria-label="QC stage"
-            title="QC stage"
-            value={stage ?? ''}
+            aria-label="GRN Type"
+            title="GRN Type"
+            value={grnType ?? ''}
             onChange={(e) =>
-              props.setStage(e.target.value === '' ? null : (e.target.value as QcStage))
+              props.setGrnType(e.target.value === '' ? null : (e.target.value as QcGrnType))
             }
           >
+            {/* Register: "All" is no GRN Type filter (job-card calls included),
+                so no count; Incoming QC: both of its types, counted. */}
             <option value="">
-              {`All stages (${stageStats.incoming.count + stageStats.inprocess.count + stageStats.final.count})`}
+              {incoming ? `All GRN Types (${allTypesCount})` : 'All GRN Types'}
             </option>
-            {QC_STAGES.map((s) => (
-              <option key={s.key} value={s.key}>
-                {`${s.label} (${stageStats[s.key].count})`}
+            {types.map((t) => (
+              <option key={t} value={t}>
+                {`${QC_GRN_TYPE_LABELS[t]} (${grnTypeStats[t].count})`}
               </option>
             ))}
           </select>
-          {view === 'pending' ? (
+          {view === 'pending' && !incoming ? (
             <button
               type="button"
               className="btn btn-sm"
@@ -106,14 +153,14 @@ export function QcCallRegisterHeader(props: {
         </>
       }
       onClearFilters={props.onClearFilters}
-      filtersActive={stage !== null || mineOnly || search.trim() !== ''}
+      filtersActive={stage !== null || grnType !== null || mineOnly || search.trim() !== ''}
       tools={
         <>
           <div style={{ display: 'flex', gap: 4 }}>
             {viewBtn('pending', 'Pending', view, props.setView)}
             {viewBtn('completed', 'Completed', view, props.setView)}
           </div>
-          {view === 'completed' ? (
+          {view === 'completed' && !incoming ? (
             <Link
               to="/qc-history"
               className="btn btn-ghost btn-sm"

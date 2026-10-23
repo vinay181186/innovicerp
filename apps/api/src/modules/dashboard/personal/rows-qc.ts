@@ -4,17 +4,21 @@
 //               test) + party GRN lines by party-grn PENDING_QC_SQL.
 //               x1 = first waiting line id (the Inspect deep link),
 //               x2/x3 = the PO / JWSO behind it (id, number).
+//               kind = 'party_grn', or the GRN's GRN Type (ADR-251, the
+//               register's grnTypeSql rule) so Inspect opens the page that
+//               lists the call.
 //   capa_mine — open CAPAs where the caller is the Responsible person
 //               (capa_records.responsible holds the person's name).
 //               x1 = the next step, x2 = the problem.
 
 import { type SQL, sql } from 'drizzle-orm';
 import { PENDING_QC_SQL } from '../../party-grn/service';
+import { grnTypeSql } from '../../qc-history/register-incoming';
 import { filterFrag, type ListFilter } from './list-query';
 
 export function grnQcSql(cid: string, f: ListFilter): SQL {
   return sql`
-    SELECT g.id::text AS row_key, g.id, g.code, 'grn'::text AS kind,
+    SELECT g.id::text AS row_key, g.id, g.code, ${grnTypeSql('g')}::text AS kind,
            g.grn_date::text AS doc_date, NULL::text AS due_date, g.grn_date::text AS sort_key,
            COALESCE(v.name, g.vendor_code_text)::text AS party,
            (ARRAY_AGG(COALESCE(i.code, gl.item_code_text) ORDER BY gl.line_no))[1]::text AS item_code,

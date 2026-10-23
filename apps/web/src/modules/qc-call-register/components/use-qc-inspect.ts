@@ -9,6 +9,7 @@
 
 import type {
   IncomingQcPendingRow,
+  QcGrnType,
   QcHistoryPendingRow,
   QcRegisterPendingItem,
 } from '@innovic/shared';
@@ -30,13 +31,16 @@ export function useQcInspect(args: {
   opParam: string | undefined;
   /** Strip a consumed deep-link param from the URL (replace). */
   stripParam: (key: 'line' | 'op') => void;
+  /** ADR-251: the screen's GRN Types — a ?line= for a call the screen does not
+   *  list (Incoming QC and an OSP / NC return) finds nothing, so opens nothing. */
+  grnType?: readonly QcGrnType[] | undefined;
 }): {
   inspect: InspectTarget;
   setInspect: (t: InspectTarget) => void;
   inspectOp: QcHistoryPendingRow | null;
   inspectInc: IncomingQcPendingRow | null;
 } {
-  const { pageRows, lineParam, opParam, stripParam } = args;
+  const { pageRows, lineParam, opParam, stripParam, grnType } = args;
   const [inspect, setInspect] = useState<InspectTarget>(null);
 
   // The call to read: the open popup's, else a deep link not yet consumed.
@@ -52,6 +56,7 @@ export function useQcInspect(args: {
       view: 'pending',
       jcOpId: target?.kind === 'op' ? target.jcOpId : undefined,
       grnLineId: target?.kind === 'inc' ? target.grnLineId : undefined,
+      grnType: grnType ? [...grnType] : undefined,
       limit: 1,
       offset: 0,
     },

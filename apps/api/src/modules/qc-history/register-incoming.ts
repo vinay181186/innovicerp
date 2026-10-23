@@ -6,9 +6,37 @@
 // so a row reads the same on Incoming QC and here.
 
 import { type SQL, sql } from 'drizzle-orm';
-import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
+import type { IncomingQcCompletedRow, IncomingQcPendingRow, QcGrnType } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+
+/** A GRN's own GRN Type (no Party GRN — that is a different table). */
+export type IncGrnType = Exclude<QcGrnType, 'party_grn'>;
+
+/** ADR-251 — THE rule for a saved GRN's type, exactly as NAMING.md "Which
+ *  paper a receipt is against" and the web's grnTypeLabel decide it: NC first
+ *  (an NC-return GRN carries a DC too), then a DC, else Against PO — which
+ *  includes old GRNs with no PO / DC / NC. (A GRN Against PO cannot be booked
+ *  on a job-work / service PO — goods-receipt-notes/service.ts refuses it.)
+ *  `h` = the GRN header alias, a fixed alias written in this code, never user
+ *  input. Every caller (register filter, counts, row value, home tile) uses
+ *  this one function. */
+export function grnTypeSql(h: string): SQL {
+  return sql.raw(
+    `(CASE WHEN ${h}.nc_id IS NOT NULL THEN 'nc_return'` +
+      ` WHEN ${h}.delivery_challan_id IS NOT NULL THEN 'job_work_return' ELSE 'purchase' END)`,
+  );
+}
+
+/** The register's GRN Type expression over incJoins' aliases. */
+export const GRN_TYPE_SQL = grnTypeSql('h');
+
+const INC_GRN_TYPES: readonly IncGrnType[] = ['purchase', 'job_work_return', 'nc_return'];
+
+/** A raw "grnType" value → the typed value (unknown reads as Against PO). */
+export function toIncGrnType(v: unknown): IncGrnType {
+  return INC_GRN_TYPES.includes(v as IncGrnType) ? (v as IncGrnType) : 'purchase';
+}
 
 /** Pending qty of a GRN line (received − accepted − rejected). */
 export const INC_PENDING_QTY = sql`(l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty)`;
@@ -58,7 +86,7 @@ export const INC_PENDING_SELECT = sql`
   ${ITEM_CODE} AS "itemCode", ${ITEM_REV} AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
   l.received_qty AS "receivedQty", ${INC_PENDING_QTY} AS "pendingQty",
-  GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays"`;
+  GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays", ${GRN_TYPE_SQL} AS "grnType"`;
 
 export const INC_COMPLETED_SELECT = sql`
   l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
@@ -70,7 +98,8 @@ export const INC_COMPLETED_SELECT = sql`
   l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
   l.qc_remarks AS "qcRemarks", l.updated_at AS "qcAt",
   COALESCE(l.qc_inspected_by_text, u.full_name, u.email) AS "qcInspectedBy",
-  l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName"`;
+  l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName",
+  ${GRN_TYPE_SQL} AS "grnType"`;
 
 /** When the line was inspected — the completed register's newest-first key. */
 export const INC_DONE_AT = sql`COALESCE(l.updated_at, l.qc_date::timestamptz, h.grn_date::timestamptz)`;

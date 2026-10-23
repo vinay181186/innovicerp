@@ -26,13 +26,12 @@ import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
  *  closed union so every target stays a typed route. */
 export type OpActionTarget =
   | { to: '/op-entry'; search: { jc: string; op: string; mode: 'start' | 'complete' } }
-  | { to: '/qc-call-register'; search: { search: string } }
+  | { to: '/qc-call-register'; search: { search?: string } }
   | { to: '/qc-call-register'; search: { tab: 'tpi' } }
   | { to: '/nc-register'; search: { search: string } }
   | { to: '/purchase-orders/from-pr'; search: { prId: string } }
   | { to: '/delivery-challans/new'; search: { poId: string } }
-  | { to: '/delivery-challans/$id/receive'; params: { id: string } }
-  | { to: '/incoming-qc' };
+  | { to: '/delivery-challans/$id/receive'; params: { id: string } };
 
 export interface OpAction {
   key: string;
@@ -103,20 +102,24 @@ function outsourceLadder(
   }
   // 4. Incoming QC — L176: pieces back and not inspected. ADR-234: Inspect
   //    records a result, so it needs qc_incoming ENTRY (not view); L179: the
-  //    register when there is a PO code and qc_submit.entry, else the
-  //    Incoming QC queue (L189).
-  if (op.inQcQty > 0 && effectiveFormPerms(eff, 'qc_incoming').entry) {
-    const poCode = row.outsourcePoCode;
+  //    register (qc_submit.entry), searched by the PO code (unsearched without one).
+  //    ADR-251: an OSP return is never on Incoming QC, so there is no
+  //    fallback there — without the register right the step is not offered.
+  if (
+    op.inQcQty > 0 &&
+    effectiveFormPerms(eff, 'qc_incoming').entry &&
+    effectiveFormPerms(eff, 'qc_submit').entry
+  ) {
     out.push({
       key: 'iqc',
       label: `Inspect (${op.inQcQty})`,
       title: 'Inspect the pieces back from the vendor',
       icon: 'search',
       tone: 'qc',
-      target:
-        poCode && effectiveFormPerms(eff, 'qc_submit').entry
-          ? { to: '/qc-call-register', search: { search: poCode } }
-          : { to: '/incoming-qc' },
+      target: {
+        to: '/qc-call-register',
+        search: row.outsourcePoCode ? { search: row.outsourcePoCode } : {},
+      },
     });
   }
   return out;

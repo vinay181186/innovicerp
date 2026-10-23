@@ -312,14 +312,27 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               ]}
             />
             {/* The one next step: while any line still waits for QC. */}
+            {/* ADR-251: Incoming QC lists only GRNs Against PO; an OSP return
+                (Against JW PO / DC) or NC return is inspected on the QC Call
+                Register. Same `grnTypeLabel` rule as the identity line. */}
             {firstQcPending && canInspect ? (
-              <Link
-                to="/incoming-qc"
-                search={{ line: firstQcPending.id }}
-                className="btn btn-primary"
-              >
-                Open in Incoming QC
-              </Link>
+              grnType === 'Against NC' || grnType === 'Against JW PO / DC' ? (
+                <Link
+                  to="/qc-call-register"
+                  search={{ line: firstQcPending.id }}
+                  className="btn btn-primary"
+                >
+                  Open in QC Call Register
+                </Link>
+              ) : (
+                <Link
+                  to="/incoming-qc"
+                  search={{ line: firstQcPending.id }}
+                  className="btn btn-primary"
+                >
+                  Open in Incoming QC
+                </Link>
+              )
             ) : null}
           </div>
         </div>

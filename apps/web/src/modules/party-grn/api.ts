@@ -11,6 +11,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { dashboardKeys } from '@/modules/dashboard/api';
+import { incomingQcKeys } from '@/modules/incoming-qc/api';
+import { qcHistoryKeys } from '@/modules/qc-history/api';
 
 export const partyGrnKeys = {
   all: ['party-grn'] as const,
@@ -184,6 +187,11 @@ export function useQcPartyGrn() {
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
       void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
       void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
+      // ADR-251: the line leaves the Incoming QC / QC Call Register queue and
+      // the home dashboard's QC row.
+      void qc.invalidateQueries({ queryKey: incomingQcKeys.all });
+      void qc.invalidateQueries({ queryKey: qcHistoryKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     },
   });
 }

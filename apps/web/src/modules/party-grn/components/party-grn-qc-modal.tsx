@@ -13,7 +13,7 @@
 
 import type { PartyGrnListItem, PartyGrnQcInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { usePartyGrnDetail, useQcPartyGrn } from '../api';
 
@@ -51,6 +51,9 @@ export function PartyGrnQcModal({
   const [entries, setEntries] = useState<Record<string, QcEntry>>({});
   const [err, setErr] = useState<string | null>(null);
   const qcMut = useQcPartyGrn();
+  // §20.1 — an instant in-flight latch: isPending only disables the button
+  // after a re-render, so a fast double-click could send two requests.
+  const inFlight = useRef(false);
 
   // Default: everything received is accepted. Seeded once the lines arrive;
   // a line already typed into is never overwritten by a refetch.
@@ -125,9 +128,14 @@ export function PartyGrnQcModal({
       setErr('No line is waiting for QC.');
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
     qcMut.mutate(
       { id: row.id, lines },
       {
+        onSettled: () => {
+          inFlight.current = false;
+        },
         onSuccess: () => onClose(),
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not save Incoming QC. Try again.'),
