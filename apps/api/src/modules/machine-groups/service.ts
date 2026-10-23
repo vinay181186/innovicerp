@@ -245,31 +245,14 @@ export async function updateMachineGroupOrStage(
   user: AuthContext,
 ): Promise<MachineGroup | DocumentEditStagedResult> {
   await requireFormAccess(user, 'machine_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with
   // machine-group-edit-registry (which imports updateMachineGroupTx from here).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors machineGroupEditRegistryEntry.isLive: any live row.
-    const rows = await tx
-      .select({ id: machineGroups.id })
-      .from(machineGroups)
-      .where(
-        and(
-          eq(machineGroups.id, id),
-          eq(machineGroups.companyId, companyId),
-          isNull(machineGroups.deletedAt),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit('MachineGroup', id, input, undefined, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is machineGroupEditRegistryEntry's own rule (any not-Trash row),
+  // read through the registry so the two can never drift.
+  const request = await requestDocumentEdit('MachineGroup', id, input, undefined, user);
+  if (request) return { staged: true, request };
 
   return updateMachineGroup(id, input, user);
 }

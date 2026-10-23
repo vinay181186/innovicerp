@@ -1,6 +1,8 @@
 // JobCard entry for the edit-approval engine (ADR-202, Phase 2c).
 //
-// HEADER fields (JC_EDIT_FIELDS) AND, since ADR-220, the Job Card's OPERATIONS —
+// HEADER fields (JC_EDIT_FIELDS, plus the raw material — RM Grade, RM Size, RM
+// Item with its qty per piece — as one readable box each) AND, since ADR-220, the
+// Job Card's OPERATIONS —
 // one approvable box per change, keyed on the operation's own id (jc-op-edit.ts):
 //   op:<jcOpId>:<attr>   one attribute of an existing op
 //   op:remove:<jcOpId>   the op is removed
@@ -11,13 +13,23 @@
 // un-approvable change never becomes a box.
 //
 // LOCK ORDER (ADR-220; ADR-215 had a real 40P01 deadlock from getting this wrong):
-//   1. job_cards row  FOR UPDATE   (loadForDiff)
-//   2. jc_ops rows    FOR UPDATE   (loadForDiff, in op_seq order)
+//   1. jc_ops rows    FOR UPDATE   (loadForDiff, in op_seq order)
+//   2. job_cards row  FOR UPDATE   (loadForDiff)
 //   3. everything updateJobCardTx writes - purchase_requests (autoRaiseOspPrs) etc.
-// updateJobCardTx itself now takes job_cards FIRST (it used to write jc_ops before
-// job_cards), so the direct path and the approval path agree. executePlan locks the
-// PLAN row and only INSERTS new job_cards / jc_ops rows, so it never waits on a lock
-// taken here and cannot form a cycle with it.
+// jc_ops FIRST, then job_cards — the order every other writer of the pair uses:
+// updateJobCardTx writes jc_ops before the job_cards header (and deliberately takes
+// no job_cards lock — see the ADR-220 note there), and Op Entry holds a key-share on
+// jc_ops (the op_log FK) and THEN updates job_cards in finishJc. This entry used to
+// lock job_cards first, the opposite order, which could deadlock (40P01) against an
+// operation being completed while an approval (or, now that every OrStage reads its
+// liveness through loadForDiff, a staged save) ran on the same card. executePlan
+// locks the PLAN row and only INSERTS new job_cards / jc_ops rows, so it never waits
+// on a lock taken here and cannot form a cycle with it.
+//
+// QC docs (attachments) are NOT field edits and get no box: a new QC document sent
+// with a staged edit is not registered on approval (applyEdit sends qcDocs: []), and
+// a save whose only change is a new QC document is answered "Nothing changed to
+// approve". The upload itself stays in storage, unlinked.
 //
 // applyEdit rebuilds the routing from the CURRENT ops, applies only the approved
 // boxes, and replays through updateJobCardTx so every guard runs - it never writes
@@ -42,7 +54,8 @@
 
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { AccessFormKey, JobCardWriteInput } from '@innovic/shared';
-import { jobCards } from '../../db/schema';
+import { items, jobCards, materialGrades, materialSizes } from '../../db/schema';
+import type { DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import type { DiffField } from '../../lib/audit-trail';
 import { NotFoundError } from '../../lib/errors';
@@ -60,6 +73,7 @@ import {
   jcOpChangeLabel,
   jcOpRemoveKey,
   jcOpRemoveLabel,
+  jobCardIsLive,
   parseJcOpEditKey,
   proposedOpsForStagedKeys,
   stagedTerminalQcOpId,
@@ -78,6 +92,91 @@ import {
 } from './service';
 
 const JC_FORM_KEY: AccessFormKey = 'jc_create';
+
+/** ADR-218 — the card's raw material, one readable box each, with the Job Card
+ *  screens' own labels (docs/NAMING.md): grade / size compared and shown by NAME,
+ *  the RM item by CODE, never a uuid. A grade or size travels as id + text
+ *  together (one box), and so does the RM item with its qty per piece. */
+const JC_RM_EDIT_FIELDS: readonly DiffField[] = [
+  { key: 'rawMaterialGrade', label: 'RM Grade' },
+  { key: 'rawMaterialSize', label: 'RM Size' },
+  // ONE box for the pair, read "RM-EN8-40 × 0.5": resolveRmItem accepts the RM
+  // item and its qty per piece only together, so they are approved together.
+  { key: 'rawMaterialItem', label: 'RM Item' },
+];
+
+/** The name a grade / size resolves to, as resolveJcRawMaterial writes it: the
+ *  master's name when an id is sent (company-scoped), else the trimmed text. */
+async function rmNameOf(
+  tx: DbTransaction,
+  companyId: string,
+  kind: 'grade' | 'size',
+  id: string | null | undefined,
+  text: string | null | undefined,
+): Promise<string | null> {
+  const typed = text?.trim() || null;
+  if (!id) return typed;
+  const rows =
+    kind === 'grade'
+      ? await tx
+          .select({ name: materialGrades.name })
+          .from(materialGrades)
+          .where(and(eq(materialGrades.id, id), eq(materialGrades.companyId, companyId)))
+          .limit(1)
+      : await tx
+          .select({ name: materialSizes.name })
+          .from(materialSizes)
+          .where(and(eq(materialSizes.id, id), eq(materialSizes.companyId, companyId)))
+          .limit(1);
+  return rows[0]?.name ?? typed;
+}
+
+/** A grade / size box value, or undefined when the payload does not change it.
+ *  Compared like with like — id against id; text against text only when neither
+ *  side has an id — so a renamed master or a legacy blank snapshot never shows a
+ *  box on an edit that did not touch the raw material. The value shown is the
+ *  stored snapshot's kind of value: the master name (or the typed text). When
+ *  only the master link changes and the words stay the same, the after-value
+ *  says so, so the box is never "EN8 → EN8". */
+async function rmPickValue(
+  tx: DbTransaction,
+  companyId: string,
+  kind: 'grade' | 'size',
+  stored: { id: unknown; text: unknown },
+  sentId: string | null | undefined,
+  sentText: string | null | undefined,
+): Promise<string | null | undefined> {
+  const storedId = (stored.id as string | null | undefined) ?? null;
+  const storedText = (stored.text as string | null | undefined)?.trim() || null;
+  const nextId = sentId ?? null;
+  const nextText = sentText?.trim() || null;
+  if (nextId === storedId && (nextId !== null || nextText === storedText)) return undefined;
+  const shown = nextId ? await rmNameOf(tx, companyId, kind, nextId, nextText) : nextText;
+  if (shown !== storedText) return shown;
+  const how = nextId ? 'from master' : nextText ? 'typed' : 'cleared';
+  return shown ? `${shown} (${how})` : `(${how})`;
+}
+
+/** The RM Item box value: "RM-EN8-40 × 0.5"; null when neither half is set. */
+function rmItemValue(code: unknown, qty: unknown): string | null {
+  if (code == null && qty == null) return null;
+  return `${(code as string | null) ?? '—'} × ${qty == null ? '—' : Number(qty)}`;
+}
+
+/** The master code of an RM item, company-scoped (fallback: the id itself). */
+async function rmItemCodeOf(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string | null | undefined,
+): Promise<string | null> {
+  if (!itemId) return null;
+  const rows = await tx
+    .select({ code: items.code })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.companyId, companyId)))
+    .limit(1);
+  return rows[0]?.code ?? itemId;
+}
 
 /** What buildFilteredInput hands applyEdit: only the APPROVED header fields, by
  *  their JC_EDIT_FIELDS key. applyEdit rebuilds the full write from the CURRENT
@@ -138,10 +237,20 @@ const opAttrFormat = (attr: JcOpEditAttr): ((v: unknown) => string | number | nu
 export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
   formKey: JC_FORM_KEY,
 
+  // An operation ADDED with an outsource cost: approving it writes that cost, so
+  // a price-blind approver may reject it but not approve it. The box itself
+  // shows only the operation name, so nothing on it is masked.
+  carriesPrice(field, proposedPayload) {
+    const k = parseJcOpEditKey(field);
+    if (k?.kind !== 'add') return false;
+    const op = proposedOpsOf(proposedPayload)?.[k.index];
+    return Number(op?.outsourceCost ?? 0) !== 0;
+  },
+
   // HEADER fields only, reusing the module's own EDIT diff set + labels. The
   // computed JC status is deliberately NOT here — it is derived, not an edit.
   diffFields(target, proposedInput): readonly DiffField[] {
-    const fields: DiffField[] = [...JC_EDIT_FIELDS];
+    const fields: DiffField[] = [...JC_EDIT_FIELDS, ...JC_RM_EDIT_FIELDS];
     const ops = (target.doc['ops'] as JcOpEditRow[] | undefined) ?? [];
     const proposed = proposedOpsOf(proposedInput);
     const proposedById = new Map(
@@ -176,9 +285,23 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
   },
 
   async loadForDiff(tx, companyId, id): Promise<DocEditTarget | null> {
-    // REQUIRED: lock the job_cards row FOR UPDATE (lock 1 of 2 - see LOCK ORDER
-    // in the file header), then the jc_ops rows (lock 2): the diff is derived from
-    // them, so they must not change between here and applyEdit.
+    // REQUIRED: lock the jc_ops rows FOR UPDATE (lock 1 of 2 - see LOCK ORDER in
+    // the file header), then the job_cards row (lock 2): the diff is derived from
+    // both, so they must not change between here and applyEdit.
+    //
+    // ADR-220 - the operations, with their eligibility. The generated terminal QC
+    // op is projected out (no durable id, no box).
+    //
+    // ADR-227 - doc.terminalQcOpId below is a RECORD, not an input: it says WHICH
+    // jc_ops row was projected out of doc.ops at lock time, so the diff can be
+    // read back and understood later. NOTHING strips a routing by it. The STORED
+    // routing is already stripped here; the PROPOSED routing is stripped by the id
+    // its own payload carries (proposedOpsOf above / the `op:add:<index>` note in
+    // buildFilteredInput below), which is a different question and was the bug.
+    // Do not wire it into either path, and do not delete it because it looks
+    // unused - it is the only trace of which op the boxes exclude.
+    const allOps = await loadJcOpsForEdit(tx, companyId, id, { lock: true });
+
     const rows = await tx
       .select({
         code: jobCards.code,
@@ -190,9 +313,18 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
         drawingFilePath: jobCards.drawingFilePath,
         closedAt: jobCards.closedAt,
         updatedAt: jobCards.updatedAt,
+        rawMaterialGradeId: jobCards.rawMaterialGradeId,
+        rawMaterialGradeText: jobCards.rawMaterialGradeText,
+        rawMaterialSizeId: jobCards.rawMaterialSizeId,
+        rawMaterialSizeText: jobCards.rawMaterialSizeText,
+        rawMaterialItemId: jobCards.rawMaterialItemId,
+        rmQtyPerPiece: jobCards.rmQtyPerPiece,
         itemCode: sql<
           string | null
         >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.itemId})`,
+        rawMaterialItemCode: sql<
+          string | null
+        >`(SELECT i.code FROM public.items i WHERE i.id = ${jobCards.rawMaterialItemId})`,
       })
       .from(jobCards)
       .where(
@@ -210,18 +342,6 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
     `)) as unknown as Array<{ s: string }>;
     const status = statusRows[0]?.s ?? 'no_ops';
 
-    // ADR-220 - lock 2: the operations, with their eligibility. The generated
-    // terminal QC op is projected out (no durable id, no box).
-    //
-    // ADR-227 - doc.terminalQcOpId below is a RECORD, not an input: it says WHICH
-    // jc_ops row was projected out of doc.ops at lock time, so the diff can be
-    // read back and understood later. NOTHING strips a routing by it. The STORED
-    // routing is already stripped here; the PROPOSED routing is stripped by the id
-    // its own payload carries (proposedOpsOf above / the `op:add:<index>` note in
-    // buildFilteredInput below), which is a different question and was the bug.
-    // Do not wire it into either path, and do not delete it because it looks
-    // unused - it is the only trace of which op the boxes exclude.
-    const allOps = await loadJcOpsForEdit(tx, companyId, id, { lock: true });
     const terminalQcOpId = terminalQcOp(allOps)?.id ?? null;
     const ops = withoutOpId(allOps, terminalQcOpId);
 
@@ -234,6 +354,14 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
         dueDate: jc.dueDate,
         remarks: jc.remarks,
         drawingFilePath: jc.drawingFilePath,
+        rawMaterialGradeId: jc.rawMaterialGradeId,
+        rawMaterialGradeText: jc.rawMaterialGradeText,
+        rawMaterialSizeId: jc.rawMaterialSizeId,
+        rawMaterialSizeText: jc.rawMaterialSizeText,
+        rawMaterialItemId: jc.rawMaterialItemId,
+        // RM item by CODE (fallback: the id) — the same read afterSnapshot makes.
+        rawMaterialItemCode: jc.rawMaterialItemCode ?? jc.rawMaterialItemId,
+        rmQtyPerPiece: jc.rmQtyPerPiece,
         ops,
         terminalQcOpId,
       },
@@ -241,7 +369,7 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
       docCode: jc.code,
       // Editable while not complete / closed — the module's own rule. (JC has no
       // 'cancelled' status; a removed card is soft-deleted and filtered out above.)
-      isLive: jc.closedAt == null && status !== 'complete' && status !== 'closed',
+      isLive: jobCardIsLive({ closedAt: jc.closedAt, status }),
     };
   },
 
@@ -255,6 +383,9 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
       dueDate: d['dueDate'] ?? null,
       remarks: d['remarks'] ?? null,
       drawingFilePath: d['drawingFilePath'] ?? null,
+      rawMaterialGrade: (d['rawMaterialGradeText'] as string | null)?.trim() || null,
+      rawMaterialSize: (d['rawMaterialSizeText'] as string | null)?.trim() || null,
+      rawMaterialItem: rmItemValue(d['rawMaterialItemCode'], d['rmQtyPerPiece']),
     };
     for (const op of (d['ops'] as JcOpEditRow[] | undefined) ?? []) {
       const snap = jcOpAttrSnapshot(op);
@@ -264,7 +395,7 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
     return out;
   },
 
-  async afterSnapshot(_tx, _companyId, input, user, target) {
+  async afterSnapshot(tx, companyId, input, user, target, opts) {
     const i = input as JobCardWriteInput;
     const out: Record<string, unknown> = {};
     // The JC form always posts the whole header, so every key is present; diffFields
@@ -278,6 +409,41 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
     out['remarks'] = i.remarks ?? null;
     out['drawingFilePath'] = i.drawingFilePath ?? null;
 
+    // ADR-218 raw material — a box only for a real change to what is stored
+    // (see rmPickValue). Grade and size mirror resolveJcRawMaterial exactly: a
+    // side the payload leaves out reads as null, so an omitted grade / size is
+    // a CLEAR (a box when something is stored) — one payload, one outcome,
+    // gate on or off.
+    const d: Record<string, unknown> = target?.doc ?? {};
+    const grade = await rmPickValue(
+      tx,
+      companyId,
+      'grade',
+      { id: d['rawMaterialGradeId'], text: d['rawMaterialGradeText'] },
+      i.rawMaterialGradeId,
+      i.rawMaterialGradeText,
+    );
+    if (grade !== undefined) out['rawMaterialGrade'] = grade;
+    const size = await rmPickValue(
+      tx,
+      companyId,
+      'size',
+      { id: d['rawMaterialSizeId'], text: d['rawMaterialSizeText'] },
+      i.rawMaterialSizeId,
+      i.rawMaterialSizeText,
+    );
+    if (size !== undefined) out['rawMaterialSize'] = size;
+    // The RM item pair: a half the payload leaves out keeps its stored value,
+    // exactly as resolveJcRawMaterial reads it.
+    if (i.rawMaterialItemId !== undefined || i.rmQtyPerPiece !== undefined) {
+      const storedId = (d['rawMaterialItemId'] as string | null | undefined) ?? null;
+      const nextId = i.rawMaterialItemId !== undefined ? i.rawMaterialItemId : storedId;
+      const nextQty = i.rmQtyPerPiece !== undefined ? i.rmQtyPerPiece : d['rmQtyPerPiece'];
+      const code =
+        nextId === storedId ? d['rawMaterialItemCode'] : await rmItemCodeOf(tx, companyId, nextId);
+      out['rawMaterialItem'] = rmItemValue(code, nextQty);
+    }
+
     // ADR-220 - operations. An op key ABSENT from `after` is not a change, so a
     // key is written only for what the payload actually says.
     // Stripped exactly as diffFields strips it — both read the id (or the legacy
@@ -287,7 +453,7 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
     if (proposed) {
       // Price gate (as PO's rate): a caller who cannot see the cost posts a
       // blinded 0, which must not be read as "cost changed to 0".
-      const showMoney = await canSeeFormPrice(user, JC_FORM_KEY);
+      const showMoney = opts?.allPrices || (await canSeeFormPrice(user, JC_FORM_KEY));
       const proposedIds = new Set<string>();
       proposed.forEach((p, idx) => {
         if (!p.id) {
@@ -328,6 +494,20 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
         if (k.kind === 'attr') (approvedOps.attrs[k.jcOpId] ??= []).push(k.attr);
         else if (k.kind === 'remove') approvedOps.removes.push(k.jcOpId);
         else approvedOps.adds.push(k.index);
+      } else if (field === 'rawMaterialGrade') {
+        // One box, two columns: the grade travels as id + text together.
+        approvedHeader['rawMaterialGradeId'] = i.rawMaterialGradeId ?? null;
+        approvedHeader['rawMaterialGradeText'] = i.rawMaterialGradeText ?? null;
+      } else if (field === 'rawMaterialSize') {
+        approvedHeader['rawMaterialSizeId'] = i.rawMaterialSizeId ?? null;
+        approvedHeader['rawMaterialSizeText'] = i.rawMaterialSizeText ?? null;
+      } else if (field === 'rawMaterialItem') {
+        // One box, the pair: only the half (or halves) the payload sent travels;
+        // applyEdit fills the other from the card as stored.
+        if (i.rawMaterialItemId !== undefined) {
+          approvedHeader['rawMaterialItemId'] = i.rawMaterialItemId;
+        }
+        if (i.rmQtyPerPiece !== undefined) approvedHeader['rmQtyPerPiece'] = i.rmQtyPerPiece;
       } else if (field in proposed) {
         approvedHeader[field] = proposed[field];
       }
@@ -475,6 +655,14 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
 
     const take = <T>(key: string, fallback: T): T =>
       key in approvedHeader ? (approvedHeader[key] as T) : fallback;
+    // ADR-193 / ADR-218 — the RM item pair is sent ONLY when its RM Item box was
+    // approved (a half the request did not send keeps its stored value). Left
+    // out, the writer keeps the stored pair untouched, never re-validates it
+    // (review M2) and never writes it onto the Route Card (review M1) — exactly
+    // what a direct save from the JC form, which does not send the pair, does.
+    // Approved, it is exactly what a direct save of the same payload would send.
+    const rmItemApproved =
+      'rawMaterialItemId' in approvedHeader || 'rmQtyPerPiece' in approvedHeader;
 
     const payload: JobCardWriteInput = {
       jcDate: take('jcDate', head.jcDate),
@@ -488,13 +676,21 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
       // the full write shape is honest.
       sourceSoLineId: head.sourceSoLineId,
       sourceJwLineId: head.sourceJwLineId,
-      // Raw material carried through unchanged (the form always sends both sides).
-      rawMaterialGradeId: head.rawMaterialGradeId,
-      rawMaterialGradeText: head.rawMaterialGradeText,
-      rawMaterialSizeId: head.rawMaterialSizeId,
-      rawMaterialSizeText: head.rawMaterialSizeText,
-      rawMaterialItemId: head.rawMaterialItemId,
-      rmQtyPerPiece: head.rmQtyPerPiece == null ? null : Number(head.rmQtyPerPiece),
+      // Raw material: the CURRENT value unless its box was approved. Grade and
+      // size are always sent (the writer reads an omitted side as "clear").
+      rawMaterialGradeId: take('rawMaterialGradeId', head.rawMaterialGradeId),
+      rawMaterialGradeText: take('rawMaterialGradeText', head.rawMaterialGradeText),
+      rawMaterialSizeId: take('rawMaterialSizeId', head.rawMaterialSizeId),
+      rawMaterialSizeText: take('rawMaterialSizeText', head.rawMaterialSizeText),
+      ...(rmItemApproved
+        ? {
+            rawMaterialItemId: take('rawMaterialItemId', head.rawMaterialItemId),
+            rmQtyPerPiece: take(
+              'rmQtyPerPiece',
+              head.rmQtyPerPiece == null ? null : Number(head.rmQtyPerPiece),
+            ),
+          }
+        : {}),
       ops,
       qcDocs: [],
     };

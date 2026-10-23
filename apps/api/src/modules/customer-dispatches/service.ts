@@ -1541,60 +1541,48 @@ export async function updateCustomerDispatchOrStage(
   user: AuthContext,
 ): Promise<CustomerDispatchDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'dispatch_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with the registry (which
   // imports updateCustomerDispatchTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const rows = await tx
-      .select({ status: customerDispatches.status })
-      .from(customerDispatches)
-      .where(
-        and(
-          eq(customerDispatches.id, id),
-          eq(customerDispatches.companyId, companyId),
-          isNull(customerDispatches.deletedAt),
-        ),
-      )
-      .limit(1);
-    const status = rows[0]?.status;
-    // isLive mirrors the registry: a cancelled dispatch is not editable; every
-    // other status is LIVE (a dispatch has no draft state). Nothing to stage
-    // otherwise — fall through to the direct edit, which 404s a missing row.
-    if (status === undefined || status === 'cancelled') return false;
-
-    // Refuse add / remove at stage time too, so a staged edit never silently
-    // drops or invents a line (the registry's applyEdit rebuilds from current
-    // lines; this gives the user a clear message instead).
-    const currentIds = (
-      await tx
-        .select({ id: customerDispatchLines.id })
-        .from(customerDispatchLines)
-        .where(
-          and(
-            eq(customerDispatchLines.customerDispatchId, id),
-            isNull(customerDispatchLines.deletedAt),
-          ),
-        )
-    ).map((r) => r.id);
-    const currentSet = new Set(currentIds);
-    const inputSet = new Set(input.lines.map((l) => l.id));
-    const sameSet =
-      currentSet.size === inputSet.size && [...inputSet].every((x) => currentSet.has(x));
-    if (!sameSet) {
-      throw new ConflictError(
-        `Dispatch ${id}: lines cannot be added or removed — a dispatch's items are fixed from ` +
-          `the SO selection. Only Dispatch Qty can be edited.`,
-      );
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit('Dispatch', id, input, input.expectedUpdatedAt, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is the registry entry's own rule (a cancelled dispatch is not
+  // editable; every other status is LIVE — a dispatch has no draft state),
+  // read through the registry so the two can never drift. Nothing to stage
+  // otherwise — fall through to the direct edit, which 404s a missing row.
+  const request = await requestDocumentEdit(
+    'Dispatch',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx) => {
+      // Refuse add / remove at stage time too, so a staged edit never silently
+      // drops or invents a line (the registry's applyEdit rebuilds from current
+      // lines; this gives the user a clear message instead).
+      const currentIds = (
+        await tx
+          .select({ id: customerDispatchLines.id })
+          .from(customerDispatchLines)
+          .where(
+            and(
+              eq(customerDispatchLines.customerDispatchId, id),
+              isNull(customerDispatchLines.deletedAt),
+            ),
+          )
+      ).map((r) => r.id);
+      const currentSet = new Set(currentIds);
+      const inputSet = new Set(input.lines.map((l) => l.id));
+      const sameSet =
+        currentSet.size === inputSet.size && [...inputSet].every((x) => currentSet.has(x));
+      if (!sameSet) {
+        throw new ConflictError(
+          `Dispatch ${id}: lines cannot be added or removed — a dispatch's items are fixed from ` +
+            `the SO selection. Only Dispatch Qty can be edited.`,
+        );
+      }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateCustomerDispatch(id, input, user);
 }

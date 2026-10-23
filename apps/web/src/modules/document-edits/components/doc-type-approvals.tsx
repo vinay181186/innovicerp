@@ -1,7 +1,8 @@
 // Edit Approvals — ONE document type, on the uniform approval shell (ADR-202).
 //
-// The Approvals page draws one of these per enrolled document type (SO, GRN, Job
-// Card, Delivery Challan, NC, JWSO, Plan, Production Order). It owns a single
+// The Approvals page draws one of these per enrolled document type — every entry
+// of DOCUMENT_EDIT_ENTITIES (documents get their own tab, the masters share one
+// Masters tab with a picker). It owns a single
 // type's staged-edit queue, split Pending / Approved / Rejected by the shell's
 // status filter, and feeds the shell:
 //   • rows        — useDocumentEdits({ entity, status })
@@ -32,6 +33,7 @@ import { type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { useDecideDocumentEdit, useDocumentEditCounts, useDocumentEdits } from '../api';
 
+import { DocEditLink } from './doc-edit-link';
 import { EditRejectDialog } from './edit-reject-dialog';
 import { ApprovalTab, type ApprovalView } from '@/modules/approvals/components/approval-tab';
 
@@ -55,7 +57,8 @@ function columns(): DataTableColumn<DocumentEditRow>[] {
       kind: 'code',
       header: 'Doc No.',
       className: 'mono fw-700',
-      render: (r) => <span style={{ color: 'var(--blue)' }}>{r.docCode}</span>,
+      // Opens the document / master itself (doc-edit-link.tsx, one entry per type).
+      render: (r) => <DocEditLink row={r} />,
     },
     {
       id: 'requested_by',

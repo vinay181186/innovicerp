@@ -244,39 +244,16 @@ export async function updateQcProcessOrStage(
   user: AuthContext,
 ): Promise<QcProcess | DocumentEditStagedResult> {
   await requireFormAccess(user, 'qcprocess_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with the registry entry
   // (which imports updateQcProcessTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors the registry's isLive: any live (not-Trash) process.
-    const rows = await tx
-      .select({ id: qcProcesses.id })
-      .from(qcProcesses)
-      .where(
-        and(
-          eq(qcProcesses.id, id),
-          eq(qcProcesses.companyId, companyId),
-          isNull(qcProcesses.deletedAt),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  });
-  if (shouldStage) {
-    // The form's own version token rides along (ADR-226), so staging an edit
-    // from a stale form is refused the same way saving one is.
-    const request = await requestDocumentEdit(
-      'QcProcess',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is the registry entry's own rule (any not-Trash process), read
+  // through the registry so the two can never drift.
+  // The form's own version token rides along (ADR-226), so staging an edit
+  // from a stale form is refused the same way saving one is.
+  const request = await requestDocumentEdit('QcProcess', id, input, input.expectedUpdatedAt, user);
+  if (request) return { staged: true, request };
 
   return updateQcProcess(id, input, user);
 }

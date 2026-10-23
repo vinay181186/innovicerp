@@ -34,6 +34,9 @@ async function registerJwDoc(
   if (!file) return null;
   try {
     if (!companyId) throw new Error('no company');
+    // Never register a document under a blank JWSO code — report it as not
+    // attached instead (the caller's red banner), before anything is uploaded.
+    if (!jwCode.trim()) throw new Error('no JWSO code');
     const storagePath = await uploadJwDocFile(file, companyId);
     await createDoc.mutateAsync({
       jobWorkOrderId: jwId,
@@ -179,27 +182,21 @@ function JobWorkOrderEditPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const saved = await update.mutateAsync({ ...values, expectedUpdatedAt: opened.expected() });
-      if (isStagedResult(saved)) {
-        // The edit-approval gate is on and this JWSO is live: nothing was
-        // changed on the JWSO — the edit is now waiting for approval. Say so,
-        // then return to the JWSO (its fields now carry the pending-change
-        // chip). A picked Client PO / Email Ref file is not uploaded here while
-        // the edit is pending — re-upload it from the Documents panel.
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
-        exit.leave(
-          () => void navigate({ to: '/job-work-orders/$id', params: { id }, replace: true }),
-        );
-        return;
-      }
-      opened.saved(saved.updatedAt);
-      // Upload a newly-picked Client PO document + Email Ref against this JWSO
-      // (a failed upload is reported on the JWSO, never swallowed).
+      const staged = isStagedResult(saved);
+      // A document is its own record, not a field of the JWSO, so a newly-picked
+      // Client PO document + Email Ref is uploaded whether the edit applied or
+      // was staged for approval (as on the SO edit page). A failed upload is
+      // reported on the JWSO, never swallowed.
+      // Staged: the request names the JWSO it was raised on (docCode); else the
+      // code this page loaded. Neither → blank, and registerJwDoc reports the
+      // file as not attached rather than registering it under no code.
+      const jwCode = staged ? saved.request.docCode || detail?.code || '' : saved.code;
       const failed = [
         await registerJwDoc(
           poFileRef.current,
           me?.companyId,
           id,
-          saved.code,
+          jwCode,
           createDoc,
           'po-docs',
           'Client PO',
@@ -208,20 +205,27 @@ function JobWorkOrderEditPage(): React.JSX.Element {
           emailFileRef.current,
           me?.companyId,
           id,
-          saved.code,
+          jwCode,
           createDoc,
           'email_reference',
           'Email Reference',
         ),
       ].filter((f): f is string => f !== null);
+      const search = failed.length > 0 ? { uploadFailed: failed.join(', ') } : {};
+      if (staged) {
+        // The edit-approval gate is on and this JWSO is live: nothing was
+        // changed on the JWSO — the edit is now waiting for approval. Say so,
+        // then return to the JWSO (its fields now carry the pending-change chip).
+        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        exit.leave(
+          () =>
+            void navigate({ to: '/job-work-orders/$id', params: { id }, search, replace: true }),
+        );
+        return;
+      }
+      opened.saved(saved.updatedAt);
       exit.leave(
-        () =>
-          void navigate({
-            to: '/job-work-orders/$id',
-            params: { id },
-            search: failed.length > 0 ? { uploadFailed: failed.join(', ') } : {},
-            replace: true,
-          }),
+        () => void navigate({ to: '/job-work-orders/$id', params: { id }, search, replace: true }),
       );
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save changes. Try again.');

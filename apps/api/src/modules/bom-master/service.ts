@@ -843,46 +843,36 @@ export async function updateBomMasterOrStage(
   user: AuthContext,
 ): Promise<BomMasterDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'bom_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Engine imported dynamically to avoid a static import cycle with
   // bom-edit-registry (which imports updateBomMasterTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Live" mirrors bomEditRegistryEntry.isLive: any existing (not-Trash) BOM.
-    const rows = await tx
-      .select({ id: bomMasters.id })
-      .from(bomMasters)
-      .where(
-        and(
-          eq(bomMasters.id, id),
-          eq(bomMasters.companyId, companyId),
-          isNull(bomMasters.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (rows.length === 0) return false;
-    // Adding or removing a line cannot be staged this pass — refuse it clearly
-    // rather than let it ride along unapproved. A field change on an existing
-    // line falls through and is staged for per-change approval.
-    const current = await tx
-      .select({ childItemId: bomMasterLines.childItemId })
-      .from(bomMasterLines)
-      .where(and(eq(bomMasterLines.bomMasterId, id), isNull(bomMasterLines.deletedAt)));
-    if (bomLinesAddedOrRemoved(current, input.lines)) {
-      throw new ConflictError(
-        "Adding or removing BOM lines isn't available while Document Edit Approval is on — " +
-          "change an existing line's component/qty (it will go for approval), or turn the gate " +
-          'off to restructure the BOM.',
-      );
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit('BOM', id, input, input.expectedUpdatedAt, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is bomEditRegistryEntry's own rule (any existing, not-Trash BOM),
+  // read through the registry so the two can never drift.
+  const request = await requestDocumentEdit(
+    'BOM',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx) => {
+      // Adding or removing a line cannot be staged this pass — refuse it clearly
+      // rather than let it ride along unapproved. A field change on an existing
+      // line falls through and is staged for per-change approval.
+      const current = await tx
+        .select({ childItemId: bomMasterLines.childItemId })
+        .from(bomMasterLines)
+        .where(and(eq(bomMasterLines.bomMasterId, id), isNull(bomMasterLines.deletedAt)));
+      if (bomLinesAddedOrRemoved(current, input.lines)) {
+        throw new ConflictError(
+          "Adding or removing BOM lines isn't available while Document Edit Approval is on — " +
+            "change an existing line's component/qty (it will go for approval), or turn the gate " +
+            'off to restructure the BOM.',
+        );
+      }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateBomMaster(id, input, user);
 }

@@ -38,6 +38,7 @@ import {
 import { polSql } from '../../lib/pol';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
+import { jobCardIsLive } from '../job-cards/jc-op-edit';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -333,10 +334,11 @@ export async function rescheduleJcOp(
       // reschedule stays free (that is why this sits inside `machineChanged`).
       const { isDocEditApprovalOn } = await import('../document-edits/service');
       if (await isDocEditApprovalOn(tx, companyId)) {
-        // "Live" is the Job Card registry's own rule, read through this op's
-        // card, so the three paths cannot disagree: open, not complete/closed.
-        const liveRows = (await tx.execute(sql`
-          SELECT 1 AS one
+        // "Live" is THE Job Card rule (jobCardIsLive — what
+        // jobCardEditRegistryEntry.isLive uses), fed this op's card, so the three
+        // paths cannot disagree.
+        const cardRows = (await tx.execute(sql`
+          SELECT COALESCE(v.computed_status, 'no_ops') AS "status", jc.closed_at AS "closedAt"
           FROM public.jc_ops o
           JOIN public.job_cards jc
             ON jc.id = o.job_card_id
@@ -345,11 +347,10 @@ export async function rescheduleJcOp(
           LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
           WHERE o.id = ${jcOpId}::uuid
             AND o.deleted_at IS NULL
-            AND jc.closed_at IS NULL
-            AND COALESCE(v.computed_status, 'no_ops') NOT IN ('complete', 'closed')
           LIMIT 1
-        `)) as unknown as Array<{ one: number }>;
-        if (liveRows.length > 0) {
+        `)) as unknown as Array<{ status: string; closedAt: unknown }>;
+        const card = cardRows[0];
+        if (card && jobCardIsLive(card)) {
           throw new ConflictError(
             "Changing an operation's machine isn't available while Document Edit Approval is on — " +
               'open the Job Card and edit it there, so the change goes for approval.',

@@ -286,39 +286,22 @@ export async function updateTpiMasterOrStage(
   user: AuthContext,
 ): Promise<TpiMaster | DocumentEditStagedResult> {
   await requireFormAccess(user, 'tpimaster_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with the registry entry
   // (which imports updateTpiMasterTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors the registry's isLive: any live (not-Trash) inspector.
-    const rows = await tx
-      .select({ id: tpiMasters.id })
-      .from(tpiMasters)
-      .where(
-        and(
-          eq(tpiMasters.id, id),
-          eq(tpiMasters.companyId, companyId),
-          isNull(tpiMasters.deletedAt),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  });
-  if (shouldStage) {
-    // The form's own version token rides along (ADR-226), so staging an edit
-    // from a stale form is refused the same way saving one is.
-    const request = await requestDocumentEdit(
-      'TpiInspector',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is the registry entry's own rule (any not-Trash inspector), read
+  // through the registry so the two can never drift.
+  // The form's own version token rides along (ADR-226), so staging an edit
+  // from a stale form is refused the same way saving one is.
+  const request = await requestDocumentEdit(
+    'TpiInspector',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+  );
+  if (request) return { staged: true, request };
 
   return updateTpiMaster(id, input, user);
 }

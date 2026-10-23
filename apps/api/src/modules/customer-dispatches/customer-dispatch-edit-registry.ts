@@ -41,6 +41,8 @@ interface DispatchFilteredInput {
   header: Partial<Pick<UpdateCustomerDispatchInput, 'dispatchDate' | 'transport' | 'vehicleNo' | 'remarks'>>;
   approvedLineKeys: string[];
   proposedLines: ReadonlyArray<{ id: string; qty: number }>;
+  /** The requester's edit reason — kept on the EDIT history row the approval writes. */
+  reason?: string;
   expectedUpdatedAt?: string;
 }
 
@@ -149,6 +151,7 @@ export const customerDispatchEditRegistryEntry: DocEditRegistryEntry = {
       header,
       approvedLineKeys,
       proposedLines: input.lines,
+      ...(input.reason ? { reason: input.reason } : {}),
       ...(input.expectedUpdatedAt !== undefined ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
     } satisfies DispatchFilteredInput;
   },
@@ -187,6 +190,7 @@ export const customerDispatchEditRegistryEntry: DocEditRegistryEntry = {
       {
         ...f.header,
         lines,
+        ...(f.reason ? { reason: f.reason } : {}),
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       },
       user,

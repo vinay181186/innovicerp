@@ -1855,66 +1855,47 @@ export async function updateDeliveryChallanOrStage(
   user: AuthContext,
 ): Promise<DeliveryChallanWithLines | DocumentEditStagedResult> {
   await requireFormAccess(user, 'ospdc_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with the registry (which
   // imports updateDeliveryChallanTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const rows = await tx
-      .select({ status: deliveryChallans.status, ncId: deliveryChallans.ncId })
-      .from(deliveryChallans)
-      .where(
-        and(
-          eq(deliveryChallans.id, id),
-          eq(deliveryChallans.companyId, companyId),
-          isNull(deliveryChallans.deletedAt),
-        ),
-      )
-      .limit(1);
-    const row = rows[0];
-    // isLive mirrors the registry: only an issued DC with no receipts and no NC
-    // link is editable. Otherwise fall through to the direct edit, which raises
-    // the precise refusal (404 / status / receipts / nc).
-    if (!row || row.status !== 'issued' || row.ncId) return false;
-    if (await dcHasActiveReceipts(tx, id)) return false;
-
-    // Refuse add / remove at stage time too, so a staged edit never silently
-    // drops or invents a line.
-    const currentIds = (
-      await tx
-        .select({ id: deliveryChallanLines.id })
-        .from(deliveryChallanLines)
-        .where(
-          and(
-            eq(deliveryChallanLines.deliveryChallanId, id),
-            isNull(deliveryChallanLines.deletedAt),
-          ),
-        )
-    ).map((r) => r.id);
-    const currentSet = new Set(currentIds);
-    const inputSet = new Set(input.lines.map((l) => l.id));
-    const sameSet =
-      currentSet.size === inputSet.size && [...inputSet].every((x) => currentSet.has(x));
-    if (!sameSet) {
-      throw new ConflictError(
-        `DC ${id}: lines cannot be added or removed — a DC's items are fixed from the PO ` +
-          `selection. Only Challan Qty / Material / Remarks can be edited.`,
-      );
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit(
-      'DeliveryChallan',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is the registry entry's own rule (only an issued DC with no
+  // receipts and no NC link), read through the registry so the two can never
+  // drift. Otherwise fall through to the direct edit, which raises the precise
+  // refusal (404 / status / receipts / nc).
+  const request = await requestDocumentEdit(
+    'DeliveryChallan',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx) => {
+      // Refuse add / remove at stage time too, so a staged edit never silently
+      // drops or invents a line.
+      const currentIds = (
+        await tx
+          .select({ id: deliveryChallanLines.id })
+          .from(deliveryChallanLines)
+          .where(
+            and(
+              eq(deliveryChallanLines.deliveryChallanId, id),
+              isNull(deliveryChallanLines.deletedAt),
+            ),
+          )
+      ).map((r) => r.id);
+      const currentSet = new Set(currentIds);
+      const inputSet = new Set(input.lines.map((l) => l.id));
+      const sameSet =
+        currentSet.size === inputSet.size && [...inputSet].every((x) => currentSet.has(x));
+      if (!sameSet) {
+        throw new ConflictError(
+          `DC ${id}: lines cannot be added or removed — a DC's items are fixed from the PO ` +
+            `selection. Only Challan Qty / Material / Remarks can be edited.`,
+        );
+      }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateDeliveryChallan(id, input, user);
 }

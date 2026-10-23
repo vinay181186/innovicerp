@@ -711,33 +711,30 @@ export async function updateVendorOrStage(
 
   // Imported dynamically to avoid a static import cycle with vendor-edit-registry
   // (which imports updateVendorTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors vendorEditRegistryEntry.isLive: any live (not-Trash) vendor.
-    const rows = await tx
-      .select()
-      .from(vendors)
-      .where(and(eq(vendors.id, id), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)))
-      .limit(1);
-    const before = rows[0];
-    if (!before) return false;
-    // ADR-246 (customer rule ADR-244): a GSTIN problem is refused to the person
-    // who typed it, not held for an approver who would then hit the same refusal.
-    if (partyGstinRuleApplies(input)) {
-      const settings = await loadMasterRuleSettings(tx, companyId);
-      applyCustomerGstRules(
-        vendorGstUpdate(before, input).issues,
-        settings.masterRulesMode,
-        `Vendor ${before.code}`,
-      );
-    }
-    return true;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit('Vendor', id, input, input.expectedUpdatedAt, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is vendorEditRegistryEntry's own rule (any not-Trash vendor), read
+  // through the registry so the two can never drift. Its doc is the full row.
+  const request = await requestDocumentEdit(
+    'Vendor',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx, target) => {
+      const before = target.doc as typeof vendors.$inferSelect;
+      // ADR-246 (customer rule ADR-244): a GSTIN problem is refused to the person
+      // who typed it, not held for an approver who would then hit the same refusal.
+      if (partyGstinRuleApplies(input)) {
+        const settings = await loadMasterRuleSettings(tx, companyId);
+        applyCustomerGstRules(
+          vendorGstUpdate(before, input).issues,
+          settings.masterRulesMode,
+          `Vendor ${before.code}`,
+        );
+      }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateVendor(id, input, user);
 }

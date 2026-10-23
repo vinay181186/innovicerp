@@ -1,0 +1,219 @@
+/* ADR-250 — the one per-person home. Compact, two columns, no page scroll
+   sideways. Tokens only: late = red, due = orange (the amber tokens), ok = green,
+   none = neutral. */
+
+.dh {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.dh-code {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+.dh-mut {
+  color: var(--text3);
+}
+a.dh-link {
+  color: var(--text-link);
+  text-decoration: none;
+}
+a.dh-link:hover {
+  text-decoration: underline;
+}
+/* ActionLink fallback="text": the caller cannot open that page. */
+span.dh-link {
+  color: var(--text3);
+  cursor: default;
+}
+
+/* ── header row ── */
+.dh-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+}
+.dh-top h1 {
+  font-size: var(--fs-lg);
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dh-top h1 .dh-meta {
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  color: var(--text3);
+}
+.dh-av {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--bg2);
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  flex: none;
+}
+.dh-seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.dh-seg button,
+.dh-tabs button {
+  font: inherit;
+  font-size: var(--fs-sm);
+  border: 0;
+  background: var(--bg2);
+  color: var(--text3);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.dh-seg button[aria-pressed='true'] {
+  background: var(--blue3);
+  color: var(--blue);
+  font-weight: 700;
+}
+.dh-bell {
+  font: inherit;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.dh-bell b {
+  color: var(--amber2);
+}
+
+/* ── headline + cues ── */
+.dh-headline {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--blue);
+  border-radius: var(--radius2);
+  padding: 7px 12px;
+}
+.dh-headline .dh-link,
+.dh-headline span.dh-link,
+.dh-li .dh-link,
+.dh-li span.dh-link {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.dh-cues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dh-cue {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  padding: 5px 10px;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+a.dh-cue:hover {
+  border-color: var(--blue);
+  background: var(--bg4);
+}
+.dh-cue .dh-n {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: var(--fs-md);
+}
+.dh-cue .dh-s {
+  color: var(--text3);
+  font-size: var(--fs-sm);
+}
+.dh-cue.t-late .dh-n {
+  color: var(--red2);
+}
+.dh-cue.t-due .dh-n {
+  color: var(--amber2);
+}
+.dh-cue.t-ok .dh-n {
+  color: var(--green2);
+}
+
+/* ── two-column grid ── */
+.dh-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .dh-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.dh-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+/* ── panel ── */
+.dh-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  min-width: 0;
+}
+.dh-ph {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.dh-ph h2 {
+  font-size: var(--fs-body);
+  margin: 0;
+}
+.dh-cnt {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  color: var(--text3);
+  font-weight: 400;
+  margin-left: 4px;
+}
+.dh-tabs {
+  display: flex;
+  gap: 2px;
+}
+.dh-tabs button {
+  background: none;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+.dh-tabs button[aria-pressed='true'] {
+  background: var(--bg3);
+  color: var(--text);
+  font-weight: 700;
+}
+.dh-empty {
+  padding: 8px 12px;
+  color: var(--text3);
+}
+.dh-more {
+  padding: 5px 12px;
+  font-size: var(--fs-sm);
+}

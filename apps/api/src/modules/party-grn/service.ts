@@ -1156,51 +1156,54 @@ export async function updatePartyGrnOrStage(
 
   // Engine imported dynamically to avoid a static import cycle with
   // party-grn-edit-registry (which imports updatePartyGrnTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const lines = await tx
-      .select({
-        id: partyGrnLines.id,
-        lineNo: partyGrnLines.lineNo,
-        qcAt: partyGrnLines.qcAt,
-        acceptedQty: partyGrnLines.acceptedQty,
-        rejectedQty: partyGrnLines.rejectedQty,
-      })
-      .from(partyGrnLines)
-      .innerJoin(partyGrn, eq(partyGrn.id, partyGrnLines.partyGrnId))
-      .where(
-        and(
-          eq(partyGrnLines.partyGrnId, id),
-          eq(partyGrnLines.companyId, companyId),
-          isNull(partyGrnLines.deletedAt),
-          isNull(partyGrn.deletedAt),
-        ),
-      );
-    if (lines.length === 0) return false; // gone / cancelled — direct path reports it
-    // "Live" = at least one line still waiting for Incoming QC. A fully QC-closed
-    // GRN edits directly, like a draft (header-only, lines are frozen anyway).
-    if (!lines.some(isPendingQc)) return false;
-    // Refuse a change to a line that is no longer editable, rather than drop it.
-    const byId = new Map(lines.map((l) => [l.id, l]));
-    for (const li of input.lines ?? []) {
-      const c = byId.get(li.id);
-      if (!c) {
-        throw new ConflictError('A line in this edit is not on this Party GRN. Refresh the page.');
-      }
-      if (!isPendingQc(c)) {
-        throw new ConflictError(
-          `Line ${c.lineNo} has already been through Incoming QC — it can no longer be edited.`,
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is partyGrnEditRegistryEntry's own rule (at least one line still
+  // waiting for Incoming QC), read through the registry so the two can never
+  // drift. Gone / cancelled → the direct path reports it; a fully QC-closed GRN
+  // edits directly, like a draft (header-only, lines are frozen anyway).
+  const request = await requestDocumentEdit(
+    'PartyGrn',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx) => {
+      const lines = await tx
+        .select({
+          id: partyGrnLines.id,
+          lineNo: partyGrnLines.lineNo,
+          qcAt: partyGrnLines.qcAt,
+          acceptedQty: partyGrnLines.acceptedQty,
+          rejectedQty: partyGrnLines.rejectedQty,
+        })
+        .from(partyGrnLines)
+        .innerJoin(partyGrn, eq(partyGrn.id, partyGrnLines.partyGrnId))
+        .where(
+          and(
+            eq(partyGrnLines.partyGrnId, id),
+            eq(partyGrnLines.companyId, companyId),
+            isNull(partyGrnLines.deletedAt),
+            isNull(partyGrn.deletedAt),
+          ),
         );
+      // Refuse a change to a line that is no longer editable, rather than drop it.
+      const byId = new Map(lines.map((l) => [l.id, l]));
+      for (const li of input.lines ?? []) {
+        const c = byId.get(li.id);
+        if (!c) {
+          throw new ConflictError(
+            'A line in this edit is not on this Party GRN. Refresh the page.',
+          );
+        }
+        if (!isPendingQc(c)) {
+          throw new ConflictError(
+            `Line ${c.lineNo} has already been through Incoming QC — it can no longer be edited.`,
+          );
+        }
       }
-    }
-    return true;
-  });
-
-  if (shouldStage) {
-    const request = await requestDocumentEdit('PartyGrn', id, input, input.expectedUpdatedAt, user);
-    return { staged: true, request };
-  }
+    },
+  );
+  if (request) return { staged: true, request };
   return updatePartyGrn(id, input, user);
 }
 

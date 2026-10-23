@@ -887,10 +887,19 @@ function LineRow(props: {
   pendingChanges: readonly DocumentEditChange[];
 }): React.JSX.Element {
   const { line: l, priceHidden, poStatus, pendingChanges } = props;
-  // ADR-202 — a pending edit to this line's Qty / Rate shows as an amber chip,
-  // matched by the line's id (field key `line:<id>:qty` / `line:<id>:rate`).
+  // ADR-202 — a pending edit to one of this line's fields shows as an amber
+  // chip in that field's cell, matched by the line's id (field key
+  // `line:<id>:<attr>`, po-edit-registry LINE_ATTRS). The PR link has no column
+  // of its own, so its chip sits in Source (where the line came from); Ram
+  // Remark shares the Remarks cell, so both chips there carry their name.
+  const itemPending = linePendingChange(pendingChanges, l.id, 'item');
+  const itemNamePending = linePendingChange(pendingChanges, l.id, 'itemName');
   const qtyPending = linePendingChange(pendingChanges, l.id, 'qty');
   const ratePending = linePendingChange(pendingChanges, l.id, 'rate');
+  const dueDatePending = linePendingChange(pendingChanges, l.id, 'dueDate');
+  const prPending = linePendingChange(pendingChanges, l.id, 'pr');
+  const ramRemarkPending = linePendingChange(pendingChanges, l.id, 'ramRemark');
+  const lineRemarksPending = linePendingChange(pendingChanges, l.id, 'lineRemarks');
   // When the viewer may not see prices the Rate + Amount columns are dropped
   // from the table entirely (header + cells), not blanked.
   const amount = l.qty * Number(l.rate ?? 0);
@@ -913,10 +922,15 @@ function LineRow(props: {
           the bare code, with no trailing slash. */}
       <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
         {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
+        {itemPending ? <PendingChangeChip after={itemPending.after} /> : null}
       </td>
-      <td>{l.itemName}</td>
+      <td>
+        {l.itemName}
+        {itemNamePending ? <PendingChangeChip after={itemNamePending.after} /> : null}
+      </td>
       <td className="mono text2" style={{ fontSize: 11 }}>
         {l.sourceJcOpId ? 'JC Op' : '—'}
+        {prPending ? <PendingChangeChip label="PR No." after={prPending.after} /> : null}
       </td>
       <td className="td-num mono fw-700">
         {l.qty}
@@ -939,9 +953,18 @@ function LineRow(props: {
       >
         {pending}
       </td>
-      <td style={{ fontSize: 11 }}>{fmtDate(l.dueDate)}</td>
+      <td style={{ fontSize: 11 }}>
+        {fmtDate(l.dueDate)}
+        {dueDatePending ? <PendingChangeChip after={dueDatePending.after} /> : null}
+      </td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.lineRemarks ?? '—'}
+        {lineRemarksPending ? (
+          <PendingChangeChip label="Remarks" after={lineRemarksPending.after} />
+        ) : null}
+        {ramRemarkPending ? (
+          <PendingChangeChip label="Ram Remark" after={ramRemarkPending.after} />
+        ) : null}
       </td>
     </tr>
   );

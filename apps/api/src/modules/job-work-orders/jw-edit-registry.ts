@@ -81,7 +81,7 @@ export const jwEditRegistryEntry: DocEditRegistryEntry = {
     };
   },
 
-  async afterSnapshot(tx, companyId, input, user) {
+  async afterSnapshot(tx, companyId, input, user, _target, opts) {
     const i = input as UpdateJobWorkOrderInput;
     const h = i.header ?? {};
     const out: Record<string, unknown> = {};
@@ -97,7 +97,10 @@ export const jwEditRegistryEntry: DocEditRegistryEntry = {
     }
     // Money only when the actor may see prices — a price-blind payload would
     // otherwise read as a GST change.
-    if (h.gstPercent !== undefined && (await canSeeFormPrice(user, JW_FORM_KEY))) {
+    if (
+      h.gstPercent !== undefined &&
+      (opts?.allPrices || (await canSeeFormPrice(user, JW_FORM_KEY)))
+    ) {
       out['gstPercent'] = h.gstPercent;
     }
     return out;

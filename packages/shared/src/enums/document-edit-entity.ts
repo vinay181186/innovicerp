@@ -69,3 +69,51 @@ export const DOCUMENT_EDIT_FORM_KEY: Readonly<Record<DocumentEditEntity, AccessF
   Instrument: 'toolissue_create',
   BOM: 'bom_create',
 };
+
+// The tab / row label each enrolled type shows in Settings → Approvals. A full
+// Record, so enrolling a new entity without a label fails the typecheck and the
+// Approvals page can never again miss a type that the server stages.
+export const DOCUMENT_EDIT_LABEL: Readonly<Record<DocumentEditEntity, string>> = {
+  PurchaseOrder: 'PO Edit',
+  PurchaseRequest: 'PR Edit',
+  NonConformance: 'NC',
+  Plan: 'Plan',
+  SalesOrder: 'SO',
+  JobWorkOrder: 'JWSO',
+  GoodsReceiptNote: 'GRN',
+  JobCard: 'Job Card',
+  Dispatch: 'Dispatch',
+  DeliveryChallan: 'Delivery Challan',
+  PartyGrn: 'Party GRN',
+  ProductionOrder: 'Production Order',
+  Item: 'Item',
+  Vendor: 'Vendor',
+  Client: 'Customer',
+  Machine: 'Machine',
+  MachineGroup: 'Machine Group',
+  Operator: 'Operator',
+  CostCenter: 'Cost Centre',
+  TpiInspector: 'TPI',
+  QcProcess: 'QC Process',
+  MaterialGrade: 'Material Grade',
+  MaterialSize: 'Material Size',
+  Instrument: 'Instrument',
+  BOM: 'BOM',
+};
+
+// The masters share ONE "Masters" tab (a picker inside it chooses the master);
+// every other type gets its own tab.
+export const DOCUMENT_EDIT_MASTER_ENTITIES = [
+  'Item',
+  'Vendor',
+  'Client',
+  'Machine',
+  'MachineGroup',
+  'Operator',
+  'CostCenter',
+  'TpiInspector',
+  'QcProcess',
+  'MaterialGrade',
+  'MaterialSize',
+  'Instrument',
+] as const satisfies readonly DocumentEditEntity[];

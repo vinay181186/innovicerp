@@ -23,6 +23,7 @@ import type {
 } from '@innovic/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
 export const taskKeys = {
   all: ['tasks'] as const,
@@ -123,9 +124,17 @@ function useTaskMutation<TInput, TOut = TaskDetail>(run: (input: TInput) => Prom
   });
 }
 
-export function useCreateTask() {
+/** `saveKey` (optional): one Idempotency-Key reused for every retry of the
+ *  same create, so a double click or a resend makes ONE task (ADR-172 R2). */
+export function useCreateTask(saveKey?: SaveKey) {
   return useTaskMutation<CreateTaskInput>((input) =>
-    apiFetch<TaskDetail>('/tasks', { method: 'POST', json: input }),
+    withSaveKey(saveKey, (headers) =>
+      apiFetch<TaskDetail>('/tasks', {
+        method: 'POST',
+        json: input,
+        ...(headers ? { headers } : {}),
+      }),
+    ),
   );
 }
 

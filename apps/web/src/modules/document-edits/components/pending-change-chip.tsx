@@ -10,15 +10,23 @@ function fmtVal(v: ActivityChangeValue): string {
   return String(v);
 }
 
-/** The amber "→ after" chip. Reuses the shared `.tag` + `.b-amber` classes. */
-export function PendingChangeChip({ after }: { after: ActivityChangeValue }): React.JSX.Element {
+/** The amber "→ after" chip. Reuses the shared `.tag` + `.b-amber` classes.
+ *  `label` names the field when the cell shows more than one (e.g. a PO line's
+ *  Remarks cell carries both Remarks and Ram Remark). */
+export function PendingChangeChip({
+  after,
+  label,
+}: {
+  after: ActivityChangeValue;
+  label?: string;
+}): React.JSX.Element {
   return (
     <span
       className="tag b-amber"
       style={{ marginLeft: 6 }}
       title="A change to this field is waiting for approval"
     >
-      → {fmtVal(after)}
+      {label ? `${label} ` : ''}→ {fmtVal(after)}
     </span>
   );
 }
@@ -34,7 +42,8 @@ export function headerPendingChange(
 
 /** The pending change for a LINE field. Line changes carry a composite field
  *  key `line:<lineId>:<attr>` (attr = item | qty | rate | material | remarks |
- *  bomType | rmGrade | rmSize) so each line's change is matched exactly by the
+ *  bomType | rmGrade | rmSize, and on a PO line also itemName | dueDate | pr |
+ *  ramRemark | lineRemarks) so each line's change is matched exactly by the
  *  line's id — no reliance on label wording. `material` / `remarks` are the
  *  per-line fields a Delivery Challan edit can change (ADR-202 Phase 3) alongside
  *  its qty; `bomType` / `rmGrade` / `rmSize` are the per-line BOM Master fields
@@ -42,7 +51,20 @@ export function headerPendingChange(
 export function linePendingChange(
   changes: readonly DocumentEditChange[],
   lineId: string,
-  attr: 'item' | 'qty' | 'rate' | 'material' | 'remarks' | 'bomType' | 'rmGrade' | 'rmSize',
+  attr:
+    | 'item'
+    | 'qty'
+    | 'rate'
+    | 'material'
+    | 'remarks'
+    | 'bomType'
+    | 'rmGrade'
+    | 'rmSize'
+    | 'itemName'
+    | 'dueDate'
+    | 'pr'
+    | 'ramRemark'
+    | 'lineRemarks',
 ): DocumentEditChange | undefined {
   const key = `line:${lineId}:${attr}`;
   return changes.find((c) => c.field === key);

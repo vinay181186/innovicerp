@@ -71,10 +71,21 @@ export interface DocEditRegistryEntry {
     input: unknown,
     user: AuthContext,
     target?: DocEditTarget,
+    /** `allPrices`: include the money fields whatever `user` may see. The
+     *  decide path sets it, so the approver's own price visibility never changes
+     *  the fresh before/after the drift check compares against (a price-blind
+     *  approver would otherwise see a price box as "superseded"). */
+    opts?: { allPrices?: boolean },
   ): Promise<Record<string, unknown>>;
   /** Rebuild a proposed edit input carrying ONLY the approved field keys, or
    *  null when none remain. */
-  buildFilteredInput(proposedPayload: unknown, approvedFields: ReadonlySet<string>): unknown | null;
+  buildFilteredInput(
+    proposedPayload: unknown,
+    approvedFields: ReadonlySet<string>,
+    /** `firstApply`: no earlier decide call on this request applied anything —
+     *  for a once-per-request extra such as the BOM Revision Note. */
+    ctx?: { firstApply: boolean },
+  ): unknown | null;
   /** Apply the filtered input inside the engine's transaction (which already
    *  holds the target row lock). `expectedUpdatedAt` is the freshly-locked token. */
   applyEdit(
@@ -85,6 +96,11 @@ export interface DocEditRegistryEntry {
     expectedUpdatedAt: string | null,
     user: AuthContext,
   ): Promise<void>;
+  /** A box whose key is not a price (./price-field.ts) but whose PROPOSED value
+   *  carries one — a Job Card operation added with an outsource cost. Approving
+   *  it then needs price sight, like a price box; nothing on it is masked.
+   *  Omitted = no such box. */
+  carriesPrice?(field: string, proposedPayload: unknown): boolean;
   /** Batch lookup of each document's current updated_at, so the inbox's isStale
    *  flag costs one query per entity type, not one per request (§6 no N+1). */
   loadUpdatedAts(

@@ -83,7 +83,7 @@ export const prEditRegistryEntry: DocEditRegistryEntry = {
     };
   },
 
-  async afterSnapshot(tx, companyId, input, user) {
+  async afterSnapshot(tx, companyId, input, user, _target, opts) {
     const i = input as UpdatePurchaseRequestInput;
     const out: Record<string, unknown> = {};
     if (i.prDate !== undefined) out['prDate'] = i.prDate;
@@ -98,7 +98,10 @@ export const prEditRegistryEntry: DocEditRegistryEntry = {
     }
     // Money field only when the actor may see prices — a price-blind payload
     // carries a zod default that would otherwise read as an Est. Rate change.
-    if (i.estCost !== undefined && (await canSeeFormPrice(user, PR_FORM_KEY))) {
+    if (
+      i.estCost !== undefined &&
+      (opts?.allPrices || (await canSeeFormPrice(user, PR_FORM_KEY)))
+    ) {
       out['estCost'] = i.estCost;
     }
     return out;

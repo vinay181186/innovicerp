@@ -1781,40 +1781,23 @@ export async function updateNcRegisterOrStage(
   user: AuthContext,
 ): Promise<NcRegister | DocumentEditStagedResult> {
   await requireFormAccess(user, 'nc_dispose', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with nc-edit-registry
   // (which imports updateNcRegisterTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const rows = await tx
-      .select({ status: ncRegister.status })
-      .from(ncRegister)
-      .where(
-        and(
-          eq(ncRegister.id, id),
-          eq(ncRegister.companyId, companyId),
-          isNull(ncRegister.deletedAt),
-        ),
-      )
-      .limit(1);
-    // "Editable" mirrors ncEditRegistryEntry.isLive: only an NC Raised NC.
-    return rows[0]?.status === 'pending';
-  });
-  if (shouldStage) {
-    // The form's own version token rides along (ADR-226), so staging an edit
-    // from a stale form is refused the same way saving one is — on top of NC's
-    // own status-conditional UPDATE under lockNcRow.
-    const request = await requestDocumentEdit(
-      'NonConformance',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is ncEditRegistryEntry's own rule (only an NC Raised NC), read
+  // through the registry so the two can never drift.
+  // The form's own version token rides along (ADR-226), so staging an edit
+  // from a stale form is refused the same way saving one is — on top of NC's
+  // own status-conditional UPDATE under lockNcRow.
+  const request = await requestDocumentEdit(
+    'NonConformance',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+  );
+  if (request) return { staged: true, request };
 
   return updateNcRegister(id, input, user);
 }

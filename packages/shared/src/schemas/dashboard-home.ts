@@ -2,39 +2,14 @@
 // legacy renderHome (HTML L2486) and its sub-views. Distinct from dashboard.ts
 // (the role-filtered KPI tiles) and production-dashboard (renderDashboard).
 //
-// The home is role-aware: admin / operator / specialist layouts, plus Alerts
-// (reuses /alerts), Widgets, and Customize views. Everything is computed
+// ADR-250: one per-person home for every user (blocks gated by the caller's
+// rights), plus the Widgets and Customize views. Everything is computed
 // server-side; the web renders the returned payload.
 
 import { z } from 'zod';
+import { approvalInboxResponseSchema } from './approval-config';
 
-// ── Work List (My Work) item — legacy _buildWorkList L3196 ──
-export const workListSeveritySchema = z.enum(['critical', 'warn', 'info']);
-export type WorkListSeverity = z.infer<typeof workListSeveritySchema>;
-
-export const workListItemSchema = z.object({
-  key: z.string(),
-  dept: z.string(),
-  severity: workListSeveritySchema,
-  icon: z.string(),
-  title: z.string(),
-  detail: z.string(),
-  age: z.number().int(), // days
-  actionLabel: z.string(),
-  navPage: z.string(), // our route path
-});
-export type WorkListItem = z.infer<typeof workListItemSchema>;
-
-// ── Needs Attention (admin) — legacy L2630 ──
-export const attnItemSchema = z.object({
-  icon: z.string(),
-  label: z.string(),
-  navPage: z.string(),
-  severity: workListSeveritySchema,
-});
-export type AttnItem = z.infer<typeof attnItemSchema>;
-
-// ── Operator layout rows ──
+// ── Op rows (Running Ops board + the home ops lists) ──
 export const runningOpRowSchema = z.object({
   jcCode: z.string(),
   /** WHAT is being made. A job-card number says WHICH JOB, not which part, so
@@ -81,103 +56,197 @@ export const readyOpRowSchema = z.object({
 });
 export type ReadyOpRow = z.infer<typeof readyOpRowSchema>;
 
-// ── Specialist layout ──
-export const specialistKpiSchema = z.object({
+// ── Per-person home (ADR-250) ──
+// ONE home for every user; each block is present only when the caller holds
+// the right its action needs (effectiveFormPerms / canOpenPage on the server).
+// Replaces the admin / operator / specialist layouts (ADR-044).
+//
+// Document numbers never travel inside free text: text is a list of parts, and
+// a `code` part carries the page that opens it. The web renders every code
+// through <ActionLink fallback="text"> (ADR-234) — a link when the caller may
+// open that page, plain text when not. The server always sends the href.
+
+export const dashTextPartSchema = z.union([
+  z.object({ text: z.string() }),
+  z.object({ code: z.string(), href: z.string() }),
+]);
+export type DashTextPart = z.infer<typeof dashTextPartSchema>;
+export const dashTextSchema = z.array(dashTextPartSchema);
+export type DashText = z.infer<typeof dashTextSchema>;
+
+/** late = red, due = orange (today / waiting), ok = green, none = no colour. */
+export const dashToneSchema = z.enum(['late', 'due', 'ok', 'none']);
+export type DashTone = z.infer<typeof dashToneSchema>;
+
+/** One symbol in a row's action column. The server sends only actions the
+ *  caller holds the right for; the web still wraps each in <ActionLink>.
+ *  `href` opens a page; `taskFor` (remind) creates a linked task via the
+ *  existing POST /tasks. */
+export const dashActionKindSchema = z.enum(['create', 'open', 'inspect', 'start', 'remind']);
+export type DashActionKind = z.infer<typeof dashActionKindSchema>;
+export const dashActionSchema = z.object({
+  kind: dashActionKindSchema,
+  /** Words for the hover title / screen reader, e.g. "Create JW PO". */
   label: z.string(),
-  value: z.union([z.number(), z.string()]),
-  sub: z.string(),
-  color: z.string(),
-  navPage: z.string(),
+  href: z.string().nullable(),
+  /** remind only: who the task goes to (the person holding the next step),
+   *  and the document it links to. */
+  taskFor: z
+    .object({
+      userId: z.string().uuid(),
+      linkedRefType: z.string(),
+      linkedRefId: z.string().uuid(),
+      linkedRefDisplay: z.string(),
+      linkedRefNavPage: z.string(),
+    })
+    .nullable()
+    .default(null),
 });
-export type SpecialistKpi = z.infer<typeof specialistKpiSchema>;
+export type DashAction = z.infer<typeof dashActionSchema>;
 
-export const specialistPanelRowSchema = z.object({
-  cells: z.array(z.string()),
-  navPage: z.string(),
+export const dashRowSchema = z.object({
+  key: z.string(),
+  docCode: z.string(),
+  docHref: z.string(),
+  /** Second line under the number: party, next step, who holds it. */
+  sub: dashTextSchema,
+  itemCode: z.string().nullable(),
+  itemName: z.string().nullable(),
+  qty: z.number().nullable(),
+  uom: z.string().nullable(),
+  /** The status cell, e.g. "6 days", "due 25-Oct", "1 day late". */
+  statusLabel: z.string(),
+  tone: dashToneSchema,
+  /** Raised / received / assigned by the caller — the "Mine" switch keeps these. */
+  mine: z.boolean(),
+  /** ₹ before GST; null when the caller has no price right on that page. */
+  amount: z.number().nullable(),
+  actions: z.array(dashActionSchema),
 });
-export type SpecialistPanelRow = z.infer<typeof specialistPanelRowSchema>;
+export type DashRow = z.infer<typeof dashRowSchema>;
 
-export const specialistPanelSchema = z.object({
+export const dashListKeySchema = z.enum([
+  'pr_to_po', // approved PR, balance still to order → po_create.entry
+  'po_to_dc', // approved job-work / outsource PO, qty not yet sent → ospdc_create.entry
+  'grn_qc', // purchase GRN + party GRN lines waiting for Incoming QC → qc_incoming.entry
+  'so_to_plan', // SO / JWSO lines not fully planned → plan_create.entry
+  'plan_to_pro', // plan ready for a Production Order → prodorder_create.entry
+  'ops_ready', // job-card ops ready to run ("Ready for You") → op_entry.entry
+  'ops_running', // ops started and still running, elapsed time → op_entry.entry
+  'jc_running', // open job cards, late first → jc_create.view
+  'po_overdue', // PO delivery past due → po_create.view
+  'bom_pending', // equipment SO waiting for a BOM → bom_create.entry
+  'capa_mine', // CAPA where the caller is responsible → capa_create.edit
+]);
+export type DashListKey = z.infer<typeof dashListKeySchema>;
+
+export const dashListSchema = z.object({
+  key: dashListKeySchema,
   title: z.string(),
-  titleColor: z.string().nullable(),
-  headers: z.array(z.string()),
-  rows: z.array(specialistPanelRowSchema),
-  emptyText: z.string(),
-});
-export type SpecialistPanel = z.infer<typeof specialistPanelSchema>;
-
-// ── Home response ──
-export const homeLayoutSchema = z.enum(['admin', 'operator', 'specialist']);
-export type HomeLayout = z.infer<typeof homeLayoutSchema>;
-
-export const adminKpisSchema = z.object({
-  activeSOs: z.number().int(),
-  overdueSOs: z.number().int(),
-  dueThisWeekSOs: z.number().int(),
-  openJCs: z.number().int(),
-  overdueJCs: z.number().int(),
-  machsRunning: z.number().int(),
-  machsTotal: z.number().int(),
-  todayOutputQty: z.number().int(),
-});
-export type AdminKpis = z.infer<typeof adminKpisSchema>;
-
-export const homeTodaySchema = z.object({
-  grnReceived: z.number().int(),
-  dispatches: z.number().int(),
-  opsRunning: z.number().int(),
-  opsCompleted: z.number().int(),
-});
-export type HomeToday = z.infer<typeof homeTodaySchema>;
-
-export const homeOperatorSchema = z.object({
-  myOutputQty: z.number().int(),
-  myEntries: z.number().int(),
-  /** Every ready op (not just the first page in `ready`). */
-  readyCount: z.number().int(),
-  allRunningCount: z.number().int(),
-  running: z.array(runningOpRowSchema),
-  /** First page (25) of the Ready table — later pages: GET /dashboard/operator-ready. */
-  ready: z.array(readyOpRowSchema),
-});
-export type HomeOperator = z.infer<typeof homeOperatorSchema>;
-
-// Operator home "Ready for You" pages 2+ (ADR-201: 25 a page, only that page loaded).
-export const operatorReadyQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(200).default(25),
-  offset: z.coerce.number().int().nonnegative().default(0),
-});
-export type OperatorReadyQuery = z.infer<typeof operatorReadyQuerySchema>;
-export interface OperatorReadyResponse {
-  items: ReadyOpRow[];
-  /** Every ready op — the same figure as HomeOperator.readyCount. */
-  total: number;
-}
-
-export const homeSpecialistSchema = z.object({
+  /** Department the list belongs to — orders blocks (main dept first). */
   dept: z.string(),
-  kpis: z.array(specialistKpiSchema),
-  panels: z.array(specialistPanelSchema),
+  /** Column headers: [document, item, qty, status]. */
+  head: z.tuple([z.string(), z.string(), z.string(), z.string()]),
+  /** Every matching row — the same figure as the cue and the target page. */
+  total: z.number().int().nonnegative(),
+  /** First page (25), late first then oldest. */
+  rows: z.array(dashRowSchema),
+  /** Page with the full list. */
+  href: z.string(),
 });
-export type HomeSpecialist = z.infer<typeof homeSpecialistSchema>;
+export type DashList = z.infer<typeof dashListSchema>;
+
+export const dashCueSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  count: z.number().int().nonnegative(),
+  sub: z.string(),
+  tone: dashToneSchema,
+  href: z.string().nullable(),
+});
+export type DashCue = z.infer<typeof dashCueSchema>;
+
+export const dashTodoRowSchema = z.object({
+  taskId: z.string().uuid(),
+  taskCode: z.string(),
+  title: z.string(),
+  ref: z.object({ code: z.string(), href: z.string() }).nullable(),
+  dueDate: z.string().nullable(), // YYYY-MM-DD (IST)
+  unread: z.boolean(),
+});
+export type DashTodoRow = z.infer<typeof dashTodoRowSchema>;
+
+export const dashDoneRowSchema = z.object({
+  ts: z.string(), // ISO; shown as IST hh:mm
+  action: z.string(), // activity_log.action
+  text: dashTextSchema,
+});
+export type DashDoneRow = z.infer<typeof dashDoneRowSchema>;
+
+export const dashNoteSchema = z.object({
+  key: z.string(),
+  ts: z.string(), // ISO of the event
+  tone: dashToneSchema,
+  text: dashTextSchema,
+  /** After the caller's last "seen" time. */
+  unseen: z.boolean(),
+});
+export type DashNote = z.infer<typeof dashNoteSchema>;
 
 export const homeResponseSchema = z.object({
   userName: z.string(),
   role: z.string(),
   dateLabel: z.string(),
   greetingPart: z.string(), // morning | afternoon | evening
-  layout: homeLayoutSchema,
-  primaryDept: z.string().nullable(),
   isAdmin: z.boolean(),
-  workList: z.array(workListItemSchema),
-  kpis: adminKpisSchema.nullable(),
-  today: homeTodaySchema.nullable(),
-  needsAttention: z.array(attnItemSchema).nullable(),
-  operator: homeOperatorSchema.nullable(),
-  specialist: homeSpecialistSchema.nullable(),
+  /** Access Control main department, or the derived fallback (highest tier,
+   *  then the fixed order) used to put that department's blocks first. */
+  mainDept: z.string().nullable(),
+  headline: dashTextSchema,
+  cues: z.array(dashCueSchema),
+  /** Null when the caller holds no Approve tick → the block is not shown.
+   *  Same rows and rules as GET /approvals/inbox (one source). */
+  approvals: approvalInboxResponseSchema.nullable(),
+  /** Documents the caller raised that are waiting for someone else's approval. */
+  sentForApproval: z.array(dashRowSchema),
+  lists: z.array(dashListSchema),
+  /** The caller's own documents whose next step is someone else's (first 25). */
+  waiting: z.array(dashRowSchema),
+  /** Every waiting document — the cue figure. */
+  waitingTotal: z.number().int().nonnegative(),
+  todo: z.object({
+    late: z.array(dashTodoRowSchema),
+    today: z.array(dashTodoRowSchema),
+    planned: z.array(dashTodoRowSchema),
+  }),
+  /** Newest 50 per day; the totals count every entry of that IST day. */
+  done: z.object({
+    today: z.array(dashDoneRowSchema),
+    yesterday: z.array(dashDoneRowSchema),
+    todayTotal: z.number().int().nonnegative(),
+    yesterdayTotal: z.number().int().nonnegative(),
+  }),
+  /** Dashboard-only notifications (no email). Empty for Full Access admins. */
+  notifications: z.object({
+    items: z.array(dashNoteSchema),
+    unseen: z.number().int().nonnegative(),
+    seenAt: z.string().nullable(),
+  }),
   quickLinks: z.array(z.string()), // page keys the user can see (after access + selection)
 });
 export type HomeResponse = z.infer<typeof homeResponseSchema>;
+
+// GET /dashboard/home?scope= — the My department / Mine switch. The server
+// applies it to every list and to the totals, so a count always equals its list.
+export const homeScopeSchema = z.enum(['dept', 'mine']);
+export type HomeScope = z.infer<typeof homeScopeSchema>;
+export const homeQuerySchema = z.object({ scope: homeScopeSchema.default('dept') });
+export type HomeQuery = z.input<typeof homeQuerySchema>;
+
+// POST /dashboard/notifications/seen — moves the caller's "seen" time forward
+// (never back: the server keeps the later of the stored and the sent time).
+export const markNotificationsSeenInputSchema = z.object({ seenAt: z.string().datetime() });
+export type MarkNotificationsSeenInput = z.infer<typeof markNotificationsSeenInputSchema>;
 
 // ── Widgets (Widgets view) ──
 export const widgetStatSchema = z.object({

@@ -11,7 +11,7 @@ import type {
 } from '@innovic/shared';
 import { documentEditRequests } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireCompany, selectDocumentEditRows } from './helpers';
+import { maskPriceChanges, requireCompany, selectDocumentEditRows } from './helpers';
 import { DOC_EDIT_REGISTRY } from './registry';
 
 export async function listDocumentEdits(
@@ -29,7 +29,7 @@ export async function listDocumentEdits(
     ...(query.status ? { status: query.status } : {}),
   };
 
-  return withUserContext(user, async (tx) => {
+  const result = await withUserContext(user, async (tx) => {
     const where: SQL[] = [
       eq(documentEditRequests.companyId, companyId),
       isNull(documentEditRequests.deletedAt),
@@ -46,6 +46,10 @@ export async function listDocumentEdits(
     await markStale(tx, companyId, rows);
     return { rows, total: totals[0]?.value ?? 0 };
   });
+  // Prices hidden from a price-blind viewer — after the transaction, so the
+  // access read never holds a second connection inside it.
+  await maskPriceChanges(result.rows, user);
+  return result;
 }
 
 /** GET /document-edits/counts — per-document-type edit-request counts split by

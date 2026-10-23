@@ -1087,39 +1087,28 @@ export async function updateProductionOrderOrStage(
   user: AuthContext,
 ): Promise<ProductionOrderDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'prodorder_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with
   // production-order-edit-registry (which imports updateProductionOrderTx here).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    const rows = await tx
-      .select({ status: productionOrders.status })
-      .from(productionOrders)
-      .where(
-        and(
-          eq(productionOrders.id, id),
-          eq(productionOrders.companyId, companyId),
-          isNull(productionOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    const status = rows[0]?.status;
-    if (status === undefined) return false;
-    // "Editable" mirrors productionOrderEditRegistryEntry.isLive.
-    return PRODUCTION_ORDER_EDITABLE_STATUSES.includes(status as ProductionOrderStatus);
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit(
-      'ProductionOrder',
-      id,
-      input,
-      input.expectedUpdatedAt,
-      user,
-    );
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is productionOrderEditRegistryEntry's own rule (open or partly
+  // closed), read through the registry so the two can never drift.
+  const request = await requestDocumentEdit(
+    'ProductionOrder',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (_tx, target) => {
+      // The order's qty is never an edit (it is reduced with Short Close), and no
+      // box can carry it — so a changed qty is refused HERE with the direct
+      // writer's own message, instead of staging the rest and dropping it.
+      if (input.orderQty !== undefined && input.orderQty !== target.doc['orderQty']) {
+        throw new ConflictError('Change the Production Order quantity with Short Close, not edit.');
+      }
+    },
+  );
+  if (request) return { staged: true, request };
 
   return updateProductionOrder(id, input, user);
 }

@@ -740,25 +740,14 @@ export async function updateItemOrStage(
   user: AuthContext,
 ): Promise<ItemSaveResponse | DocumentEditStagedResult> {
   await requireFormAccess(user, 'item_create', 'edit');
-  const companyId = requireCompany(user);
 
   // Imported dynamically to avoid a static import cycle with item-edit-registry
   // (which imports updateItemTx from this file).
-  const { isDocEditApprovalOn, requestDocumentEdit } = await import('../document-edits/service');
-  const shouldStage = await withUserContext(user, async (tx) => {
-    if (!(await isDocEditApprovalOn(tx, companyId))) return false;
-    // "Editable" mirrors itemEditRegistryEntry.isLive: any live (not-Trash) item.
-    const rows = await tx
-      .select({ id: items.id })
-      .from(items)
-      .where(and(eq(items.id, id), eq(items.companyId, companyId), isNull(items.deletedAt)))
-      .limit(1);
-    return rows.length > 0;
-  });
-  if (shouldStage) {
-    const request = await requestDocumentEdit('Item', id, input, input.expectedUpdatedAt, user);
-    return { staged: true, request };
-  }
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  // "Live" is itemEditRegistryEntry's own rule (any not-Trash item), read
+  // through the registry so the two can never drift.
+  const request = await requestDocumentEdit('Item', id, input, input.expectedUpdatedAt, user);
+  if (request) return { staged: true, request };
 
   return updateItem(id, input, user);
 }
