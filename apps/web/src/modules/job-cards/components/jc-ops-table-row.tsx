@@ -46,9 +46,6 @@ function go(navigate: Navigate, t: OpActionTarget): void {
     case '/delivery-challans/$id/receive':
       void navigate({ to: '/delivery-challans/$id/receive', params: t.params });
       return;
-    case '/incoming-qc':
-      void navigate({ to: '/incoming-qc' });
-      return;
   }
 }
 

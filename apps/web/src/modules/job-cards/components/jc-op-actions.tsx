@@ -171,25 +171,24 @@ function OutsourceNextAction({
   //    there is nothing to inspect and the button must not show.
   //    Opens the QC Call Register (the same screen the 🔬 Inspect button on a
   //    QC op opens) searched by this op's PO code — its incoming rows match on
-  //    PO code, so the inspector lands on this job card's GRN line. Falls back
-  //    to the Incoming QC queue when there is no PO code or no register access.
-  if (op.inQcQty > 0 && effectiveFormPerms(eff, 'qc_incoming').view) {
-    const poCode = row.outsourcePoCode;
+  //    PO code, so the inspector lands on this job card's GRN line (the whole
+  //    register when there is none — GRN rows do not match a JC code). ADR-251: an OSP return is never on
+  //    Incoming QC, so there is no fallback there; without register access
+  //    the button is not offered (it could only land on a no-access panel).
+  if (
+    op.inQcQty > 0 &&
+    effectiveFormPerms(eff, 'qc_incoming').view &&
+    effectiveFormPerms(eff, 'qc_submit').view
+  ) {
     actions.push(
-      poCode && effectiveFormPerms(eff, 'qc_submit').view ? (
-        <Link
-          key="iqc"
-          to="/qc-call-register"
-          search={{ search: poCode }}
-          title="Inspect the pieces back from the vendor"
-        >
-          🔬 Inspect ({op.inQcQty})
-        </Link>
-      ) : (
-        <Link key="iqc" to="/incoming-qc" title="Inspect the pieces back from the vendor">
-          🔬 Inspect ({op.inQcQty})
-        </Link>
-      ),
+      <Link
+        key="iqc"
+        to="/qc-call-register"
+        search={row.outsourcePoCode ? { search: row.outsourcePoCode } : {}}
+        title="Inspect the pieces back from the vendor"
+      >
+        🔬 Inspect ({op.inQcQty})
+      </Link>,
     );
   }
 

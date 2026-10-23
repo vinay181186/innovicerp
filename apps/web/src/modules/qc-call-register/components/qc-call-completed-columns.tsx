@@ -14,22 +14,19 @@
 // finished part (CODE/REV), Item Name = the customer RM, SO / Vendor = the
 // customer, Remarks = the reject reason.
 
-import type { IncomingQcCompletedRow, PartyGrnQcRow, QcHistoryLogRow } from '@innovic/shared';
+import type { QcRegisterCompletedItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
-import { pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
-import { dayDiff } from './qc-sheet';
+import { incomingStageLabel, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
+import { QC_STAGES, dayDiff, processStage } from './qc-sheet';
 
 /** One completed inspection, from either feed. The raw row is kept so the page
  *  can open the right document and the feed can be time-ordered. */
-export type CompletedVM =
-  | { kind: 'op'; row: QcHistoryLogRow }
-  | { kind: 'inc'; row: IncomingQcCompletedRow }
-  | { kind: 'pgrn'; row: PartyGrnQcRow };
+export type CompletedVM = QcRegisterCompletedItem;
 
 /** Stable row key — the same `proc:` / `inc:` prefixes the old sheet used, plus
  *  `pgrn:` for a Party GRN line. */
@@ -116,6 +113,15 @@ function operationOf(vm: CompletedVM): string {
     ? `Op ${opSrNo(vm.row.opSeq)} ${vm.row.operation}`
     : `GRN ${vm.row.grnNo}`;
 }
+/** ADR-251 — the Stage cell: process calls by stage, incoming ones by GRN Type
+ *  ("Incoming · Direct Purchase"). */
+function stageLabelOf(vm: CompletedVM): string {
+  if (vm.kind === 'op') {
+    const k = processStage(vm.row.isLastOp);
+    return QC_STAGES.find((s) => s.key === k)?.label ?? '—';
+  }
+  return incomingStageLabel(vm.kind === 'pgrn' ? 'party_grn' : vm.grnType);
+}
 function remarksOf(vm: CompletedVM): string | null {
   if (vm.kind === 'pgrn') return vm.row.rejectReason;
   return vm.kind === 'op' ? vm.row.remarks : vm.row.qcRemarks;
@@ -161,6 +167,7 @@ function respDisplay(vm: CompletedVM): string {
 
 /** Columns that start hidden — the fit engine shows them in the ▸ detail row. */
 export const COMPLETED_HIDDEN = [
+  'stage',
   'item_name',
   'pol',
   'so_vendor',
@@ -276,6 +283,18 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       title: (vm) => inspectedByOf(vm) ?? '',
     },
     // ─── ▸ detail (hidden by default) ───────────────────────────────────────
+    {
+      id: 'stage',
+      kind: 'badge',
+      header: 'Stage',
+      nowrap: true,
+      render: (vm) => (
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>
+          {stageLabelOf(vm)}
+        </span>
+      ),
+      filterValue: (vm) => stageLabelOf(vm),
+    },
     {
       id: 'item_name',
       header: 'Item Name',

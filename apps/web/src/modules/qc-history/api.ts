@@ -49,7 +49,12 @@ export function fetchQcLogs(q: ListQcLogsQuery): Promise<QcLogsListResponse> {
   return apiFetch<QcLogsListResponse>(`/qc-history/logs${qs(q)}`);
 }
 export function fetchQcRegister(q: QcRegisterQuery): Promise<QcRegisterResponse> {
-  return apiFetch<QcRegisterResponse>(`/qc-history/register${qs(q)}`);
+  // ADR-251: grnType goes out as one comma list (`grnType=purchase,party_grn`).
+  const { grnType, ...rest } = q;
+  const grnTypeParam = Array.isArray(grnType) ? grnType.join(',') : grnType;
+  return apiFetch<QcRegisterResponse>(
+    `/qc-history/register${qs({ ...rest, grnType: grnTypeParam })}`,
+  );
 }
 
 /** QC Pending ops — one page (ADR-201). */

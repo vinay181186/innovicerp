@@ -74,6 +74,13 @@ const poHref = (r: RawRow) => docNavPage('purchase-order', r.id);
 const jcHref = (r: RawRow) => docNavPage('job-card', r.id);
 const grnHref = (r: RawRow) =>
   r.kind === 'party_grn' ? entityHref('PartyGrn', r.id, r.code)! : docNavPage('grn', r.id);
+const grnInspectHref = (r: RawRow): string => {
+  if (r.kind === 'party_grn') return `/incoming-qc?search=${encodeURIComponent(r.code)}`;
+  const line = encodeURIComponent(r.x1 ?? '');
+  if (r.kind === 'job_work_return' || r.kind === 'nc_return')
+    return `/qc-call-register?line=${line}`;
+  return `/incoming-qc?line=${line}`;
+};
 const orderHref = (r: RawRow) =>
   r.kind === 'jw' ? docNavPage('job-work-order', r.id) : docNavPage('sales-order', r.id);
 const opText = (r: RawRow): DashText => [
@@ -115,7 +122,9 @@ export const LIST_DEFS: readonly ListDef[] = [
     key: 'grn_qc',
     title: 'Incoming QC',
     head: ['GRN No.', 'Item', 'Received', 'Status'],
-    href: '/incoming-qc',
+    // ADR-251: the tile lists EVERY incoming call (OSP / NC returns too), so
+    // its "all" link is the QC Call Register, whose Incoming stage it matches.
+    href: '/qc-call-register',
     rights: [['qc_incoming', 'entry']],
     priceForm: null,
     query: (c, f) => grnQcSql(c.cid, f),
@@ -125,13 +134,10 @@ export const LIST_DEFS: readonly ListDef[] = [
       r.kind === 'party_grn'
         ? withCode(r, 'JWSO', r.x3, r.x2 ? docNavPage('job-work-order', r.x2) : null)
         : withCode(r, 'PO', r.x3, r.x2 ? docNavPage('purchase-order', r.x2) : null),
-    actions: (r) =>
-      r.kind === 'party_grn'
-        ? [
-            { kind: 'inspect', label: 'Inspect', href: grnHref(r) },
-            { kind: 'inspect', label: 'Inspect', href: '/qc-call-register' },
-          ]
-        : [{ kind: 'inspect', label: 'Inspect', href: `/incoming-qc?line=${r.x1 ?? ''}` }],
+    // ADR-251: Inspect opens the page that lists the call — Party GRN and
+    // Against PO on Incoming QC; Against JW PO / DC and Against NC on the QC
+    // Call Register. kind = 'party_grn' or the GRN Type (rows-qc.ts).
+    actions: (r) => [{ kind: 'inspect', label: 'Inspect', href: grnInspectHref(r) }],
   },
   {
     key: 'so_to_plan',

@@ -20,20 +20,18 @@
 // customer; Operation reads "Party GRN · <JWSO> Ln <n>". It files under the
 // Incoming stage. Whole pieces only.
 
-import type { IncomingQcPendingRow, PartyGrnQcRow, QcHistoryPendingRow } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import type { PartyGrnQcRow, QcGrnType, QcRegisterPendingItem } from '@innovic/shared';
+import { QC_GRN_TYPE_LABELS, opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { QC_STAGES, dayDiff, processStage, type QcStage } from './qc-sheet';
 
-/** One pending call, from either feed. The raw row is kept so the page can open
- *  the right document and the right inspect popup off it. */
-export type PendingVM =
-  | { kind: 'op'; row: QcHistoryPendingRow }
-  | { kind: 'inc'; row: IncomingQcPendingRow }
-  | { kind: 'pgrn'; row: PartyGrnQcRow };
+/** One pending call, from either feed — the register's own item, so a GRN
+ *  line carries its GRN Type (ADR-251). The raw row is kept so the page can
+ *  open the right document and the right inspect popup off it. */
+export type PendingVM = QcRegisterPendingItem;
 
 /** Stable row key — the same `op:` / `inc:` prefixes the old sheet used, plus
  *  `pgrn:` for a Party GRN line. */
@@ -60,6 +58,20 @@ const STAGE_LABEL = Object.fromEntries(QC_STAGES.map((s) => [s.key, s.label])) a
   QcStage,
   string
 >;
+
+/** ADR-251 — an incoming call's Stage cell names its GRN Type:
+ *  "Incoming · Direct Purchase", "Incoming · Party GRN". Plain "Incoming" when an
+ *  older API build sent no type. */
+export function incomingStageLabel(grnType: QcGrnType | undefined): string {
+  return grnType
+    ? `${STAGE_LABEL.incoming} · ${QC_GRN_TYPE_LABELS[grnType]}`
+    : STAGE_LABEL.incoming;
+}
+/** The Stage cell text for a pending call. */
+function stageLabelOf(vm: PendingVM): string {
+  if (vm.kind === 'op') return STAGE_LABEL[processStage(vm.row.isLastOp)];
+  return incomingStageLabel(vm.kind === 'pgrn' ? 'party_grn' : vm.grnType);
+}
 
 function qcPending(vm: PendingVM): number {
   return vm.kind === 'op' ? vm.row.qcPending : vm.row.pendingQty;
@@ -229,10 +241,10 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       nowrap: true,
       render: (vm) => (
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>
-          {STAGE_LABEL[pendingStageOf(vm)]}
+          {stageLabelOf(vm)}
         </span>
       ),
-      filterValue: (vm) => STAGE_LABEL[pendingStageOf(vm)],
+      filterValue: (vm) => stageLabelOf(vm),
     },
     // ─── ▸ detail (hidden by default) ───────────────────────────────────────
     {

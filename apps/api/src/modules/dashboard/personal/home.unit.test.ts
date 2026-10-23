@@ -85,16 +85,24 @@ describe('list gating per tier', () => {
     const qc = dash({ departments: { qc: 'L2' } });
     const d = lists.listDef('grn_qc')!;
     const party = raw({ kind: 'party_grn', code: 'IN-PGRN-1' });
-    // QC without Party Material view: Inspect goes through the QC Call Register.
+    // ADR-251: Party GRN and Against-PO calls are inspected on Incoming QC.
     expect(lists.toDashRow(d, party, rowCtx(qc)).actions.map((x) => x.href)).toEqual([
-      '/qc-call-register',
+      '/incoming-qc?search=IN-PGRN-1',
     ]);
+    const osp = raw({ kind: 'job_work_return', x1: 'line-2' });
+    expect(lists.toDashRow(d, osp, rowCtx(qc)).actions.map((x) => x.href)).toEqual([
+      '/qc-call-register?line=line-2',
+    ]);
+    // QC Call Register hidden: the OSP-return Inspect goes, Incoming QC's stay.
     const hidden = dash({
       departments: { qc: 'L2' },
       forms: { qc_submit: perms({ viewOff: true }) },
     });
-    expect(lists.toDashRow(d, party, rowCtx(hidden)).actions).toEqual([]);
-    const grn = raw({ kind: 'grn', x1: 'line-1' });
+    expect(lists.toDashRow(d, osp, rowCtx(hidden)).actions).toEqual([]);
+    expect(lists.toDashRow(d, party, rowCtx(hidden)).actions.map((x) => x.href)).toEqual([
+      '/incoming-qc?search=IN-PGRN-1',
+    ]);
+    const grn = raw({ kind: 'purchase', x1: 'line-1' });
     expect(lists.toDashRow(d, grn, rowCtx(hidden)).actions.map((x) => x.href)).toEqual([
       '/incoming-qc?line=line-1',
     ]);

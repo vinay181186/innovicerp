@@ -14324,3 +14324,46 @@ ignored the approver list and the limit, and pending QC missed party GRNs.
 - Negative: notifications are "new since last seen", not per-item read/dismiss.
 - Open (separate changes, D4): `GET /activity-log` and the Alerts module still check
   only the company — to be fixed right after this.
+
+## ADR-251: Incoming QC lists Direct Purchase + Party GRN calls, on the QC Call Register layout
+
+**Date:** 2026-10-23
+**Status:** Accepted (owner "ok", 2026-10-23)
+
+### Context
+
+Quality → Incoming QC read company GRN lines only (`goods_receipt_note_lines`),
+so a Party GRN (customer material on a JWSO) waiting for QC was on the QC Call
+Register and the home "Incoming QC" tile but never on the page of that name.
+It also listed OSP returns (Against JW PO / DC) and NC returns, and it had its own
+layout (tile strip, two-tab FIT tables) unlike the QC Call Register.
+
+### Decision
+
+1. Incoming QC lists two GRN Types only: **Direct Purchase** (a GRN against a purchase PO; the label was "Against PO" until the owner found it unclear, 2026-10-23) and
+   **Party GRN**. Against JW PO / DC and Against NC calls are inspected from the
+   QC Call Register.
+2. GRN Type of an incoming call is derived on read, never stored, by one SQL
+   expression (`register-incoming.ts` `GRN_TYPE_SQL`) in the NAMING.md order:
+   `nc_id` → Against NC; `delivery_challan_id` →
+   Against JW PO / DC; otherwise Direct Purchase (old GRNs with no PO/DC/NC included).
+   A Party GRN line is its own type. Shared values: `QC_GRN_TYPES`.
+3. `GET /qc-history/register` takes `grnType` (comma list). When set, job-card
+   calls drop out and the incoming halves are narrowed to those types. The summary
+   carries `grnTypes` — the Incoming stage split by type; the four add up to it.
+4. The Incoming QC screen IS the QC Call Register screen in 'incoming' mode
+   (`grnType = purchase,party_grn`): same header, Pending | Completed, columns,
+   ▸ details, Inspect popups, Export and paging. No Stage, Mine, TPI or Full
+   History there. Page right stays `qc_incoming` (view to see, entry to inspect).
+5. The QC Call Register gets a GRN Type filter beside Stage.
+6. Links that pointed at Incoming QC for OSP / NC returns (JC op card, GRN detail,
+   GRN task link, home tile Inspect) now go to the QC Call Register.
+
+### Alternatives Considered
+
+- Keep the old Incoming QC layout and add Party GRN rows — declined by the owner
+  (layout must match the QC Call Register).
+- Negative: the old tile strip (incl. Value in QC) and per-column Sort & Filter
+  are gone from Incoming QC, as on the QC Call Register.
+- No write path changed; both QC saves (`/incoming-qc/:line/inspect`,
+  `/party-grn/:id/qc`) keep their §20.2 conditional updates. No migration.

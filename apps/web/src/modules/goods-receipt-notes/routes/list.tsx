@@ -35,7 +35,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useGoodsReceiptNotesList } from '../api';
 import { GrnExpandedLines } from '../components/grn-expanded-lines';
-import { goodsReceiptNoteListColumns } from '../components/grn-list-columns';
+import { goodsReceiptNoteListColumns, grnTypeLabel } from '../components/grn-list-columns';
 import { useGrnPrint } from '../components/use-grn-print';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
@@ -345,7 +345,11 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             type: 'GRN',
             id: assignGrn.id,
             display: assignGrn.code,
-            navPage: '/incoming-qc',
+            // ADR-251: Incoming QC lists only GRNs Against PO; an OSP / NC
+            // return is inspected on the QC Call Register.
+            navPage: ['Against NC', 'Against JW PO / DC'].includes(grnTypeLabel(assignGrn) ?? '')
+              ? '/qc-call-register'
+              : '/incoming-qc',
           }}
           suggestedTitle={`Inspect ${assignGrn.code}`}
           onClose={() => setAssignGrn(null)}

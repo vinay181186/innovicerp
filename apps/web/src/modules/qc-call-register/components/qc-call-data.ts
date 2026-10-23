@@ -4,11 +4,13 @@
 // applied there over EVERY call. The stage counts and the register totals are
 // the server's whole-register summary — never counted from the loaded page.
 
-import type {
-  QcRegisterCompletedItem,
-  QcRegisterPendingItem,
-  QcRegisterQuery,
-  QcRegisterSummary,
+import {
+  INCOMING_QC_GRN_TYPES,
+  type QcGrnType,
+  type QcRegisterCompletedItem,
+  type QcRegisterPendingItem,
+  type QcRegisterQuery,
+  type QcRegisterSummary,
 } from '@innovic/shared';
 import { useMemo, useRef } from 'react';
 import { LIST_PAGE_SIZE, pageOffset } from '@/lib/list-paging';
@@ -26,9 +28,14 @@ export interface QcCallData {
   total: number;
   /** Stage figures over the WHOLE register, for the stage dropdown. */
   stageStats: Record<QcStage, StageStat>;
+  /** ADR-251: the Incoming stage split by GRN Type, for the GRN Type dropdown. */
+  grnTypeStats: Record<QcGrnType, StageStat>;
   pendingCount: number;
   completeCount: number;
   pcsPending: number;
+  /** ADR-251: the same three totals over the Incoming QC screen's GRN Types
+   *  (Direct Purchase + Party GRN) only — that screen's summary line. */
+  incomingTotals: { pendingCount: number; completeCount: number; pcsPending: number };
   loaded: boolean;
   isLoading: boolean;
   isFetching: boolean;
@@ -48,16 +55,42 @@ function stageStatsOf(s: QcRegisterSummary | undefined, view: QcView): Record<Qc
   return { incoming: one('incoming'), inprocess: one('inprocess'), final: one('final') };
 }
 
+function grnTypeStatsOf(
+  s: QcRegisterSummary | undefined,
+  view: QcView,
+): Record<QcGrnType, StageStat> {
+  const one = (k: QcGrnType): StageStat => {
+    // `?.` on grnTypes: an API build older than ADR-251 does not send it.
+    const st = s?.grnTypes?.[k];
+    return {
+      count: (view === 'pending' ? st?.pendingCount : st?.doneCount) ?? 0,
+      pcsPending: st?.pcsPending ?? 0,
+      done: st?.doneCount ?? 0,
+      doneCapped: false,
+    };
+  };
+  return {
+    purchase: one('purchase'),
+    party_grn: one('party_grn'),
+    job_work_return: one('job_work_return'),
+    nc_return: one('nc_return'),
+  };
+}
+
 export function useQcCallData(args: {
   view: QcView;
   stage: QcStage | null;
   /** Debounced search term ('' = none). */
   search: string;
   mineOnly: boolean;
+  /** ADR-251: only incoming calls of these GRN Types; undefined = no narrowing. */
+  grnType: readonly QcGrnType[] | undefined;
   /** 1-based page. */
   page: number;
 }): QcCallData {
-  const { view, stage, search, mineOnly, page } = args;
+  const { view, stage, search, mineOnly, grnType, page } = args;
+  // A stable key for the memo below — the caller may build a fresh array.
+  const grnTypeKey = grnType?.join(',') ?? '';
   const query = useMemo(
     (): Omit<QcRegisterQuery, 'limit' | 'offset'> => ({
       view,
@@ -65,8 +98,9 @@ export function useQcCallData(args: {
       search: search || undefined,
       // "Mine" is a pending-queue filter: QC Command assigns open calls only.
       mine: view === 'pending' && mineOnly ? 'true' : undefined,
+      grnType: grnTypeKey ? (grnTypeKey.split(',') as QcGrnType[]) : undefined,
     }),
-    [view, stage, search, mineOnly],
+    [view, stage, search, mineOnly, grnTypeKey],
   );
   const res = useQcRegister({ ...query, limit: LIST_PAGE_SIZE, offset: pageOffset(page) });
   const data = res.data;
@@ -78,6 +112,19 @@ export function useQcCallData(args: {
   const items = dataView.current === view ? (data?.items ?? []) : [];
   const summary = data?.summary;
   const stageStats = useMemo(() => stageStatsOf(summary, view), [summary, view]);
+  const grnTypeStats = useMemo(() => grnTypeStatsOf(summary, view), [summary, view]);
+  const incomingTotals = useMemo(() => {
+    let pendingCount = 0;
+    let completeCount = 0;
+    let pcsPending = 0;
+    for (const t of INCOMING_QC_GRN_TYPES) {
+      const st = summary?.grnTypes?.[t];
+      pendingCount += st?.pendingCount ?? 0;
+      completeCount += st?.doneCount ?? 0;
+      pcsPending += st?.pcsPending ?? 0;
+    }
+    return { pendingCount, completeCount, pcsPending };
+  }, [summary]);
 
   return {
     query,
@@ -85,9 +132,11 @@ export function useQcCallData(args: {
     completedRows: view === 'completed' ? (items as QcRegisterCompletedItem[]) : [],
     total: data?.total ?? 0,
     stageStats,
+    grnTypeStats,
     pendingCount: summary?.pendingCount ?? 0,
     completeCount: summary?.completeCount ?? 0,
     pcsPending: summary?.pcsPending ?? 0,
+    incomingTotals,
     loaded: data !== undefined,
     isLoading: res.isLoading,
     isFetching: res.isFetching,

@@ -106,6 +106,10 @@ export const TABLE_KEYS = {
   qcCallCompleted: 'qc-call-completed',
   incomingQcPending: 'incoming-qc-pending',
   incomingQcDone: 'incoming-qc-done',
+  // ADR-251: Incoming QC on the register's columns — new keys, so a layout
+  // saved for the old Incoming QC columns is not applied to these.
+  incomingQcCallPending: 'incoming-qc-call-pending',
+  incomingQcCallCompleted: 'incoming-qc-call-completed',
   qcCommandQueue: 'qc-command-queue',
   qcCommandFpy: 'qc-command-fpy',
   qcCommandInspector: 'qc-command-inspector',

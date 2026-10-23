@@ -14,9 +14,16 @@
 // ADR-203: Party GRN lines (customer material against a JWSO line) are a third
 // kind, 'pgrn'. They belong to the Incoming stage: they ride with the GRN half
 // everywhere (on / off, sort keys, stage counts).
+//
+// ADR-251: `grnType` narrows to incoming calls of those GRN Types — the
+// job-card half drops out, the GRN half keeps only its listed types
+// (GRN_TYPE_SQL), the Party GRN half is on only for 'party_grn'. Incoming QC
+// is this register with grnType = purchase,party_grn.
 
 import { type SQL, sql } from 'drizzle-orm';
 import {
+  QC_GRN_TYPES,
+  type QcGrnType,
   type QcRegisterCompletedItem,
   type QcRegisterPendingItem,
   type QcRegisterResponse,
@@ -32,14 +39,17 @@ import {
   withUserContext,
 } from '../../db/with-user-context';
 import {
+  GRN_TYPE_SQL,
   INC_COMPLETED_SELECT,
   INC_DONE_AT,
   INC_PENDING_QTY,
   INC_PENDING_SELECT,
   incCompletedFrom,
   incPendingFrom,
+  type IncGrnType,
   incSearchWhere,
   toIncCompletedRow,
+  toIncGrnType,
   toIncPendingRow,
 } from './register-incoming';
 import {
@@ -84,6 +94,15 @@ function idList(ids: string[]): SQL {
   );
 }
 
+/** ADR-251: `AND <type> IN (…)` for the GRN half — empty when not narrowed. */
+function incTypeWhere(types: readonly IncGrnType[] | null): SQL {
+  if (types === null) return sql``;
+  return sql`AND ${GRN_TYPE_SQL} IN (${sql.join(
+    types.map((t) => sql`${t}`),
+    sql`, `,
+  )})`;
+}
+
 /** The caller's full name + short form, lower-cased — "Mine" matches either. */
 async function myNames(tx: Tx, userId: string): Promise<string[]> {
   const r = rows(
@@ -105,9 +124,19 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
     let opOn = input.stage !== 'incoming';
     // Party GRN calls: same stage + "Mine" rule as the GRN half; no deep link.
     let pgrnOn = incOn;
+    // ADR-251 GRN Type: process calls drop out; each GRN half stays on only
+    // when one of its types is asked for (on top of the stage / "Mine" rule).
+    let incTypes: IncGrnType[] | null = null;
+    if (input.grnType !== undefined) {
+      incTypes = input.grnType.filter((t): t is IncGrnType => t !== 'party_grn');
+      opOn = false;
+      incOn = incOn && incTypes.length > 0;
+      pgrnOn = pgrnOn && input.grnType.includes('party_grn');
+    }
     if (one) {
-      incOn = input.grnLineId !== undefined;
-      opOn = input.jcOpId !== undefined;
+      // The single-call read (?line= / ?op=) still honours the GRN Type.
+      incOn = input.grnLineId !== undefined && (incTypes === null || incTypes.length > 0);
+      opOn = input.jcOpId !== undefined && input.grnType === undefined;
       pgrnOn = false;
     }
     let mineWhere = sql``;
@@ -130,7 +159,7 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
       const incPart = sql`
         SELECT 'inc'::text AS kind, l.id AS id, 0 AS k0, h.grn_date AS d_inc, h.code AS c_inc,
           NULL::date AS d_op, NULL::text AS c_op, NULL::int AS s_op
-        ${incPendingFrom(companyId)} ${incSearchWhere(input.search, true)}
+        ${incPendingFrom(companyId)} ${incSearchWhere(input.search, true)} ${incTypeWhere(incTypes)}
         ${input.grnLineId ? sql`AND l.id = ${input.grnLineId}::uuid` : sql``}`;
       const opPart = sql`
         SELECT 'op'::text AS kind, vos.jc_op_id AS id, 1 AS k0, NULL::date AS d_inc,
@@ -147,7 +176,8 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
     } else {
       const incPart = sql`
         SELECT 'inc'::text AS kind, l.id AS id, ${INC_DONE_AT} AS at
-        ${incCompletedFrom(companyId)} ${incSearchWhere(input.search, false)}`;
+        ${incCompletedFrom(companyId)} ${incSearchWhere(input.search, false)}
+        ${incTypeWhere(incTypes)}`;
       const opPart = sql`
         SELECT 'op'::text AS kind, ol.id AS id, ol.created_at AS at
         ${logsFrom(companyId)} ${opSearchWhere(input.search)}
@@ -197,7 +227,11 @@ async function hydrate(
         sql`SELECT ${INC_PENDING_SELECT} ${incPendingFrom(companyId)} AND l.id IN (${idList(incIds)})`,
       );
       for (const x of rows(r))
-        byId.set(`inc:${String(x['grnLineId'])}`, { kind: 'inc', row: toIncPendingRow(x) });
+        byId.set(`inc:${String(x['grnLineId'])}`, {
+          kind: 'inc',
+          row: toIncPendingRow(x),
+          grnType: toIncGrnType(x['grnType']),
+        });
     }
     if (pgrnIds.length > 0) {
       const r = await tx.execute(
@@ -220,7 +254,11 @@ async function hydrate(
         sql`SELECT ${INC_COMPLETED_SELECT} ${incCompletedFrom(companyId)} AND l.id IN (${idList(incIds)})`,
       );
       for (const x of rows(r))
-        byId.set(`inc:${String(x['grnLineId'])}`, { kind: 'inc', row: toIncCompletedRow(x) });
+        byId.set(`inc:${String(x['grnLineId'])}`, {
+          kind: 'inc',
+          row: toIncCompletedRow(x),
+          grnType: toIncGrnType(x['grnType']),
+        });
     }
     if (pgrnIds.length > 0) {
       const r = await tx.execute(
@@ -256,20 +294,25 @@ async function registerSummary(tx: Tx, companyId: string): Promise<QcRegisterSum
         COALESCE(SUM(vos.qc_pending) FILTER (WHERE NOT ${PEND_IS_LAST}), 0)::numeric AS "ipPcs"
       ${pendingFrom(companyId)}`),
   )[0];
-  const inc = rows(
+  // ADR-251: the GRN half split by GRN Type (one row per type present).
+  const incByType = rows(
     await tx.execute(sql`
-      SELECT COUNT(*)::int AS n, COALESCE(SUM(${INC_PENDING_QTY}), 0)::numeric AS pcs
-      ${incPendingFrom(companyId)}`),
-  )[0];
+      SELECT ${GRN_TYPE_SQL} AS t, COUNT(*)::int AS n,
+        COALESCE(SUM(${INC_PENDING_QTY}), 0)::numeric AS pcs
+      ${incPendingFrom(companyId)}
+      GROUP BY 1`),
+  );
   const opDone = rows(
     await tx.execute(sql`
       SELECT COUNT(*) FILTER (WHERE ${LOG_IS_LAST})::int AS "finalN",
         COUNT(*) FILTER (WHERE NOT ${LOG_IS_LAST})::int AS "ipN"
       ${logsFrom(companyId)}`),
   )[0];
-  const incDone = rows(
-    await tx.execute(sql`SELECT COUNT(*)::int AS n ${incCompletedFrom(companyId)}`),
-  )[0];
+  const incDoneByType = rows(
+    await tx.execute(
+      sql`SELECT ${GRN_TYPE_SQL} AS t, COUNT(*)::int AS n ${incCompletedFrom(companyId)} GROUP BY 1`,
+    ),
+  );
   // ADR-203: Party GRN calls count under the Incoming stage.
   const pgrn = rows(
     await tx.execute(sql`
@@ -281,11 +324,29 @@ async function registerSummary(tx: Tx, companyId: string): Promise<QcRegisterSum
   )[0];
   const n = (r: Raw | undefined, k: string): number => Number(r?.[k] ?? 0);
   const pcs = (v: number): number => Math.round(v * 1000) / 1000;
+  const ofType = (rs: Raw[], t: QcGrnType): Raw | undefined => rs.find((r) => r['t'] === t);
+  const grnTypes = {} as QcRegisterSummary['grnTypes'];
+  for (const t of QC_GRN_TYPES) {
+    grnTypes[t] =
+      t === 'party_grn'
+        ? {
+            pendingCount: n(pgrn, 'n'),
+            pcsPending: pcs(n(pgrn, 'pcs')),
+            doneCount: n(pgrnDone, 'n'),
+          }
+        : {
+            pendingCount: n(ofType(incByType, t), 'n'),
+            pcsPending: pcs(n(ofType(incByType, t), 'pcs')),
+            doneCount: n(ofType(incDoneByType, t), 'n'),
+          };
+  }
+  // The Incoming stage = the sum of its four GRN Types, so the two always agree.
+  const types = QC_GRN_TYPES.map((t) => grnTypes[t]);
   const stages: QcRegisterSummary['stages'] = {
     incoming: {
-      pendingCount: n(inc, 'n') + n(pgrn, 'n'),
-      pcsPending: pcs(n(inc, 'pcs') + n(pgrn, 'pcs')),
-      doneCount: n(incDone, 'n') + n(pgrnDone, 'n'),
+      pendingCount: types.reduce((a, x) => a + x.pendingCount, 0),
+      pcsPending: pcs(types.reduce((a, x) => a + x.pcsPending, 0)),
+      doneCount: types.reduce((a, x) => a + x.doneCount, 0),
     },
     inprocess: {
       pendingCount: n(op, 'ipN'),
@@ -301,6 +362,7 @@ async function registerSummary(tx: Tx, companyId: string): Promise<QcRegisterSum
   const all = [stages.incoming, stages.inprocess, stages.final];
   return {
     stages,
+    grnTypes,
     pendingCount: all.reduce((a, s) => a + s.pendingCount, 0),
     completeCount: all.reduce((a, s) => a + s.doneCount, 0),
     pcsPending: pcs(all.reduce((a, s) => a + s.pcsPending, 0)),

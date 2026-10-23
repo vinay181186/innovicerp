@@ -173,6 +173,36 @@ export interface QcLogsListResponse {
 export const QC_REGISTER_STAGES = ['incoming', 'inprocess', 'final'] as const;
 export type QcRegisterStage = (typeof QC_REGISTER_STAGES)[number];
 
+// ADR-251 — the GRN Type of an incoming call, named as NAMING.md names a GRN's
+// paper ("GRN Type": Direct Purchase / Against JW PO / DC / Against NC), plus the
+// Party GRN (customer material against a JWSO line). Derived on read from
+// nc_id → delivery_challan_id → otherwise Direct Purchase
+// (register-incoming.ts GRN_TYPE_SQL), never stored. The Incoming QC screen is
+// the register narrowed to `purchase` + `party_grn`.
+export const QC_GRN_TYPES = ['purchase', 'party_grn', 'job_work_return', 'nc_return'] as const;
+export type QcGrnType = (typeof QC_GRN_TYPES)[number];
+export const QC_GRN_TYPE_LABELS: Record<QcGrnType, string> = {
+  purchase: 'Direct Purchase',
+  party_grn: 'Party GRN',
+  job_work_return: 'Against JW PO / DC',
+  nc_return: 'Against NC',
+};
+/** The GRN Types the Incoming QC screen lists (ADR-251, owner 2026-10-23). */
+export const INCOMING_QC_GRN_TYPES: readonly QcGrnType[] = ['purchase', 'party_grn'];
+
+/** `?grnType=purchase,party_grn` — a comma list; blank / omitted = no narrowing. */
+const grnTypeListParam = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    const parts = (Array.isArray(v) ? v : v.split(','))
+      .map((x) => x.trim())
+      .filter((x) => x !== '');
+    return parts.length > 0 ? parts : undefined;
+  })
+  .pipe(z.array(z.enum(QC_GRN_TYPES)).min(1).optional());
+
 export const qcRegisterQuerySchema = z.object({
   view: z.enum(['pending', 'completed']).default('pending'),
   /** Omitted = every stage. */
@@ -187,6 +217,8 @@ export const qcRegisterQuerySchema = z.object({
   jcOpId: z.string().uuid().optional(),
   /** One pending incoming call (the Inspect popup / ?line= deep link). */
   grnLineId: z.string().uuid().optional(),
+  /** ADR-251: only incoming calls of these GRN Types (job-card calls drop out). */
+  grnType: grnTypeListParam,
   limit: limitParam,
   offset: offsetParam,
 });
@@ -230,11 +262,11 @@ export interface PartyGrnQcRow {
 
 export type QcRegisterPendingItem =
   | { kind: 'op'; row: QcHistoryPendingRow }
-  | { kind: 'inc'; row: IncomingQcPendingRow }
+  | { kind: 'inc'; row: IncomingQcPendingRow; grnType: Exclude<QcGrnType, 'party_grn'> }
   | { kind: 'pgrn'; row: PartyGrnQcRow };
 export type QcRegisterCompletedItem =
   | { kind: 'op'; row: QcHistoryLogRow }
-  | { kind: 'inc'; row: IncomingQcCompletedRow }
+  | { kind: 'inc'; row: IncomingQcCompletedRow; grnType: Exclude<QcGrnType, 'party_grn'> }
   | { kind: 'pgrn'; row: PartyGrnQcRow };
 
 export interface QcRegisterStageSummary {
@@ -249,6 +281,8 @@ export interface QcRegisterStageSummary {
 /** Whole-register figures (not narrowed by search / stage / Mine). */
 export interface QcRegisterSummary {
   stages: Record<QcRegisterStage, QcRegisterStageSummary>;
+  /** ADR-251: the Incoming stage split by GRN Type — the four add up to it. */
+  grnTypes: Record<QcGrnType, QcRegisterStageSummary>;
   pendingCount: number;
   completeCount: number;
   pcsPending: number;
