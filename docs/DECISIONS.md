@@ -14367,3 +14367,59 @@ layout (tile strip, two-tab FIT tables) unlike the QC Call Register.
   are gone from Incoming QC, as on the QC Call Register.
 - No write path changed; both QC saves (`/incoming-qc/:line/inspect`,
   `/party-grn/:id/qc`) keep their §20.2 conditional updates. No migration.
+
+## ADR-252: QC Dossier — SO / JWSO → POL → report folders; mandatory report on Submit QC
+
+**Date:** 2026-10-23
+**Status:** Accepted (owner, 2026-10-23)
+
+### Context
+
+QC reports were kept in four places that never met: the QC entry itself
+(`op_log.qc_report_path`, Op Entry / TPI / QC Call Register), QC Documents uploads
+(`qc_documents`), the Job Card form (`file_registry` 'qc-docs') and GRN lines. The QC
+Documents matrix only counted `qc_documents`, so a report attached in Op Entry showed
+"report missing". No QC file carried a POL; JWSO jobs were not covered; report names
+were free text that never matched the matrix; a line counted complete with reports
+missing; "Download All" saved files one by one. The owner asked for all QC reports at
+one location: SO No. → POL folders → MIR / DIR / … folders.
+
+### Decision
+
+1. A **Dossier** tab on QC Documents: order (SO or JWSO, D1) → POL → report folders →
+   files. Folders are labels on each file, never storage paths. One server read over
+   all the stores; no files are moved.
+2. A line's folders are the reports produced by the QC steps on its job cards (rework
+   children included): `jc_ops.operation` → QC Process Master code (trimmed,
+   case-insensitive, `packages/shared/src/lib/qc-report.ts`) → `qc_processes.report_type_id`
+   → `report_types`. No QC step = "No QC steps" (nothing missing); no JC = "No JC yet".
+3. A report belongs to its **QC Entry** (`op_log` log_type 'qc'). Missing is counted per
+   entry with accepted qty > 0; a step with no entry is "QC not done", not missing. The
+   Pieces from–to box is dropped (D6) — it only numbered accepted qty.
+4. **Mandatory** report types (MIR, DIR, MCR, TPI — `report_types.default_mandatory`):
+   `submitQcLog` refuses a QC entry with accepted qty and no report (D7, the one writer
+   of QC entries, used by Op Entry, TPI and QC Call Register). Optional ones save and
+   stay missing until uploaded. `op_log.report_required` is stamped at submit; entries
+   from before this change (NULL) show red in the Dossier only (D8).
+5. A line is ✓ only when every QC step has entries and every entry has its report (D2).
+6. Home list **Reports to upload** (`qc_report_missing`) + bell, for `qcdocs_upload`
+   entry holders only (ADR-250 rights rule).
+7. ZIP download in the browser (JSZip, D3): `SO/POL-n_item/Report/file`. Replacing a
+   report keeps the old file as an earlier revision (D4).
+8. Every QC Documents read needs `qcdocs_upload` view; uploads need `qcdocs_upload`
+   entry (ticks, ADR-232). The API connects as postgres and bypasses RLS, so the
+   role-based write policy on `qc_documents` (admin / manager / qc) stays as the guard
+   on direct browser writes. Every stored report path must sit under the company's own
+   folder (`lib/storage-path.ts`). Migration 0216.
+
+### Alternatives Considered
+
+- Real storage folders per SO/POL — rejected: a renamed POL or moved JC breaks paths.
+- Copying op_log reports into qc_documents — rejected: two writers of one fact (§20.1).
+- Block every report type — owner chose mandatory only (D7 "A for mandatory").
+
+### Consequences
+
+- Positive: one place, same ✓ counts on Dossier, Matrix, SO QC Status and the home.
+- Negative: Op Entry / TPI / QC Call Register refuse a MIR/DIR/MCR/TPI result without
+  its file. Storage-folder policies (all modules) are still company-wide — separate change.

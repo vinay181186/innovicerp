@@ -1,11 +1,15 @@
 import {
   createQcDocumentInputSchema,
   listQcDocumentsQuerySchema,
-  qcLineDetailQuerySchema,
+  qcDossierOrdersQuerySchema,
+  qcDossierQuerySchema,
+  qcDossierUrlsInputSchema,
   qcMatrixQuerySchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
+import * as dossier from './dossier';
+import * as matrix from './matrix';
 import * as service from './service';
 
 export async function qcDocumentsRoutes(app: FastifyInstance): Promise<void> {
@@ -18,19 +22,32 @@ export async function qcDocumentsRoutes(app: FastifyInstance): Promise<void> {
   // SO-pivoted QC-completion matrix (legacy renderQCDocuments L23039).
   app.get('/qc-documents/so-list', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.listQcMatrixSos(req.user);
+    return matrix.listQcMatrixSos(req.user);
   });
 
   app.get('/qc-documents/matrix', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const query = qcMatrixQuerySchema.parse(req.query);
-    return service.getQcMatrix(query.salesOrderId, req.user);
+    return matrix.getQcMatrix(query.salesOrderId, req.user);
   });
 
-  app.get('/qc-documents/line-detail', async (req) => {
+  // ADR-252 — QC Dossier: SO / JWSO -> POL -> report folders -> files.
+  app.get('/qc-documents/dossier/orders', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    const query = qcLineDetailQuerySchema.parse(req.query);
-    return service.getQcLineDetail(query.jobCardId, req.user);
+    const query = qcDossierOrdersQuerySchema.parse(req.query);
+    return dossier.listQcDossierOrders(query, req.user);
+  });
+
+  app.get('/qc-documents/dossier', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = qcDossierQuerySchema.parse(req.query);
+    return dossier.getQcDossier(query, req.user);
+  });
+
+  app.post('/qc-documents/dossier/urls', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = qcDossierUrlsInputSchema.parse(req.body);
+    return dossier.getQcDossierUrls(input, req.user);
   });
 
   app.post('/qc-documents', async (req) => {

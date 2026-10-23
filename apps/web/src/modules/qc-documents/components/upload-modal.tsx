@@ -1,20 +1,18 @@
 // Upload QC Document modal (register view's 📎 Upload Document). Split out of
-// routes/list.tsx. Unchanged behaviour.
+// routes/list.tsx. ADR-252: the Document Type list is the Report Types master
+// (reportTypeId is sent; the server writes the type's own name).
 
-import {
-  QC_DOC_CATEGORIES,
-  QC_DOC_TYPES,
-  type CreateQcDocumentInput,
-  type QcDocCategory,
-} from '@innovic/shared';
+import { QC_DOC_CATEGORIES, type CreateQcDocumentInput, type QcDocCategory } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useJobCardsList } from '@/modules/job-cards/api';
+import { useReportTypes } from '@/modules/report-types/api';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
-import { uploadQcFile, useCreateQcDocument } from '../api';
+import { QC_REPORT_ACCEPT, QC_REPORT_MAX_BYTES, uploadQcFile, useCreateQcDocument } from '../api';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 
 export function UploadModal({
@@ -24,10 +22,14 @@ export function UploadModal({
   companyId: string;
   onClose: () => void;
 }): React.JSX.Element {
-  const create = useCreateQcDocument();
+  const saveKey = useSaveKey();
+  const create = useCreateQcDocument(saveKey);
   const [file, setFile] = useState<File | null>(null);
   const [category, setCategory] = useState<QcDocCategory>('qc-docs');
-  const [docType, setDocType] = useState<string>(QC_DOC_TYPES[0]);
+  // Document Type = a Report Types master row (Active ones only).
+  const reportTypes = useReportTypes({ limit: 1000, offset: 0 });
+  const typeOptions = (reportTypes.data?.items ?? []).filter((t) => t.status === 'Active');
+  const [reportTypeId, setReportTypeId] = useState<string>('');
   // JC / SO are picked from their masters (a hand-typed code broke the link on
   // every typo). The picked id is SAVED with the code — the SO matrix and the
   // line detail find a JC's files by job_card_id, so code text alone never
@@ -51,12 +53,20 @@ export function UploadModal({
       setErr('Choose a file to upload.');
       return;
     }
+    if (!reportTypeId) {
+      setErr('Pick the Document Type.');
+      return;
+    }
+    if (file.size > QC_REPORT_MAX_BYTES) {
+      setErr('File too large (max 10 MB).');
+      return;
+    }
     setBusy(true);
     try {
       const storagePath = await uploadQcFile(file, companyId);
       const input: CreateQcDocumentInput = {
         category,
-        docType,
+        reportTypeId,
         fileName: file.name,
         storagePath,
         ...(jcId ? { jobCardId: jcId } : {}),
@@ -108,19 +118,24 @@ export function UploadModal({
               <input
                 type="file"
                 className="innovic-input"
-                accept="image/*,.pdf"
+                accept={QC_REPORT_ACCEPT}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">Document Type</label>
+              <label className="form-label">
+                Document Type<span className="req">★</span>
+              </label>
               <select
                 className="innovic-select"
-                value={docType}
-                onChange={(e) => setDocType(e.target.value)}
+                value={reportTypeId}
+                onChange={(e) => setReportTypeId(e.target.value)}
               >
-                {QC_DOC_TYPES.map((t) => (
-                  <option key={t}>{t}</option>
+                <option value="">{reportTypes.isLoading ? 'Loading…' : 'Select…'}</option>
+                {typeOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
                 ))}
               </select>
             </div>

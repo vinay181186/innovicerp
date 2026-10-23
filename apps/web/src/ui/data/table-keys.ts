@@ -120,6 +120,9 @@ export const TABLE_KEYS = {
   qcDocsMatrix: 'qc-docs-matrix',
   qcDocsRegister: 'qc-docs-register',
   qcDocsStatus: 'qc-docs-status',
+  /** ADR-252 QC Dossier — order summary (one row per POL) and the file sheet. */
+  qcDocsDossier: 'qc-docs-dossier',
+  qcDocsDossierFiles: 'qc-docs-dossier-files',
   reportTypes: 'report-types',
 
   // ADR-199 conversions — Design / Tasks / System / Dashboards (batch D)

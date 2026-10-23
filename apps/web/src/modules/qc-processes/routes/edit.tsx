@@ -18,7 +18,12 @@ import { QcProcessForm } from '../components/qc-process-form';
 // rather than inferred: `code` IS the QC Process Name and is permanent — the box
 // is read-only on edit and updateQcProcessInputSchema omits it outright — and
 // the record also carries the audit columns, which are nobody's edit.
-const QC_PROCESS_EDITABLE = ['description', 'defaultCycleTimeMin', 'isActive'] as const;
+const QC_PROCESS_EDITABLE = [
+  'description',
+  'defaultCycleTimeMin',
+  'isActive',
+  'reportTypeId', // ADR-252
+] as const;
 
 // The screen's own labels, so a notice reads "Default Cycle Time (min)", never
 // `defaultCycleTimeMin`. No row exists in docs/NAMING.md for any of the three;
@@ -28,6 +33,7 @@ const QC_PROCESS_LABELS: Record<string, string> = {
   description: 'Description',
   defaultCycleTimeMin: 'Default Cycle Time (min)',
   isActive: 'Active',
+  reportTypeId: 'Report Type',
 };
 
 export const qcProcessEditRoute = createRoute({

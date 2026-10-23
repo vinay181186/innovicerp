@@ -137,6 +137,7 @@ export const dashListKeySchema = z.enum([
   'po_overdue', // PO delivery past due → po_create.view
   'bom_pending', // equipment SO waiting for a BOM → bom_create.entry
   'capa_mine', // CAPA where the caller is responsible → capa_create.edit
+  'qc_report_missing', // ADR-252 QC entries saved without their report → qcdocs_upload.entry
 ]);
 export type DashListKey = z.infer<typeof dashListKeySchema>;
 

@@ -23,13 +23,17 @@
 
 import type { CreateQcProcessInput, QcProcess, UpdateQcProcessInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useReportTypes } from '@/modules/report-types/api';
 
 interface FormValues {
   code: string;
   description: string;
   defaultCycleTimeMin: number;
   isActive: boolean;
+  /** ADR-252 — '' = this process produces no report. */
+  reportTypeId: string;
 }
 
 const DEFAULTS: FormValues = {
@@ -37,6 +41,7 @@ const DEFAULTS: FormValues = {
   description: '',
   defaultCycleTimeMin: 0,
   isActive: true,
+  reportTypeId: '',
 };
 
 type CreateMode = {
@@ -61,8 +66,30 @@ export type QcProcessFormProps = CreateMode | EditMode;
 export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
-  const { register, handleSubmit, formState } = useForm<FormValues>({ defaultValues: defaults });
+  const { register, handleSubmit, formState, setValue } = useForm<FormValues>({
+    defaultValues: defaults,
+  });
   const errors = formState.errors;
+  // ADR-252 — Report Type options: the Active ones. The saved one stays visible
+  // as "<name> (inactive)" when it is no longer in the active list, so an edit
+  // never silently changes or blanks it.
+  const reportTypes = useReportTypes({ limit: 1000, offset: 0 });
+  const savedReportTypeId = defaults.reportTypeId;
+  const reportOptions = (reportTypes.data?.items ?? []).filter((t) => t.status === 'Active');
+  const savedIsActiveOption = reportOptions.some((t) => t.id === savedReportTypeId);
+  const savedInactiveLabel =
+    savedReportTypeId && !savedIsActiveOption
+      ? `${
+          (reportTypes.data?.items ?? []).find((t) => t.id === savedReportTypeId)?.name ??
+          (isEdit ? props.detail.reportTypeName : null) ??
+          'Report type'
+        } (inactive)`
+      : null;
+  // The saved value can only show once its <option> exists.
+  const optionsLoaded = reportTypes.data !== undefined;
+  useEffect(() => {
+    if (optionsLoaded && savedReportTypeId) setValue('reportTypeId', savedReportTypeId);
+  }, [optionsLoaded, savedReportTypeId, setValue]);
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {
@@ -76,6 +103,11 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
         description: values.description.trim(),
         defaultCycleTimeMin: Number(values.defaultCycleTimeMin) || 0,
         isActive: values.isActive,
+        // Sent only when the user changed it — an unchanged (possibly now
+        // inactive) saved type is left alone. Blank clears it (null).
+        ...(values.reportTypeId !== savedReportTypeId
+          ? { reportTypeId: values.reportTypeId || null }
+          : {}),
       };
       await props.onSubmit(payload);
     } else {
@@ -84,6 +116,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
         ...(values.description.trim() ? { description: values.description.trim() } : {}),
         defaultCycleTimeMin: Number(values.defaultCycleTimeMin) || 0,
         isActive: values.isActive,
+        ...(values.reportTypeId ? { reportTypeId: values.reportTypeId } : {}),
       };
       await props.onSubmit(payload);
     }
@@ -155,11 +188,33 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
           <label className="form-label" htmlFor="isActive">
             Active
           </label>
-          <select id="isActive" className="innovic-select" {...register('isActive', {
-            setValueAs: (v) => v === 'true' || v === true,
-          })}>
+          <select
+            id="isActive"
+            className="innovic-select"
+            {...register('isActive', {
+              setValueAs: (v) => v === 'true' || v === true,
+            })}
+          >
             <option value="true">Active</option>
             <option value="false">Inactive</option>
+          </select>
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="reportTypeId">
+            Report Type
+          </label>
+          <select id="reportTypeId" className="innovic-select" {...register('reportTypeId')}>
+            <option value="">{reportTypes.isLoading ? 'Loading…' : '— No report —'}</option>
+            {savedInactiveLabel ? (
+              <option value={savedReportTypeId}>{savedInactiveLabel}</option>
+            ) : null}
+            {reportOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+                {t.defaultMandatory ? ' (Mandatory)' : ''}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -202,5 +257,6 @@ function detailToFormValues(detail: QcProcess): FormValues {
     description: detail.description ?? '',
     defaultCycleTimeMin: Number(detail.defaultCycleTimeMin),
     isActive: detail.isActive,
+    reportTypeId: detail.reportTypeId ?? '',
   };
 }

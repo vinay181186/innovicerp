@@ -18,7 +18,7 @@
 // (machine_id) where status='running' and is_osp=false. The service catches
 // the resulting unique-violation and returns a typed ConflictError.
 
-import { ActivityAction, type ActivityChange, opSrNo } from '@innovic/shared';
+import { ActivityAction, type ActivityChange, opSrNo, qcReportMandatory } from '@innovic/shared';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -43,6 +43,8 @@ import {
 } from '../../lib/access';
 import { diffFields } from '../../lib/audit-trail';
 import { polOf, polSql } from '../../lib/pol';
+import { loadQcProcessReport } from '../../lib/qc-process-report';
+import { assertCompanyStoragePath } from '../../lib/storage-path';
 import {
   AuthorizationError,
   ConflictError,
@@ -1267,6 +1269,9 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
   // A QC date box is blank and typed like every other one, so it can be
   // mistyped like every other one.
   assertNotFutureDate(input.logDate, 'Inspection Date');
+  // ADR-252 — op_log.qc_report_path is later trusted as proof the company owns
+  // the file (QC Dossier download), so it must sit in this company's folder.
+  assertCompanyStoragePath(input.qcReportPath, companyId);
 
   return withUserContext(user, async (tx) => {
     // Load op + qc_required + qc_call_date in one go (loadJcOp doesn't carry
@@ -1292,6 +1297,24 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     const isQcBearing = op.opType === 'qc' || op.qcRequired;
     if (!isQcBearing) {
       throw new ValidationError('This operation has no QC step. Use Complete on Op Entry instead.');
+    }
+
+    // ADR-252 — the report this QC step produces (QC Process Master -> Report
+    // Type). A mandatory report must be attached before an entry that accepts
+    // pieces can save; an optional one saves and shows as missing in the QC
+    // Dossier. report_required is stamped on the entry either way. A process
+    // op with qc_required has no QC process behind it, so it expects none.
+    const qcReport =
+      op.opType === 'qc' ? await loadQcProcessReport(tx, companyId, op.operation) : null;
+    if (
+      qcReport &&
+      qcReportMandatory(op.operation, input.qty, [qcReport]) &&
+      !input.qcReportPath?.trim()
+    ) {
+      const name = qcReport.reportTypeName ?? 'QC';
+      throw new ValidationError(
+        `Attach the ${name} report before submitting — ${name} is a mandatory report.`,
+      );
     }
 
     // Serialize concurrent QC logs on the SAME op (over-inspection race).
@@ -1396,6 +1419,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         // original file name when the inspector attached a report.
         qcReportPath: input.qcReportPath ?? null,
         qcReportName: input.qcReportName ?? null,
+        reportRequired: qcReport !== null,
         createdBy: user.id,
       })
       .returning();

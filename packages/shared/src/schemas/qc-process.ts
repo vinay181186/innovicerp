@@ -24,6 +24,11 @@ export const qcProcessSchema = z.object({
   description: z.string().nullable(),
   defaultCycleTimeMin: z.string(), // numeric(8,2) as string from Drizzle
   isActive: z.boolean(),
+  /** ADR-252 — the Report Type this QC process produces (report_types.id),
+   *  joined in with its name and compulsory flag. Null = no report expected. */
+  reportTypeId: z.string().uuid().nullable(),
+  reportTypeName: z.string().nullable(),
+  reportMandatory: z.boolean(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -44,6 +49,8 @@ export const createQcProcessInputSchema = z.object({
   description: z.string().max(1000).optional(),
   defaultCycleTimeMin: z.coerce.number().nonnegative().default(0),
   isActive: z.boolean().default(true),
+  /** ADR-252 — Report Type this process produces; null clears it. */
+  reportTypeId: z.string().uuid().nullable().optional(),
 });
 export type CreateQcProcessInput = z.infer<typeof createQcProcessInputSchema>;
 

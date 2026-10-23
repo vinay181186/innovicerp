@@ -501,6 +501,9 @@ async function reinjectIntoOriginOp(
     qcUserId: user.id,
     machineId: null,
     remarks: `Recovered via ${via} — ${nc.code}`,
+    // ADR-252 — a system-carried re-entry expects no report: only Submit QC
+    // can block on one.
+    reportRequired: false,
     createdBy: user.id,
   });
 }

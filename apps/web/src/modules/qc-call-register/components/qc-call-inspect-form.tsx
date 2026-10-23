@@ -35,6 +35,11 @@ import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
+import {
+  QcReportRequiredNote,
+  reportMissingReason,
+  useQcReportRule,
+} from '@/modules/qc-processes/use-qc-report-rule';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
@@ -269,6 +274,10 @@ export function QcCallInspectFormView(props: {
 }): React.JSX.Element {
   const { form, onCancel } = props;
   const { o } = form;
+  // ADR-252 — this QC step's report may be compulsory.
+  const qcReportRule = useQcReportRule(o.operation, Number(form.accept || '0'));
+  const hasReport = form.qcReportName !== null;
+  const qcReportMissing = reportMissingReason(qcReportRule, hasReport);
 
   return (
     <div style={{ padding: '14px 16px', borderTop: '2px solid var(--green)' }}>
@@ -374,6 +383,7 @@ export function QcCallInspectFormView(props: {
           />
         </div>
         <div className="form-grp form-full">
+          <QcReportRequiredNote rule={qcReportRule} hasReport={hasReport} />
           <QcReportAttach
             companyId={form.companyId}
             fileName={form.qcReportName}
@@ -394,7 +404,8 @@ export function QcCallInspectFormView(props: {
         <button
           type="button"
           className="btn btn-primary"
-          disabled={form.submitting}
+          disabled={form.submitting || qcReportMissing !== null}
+          title={qcReportMissing ?? undefined}
           onClick={() => void form.doSubmit()}
         >
           {form.submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Submit Inspection

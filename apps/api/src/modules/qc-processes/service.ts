@@ -1,7 +1,8 @@
 import { ActivityAction } from '@innovic/shared';
 import type { DocumentEditStagedResult } from '@innovic/shared';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
-import { qcProcesses } from '../../db/schema';
+import { qcProcesses, reportTypes } from '../../db/schema';
+import { assertReportType, liveReportType, PROCESS_COLUMNS, readProcess } from './report-type';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -57,6 +58,8 @@ export const QC_PROCESS_EDIT_FIELDS: readonly DiffField[] = [
   { key: 'description', label: 'Description' },
   { key: 'defaultCycleTimeMin', label: 'Default Cycle Time (min)' },
   { key: 'isActive', label: 'Active', format: activeLabel },
+  // ADR-252 — the snapshot holds the report type's NAME (registry).
+  { key: 'reportTypeId', label: 'Report Type' },
 ];
 
 export async function listQcProcesses(
@@ -89,8 +92,9 @@ export async function listQcProcesses(
 
     const [rows, totals] = await Promise.all([
       tx
-        .select()
+        .select(PROCESS_COLUMNS)
         .from(qcProcesses)
+        .leftJoin(reportTypes, liveReportType)
         .where(where)
         .orderBy(sfOrderBy(QC_PROCESS_SF_COLUMNS, sf, asc(qcProcesses.code)))
         .limit(input.limit)
@@ -109,16 +113,7 @@ export async function listQcProcesses(
 
 export async function getQcProcess(id: string, user: AuthContext): Promise<QcProcess> {
   requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select()
-      .from(qcProcesses)
-      .where(and(eq(qcProcesses.id, id), isNull(qcProcesses.deletedAt)))
-      .limit(1);
-    const row = rows[0];
-    if (!row) throw new NotFoundError('QC Process not found. Refresh the page.');
-    return row as unknown as QcProcess;
-  });
+  return withUserContext(user, (tx) => readProcess(tx, id));
 }
 
 export async function createQcProcess(
@@ -145,6 +140,7 @@ export async function createQcProcess(
     if (existing.length > 0) {
       throw new ConflictError(`QC Process "${input.code}" already exists`);
     }
+    await assertReportType(tx, companyId, input.reportTypeId);
 
     const inserted = await tx
       .insert(qcProcesses)
@@ -154,11 +150,12 @@ export async function createQcProcess(
         description: emptyToNull(input.description),
         defaultCycleTimeMin: String(input.defaultCycleTimeMin ?? 0),
         isActive: input.isActive,
+        reportTypeId: input.reportTypeId ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       })
-      .returning();
-    return inserted[0] as unknown as QcProcess;
+      .returning({ id: qcProcesses.id });
+    return readProcess(tx, inserted[0]!.id);
   });
 }
 
@@ -188,7 +185,7 @@ export async function updateQcProcessTx(
   input: UpdateQcProcessInput,
   user: AuthContext,
 ): Promise<QcProcess> {
-  requireCompany(user);
+  const companyId = requireCompany(user);
   // ADR-226 / §20.4 — read under the row lock, so the version check below and
   // the UPDATE are one atomic step: a second editor WAITS here, then sees the
   // first editor's new updated_at and is refused instead of overwriting it.
@@ -198,6 +195,7 @@ export async function updateQcProcessTx(
       id: qcProcesses.id,
       updatedAt: qcProcesses.updatedAt,
       updatedBy: qcProcesses.updatedBy,
+      reportTypeId: qcProcesses.reportTypeId,
     })
     .from(qcProcesses)
     .where(and(eq(qcProcesses.id, id), isNull(qcProcesses.deletedAt)))
@@ -221,13 +219,17 @@ export async function updateQcProcessTx(
   if (input.defaultCycleTimeMin !== undefined)
     updates.defaultCycleTimeMin = String(input.defaultCycleTimeMin);
   if (input.isActive !== undefined) updates.isActive = input.isActive;
+  if (input.reportTypeId !== undefined) {
+    // Only a CHANGED link is checked: an edit that re-sends the current Report
+    // Type (now Inactive) must still save the other fields. Create always checks.
+    if (input.reportTypeId !== cur.reportTypeId) {
+      await assertReportType(tx, companyId, input.reportTypeId);
+    }
+    updates.reportTypeId = input.reportTypeId;
+  }
 
-  const updated = await tx
-    .update(qcProcesses)
-    .set(updates)
-    .where(eq(qcProcesses.id, id))
-    .returning();
-  return updated[0] as unknown as QcProcess;
+  await tx.update(qcProcesses).set(updates).where(eq(qcProcesses.id, id));
+  return readProcess(tx, id);
 }
 
 /**

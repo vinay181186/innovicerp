@@ -22,6 +22,11 @@ import { fmtDate, todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
+import {
+  QcReportRequiredNote,
+  reportMissingReason,
+  useQcReportRule,
+} from '@/modules/qc-processes/use-qc-report-rule';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { tpiKeys } from '../api';
 import { TpiDetailsBox } from './tpi-details-box';
@@ -60,6 +65,9 @@ export function PendingTpi(props: {
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // ADR-252 — the TPI step's report may be compulsory.
+  const qcReportRule = useQcReportRule(o.operation, Number(accept || '0'));
+  const qcReportMissing = reportMissingReason(qcReportRule, qcReportPath !== null);
 
   async function send(): Promise<void> {
     setErr(null);
@@ -312,6 +320,7 @@ export function PendingTpi(props: {
           {/* Legacy L21429-21433: attach row sits between the details box and the
               action buttons. QcReportAttach renders the same picker + × Remove. */}
           <div style={{ marginBottom: 12 }}>
+            <QcReportRequiredNote rule={qcReportRule} hasReport={qcReportPath !== null} />
             <QcReportAttach
               companyId={companyId}
               fileName={qcReportName}
@@ -343,7 +352,8 @@ export function PendingTpi(props: {
                 fontSize: 13,
                 padding: '8px 24px',
               }}
-              disabled={submit.isPending}
+              disabled={submit.isPending || qcReportMissing !== null}
+              title={qcReportMissing ?? undefined}
               onClick={() => void send()}
             >
               {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Submit TPI

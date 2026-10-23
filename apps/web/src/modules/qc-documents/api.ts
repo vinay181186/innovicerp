@@ -4,20 +4,27 @@ import type {
   ListQcDocumentsResponse,
   ListQcMatrixSosResponse,
   QcDocument,
-  QcLineDetailResponse,
+  QcDossierOrderKind,
+  QcDossierOrdersResponse,
+  QcDossierResponse,
+  QcDossierUrlsInput,
+  QcDossierUrlsResponse,
   QcMatrixResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { drawingViewUrl, saveDrawing } from '@/lib/drawing-url';
 import { uploadFile } from '@/lib/storage';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 
 export const qcDocumentsKeys = {
   all: ['qc-documents'] as const,
   list: (q: ListQcDocumentsQuery) => [...qcDocumentsKeys.all, 'list', q] as const,
   soList: () => [...qcDocumentsKeys.all, 'so-list'] as const,
   matrix: (soId: string) => [...qcDocumentsKeys.all, 'matrix', soId] as const,
-  lineDetail: (jcId: string) => [...qcDocumentsKeys.all, 'line-detail', jcId] as const,
+  dossierOrders: (search: string) => [...qcDocumentsKeys.all, 'dossier-orders', search] as const,
+  dossier: (kind: QcDossierOrderKind, orderId: string) =>
+    [...qcDocumentsKeys.all, 'dossier', kind, orderId] as const,
 };
 
 function toQuery(q: ListQcDocumentsQuery): string {
@@ -41,10 +48,15 @@ export function useQcDocuments(query: ListQcDocumentsQuery) {
 }
 
 /** Uploads a QC document file; returns its storage path. Thin wrapper over the
- *  shared Storage helper (kept for the QC Documents call sites). */
+ *  shared Storage helper (kept for the QC Documents call sites). ADR-252: QC
+ *  reports land under `${companyId}/qc-docs/…`. */
 export function uploadQcFile(file: File, companyId: string): Promise<string> {
-  return uploadFile(file, companyId);
+  return uploadFile(file, companyId, { folder: 'qc-docs' });
 }
+
+/** ADR-252 — what a QC report file may be, and how big. */
+export const QC_REPORT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx';
+export const QC_REPORT_MAX_BYTES = 10 * 1024 * 1024;
 
 /** Link for LOOKING at a stored QC document.
  *
@@ -101,22 +113,53 @@ export function useQcMatrix(salesOrderId: string | undefined) {
   });
 }
 
-/** Per-JC line-detail (batches + per-doc-type sections) for the modal. */
-export function useQcLineDetail(jobCardId: string | undefined) {
-  return useQuery<QcLineDetailResponse>({
-    queryKey: qcDocumentsKeys.lineDetail(jobCardId ?? ''),
-    queryFn: () =>
-      apiFetch<QcLineDetailResponse>(
-        `/qc-documents/line-detail?jobCardId=${encodeURIComponent(jobCardId ?? '')}`,
-      ),
-    enabled: !!jobCardId,
+/** ADR-252 — the Dossier order picker (SO + JWSO, server search). */
+export function useQcDossierOrders(search: string) {
+  return useQuery<QcDossierOrdersResponse>({
+    queryKey: qcDocumentsKeys.dossierOrders(search),
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (search) p.set('search', search);
+      p.set('limit', '20');
+      return apiFetch<QcDossierOrdersResponse>(`/qc-documents/dossier/orders?${p.toString()}`);
+    },
+    placeholderData: (prev) => prev,
   });
 }
 
-export function useCreateQcDocument() {
+/** ADR-252 — one order's Dossier: POL → report folders → QC entries → files. */
+export function useQcDossier(kind: QcDossierOrderKind | undefined, orderId: string | undefined) {
+  return useQuery<QcDossierResponse>({
+    queryKey: qcDocumentsKeys.dossier(kind ?? 'so', orderId ?? ''),
+    queryFn: () =>
+      apiFetch<QcDossierResponse>(
+        `/qc-documents/dossier?kind=${encodeURIComponent(kind ?? 'so')}&orderId=${encodeURIComponent(orderId ?? '')}`,
+      ),
+    enabled: !!kind && !!orderId,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-252 — signed links for a ZIP. The server checks every path belongs to
+ *  the order and logs each one. */
+export function fetchQcDossierUrls(input: QcDossierUrlsInput): Promise<QcDossierUrlsResponse> {
+  return apiFetch<QcDossierUrlsResponse>('/qc-documents/dossier/urls', {
+    method: 'POST',
+    json: input,
+  });
+}
+
+export function useCreateQcDocument(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<QcDocument, Error, CreateQcDocumentInput>({
-    mutationFn: (input) => apiFetch<QcDocument>('/qc-documents', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<QcDocument>('/qc-documents', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qcDocumentsKeys.all }),
   });
 }

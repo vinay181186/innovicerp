@@ -731,6 +731,12 @@ export const qcProcesses = pgTable(
       .notNull()
       .default('0'),
     isActive: boolean('is_active').notNull().default(true),
+    // ADR-252 (migration 0216) — the Report Type this QC process produces.
+    // Null = the step expects no report. report_types.default_mandatory says
+    // whether Submit QC refuses an entry without it.
+    reportTypeId: uuid('report_type_id').references((): AnyPgColumn => reportTypes.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -743,6 +749,9 @@ export const qcProcesses = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
+    index('qc_processes_report_type_idx')
+      .on(t.reportTypeId)
+      .where(sql`${t.deletedAt} is null`),
     uniqueIndex('qc_processes_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -1338,6 +1347,10 @@ export const opLog = pgTable(
     // file name for a report attached to this QC/TPI entry. Migration 0043.
     qcReportPath: text('qc_report_path'),
     qcReportName: text('qc_report_name'),
+    // ADR-252 (migration 0216) — stamped at Submit QC: true when the op's QC
+    // process produces a report, false when it does not. NULL = an entry saved
+    // before 0216 (red in the QC Dossier, never on the dashboard — D8).
+    reportRequired: boolean('report_required'),
     // The one permitted mutation on an append-only table (0097 / ADR-127): a
     // wrong log_date or start_time can be corrected. Stamped by the BEFORE
     // UPDATE trigger op_log_timing_only_update, which refuses the write if any
@@ -1361,6 +1374,17 @@ export const opLog = pgTable(
       .on(t.reversalOfId)
       .where(sql`${t.reversalOfId} is not null`),
     index('op_log_company_op_date_idx').on(t.companyId, t.jcOpId, t.logDate),
+    // ADR-252 (0216) — the QC Dossier opens a Submit QC report by its path.
+    index('op_log_qc_report_path_idx')
+      .on(t.companyId, t.qcReportPath)
+      .where(sql`${t.qcReportPath} is not null`),
+    // ADR-252 (0216) — home "Reports to upload" list (rows-qc.ts); predicate
+    // matches that query's WHERE word for word so the planner can use it.
+    index('op_log_qc_report_owed_idx')
+      .on(t.companyId)
+      .where(
+        sql`${t.logType} = 'qc' and ${t.reportRequired} = true and nullif(btrim(coalesce(${t.qcReportPath}, '')), '') is null`,
+      ),
     index('op_log_company_tpi_idx')
       .on(t.companyId, t.logDate)
       .where(sql`${t.isTpi} = true`),
@@ -7336,6 +7360,18 @@ export const qcDocuments = pgTable(
     qcOpName: text('qc_op_name'),
     srFrom: integer('sr_from'),
     srTo: integer('sr_to'),
+    // ADR-252 (migration 0216) — the order line (POL folder), the QC entry and
+    // the report folder this file is. At most one of the two line links.
+    soLineId: uuid('so_line_id').references((): AnyPgColumn => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    opLogId: uuid('op_log_id').references((): AnyPgColumn => opLog.id, { onDelete: 'set null' }),
+    reportTypeId: uuid('report_type_id').references((): AnyPgColumn => reportTypes.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -7354,11 +7390,32 @@ export const qcDocuments = pgTable(
     index('qc_documents_company_cat_idx')
       .on(t.companyId, t.category)
       .where(sql`${t.deletedAt} is null`),
+    // 0043 — was in the database but missing here.
+    index('qc_documents_jc_op_idx')
+      .on(t.jcOpId)
+      .where(sql`${t.deletedAt} is null`),
+    // ADR-252 (0216).
+    index('qc_documents_company_so_line_idx')
+      .on(t.companyId, t.soLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_documents_company_jw_line_idx')
+      .on(t.companyId, t.jwLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_documents_op_log_idx')
+      .on(t.opLogId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_documents_company_so_idx')
+      .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    check('qc_documents_one_line', sql`num_nonnulls(${t.soLineId}, ${t.jwLineId}) <= 1`),
     pgPolicy('qc_documents_company_read', {
       for: 'select',
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
+    // 0039, kept by ADR-252 (0216): guards DIRECT browser -> PostgREST writes
+    // only. The API connects as postgres (BYPASSRLS) and decides by the Access
+    // Control ticks (qcdocs_upload entry; delete = Super Admin, ADR-232).
     pgPolicy('qc_documents_qc_write', {
       for: 'all',
       to: 'authenticated',

@@ -5,7 +5,7 @@
 
 import type { QcMatrixCell, QcMatrixRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { openStoragePath } from './qc-doc-shared';
+import { saveQcDoc } from '../api';
 
 /** Compact op-status chip for one matrix cell. */
 export function MatrixOpChip({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
@@ -119,7 +119,12 @@ function OpDetail({ cell, maySave }: { cell: QcMatrixCell; maySave: boolean }): 
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                if (cell.storagePath) void openStoragePath(cell.storagePath);
+                // A real save (attachment link, logged) — it used to open the
+                // file inline, so "Download" did not download (ADR-252).
+                if (cell.storagePath)
+                  void saveQcDoc(cell.storagePath, cell.fileName).catch((err: unknown) =>
+                    window.alert(err instanceof Error ? err.message : 'Could not download.'),
+                  );
               }}
             >
               ⬇ Download

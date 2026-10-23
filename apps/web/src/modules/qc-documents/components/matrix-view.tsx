@@ -2,22 +2,21 @@
 // (tableKey qcDocsMatrix). Pick a Sales Order, see one row per JC per SO line
 // with one compact chip column per QC op (dynamicColumns, decision #14). The
 // per-column filters (Code / Item Name / JC / Overall) moved OFF the table
-// header into the ListHeader filter bar (decision #14). Clicking a JC row opens
-// the line-detail modal; the ▸ expand shows POL / Item Name / Order Qty and the
-// full per-op detail.
+// header into the ListHeader filter bar (decision #14). Clicking a row opens
+// that POL in the Dossier tab (ADR-252 — the old line-detail modal with its
+// Pieces from–to is gone); the ▸ expand shows POL / Item Name / Order Qty and
+// the full per-op detail.
 
 import type { QcMatrixRow } from '@innovic/shared';
 import { useCallback, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
-import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { ActionMenu, ListHeader, PageState } from '@/ui/layout';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { useQcMatrix } from '../api';
+import { useQcDossierOrders, useQcMatrix } from '../api';
 import { qcDocumentsListRoute } from '../routes/list';
-import { LineDetailModal } from './line-detail-modal';
 import { MatrixExpandedDetail } from './matrix-cells';
 import { buildMatrixColumns, MATRIX_DETAIL_IDS } from './matrix-columns';
 import { downloadAllReports, exportMatrixExcel } from './matrix-export';
@@ -37,8 +36,13 @@ export function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.E
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
   const [soSearch, setSoSearch] = useState('');
-  const soQuery = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
-  const sos = useMemo(() => soQuery.data?.items ?? [], [soQuery.data]);
+  // The same order picker as the Dossier (ADR-252), SOs only — the matrix is
+  // built from SO lines.
+  const soQuery = useQcDossierOrders(soSearch);
+  const sos = useMemo(
+    () => (soQuery.data?.orders ?? []).filter((o) => o.kind === 'so'),
+    [soQuery.data],
+  );
 
   // Default to the first (newest) SO once the list loads.
   const selectedSo = search.so ?? sos[0]?.id;
@@ -50,8 +54,6 @@ export function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.E
   const [fName, setFName] = useState('');
   const [fJc, setFJc] = useState('');
   const [fOverall, setFOverall] = useState('');
-
-  const [detailJcId, setDetailJcId] = useState<string | null>(null);
 
   // ▸ expand: caller owns the open set; the fit table's ▸ is the row's one
   // expand control. renderExpanded returns null for a collapsed row.
@@ -300,10 +302,18 @@ export function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.E
             // shared Sort & Filter menu is turned off to avoid two filters on the
             // same columns.
             sortFilter={false}
-            onRowClick={(r) => {
-              if (r.jobCardId) setDetailJcId(r.jobCardId);
-            }}
-            isRowClickable={(r) => !!r.jobCardId}
+            onRowClick={(r) =>
+              void navigate({
+                search: (p) => ({
+                  ...p,
+                  view: 'dossier',
+                  kind: 'so',
+                  orderId: matrix?.so.id ?? selectedSo,
+                  lineId: r.soLineId,
+                  folder: undefined,
+                }),
+              })
+            }
             rowClassName={(r) => ROW_TINT_BY_OVERALL[r.overall]}
             renderExpanded={(r) =>
               expandedKeys.has(rowKeyOf(r)) ? (
@@ -318,15 +328,11 @@ export function MatrixView({ toggle }: { toggle: React.ReactNode }): React.JSX.E
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
         <span
           style={{ cursor: 'help' }}
-          title="OK (date) = Completed · OK* = Completed, report missing · wait N = QC pending qty · Waiting · — not applicable. Open ▸ for the full per-op detail and downloads; click a row for upload / manage."
+          title="OK (date) = Completed · OK* = Completed, report missing · wait N = QC pending qty · Waiting · — not applicable. Open ▸ for the full per-op detail and downloads; click a row to open its POL in the Dossier (upload / manage)."
         >
           ?
         </span>
       </div>
-
-      {detailJcId ? (
-        <LineDetailModal jobCardId={detailJcId} onClose={() => setDetailJcId(null)} />
-      ) : null}
     </div>
   );
 }

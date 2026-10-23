@@ -5,6 +5,7 @@ export * from './lib/planning-line-status';
 export * from './lib/so-line-plan-coverage';
 export * from './lib/internal-so-no';
 export * from './lib/pol';
+export * from './lib/qc-report';
 export * from './lib/line-remarks';
 export * from './lib/jc-op-sequence';
 export * from './lib/doc-nav-page';

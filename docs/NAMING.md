@@ -346,6 +346,13 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Home block: pages the caller can open (ADR-044, label kept) | `Shortcuts` | `quickLinks` | dashboard_config.quick_links filtered by canOpenPage | `Quick Access`, `Quick Links` |
 | Home rows filter (ADR-250) | `My department` / `Mine` | `mine` (row flag) | created / received / responsible = caller | `All` / `Self` |
 | Home count strip entry (ADR-250) | — (one per list) | `cues[]` (`count` = the list's `total`) | the same query as its list | `KPI`, `Tile` |
+| QC Documents view: one order → POL folders → report folders → files (ADR-252) | `Dossier` | `QcDossierResponse` | GET /qc-documents/dossier | `QC Folder`, `QC Repository`, `Document Tree` |
+| Home list: QC entries saved without their report (ADR-252) | `Reports to upload` | `qc_report_missing` | GET /dashboard/home | `Missing Reports`, `Pending Reports` |
+| The QC inspection a report belongs to: accepted qty + date of one op_log QC row (ADR-252) | `QC Entry` | `opLogId` | `qc_documents.op_log_id`, `op_log` (log_type `qc`) | `Batch`, `Pieces`, `Sr From/To` |
+| Where a QC file was attached (Op Entry / TPI, QC Documents, Job Card) (ADR-252) | `Added From` | `source` | derived (`qc_entry` / `qc_document` / `job_card`) | `Source`, `Origin` |
+| Report a QC process produces (ADR-252) | `Report Type` | `reportTypeId` | `qc_processes.report_type_id` → `report_types` | `Doc Type` (on new screens), `Report` |
+| A report that must be attached before Submit QC saves (ADR-252) | `Mandatory` | `reportMandatory` / `defaultMandatory` | `report_types.default_mandatory` | `Compulsory`, `Required` |
+| When a QC file was uploaded, IST date + time (ADR-252 Dossier) | `Uploaded At` | `uploadedAt` | qc_documents.created_at / op_log.created_at / file_registry.created_at | `Date`, `Upload Date` |
 
 ---
 

@@ -30,7 +30,7 @@ interface AttachProps {
   onClear: () => void;
 }
 
-/** "📎 Attach QC Report (optional)" file picker. Uploads on pick, surfaces an
+/** "📎 Attach QC Report" file picker (ADR-252: mandatory or not is said by the screen). Uploads on pick, surfaces an
  *  inline error on failure, shows the attached file name + a Remove link. */
 export function QcReportAttach({
   companyId,
@@ -81,7 +81,7 @@ export function QcReportAttach({
           opacity: companyId ? 1 : 0.6,
         }}
       >
-        📎 {busy ? 'Uploading…' : fileName ? fileName : 'Attach QC Report (optional)'}
+        📎 {busy ? 'Uploading…' : fileName ? fileName : 'Attach QC Report'}
         <input
           type="file"
           accept="image/*,.pdf"

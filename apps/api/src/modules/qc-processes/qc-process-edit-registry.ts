@@ -16,11 +16,12 @@
 // A master has no money column, so there is no price-gated field here — every
 // field in QC_PROCESS_EDIT_FIELDS is visible to any editor.
 
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
 import type { AccessFormKey, UpdateQcProcessInput } from '@innovic/shared';
-import { qcProcesses } from '../../db/schema';
+import { qcProcesses, reportTypes } from '../../db/schema';
 import type { DiffField } from '../../lib/audit-trail';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
+import { reportTypeNameOf } from './report-type';
 import { QC_PROCESS_EDIT_FIELDS, updateQcProcessTx } from './service';
 
 const QC_PROCESS_FORM_KEY: AccessFormKey = 'qcprocess_create';
@@ -33,8 +34,15 @@ export const qcProcessEditRegistryEntry: DocEditRegistryEntry = {
   },
 
   async loadForDiff(tx, companyId, id): Promise<DocEditTarget | null> {
+    // ADR-252 — the report type's name rides along for the Before snapshot.
     const rows = await tx
-      .select()
+      .select({
+        ...getTableColumns(qcProcesses),
+        reportTypeName: sql<string | null>`(
+          SELECT ${reportTypes.name} FROM ${reportTypes}
+          WHERE ${reportTypes.id} = ${qcProcesses.reportTypeId}
+        )`,
+      })
       .from(qcProcesses)
       .where(
         and(
@@ -62,16 +70,21 @@ export const qcProcessEditRegistryEntry: DocEditRegistryEntry = {
       description: d['description'],
       defaultCycleTimeMin: d['defaultCycleTimeMin'],
       isActive: d['isActive'],
+      reportTypeId: d['reportTypeName'] ?? null,
     };
   },
 
-  afterSnapshot(_tx, _companyId, input) {
+  async afterSnapshot(tx, _companyId, input) {
     const i = input as UpdateQcProcessInput;
     const out: Record<string, unknown> = {};
     if (i.description !== undefined) out['description'] = i.description ?? null;
     if (i.defaultCycleTimeMin !== undefined) out['defaultCycleTimeMin'] = i.defaultCycleTimeMin;
     if (i.isActive !== undefined) out['isActive'] = i.isActive;
-    return Promise.resolve(out);
+    // ADR-252 — compared and shown by NAME; the payload keeps the id.
+    if (i.reportTypeId !== undefined) {
+      out['reportTypeId'] = await reportTypeNameOf(tx, i.reportTypeId);
+    }
+    return out;
   },
 
   buildFilteredInput(proposedPayload, approvedFields) {

@@ -24,8 +24,8 @@ import type { ListFilter, RawRow } from './list-query';
 import { poDraftSql, poOverdueSql, poToDcSql, prPendingSql, prToPoSql } from './rows-purchase';
 import { bomPendingSql, planToProSql, soToPlanSql } from './rows-planning';
 import { jcRunningSql, opsReadySql, opsRunningSql } from './rows-production';
-import { capaMineSql, grnQcSql } from './rows-qc';
-import { codePart, entityHref, runningStatus, statusFor } from './util';
+import { capaMineSql, grnQcSql, qcReportMissingSql } from './rows-qc';
+import { codePart, entityHref, runningStatus, shortDate, statusFor } from './util';
 
 export interface ListCtx {
   cid: string;
@@ -264,6 +264,41 @@ export const LIST_DEFS: readonly ListDef[] = [
     refType: () => 'capa',
     sub: (r) => [{ text: [r.x1 && `${r.x1} pending`, r.x2].filter(Boolean).join(' · ') }],
     actions: (r) => [open(`/nc-register?tab=capa&capa=${enc(r.code)}`, 'Continue')],
+  },
+  {
+    // ADR-252 — QC entries saved without their report (report_required, D8).
+    key: 'qc_report_missing',
+    title: 'Reports to upload',
+    head: ['JC No.', 'Item', 'Accepted', 'Status'],
+    href: '/qc-docs?view=dossier',
+    rights: [['qcdocs_upload', 'entry']],
+    priceForm: null,
+    query: (c, f) => qcReportMissingSql(c.cid, f),
+    docHref: jcHref,
+    refType: () => 'job_card',
+    sub: (r) => [
+      {
+        text: [
+          r.party,
+          r.x3 && `POL ${r.x3}`,
+          `Accepted ${r.qty ?? 0}`,
+          r.docDate && shortDate(r.docDate),
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      },
+    ],
+    // No order behind the card (a standalone JC): open the card instead.
+    actions: (r) =>
+      r.x1
+        ? [
+            {
+              kind: 'create',
+              label: 'Upload report',
+              href: `/qc-docs?view=dossier&kind=${r.kind === 'jwso' ? 'jwso' : 'so'}&orderId=${r.x1}&lineId=${r.x2 ?? ''}`,
+            },
+          ]
+        : [open(jcHref(r))],
   },
 ];
 
