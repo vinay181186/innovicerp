@@ -1994,6 +1994,11 @@ export interface ExecutePlanResult {
   primaryPrCode?: string;
   /** Code of the material PR that was created (full_outsource only). */
   materialPrCode?: string;
+  /** ADR-249: the plan's routing differed from the item's Route Card and was
+   *  sent for approval — the card is unchanged until approved. */
+  routeCardSentForApproval?: boolean;
+  /** The routing differed but could not be sent for approval — plain reason. */
+  routeCardNotSentReason?: string;
 }
 
 /** Execute a planned plan. Type-specific:
@@ -2356,6 +2361,8 @@ async function executeManufacture(
   }
   const itemId = plan.itemId;
 
+  let routeCardSentForApproval = false;
+  let routeCardNotSentReason: string | undefined;
   const built = await buildJobCardFromOps(tx, {
     plan: { ...plan, itemId },
     ops,
@@ -2389,7 +2396,7 @@ async function executeManufacture(
         ospVendorCodeText: op.outsourceVendorText,
         ospLeadDays: null,
       }));
-      await saveRouteCardForItem(
+      const writeBack = await saveRouteCardForItem(
         tx,
         plan.companyId,
         itemId,
@@ -2405,6 +2412,8 @@ async function executeManufacture(
           rmQtyPerPiece: plan.rmQtyPerPiece,
         },
       );
+      routeCardSentForApproval = writeBack?.sentForApproval === true;
+      routeCardNotSentReason = writeBack?.notSentReason;
     },
   });
   const { jc, raisedPrCodes } = built;
@@ -2436,6 +2445,8 @@ async function executeManufacture(
   return {
     plan: await getPlanInTx(tx, plan.id, plan.companyId),
     jcCode: jc.code,
+    ...(routeCardSentForApproval ? { routeCardSentForApproval: true } : {}),
+    ...(routeCardNotSentReason ? { routeCardNotSentReason } : {}),
   };
 }
 

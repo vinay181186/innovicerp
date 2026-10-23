@@ -1388,6 +1388,28 @@ export async function updateGoodsReceiptNote(
 }
 
 /**
+ * ADR-249 Step B1 — the GRN HEADER refusals, in ONE place: a vendor / PO picked
+ * on the form must still exist (the vendor check keeps the GRN's current vendor
+ * even if it has since gone inactive). Called by updateGoodsReceiptNoteTx (every
+ * save, the approval replay included) and by the staging pre-check in
+ * updateGoodsReceiptNoteOrStage, so an edit the writer would refuse never stages
+ * — a fully QC-inspected GRN's header edit goes for approval since B1.
+ */
+export async function assertGrnHeaderEditAllowed(
+  tx: DbTransaction,
+  companyId: string,
+  header: UpdateGoodsReceiptNoteInput['header'],
+  currentVendorId: string | null,
+): Promise<void> {
+  if (header.vendorId !== undefined && header.vendorId !== null) {
+    await assertVendorExists(tx, header.vendorId, companyId, currentVendorId);
+  }
+  if (header.purchaseOrderId !== undefined && header.purchaseOrderId !== null) {
+    await assertPurchaseOrderExists(tx, header.purchaseOrderId, companyId);
+  }
+}
+
+/**
  * The body of a GRN edit, inside a caller-supplied transaction. Called by
  * updateGoodsReceiptNote (which opens the tx and ran the access check) and by the
  * edit-approval engine's applyEdit, which already holds a tx with the GRN row
@@ -1436,12 +1458,12 @@ export async function updateGoodsReceiptNoteTx(
       );
     }
 
-    if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
-      await assertVendorExists(tx, input.header.vendorId, companyId, existingHdrRows[0]!.vendorId);
-    }
-    if (input.header.purchaseOrderId !== undefined && input.header.purchaseOrderId !== null) {
-      await assertPurchaseOrderExists(tx, input.header.purchaseOrderId, companyId);
-    }
+    await assertGrnHeaderEditAllowed(
+      tx,
+      companyId,
+      input.header,
+      existingHdrRows[0]!.vendorId ?? null,
+    );
 
     // Before → after (ADR-197): read inside this transaction, before the UPDATE.
     const auditBefore = await readGrnAuditSnapshot(tx, id);
@@ -1546,8 +1568,9 @@ function grnChildRowsChanged(
 
 /**
  * The GRN edit entry point the PATCH route calls (ADR-202). When the Document
- * Edit Approval gate is ON and the GRN is LIVE (not fully QC-closed), the header
- * edit is staged for approval and the request row is returned; otherwise the
+ * Edit Approval gate is ON and the GRN is LIVE — since ADR-249 Step B1 every GRN
+ * that is not deleted, fully QC-inspected ones included — the header edit is
+ * staged for approval and the request row is returned; otherwise (gate off) the
  * edit applies directly through updateGoodsReceiptNote. Line changes are out of
  * scope this pass and refused clearly so nothing is dropped unapproved.
  */
@@ -1561,9 +1584,11 @@ export async function updateGoodsReceiptNoteOrStage(
   // Engine imported dynamically to avoid a static import cycle with
   // grn-edit-registry (which imports updateGoodsReceiptNoteTx from this file).
   const { requestDocumentEdit } = await import('../document-edits/service');
-  // "Live" is grnEditRegistryEntry's own rule (at least one line still has QC
-  // qty remaining — grnStatus 'pending'), read through the registry so the two
-  // can never drift. A fully QC-closed GRN edits directly.
+  // "Live" is grnEditRegistryEntry's own rule (grnIsLive — ADR-249 Step B1:
+  // every GRN not deleted, so a fully QC-inspected GRN's header edit goes for
+  // approval too), read through the registry so the two can never drift. The
+  // pre-check below refuses whatever updateGoodsReceiptNoteTx would refuse when
+  // the approval replays the header, so nothing stages that cannot be applied.
   // ADR-226 — the staged route gets the same version check as the direct one
   // (the engine refuses to stage an edit raised against a stale version), which
   // is what Delivery Challan and Dispatch already pass here.
@@ -1573,7 +1598,18 @@ export async function updateGoodsReceiptNoteOrStage(
     input,
     input.expectedUpdatedAt ?? null,
     user,
-    async (tx) => {
+    async (tx, target) => {
+      // ADR-249 Step B1 — the writer's header refusals, through the SAME helper
+      // updateGoodsReceiptNoteTx calls. applyEdit replays the header only, so
+      // these — plus the version check the engine already ran — are every
+      // refusal it can meet; line changes never stage (below). The stored
+      // vendor comes from the row loadForDiff already locked (target.doc).
+      await assertGrnHeaderEditAllowed(
+        tx,
+        requireCompany(user),
+        input.header,
+        (target.doc['storedVendorId'] as string | null | undefined) ?? null,
+      );
       if (input.lines !== undefined) {
         const currentLines = await tx
           .select({

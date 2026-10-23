@@ -10,7 +10,7 @@
 // PR's estimated cost) — every field in ITEM_FIELDS is visible to any editor.
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import type { AccessFormKey, UpdateItemInput } from '@innovic/shared';
+import { type AccessFormKey, roundQty, type UpdateItemInput } from '@innovic/shared';
 import { items } from '../../db/schema';
 import type { DiffField } from '../../lib/audit-trail';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
@@ -59,6 +59,8 @@ export const itemEditRegistryEntry: DocEditRegistryEntry = {
       hsnCode: d['hsnCode'],
       drawingFilePath: d['drawingFilePath'],
       imagePath: d['imagePath'],
+      minStockQty: d['minStockQty'],
+      reorderQty: d['reorderQty'],
     };
   },
 
@@ -77,6 +79,9 @@ export const itemEditRegistryEntry: DocEditRegistryEntry = {
     if (i.hsnCode !== undefined) out['hsnCode'] = i.hsnCode ?? null;
     if (i.drawingFilePath !== undefined) out['drawingFilePath'] = i.drawingFilePath ?? null;
     if (i.imagePath !== undefined) out['imagePath'] = i.imagePath ?? null;
+    // Absent = unchanged (the Item edit page never sends these two).
+    if (i.minStockQty !== undefined) out['minStockQty'] = roundQty(i.minStockQty);
+    if (i.reorderQty !== undefined) out['reorderQty'] = roundQty(i.reorderQty);
     return Promise.resolve(out);
   },
 

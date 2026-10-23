@@ -28,7 +28,9 @@ export const masterImportOptionsSchema = z.object({
   dryRun: z.boolean().default(false),
 });
 
-export type MasterImportRowAction = 'insert' | 'update' | 'skip';
+/** 'approval' (ADR-249): Update Existing on a master while Document Edit
+ *  Approval is on — the row's changes were sent for approval, nothing written. */
+export type MasterImportRowAction = 'insert' | 'update' | 'approval' | 'skip';
 
 /** What happened (or, in a preview, would happen) to ONE submitted row. */
 export interface MasterImportRowResult {
@@ -50,5 +52,7 @@ export interface MasterImportResult {
   mode: MasterImportMode;
   created: number;
   updated: number;
+  /** Update rows sent for approval instead of written (ADR-249). */
+  sentForApproval: number;
   rows: MasterImportRowResult[];
 }

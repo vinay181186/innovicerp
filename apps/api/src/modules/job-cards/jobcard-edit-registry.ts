@@ -73,6 +73,7 @@ import {
   jcOpChangeLabel,
   jcOpRemoveKey,
   jcOpRemoveLabel,
+  jobCardIsFinished,
   jobCardIsLive,
   parseJcOpEditKey,
   proposedOpsForStagedKeys,
@@ -312,6 +313,7 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
         remarks: jobCards.remarks,
         drawingFilePath: jobCards.drawingFilePath,
         closedAt: jobCards.closedAt,
+        deletedAt: jobCards.deletedAt,
         updatedAt: jobCards.updatedAt,
         rawMaterialGradeId: jobCards.rawMaterialGradeId,
         rawMaterialGradeText: jobCards.rawMaterialGradeText,
@@ -335,7 +337,11 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
     const jc = rows[0];
     if (!jc) return null;
 
-    // Computed status for the live rule (same view updateJobCardTx reads).
+    // Computed status (same view updateJobCardTx reads) — no longer the live rule
+    // (ADR-249 Step B1: every not-deleted card is live), but the staging
+    // pre-check needs to know a card is finished to refuse, at staging, the
+    // routing changes the writer's complete/closed freeze would refuse at
+    // approval. Carried on target.doc.finished so it is read once, here.
     const statusRows = (await tx.execute(sql`
       SELECT COALESCE(computed_status, 'no_ops') AS s
       FROM public.v_jc_status WHERE job_card_id = ${id}::uuid
@@ -364,12 +370,16 @@ export const jobCardEditRegistryEntry: DocEditRegistryEntry = {
         rmQtyPerPiece: jc.rmQtyPerPiece,
         ops,
         terminalQcOpId,
+        // ADR-249 Step B1 — read by updateJobCardOrStage's pre-check only; it is
+        // not a diff key (beforeSnapshot never emits it).
+        finished: jobCardIsFinished({ closedAt: jc.closedAt, status }),
       },
       updatedAt: jc.updatedAt,
       docCode: jc.code,
-      // Editable while not complete / closed — the module's own rule. (JC has no
-      // 'cancelled' status; a removed card is soft-deleted and filtered out above.)
-      isLive: jobCardIsLive({ closedAt: jc.closedAt, status }),
+      // ADR-249 Step B1 — every not-deleted card is live, complete and closed
+      // included, so their edits go for approval too. (JC has no 'cancelled'
+      // status; a removed card is soft-deleted and filtered out above.)
+      isLive: jobCardIsLive({ deletedAt: jc.deletedAt }),
     };
   },
 

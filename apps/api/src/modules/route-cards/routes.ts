@@ -48,7 +48,8 @@ export async function routeCardRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const input = updateRouteCardInputSchema.parse(req.body);
-    return service.updateRouteCard(id, input, req.user);
+    // ADR-249 Step B2 — staged for approval when the gate is on, else saved.
+    return service.updateRouteCardOrStage(id, input, req.user);
   });
 
   app.delete('/route-cards/:id', async (req) => {

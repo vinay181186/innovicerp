@@ -4,6 +4,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { PageState } from '@/ui/layout';
@@ -72,6 +73,13 @@ function MlBomEditPage(): React.JSX.Element {
         revisionNote,
         expectedUpdatedAt: opened.expected(),
       });
+      if (isStagedResult(updated)) {
+        // The edit-approval gate is on: nothing was changed on the BOM — the
+        // edit is now waiting for approval. Return to the BOM, whose
+        // "waiting for approval" notice says so.
+        exit.leave(() => void navigate({ to: '/ml-boms/$id', params: { id }, replace: true }));
+        return;
+      }
       opened.saved(updated.updatedAt);
       exit.leave(
         () => void navigate({ to: '/ml-boms/$id', params: { id: updated.id }, replace: true }),

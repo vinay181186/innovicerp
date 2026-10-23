@@ -6,7 +6,7 @@ import {
 import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { primeAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
@@ -27,6 +27,12 @@ import type {
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { OPERATOR_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  applyImportUpdates,
+  importCounts,
+  type ImportUpdateCandidate,
+  markGone,
+} from '../../lib/master-import-approval';
 
 type OperatorRow = typeof operators.$inferSelect;
 
@@ -261,6 +267,8 @@ export async function createOperatorsBulk(
   // to 'entry' for the whole route.
   await requireFormAccess(user, 'operator_create', mode === 'update' ? 'edit' : 'entry');
   const companyId = requireCompany(user);
+  // ADR-249 B2: staging a row checks access inside the transaction — read it now.
+  if (mode === 'update') await primeAccess(user);
 
   return withUserContext(user, async (tx) => {
     // One read of what already exists, rather than a duplicate-check per row.
@@ -302,11 +310,13 @@ export async function createOperatorsBulk(
     const rows: MasterImportRowResult[] = [];
     const inserts: Array<typeof operators.$inferInsert> = [];
     const codes: string[] = [];
-    const updates: Array<{
-      before: OperatorRow;
-      set: Record<string, unknown>;
-      changes: ReturnType<typeof diffFields>;
-    }> = [];
+    const updates: Array<
+      ImportUpdateCandidate & {
+        before: OperatorRow;
+        set: Record<string, unknown>;
+        changes: ReturnType<typeof diffFields>;
+      }
+    > = [];
     const seenCodes = new Set<string>();
 
     for (const [i, raw] of input.operators.entries()) {
@@ -430,15 +440,24 @@ export async function createOperatorsBulk(
       }
       // A row whose filled cells all match what is stored changes nothing — it
       // is reported as an update of 0 fields and not written.
-      if (changes.length > 0) updates.push({ before, set, changes });
-      rows.push({
+      const row: MasterImportRowResult = {
         index,
         code: before.code,
         name: patch.name?.trim() ?? before.name,
         action: 'update',
         changedFields: changes.length,
-      });
+      };
+      rows.push(row);
+      // The approval payload = the operator screen's PATCH shape, filled cells only.
+      if (changes.length > 0) updates.push({ before, set, changes, row, payload: patch });
     }
+
+    // ADR-249 B2: with Document Edit Approval on, changed rows are sent for
+    // approval (lib/master-import-approval.ts); the rest are written below.
+    const directUpdates = await applyImportUpdates(tx, 'Operator', companyId, updates, {
+      dryRun,
+      user,
+    });
 
     if (!dryRun) {
       // Chunked: one INSERT carries one parameter per column per row and
@@ -468,11 +487,23 @@ export async function createOperatorsBulk(
       // nothing a stale token could be compared against. Last write wins here
       // on purpose; the import's own guard is the dry-run preview the user
       // confirms. Do not "fix" this by adding a check — it was not missed.
-      for (const u of updates) {
-        await tx
+      for (const u of directUpdates) {
+        // Backstop: never write a record that went to Trash meanwhile.
+        const written = await tx
           .update(operators)
           .set({ ...u.set, updatedBy: user.id })
-          .where(eq(operators.id, u.before.id));
+          .where(
+            and(
+              eq(operators.id, u.before.id),
+              eq(operators.companyId, companyId),
+              isNull(operators.deletedAt),
+            ),
+          )
+          .returning({ id: operators.id });
+        if (written.length === 0) {
+          markGone('Operator', u.row, u.before.code);
+          continue;
+        }
         await emitActivityLog(
           tx,
           {
@@ -496,7 +527,7 @@ export async function createOperatorsBulk(
       dryRun,
       mode,
       created: inserts.length,
-      updated: rows.filter((r) => r.action === 'update').length,
+      ...importCounts(rows),
       rows,
       skipped,
       codes,

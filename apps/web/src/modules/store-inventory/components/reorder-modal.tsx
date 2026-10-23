@@ -5,6 +5,8 @@
 import type { StoreInventoryRow } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { isStagedResult } from '@/modules/document-edits/api';
+import { Banner } from '@/ui/feedback';
 import { useSetReorder } from '../api';
 import { ModalShell } from './modal-shell';
 
@@ -28,6 +30,9 @@ export function ReorderModal({
   const [level, setLevel] = useState(String(row.reorderLevel));
   const [qty, setQty] = useState(String(row.reorderQty));
   const [err, setErr] = useState<string | null>(null);
+  // ADR-249 Step B — the change was held for approval: the item still carries
+  // its old Reorder Level / Qty, so the modal says so instead of closing as saved.
+  const [staged, setStaged] = useState(false);
   const mut = useSetReorder();
 
   const onSave = (): void => {
@@ -41,7 +46,13 @@ export function ReorderModal({
     mut.mutate(
       { itemId: row.itemId, reorderLevel: r3(l), reorderQty: r3(q) },
       {
-        onSuccess: () => onClose(),
+        onSuccess: (res) => {
+          if (isStagedResult(res)) {
+            setStaged(true);
+            return;
+          }
+          onClose();
+        },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
       },
     );
@@ -83,19 +94,37 @@ export function ReorderModal({
         </div>
       </div>
       {err ? <div style={{ marginTop: 12, color: 'var(--red2)', fontSize: 12 }}>{err}</div> : null}
+      {staged ? (
+        <div style={{ marginTop: 12 }}>
+          <Banner tone="success" role="status" flush>
+            Sent for approval — your changes will apply once an approver signs off.
+          </Banner>
+        </div>
+      ) : null}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
+        <button
+          type="button"
+          className={staged ? 'btn btn-primary' : 'btn btn-ghost'}
+          onClick={onClose}
+        >
+          {staged ? 'Close' : 'Cancel'}
         </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Save'
-          )}
-        </button>
+        {staged ? null : (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={mut.isPending}
+          >
+            {mut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save'
+            )}
+          </button>
+        )}
       </div>
     </ModalShell>
   );

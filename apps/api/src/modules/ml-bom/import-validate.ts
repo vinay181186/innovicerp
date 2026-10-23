@@ -36,6 +36,8 @@ export interface ImportValidation {
   result: MlBomImportResult;
   /** Sheet order (first appearance of the BOM Item Code). Empty unless ok. */
   plans: BomPlan[];
+  /** The sheet row numbers of each BOM, aligned with result.boms. */
+  bomRowNums: number[][];
 }
 
 /** The same child twice under one BOM Item Code → an error on EVERY such row. */
@@ -141,10 +143,12 @@ export async function validateImport(
   });
 
   const boms: MlBomImportBom[] = [];
+  const bomRowNums: number[][] = [];
   for (const itemId of graph.keys()) {
     const item = itemsById.get(itemId)!;
     const existing = defaults.get(itemId) ?? null;
     const own = checked.filter((c) => c.bomItem?.id === itemId);
+    bomRowNums.push(own.map((c) => c.rowNum));
     boms.push({
       itemCode: item.code,
       itemName: item.name,
@@ -197,5 +201,6 @@ export async function validateImport(
       levels,
     },
     plans,
+    bomRowNums,
   };
 }

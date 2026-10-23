@@ -21,9 +21,10 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { fmtDate } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
 import { useDocumentHistory } from '@/modules/activity-log/api';
+import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
@@ -58,6 +59,10 @@ function RouteCardDetailPage(): React.JSX.Element {
     entityId: detail?.id,
     refId: detail?.code,
   });
+  // ADR-249 Step B — a saved edit held for approval leaves the card as it was;
+  // say so here, where the edit page returns, so it does not read as lost.
+  const pendingEdit = usePendingEditForDoc('RouteCard', id);
+  const hasPendingEdit = (pendingEdit.data?.rows.length ?? 0) > 0;
   const del = useDeleteRouteCard();
   // Print failure (popup blocked) shows in place — never window.alert.
   const [notice, setNotice] = useState<string | null>(null);
@@ -169,6 +174,14 @@ function RouteCardDetailPage(): React.JSX.Element {
           </Link>
         )}
       </div>
+
+      {hasPendingEdit ? (
+        <div style={{ marginBottom: 'var(--panel-gap)' }}>
+          <Banner tone="info" role="status" flush>
+            A change to this Route Card is waiting for approval.
+          </Banner>
+        </div>
+      ) : null}
 
       <Panel>
         {/* WHICH item this route belongs to — identity, not a fact about the

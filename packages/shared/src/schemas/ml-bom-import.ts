@@ -74,6 +74,11 @@ export const mlBomImportBomSchema = z.object({
   revision: z.number().int().positive(),
   lineCount: z.number().int().nonnegative(),
   subAssemblyCount: z.number().int().nonnegative(),
+  /** ADR-249: real import with Document Edit Approval on — a revise row is
+   *  'sent_for_approval' (nothing changed yet) or 'not_sent' (refused, see
+   *  outcomeMessage). Absent on a dry run. */
+  outcome: z.enum(['saved', 'sent_for_approval', 'not_sent']).optional(),
+  outcomeMessage: z.string().nullable().optional(),
 });
 export type MlBomImportBom = z.infer<typeof mlBomImportBomSchema>;
 
@@ -105,5 +110,7 @@ export const mlBomImportResultSchema = z.object({
   boms: z.array(mlBomImportBomSchema),
   tree: z.array(mlBomImportTreeRowSchema),
   levels: z.number().int().nonnegative(),
+  sentForApprovalCount: z.number().int().nonnegative().optional(),
+  notSentCount: z.number().int().nonnegative().optional(),
 });
 export type MlBomImportResult = z.infer<typeof mlBomImportResultSchema>;

@@ -210,6 +210,12 @@ export const jcRouteCardWriteBackSchema = z.object({
   routeCardRevision: z.number().int(),
   /** true = this save created the item's first Route Card. */
   created: z.boolean(),
+  /** ADR-249: the routing differed from the existing card and Document Edit
+   *  Approval is on — the change was sent for approval, the card is unchanged. */
+  sentForApproval: z.boolean().optional(),
+  /** ADR-249: the routing differed but could NOT be sent for approval (e.g. the
+   *  card already has a change waiting) — plain reason; the card is unchanged. */
+  notSentReason: z.string().optional(),
 });
 export type JcRouteCardWriteBack = z.infer<typeof jcRouteCardWriteBackSchema>;
 /** POST / PATCH /job-cards response: the saved card + the write-back note. */

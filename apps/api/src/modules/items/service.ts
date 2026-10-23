@@ -25,7 +25,7 @@ import {
 import type { DocumentEditStagedResult } from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { primeAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -42,6 +42,13 @@ import {
   zodRowReason,
 } from '../../lib/master-rules';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  applyImportUpdates,
+  importCounts,
+  type ImportUpdateCandidate,
+  markGone,
+} from '../../lib/master-import-approval';
+import { assertReorderSettable } from './reorder-check';
 import { checkTypeAndSerialChange, SERIAL_ONLY_FOR_TOOLS, trackSerialForCreate } from './type-lock';
 import { createItemInputSchema, updateItemImportRowSchema } from './schema';
 import type {
@@ -110,6 +117,9 @@ export const ITEM_FIELDS: readonly DiffField[] = [
   { key: 'hsnCode', label: 'HSN Code' },
   { key: 'drawingFilePath', label: 'Old Drawing', format: fileName },
   { key: 'imagePath', label: 'Product image', format: fileName },
+  // Store → Reorder (ADR-193 ph5) — staged like any Item edit (ADR-249 B2).
+  { key: 'minStockQty', label: 'Reorder Level' },
+  { key: 'reorderQty', label: 'Reorder Qty' },
 ];
 
 function escapeLikeTerm(raw: string): string {
@@ -375,6 +385,8 @@ export async function createItemsBulk(
   // Insert raises items (`entry`); Update Existing changes saved ones (`edit`).
   await requireFormAccess(user, 'item_create', mode === 'update' ? 'edit' : 'entry');
   const companyId = requireCompany(user);
+  // ADR-249 B2: staging a row checks access inside the transaction — read it now.
+  if (mode === 'update') await primeAccess(user);
 
   return withUserContext(user, async (tx) => {
     const settings = await loadMasterRuleSettings(tx, companyId);
@@ -400,11 +412,13 @@ export async function createItemsBulk(
     const rows: MasterImportRowResult[] = [];
     const inserts: Array<typeof items.$inferInsert> = [];
     const codes: string[] = [];
-    const updates: Array<{
-      before: ItemRow;
-      set: Record<string, unknown>;
-      changes: ReturnType<typeof diffFields>;
-    }> = [];
+    const updates: Array<
+      ImportUpdateCandidate & {
+        before: ItemRow;
+        set: Record<string, unknown>;
+        changes: ReturnType<typeof diffFields>;
+      }
+    > = [];
     const seenCodes = new Set<string>();
 
     for (const [i, raw] of input.items.entries()) {
@@ -536,16 +550,32 @@ export async function createItemsBulk(
         continue;
       }
       const changes = diffFields(before, set, ITEM_FIELDS);
-      if (changes.length > 0) updates.push({ before, set, changes });
-      rows.push({
+      const row: MasterImportRowResult = {
         index,
         code: before.code,
         name: patch.name?.trim() ?? before.name,
         action: 'update',
         changedFields: changes.length,
         ...(issues.length ? { warnings: issueTexts(issues) } : {}),
-      });
+      };
+      rows.push(row);
+      if (changes.length > 0) {
+        // The approval payload = the item screen's PATCH shape, filled cells
+        // only. Item Type / Track by Serial No. are never changed by import
+        // (refused above when different), so they are left out.
+        const payload: Record<string, unknown> = { ...patch };
+        delete payload.itemType;
+        delete payload.trackSerial;
+        updates.push({ before, set, changes, row, payload });
+      }
     }
+
+    // ADR-249 B2: with Document Edit Approval on, changed rows are sent for
+    // approval (lib/master-import-approval.ts); the rest are written below.
+    const directUpdates = await applyImportUpdates(tx, 'Item', companyId, updates, {
+      dryRun,
+      user,
+    });
 
     if (!dryRun) {
       // Chunked: one INSERT carries one parameter per column per row and
@@ -569,11 +599,19 @@ export async function createItemsBulk(
         );
       }
       // Update Existing: one History row per item, Before → After (ADR-197).
-      for (const u of updates) {
-        await tx
+      for (const u of directUpdates) {
+        // Backstop: never write a record that went to Trash meanwhile.
+        const written = await tx
           .update(items)
           .set({ ...u.set, updatedBy: user.id })
-          .where(eq(items.id, u.before.id));
+          .where(
+            and(eq(items.id, u.before.id), eq(items.companyId, companyId), isNull(items.deletedAt)),
+          )
+          .returning({ id: items.id });
+        if (written.length === 0) {
+          markGone('Item', u.row, u.before.code);
+          continue;
+        }
         await emitActivityLog(
           tx,
           {
@@ -597,7 +635,7 @@ export async function createItemsBulk(
       dryRun,
       mode,
       created: inserts.length,
-      updated: rows.filter((r) => r.action === 'update').length,
+      ...importCounts(rows),
       rows,
       skipped,
       codes,
@@ -687,23 +725,43 @@ export async function updateItemTx(
   }
   const trackSerial = await checkTypeAndSerialChange(tx, id, cur, input);
 
-  // HSN rule on the MERGED item (type and HSN after this save).
-  const settings = await loadMasterRuleSettings(tx, companyId);
-  const warnings = applyMasterRules(
-    checkItemHsn(
-      {
-        itemType: input.itemType ?? cur.itemType,
-        hsnCode: input.hsnCode !== undefined ? input.hsnCode : cur.hsnCode,
-      },
-      settings,
-    ),
-    settings.masterRulesMode,
-    `Item ${cur.code}`,
+  // HSN rule on the MERGED item (type and HSN after this save). Not for a
+  // Store → Reorder save (only Reorder Level / Qty): before it went through
+  // this writer (ADR-249 B2) a reorder never ran the HSN rule, and an old item
+  // with no HSN must not be refused a Reorder Level in enforce mode.
+  const reorderOnly = Object.keys(input).every(
+    (k) => k === 'minStockQty' || k === 'reorderQty' || k === 'expectedUpdatedAt',
   );
+  const settings = await loadMasterRuleSettings(tx, companyId);
+  const warnings = reorderOnly
+    ? []
+    : applyMasterRules(
+        checkItemHsn(
+          {
+            itemType: input.itemType ?? cur.itemType,
+            hsnCode: input.hsnCode !== undefined ? input.hsnCode : cur.hsnCode,
+          },
+          settings,
+        ),
+        settings.masterRulesMode,
+        `Item ${cur.code}`,
+      );
 
   const updates: Record<string, unknown> = { updatedBy: user.id, ...itemPlainUpdates(input) };
   if (input.itemType !== undefined) updates.itemType = input.itemType;
   if (trackSerial !== undefined) updates.trackSerial = trackSerial;
+  // Reorder Level / Reorder Qty (Store → Reorder, or its approved staged edit).
+  // A key that is absent leaves the stored value alone — the Item edit page
+  // never sends them, so it can never clear them.
+  if (input.minStockQty !== undefined || input.reorderQty !== undefined) {
+    const { level, qty } = assertReorderSettable(
+      { code: cur.code, uom: input.uom ?? cur.uom, itemType: input.itemType ?? cur.itemType },
+      input.minStockQty ?? cur.minStockQty,
+      input.reorderQty ?? cur.reorderQty,
+    );
+    if (input.minStockQty !== undefined) updates.minStockQty = level;
+    if (input.reorderQty !== undefined) updates.reorderQty = qty;
+  }
 
   const changes = diffFields(cur, updates, ITEM_FIELDS);
   const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();

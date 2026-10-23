@@ -50,6 +50,7 @@
 
 import {
   type ActivityChange,
+  type DocumentEditStagedResult,
   ActivityAction,
   type JcRouteCardWriteBack,
   opSrNo,
@@ -77,6 +78,7 @@ import { resolveRmItem } from '../../lib/rm-item';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import {
+  AppError,
   AuthorizationError,
   ConflictError,
   NotFoundError,
@@ -84,7 +86,14 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { logger } from '../../lib/logger';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  type RouteCardEditPayload,
+  routingNotSentReason,
+  stagingFromSourceDoc,
+} from './route-card-edit-common';
+import { opInputFromRow } from './route-card-edit-lookups';
 // T2 — push a new card's raw material onto that item's blank, waiting plans.
 // The lookup is shared with the plan side's T1 default (ONE route-card query).
 import {
@@ -695,7 +704,7 @@ export function computeRouteCardDiffNote(oldOps: DiffOp[], newOps: DiffOp[]): st
 // built as a person reads them: ids already turned into codes, plan / op
 // types into their screen words. Labels are the form's own (docs/NAMING.md).
 
-const PLAN_TYPE_LABEL: Record<string, string> = {
+export const PLAN_TYPE_LABEL: Record<string, string> = {
   manufacture: 'Manufacture',
   full_outsource: 'Full Outsource',
   direct_purchase: 'Buy',
@@ -707,7 +716,7 @@ const OP_TYPE_LABEL: Record<string, string> = {
   qc: 'QC',
 };
 
-function labelOf(map: Record<string, string>): (v: unknown) => string | null {
+export function labelOf(map: Record<string, string>): (v: unknown) => string | null {
   return (v) => (v === null || v === undefined || v === '' ? null : (map[String(v)] ?? String(v)));
 }
 
@@ -997,294 +1006,414 @@ export async function createRouteCard(
   });
 }
 
+/** The checks an edit must pass before anything is written — ONE place, used
+ *  by the writer (updateRouteCardTx) and by the edit-approval staging precheck
+ *  (updateRouteCardOrStage, saveRouteCardForItem), so a proposal the writer
+ *  would refuse is refused before it is staged, not at approval. `header` is
+ *  the card row as stored (locked by the caller).
+ *
+ *  `routingUnchanged` (an approved edit whose "Operations" box was NOT
+ *  approved, so the STORED ops + raw material are resubmitted as they stand):
+ *  only what changes is checked — the routing rule, machine / vendor and raw
+ *  material checks are skipped, so a grandfathered routing (QC after OSP from
+ *  a Job Card auto-save) cannot block approving, say, its Notes. */
+export async function validateRouteCardEdit(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  header: typeof routeCards.$inferSelect,
+  input: UpdateRouteCardInput,
+  routingUnchanged = false,
+): Promise<{
+  item: { code: string; name: string };
+  machinesLookup: MachinesLookup;
+  vendorsLookup: VendorsLookup;
+  rawMaterial: ResolvedRawMaterial;
+}> {
+  // Validate item exists (may have changed if user re-pointed).
+  const item = await assertItemExists(tx, input.itemId, companyId);
+
+  // If item changed, ensure no other active RC owns the new item.
+  if (input.itemId !== header.itemId) {
+    const other = await tx
+      .select({ id: routeCards.id, code: routeCards.code })
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.itemId, input.itemId),
+          isNull(routeCards.deletedAt),
+          sql`${routeCards.id} != ${id}::uuid`,
+        ),
+      )
+      .limit(1);
+    if (other.length > 0) {
+      throw new ConflictError(
+        `Another Route Card already covers ${item.code} (${other[0]!.code}).`,
+      );
+    }
+  }
+
+  // code collision check (only when it changed).
+  if (input.code !== header.code) {
+    const dup = await tx
+      .select({ id: routeCards.id })
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.code, input.code),
+          isNull(routeCards.deletedAt),
+          sql`${routeCards.id} != ${id}::uuid`,
+        ),
+      )
+      .limit(1);
+    if (dup.length > 0) throw new ConflictError(`Route Card No. "${input.code}" already exists`);
+  }
+
+  if (routingUnchanged) {
+    // Lookups only for the revision snapshot; the stored RM as it stands.
+    return {
+      item,
+      machinesLookup: await loadMachinesByIds(
+        tx,
+        input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x)),
+        companyId,
+      ),
+      vendorsLookup: await loadVendorsByIds(
+        tx,
+        input.ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x)),
+        companyId,
+      ),
+      rawMaterial: {
+        rawMaterialGradeId: header.rawMaterialGradeId,
+        rawMaterialGradeText: header.rawMaterialGradeText,
+        rawMaterialSizeId: header.rawMaterialSizeId,
+        rawMaterialSizeText: header.rawMaterialSizeText,
+        rawMaterialItemId: header.rawMaterialItemId,
+        rmQtyPerPiece: header.rmQtyPerPiece,
+      },
+    };
+  }
+
+  // Routing rule: a QC op may not sit directly after an OSP op. Same as
+  // create — no rework/grandfather exemption on an item's master routing.
+  assertNoQcDirectlyAfterOutsource(input.ops);
+
+  // Validate ops references.
+  const machineIds = input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x));
+  const vendorIds = input.ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x));
+  const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
+  // Vendors already on this route card's ops stay allowed even if inactive.
+  const currentOpVendors = await tx
+    .select({ id: routeCardOps.ospVendorId })
+    .from(routeCardOps)
+    .where(
+      and(
+        eq(routeCardOps.routeCardId, id),
+        eq(routeCardOps.companyId, companyId),
+        isNull(routeCardOps.deletedAt),
+      ),
+    );
+  const vendorsLookup = await assertVendorIdsExist(
+    tx,
+    vendorIds,
+    companyId,
+    new Set(currentOpVendors.flatMap((r) => (r.id ? [r.id] : []))),
+  );
+
+  const rawMaterial = await resolveRcRawMaterial(tx, companyId, input, {
+    rawMaterialItemId: header.rawMaterialItemId,
+    rmQtyPerPiece: header.rmQtyPerPiece,
+  });
+  return { item, machinesLookup, vendorsLookup, rawMaterial };
+}
+
 export async function updateRouteCard(
   id: string,
   input: UpdateRouteCardInput,
   user: AuthContext,
 ): Promise<RouteCardDetail> {
+  // The `edit` check lives HERE, not in updateRouteCardTx, so the edit-approval
+  // engine's applyEdit can replay an approved edit for an approver who holds
+  // `approve` but not `edit` (the same split as updateBomMaster).
+  await requireFormAccess(user, 'routecard_create', 'edit');
+  return withUserContext(user, (tx) => updateRouteCardTx(tx, id, input, user));
+}
+
+/**
+ * The Route Card edit entry point the HTTP route calls (ADR-249 Step B2). With
+ * the company's edit-approval gate on, an edit to a live card is STAGED for
+ * per-box approval and `{ staged: true, request }` comes back; otherwise it
+ * saves directly through updateRouteCard, exactly as before.
+ */
+export async function updateRouteCardOrStage(
+  id: string,
+  input: UpdateRouteCardInput,
+  user: AuthContext,
+): Promise<RouteCardDetail | DocumentEditStagedResult> {
   await requireFormAccess(user, 'routecard_create', 'edit');
   const companyId = requireCompany(user);
-
-  return withUserContext(user, async (tx) => {
-    // LOCK ORDER — plans BEFORE route_cards (CLAUDE.md Section 20.3). This is
-    // the FIRST statement of the transaction, ahead of the route_cards row lock
-    // below, because this path ends in a T2 backfill that locks plan rows
-    // (backfillPlansFromRouteCard, bottom of this function). `executePlan`
-    // (modules/plans/service.ts) goes the other way round — it locks the plan
-    // row FOR UPDATE and only later writes this item's route_cards row through
-    // `saveRouteCardForItem` — so route_cards → plans here would let one user
-    // saving the Route Card for item X and another pressing Execute on a plan
-    // for item X deadlock (Postgres 40P01), with the loser getting a raw
-    // database error. Taking the plan locks first makes both paths
-    // plans → route_cards, so one simply waits for the other.
-    //
-    // It locks exactly the rows the backfill will touch, using the SAME
-    // predicate (backfillCandidateGuard), which keys on the PLAN's blank
-    // columns, its item and its Job Card — never on the card's values — so
-    // writing the route_cards row in between cannot change the set. The
-    // backfill's own FOR UPDATE then re-locks rows this transaction already
-    // holds, which is free. createRouteCard takes the same pre-lock, for the
-    // partial-unique-index reason spelled out there.
-    await lockBackfillCandidates(tx, companyId, input.itemId);
-
-    const headers = await tx
-      .select()
-      .from(routeCards)
-      .where(
-        and(
-          eq(routeCards.id, id),
-          eq(routeCards.companyId, companyId),
-          isNull(routeCards.deletedAt),
-        ),
-      )
-      .for('update')
-      .limit(1);
-    const header = headers[0];
-    if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
-    // R5: refuse the save if someone else edited the Route Card after this form opened it.
-    assertUnchangedSinceOpened(header.updatedAt, input.expectedUpdatedAt);
-
-    // Validate item exists (may have changed if user re-pointed).
-    const item = await assertItemExists(tx, input.itemId, companyId);
-
-    // If item changed, ensure no other active RC owns the new item.
-    if (input.itemId !== header.itemId) {
-      const other = await tx
-        .select({ id: routeCards.id, code: routeCards.code })
-        .from(routeCards)
-        .where(
-          and(
-            eq(routeCards.companyId, companyId),
-            eq(routeCards.itemId, input.itemId),
-            isNull(routeCards.deletedAt),
-            sql`${routeCards.id} != ${id}::uuid`,
-          ),
-        )
-        .limit(1);
-      if (other.length > 0) {
+  // Imported dynamically: the engine's registry imports the Route Card entry,
+  // which imports this file — a static import would be a cycle.
+  const { requestDocumentEdit } = await import('../document-edits/service');
+  const request = await requestDocumentEdit(
+    'RouteCard',
+    id,
+    input,
+    input.expectedUpdatedAt,
+    user,
+    async (tx, target) => {
+      // §20.3 — approving a move to item B would lock B's plans AFTER the
+      // route_cards row (the reverse of executePlan), so a re-point is not
+      // staged at all.
+      if (input.itemId !== target.doc['itemId']) {
         throw new ConflictError(
-          `Another Route Card already covers ${item.code} (${other[0]!.code}).`,
+          'An approved Route Card cannot be moved to another item while Document Edit ' +
+            'Approval is on — create a Route Card for that item instead.',
         );
       }
-    }
-
-    // code collision check (only when it changed).
-    if (input.code !== header.code) {
-      const dup = await tx
-        .select({ id: routeCards.id })
-        .from(routeCards)
-        .where(
-          and(
-            eq(routeCards.companyId, companyId),
-            eq(routeCards.code, input.code),
-            isNull(routeCards.deletedAt),
-            sql`${routeCards.id} != ${id}::uuid`,
-          ),
-        )
-        .limit(1);
-      if (dup.length > 0) throw new ConflictError(`Route Card No. "${input.code}" already exists`);
-    }
-
-    // Routing rule: a QC op may not sit directly after an OSP op. Same as
-    // create — no rework/grandfather exemption on an item's master routing.
-    // Legacy JC edits reach the route card through saveRouteCardForItem, not
-    // here, so a grandfathered JC's auto-save is not caught by this check.
-    assertNoQcDirectlyAfterOutsource(input.ops);
-
-    // Validate ops references.
-    const machineIds = input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x));
-    const vendorIds = input.ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x));
-    const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
-    // Vendors already on this route card's ops stay allowed even if inactive.
-    const currentOpVendors = await tx
-      .select({ id: routeCardOps.ospVendorId })
-      .from(routeCardOps)
-      .where(
-        and(
-          eq(routeCardOps.routeCardId, id),
-          eq(routeCardOps.companyId, companyId),
-          isNull(routeCardOps.deletedAt),
-        ),
+      // The writer's own checks, under the locks loadForDiff took.
+      await validateRouteCardEdit(
+        tx,
+        companyId,
+        id,
+        target.doc as unknown as typeof routeCards.$inferSelect,
+        input,
       );
-    const vendorsLookup = await assertVendorIdsExist(
-      tx,
-      vendorIds,
-      companyId,
-      new Set(currentOpVendors.flatMap((r) => (r.id ? [r.id] : []))),
+    },
+  );
+  if (request) return { staged: true, request };
+  return updateRouteCard(id, input, user);
+}
+
+/** The Route Card writer, inside the caller's transaction. PUT (through
+ *  updateRouteCard) and the edit-approval applyEdit both land here, so an
+ *  approved edit gets the same checks, revision bump, plan backfill and
+ *  History as a direct save. */
+export async function updateRouteCardTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateRouteCardInput,
+  user: AuthContext,
+  /** `routingUnchanged`: see validateRouteCardEdit — set by the edit-approval
+   *  applyEdit when only header boxes were approved. */
+  opts?: { routingUnchanged?: boolean },
+): Promise<RouteCardDetail> {
+  const companyId = requireCompany(user);
+  // LOCK ORDER — plans BEFORE route_cards (CLAUDE.md Section 20.3). This is
+  // the FIRST statement of the transaction, ahead of the route_cards row lock
+  // below, because this path ends in a T2 backfill that locks plan rows
+  // (backfillPlansFromRouteCard, bottom of this function). `executePlan`
+  // (modules/plans/service.ts) goes the other way round — it locks the plan
+  // row FOR UPDATE and only later writes this item's route_cards row through
+  // `saveRouteCardForItem` — so route_cards → plans here would let one user
+  // saving the Route Card for item X and another pressing Execute on a plan
+  // for item X deadlock (Postgres 40P01), with the loser getting a raw
+  // database error. Taking the plan locks first makes both paths
+  // plans → route_cards, so one simply waits for the other.
+  //
+  // It locks exactly the rows the backfill will touch, using the SAME
+  // predicate (backfillCandidateGuard), which keys on the PLAN's blank
+  // columns, its item and its Job Card — never on the card's values — so
+  // writing the route_cards row in between cannot change the set. The
+  // backfill's own FOR UPDATE then re-locks rows this transaction already
+  // holds, which is free. createRouteCard takes the same pre-lock, for the
+  // partial-unique-index reason spelled out there.
+  await lockBackfillCandidates(tx, companyId, input.itemId);
+
+  const headers = await tx
+    .select()
+    .from(routeCards)
+    .where(
+      and(eq(routeCards.id, id), eq(routeCards.companyId, companyId), isNull(routeCards.deletedAt)),
+    )
+    .for('update')
+    .limit(1);
+  const header = headers[0];
+  if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
+  // R5: refuse the save if someone else edited the Route Card after this form opened it.
+  assertUnchangedSinceOpened(header.updatedAt, input.expectedUpdatedAt);
+
+  // Item, code, routing rule, machines / vendors, raw material — one place
+  // (validateRouteCardEdit), shared with the edit-approval staging precheck.
+  // Legacy JC edits reach the route card through saveRouteCardForItem, not
+  // here, so a grandfathered JC's auto-save is not caught by the QC rule.
+  const { item, machinesLookup, vendorsLookup, rawMaterial } = await validateRouteCardEdit(
+    tx,
+    companyId,
+    id,
+    header,
+    input,
+    opts?.routingUnchanged === true,
+  );
+
+  // What changed ABOVE the operation table — computed here, while `header`
+  // still holds the pre-save values. These edits bump the revision like any
+  // other save, so leaving them out of the note meant a card could go from
+  // Rev 2 to Rev 3 with "No op changes" written against it and no record
+  // anywhere that the raw material grade had been swapped.
+  const headerChanges: string[] = [];
+  if (input.code !== header.code) {
+    headerChanges.push(`Code ${header.code} → ${input.code}`);
+  }
+  let prevItemCode: string | null = item.code;
+  if (input.itemId !== header.itemId) {
+    // Plain select, not assertItemExists: the OLD item may since have been
+    // deleted, and that must not block recording that it was replaced.
+    const prev = await tx
+      .select({ code: items.code })
+      .from(items)
+      .where(eq(items.id, header.itemId))
+      .limit(1);
+    prevItemCode = prev[0]?.code ?? null;
+    headerChanges.push(`Item ${prev[0]?.code ?? '—'} → ${item.code}`);
+  }
+  if ((rawMaterial.rawMaterialGradeText ?? null) !== (header.rawMaterialGradeText ?? null)) {
+    headerChanges.push(
+      `Grade ${noteVal(header.rawMaterialGradeText)} → ${noteVal(rawMaterial.rawMaterialGradeText)}`,
     );
-
-    const rawMaterial = await resolveRcRawMaterial(tx, companyId, input, {
-      rawMaterialItemId: header.rawMaterialItemId,
-      rmQtyPerPiece: header.rmQtyPerPiece,
-    });
-
-    // What changed ABOVE the operation table — computed here, while `header`
-    // still holds the pre-save values. These edits bump the revision like any
-    // other save, so leaving them out of the note meant a card could go from
-    // Rev 2 to Rev 3 with "No op changes" written against it and no record
-    // anywhere that the raw material grade had been swapped.
-    const headerChanges: string[] = [];
-    if (input.code !== header.code) {
-      headerChanges.push(`Code ${header.code} → ${input.code}`);
-    }
-    let prevItemCode: string | null = item.code;
-    if (input.itemId !== header.itemId) {
-      // Plain select, not assertItemExists: the OLD item may since have been
-      // deleted, and that must not block recording that it was replaced.
-      const prev = await tx
-        .select({ code: items.code })
-        .from(items)
-        .where(eq(items.id, header.itemId))
-        .limit(1);
-      prevItemCode = prev[0]?.code ?? null;
-      headerChanges.push(`Item ${prev[0]?.code ?? '—'} → ${item.code}`);
-    }
-    if ((rawMaterial.rawMaterialGradeText ?? null) !== (header.rawMaterialGradeText ?? null)) {
-      headerChanges.push(
-        `Grade ${noteVal(header.rawMaterialGradeText)} → ${noteVal(rawMaterial.rawMaterialGradeText)}`,
-      );
-    }
-    if ((rawMaterial.rawMaterialSizeText ?? null) !== (header.rawMaterialSizeText ?? null)) {
-      headerChanges.push(
-        `Size ${noteVal(header.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
-      );
-    }
-    if (
-      (rawMaterial.rawMaterialItemId ?? null) !== (header.rawMaterialItemId ?? null) ||
-      (rawMaterial.rmQtyPerPiece ?? null) !== (header.rmQtyPerPiece ?? null)
-    ) {
-      const codes = await rmItemCodes(tx, companyId, [
-        header.rawMaterialItemId,
-        rawMaterial.rawMaterialItemId,
-      ]);
-      headerChanges.push(
-        `RM item ${rmItemNote(codes, header.rawMaterialItemId, header.rmQtyPerPiece)} → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
-      );
-    }
-    // The plan type is a header fact like grade and size: a change to it is a
-    // revision and belongs in the auto-note next to them.
-    const nextPlanType = input.planType ?? header.planType;
-    if (nextPlanType !== header.planType) {
-      headerChanges.push(`Plan type ${header.planType} → ${nextPlanType}`);
-    }
-    if ((input.notes ?? null) !== (header.notes ?? null)) {
-      headerChanges.push(`Notes ${noteVal(header.notes)} → ${noteVal(input.notes)}`);
-    }
-
-    // ADR-197 — the same header, as a person reads it, for the log's
-    // before → after. Read here, before the UPDATE below.
-    const rmCodes = await rmItemCodes(tx, companyId, [
+  }
+  if ((rawMaterial.rawMaterialSizeText ?? null) !== (header.rawMaterialSizeText ?? null)) {
+    headerChanges.push(
+      `Size ${noteVal(header.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
+    );
+  }
+  if (
+    (rawMaterial.rawMaterialItemId ?? null) !== (header.rawMaterialItemId ?? null) ||
+    (rawMaterial.rmQtyPerPiece ?? null) !== (header.rmQtyPerPiece ?? null)
+  ) {
+    const codes = await rmItemCodes(tx, companyId, [
       header.rawMaterialItemId,
       rawMaterial.rawMaterialItemId,
     ]);
-    const beforeView: RcHeaderView = {
-      code: header.code,
-      itemCode: prevItemCode,
-      planType: header.planType,
-      rawMaterialGradeText: header.rawMaterialGradeText,
-      rawMaterialSizeText: header.rawMaterialSizeText,
-      rawMaterialItemCode: header.rawMaterialItemId
-        ? (rmCodes.get(header.rawMaterialItemId) ?? null)
-        : null,
-      rmQtyPerPiece: header.rmQtyPerPiece,
-      notes: header.notes,
-    };
-    const afterView: RcHeaderView = {
+    headerChanges.push(
+      `RM item ${rmItemNote(codes, header.rawMaterialItemId, header.rmQtyPerPiece)} → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
+    );
+  }
+  // The plan type is a header fact like grade and size: a change to it is a
+  // revision and belongs in the auto-note next to them.
+  const nextPlanType = input.planType ?? header.planType;
+  if (nextPlanType !== header.planType) {
+    headerChanges.push(`Plan type ${header.planType} → ${nextPlanType}`);
+  }
+  if ((input.notes ?? null) !== (header.notes ?? null)) {
+    headerChanges.push(`Notes ${noteVal(header.notes)} → ${noteVal(input.notes)}`);
+  }
+
+  // ADR-197 — the same header, as a person reads it, for the log's
+  // before → after. Read here, before the UPDATE below.
+  const rmCodes = await rmItemCodes(tx, companyId, [
+    header.rawMaterialItemId,
+    rawMaterial.rawMaterialItemId,
+  ]);
+  const beforeView: RcHeaderView = {
+    code: header.code,
+    itemCode: prevItemCode,
+    planType: header.planType,
+    rawMaterialGradeText: header.rawMaterialGradeText,
+    rawMaterialSizeText: header.rawMaterialSizeText,
+    rawMaterialItemCode: header.rawMaterialItemId
+      ? (rmCodes.get(header.rawMaterialItemId) ?? null)
+      : null,
+    rmQtyPerPiece: header.rmQtyPerPiece,
+    notes: header.notes,
+  };
+  const afterView: RcHeaderView = {
+    code: input.code,
+    itemCode: item.code,
+    planType: nextPlanType,
+    rawMaterialGradeText: rawMaterial.rawMaterialGradeText,
+    rawMaterialSizeText: rawMaterial.rawMaterialSizeText,
+    rawMaterialItemCode: rawMaterial.rawMaterialItemId
+      ? (rmCodes.get(rawMaterial.rawMaterialItemId) ?? null)
+      : null,
+    rmQtyPerPiece: rawMaterial.rmQtyPerPiece,
+    notes: input.notes ?? null,
+  };
+
+  // Header fields the ops-replace helper does not own. rawMaterial is always
+  // written, never merged — sending null (or leaving the field out) clears
+  // the grade or size instead of keeping the old one.
+  await tx
+    .update(routeCards)
+    .set({
       code: input.code,
-      itemCode: item.code,
-      planType: nextPlanType,
-      rawMaterialGradeText: rawMaterial.rawMaterialGradeText,
-      rawMaterialSizeText: rawMaterial.rawMaterialSizeText,
-      rawMaterialItemCode: rawMaterial.rawMaterialItemId
-        ? (rmCodes.get(rawMaterial.rawMaterialItemId) ?? null)
-        : null,
-      rmQtyPerPiece: rawMaterial.rmQtyPerPiece,
+      itemId: input.itemId,
+      ...rawMaterial,
       notes: input.notes ?? null,
-    };
+      planType: input.planType ?? header.planType,
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(routeCards.id, id));
 
-    // Header fields the ops-replace helper does not own. rawMaterial is always
-    // written, never merged — sending null (or leaving the field out) clears
-    // the grade or size instead of keeping the old one.
-    await tx
-      .update(routeCards)
-      .set({
-        code: input.code,
-        itemId: input.itemId,
-        ...rawMaterial,
-        notes: input.notes ?? null,
-        planType: input.planType ?? header.planType,
-        updatedBy: user.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(routeCards.id, id));
-
-    // Ops swap + revision bump + snapshot live in ONE place
-    // (replaceRouteCardOps) shared with the auto-save path below.
-    // skipWhenUnchanged is false here: an explicit user save always
-    // records a revision, exactly as it did before this refactor.
-    const replaced = await replaceRouteCardOps(
-      tx,
-      {
-        routeCardId: id,
-        companyId,
-        currentRevision: header.currentRevision,
-        ops: input.ops,
-        machinesLookup,
-        vendorsLookup,
-        note: input.revisionNote?.trim() || null,
-        headerNote: headerChanges.length > 0 ? headerChanges.join(', ') : null,
-      },
-      user,
-    );
-
-    // An explicit save always records a revision, so the header row always
-    // carries at least the Route Card Rev bump.
-    const revisionNote = input.revisionNote?.trim();
-    await logRouteCardRevision(
-      tx,
+  // Ops swap + revision bump + snapshot live in ONE place
+  // (replaceRouteCardOps) shared with the auto-save path below.
+  // skipWhenUnchanged is false here: an explicit user save always
+  // records a revision, exactly as it did before this refactor.
+  const replaced = await replaceRouteCardOps(
+    tx,
+    {
+      routeCardId: id,
       companyId,
-      user,
-      { id, code: input.code },
-      [
-        ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
-        revChange(header.currentRevision, replaced.newRevision),
-      ],
-      routeCardOpLogRows(replaced.oldOps, replaced.newOps),
-      `Edited ${rcDetailString(input.code, item.code)}${revisionNote ? ` — ${revisionNote}` : ''}`,
-    );
+      currentRevision: header.currentRevision,
+      ops: input.ops,
+      machinesLookup,
+      vendorsLookup,
+      note: input.revisionNote?.trim() || null,
+      headerNote: headerChanges.length > 0 ? headerChanges.join(', ') : null,
+    },
+    user,
+  );
 
-    // T2 (plan-rm-backfill) on the EDIT side — the create-only version of this
-    // left a hole as wide as the one it closed: a card saved with blank raw
-    // material, or one whose grade / size was typed in a week later, never
-    // reached the plans already waiting on it, so they kept their blanks for
-    // ever and Create Production Order stayed empty.
-    //
-    // Same shape and the same lookup as createRouteCard, inside THIS
-    // transaction so a failed backfill rolls the edit back with it. Still
-    // fill-BLANKS-only and now per HALF (a blank grade OR a blank size, jc_id
-    // NULL — the guards live in backfillPlansFromRouteCard), so an edit can
-    // never overwrite a grade or a size a planner typed.
-    //
-    // LOCK ORDER — the plan rows this locks were ALREADY locked at the top of
-    // this transaction (lockBackfillCandidates), with the same predicate and
-    // for this reason: `executePlan` locks plans before route_cards, and this
-    // path must not go the other way or the two deadlock. Re-locking rows we
-    // already hold is free. Do not move this call above the pre-lock, and do
-    // not drop the pre-lock.
-    //
-    // NOT on a re-point. This form can move a card from item A to item B, and
-    // the raw material on it was chosen for A. Backfilling then stamps A's
-    // grade and size onto every blank-RM plan of B while A's plans keep what
-    // this card already gave them — one card's material landing on two parts.
-    // A re-pointed card fills B's plans the next time someone saves it with
-    // the material B actually needs.
-    if (input.itemId === header.itemId) {
-      const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId);
-      if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
-    }
+  // An explicit save always records a revision, so the header row always
+  // carries at least the Route Card Rev bump.
+  const revisionNote = input.revisionNote?.trim();
+  await logRouteCardRevision(
+    tx,
+    companyId,
+    user,
+    { id, code: input.code },
+    [
+      ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
+      revChange(header.currentRevision, replaced.newRevision),
+    ],
+    routeCardOpLogRows(replaced.oldOps, replaced.newOps),
+    `Edited ${rcDetailString(input.code, item.code)}${revisionNote ? ` — ${revisionNote}` : ''}`,
+  );
 
-    return loadRouteCardDetail(tx, id, companyId);
-  });
+  // T2 (plan-rm-backfill) on the EDIT side — the create-only version of this
+  // left a hole as wide as the one it closed: a card saved with blank raw
+  // material, or one whose grade / size was typed in a week later, never
+  // reached the plans already waiting on it, so they kept their blanks for
+  // ever and Create Production Order stayed empty.
+  //
+  // Same shape and the same lookup as createRouteCard, inside THIS
+  // transaction so a failed backfill rolls the edit back with it. Still
+  // fill-BLANKS-only and now per HALF (a blank grade OR a blank size, jc_id
+  // NULL — the guards live in backfillPlansFromRouteCard), so an edit can
+  // never overwrite a grade or a size a planner typed.
+  //
+  // LOCK ORDER — the plan rows this locks were ALREADY locked at the top of
+  // this transaction (lockBackfillCandidates), with the same predicate and
+  // for this reason: `executePlan` locks plans before route_cards, and this
+  // path must not go the other way or the two deadlock. Re-locking rows we
+  // already hold is free. Do not move this call above the pre-lock, and do
+  // not drop the pre-lock.
+  //
+  // NOT on a re-point. This form can move a card from item A to item B, and
+  // the raw material on it was chosen for A. Backfilling then stamps A's
+  // grade and size onto every blank-RM plan of B while A's plans keep what
+  // this card already gave them — one card's material landing on two parts.
+  // A re-pointed card fills B's plans the next time someone saves it with
+  // the material B actually needs.
+  if (input.itemId === header.itemId) {
+    const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId);
+    if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
+  }
+
+  return loadRouteCardDetail(tx, id, companyId);
 }
 
 export async function softDeleteRouteCard(
@@ -1403,6 +1532,31 @@ async function rmItemCodes(
  *  every writer trims to null, and a card's history is longer.) */
 function isBlankRmText(v: string | null | undefined): boolean {
   return v === null || v === undefined || v.trim() === '';
+}
+
+/** Which raw-material halves a Job Card / plan auto-save may fill on an
+ *  EXISTING card (ADR-218: a half the card holds blank, from non-blank incoming
+ *  values; the RM item moves as a pair). One test, used by the direct fill and
+ *  by a staged routing change (ADR-249 Step B2). */
+export function rmHalvesToFill(
+  card: {
+    rawMaterialGradeText: string | null;
+    rawMaterialSizeText: string | null;
+    rawMaterialItemId: string | null;
+    rmQtyPerPiece: number | null;
+  },
+  incoming: ResolvedRawMaterial,
+): { grade: boolean; size: boolean; rmItem: boolean } {
+  return {
+    grade:
+      isBlankRmText(card.rawMaterialGradeText) && !isBlankRmText(incoming.rawMaterialGradeText),
+    size: isBlankRmText(card.rawMaterialSizeText) && !isBlankRmText(incoming.rawMaterialSizeText),
+    rmItem:
+      card.rawMaterialItemId === null &&
+      card.rmQtyPerPiece === null &&
+      Boolean(incoming.rawMaterialItemId) &&
+      incoming.rmQtyPerPiece != null,
+  };
 }
 
 /** The same test as SQL, for the UPDATE's WHERE — the concurrency guard that
@@ -1577,6 +1731,36 @@ interface ReplaceRouteCardOpsParams {
   preserveRemarks?: boolean;
 }
 
+/** The auto-save's remark carry-over (0195) — see the note at its use in
+ *  replaceRouteCardOps. One place, also used to build a staged routing change
+ *  (ADR-249 Step B2) so the approver sees the remarks that would be kept. */
+function carryRemarksForward(
+  ops: CreateRouteCardOpInput[],
+  prevOps: ReadonlyArray<{
+    opSeq: number;
+    operation: string;
+    opType: string;
+    machineId: string | null;
+    ospVendorId: string | null;
+    remarks: string | null;
+  }>,
+): CreateRouteCardOpInput[] {
+  return ops.map((o, i) => {
+    if (o.remarks != null && o.remarks.trim() !== '') return o;
+    const prev = prevOps[i];
+    if (!prev?.remarks) return o;
+    if (prev.opSeq !== i + 1) return o;
+    if (prev.operation.trim().toUpperCase() !== o.operation.trim().toUpperCase()) return o;
+    if (prev.opType !== o.opType) return o;
+    // Name + position + kind are NOT enough: two DEBURR steps on different
+    // benches are routine, and deleting the first would move the first
+    // one's remark onto the second. The machine / vendor must match too.
+    if (prev.machineId !== (o.machineId ?? null)) return o;
+    if (prev.ospVendorId !== (o.ospVendorId ?? null)) return o;
+    return { ...o, remarks: prev.remarks };
+  });
+}
+
 async function replaceRouteCardOps(
   tx: DbTransaction,
   p: ReplaceRouteCardOpsParams,
@@ -1621,20 +1805,10 @@ async function replaceRouteCardOps(
   // user cleared it on purpose and it must clear.
   const opsToWrite: CreateRouteCardOpInput[] =
     p.preserveRemarks === true
-      ? p.ops.map((o, i) => {
-          if (o.remarks != null && o.remarks.trim() !== '') return o;
-          const prev = oldOpRows[i]?.op;
-          if (!prev?.remarks) return o;
-          if (prev.opSeq !== i + 1) return o;
-          if (prev.operation.trim().toUpperCase() !== o.operation.trim().toUpperCase()) return o;
-          if (prev.opType !== o.opType) return o;
-          // Name + position + kind are NOT enough: two DEBURR steps on different
-          // benches are routine, and deleting the first would move the first
-          // one's remark onto the second. The machine / vendor must match too.
-          if (prev.machineId !== (o.machineId ?? null)) return o;
-          if (prev.ospVendorId !== (o.ospVendorId ?? null)) return o;
-          return { ...o, remarks: prev.remarks };
-        })
+      ? carryRemarksForward(
+          p.ops,
+          oldOpRows.map((r) => r.op),
+        )
       : p.ops;
 
   const oldSnapshot: DiffOp[] = oldOpRows.map((r) => ({
@@ -1740,6 +1914,303 @@ export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRout
   return needsDefaultQcOp(head) ? head : ops;
 }
 
+/**
+ * ADR-249 Step B2 — stage a Job Card / plan routing change as a Route Card edit
+ * request, INSIDE the caller's transaction (requestDocumentEditInTx runs in a
+ * savepoint, so a refusal rolls back only the request and the caller carries
+ * on). Returns:
+ *   'direct' — the gate is off (or the card is not live): the caller rewrites
+ *              the card exactly as before;
+ *   'staged' — a request is waiting for approval; the card is untouched;
+ *   { notSentReason } — the request was refused (one already waiting,
+ *              nothing to approve): the routing is kept as stored, a blank
+ *              raw-material half may still be filled (the caller falls through
+ *              to the direct path with the STORED ops), the reason is returned
+ *              to the saving screen, and the caller's save goes on.
+ *
+ * The proposal is the card's CURRENT header plus the new routing (remarks
+ * carried as the direct auto-save carries them) and — only when the proposer
+ * passes canWriteCard, as on the gate-off path — any blank raw-material half
+ * filled (ADR-218). Approving it replays through overwriteRouteCardFromSource,
+ * the gate-off writer, so it writes what the direct rewrite would have written.
+ *
+ * Lock order: the caller already holds its plan row, so loadForDiff is told
+ * (stagingFromSourceDoc) to skip the plans pre-lock and lock only route_cards
+ * + its ops — the same rows, in the same order, as the direct rewrite.
+ */
+async function stageRoutingFromSourceDoc(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+  card: {
+    id: string;
+    code: string;
+    rawMaterialGradeId: string | null;
+    rawMaterialGradeText: string | null;
+    rawMaterialSizeId: string | null;
+    rawMaterialSizeText: string | null;
+    rawMaterialItemId: string | null;
+    rmQtyPerPiece: number | null;
+    notes: string | null;
+    planType: RouteCard['planType'];
+  },
+  storedOps: Array<typeof routeCardOps.$inferSelect>,
+  cleanOps: CreateRouteCardOpInput[],
+  rawMaterial: ResolvedRawMaterial,
+  user: AuthContext,
+  sourceCode: string,
+  canWriteCard: () => Promise<boolean>,
+): Promise<'direct' | 'staged' | { notSentReason: string }> {
+  // The blank-RM fill rides along only when the proposer may fill it, exactly
+  // as the gate-off write path asks (ADR-218 canWriteCard).
+  const fillRm = await canWriteCard();
+  const fill = fillRm
+    ? rmHalvesToFill(card, rawMaterial)
+    : { grade: false, size: false, rmItem: false };
+  const proposal: RouteCardEditPayload = {
+    code: card.code,
+    itemId,
+    rawMaterialGradeId: fill.grade ? rawMaterial.rawMaterialGradeId : card.rawMaterialGradeId,
+    rawMaterialGradeText: fill.grade ? rawMaterial.rawMaterialGradeText : card.rawMaterialGradeText,
+    rawMaterialSizeId: fill.size ? rawMaterial.rawMaterialSizeId : card.rawMaterialSizeId,
+    rawMaterialSizeText: fill.size ? rawMaterial.rawMaterialSizeText : card.rawMaterialSizeText,
+    rawMaterialItemId: fill.rmItem ? rawMaterial.rawMaterialItemId : card.rawMaterialItemId,
+    rmQtyPerPiece: fill.rmItem ? rawMaterial.rmQtyPerPiece : card.rmQtyPerPiece,
+    notes: card.notes,
+    // Left out = the writer keeps the stored plan type (the edit input cannot
+    // carry 'assembly', which only the system sets).
+    planType: card.planType === 'assembly' ? undefined : card.planType,
+    ops: carryRemarksForward(cleanOps, storedOps),
+    revisionNote: null,
+    // Shown on the request's History row (the engine's request note).
+    reason: `Routing changed on ${sourceCode}`,
+    sourceCode,
+    fillRm,
+  };
+  try {
+    const { requestDocumentEditInTx } = await import('../document-edits/service');
+    const request = await stagingFromSourceDoc.run(true, () =>
+      requestDocumentEditInTx(
+        tx,
+        'RouteCard',
+        card.id,
+        proposal,
+        undefined,
+        user,
+        // No precheck: the gate-off write path runs none of the Route Card
+        // form's checks (grandfathered routings), and approval replays through
+        // that same path (overwriteRouteCardFromSource), so one Job Card gives
+        // the same card with the gate on or off.
+        undefined,
+        // The proposer needs no Route Card Edit tick: they never edit the card
+        // themselves, the approver's Approve tick decides (no silent drop).
+        { proposedBySourceDoc: true },
+      ),
+    );
+    return request ? 'staged' : 'direct';
+  } catch (e) {
+    // Never fail the Job Card / plan over its Route Card. A refusal the engine
+    // or the card's checks raise is expected; anything else is logged.
+    if (!(e instanceof AppError)) {
+      logger.warn(
+        { err: e, routeCardId: card.id, sourceCode },
+        'Route Card routing change could not be staged — card kept as stored',
+      );
+    }
+    // Said to the user on the saving screen — never a silent drop.
+    return {
+      notSentReason: routingNotSentReason(card.code, e instanceof AppError ? e.message : null),
+    };
+  }
+}
+
+/** The card shape the source-document write path needs. */
+export interface SourceDocCard {
+  id: string;
+  code: string;
+  currentRevision: number;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeText: string | null;
+  rawMaterialItemId: string | null;
+  rmQtyPerPiece: number | null;
+}
+
+/**
+ * The Job Card / plan write path onto an EXISTING card: fill blank raw
+ * material only (ADR-218, behind `canWriteCard`), replace the routing (remarks
+ * carried, no revision when nothing changed), log the revision. ONE writer for
+ * the gate-off auto-save, the not-sent fall-through, and the approval of a
+ * routing change staged from a source document (ADR-249 Step B2) — so one Job
+ * Card gives the same card whether the gate is on or off. Deliberately not
+ * the Route Card form's checks (validateRouteCardEdit): this path never had
+ * them (grandfathered routings), and approval must not add them.
+ */
+export async function overwriteRouteCardFromSource(
+  tx: DbTransaction,
+  companyId: string,
+  card: SourceDocCard,
+  ops: CreateRouteCardOpInput[],
+  rawMaterial: ResolvedRawMaterial,
+  user: AuthContext,
+  sourceCode: string,
+  canWriteCard: () => Promise<boolean>,
+): Promise<JcRouteCardWriteBack | null> {
+  const machinesLookup = await loadMachinesByIds(
+    tx,
+    ops.map((o) => o.machineId).filter((x): x is string => Boolean(x)),
+    companyId,
+  );
+  const vendorsLookup = await loadVendorsByIds(
+    tx,
+    ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x)),
+    companyId,
+  );
+  // RAW MATERIAL IS FILL-BLANKS-ONLY (ADR-218; CLAUDE.md §20.1 "one number,
+  // one writer"). The Route Card for a part — or the BOM line for a BOM
+  // child — is the ONE author of grade / size / RM item / RM qty per piece.
+  // This function is called BY the documents downstream of the card (plan
+  // execute, Job Card create / edit), so it may fill a half the card has
+  // never had and it may NEVER replace one it already holds.
+  //
+  // It used to move "forwards": any non-blank incoming value overwrote the
+  // card. That silently rewrote the master — IN-RC-00005 went Rev 0 → 1 and
+  // gained EN24 / DIA 36 from IN-JC-26-00004, with no one asking for it.
+  //
+  // PER FIELD, NOT PER ROW, and each pair moves as a pair, exactly as
+  // plans/rm-backfill.ts does it (backfillCandidateGuard + its per-half
+  // UPDATE): a card that holds a size and no grade receives ONLY its grade,
+  // and the id and the text of one half always come from the SAME document —
+  // never an id from here beside text from there.
+  //
+  // A fill is TRIGGERED BY NON-BLANK INCOMING TEXT (not by an id alone).
+  // Every caller resolves the pair through the same resolver, which rewrites
+  // the text from the master whenever an id is given, so "id without text"
+  // does not arise; keying on the text also means a fill can never repeat
+  // itself and inflate the revision history.
+  const rmPatch: Partial<ResolvedRawMaterial> = {};
+  const rmChanges: string[] = [];
+  // Repeated on the UPDATE's WHERE below — that is the concurrency guard: if
+  // anyone fills the same half between this read and the write, the UPDATE
+  // matches no row, nothing is claimed as written and the revision does not
+  // move. No new lock is taken (see the lock-order note on
+  // lockBackfillCandidates: route_cards must not be locked before plans).
+  const rmBlankGuards: SQL[] = [];
+  const fill = rmHalvesToFill(card, rawMaterial);
+  if (fill.grade) {
+    rmChanges.push(
+      `Grade ${noteVal(card.rawMaterialGradeText)} → ${noteVal(rawMaterial.rawMaterialGradeText)}`,
+    );
+    rmPatch.rawMaterialGradeId = rawMaterial.rawMaterialGradeId;
+    rmPatch.rawMaterialGradeText = rawMaterial.rawMaterialGradeText;
+    rmBlankGuards.push(blankRmTextSql(routeCards.rawMaterialGradeText));
+  }
+  if (fill.size) {
+    rmChanges.push(
+      `Size ${noteVal(card.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
+    );
+    rmPatch.rawMaterialSizeId = rawMaterial.rawMaterialSizeId;
+    rmPatch.rawMaterialSizeText = rawMaterial.rawMaterialSizeText;
+    rmBlankGuards.push(blankRmTextSql(routeCards.rawMaterialSizeText));
+  }
+  // ADR-193 phase 3a: the RM item + qty per piece fill the same way, as a
+  // pair (resolveRmItem guarantees both or neither). Blank means BOTH columns
+  // are null — the same test rm-backfill.ts uses for a plan's pair.
+  if (fill.rmItem && rawMaterial.rawMaterialItemId) {
+    const codes = await rmItemCodes(tx, companyId, [rawMaterial.rawMaterialItemId]);
+    rmChanges.push(
+      `RM item — → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
+    );
+    rmPatch.rawMaterialItemId = rawMaterial.rawMaterialItemId;
+    rmPatch.rmQtyPerPiece = rawMaterial.rmQtyPerPiece;
+    rmBlankGuards.push(isNull(routeCards.rawMaterialItemId));
+    rmBlankGuards.push(isNull(routeCards.rmQtyPerPiece));
+  }
+  let rmFilled = false;
+  if (rmChanges.length > 0 && (await canWriteCard())) {
+    const updated = await tx
+      .update(routeCards)
+      .set({ ...rmPatch, updatedBy: user.id, updatedAt: new Date() })
+      .where(and(eq(routeCards.id, card.id), eq(routeCards.companyId, companyId), ...rmBlankGuards))
+      .returning({ id: routeCards.id });
+    rmFilled = updated.length > 0;
+  }
+  // What was ACTUALLY written. A zero-row UPDATE (someone filled the same
+  // half first) must not be reported as a change, must not bump the revision
+  // and must not appear in History.
+  const rmWritten: Partial<ResolvedRawMaterial> = rmFilled ? rmPatch : {};
+
+  const replaced = await replaceRouteCardOps(
+    tx,
+    {
+      routeCardId: card.id,
+      companyId,
+      currentRevision: card.currentRevision,
+      ops,
+      machinesLookup,
+      vendorsLookup,
+      notePrefix: `Updated from ${sourceCode}`,
+      headerNote: rmFilled ? rmChanges.join(', ') : null,
+      // Filling a blank half IS a change, so it earns a revision even when
+      // the operations came back identical. But ONLY a half that was really
+      // written: if nothing was filled and the ops are identical, the card is
+      // left completely alone — no revision bump, no revision-log row (the
+      // owner's complaint was a Rev that moved for nothing).
+      skipWhenUnchanged: !rmFilled,
+      // The source document has no remarks; keep the card's own (0195).
+      preserveRemarks: true,
+    },
+    user,
+  );
+  if (replaced.changed) {
+    // ADR-197 — the auto-save is a revision like any other: header row with
+    // the raw-material moves + the Route Card Rev bump, then the op rows.
+    // Only the halves actually written are named, so a value this save
+    // DECLINED to overwrite never shows up as a change (it was not one).
+    const rmCodes =
+      rmWritten.rawMaterialItemId !== undefined
+        ? await rmItemCodes(tx, companyId, [card.rawMaterialItemId, rmWritten.rawMaterialItemId])
+        : new Map<string, string>();
+    const rmCode = (rid: string | null): string | null => (rid ? (rmCodes.get(rid) ?? null) : null);
+    const beforeView: RcHeaderView = {
+      rawMaterialGradeText: card.rawMaterialGradeText,
+      rawMaterialSizeText: card.rawMaterialSizeText,
+      rawMaterialItemCode: rmCode(card.rawMaterialItemId),
+      rmQtyPerPiece: card.rmQtyPerPiece,
+    };
+    const afterView: RcHeaderView = {};
+    if (rmWritten.rawMaterialGradeText !== undefined) {
+      afterView.rawMaterialGradeText = rmWritten.rawMaterialGradeText;
+    }
+    if (rmWritten.rawMaterialSizeText !== undefined) {
+      afterView.rawMaterialSizeText = rmWritten.rawMaterialSizeText;
+    }
+    if (rmWritten.rawMaterialItemId !== undefined) {
+      afterView.rawMaterialItemCode = rmCode(rmWritten.rawMaterialItemId);
+      afterView.rmQtyPerPiece = rmWritten.rmQtyPerPiece ?? null;
+    }
+    await logRouteCardRevision(
+      tx,
+      companyId,
+      user,
+      { id: card.id, code: card.code },
+      [
+        ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
+        revChange(card.currentRevision, replaced.newRevision),
+      ],
+      routeCardOpLogRows(replaced.oldOps, replaced.newOps),
+      `${card.code} updated from ${sourceCode}`,
+    );
+  }
+  return replaced.changed
+    ? {
+        routeCardId: card.id,
+        routeCardCode: card.code,
+        routeCardRevision: replaced.newRevision,
+        created: false,
+      }
+    : null;
+}
+
 /** Write the item's route card from a source document's operations — the write
  *  half of legacy `saveRouteCardForItem` (legacy L6918) that ADR-051 left as a
  *  follow-up. Callers: job-cards create/edit and plans execute.
@@ -1754,7 +2225,15 @@ export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRout
  *      noted "Created from <source code>", WITH the material it was given. A
  *      hand-raised job-work Job Card for an item that has no card is how that
  *      card is born, so this branch still writes material in full.
- *    - active card exists → replace its ops, bump the revision, snapshot noted
+ *    - active card exists, routing DIFFERS, edit-approval gate ON (ADR-249
+ *      Step B2) → the card is NOT rewritten: the change is staged as a Route
+ *      Card edit request (stageRoutingFromSourceDoc) and a write-back with
+ *      `sentForApproval: true` at the card's CURRENT Rev is returned; if it
+ *      cannot be staged (one already waiting, nothing to approve) the routing
+ *      is kept as stored, only the blank-RM fill below may still run, and the
+ *      write-back carries `notSentReason` so the screen says why.
+ *      Either way the caller's save goes on.
+ *    - active card exists (gate off) → replace its ops, bump the revision, snapshot noted
  *      with the source code. One active card per item per company, matching the
  *      `route_cards_company_item_uniq` partial unique index — never a second card.
  *    - stored ops already identical AND no blank material filled → left
@@ -1813,26 +2292,19 @@ export async function saveRouteCardForItem(
     return editGate;
   };
 
-  const machinesLookup = await loadMachinesByIds(
-    tx,
-    cleanOps.map((o) => o.machineId).filter((x): x is string => Boolean(x)),
-    companyId,
-  );
-  const vendorsLookup = await loadVendorsByIds(
-    tx,
-    cleanOps.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x)),
-    companyId,
-  );
-
   const existing = await tx
     .select({
       id: routeCards.id,
       code: routeCards.code,
       currentRevision: routeCards.currentRevision,
+      rawMaterialGradeId: routeCards.rawMaterialGradeId,
       rawMaterialGradeText: routeCards.rawMaterialGradeText,
+      rawMaterialSizeId: routeCards.rawMaterialSizeId,
       rawMaterialSizeText: routeCards.rawMaterialSizeText,
       rawMaterialItemId: routeCards.rawMaterialItemId,
       rmQtyPerPiece: routeCards.rmQtyPerPiece,
+      notes: routeCards.notes,
+      planType: routeCards.planType,
     })
     .from(routeCards)
     .where(
@@ -1846,164 +2318,93 @@ export async function saveRouteCardForItem(
 
   const card = existing[0];
   if (card) {
-    // RAW MATERIAL IS FILL-BLANKS-ONLY (ADR-218; CLAUDE.md §20.1 "one number,
-    // one writer"). The Route Card for a part — or the BOM line for a BOM
-    // child — is the ONE author of grade / size / RM item / RM qty per piece.
-    // This function is called BY the documents downstream of the card (plan
-    // execute, Job Card create / edit), so it may fill a half the card has
-    // never had and it may NEVER replace one it already holds.
-    //
-    // It used to move "forwards": any non-blank incoming value overwrote the
-    // card. That silently rewrote the master — IN-RC-00005 went Rev 0 → 1 and
-    // gained EN24 / DIA 36 from IN-JC-26-00004, with no one asking for it.
-    //
-    // PER FIELD, NOT PER ROW, and each pair moves as a pair, exactly as
-    // plans/rm-backfill.ts does it (backfillCandidateGuard + its per-half
-    // UPDATE): a card that holds a size and no grade receives ONLY its grade,
-    // and the id and the text of one half always come from the SAME document —
-    // never an id from here beside text from there.
-    //
-    // A fill is TRIGGERED BY NON-BLANK INCOMING TEXT (not by an id alone).
-    // Every caller resolves the pair through the same resolver, which rewrites
-    // the text from the master whenever an id is given, so "id without text"
-    // does not arise; keying on the text also means a fill can never repeat
-    // itself and inflate the revision history.
-    const rmPatch: Partial<ResolvedRawMaterial> = {};
-    const rmChanges: string[] = [];
-    // Repeated on the UPDATE's WHERE below — that is the concurrency guard: if
-    // anyone fills the same half between this read and the write, the UPDATE
-    // matches no row, nothing is claimed as written and the revision does not
-    // move. No new lock is taken (see the lock-order note on
-    // lockBackfillCandidates: route_cards must not be locked before plans).
-    const rmBlankGuards: SQL[] = [];
-    if (
-      isBlankRmText(card.rawMaterialGradeText) &&
-      !isBlankRmText(rawMaterial.rawMaterialGradeText)
-    ) {
-      rmChanges.push(
-        `Grade ${noteVal(card.rawMaterialGradeText)} → ${noteVal(rawMaterial.rawMaterialGradeText)}`,
-      );
-      rmPatch.rawMaterialGradeId = rawMaterial.rawMaterialGradeId;
-      rmPatch.rawMaterialGradeText = rawMaterial.rawMaterialGradeText;
-      rmBlankGuards.push(blankRmTextSql(routeCards.rawMaterialGradeText));
-    }
-    if (
-      isBlankRmText(card.rawMaterialSizeText) &&
-      !isBlankRmText(rawMaterial.rawMaterialSizeText)
-    ) {
-      rmChanges.push(
-        `Size ${noteVal(card.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
-      );
-      rmPatch.rawMaterialSizeId = rawMaterial.rawMaterialSizeId;
-      rmPatch.rawMaterialSizeText = rawMaterial.rawMaterialSizeText;
-      rmBlankGuards.push(blankRmTextSql(routeCards.rawMaterialSizeText));
-    }
-    // ADR-193 phase 3a: the RM item + qty per piece fill the same way, as a
-    // pair (resolveRmItem guarantees both or neither). Blank means BOTH columns
-    // are null — the same test rm-backfill.ts uses for a plan's pair.
-    if (
-      card.rawMaterialItemId === null &&
-      card.rmQtyPerPiece === null &&
-      rawMaterial.rawMaterialItemId &&
-      rawMaterial.rmQtyPerPiece != null
-    ) {
-      const codes = await rmItemCodes(tx, companyId, [rawMaterial.rawMaterialItemId]);
-      rmChanges.push(
-        `RM item — → ${rmItemNote(codes, rawMaterial.rawMaterialItemId, rawMaterial.rmQtyPerPiece)}`,
-      );
-      rmPatch.rawMaterialItemId = rawMaterial.rawMaterialItemId;
-      rmPatch.rmQtyPerPiece = rawMaterial.rmQtyPerPiece;
-      rmBlankGuards.push(isNull(routeCards.rawMaterialItemId));
-      rmBlankGuards.push(isNull(routeCards.rmQtyPerPiece));
-    }
-    let rmFilled = false;
-    if (rmChanges.length > 0 && (await canWriteCard())) {
-      const updated = await tx
-        .update(routeCards)
-        .set({ ...rmPatch, updatedBy: user.id, updatedAt: new Date() })
-        .where(
-          and(eq(routeCards.id, card.id), eq(routeCards.companyId, companyId), ...rmBlankGuards),
-        )
-        .returning({ id: routeCards.id });
-      rmFilled = updated.length > 0;
-    }
-    // What was ACTUALLY written. A zero-row UPDATE (someone filled the same
-    // half first) must not be reported as a change, must not bump the revision
-    // and must not appear in History.
-    const rmWritten: Partial<ResolvedRawMaterial> = rmFilled ? rmPatch : {};
-
-    const replaced = await replaceRouteCardOps(
-      tx,
-      {
+    // ADR-249 Step B2 — the auto-save no longer rewrites a live card's
+    // routing behind the planner's back. When the routing this document
+    // brings DIFFERS from the stored one and the company's edit-approval gate
+    // is on, the change is STAGED as a Route Card edit for approval and the
+    // card is left as it is; the Job Card / plan still saves. Gate off (or the
+    // card not live) → the direct rewrite below runs exactly as before. An
+    // unchanged routing never reaches the engine: it takes the path below,
+    // which may only fill blank raw material (ADR-218) and otherwise does
+    // nothing.
+    const storedOps = await tx
+      .select()
+      .from(routeCardOps)
+      .where(
+        and(
+          eq(routeCardOps.routeCardId, card.id),
+          eq(routeCardOps.companyId, companyId),
+          isNull(routeCardOps.deletedAt),
+        ),
+      )
+      .orderBy(asc(routeCardOps.opSeq));
+    const staging = opsAreIdentical(
+      storedOps.map(comparableFromRow),
+      cleanOps.map(comparableFromInput),
+    )
+      ? 'direct'
+      : await stageRoutingFromSourceDoc(
+          tx,
+          companyId,
+          itemId,
+          card,
+          storedOps,
+          cleanOps,
+          rawMaterial,
+          user,
+          sourceCode,
+          canWriteCard,
+        );
+    if (staging === 'staged') {
+      // The card is unchanged (still at its current Rev); the saving screen
+      // says the routing change went for approval (sentForApproval).
+      return {
         routeCardId: card.id,
-        companyId,
-        currentRevision: card.currentRevision,
-        ops: cleanOps,
-        machinesLookup,
-        vendorsLookup,
-        notePrefix: `Updated from ${sourceCode}`,
-        headerNote: rmFilled ? rmChanges.join(', ') : null,
-        // Filling a blank half IS a change, so it earns a revision even when
-        // the operations came back identical. But ONLY a half that was really
-        // written: if nothing was filled and the ops are identical, the card is
-        // left completely alone — no revision bump, no revision-log row (the
-        // owner's complaint was a Rev that moved for nothing).
-        skipWhenUnchanged: !rmFilled,
-        // The source document has no remarks; keep the card's own (0195).
-        preserveRemarks: true,
-      },
-      user,
-    );
-    if (replaced.changed) {
-      // ADR-197 — the auto-save is a revision like any other: header row with
-      // the raw-material moves + the Route Card Rev bump, then the op rows.
-      // Only the halves actually written are named, so a value this save
-      // DECLINED to overwrite never shows up as a change (it was not one).
-      const rmCodes =
-        rmWritten.rawMaterialItemId !== undefined
-          ? await rmItemCodes(tx, companyId, [card.rawMaterialItemId, rmWritten.rawMaterialItemId])
-          : new Map<string, string>();
-      const rmCode = (rid: string | null): string | null =>
-        rid ? (rmCodes.get(rid) ?? null) : null;
-      const beforeView: RcHeaderView = {
-        rawMaterialGradeText: card.rawMaterialGradeText,
-        rawMaterialSizeText: card.rawMaterialSizeText,
-        rawMaterialItemCode: rmCode(card.rawMaterialItemId),
-        rmQtyPerPiece: card.rmQtyPerPiece,
+        routeCardCode: card.code,
+        routeCardRevision: card.currentRevision,
+        created: false,
+        sentForApproval: true,
       };
-      const afterView: RcHeaderView = {};
-      if (rmWritten.rawMaterialGradeText !== undefined) {
-        afterView.rawMaterialGradeText = rmWritten.rawMaterialGradeText;
-      }
-      if (rmWritten.rawMaterialSizeText !== undefined) {
-        afterView.rawMaterialSizeText = rmWritten.rawMaterialSizeText;
-      }
-      if (rmWritten.rawMaterialItemId !== undefined) {
-        afterView.rawMaterialItemCode = rmCode(rmWritten.rawMaterialItemId);
-        afterView.rmQtyPerPiece = rmWritten.rmQtyPerPiece ?? null;
-      }
-      await logRouteCardRevision(
-        tx,
-        companyId,
-        user,
-        { id: card.id, code: card.code },
-        [
-          ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
-          revChange(card.currentRevision, replaced.newRevision),
-        ],
-        routeCardOpLogRows(replaced.oldOps, replaced.newOps),
-        `${card.code} updated from ${sourceCode}`,
-      );
     }
-    return replaced.changed
-      ? {
-          routeCardId: card.id,
-          routeCardCode: card.code,
-          routeCardRevision: replaced.newRevision,
-          created: false,
-        }
-      : null;
+    // The direct rewrite — the gate is off, the routing is unchanged, or the
+    // change could not be staged. When it could not, the STORED routing is
+    // resubmitted, so only a blank raw-material half can still be filled
+    // (ADR-218) — the routing itself is never rewritten behind the approval.
+    const notSent = staging === 'direct' ? null : staging.notSentReason;
+    const written = await overwriteRouteCardFromSource(
+      tx,
+      companyId,
+      card,
+      notSent ? storedOps.map(opInputFromRow) : cleanOps,
+      rawMaterial,
+      user,
+      sourceCode,
+      canWriteCard,
+    );
+    if (!notSent) return written;
+    // Not silent: the screen says why this routing did not go for approval,
+    // beside whatever the raw-material fill did write.
+    return {
+      ...(written ?? {
+        routeCardId: card.id,
+        routeCardCode: card.code,
+        routeCardRevision: card.currentRevision,
+        created: false,
+      }),
+      notSentReason: notSent,
+    };
   }
+
+  const machinesLookup = await loadMachinesByIds(
+    tx,
+    cleanOps.map((o) => o.machineId).filter((x): x is string => Boolean(x)),
+    companyId,
+  );
+  const vendorsLookup = await loadVendorsByIds(
+    tx,
+    cleanOps.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x)),
+    companyId,
+  );
 
   // The item has NO card: this is the card being born, so the material it was
   // given goes on in full (a hand-raised job-work Job Card for an item with no

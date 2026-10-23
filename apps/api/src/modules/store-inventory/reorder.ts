@@ -8,6 +8,7 @@
 // "Below Reorder" is decided in reorder-rule.ts and nowhere else.
 
 import type {
+  DocumentEditStagedResult,
   ReorderListQuery,
   ReorderListResponse,
   ReorderPrInput,
@@ -17,11 +18,18 @@ import type {
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { items, vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
+import {
+  primeAccess,
+  requireAnyFormAccess,
+  requireFormAccess,
+  STORE_VIEW_FORMS,
+} from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { assertQtyFitsUom, roundQty } from '../../lib/stock-ledger';
-import { emitActivityLog } from '../activity-log/service';
+import { requestDocumentEdit } from '../document-edits/service';
+import { assertReorderSettable, notReorderableMessage } from '../items/reorder-check';
+import { updateItem } from '../items/service';
 import { insertPurchaseRequestTx } from '../purchase-requests/service';
 import {
   isReorderableType,
@@ -37,11 +45,6 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
-/** P48 — only reorderable item types carry a Reorder Level. */
-function notReorderableMessage(code: string): string {
-  return `${code} is an Assembly — it is built, not reordered`;
-}
-
 /** Today's calendar date in IST (the UTC date is yesterday before 05:30 IST). */
 function todayIst(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -52,14 +55,25 @@ function todayIst(): string {
   }).format(new Date());
 }
 
+/**
+ * ADR-249 B2: Reorder Level / Reorder Qty are Item Master fields with ONE
+ * writer — the Item edit writer (updateItemTx: row lock, the reorder check,
+ * Item History). With Document Edit Approval on they are STAGED as an Item edit
+ * (approved on the Approvals page, replayed through that same writer); with it
+ * off they are written through it directly. Saving the values already stored
+ * changes nothing and answers as a save (no "Nothing changed to approve").
+ */
 export async function setReorder(
   input: SetReorderInput,
   user: AuthContext,
-): Promise<{ ok: true; reorderLevel: number; reorderQty: number }> {
+): Promise<{ ok: true; reorderLevel: number; reorderQty: number } | DocumentEditStagedResult> {
   // Same tier the old Min Qty button had: the level lives on a saved item row.
+  // It is also the Item Edit tick the staging checks — no new refusal.
   await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
+  await primeAccess(user);
+
+  const cur = await withUserContext(user, async (tx) => {
     const found = await tx
       .select({
         code: items.code,
@@ -72,37 +86,38 @@ export async function setReorder(
       .where(
         and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
       )
-      .limit(1)
-      .for('update');
-    const cur = found[0];
-    if (!cur) throw new NotFoundError('Item not found. Refresh the page.');
-    const level = roundQty(input.reorderLevel);
-    const qty = roundQty(input.reorderQty);
-    // Clearing (0 / 0) is always allowed — it takes a wrongly-set level off.
-    if ((level > 0 || qty > 0) && !isReorderableType(cur.itemType)) {
-      throw new ValidationError(notReorderableMessage(cur.code));
-    }
-    const uom = cur.uom;
-    if (level > 0) assertQtyFitsUom(cur.code, uom, level, 'Reorder Level');
-    if (qty > 0) assertQtyFitsUom(cur.code, uom, qty, 'Reorder Qty');
-
-    await tx
-      .update(items)
-      .set({ minStockQty: level, reorderQty: qty, updatedAt: new Date(), updatedBy: user.id })
-      .where(and(eq(items.id, input.itemId), eq(items.companyId, companyId)));
-    await emitActivityLog(
-      tx,
-      {
-        action: 'SET_REORDER',
-        entity: 'Store Inventory',
-        detail: `${cur.code}: Reorder Level ${cur.reorderLevel} → ${level}, Reorder Qty ${cur.reorderQty} → ${qty}`,
-        refId: cur.code,
-      },
-      companyId,
-      user,
-    );
-    return { ok: true as const, reorderLevel: level, reorderQty: qty };
+      .limit(1);
+    return found[0];
   });
+  if (!cur) throw new NotFoundError('Item not found. Refresh the page.');
+  // Clearing (0 / 0) is always allowed — it takes a wrongly-set level off.
+  const { level, qty } = assertReorderSettable(cur, input.reorderLevel, input.reorderQty);
+  const saved = { ok: true as const, reorderLevel: level, reorderQty: qty };
+  if (roundQty(cur.reorderLevel) === level && roundQty(cur.reorderQty) === qty) return saved;
+
+  const patch = { minStockQty: level, reorderQty: qty };
+  const request = await requestDocumentEdit(
+    'Item',
+    input.itemId,
+    patch,
+    undefined,
+    user,
+    // Refuse at staging what the approval would refuse — on the locked row.
+    (_tx, target) => {
+      const d = target.doc;
+      assertReorderSettable(
+        { code: String(d['code']), uom: String(d['uom']), itemType: String(d['itemType']) },
+        level,
+        qty,
+      );
+      return Promise.resolve(undefined);
+    },
+  );
+  if (request) return { staged: true, request };
+
+  // Gate off: the Item edit writer itself (it re-checks under the row lock).
+  await updateItem(input.itemId, patch, user);
+  return saved;
 }
 
 /** Sort & Filter (ADR-200) — the Reorder List's columns, over the Below

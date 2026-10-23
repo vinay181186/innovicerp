@@ -12,6 +12,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
@@ -187,6 +188,16 @@ function ProductionSchedulePage(): React.JSX.Element {
           </div>
         }
       />
+
+      {/* A refused drag (e.g. ADR-249: a machine change on a Completed /
+          Closed card while Document Edit Approval is on) says why. */}
+      {rescheduleMut.error ? (
+        <div style={{ marginBottom: 10 }}>
+          <Banner tone="error" role="alert" flush onDismiss={() => rescheduleMut.reset()}>
+            {rescheduleMut.error.message || 'Could not move this operation. Try again.'}
+          </Banner>
+        </div>
+      ) : null}
 
       {/* Legend */}
       <div

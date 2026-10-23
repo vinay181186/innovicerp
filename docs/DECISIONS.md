@@ -14239,6 +14239,28 @@ a JWSO staged save lost a newly picked file.
 - Fixed on the way: a price-blind user's direct Plan save no longer wipes Unit
   Cost / Rate.
 
+### Step B (owner "start step b", 2026-10-23)
+
+- Live = not deleted / not cancelled for GRN, Party GRN and Job Card, so header
+  edits of a fully QC'd GRN / Party GRN and any edit of a Completed / Closed JC
+  go for approval; staging prechecks refuse what the writer would (JC routing
+  freeze + header guards moved into shared helpers). A machine change on a
+  finished JC is refused while the gate is on.
+- New entities RouteCard and MlBom (no migration — entity is text). Each stages
+  header boxes plus ONE whole-routing / whole-lines box ("Operations",
+  "BOM Lines") whose readable text is also the freshness check; ML-BOM
+  "Default" is its own box. Approval replays through the real writers.
+- A JC create / Plan execute bringing a different routing for an existing card
+  proposes a Route Card edit (`requestDocumentEditInTx`, savepoint, no Edit
+  tick needed — `proposedBySourceDoc`) and never fails the JC / Plan; the card
+  stays until approved (`routeCardWriteBack.sentForApproval`).
+- Excel "Update existing" (Item / Customer / Vendor / Operator, ML-BOM revise
+  rows) stages one request per changed record (`Sent for approval`); the
+  screen sends update sheets in chunks of 200 rows to stay inside the timeout.
+- Store Reorder Level / Qty is an Item edit (one shared reorder check).
+- Still direct by decision: Plan own-draft; CAPA, Design, Party Material, OSP
+  Process (later).
+
 Step B (owner decisions 1–2 as recommended: finished GRN / Party GRN / JC go for
 approval; Route Card, Multi-level BOM, master Excel update and Reorder Level get
 approval) follows separately. Plan own-draft direct save is kept (decision 3).

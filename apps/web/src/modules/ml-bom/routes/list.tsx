@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { isStagedResult } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
@@ -93,6 +94,8 @@ function MlBomsListPage(): React.JSX.Element {
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
   const [deleteReason, setDeleteReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+  // ADR-249 Step B — Make Default staged for approval (nothing moved yet).
+  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
 
@@ -110,8 +113,14 @@ function MlBomsListPage(): React.JSX.Element {
 
   const onMakeDefault = async (b: MlBomListItem): Promise<void> => {
     setActionError(null);
+    setStagedNotice(null);
     try {
-      await makeDefault.mutateAsync({ id: b.id, expectedUpdatedAt: b.updatedAt });
+      const res = await makeDefault.mutateAsync({ id: b.id, expectedUpdatedAt: b.updatedAt });
+      if (isStagedResult(res)) {
+        setStagedNotice(
+          `Sent for approval — ${b.code} becomes the Default once an approver signs off.`,
+        );
+      }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Could not make this BOM the Default.');
     }
@@ -186,6 +195,11 @@ function MlBomsListPage(): React.JSX.Element {
         }
       />
 
+      {stagedNotice ? (
+        <Banner tone="success" role="status" onDismiss={() => setStagedNotice(null)}>
+          {stagedNotice}
+        </Banner>
+      ) : null}
       {actionError ? (
         <Banner tone="error" role="alert" onDismiss={() => setActionError(null)}>
           {actionError}
