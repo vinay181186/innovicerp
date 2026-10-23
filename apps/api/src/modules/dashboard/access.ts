@@ -62,24 +62,3 @@ export function canSeeWidget(
 export function hasTick(a: DashAccess, form: AccessFormKey, action: AccessAction): boolean {
   return a.isAdmin || effectiveFormPerms(a.eff, form)[action];
 }
-
-// First department the user has access to, in legacy priority order
-// (_detectPrimaryDept L2522). Null if none.
-const PRIMARY_DEPT_ORDER = [
-  'qc',
-  'purchase',
-  'design',
-  'sales',
-  'store',
-  'production',
-  'finance',
-  'planning',
-] as const;
-
-export function detectPrimaryDept(a: DashAccess): string | null {
-  const depts = normalizeDeptsMap(a.eff.departments ?? {});
-  for (const d of PRIMARY_DEPT_ORDER) {
-    if (depts[d]) return d;
-  }
-  return null;
-}

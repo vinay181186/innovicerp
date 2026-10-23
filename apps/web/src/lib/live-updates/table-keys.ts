@@ -12,6 +12,7 @@
 import type { LiveTable } from '@innovic/shared';
 import type { QueryKey } from '@tanstack/react-query';
 import { approvalsKeys } from '@/modules/approvals/api';
+import { dashboardKeys } from '@/modules/dashboard/api';
 import { documentEditsKeys } from '@/modules/document-edits/api';
 import { goodsReceiptNotesKeys } from '@/modules/goods-receipt-notes/api';
 import { incomingQcKeys } from '@/modules/incoming-qc/api';
@@ -32,9 +33,14 @@ import { soOverviewKeys } from '@/modules/so-overview/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
 import { soStatusKeys } from '@/modules/so-status/api';
 
+// ADR-250 — the per-person home (dashboardKeys.home(), both scopes) shows job
+// cards, ops, sales orders, purchase documents, GRNs, PROs and edit requests, so
+// each of those tables refreshes it (only the home query, not KPIs / widgets).
+
 /** Everything that shows a job card's header, status or op progress. */
 const PRODUCTION_VIEWS: readonly QueryKey[] = [
   jobCardsKeys.all,
+  dashboardKeys.home(),
   jobQueueKeys.all,
   jcOpsBoardKeys.all,
   shopFloorKeys.all,
@@ -55,6 +61,7 @@ const OP_VIEWS: readonly QueryKey[] = [
 
 const SALES_ORDER_VIEWS: readonly QueryKey[] = [
   salesOrdersKeys.all,
+  dashboardKeys.home(),
   soStatusKeys.all,
   soOverviewKeys.all,
 ];
@@ -65,6 +72,7 @@ const SALES_ORDER_VIEWS: readonly QueryKey[] = [
  *  QC Call Register hear that an incoming call was cleared. */
 const PURCHASE_ORDER_VIEWS: readonly QueryKey[] = [
   purchaseOrdersKeys.all,
+  dashboardKeys.home(),
   goodsReceiptNotesKeys.all,
   approvalsKeys.all,
   incomingQcKeys.all,
@@ -93,15 +101,16 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   sales_order_lines: SALES_ORDER_VIEWS,
   purchase_orders: PURCHASE_ORDER_VIEWS,
   purchase_order_lines: PURCHASE_ORDER_VIEWS,
-  purchase_requests: [purchaseRequestsKeys.all, approvalsKeys.all],
+  purchase_requests: [purchaseRequestsKeys.all, approvalsKeys.all, dashboardKeys.home()],
   // A new GRN raises an incoming QC call on the QC Call Register.
   goods_receipt_notes: [
     goodsReceiptNotesKeys.all,
     incomingQcKeys.all,
     qcHistoryKeys.all,
     purchaseOrdersKeys.all,
+    dashboardKeys.home(),
   ],
-  document_edit_requests: [documentEditsKeys.all, approvalsKeys.all],
-  production_orders: PRODUCTION_ORDER_VIEWS,
+  document_edit_requests: [documentEditsKeys.all, approvalsKeys.all, dashboardKeys.home()],
+  production_orders: [...PRODUCTION_ORDER_VIEWS, dashboardKeys.home()],
   production_order_closes: PRODUCTION_ORDER_VIEWS,
 };

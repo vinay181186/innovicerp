@@ -10,7 +10,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { canSeeWidget, type DashAccess, hasDept, loadAccess } from './access';
 import { getConfig } from './config-service';
 import { getMachineLoading } from '../machine-loading/service';
-import { istToday } from './work-list-service';
+import { istToday } from './personal/util';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');

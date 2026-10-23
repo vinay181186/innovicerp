@@ -137,7 +137,6 @@ export const TABLE_KEYS = {
   globalSearch: 'global-search',
   scDashboard: 'sc-dashboard',
   stuckDashboard: 'stuck-dashboard',
-  homeOperator: 'home-operator',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

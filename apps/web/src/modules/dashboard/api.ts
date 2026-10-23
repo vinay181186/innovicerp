@@ -3,50 +3,46 @@ import type {
   DashboardConfigScreen,
   DashboardKpisResponse,
   HomeResponse,
+  HomeScope,
   ListWidgetsResponse,
-  OperatorReadyResponse,
+  MarkNotificationsSeenInput,
   SaveDashboardConfigInput,
-  WorkListItem,
 } from '@innovic/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const dashboardKeys = {
   all: ['dashboard'] as const,
   kpis: () => [...dashboardKeys.all, 'kpis'] as const,
+  /** Both scopes — what live updates and the seen-mark refetch. */
   home: () => [...dashboardKeys.all, 'home'] as const,
-  workList: () => [...dashboardKeys.all, 'work-list'] as const,
+  homeScope: (scope: HomeScope) => [...dashboardKeys.home(), scope] as const,
   widgets: () => [...dashboardKeys.all, 'widgets'] as const,
   config: () => [...dashboardKeys.all, 'config'] as const,
-  operatorReady: (offset: number) => [...dashboardKeys.all, 'operator-ready', offset] as const,
 };
 
-export function useHome() {
+/** ADR-250 — the home for `scope` (My department / Mine). The server filters
+ *  rows and counts for the scope; the browser never does. */
+export function useHome(scope: HomeScope) {
   return useQuery<HomeResponse>({
-    queryKey: dashboardKeys.home(),
-    queryFn: () => apiFetch<HomeResponse>('/dashboard/home'),
+    queryKey: dashboardKeys.homeScope(scope),
+    queryFn: () => apiFetch<HomeResponse>(`/dashboard/home?scope=${scope}`),
+    // Switching scope keeps the page on screen until the other scope arrives.
+    placeholderData: keepPreviousData,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
 }
 
-/** Operator home "Ready for You" page at `offset` (pages 2+; page 1 rides on /home). */
-export function useOperatorReady(offset: number, enabled: boolean) {
-  return useQuery<OperatorReadyResponse>({
-    queryKey: dashboardKeys.operatorReady(offset),
-    queryFn: () =>
-      apiFetch<OperatorReadyResponse>(`/dashboard/operator-ready?limit=25&offset=${offset}`),
-    enabled,
-    refetchInterval: 60_000,
-    placeholderData: (prev) => prev,
-  });
-}
-
-export function useWorkList() {
-  return useQuery<{ items: WorkListItem[] }>({
-    queryKey: dashboardKeys.workList(),
-    queryFn: () => apiFetch<{ items: WorkListItem[] }>('/dashboard/work-list'),
-    staleTime: 30_000,
+/** ADR-250 — move the caller's "seen" time for home notifications forward
+ *  (the server keeps the later of stored and sent), then refetch home so the
+ *  bell count drops. */
+export function useMarkNotificationsSeen() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, MarkNotificationsSeenInput>({
+    mutationFn: (input) =>
+      apiFetch('/dashboard/notifications/seen', { method: 'POST', json: input }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: dashboardKeys.home() }),
   });
 }
 
