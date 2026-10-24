@@ -8,7 +8,7 @@
 // dashboard's "QC report missing" rows deep-link straight to a POL.
 
 import type { QcDossierLine, QcDossierOrderKind } from '@innovic/shared';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -53,11 +53,27 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
   const [pickSearch, setPickSearch] = useState('');
   const orders = useQcDossierOrders(pickSearch);
   const options = orders.data?.orders ?? [];
-  // No order in the URL → the newest one in the picker (as the Matrix does).
-  const kind: QcDossierOrderKind | undefined = search.orderId
-    ? (search.kind ?? 'so')
-    : options[0]?.kind;
-  const orderId = search.orderId ?? options[0]?.id;
+  // No order in the URL on FIRST load → open the newest one in the picker (as the
+  // Matrix does) and pin it into the URL, so later picker searches never swap it.
+  const defaultPending = useRef(!search.orderId);
+  const first = defaultPending.current && pickSearch === '' ? options[0] : undefined;
+  const kind: QcDossierOrderKind | undefined = search.orderId ? (search.kind ?? 'so') : first?.kind;
+  const orderId = search.orderId ?? first?.id;
+  useEffect(() => {
+    if (search.orderId) {
+      defaultPending.current = false;
+      return;
+    }
+    if (!defaultPending.current || !first) return;
+    defaultPending.current = false;
+    void navigate({
+      search: (p) => ({ ...p, kind: first.kind, orderId: first.id }),
+      replace: true,
+    });
+  }, [search.orderId, first, navigate]);
+  const pickEmptyText = pickSearch
+    ? `No SO or JWSO matches "${pickSearch}".`
+    : 'No SO or JWSO yet.';
   const { data: dossier, isLoading, isFetching, isError, error } = useQcDossier(kind, orderId);
 
   const [term, setTerm] = useState(search.search ?? '');
@@ -137,7 +153,9 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
             : undefined
         }
         onChange={(v) => {
-          const [k, id] = (v ?? '').split(':');
+          // Clearing / typing to search keeps the open order until a new one is picked.
+          if (!v) return;
+          const [k, id] = v.split(':');
           void navigate({
             search: (p) => ({
               ...p,
@@ -151,6 +169,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
         }}
         onSearch={setPickSearch}
         loading={orders.isFetching}
+        emptyText={pickEmptyText}
         placeholder="Search SO / JWSO No., Internal SO No., customer…"
         options={options.map((o) => ({
           id: `${o.kind}:${o.id}`,
@@ -213,7 +232,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
         {header}
         <PageState
           state={orders.isLoading ? 'loading' : 'empty'}
-          message={orders.isLoading ? 'Loading…' : 'No SO or JWSO yet.'}
+          message={orders.isLoading ? 'Loading…' : pickEmptyText}
         />
       </div>
     );
@@ -291,6 +310,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
                     showReport
                     rights={rights}
                     onUpload={upload.start}
+                    refreshing={upload.refreshing}
                   />
                 </>
               ) : line ? (
@@ -301,6 +321,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
                     folder={sel.folder}
                     rights={rights}
                     onUpload={upload.start}
+                    refreshing={upload.refreshing}
                     zipButton={
                       rights.maySave && lineFileCount(line) > 0 ? (
                         <button
@@ -320,6 +341,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
                     showReport={!sel.folder}
                     rights={rights}
                     onUpload={upload.start}
+                    refreshing={upload.refreshing}
                   />
                 </>
               ) : (

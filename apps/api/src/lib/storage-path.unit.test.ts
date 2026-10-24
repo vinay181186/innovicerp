@@ -13,7 +13,15 @@ describe('assertCompanyStoragePath', () => {
     expect(() => assertCompanyStoragePath('  ', cid)).not.toThrow();
   });
   it("refuses another company's folder, a bare prefix, and a relative escape", () => {
-    for (const p of ['22222222-2222-2222-2222-222222222222/qc/a.pdf', cid, `x/${cid}/a.pdf`]) {
+    for (const p of [
+      '22222222-2222-2222-2222-222222222222/qc/a.pdf',
+      cid,
+      `x/${cid}/a.pdf`,
+      `${cid}/../22222222-2222-2222-2222-222222222222/a.pdf`,
+      `${cid}/./a.pdf`,
+      `${cid}//a.pdf`,
+      `${cid}/qc\\..\\a.pdf`,
+    ]) {
       expect(() => assertCompanyStoragePath(p, cid)).toThrow(ValidationError);
     }
   });

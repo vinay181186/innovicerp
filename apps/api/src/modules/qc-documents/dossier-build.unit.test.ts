@@ -27,6 +27,7 @@ const step = (over: Partial<DossierStepRow>): DossierStepRow => ({
   reportTypeId: DIR.id,
   reportName: DIR.name,
   mandatory: true,
+  opDone: true,
   ...over,
 });
 const entry = (over: Partial<DossierEntryRow>): DossierEntryRow => ({
@@ -266,5 +267,15 @@ describe('Submit QC rule (shared qcReportMandatory)', () => {
     expect(qcReportMandatory('DIR', 0, [dir])).toBe(false);
     expect(qcReportMandatory('Final Inspection', 3, [fi])).toBe(false);
     expect(qcReportMandatory('Turning', 3, [dir])).toBe(false);
+  });
+});
+
+describe('ADR-252 line state waits for QC to finish', () => {
+  it('reports all in but pieces still to inspect → qc_pending, not complete', () => {
+    const b = buildDossier(
+      raw({ steps: [step({ opDone: false })], entries: [entry({ qcReportPath: 'c1/x.pdf' })] }),
+    );
+    expect(b.lines[0]!.state).toBe('qc_pending');
+    expect(b.lines[0]!.folders[0]!.state).toBe('qc_not_done');
   });
 });

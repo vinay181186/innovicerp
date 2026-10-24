@@ -10,6 +10,10 @@ export interface QcReportRule {
   required: boolean;
   /** Report Type name of the op's QC process (null when none). */
   reportName: string | null;
+  /** The QC process list is still loading — the rule is not known yet. */
+  loading: boolean;
+  /** Accepted qty > 0 — only then can the rule demand a report. */
+  accepting: boolean;
 }
 
 export function useQcReportRule(
@@ -18,7 +22,7 @@ export function useQcReportRule(
   /** False skips the fetch (e.g. a production op on the shared Op Entry form). */
   enabled = true,
 ): QcReportRule {
-  const { data } = useQcProcessesList(
+  const { data, isPending } = useQcProcessesList(
     { limit: 200, offset: 0 },
     { staleTime: 5 * 60_000, enabled },
   );
@@ -29,11 +33,15 @@ export function useQcReportRule(
   return {
     required: qcReportMandatory(operation, acceptedQty, processes),
     reportName: p?.reportTypeName ?? null,
+    loading: enabled && isPending,
+    accepting: acceptedQty > 0,
   };
 }
 
 /** The reason Submit is disabled, or null. */
 export function reportMissingReason(rule: QcReportRule, hasReport: boolean): string | null {
+  // Rule not loaded yet: hold Submit for accepted entries (reject-only never needs a report).
+  if (rule.loading && rule.accepting) return 'Checking which QC report this step needs…';
   if (!rule.required || hasReport) return null;
   return `Attach the ${rule.reportName ?? 'QC'} report first — it is a mandatory report for this QC step.`;
 }

@@ -149,8 +149,10 @@ export async function loadDossierRaw(
       : rowsOf(
           await tx.execute(sql`
             SELECT jo.id, jo.job_card_id, jo.op_seq, jo.operation,
-                   pr.report_type_id, pr.report_name, pr.mandatory
+                   pr.report_type_id, pr.report_name, pr.mandatory,
+                   (vs.computed_status = 'complete') AS op_done
             FROM public.jc_ops jo
+            LEFT JOIN public.v_jc_op_status vs ON vs.jc_op_id = jo.id
             ${qcProcessReportJoin(cid, 'jo.operation', 'pr')}
             WHERE jo.company_id = ${cid}::uuid AND jo.deleted_at IS NULL AND jo.op_type = 'qc'
               AND jo.job_card_id = ANY(${sql.param(jcIds)}::uuid[])
@@ -163,6 +165,7 @@ export async function loadDossierRaw(
           reportTypeId: s(r['report_type_id']),
           reportName: s(r['report_name']),
           mandatory: r['mandatory'] === true,
+          opDone: r['op_done'] === true,
         }));
   const opIds = steps.map((st) => st.jcOpId);
 
