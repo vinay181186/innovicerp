@@ -106,8 +106,8 @@ async function makeSoLine(item: string, orderQty: number): Promise<string> {
   return line[0]!.id;
 }
 
-// ADR-253 — route_cards.approval_status defaults to 'pending' (not usable), so
-// a fixture card that should drive work is inserted 'approved' explicitly.
+// ADR-253 — every fixture card states its approval_status explicitly: the DB
+// default is 'approved' for the release window (0219), new code always sets it.
 async function makeRouteCard(
   item: string,
   withOp = true,

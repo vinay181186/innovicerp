@@ -24,7 +24,9 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { fmtDateTime } from '../../lib/format-date';
-import { assertRowUpdated } from '../../lib/row-lock';
+import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
+import { assertRowUpdated, changedByOtherError } from '../../lib/row-lock';
 import { emitActivityLog } from '../activity-log/service';
 import {
   backfillPlansFromRouteCard,
@@ -42,12 +44,15 @@ const requireCompany = (user: AuthContext): string => {
 };
 
 /** Lock the item's backfill-candidate plans, then the card row (§20.3), and
- *  refuse unless the card is still Pending Approval — naming who decided it. */
+ *  refuse unless the card is still Pending Approval — naming who decided it —
+ *  and unchanged since the approver opened it (§20.4, `expectedUpdatedAt`;
+ *  absent from an older client = no check). */
 async function lockPendingCard(
   tx: DbTransaction,
   companyId: string,
   id: string,
   verb: 'approve' | 'reject',
+  expectedUpdatedAt: string | null | undefined,
 ): Promise<RcRow> {
   const live = and(
     eq(routeCards.id, id),
@@ -58,11 +63,16 @@ async function lockPendingCard(
   // set keys on the PLANS' own columns (see lockBackfillCandidates).
   const pre = await tx.select({ itemId: routeCards.itemId }).from(routeCards).where(live).limit(1);
   if (!pre[0]) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
-  await lockBackfillCandidates(tx, companyId, pre[0].itemId);
+  const preItemId = pre[0].itemId;
+  await lockBackfillCandidates(tx, companyId, preItemId);
 
   const rows = await tx.select().from(routeCards).where(live).limit(1).for('update');
   const card = rows[0];
   if (!card) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
+  // The plans locked above were picked by the UNLOCKED item read. If the card's
+  // item moved in between, those are the wrong plans — refuse rather than
+  // backfill plans this transaction never locked.
+  if (card.itemId !== preItemId) throw changedByOtherError(`Route Card ${card.code}`);
   if (card.approvalStatus !== 'pending') {
     const names = await loadUserNames(tx, [card.approvedBy, card.rejectedBy]);
     const decided =
@@ -71,6 +81,16 @@ async function lockPendingCard(
         : `was rejected${card.rejectedBy && names.get(card.rejectedBy) ? ` by ${names.get(card.rejectedBy)}` : ''}${card.rejectedAt ? ` at ${fmtDateTime(card.rejectedAt)}` : ''}`;
     throw new ConflictError(
       `Cannot ${verb} Route Card ${card.code}: it ${decided}. Reload the page.`,
+    );
+  }
+  // §20.4 — a card edited after the approver opened it is refused with the
+  // standard "changed by <name> at <time>" 409; the name lookup runs only on
+  // the refusal path.
+  if (editConflicts(card.updatedAt, expectedUpdatedAt)) {
+    assertUnchangedSinceOpened(
+      card.updatedAt,
+      expectedUpdatedAt,
+      await rowChangedByName(tx, card.updatedBy),
     );
   }
   return card;
@@ -86,7 +106,7 @@ export async function approveRouteCard(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const card = await lockPendingCard(tx, companyId, id, 'approve');
+    const card = await lockPendingCard(tx, companyId, id, 'approve', input.expectedUpdatedAt);
     const now = new Date();
     const updated = await tx
       .update(routeCards)
@@ -142,7 +162,7 @@ export async function rejectRouteCard(
   const reason = input.reason.trim();
 
   return withUserContext(user, async (tx) => {
-    const card = await lockPendingCard(tx, companyId, id, 'reject');
+    const card = await lockPendingCard(tx, companyId, id, 'reject', input.expectedUpdatedAt);
     const now = new Date();
     const updated = await tx
       .update(routeCards)

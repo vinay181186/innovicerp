@@ -114,7 +114,9 @@ function PlansListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'plan_create');
   // The ⋯ menu's next steps: each one is the action that moves the plan out of
   // the state it shows, offered only to someone allowed to take it.
-  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
+  const rcPerms = effectiveFormPerms(eff, 'routecard_create');
+  const canCreateRouteCard = rcPerms.entry;
+  const canViewRouteCard = rcPerms.view;
   const proPerms = effectiveFormPerms(eff, 'prodorder_create');
   const canProductionOrder = proPerms.entry;
   // Closing an order moves it to its next step — Advance, not Entry (ADR-231).
@@ -340,6 +342,7 @@ function PlansListPage(): React.JSX.Element {
               rowMenu={(row) =>
                 planRowMenu(row, {
                   canCreateRouteCard,
+                  canViewRouteCard,
                   canProductionOrder,
                   canCloseProductionOrder,
                   canOpenJobCard,

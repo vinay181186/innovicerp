@@ -84,7 +84,9 @@ export function OrderDetail({
   const [savedPlan, setSavedPlan] = useState<SavedPlanNote | null>(null);
   const { data: eff } = useMyAccess();
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
-  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
+  const rcPerms = effectiveFormPerms(eff, 'routecard_create');
+  const canCreateRouteCard = rcPerms.entry;
+  const canViewRouteCard = rcPerms.view;
   const canMlPlan = effectiveFormPerms(eff, 'mlplan_create').entry;
 
   const backBtn = (
@@ -161,6 +163,7 @@ export function OrderDetail({
     perms,
     canProductionOrder,
     canCreateRouteCard,
+    canViewRouteCard,
     canMlPlan,
     setModal,
     onExecutePlan: runExecutePlan,
@@ -311,6 +314,27 @@ export function OrderDetail({
                 </Link>
               </>
             ) : null
+          ) : savedPlan.derivedStatus === 'route_card_approval_pending' ? (
+            // ADR-253 — the item's card exists but is not approved; a
+            // Production Order is refused until it is, so no Create PO here.
+            <>
+              Route Card is waiting for approval
+              {canViewRouteCard ? (
+                <>
+                  {' — '}
+                  <Link
+                    to="/route-cards"
+                    search={savedPlan.itemCode ? { search: savedPlan.itemCode } : {}}
+                    className="fw-700"
+                    style={{ color: 'var(--blue)' }}
+                  >
+                    Open Route Card →
+                  </Link>
+                </>
+              ) : (
+                '.'
+              )}
+            </>
           ) : canProductionOrder ? (
             <>
               Next:{' '}
@@ -345,7 +369,8 @@ export function OrderDetail({
       ) : null}
       {rcStagedCode ? (
         <Banner tone="info" role="status" onDismiss={() => setRcStagedCode(null)}>
-          <span className="mono">{rcStagedCode}</span>: Route Card change sent for approval — the card is unchanged until approved.
+          <span className="mono">{rcStagedCode}</span>: Route Card change sent for approval — the
+          card is unchanged until approved.
         </Banner>
       ) : null}
       {rcNotSent ? (

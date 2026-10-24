@@ -186,14 +186,25 @@ function useRouteCardDecision<TVars extends { id: string }>(
   });
 }
 
+// expectedUpdatedAt = the card's updatedAt as the approver saw it (§20.4); the
+// server answers 409 if the card changed since. Optional: the inbox rows carry
+// no updatedAt, so the Approvals tab and the home dashboard send none.
 export function useApproveRouteCard() {
-  return useRouteCardDecision<{ id: string; remarks?: string }>('approve', (v) =>
-    v.remarks ? { remarks: v.remarks } : {},
+  return useRouteCardDecision<{ id: string; remarks?: string; expectedUpdatedAt?: string }>(
+    'approve',
+    (v) => ({
+      ...(v.remarks ? { remarks: v.remarks } : {}),
+      ...(v.expectedUpdatedAt ? { expectedUpdatedAt: v.expectedUpdatedAt } : {}),
+    }),
   );
 }
 
 export function useRejectRouteCard() {
-  return useRouteCardDecision<{ id: string; reason: string }>('reject', (v) => ({
-    reason: v.reason,
-  }));
+  return useRouteCardDecision<{ id: string; reason: string; expectedUpdatedAt?: string }>(
+    'reject',
+    (v) => ({
+      reason: v.reason,
+      ...(v.expectedUpdatedAt ? { expectedUpdatedAt: v.expectedUpdatedAt } : {}),
+    }),
+  );
 }

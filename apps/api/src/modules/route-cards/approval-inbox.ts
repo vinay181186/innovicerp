@@ -5,8 +5,7 @@
 // is allowed (owner, 2026-10-24). A Route Card carries no qty, value or vendor.
 
 import type { ApprovalInboxRow } from '@innovic/shared';
-import { and, eq, isNull, type SQL, sql } from 'drizzle-orm';
-import { items, routeCards, users } from '../../db/schema';
+import { type SQL, sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 
@@ -25,45 +24,46 @@ export async function loadRcInboxAccess(user: AuthContext): Promise<RcInboxAcces
 /** Where a waiting card opens. */
 export const rcNavPage = (id: string): string => `/route-cards/${id}`;
 
+/** THE "pending Route Card" filter, on a route_cards alias `rc` already in
+ *  the query: this company, live, Pending Approval. One place — the approvals
+ *  inbox (list + paged) and the per-person home's rc_pending row all use it. */
+export function rcPendingWhereSql(companyId: string): SQL {
+  return sql`rc.company_id = ${companyId}::uuid
+      AND rc.deleted_at IS NULL
+      AND rc.approval_status = 'pending'`;
+}
+
 export async function listRcApprovalInbox(
   tx: DbTransaction,
   companyId: string,
   access: RcInboxAccess,
 ): Promise<ApprovalInboxRow[]> {
   if (!access.canApprove) return [];
-  const rows = await tx
-    .select({
-      id: routeCards.id,
-      code: routeCards.code,
-      itemCode: items.code,
-      itemName: items.name,
-      createdAt: routeCards.createdAt,
-      createdByName: users.fullName,
-      createdByEmail: users.email,
-    })
-    .from(routeCards)
-    .leftJoin(items, eq(items.id, routeCards.itemId))
-    .leftJoin(users, eq(users.id, routeCards.createdBy))
-    .where(
-      and(
-        eq(routeCards.companyId, companyId),
-        isNull(routeCards.deletedAt),
-        eq(routeCards.approvalStatus, 'pending'),
-      ),
-    )
-    .orderBy(routeCards.createdAt);
+  // The same row set the paged inbox (approvals/inbox-list.ts) reads.
+  const rows = (await tx.execute(sql`
+    SELECT t.id, t.doc_code, t.item_code, t.item_name, t.created_by_name, t.created_at
+    FROM (${rcInboxRowsSql(companyId)}) t
+    ORDER BY t.created_at
+  `)) as unknown as Array<{
+    id: string;
+    doc_code: string;
+    item_code: string | null;
+    item_name: string | null;
+    created_by_name: string | null;
+    created_at: Date | string;
+  }>;
 
   return rows.map((r) => ({
-    id: r.id,
-    docCode: r.code,
+    id: String(r.id),
+    docCode: String(r.doc_code),
     vendorName: null,
-    itemCode: r.itemCode ?? null,
-    itemName: r.itemName ?? null,
+    itemCode: r.item_code ?? null,
+    itemName: r.item_name ?? null,
     docQty: null,
     docAmount: null,
-    createdByName: r.createdByName?.trim() || r.createdByEmail?.split('@')[0] || null,
-    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
-    navPage: rcNavPage(r.id),
+    createdByName: r.created_by_name || null,
+    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    navPage: rcNavPage(String(r.id)),
   }));
 }
 
@@ -79,7 +79,5 @@ export function rcInboxRowsSql(companyId: string): SQL {
     FROM public.route_cards rc
     LEFT JOIN public.items i ON i.id = rc.item_id
     LEFT JOIN public.users u ON u.id = rc.created_by
-    WHERE rc.company_id = ${companyId}::uuid
-      AND rc.deleted_at IS NULL
-      AND rc.approval_status = 'pending'`;
+    WHERE ${rcPendingWhereSql(companyId)}`;
 }

@@ -1,10 +1,11 @@
 // ADR-253 — Route Card inner query for the per-person home (list-query.ts
 // shape): rc_pending — NEW cards Pending Approval (the Sent for approval
 // block, and the "still waiting?" read for the approval_rc notification goes
-// through the approvals inbox instead). Same predicate as
-// route-cards/approval-inbox.ts: live card, approval_status = 'pending'.
+// through the approvals inbox instead). The pending filter is the ONE in
+// route-cards/approval-inbox.ts (rcPendingWhereSql).
 
 import { type SQL, sql } from 'drizzle-orm';
+import { rcPendingWhereSql } from '../../route-cards/approval-inbox';
 import { filterFrag, type ListFilter } from './list-query';
 
 export function rcPendingSql(cid: string, f: ListFilter): SQL {
@@ -26,7 +27,6 @@ export function rcPendingSql(cid: string, f: ListFilter): SQL {
       SELECT COUNT(*) AS n FROM public.route_card_ops o
       WHERE o.route_card_id = rc.id AND o.deleted_at IS NULL
     ) op_agg ON TRUE
-    WHERE rc.company_id = ${cid}::uuid AND rc.deleted_at IS NULL
-      AND rc.approval_status = 'pending'
+    WHERE ${rcPendingWhereSql(cid)}
       ${filterFrag(f, 'rc.id', 'rc.created_by')}`;
 }

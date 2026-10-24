@@ -116,7 +116,11 @@ export function RcApprovalActions({
         onCancel={() => setApproveOpen(false)}
         onConfirm={async () => {
           const r = remarks.trim();
-          await approveMut.mutateAsync(r ? { id: detail.id, remarks: r } : { id: detail.id });
+          await approveMut.mutateAsync({
+            id: detail.id,
+            expectedUpdatedAt: detail.updatedAt,
+            ...(r ? { remarks: r } : {}),
+          });
           setApproveOpen(false);
         }}
       />
@@ -146,7 +150,11 @@ export function RcApprovalActions({
           const r = reason.trim();
           // Thrown, not returned: the dialog shows it and stays open.
           if (!r) throw new Error('Enter a Rejection Reason.');
-          await rejectMut.mutateAsync({ id: detail.id, reason: r });
+          await rejectMut.mutateAsync({
+            id: detail.id,
+            reason: r,
+            expectedUpdatedAt: detail.updatedAt,
+          });
           setRejectOpen(false);
         }}
       />

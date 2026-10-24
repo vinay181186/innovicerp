@@ -7,12 +7,13 @@
 // The "seen" time is the caller's own user_ui_settings row; it only ever
 // moves forward (GREATEST in one statement) and never past the server's now.
 
-import type {
-  AccessAction,
-  AccessFormKey,
-  ApprovalInboxResponse,
-  DashNote,
-  DashTone,
+import {
+  type AccessAction,
+  type AccessFormKey,
+  type ApprovalInboxResponse,
+  type DashNote,
+  type DashTone,
+  ROUTE_CARD_APPROVAL_LABEL,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../../db/with-user-context';
@@ -31,6 +32,8 @@ type Open =
   | 'approval_rc'
   | 'raiser_pr'
   | 'raiser_po'
+  | 'raiser_rc'
+  | 'raiser_rc_approved'
   | 'pr_to_po'
   | 'po_to_dc'
   | 'grn_qc'
@@ -52,7 +55,28 @@ export interface NoteRule {
    *  JobCard QC with no op_ref — its pieces go back to ANOTHER card — so it is
    *  not a "next op can start" event and is left out. */
   opQc?: true;
+  /** ADR-253 — only an event whose `changes` move RC Status to Pending
+   *  Approval (a Rejected card saved again). Other edits of the same entity
+   *  are not a "waiting for your approval" event. */
+  toPending?: true;
+  /** Show the activity's reason after the tail (a Route Card rejection). */
+  withReason?: true;
 }
+
+/** ADR-253 — the one `changes` entry a resubmitted Route Card's EDIT carries
+ *  (route-cards/service.ts rcStatusChange('rejected', 'pending')). */
+const RC_TO_PENDING_CHANGE = JSON.stringify([
+  { field: 'approvalStatus', after: ROUTE_CARD_APPROVAL_LABEL.pending },
+]);
+
+/** Next steps where one note per document is enough: a card created,
+ *  rejected, resubmitted and restored inside the window is still ONE card
+ *  waiting — only its newest event shows. */
+const ONE_NOTE_PER_DOC: ReadonlySet<Open> = new Set<Open>([
+  'approval_rc',
+  'raiser_rc',
+  'raiser_rc_approved',
+]);
 
 // Entity / action strings as each writer emits them (activity_log).
 export const NOTE_RULES: readonly NoteRule[] = [
@@ -90,6 +114,28 @@ export const NOTE_RULES: readonly NoteRule[] = [
     right: ['routecard_create', 'approve'],
     open: 'approval_rc',
     verb: 'created',
+    tail: ' — waiting for your approval',
+    tone: 'due',
+  },
+  {
+    // ADR-253 — a Rejected card corrected and saved again is back to Pending
+    // Approval: the approvers are told again.
+    entity: 'RouteCard',
+    action: 'EDIT',
+    right: ['routecard_create', 'approve'],
+    open: 'approval_rc',
+    verb: 'sent again',
+    tail: ' — waiting for your approval',
+    tone: 'due',
+    toPending: true,
+  },
+  {
+    // ADR-253 — a card restored from Trash comes back Pending Approval.
+    entity: 'RouteCard',
+    action: 'RESTORE',
+    right: ['routecard_create', 'approve'],
+    open: 'approval_rc',
+    verb: 'restored',
     tail: ' — waiting for your approval',
     tone: 'due',
   },
@@ -188,6 +234,28 @@ export const NOTE_RULES: readonly NoteRule[] = [
     tail: ' — your order',
     tone: 'late',
   },
+  {
+    // ADR-253 — the creator hears the decision on their Route Card. 'view' is
+    // the right: a card born from a Job Card / plan has a creator who may only
+    // view Route Cards, and viewing it is all the note asks of them.
+    entity: 'RouteCard',
+    action: 'REJECT',
+    right: ['routecard_create', 'view'],
+    open: 'raiser_rc',
+    verb: 'rejected',
+    tail: ' — your Route Card',
+    tone: 'late',
+    withReason: true,
+  },
+  {
+    entity: 'RouteCard',
+    action: 'APPROVE',
+    right: ['routecard_create', 'view'],
+    open: 'raiser_rc_approved',
+    verb: 'approved',
+    tail: ' — your Route Card can be used now',
+    tone: 'ok',
+  },
 ];
 
 /** "<actor> raised " / "<actor> accepted 20 on " — the words before the number. */
@@ -219,6 +287,11 @@ export interface ActivityEvent {
    *  input.qty, the accepted pieces; rejects ride only in the detail). */
   qty: number | null;
   opRef: string | null;
+  /** The activity's `changes` move RC Status to Pending Approval (see
+   *  NoteRule.toPending). */
+  toPending?: boolean;
+  /** activity_log.reason (a rejection's reason). */
+  reason?: string | null;
 }
 
 /** Events that become candidate notes: a held rule, not the caller's own.
@@ -237,6 +310,7 @@ export function candidates(
     for (const rule of rules) {
       if (rule.entity !== ev.entity || rule.action !== ev.action) continue;
       if (rule.opQc && (!ev.opRef || !(Number(ev.qty) > 0))) continue;
+      if (rule.toPending && !ev.toPending) continue;
       out.push({ ev, rule, key: first ? ev.id : `${ev.id}:${rule.open}` });
       first = false;
     }
@@ -267,6 +341,18 @@ async function openIds(
     `)) as unknown as Array<{ id: string }>;
     return new Set(rows.map((r) => r.id));
   }
+  if (open === 'raiser_rc' || open === 'raiser_rc_approved') {
+    // Still the caller's card, and still in the state the note announces — a
+    // rejection is dropped once the card is sent again (or approved).
+    const status = open === 'raiser_rc' ? 'rejected' : 'approved';
+    const rows = (await tx.execute(sql`
+      SELECT d.id::text AS id FROM public.route_cards d
+      WHERE d.company_id = ${c.cid}::uuid AND d.deleted_at IS NULL AND d.created_by = ${me}::uuid
+        AND d.approval_status = ${status}
+        AND d.id = ANY(${sql.param(ids)}::uuid[])
+    `)) as unknown as Array<{ id: string }>;
+    return new Set(rows.map((r) => r.id));
+  }
   const d = listDef(open)!;
   const { rows } = await runList(tx, d.query(c, { ids }), { ids, limit: 1000 });
   return new Set(rows.map((r) => r.id));
@@ -283,10 +369,16 @@ export async function buildNotifications(
   const rules = rulesFor(a);
   if (rules.length === 0) return { items: [], unseen: 0, seenAt };
 
-  const pairs: SQL[] = rules.map((r) => sql`(${r.entity}::text, ${r.action}::text)`);
+  const toPendingSql = sql`COALESCE(a.changes @> ${RC_TO_PENDING_CHANGE}::jsonb, false)`;
+  const pairs: SQL[] = rules.map((r) =>
+    r.toPending
+      ? sql`(a.entity = ${r.entity} AND a.action = ${r.action} AND ${toPendingSql})`
+      : sql`(a.entity = ${r.entity} AND a.action = ${r.action})`,
+  );
   const res = (await tx.execute(sql`
     SELECT a.id::text AS id, a.ts, a.entity, a.action, a.entity_id::text AS entity_id,
-           a.ref_id, a.user_id::text AS user_id, a.qty, a.op_ref,
+           a.ref_id, a.user_id::text AS user_id, a.qty, a.op_ref, a.reason,
+           ${toPendingSql} AS to_pending,
            COALESCE(u.full_name, a.user_full_name, a.user_name) AS actor
     FROM public.activity_log a
     LEFT JOIN public.users u ON u.id = a.user_id
@@ -294,7 +386,7 @@ export async function buildNotifications(
       AND a.user_id IS NOT NULL AND a.user_id <> ${me}::uuid
       AND a.entity_id IS NOT NULL AND a.ref_id IS NOT NULL
       AND a.ts >= ((${addDays(c.today, -(NOTE_DAYS - 1))}::date)::timestamp AT TIME ZONE 'Asia/Kolkata')
-      AND (a.entity, a.action) IN (${sql.join(pairs, sql`, `)})
+      AND (${sql.join(pairs, sql` OR `)})
     ORDER BY a.ts DESC
     LIMIT 300
   `)) as unknown as Array<Record<string, unknown>>;
@@ -309,6 +401,8 @@ export async function buildNotifications(
     actor: str(r['actor']) ?? 'Someone',
     qty: r['qty'] === null || r['qty'] === undefined ? null : Number(r['qty']),
     opRef: str(r['op_ref']),
+    toPending: r['to_pending'] === true,
+    reason: str(r['reason']),
   }));
   const cands = candidates(events, rules, me);
 
@@ -324,8 +418,17 @@ export async function buildNotifications(
     stillOpen.set(open, await openIds(tx, open, [...ids], c, me, approvals));
 
   const seenMs = seenAt ? Date.parse(seenAt) : NaN;
+  // Events arrive newest first, so the first note kept per document is the newest.
+  const oneDoc = new Set<string>();
   const items: DashNote[] = cands
     .filter(({ ev, rule }) => stillOpen.get(rule.open)?.has(ev.entityId))
+    .filter(({ ev, rule }) => {
+      if (!ONE_NOTE_PER_DOC.has(rule.open)) return true;
+      const k = `${rule.open}:${ev.entityId}`;
+      if (oneDoc.has(k)) return false;
+      oneDoc.add(k);
+      return true;
+    })
     .slice(0, NOTE_MAX)
     .map(({ ev, rule, key }) => ({
       key,
@@ -335,6 +438,7 @@ export async function buildNotifications(
         { text: noteLead(ev, rule) },
         codePart(ev.refId, entityHref(ev.entity, ev.entityId, ev.refId)),
         { text: rule.tail },
+        ...(rule.withReason && ev.reason ? [{ text: ` — ${ev.reason}` }] : []),
       ],
       unseen: Number.isNaN(seenMs) || ev.ts.getTime() > seenMs,
     }));

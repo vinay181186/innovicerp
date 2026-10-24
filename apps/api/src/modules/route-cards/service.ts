@@ -446,8 +446,6 @@ export async function listRouteCards(
       FROM public.route_cards rc
       LEFT JOIN public.items i ON i.id = rc.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.items rmi ON rmi.id = rc.raw_material_item_id AND rmi.company_id = rc.company_id
-      LEFT JOIN public.users au ON au.id = rc.approved_by
-      LEFT JOIN public.users ru ON ru.id = rc.rejected_by
       LEFT JOIN LATERAL (
         SELECT COUNT(*) AS op_count
         FROM public.route_card_ops o
@@ -474,9 +472,11 @@ export async function listRouteCards(
         rc.plan_type AS "planType",
         rc.approval_status AS "approvalStatus",
         rc.approved_by AS "approvedBy", rc.approved_at AS "approvedAt",
-        COALESCE(NULLIF(btrim(au.full_name), ''), split_part(au.email, '@', 1)) AS "approvedByName",
+        (SELECT COALESCE(NULLIF(btrim(au.full_name), ''), split_part(au.email, '@', 1))
+           FROM public.users au WHERE au.id = rc.approved_by) AS "approvedByName",
         rc.rejected_by AS "rejectedBy", rc.rejected_at AS "rejectedAt",
-        COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1)) AS "rejectedByName",
+        (SELECT COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1))
+           FROM public.users ru WHERE ru.id = rc.rejected_by) AS "rejectedByName",
         rc.rejection_reason AS "rejectionReason",
         rc.created_at AS "createdAt", rc.created_by AS "createdBy",
         rc.updated_at AS "updatedAt", rc.updated_by AS "updatedBy",
@@ -2340,7 +2340,9 @@ export async function overwriteRouteCardFromSource(
  *      card is born, so this branch still writes material in full. The new
  *      card is Pending Approval (ADR-253) and feeds no plan until approved.
  *    - active card exists but is Pending Approval / Rejected (ADR-253) → left
- *      untouched; the write-back carries `notSentReason` saying so.
+ *      untouched; the write-back carries `notSentReason` saying so — but only
+ *      when something was held back (routing differs, or a blank RM half this
+ *      user may fill); an identical routing returns null, as on an approved card.
  *    - active card exists, routing DIFFERS, edit-approval gate ON (ADR-249
  *      Step B2) → the card is NOT rewritten: the change is staged as a Route
  *      Card edit request (stageRoutingFromSourceDoc) and a write-back with
@@ -2434,24 +2436,6 @@ export async function saveRouteCardForItem(
     .limit(1);
 
   const card = existing[0];
-  if (card && !isRouteCardUsable(card.approvalStatus)) {
-    // ADR-253 — the item's card is still Pending Approval (or Rejected). It
-    // is not in use, and the approver is looking at exactly what it holds now:
-    // a Job Card / plan must not rewrite it under them, and there is nothing
-    // to stage (the edit-approval engine only handles approved cards). The
-    // card is left exactly as it is; the caller's own save goes on and the
-    // screen says why the routing did not reach the card.
-    return {
-      routeCardId: card.id,
-      routeCardCode: card.code,
-      routeCardRevision: card.currentRevision,
-      created: false,
-      notSentReason:
-        card.approvalStatus === 'rejected'
-          ? `Route Card ${card.code} was rejected — correct it on the Route Card screen and send it for approval again. This routing was not copied to it.`
-          : `Route Card ${card.code} is waiting for approval — this routing was not copied to it.`,
-    };
-  }
   if (card) {
     // ADR-249 Step B2 — the auto-save no longer rewrites a live card's
     // routing behind the planner's back. When the routing this document
@@ -2473,10 +2457,40 @@ export async function saveRouteCardForItem(
         ),
       )
       .orderBy(asc(routeCardOps.opSeq));
-    const staging = opsAreIdentical(
+    const routingIdentical = opsAreIdentical(
       storedOps.map(comparableFromRow),
       cleanOps.map(comparableFromInput),
-    )
+    );
+
+    if (!isRouteCardUsable(card.approvalStatus)) {
+      // ADR-253 — the item's card is still Pending Approval (or Rejected). It
+      // is not in use, and the approver is looking at exactly what it holds
+      // now: a Job Card / plan must not rewrite it under them, and there is
+      // nothing to stage (the edit-approval engine only handles approved
+      // cards). The card is left exactly as it is; the caller's own save goes
+      // on. The screen is told ONLY when something was actually held back —
+      // the same test the approved path applies: the routing differs, or a
+      // blank raw-material half would have been filled AND this user holds the
+      // Route Card edit right (ADR-218 — without it the approved path fills
+      // nothing either, so there is nothing to report). An identical routing
+      // says nothing, exactly as on an approved card.
+      const fill = rmHalvesToFill(card, rawMaterial);
+      const rmWouldFill =
+        (fill.grade || fill.size || fill.rmItem) && (await canWriteCard());
+      if (routingIdentical && !rmWouldFill) return null;
+      return {
+        routeCardId: card.id,
+        routeCardCode: card.code,
+        routeCardRevision: card.currentRevision,
+        created: false,
+        notSentReason:
+          card.approvalStatus === 'rejected'
+            ? `Route Card ${card.code} was rejected — correct it on the Route Card screen and send it for approval again. This routing was not copied to it.`
+            : `Route Card ${card.code} is waiting for approval — this routing was not copied to it.`,
+      };
+    }
+
+    const staging = routingIdentical
       ? 'direct'
       : await stageRoutingFromSourceDoc(
           tx,

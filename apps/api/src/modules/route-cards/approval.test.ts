@@ -27,7 +27,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { AuthorizationError, ConflictError } from '../../lib/errors';
+import { AppError, AuthorizationError, ConflictError } from '../../lib/errors';
 import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { getApprovalInbox } from '../approvals/service';
@@ -47,6 +47,9 @@ let itemSeq = 0;
 
 const approver = (): AuthContext =>
   asAccess(admin, { departments: { planning: 'L5' } }, 'manager');
+/** Planning L1: view only on Route Card Master (no Edit right). */
+const viewerOnly = (): AuthContext =>
+  asAccess(admin, { departments: { planning: 'L1' } }, 'viewer');
 /** Planning L3: entry + edit on Route Card Master, no Approve. */
 const editorOnly = (): AuthContext =>
   asAccess(admin, { departments: { planning: 'L3' } }, 'operator');
@@ -408,5 +411,93 @@ describe('Route Card approval (ADR-253)', () => {
       .from(routeCardOps)
       .where(eq(routeCardOps.routeCardId, first!.routeCardId));
     expect(opRows.map((o) => o.operation)).toEqual(['from jc']);
+
+    // The SAME routing again: nothing was held back, so nothing is said —
+    // exactly as on an approved card with an identical routing.
+    const same = await withUserContext(admin, (tx) =>
+      service.saveRouteCardForItem(
+        tx,
+        admin.companyId!,
+        itemId,
+        ops('from jc'),
+        admin,
+        `${TEST_PREFIX}JC3`,
+        blankRm,
+      ),
+    );
+    expect(same).toBeNull();
+
+    // Same routing + a raw material the (blank) card does not hold: a user
+    // WITH the Edit right is told it was not copied; one WITHOUT it is told
+    // nothing (the approved path would not have filled it for them either).
+    const withRm = { ...blankRm, rawMaterialGradeText: 'EN8', rawMaterialSizeText: 'DIA 20' };
+    const rmEditor = await withUserContext(admin, (tx) =>
+      service.saveRouteCardForItem(
+        tx,
+        admin.companyId!,
+        itemId,
+        ops('from jc'),
+        editorOnly(),
+        `${TEST_PREFIX}JC4`,
+        withRm,
+      ),
+    );
+    expect(rmEditor?.notSentReason).toContain('waiting for approval');
+    const rmViewer = await withUserContext(admin, (tx) =>
+      service.saveRouteCardForItem(
+        tx,
+        admin.companyId!,
+        itemId,
+        ops('from jc'),
+        viewerOnly(),
+        `${TEST_PREFIX}JC5`,
+        withRm,
+      ),
+    );
+    expect(rmViewer).toBeNull();
+    const stillBlank = await db
+      .select({ g: routeCards.rawMaterialGradeText })
+      .from(routeCards)
+      .where(eq(routeCards.id, first!.routeCardId));
+    expect(stillBlank[0]!.g).toBeNull();
+  });
+
+  it('approve / reject with a stale expectedUpdatedAt → 409 edit conflict; current one works', async () => {
+    const { itemId, card } = await newCard(approver());
+    // Someone edits the card after the approver opened it.
+    const edited = await service.updateRouteCard(
+      card.id,
+      { code: card.code, itemId, ops: ops('changed meanwhile'), expectedUpdatedAt: card.updatedAt },
+      editorOnly(),
+    );
+    const stale = await approveRouteCard(card.id, { expectedUpdatedAt: card.updatedAt }, approver())
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(stale).toBeInstanceOf(AppError);
+    expect((stale as AppError).statusCode).toBe(409);
+    const staleReject = await rejectRouteCard(
+      card.id,
+      { reason: 'x', expectedUpdatedAt: card.updatedAt },
+      approver(),
+    )
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect((staleReject as AppError).statusCode).toBe(409);
+    const still = await service.getRouteCard(card.id, admin);
+    expect(still.approvalStatus).toBe('pending');
+
+    await expect(
+      approveRouteCard(card.id, { expectedUpdatedAt: edited.updatedAt }, approver()),
+    ).resolves.toMatchObject({ approvalStatus: 'approved' });
+  });
+
+  it('reject logs the REJECT activity with its reason against the card (creator notification source)', async () => {
+    const { card } = await newCard(approver());
+    await rejectRouteCard(card.id, { reason: 'Wrong fixture' }, approver());
+    const rows = await db
+      .select({ action: activityLog.action, reason: activityLog.reason, entity: activityLog.entity })
+      .from(activityLog)
+      .where(and(eq(activityLog.entityId, card.id), eq(activityLog.action, 'REJECT')));
+    expect(rows).toEqual([{ action: 'REJECT', reason: 'Wrong fixture', entity: 'RouteCard' }]);
   });
 });

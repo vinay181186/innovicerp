@@ -22,7 +22,12 @@ import { ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
-import { newProductionOrderTo, newRouteCardTo, withQuery } from '../lib/plan-next-step';
+import {
+  newProductionOrderTo,
+  newRouteCardTo,
+  routeCardForItemTo,
+  withQuery,
+} from '../lib/plan-next-step';
 
 type PlanRow = ListPlansResponse['items'][number];
 
@@ -320,6 +325,8 @@ export function planRowMenu(
   row: PlanRow,
   opts: {
     canCreateRouteCard: boolean;
+    /** routecard_create view — may open Route Card Master (ADR-253 next step). */
+    canViewRouteCard: boolean;
     canProductionOrder: boolean;
     canCloseProductionOrder: boolean;
     /** ADR-234 — may open the Job Card page (Job Card View). */
@@ -336,6 +343,20 @@ export function planRowMenu(
         group: 'workflow',
         hidden: !opts.canCreateRouteCard,
         to: newRouteCardTo(row),
+      },
+    ];
+  }
+  // ADR-253 — the item's card exists but waits for approval; a Production
+  // Order is refused until then, so the next step is the card, not Create PO.
+  if (row.derivedStatus === 'route_card_approval_pending') {
+    return [
+      {
+        key: 'open-route-card',
+        label: 'Open Route Card',
+        icon: 'eye',
+        group: 'workflow',
+        hidden: !opts.canViewRouteCard,
+        to: routeCardForItemTo(row),
       },
     ];
   }

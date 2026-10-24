@@ -39,7 +39,7 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
-import { assertRouteCardUsable, isRouteCardUsable } from '../../lib/route-card-usable';
+import { routeCardUnusableMessage } from '../../lib/route-card-usable';
 import { emitActivityLog } from '../activity-log/service';
 import { createPlanInTx } from '../plans/service';
 import { insertPurchaseRequestTx } from '../purchase-requests/service';
@@ -149,19 +149,6 @@ async function readRouteCards(
     });
   }
   return out;
-}
-
-/** ADR-253 — the refusal sentence for a card that is not approved, taken from
- *  assertRouteCardUsable so this list and Production Order create say the
- *  same words. Null when the card is usable. */
-function routeCardUnusableReason(card: RouteCardFacts): string | null {
-  if (isRouteCardUsable(card.approvalStatus)) return null;
-  try {
-    assertRouteCardUsable(card);
-  } catch (e) {
-    return (e as Error).message;
-  }
-  return null;
 }
 
 /** Live vendors of the company among `ids` → their code. */
@@ -324,7 +311,7 @@ export async function raiseMlPlanOrdersTx(
     if (kind === 'plan') {
       const card = cards.get(node.itemId);
       // ADR-253 — a card waiting for approval (or rejected) may not raise.
-      const unusable = card ? routeCardUnusableReason(card) : null;
+      const unusable = card ? routeCardUnusableMessage(card) : null;
       if (!card) blocked.push(`${item} has no Route Card — make one first.`);
       else if (unusable) blocked.push(`${item}: ${unusable}`);
       else if (card.opCount === 0) {
