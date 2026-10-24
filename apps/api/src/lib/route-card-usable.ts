@@ -19,16 +19,23 @@ export function isRouteCardUsable(status: RouteCardApprovalStatus | string): boo
   return status === 'approved';
 }
 
+/** The user-facing reason a card may not be used, or null when it may. */
+export function routeCardUnusableMessage(card: {
+  code: string;
+  approvalStatus: RouteCardApprovalStatus | string;
+}): string | null {
+  if (isRouteCardUsable(card.approvalStatus)) return null;
+  return card.approvalStatus === 'rejected'
+    ? `Route Card ${card.code} was rejected. Correct it and send it for approval again before using it.`
+    : `Route Card ${card.code} is waiting for approval. It can be used once it is approved.`;
+}
+
 /** Throw the user-facing refusal when the card is not approved. Call it INSIDE
  *  the transaction that uses the card, after reading the card row (§20.3). */
 export function assertRouteCardUsable(card: {
   code: string;
   approvalStatus: RouteCardApprovalStatus | string;
 }): void {
-  if (card.approvalStatus === 'approved') return;
-  throw new ConflictError(
-    card.approvalStatus === 'rejected'
-      ? `Route Card ${card.code} was rejected. Correct it and send it for approval again before using it.`
-      : `Route Card ${card.code} is waiting for approval. It can be used once it is approved.`,
-  );
+  const msg = routeCardUnusableMessage(card);
+  if (msg) throw new ConflictError(msg);
 }

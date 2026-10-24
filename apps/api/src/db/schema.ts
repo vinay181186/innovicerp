@@ -934,9 +934,9 @@ export const routeCards = pgTable(
     // default; the planner starts from it instead of re-deciding per order.
     planType: planTypeEnum('plan_type').notNull().default('manufacture'),
     // ADR-253 (migration 0219): pending / approved / rejected. Only an APPROVED
-    // card may drive work. Default 'pending' so any insert that forgets to set
-    // it is held, never silently usable (cards before 0219 were set approved).
-    approvalStatus: text('approval_status').notNull().default('pending'),
+    // card may drive work. DB default stays 'approved' (old code during the
+    // release window); every new-code insert sets 'pending' EXPLICITLY.
+    approvalStatus: text('approval_status').notNull().default('approved'),
     approvedBy: uuid('approved_by').references((): AnyPgColumn => users.id),
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     rejectedBy: uuid('rejected_by').references((): AnyPgColumn => users.id),

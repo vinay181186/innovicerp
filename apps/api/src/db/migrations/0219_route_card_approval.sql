@@ -7,10 +7,12 @@
 -- whose item card is not approved shows "Route card awaiting approval".
 --
 -- Existing cards (43 on PROD, 2026-10-24) are set 'approved' — they were in
--- use before this rule (owner: yes). The column is added with DEFAULT
--- 'approved' (fills existing rows in one step), then the default becomes
--- 'pending' so any future insert that forgets to set it is held, never
--- silently usable. approved_at/by stay NULL on those legacy rows (unknown).
+-- use before this rule (owner: yes). The column DEFAULT stays 'approved': the
+-- release applies migrations BEFORE the new code is live, and the old code
+-- (which knows nothing of approval) must keep behaving as before in that
+-- window. The new code sets 'pending' explicitly on every insert (RC create,
+-- Job Card / Plan Execute insert, Trash restore). approved_at/by stay NULL on
+-- the legacy rows (unknown).
 --
 -- Additive; no data is changed except the new column's value.
 -- ROLLBACK:
@@ -26,8 +28,6 @@ ALTER TABLE public.route_cards
   ADD COLUMN IF NOT EXISTS rejected_by uuid REFERENCES public.users(id),
   ADD COLUMN IF NOT EXISTS rejected_at timestamptz,
   ADD COLUMN IF NOT EXISTS rejection_reason text;
---> statement-breakpoint
-ALTER TABLE public.route_cards ALTER COLUMN approval_status SET DEFAULT 'pending';
 --> statement-breakpoint
 DO $$
 BEGIN

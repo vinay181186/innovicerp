@@ -293,10 +293,14 @@ export type UpdateRouteCardInput = z.infer<typeof updateRouteCardInputSchema>;
 // may approve their own card (same as PO / PR).
 export const approveRouteCardInputSchema = z.object({
   remarks: z.string().trim().max(500).optional(),
+  /** The card's updatedAt as the approver saw it (§20.4) — a card edited
+   *  since is refused, so nobody approves a routing they never saw. */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type ApproveRouteCardInput = z.infer<typeof approveRouteCardInputSchema>;
 
 export const rejectRouteCardInputSchema = z.object({
   reason: activityReasonSchema,
+  expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type RejectRouteCardInput = z.infer<typeof rejectRouteCardInputSchema>;
