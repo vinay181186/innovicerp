@@ -50,6 +50,16 @@ const ACTIVITY_ENTITY: Record<CancelDocType, string> = {
   invoice: 'Invoice',
   jw_invoice: 'JwInvoice',
   customer_dispatch: 'Dispatch',
+  jw_return: 'JwReturnChallan',
+  customer_material_return: 'CustomerMaterialReturn',
+  party_grn: 'PartyGrn',
+  party_material_issue: 'PartyMaterialIssue',
+  delivery_challan: 'DeliveryChallan',
+  store_issue: 'StoreIssue',
+  stock_count: 'StockCount',
+  tool_issue: 'ToolIssue',
+  purchase_request: 'PurchaseRequest',
+  purchase_order: 'PurchaseOrder',
 };
 
 type RequestDbRow = typeof cancelRequests.$inferSelect;

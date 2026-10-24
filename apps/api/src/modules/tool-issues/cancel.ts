@@ -1,118 +1,189 @@
-// Tool Issue — cancel (ADR-193 phase 4b). toolissue_create 'edit'.
+// Tool Issue — cancel (ADR-193 phase 4b; ADR-235: only via an approved Cancel
+// Request — the Cancel Request checks the toolissue_create Edit / Approve ticks).
 //
 // Only while nothing was returned (I12): the whole qty goes back to stock with
 // an opposite ledger entry ('in', tool_return, "<TIS> cancel") — ADR-189,
 // never an edit of the 'out' — and every instrument goes back In Store.
 
-import { ActivityAction, type CancelToolIssueInput, type ToolIssueDetail } from '@innovic/shared';
-import { eq, sql } from 'drizzle-orm';
+import { ActivityAction, type CancelBlocker } from '@innovic/shared';
+import { and, eq, sql } from 'drizzle-orm';
 import { toolIssueInstruments, toolIssues } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
-import { ConflictError } from '../../lib/errors';
-import { lockItemForStock, postStockMove } from '../../lib/stock-ledger';
+import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { ConflictError, NotFoundError } from '../../lib/errors';
+import { assertRowUpdated } from '../../lib/row-lock';
+import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { blockerRefusal } from '../cancel-requests/messages';
 import { lockInstruments, setInstrumentStatus } from '../instruments/common';
-import { lockIssue, requireCompany, todayIst } from './common';
-import { readToolIssueDetail } from './read';
+import { todayIst } from './common';
 
-export async function cancelToolIssue(
+export interface ToolIssueForCancel {
+  id: string;
+  code: string;
+  itemId: string | null;
+  itemCode: string | null;
+  qty: number;
+  returnStatus: string;
+}
+
+/** Read the issue header; `forUpdate` locks it (request / approve), the
+ *  preview reads without a lock. null = not found in this company. */
+export async function lockToolIssueForCancel(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
-  input: CancelToolIssueInput,
-  user: AuthContext,
-): Promise<ToolIssueDetail> {
-  await requireFormAccess(user, 'toolissue_create', 'edit');
-  const companyId = requireCompany(user);
-  const userId = user.id;
-  return withUserContext(user, async (tx) => {
-    const ti = await lockIssue(tx, companyId, id);
-    if (ti.returnStatus === 'cancelled')
-      throw new ConflictError(`${ti.code} is already cancelled.`);
-    const anyReturn = (await tx.execute(sql`
-      SELECT 1 FROM public.tool_issue_returns
-      WHERE tool_issue_id = ${id}::uuid AND deleted_at IS NULL
-      UNION ALL
-      SELECT 1 FROM public.tool_writeoffs
-      WHERE tool_issue_id = ${id}::uuid AND deleted_at IS NULL
-      LIMIT 1
-    `)) as unknown as unknown[];
-    if (anyReturn.length > 0) {
-      throw new ConflictError(
-        `${ti.code} has a return recorded — it can no longer be cancelled. Record the rest as a return instead.`,
-      );
-    }
-    if (!ti.itemId)
-      throw new ConflictError(`${ti.code}: the item was deleted — it cannot be cancelled.`);
+  forUpdate: boolean,
+): Promise<ToolIssueForCancel | null> {
+  const rows = (await tx.execute(sql`
+    SELECT ti.id, ti.code, ti.item_id AS "itemId",
+      COALESCE(i.code, ti.item_code_text) AS "itemCode",
+      ti.qty::float8 AS qty, ti.return_status AS "returnStatus"
+    FROM public.tool_issues ti
+    LEFT JOIN public.items i ON i.id = ti.item_id
+    WHERE ti.id = ${id}::uuid AND ti.company_id = ${companyId}::uuid AND ti.deleted_at IS NULL
+    ${forUpdate ? sql`FOR UPDATE OF ti` : sql``}
+  `)) as unknown as ToolIssueForCancel[];
+  const r = rows[0];
+  return r ? { ...r, qty: roundQty(Number(r.qty)) } : null;
+}
 
-    const item = await lockItemForStock(tx, companyId, ti.itemId);
-    const links = (await tx.execute(sql`
-      SELECT instrument_id FROM public.tool_issue_instruments
-      WHERE tool_issue_id = ${id}::uuid AND deleted_at IS NULL
-    `)) as unknown as Array<{ instrument_id: string }>;
-    const locked = await lockInstruments(
-      tx,
-      companyId,
-      links.map((l) => l.instrument_id),
-    );
-    const qty = locked.length > 0 ? locked.length : ti.qty;
-    const today = todayIst();
-
-    await postStockMove(tx, {
-      companyId,
-      itemId: ti.itemId,
-      txnType: 'in',
-      qty,
-      sourceType: 'tool_return',
-      sourceRef: `${ti.code} cancel`,
-      remarks: `Tool Issue cancelled · ${input.reason}`,
-      txnDate: today,
-      userId,
-      itemCodeText: item.code,
-      guard: 'none',
+/**
+ * THE Tool Issue cancel refusal rule (worker + preview): a Return or a
+ * write-off recorded against it (record the rest as a return instead), or the
+ * item deleted (nothing to put the qty back on).
+ */
+export async function toolIssueCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const ti = await lockToolIssueForCancel(tx, companyId, id, false);
+  if (!ti) return [];
+  const out: CancelBlocker[] = [];
+  const done = (await tx.execute(sql`
+    SELECT
+      (SELECT COALESCE(SUM(good_qty + damaged_qty + lost_qty + consumed_qty), 0)::float8 FROM public.tool_issue_returns
+        WHERE tool_issue_id = ${id}::uuid AND deleted_at IS NULL) AS returned,
+      (SELECT COUNT(*)::int FROM public.tool_issue_returns
+        WHERE tool_issue_id = ${id}::uuid AND deleted_at IS NULL) AS "returnRows",
+      (SELECT COUNT(*)::int FROM public.tool_writeoffs
+        WHERE tool_issue_id = ${id}::uuid AND deleted_at IS NULL) AS writeoffs
+  `)) as unknown as Array<{ returned: number; returnRows: number; writeoffs: number }>;
+  const d = done[0];
+  if (d && Number(d.returnRows) > 0) {
+    out.push({
+      docLabel: 'Tool Return',
+      docNo: ti.code,
+      href: null,
+      reason: `${roundQty(Number(d.returned))} already returned — record the rest as a return instead`,
     });
-    if (locked.length > 0) {
-      await setInstrumentStatus(
-        tx,
-        locked.map((l) => l.id),
-        'in_store',
-        userId,
-      );
-      await tx
-        .update(toolIssueInstruments)
-        .set({
-          returnedOn: today,
-          returnCondition: 'good',
-          updatedAt: new Date(),
-          updatedBy: userId,
-        })
-        .where(eq(toolIssueInstruments.toolIssueId, id));
-    }
-    const now = new Date();
+  }
+  if (d && Number(d.writeoffs) > 0) {
+    out.push({
+      docLabel: 'Tool Write-off',
+      docNo: ti.code,
+      href: null,
+      reason: `${Number(d.writeoffs)} write-off(s) recorded — record the rest as a return instead`,
+    });
+  }
+  if (!ti.itemId) {
+    out.push({
+      docLabel: 'Item',
+      docNo: ti.itemCode ?? ti.code,
+      href: null,
+      reason: 'the item was deleted — there is nothing to put the qty back on',
+    });
+  }
+  return out;
+}
+
+/** The ONE Tool Issue cancel writer (ADR-235). In-tx, no rights check. */
+export async function cancelToolIssueTx(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<void> {
+  const userId = user.id;
+  const ti = await lockToolIssueForCancel(tx, companyId, id, true);
+  if (!ti) throw new NotFoundError('Tool Issue not found. Refresh the page.');
+  if (ti.returnStatus === 'cancelled') throw new ConflictError(`${ti.code} is already cancelled.`);
+  const blockers = await toolIssueCancelBlockers(tx, companyId, id);
+  if (blockers.length > 0 || !ti.itemId) {
+    throw new ConflictError(blockerRefusal(ti.code, blockers), { blockers });
+  }
+
+  const item = await lockItemForStock(tx, companyId, ti.itemId);
+  const links = (await tx.execute(sql`
+    SELECT instrument_id FROM public.tool_issue_instruments
+    WHERE tool_issue_id = ${id}::uuid AND deleted_at IS NULL
+  `)) as unknown as Array<{ instrument_id: string }>;
+  const locked = await lockInstruments(
+    tx,
+    companyId,
+    links.map((l) => l.instrument_id),
+  );
+  const qty = locked.length > 0 ? locked.length : ti.qty;
+  const today = todayIst();
+
+  await postStockMove(tx, {
+    companyId,
+    itemId: ti.itemId,
+    txnType: 'in',
+    qty,
+    sourceType: 'tool_return',
+    sourceRef: `${ti.code} cancel`,
+    remarks: `Tool Issue cancelled · ${reason}`,
+    txnDate: today,
+    userId,
+    itemCodeText: item.code,
+    guard: 'none',
+  });
+  if (locked.length > 0) {
+    await setInstrumentStatus(
+      tx,
+      locked.map((l) => l.id),
+      'in_store',
+      userId,
+    );
     await tx
-      .update(toolIssues)
+      .update(toolIssueInstruments)
       .set({
-        returnStatus: 'cancelled',
-        cancelledAt: now,
-        cancelledBy: userId,
-        cancelReason: input.reason,
-        updatedAt: now,
+        returnedOn: today,
+        returnCondition: 'good',
+        updatedAt: new Date(),
         updatedBy: userId,
       })
-      .where(eq(toolIssues.id, id));
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: 'ToolIssue',
-        entityId: id,
-        refId: ti.code,
-        qty,
-        reason: input.reason,
-        detail: `${ti.code} · ${item.code} × ${qty} back to stock`,
-      },
-      companyId,
-      user,
-    );
-    return readToolIssueDetail(tx, companyId, id);
-  });
+      .where(eq(toolIssueInstruments.toolIssueId, id));
+  }
+  const now = new Date();
+  // §20.2 — cancel once: only from the status read under the lock above.
+  const moved = await tx
+    .update(toolIssues)
+    .set({
+      returnStatus: 'cancelled',
+      cancelledAt: now,
+      cancelledBy: userId,
+      cancelReason: reason,
+      updatedAt: now,
+      updatedBy: userId,
+    })
+    .where(and(eq(toolIssues.id, id), eq(toolIssues.returnStatus, ti.returnStatus)))
+    .returning({ id: toolIssues.id });
+  assertRowUpdated(moved, ti.code);
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'ToolIssue',
+      entityId: id,
+      refId: ti.code,
+      qty,
+      reason,
+      detail: `${ti.code} · ${item.code} × ${qty} back to stock`,
+    },
+    companyId,
+    user,
+  );
 }

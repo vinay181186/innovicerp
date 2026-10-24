@@ -13,8 +13,18 @@ import type {
 } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { customerDispatchCancelHandler } from '../customer-dispatches/cancel-handler';
+import { customerMaterialReturnCancelHandler } from '../customer-material-returns/cancel-handler';
+import { deliveryChallanCancelHandler } from '../delivery-challans/cancel-handler';
 import { invoiceCancelHandler } from '../invoices/cancel-handler';
 import { jwInvoiceCancelHandler } from '../jw-invoices/cancel-handler';
+import { jwReturnCancelHandler } from '../jw-returns/cancel-handler';
+import { partyGrnCancelHandler } from '../party-grn/cancel-handler';
+import { partyMaterialIssueCancelHandler } from '../party-material-issues/cancel-handler';
+import { purchaseOrderCancelHandler } from '../purchase-orders/cancel-handler';
+import { purchaseRequestCancelHandler } from '../purchase-requests/cancel-handler';
+import { stockCountCancelHandler } from '../stock-counts/cancel-handler';
+import { storeIssueCancelHandler } from '../store-issues/cancel-handler';
+import { toolIssueCancelHandler } from '../tool-issues/cancel-handler';
 
 export interface CancelHandler {
   docType: CancelDocType;
@@ -48,4 +58,14 @@ export const CANCEL_HANDLERS: Record<CancelDocType, CancelHandler> = {
   invoice: invoiceCancelHandler,
   jw_invoice: jwInvoiceCancelHandler,
   customer_dispatch: customerDispatchCancelHandler,
+  jw_return: jwReturnCancelHandler,
+  customer_material_return: customerMaterialReturnCancelHandler,
+  party_grn: partyGrnCancelHandler,
+  party_material_issue: partyMaterialIssueCancelHandler,
+  delivery_challan: deliveryChallanCancelHandler,
+  store_issue: storeIssueCancelHandler,
+  stock_count: stockCountCancelHandler,
+  tool_issue: toolIssueCancelHandler,
+  purchase_request: purchaseRequestCancelHandler,
+  purchase_order: purchaseOrderCancelHandler,
 };

@@ -30,6 +30,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ActionLink, useCanOpen } from '@/components/shared/action-link';
 import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -104,6 +106,8 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  // ADR-235 — the standard Cancel dialog.
+  const [cancelOpen, setCancelOpen] = useState(false);
   // Preview / ⬇ Download PDF — the PR sheet, loaded fresh (use-pr-print.ts).
   const prPrint = usePrPrint();
 
@@ -176,6 +180,11 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     !bal.closed &&
     bal.ordered > 0 &&
     bal.balance > 0;
+  // ADR-235 — Cancel PR: the Edit tick raises the request, the Approve tick
+  // decides it. Not on a cancelled or short-closed PR; a PR on a live PO is
+  // refused by the server's preview (cancel the PO first).
+  const cancelled = detail.status === 'cancelled';
+  const canCancel = (perms.edit || perms.approve) && !cancelled && !bal.closed;
 
   const onCloseBalance = (reason: string): void => {
     setCloseError(null);
@@ -199,6 +208,13 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
       <Link to="/purchase-requests" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Purchase Requests
       </Link>
+
+      <CancelPendingBanner
+        docType="purchase_request"
+        docId={detail.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
 
       <div className="panel">
         <div className="panel-hdr">
@@ -284,6 +300,12 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                   hidden: !(canEdit && !linkedToPo),
                   onClick: () =>
                     void navigate({ to: '/purchase-requests/$id/edit', params: { id: detail.id } }),
+                },
+                {
+                  label: 'Cancel PR',
+                  danger: true,
+                  hidden: !canCancel,
+                  onClick: () => setCancelOpen(true),
                 },
                 {
                   label: 'Delete',
@@ -428,6 +450,14 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             setCloseOpen(false);
           }}
           onSubmit={onCloseBalance}
+        />
+      ) : null}
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="purchase_request"
+          docId={detail.id}
+          docCode={detail.code}
+          onClose={() => setCancelOpen(false)}
         />
       ) : null}
     </div>

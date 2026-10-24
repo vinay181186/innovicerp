@@ -9,6 +9,7 @@
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -45,6 +46,10 @@ export function ToolIssueRegisterView({
   const [page, setPage] = useState(1);
   const [showNew, setShowNew] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  // ADR-235 — the issue whose standard Cancel dialog is open (row ⋯ or the view).
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
+  // Cancel Issue: the Edit tick raises the request, the Approve tick decides it.
+  const canCancel = perms.edit || perms.approve;
 
   // Sort & Filter runs on the SERVER here (ADR-200): the register is paged, so
   // filtering only the loaded page would miss issues. Every change goes back to
@@ -185,7 +190,22 @@ export function ToolIssueRegisterView({
                           : undefined
                 }
                 rowActionsWidth="1%"
-                rowActions={(t) => <RowActions onView={() => setOpenId(t.id)} />}
+                rowActions={(t) => (
+                  <RowActions
+                    onView={() => setOpenId(t.id)}
+                    items={[
+                      {
+                        key: 'cancel',
+                        label: 'Cancel Issue',
+                        icon: 'x',
+                        group: 'danger',
+                        // Only while nothing has come back (the view's own rule).
+                        hidden: !canCancel || Boolean(t.cancelledAt) || t.returnStatus !== 'issued',
+                        onSelect: () => setCancelTarget({ id: t.id, code: t.code }),
+                      },
+                    ]}
+                  />
+                )}
               />
             </Panel>
           )}
@@ -206,8 +226,20 @@ export function ToolIssueRegisterView({
         <ToolIssueViewModal
           id={openId}
           canReturn={perms.advance}
-          canCancelIssue={perms.edit}
+          canCancelIssue={canCancel}
+          onCancel={(t) => {
+            setOpenId(null);
+            setCancelTarget({ id: t.id, code: t.code });
+          }}
           onClose={() => setOpenId(null)}
+        />
+      ) : null}
+      {cancelTarget ? (
+        <CancelDocDialog
+          docType="tool_issue"
+          docId={cancelTarget.id}
+          docCode={cancelTarget.code}
+          onClose={() => setCancelTarget(null)}
         />
       ) : null}
     </div>

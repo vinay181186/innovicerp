@@ -22,6 +22,8 @@ import {
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { cancelPartyGrnInputSchema, listPartyGrnQuerySchema } from '@innovic/shared';
+import { requestCancel } from '../cancel-requests/service';
 import { qcPartyGrn } from './qc';
 import * as service from './service';
 
@@ -212,6 +214,12 @@ async function receiveAndAccept(jwLineId: string, qty: number) {
   return grn;
 }
 
+/** ADR-235: a cancel is a Cancel Request; the admin holds Approve, so
+ *  approveNow = request + approve in one call. */
+function cancelGrn(id: string, reason: string) {
+  return requestCancel('party_grn', id, { reason, approveNow: true }, admin);
+}
+
 describe('party-grn service — create (ADR-203)', () => {
   it('rejects an unknown JWSO line', async () => {
     await expect(
@@ -256,7 +264,7 @@ describe('party-grn service — Incoming QC (ADR-203)', () => {
         admin,
       ),
     ).rejects.toBeInstanceOf(ValidationError);
-    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+    await cancelGrn(grn.id, 'cleanup');
   });
 
   it('posts only the accepted qty and holds the rejects', async () => {
@@ -290,45 +298,64 @@ describe('party-grn service — Incoming QC (ADR-203)', () => {
     expect(lost.reason).toBeInstanceOf(ConflictError);
   });
 });
-
-describe('party-grn service — cancel (ADR-203)', () => {
-  it('reverses the accepted qty and soft-deletes the GRN', async () => {
+describe('party-grn service — cancel (ADR-203, ADR-235)', () => {
+  it('reverses the accepted qty and shows the GRN as Cancelled', async () => {
     const created = await receiveAndAccept(line1Id, 10);
     const afterQc = await pmStock(pmAId);
 
-    const res = await service.cancelPartyGrn(created.id, 'entered twice', admin);
-    expect(res.reversedQty).toBe(10);
+    const res = await cancelGrn(created.id, 'entered twice');
+    expect(res.cancelled).toBe(true);
+    expect(res.request.status).toBe('approved');
 
     const afterCancel = await pmStock(pmAId);
     expect(afterCancel.stockQty).toBe(afterQc.stockQty - 10);
     expect(afterCancel.receivedQty).toBe(afterQc.receivedQty - 10);
 
-    await expect(service.getPartyGrnDetail(created.id, admin)).rejects.toBeInstanceOf(
-      NotFoundError,
-    );
+    // ADR-235: still readable (read-only), with the lines cancelled with it.
+    const d = await service.getPartyGrnDetail(created.id, admin);
+    expect(d.cancelReason).toBe('entered twice');
+    expect(d.cancelledAt).not.toBeNull();
+    expect(d.lines).toHaveLength(1);
+    expect(d.qcPendingLines).toBe(0);
     const rows = await db
-      .select({ deletedAt: partyGrn.deletedAt, remarks: partyGrn.remarks })
+      .select({
+        deletedAt: partyGrn.deletedAt,
+        cancelledAt: partyGrn.cancelledAt,
+        remarks: partyGrn.remarks,
+      })
       .from(partyGrn)
       .where(eq(partyGrn.id, created.id));
     expect(rows[0]!.deletedAt).not.toBeNull();
-    expect(rows[0]!.remarks).toContain('[Cancelled] entered twice');
+    expect(rows[0]!.cancelledAt?.getTime()).toBe(rows[0]!.deletedAt?.getTime());
+    expect(rows[0]!.remarks ?? '').not.toContain('[Cancelled]');
+
+    // Live list skips it; includeCancelled brings it back.
+    const live = await service.listPartyGrn(
+      listPartyGrnQuerySchema.parse({ search: created.code }),
+      admin,
+    );
+    expect(live.items.map((i) => i.id)).not.toContain(created.id);
+    const all = await service.listPartyGrn(
+      listPartyGrnQuerySchema.parse({ search: created.code, includeCancelled: 'true' }),
+      admin,
+    );
+    const row = all.items.find((i) => i.id === created.id);
+    expect(row?.cancelReason).toBe('entered twice');
+    expect(all.summary.totalGrns).toBe(live.summary.totalGrns);
   });
 
   it('requires a reason, and refuses a second cancel', async () => {
     const created = await service.createPartyGrn(receipt(line1Id, 1), admin);
-    await expect(service.cancelPartyGrn(created.id, '   ', admin)).rejects.toBeInstanceOf(
-      ValidationError,
-    );
-    await service.cancelPartyGrn(created.id, 'cleanup', admin);
-    await expect(service.cancelPartyGrn(created.id, 'again', admin)).rejects.toBeInstanceOf(
-      ConflictError,
-    );
+    // The route's schema refuses a blank reason before any request is made.
+    expect(cancelPartyGrnInputSchema.safeParse({ reason: '   ' }).success).toBe(false);
+    await cancelGrn(created.id, 'cleanup');
+    await expect(cancelGrn(created.id, 'again')).rejects.toBeInstanceOf(ConflictError);
   });
 
   it('throws NotFoundError for an unknown id', async () => {
-    await expect(
-      service.cancelPartyGrn('00000000-0000-0000-0000-000000000000', 'x', admin),
-    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(cancelGrn('00000000-0000-0000-0000-000000000000', 'x')).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });
 
@@ -353,7 +380,7 @@ describe('party-grn service — edit (ADR-202 Phase 3)', () => {
     // A waiting-QC line change posts nothing to the register.
     expect(await pmStock(pmBId)).toEqual(before);
 
-    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+    await cancelGrn(grn.id, 'cleanup');
   });
 
   it('refuses editing a line that is already through Incoming QC', async () => {
@@ -368,7 +395,7 @@ describe('party-grn service — edit (ADR-202 Phase 3)', () => {
       service.updatePartyGrn(grn.id, { lines: [{ id: d.lines[0]!.id, receivedQty: 3 }] }, admin),
     ).rejects.toBeInstanceOf(ConflictError);
 
-    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+    await cancelGrn(grn.id, 'cleanup');
   });
 
   it('refuses raising a waiting-QC line past the JWSO-line order qty', async () => {
@@ -382,6 +409,6 @@ describe('party-grn service — edit (ADR-202 Phase 3)', () => {
       ),
     ).rejects.toBeInstanceOf(ConflictError);
 
-    await service.cancelPartyGrn(grn.id, 'cleanup', admin);
+    await cancelGrn(grn.id, 'cleanup');
   });
 });

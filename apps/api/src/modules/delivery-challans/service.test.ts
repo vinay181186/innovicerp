@@ -1,7 +1,7 @@
 // DC service tests.
 //
 // T-040a: read-only — list + get against migrated dev rows.
-// T-059a: outward writes — createDeliveryChallan + cancelDeliveryChallan with
+// T-059a: outward writes — createDeliveryChallan + cancel (Cancel Request) with
 //   cascades into jc_ops.outsource_status / outsource_sent_qty +
 //   store_transactions ledger. Tests build fresh JW PO + outsource jc_op
 //   fixtures under the T059A- prefix.
@@ -36,7 +36,12 @@ import {
 } from '../../lib/errors';
 import { asAccess } from '../../lib/test-access';
 import * as poService from '../purchase-orders/service';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
+
+// ADR-235 — a DC cancel is a Cancel Request; approveNow runs the worker at once.
+const cancelNow = (id: string, user: AuthContext) =>
+  requestCancel('delivery_challan', id, { reason: 'Test cancel', approveNow: true }, user);
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 let admin: AuthContext;
@@ -603,7 +608,7 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
 
-  it('cancelDeliveryChallan reverses jc_op + writes compensating IN stock txn', async () => {
+  it('cancel (ADR-235 Cancel Request, approveNow) reverses jc_op + writes compensating IN stock txn', async () => {
     const po = await freshJwPo('CN1', 10);
     const op = await freshOutsourceJcOp('CN1', po.lineId, 'po_created');
     const dcCode = `${TEST_PREFIX}CN1`;
@@ -629,7 +634,8 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
       },
       admin,
     );
-    const cancelled = await service.cancelDeliveryChallan(detail.id, admin);
+    await cancelNow(detail.id, admin);
+    const cancelled = await service.getDeliveryChallan(detail.id, admin);
     expect(cancelled.status).toBe('cancelled');
     const after = await readJcOp(op.opId);
     expect(after.outsourceStatus).toBe('po_created');
@@ -641,7 +647,7 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
     expect(txns.filter((t) => t.txnType === 'in')).toHaveLength(1);
   });
 
-  it('cancelDeliveryChallan denies manager role with AuthorizationError', async () => {
+  it('cancel (ADR-235 Cancel Request, approveNow) denies manager role with AuthorizationError', async () => {
     const po = await freshJwPo('CN2', 10);
     const detail = await service.createDeliveryChallan(
       {
@@ -665,18 +671,16 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
       },
       admin,
     );
-    await expect(service.cancelDeliveryChallan(detail.id, manager)).rejects.toBeInstanceOf(
-      AuthorizationError,
+    await expect(cancelNow(detail.id, manager)).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('cancel (ADR-235 Cancel Request, approveNow) throws NotFoundError on unknown id', async () => {
+    await expect(cancelNow('00000000-0000-0000-0000-000000000000', admin)).rejects.toBeInstanceOf(
+      NotFoundError,
     );
   });
 
-  it('cancelDeliveryChallan throws NotFoundError on unknown id', async () => {
-    await expect(
-      service.cancelDeliveryChallan('00000000-0000-0000-0000-000000000000', admin),
-    ).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  it('cancelDeliveryChallan is idempotent — second cancel raises ConflictError', async () => {
+  it('cancel (ADR-235 Cancel Request, approveNow) is idempotent — second cancel raises ConflictError', async () => {
     const po = await freshJwPo('CN4', 10);
     const detail = await service.createDeliveryChallan(
       {
@@ -700,10 +704,8 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
       },
       admin,
     );
-    await service.cancelDeliveryChallan(detail.id, admin);
-    await expect(service.cancelDeliveryChallan(detail.id, admin)).rejects.toBeInstanceOf(
-      ConflictError,
-    );
+    await cancelNow(detail.id, admin);
+    await expect(cancelNow(detail.id, admin)).rejects.toBeInstanceOf(ConflictError);
   });
 });
 
@@ -1158,7 +1160,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
 
   it('receive against cancelled DC raises ConflictError', async () => {
     const ctx = await setupIssuedDc('RCC', { sentQty: 3 });
-    await service.cancelDeliveryChallan(ctx.dcId, admin);
+    await cancelNow(ctx.dcId, admin);
     await expect(
       service.receiveAgainstDeliveryChallan(
         ctx.dcId,
@@ -1196,9 +1198,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       },
       admin,
     );
-    await expect(service.cancelDeliveryChallan(ctx.dcId, admin)).rejects.toBeInstanceOf(
-      ConflictError,
-    );
+    await expect(cancelNow(ctx.dcId, admin)).rejects.toBeInstanceOf(ConflictError);
   });
 });
 

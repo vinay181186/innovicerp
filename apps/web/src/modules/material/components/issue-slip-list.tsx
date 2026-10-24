@@ -34,7 +34,7 @@ export function IssueSlipList({ issues }: { issues: JcMaterial['issues'] }): Rea
                   </Link>
                   {i.reversedAt ? (
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}>
-                      Reversed
+                      Cancelled
                     </div>
                   ) : null}
                 </td>

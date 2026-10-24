@@ -55,32 +55,3 @@ export function ConfirmBelowBookedPanel(props: {
     </div>
   );
 }
-
-export function CancelCountPanel(props: {
-  reason: string;
-  setReason: (v: string) => void;
-  busy: boolean;
-  onCancel: () => void;
-  onBack: () => void;
-}): React.JSX.Element {
-  const { reason, setReason, busy, onCancel, onBack } = props;
-  return (
-    <div className="panel" style={{ marginTop: 12 }}>
-      <div className="panel-body" style={{ display: 'flex', gap: 8 }}>
-        <input
-          className="innovic-input"
-          style={{ flex: 1 }}
-          placeholder="Reason for cancelling"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        />
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={onCancel}>
-          Cancel count
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={onBack}>
-          Back
-        </button>
-      </div>
-    </div>
-  );
-}

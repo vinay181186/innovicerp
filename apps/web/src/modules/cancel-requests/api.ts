@@ -1,5 +1,6 @@
 // ADR-235 — the ONE standard Cancel (Phase A: Invoice, JW Invoice, Customer
-// Dispatch). A user with the page's Edit tick sends a Cancel Request with a
+// Dispatch; Phase B: JW Return, CMR, Party GRN / Issue, DC, Item Issue, Stock
+// Count, Tool Issue, PR, PO). A user with the page's Edit tick sends a Cancel Request with a
 // reason; a holder of the Approve tick decides it in Settings → Approvals (or
 // presses "Cancel now" to request + approve at once). The server owns every
 // rule: who may request / approve, what blocks it, what it will do.
@@ -25,14 +26,25 @@ import { apiFetch } from '@/lib/api';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { approvalsKeys } from '@/modules/approvals/api';
+import { customerMaterialReturnKeys } from '@/modules/customer-material-returns/api';
 import { dispatchKeys } from '@/modules/customer-dispatches/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
+import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { invoiceKeys } from '@/modules/invoices/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { jwInvoicesKeys } from '@/modules/jw-invoices/api';
+import { jwReturnsKeys } from '@/modules/jw-returns/api';
+import { ncRegisterKeys } from '@/modules/nc-register/api';
+import { partyGrnKeys } from '@/modules/party-grn/api';
+import { partyMaterialIssuesKeys } from '@/modules/party-material-issues/api';
+import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
+import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
+import { stockCountKeys } from '@/modules/stock-counts/api';
 import { storeInventoryKeys } from '@/modules/store-inventory/api';
+import { storeIssuesKeys } from '@/modules/store-issues/api';
 import { storeTransactionsKeys } from '@/modules/store-transactions/api';
+import { toolIssuesKeys } from '@/modules/tool-issues/api';
 
 export const cancelKeys = {
   all: ['cancel-requests'] as const,
@@ -55,6 +67,24 @@ function invalidateAfterCancel(qc: QueryClient): void {
     jobWorkOrdersKeys.all,
     storeInventoryKeys.all,
     storeTransactionsKeys.all,
+    // Phase B documents and what their cancels move.
+    jwReturnsKeys.all,
+    customerMaterialReturnKeys.all,
+    partyGrnKeys.all,
+    partyMaterialIssuesKeys.all,
+    deliveryChallansKeys.all,
+    storeIssuesKeys.all,
+    stockCountKeys.all,
+    toolIssuesKeys.all,
+    purchaseRequestsKeys.all,
+    purchaseOrdersKeys.all,
+    ncRegisterKeys.all,
+    ['party-materials'],
+    ['party-stock-ledger'],
+    ['job-cards'],
+    ['jc-ops'],
+    ['material'],
+    ['items'],
     approvalsKeys.all,
     dashboardKeys.all,
     activityLogKeys.all,

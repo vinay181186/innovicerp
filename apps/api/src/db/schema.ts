@@ -5256,6 +5256,11 @@ export const partyGrn = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0218) — the cancel's reason / stamp; the cancel stamps deleted_at
+    // too, so live readers keep skipping it. List screens show it as Cancelled.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('party_grn_company_code_uniq')
@@ -5473,6 +5478,11 @@ export const partyMaterialIssues = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0218) — the cancel's reason / stamp; the cancel stamps deleted_at
+    // too, so live readers keep skipping it. List screens show it as Cancelled.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('party_material_issues_company_code_uniq')

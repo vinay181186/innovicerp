@@ -1,6 +1,5 @@
 // Tool Issue register (ADR-193 phase 4b) — TanStack Query hooks.
 import type {
-  CancelToolIssueInput,
   CreateToolIssueInput,
   DecideToolWriteoffInput,
   ListToolHoldersQuery,
@@ -138,15 +137,6 @@ export function useReturnInstruments() {
         method: 'POST',
         json: body,
       }),
-    onSuccess: () => invalidate(qc),
-  });
-}
-
-export function useCancelToolIssue() {
-  const qc = useQueryClient();
-  return useMutation<ToolIssueDetail, Error, { id: string } & CancelToolIssueInput>({
-    mutationFn: ({ id, ...body }) =>
-      apiFetch<ToolIssueDetail>(`/tool-issues/${id}/cancel`, { method: 'POST', json: body }),
     onSuccess: () => invalidate(qc),
   });
 }

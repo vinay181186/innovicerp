@@ -76,6 +76,8 @@ export function printCustomerMaterialReturn(
     title: 'Customer Material Return',
     windowTitle: `Customer Material Return ${r.code}`,
     columns: 'challan',
+    // ADR-235 — a Cancelled return prints the CANCELLED stamp.
+    cancelled: r.status === 'cancelled' || Boolean(r.cancelledAt),
     blocks: {},
     data: {},
     company: buildDocCompany(company),

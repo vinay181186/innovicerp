@@ -19,11 +19,11 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useCustomerMaterialReturnsList } from '../api';
-import { CancelCmrModal } from '../components/cancel-cmr-modal';
 import { cmrColumns } from '../components/cmr-columns';
 import { CmrExpand } from '../components/cmr-expand';
 import { NewCmrModal } from '../components/new-cmr-modal';
@@ -45,12 +45,12 @@ export const customerMaterialReturnsListRoute = createRoute({
 });
 
 function CustomerMaterialReturnsListPage(): React.JSX.Element {
-  // party_create (Store): + New Return -> entry; Cancel -> edit AND approve
-  // (reverses stock, so only the tiers that hold both — as Party GRN Cancel).
+  // party_create (Store): + New Return -> entry; Cancel Return -> Edit OR
+  // Approve (ADR-235, the ONE standard Cancel: Edit requests, Approve decides).
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'party_create');
   const canCreate = perms.entry;
-  const canCancel = perms.edit && perms.approve;
+  const canCancel = perms.edit || perms.approve;
 
   const routeSearch = customerMaterialReturnsListRoute.useSearch();
   const navigate = customerMaterialReturnsListRoute.useNavigate();
@@ -171,14 +171,12 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
                 key: 'preview',
                 label: 'Preview',
                 icon: 'eye',
-                hidden: r.status === 'cancelled',
                 onSelect: () => printCmr.preview(r.id, r.code),
               },
               {
                 key: 'download',
                 label: 'Download PDF',
                 icon: 'download',
-                hidden: r.status === 'cancelled',
                 onSelect: () => printCmr.download(r.id, r.code),
               },
               {
@@ -186,8 +184,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
                 label: 'Cancel Return',
                 icon: 'x',
                 group: 'danger',
-                hidden: !canCancel,
-                disabledReason: r.status === 'cancelled' ? 'Already Cancelled' : undefined,
+                hidden: !canCancel || r.status === 'cancelled',
                 onSelect: () => setCancelRow(r),
               },
             ]}
@@ -208,7 +205,14 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
       {showModal && canCreate ? (
         <NewCmrModal onClose={() => setShowModal(false)} docPrint={printCmr} />
       ) : null}
-      {cancelRow ? <CancelCmrModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
+      {cancelRow ? (
+        <CancelDocDialog
+          docType="customer_material_return"
+          docId={cancelRow.id}
+          docCode={cancelRow.code}
+          onClose={() => setCancelRow(null)}
+        />
+      ) : null}
     </div>
   );
 }

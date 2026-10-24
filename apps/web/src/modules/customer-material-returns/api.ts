@@ -2,10 +2,9 @@
 // (IN-CMR-#####) that sends the customer's OWN raw material back: spare good
 // material from the register, and pieces Incoming QC rejected on a Party GRN.
 // Mirrors party-grn/api.ts: one key family, list / detail / returnable reads,
-// create (idempotency key) and cancel (reason).
+// create (idempotency key). Cancel is the standard Cancel (ADR-235).
 
 import type {
-  CancelCustomerMaterialReturnInput,
   CreateCustomerMaterialReturnInput,
   CustomerMaterialReturn,
   CustomerMaterialReturnDetail,
@@ -106,14 +105,6 @@ export function useCreateCustomerMaterialReturn(saveKey?: SaveKey) {
   });
 }
 
-export function useCancelCustomerMaterialReturn() {
-  const qc = useQueryClient();
-  return useMutation<unknown, Error, { id: string } & CancelCustomerMaterialReturnInput>({
-    mutationFn: ({ id, reason }) =>
-      apiFetch<unknown>(`/customer-material-returns/${id}/cancel`, {
-        method: 'POST',
-        json: { reason },
-      }),
-    onSuccess: () => invalidateAfterWrite(qc),
-  });
-}
+// ADR-235 — Cancel moved to the ONE standard Cancel (cancel-requests module:
+// CancelDocDialog, docType 'customer_material_return'). The old POST
+// /customer-material-returns/:id/cancel hook is gone.

@@ -15,7 +15,8 @@
 // (Job Work / Service; DC entry rights, the server's rule; greyed with the
 // reason on a draft / closed / cancelled PO, which the server refuses) ·
 // Assign Task (open-ish POs; hidden for the read-only viewer role, which
-// POST /tasks refuses).
+// POST /tasks refuses) · Cancel PO (ADR-235 standard Cancel: Edit or Approve
+// tick, not cancelled / closed; opens CancelDocDialog).
 //
 // Row tint by PO status (rowClassName + ROW_TINT): draft / qc_pending = pending,
 // closed = done, cancelled = cancelled; open and partial carry no tint (active).
@@ -41,6 +42,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -155,6 +157,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   // ADR-232: Assign Task = this page's Advance right.
   const canAssign = perms.advance;
   const [assignPo, setAssignPo] = useState<PurchaseOrderListItem | null>(null);
+  // ADR-235 — Cancel PO: the Edit tick raises the request, the Approve tick
+  // decides it. The row whose standard Cancel dialog is open.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelPo, setCancelPo] = useState<PurchaseOrderListItem | null>(null);
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
@@ -226,6 +232,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           group: 'assign',
           hidden: !canAssign || po.status === 'closed' || po.status === 'cancelled',
           onSelect: () => setAssignPo(po),
+        },
+        {
+          key: 'cancel',
+          label: 'Cancel PO',
+          icon: 'x',
+          group: 'danger',
+          hidden: !canCancel || po.status === 'closed' || po.status === 'cancelled',
+          onSelect: () => setCancelPo(po),
         },
       ]}
     />
@@ -398,6 +412,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           }}
           suggestedTitle={`Follow up ${assignPo.code}`}
           onClose={() => setAssignPo(null)}
+        />
+      ) : null}
+      {cancelPo ? (
+        <CancelDocDialog
+          docType="purchase_order"
+          docId={cancelPo.id}
+          docCode={cancelPo.code}
+          onClose={() => setCancelPo(null)}
         />
       ) : null}
     </div>

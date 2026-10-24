@@ -14,7 +14,23 @@ import { z } from 'zod';
 import { activityReasonSchema } from '../enums/activity';
 
 /** Document types enrolled in the standard Cancel. Grows phase by phase. */
-export const CANCEL_DOC_TYPES = ['invoice', 'jw_invoice', 'customer_dispatch'] as const;
+export const CANCEL_DOC_TYPES = [
+  // Phase A
+  'invoice',
+  'jw_invoice',
+  'customer_dispatch',
+  // Phase B
+  'jw_return',
+  'customer_material_return',
+  'party_grn',
+  'party_material_issue',
+  'delivery_challan',
+  'store_issue',
+  'stock_count',
+  'tool_issue',
+  'purchase_request',
+  'purchase_order',
+] as const;
 export type CancelDocType = (typeof CANCEL_DOC_TYPES)[number];
 export const cancelDocTypeSchema = z.enum(CANCEL_DOC_TYPES);
 
@@ -23,6 +39,16 @@ export const CANCEL_DOC_LABELS: Record<CancelDocType, string> = {
   invoice: 'Invoice',
   jw_invoice: 'JW Invoice',
   customer_dispatch: 'Customer Dispatch',
+  jw_return: 'JW Return',
+  customer_material_return: 'Customer Material Return',
+  party_grn: 'Party GRN',
+  party_material_issue: 'Party Material Issue',
+  delivery_challan: 'Delivery Challan',
+  store_issue: 'Item Issue',
+  stock_count: 'Stock Count',
+  tool_issue: 'Tool Issue',
+  purchase_request: 'Purchase Request',
+  purchase_order: 'Purchase Order',
 };
 
 /** The page whose ticks decide the cancel: Edit = may request, Approve = may
@@ -31,6 +57,16 @@ export const CANCEL_DOC_FORM_KEY: Record<CancelDocType, string> = {
   invoice: 'invoice_create',
   jw_invoice: 'invoice_create',
   customer_dispatch: 'dispatch_create',
+  jw_return: 'jw_create',
+  customer_material_return: 'party_create',
+  party_grn: 'party_create',
+  party_material_issue: 'party_create',
+  delivery_challan: 'ospdc_create',
+  store_issue: 'issue_create',
+  stock_count: 'stockcount_create',
+  tool_issue: 'toolissue_create',
+  purchase_request: 'pr_create',
+  purchase_order: 'po_create',
 };
 
 export const CANCEL_REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;

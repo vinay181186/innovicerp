@@ -20,6 +20,8 @@ export interface PartyGrnPrintTarget {
   id: string;
   code: string;
   clientId: string | null;
+  /** ADR-235 — print the CANCELLED stamp. */
+  cancelled?: boolean | undefined;
 }
 
 export function usePartyGrnPrint(): (
@@ -56,7 +58,7 @@ export function usePartyGrnPrint(): (
             })
             .catch(() => null),
         ]);
-        return () => printPartyGrn({ grn, client, company });
+        return () => printPartyGrn({ grn, client, company, cancelled: t.cancelled });
       }),
     [qc],
   );

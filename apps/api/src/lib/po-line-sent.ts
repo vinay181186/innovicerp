@@ -27,6 +27,7 @@
 
 import { sql, type SQL } from 'drizzle-orm';
 import type { DbTransaction } from '../db/with-user-context';
+import { ConflictError } from './errors';
 
 const DC_SENT_FROM = `FROM public.delivery_challan_lines dcl
       JOIN public.delivery_challans dc ON dc.id = dcl.delivery_challan_id`;
@@ -110,6 +111,47 @@ export async function lockPoLinesForSend(
     ORDER BY pol.id
     FOR UPDATE
   `);
+  await assertPoLinesStillOrderable(tx, unique, companyId);
+}
+
+/**
+ * ADR-235 — call AFTER the PO lines are locked (FOR UPDATE). A PO cancel locks
+ * the PO header, then these same lines, and flips the header to 'cancelled'
+ * before it lets go; a sender / receiver that queued on the line lock reads the
+ * header again here (a fresh statement sees the committed status) and stops
+ * instead of posting against a cancelled PO. A PO whose Cancel Request is still
+ * pending is refused too — approving would otherwise find this new document as
+ * a blocker. No header lock is taken (that would invert the cancel's order).
+ */
+export async function assertPoLinesStillOrderable(
+  tx: DbTransaction,
+  poLineIds: readonly string[],
+  companyId: string,
+): Promise<void> {
+  const unique = Array.from(new Set(poLineIds));
+  if (unique.length === 0) return;
+  const rows = (await tx.execute(sql`
+    SELECT DISTINCT po.code, po.status::text AS status,
+      EXISTS (
+        SELECT 1 FROM public.cancel_requests cr
+        WHERE cr.doc_type = 'purchase_order' AND cr.doc_id = po.id
+          AND cr.status = 'pending' AND cr.deleted_at IS NULL
+      ) AS "cancelPending"
+    FROM public.purchase_order_lines pol
+    JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
+    WHERE pol.company_id = ${companyId}::uuid
+      AND pol.id = ANY(${sql.param(unique)}::uuid[])
+  `)) as unknown as Array<{ code: string; status: string; cancelPending: boolean }>;
+  for (const r of rows) {
+    if (r.status === 'cancelled') {
+      throw new ConflictError(`PO ${r.code} was cancelled a moment ago. Refresh the page.`);
+    }
+    if (r.cancelPending) {
+      throw new ConflictError(
+        `PO ${r.code} has a cancel request pending — it must be decided first (Settings → Approvals → Cancel Requests).`,
+      );
+    }
+  }
 }
 
 /** SENT per PO line, for the given lines (missing = nothing sent yet). */

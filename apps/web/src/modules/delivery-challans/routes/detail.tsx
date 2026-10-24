@@ -32,11 +32,13 @@ import { runPrint } from '@/lib/print/preview-host';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner } from '@/ui/feedback';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
-import { useCancelDeliveryChallan, useDeliveryChallan } from '../api';
+import { useDeliveryChallan } from '../api';
 import { DcReceiptsPanel } from '../components/dc-receipts-panel';
 import { DcStatusBadge } from '../components/dc-status-badge';
 import { printOspDc } from '../lib/print-ospdc';
@@ -64,17 +66,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const { data: vendor } = useVendor(data?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
-  const cancel = useCancelDeliveryChallan();
   // ADR-202 — the edit(s) staged against this DC, still awaiting a decision.
   // Their per-field changes drive the "Changes awaiting approval" panel below.
   const pendingEdit = usePendingEditForDoc('DeliveryChallan', id);
   const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-  // ADR-197: a cancel must say why — the reason lands on the DC's History.
-  const [cancelReason, setCancelReason] = useState('');
+  // ADR-235 — the ONE standard Cancel dialog (reason, request / approve).
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const aggregatesByLine = useMemo(() => {
     const map = new Map<string, LineAgg>();
@@ -158,38 +157,20 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   // Tier-driven, per department (ospdc_create sits in Purchase).
   //   Receive -> entry. It had NO role gate at all, so an L1 Viewer was shown
   //              the button and only found out at the API. Status condition kept.
-  //   Cancel  -> edit AND approve. Cancel is not one of the four tier actions,
-  //              so it is expressed as the pair only L5 Department Admin and
-  //              above hold: L3 Editor has edit without approve, L4 Approver has
-  //              approve without edit. It was admin-only, which locked out the
-  //              very tier meant to run the department.
+  //   Cancel DC -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit
+  //              sends a Cancel Request, Approve decides it. The dialog reads
+  //              the server's preview — what blocks it (receipts, GRNs made from
+  //              it) and which button this user may press.
   // ADR-234 — Receive opens /delivery-challans/$id/receive, whose route and
   // API accept OSP DC Entry OR GRN Entry; the list ⋯ already does this.
   const canReceive =
     dc.status === 'issued' && (perms.entry || effectiveFormPerms(eff, 'grn_create').entry);
-  const canCancel = dc.status === 'issued' && perms.edit && perms.approve;
+  const cancelled = dc.status === 'cancelled';
+  const canCancel = !cancelled && (perms.edit || perms.approve);
   // Edit (ADR-202) -> edit, only while the DC is still issued and nothing has
   // been received against it (receiving freezes the quantities). The server
   // re-checks the same guard; the edit screen does too.
   const canEdit = dc.status === 'issued' && dc.receipts.length === 0 && perms.edit;
-
-  // ConfirmDialog shows a rejection inside the dialog; cancelError is kept for
-  // the dialog's own error line.
-  const onCancel = async (): Promise<void> => {
-    setCancelError(null);
-    const reason = cancelReason.trim();
-    if (!reason) {
-      setCancelError('Enter the reason for cancelling this DC.');
-      return;
-    }
-    try {
-      await cancel.mutateAsync({ id: dc.id, reason });
-      setConfirmCancel(false);
-      setCancelReason('');
-    } catch (e) {
-      setCancelError(e instanceof Error ? e.message : 'Could not cancel DC. Try again.');
-    }
-  };
 
   const printArgs = {
     dc,
@@ -198,6 +179,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
     templates: templates?.items ?? [],
     currentUser: me?.email,
     draft: isDraft,
+    cancelled,
   };
   // Preview: the print now opens the in-app Preview box.
   const onPrint = (): void => {
@@ -307,10 +289,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => {
-                  setCancelError(null);
-                  setConfirmCancel(true);
-                }}
+                onClick={() => setCancelOpen(true)}
               >
                 <Ban size={13} /> Cancel DC
               </button>
@@ -321,6 +300,24 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
           <HeaderGrid dc={dc} />
         </div>
       </div>
+
+      {/* ADR-235 — an open Cancel Request (orange), or the Cancelled mark (red). */}
+      <CancelPendingBanner
+        docType="delivery_challan"
+        docId={dc.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
+      {cancelled ? (
+        <div className="mb-2">
+          <Banner tone="error" accent title="Cancelled — this DC is void">
+            <div className="text3" style={{ fontSize: 11 }}>
+              Nothing more can be received against it. The reason, who cancelled it and when are in
+              History below.
+            </div>
+          </Banner>
+        </div>
+      ) : null}
 
       {/* ADR-202 — edits staged against this DC and waiting for approval. The
           lines table below has no Material / DC Remarks columns to host inline
@@ -488,36 +485,12 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
         <DocumentHistory entity="DeliveryChallan" entityId={dc.id} refId={dc.code} />
       </Panel>
 
-      {confirmCancel ? (
-        <ConfirmDialog
-          title={`Cancel DC ${dc.code}?`}
-          message={
-            <div>
-              <p style={{ marginBottom: 8 }}>The DC will be marked Cancelled.</p>
-              <label className="form-label" htmlFor="dc-cancel-reason">
-                Reason <span className="req">*</span>
-              </label>
-              <textarea
-                id="dc-cancel-reason"
-                className="innovic-textarea"
-                rows={2}
-                maxLength={500}
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                autoFocus
-              />
-            </div>
-          }
-          confirmLabel="Cancel DC"
-          cancelLabel="Keep"
-          pendingLabel="Cancelling…"
-          onConfirm={onCancel}
-          onCancel={() => {
-            setConfirmCancel(false);
-            setCancelReason('');
-            setCancelError(null);
-          }}
-          errorText={cancelError}
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="delivery_challan"
+          docId={dc.id}
+          docCode={dc.code}
+          onClose={() => setCancelOpen(false)}
         />
       ) : null}
     </div>

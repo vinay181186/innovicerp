@@ -64,6 +64,8 @@ export function printPurchaseRequest(args: {
   const model: SheetPrintModel = {
     title: 'Purchase Request',
     windowTitle: 'Purchase Request',
+    // ADR-235 — a cancelled PR prints with the CANCELLED stamp.
+    cancelled: pr.status === 'cancelled',
     columns: 'challan',
     blocks: {},
     data: {},

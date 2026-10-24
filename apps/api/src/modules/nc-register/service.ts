@@ -41,6 +41,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { lockPoLinesForSend } from '../../lib/po-line-sent';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
@@ -2243,6 +2244,10 @@ export async function createNcDc(
     // movement belongs to the order it came from. Read HERE, before the insert,
     // and reused for the header recalc further down so the challan and the
     // recalc can never name two different orders.
+    // ADR-235 — lock the PO line first (the PO cancel locks header → lines and
+    // flips the status before letting go), then read the status: a PO
+    // cancelled, or with a cancel pending, while we waited is refused.
+    if (poLineId) await lockPoLinesForSend(tx, [poLineId], companyId);
     const originPo = poLineId
       ? ((
           await tx

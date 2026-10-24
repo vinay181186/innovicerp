@@ -26,8 +26,12 @@ export function printPartyGrn(args: {
   grn: PartyGrnDetail;
   client: Client | null | undefined;
   company: Company | null | undefined;
+  /** ADR-235 — stamp the sheet CANCELLED (the list row knows; the detail's
+   *  cancelledAt / deletedAt say so too). */
+  cancelled?: boolean | undefined;
 }): boolean {
   const { grn, client, company } = args;
+  const cancelled = Boolean(args.cancelled || grn.cancelledAt || grn.deletedAt);
 
   // No snapshot of the customer is kept on this paper, so the live master,
   // falling back to the name / code text the receipt itself carries.
@@ -59,7 +63,12 @@ export function printPartyGrn(args: {
   if (grn.receivedByText) documentFields.push({ label: 'Received By', value: grn.receivedByText });
   if (grn.remarks) documentFields.push({ label: 'Remarks', value: grn.remarks });
 
-  const sorted = [...grn.lines].filter((l) => !l.deletedAt).sort((a, b) => a.lineNo - b.lineNo);
+  // A Cancelled GRN's lines were stamped deleted WITH the header; the server
+  // already returns exactly those (a line removed earlier is left out), so a
+  // cancelled GRN prints every line it was sent with.
+  const sorted = [...grn.lines]
+    .filter((l) => cancelled || !l.deletedAt)
+    .sort((a, b) => a.lineNo - b.lineNo);
   const lines: SheetLine[] = sorted.map((l) => {
     const waiting = waitingQc(l);
     return {
@@ -85,6 +94,7 @@ export function printPartyGrn(args: {
     title: 'Party GRN',
     windowTitle: `Party GRN ${grn.code}`,
     columns: 'grn',
+    cancelled,
     blocks: {},
     data: {},
     company: { ...buildDocCompany(company), addressLines: [...COMPANY_CARD_ADDRESS_LINES] },

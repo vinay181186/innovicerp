@@ -1,22 +1,21 @@
 // One tool issue: what went out, what came back, and the two actions —
 // Return (bulk: Good / Damaged / Lost / Consumed; serial: a condition per
 // instrument) and Cancel (only while nothing was returned). Damaged and Lost
-// need a reason and wait for the Store In-charge's write-off decision.
-import {
-  type InstrumentReturnCondition,
-  TOOL_REASON_MIN,
-  type ToolIssueDetail,
-} from '@innovic/shared';
+// need a reason and wait for the Store In-charge's write-off decision. Cancel is
+// the ONE standard Cancel (ADR-235): the caller opens CancelDocDialog; while a
+// request waits for approval the orange "Cancel requested" banner shows here.
+import { type InstrumentReturnCondition, type ToolIssueDetail } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { Panel } from '@/ui/data';
-import { useCancelToolIssue, useToolIssue } from '../api';
+import { useToolIssue } from '../api';
 import { ReturnForm } from './tool-return-form';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
-type Mode = 'view' | 'return' | 'cancel';
+type Mode = 'view' | 'return';
 const CONDITION_LABELS: Record<InstrumentReturnCondition, string> = {
   good: 'Good',
   damaged: 'Damaged',
@@ -27,13 +26,16 @@ export function ToolIssueViewModal({
   id,
   canReturn,
   canCancelIssue,
+  onCancel,
   onClose,
 }: {
   id: string;
   /** toolissue_create advance — Record Return moves the issue on (ADR-231). */
   canReturn: boolean;
-  /** toolissue_create edit — Cancel Issue is an undo, so it stays Edit. */
+  /** toolissue_create Edit OR Approve (ADR-235) — Edit requests, Approve decides. */
   canCancelIssue: boolean;
+  /** Opens the standard Cancel dialog for this issue (the caller owns it). */
+  onCancel: (t: { id: string; code: string }) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const { data: t, isLoading, isError, error } = useToolIssue(id);
@@ -71,21 +73,22 @@ export function ToolIssueViewModal({
           ) : (
             <>
               <Facts t={t} />
+              {!t.cancelledAt ? (
+                <div style={{ marginTop: 8 }}>
+                  <CancelPendingBanner
+                    docType="tool_issue"
+                    docId={t.id}
+                    cancelled={false}
+                    {...(canCancelIssue ? { onOpen: () => onCancel(t) } : {})}
+                  />
+                </div>
+              ) : null}
               {mode === 'return' ? (
                 <ReturnForm
                   t={t}
                   onDone={(m) => {
                     setMode('view');
                     setMsg(m);
-                  }}
-                  onError={setErr}
-                />
-              ) : mode === 'cancel' ? (
-                <CancelForm
-                  t={t}
-                  onDone={() => {
-                    setMode('view');
-                    setMsg('Cancelled — the tool is back in stock.');
                   }}
                   onError={setErr}
                 />
@@ -116,14 +119,12 @@ export function ToolIssueViewModal({
               <button type="button" className="btn btn-ghost" onClick={onClose}>
                 Close
               </button>
-              {canCancelIssue && cancellable ? (
+              {canCancelIssue && cancellable && t ? (
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => {
-                    setErr(null);
-                    setMode('cancel');
-                  }}
+                  style={{ color: 'var(--red2)' }}
+                  onClick={() => onCancel(t)}
                 >
                   Cancel Issue
                 </button>
@@ -259,47 +260,5 @@ function History({ t }: { t: ToolIssueDetail }): React.JSX.Element {
         </table>
       </div>
     </>
-  );
-}
-
-function CancelForm({
-  t,
-  onDone,
-  onError,
-}: {
-  t: ToolIssueDetail;
-  onDone: () => void;
-  onError: (m: string | null) => void;
-}): React.JSX.Element {
-  const [reason, setReason] = useState('');
-  const mut = useCancelToolIssue();
-  const save = (): void => {
-    onError(null);
-    if (reason.trim().length < TOOL_REASON_MIN)
-      return onError(`Give a reason (at least ${TOOL_REASON_MIN} characters).`);
-    mut.mutate(
-      { id: t.id, reason: reason.trim() },
-      { onSuccess: onDone, onError: (e) => onError(e.message || 'Could not cancel.') },
-    );
-  };
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div className="text2" style={{ fontSize: 12, marginBottom: 8 }}>
-        Puts the tool back in stock with an opposite entry. The issue stays on the register, marked
-        Cancelled.
-      </div>
-      <input
-        type="text"
-        className="innovic-input"
-        placeholder="Reason, e.g. issued to the wrong operator"
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-      />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-        <button type="button" className="btn btn-primary" disabled={mut.isPending} onClick={save}>
-          Cancel Issue
-        </button>
-      </div>
-    </div>
   );
 }

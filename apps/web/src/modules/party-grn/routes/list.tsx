@@ -34,13 +34,14 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnList } from '../api';
-import { CancelPartyGrnModal } from '../components/cancel-party-grn-modal';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
 import { PARTY_GRN_HIDDEN_COLUMNS, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
+import { isPartyGrnCancelled } from '../components/party-grn-columns';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
@@ -66,14 +67,13 @@ function PartyGrnListPage(): React.JSX.Element {
   // Tier-driven, per department (party_create sits in Store). Replaces the old
   // admin/manager flag, which collapsed all seven tiers into two.
   //   New Party GRN -> entry (L2 Data Entry and up)
-  //   Cancel        -> edit AND approve. Cancel is not one of the four tier
-  //     actions, and it reverses a received quantity off party stock, so it is
-  //     expressed as the pair only L5 Department Admin and above hold: L3 has
-  //     edit without approve, L4 has approve without edit.
+  //   Cancel Party GRN -> Edit OR Approve (ADR-235, the ONE standard Cancel):
+  //     Edit sends a Cancel Request, Approve decides it. The dialog reads the
+  //     server's preview, which says which of the two this user may press.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'party_create');
   const canCreate = perms.entry;
-  const canCancel = perms.edit && perms.approve;
+  const canCancel = perms.edit || perms.approve;
   // ADR-203 (owner D4): Incoming QC on a party GRN is the Incoming QC
   // permission (qc_incoming · entry), the same gate the Incoming QC screens use.
   const canQc = effectiveFormPerms(eff, 'qc_incoming').entry;
@@ -120,6 +120,8 @@ function PartyGrnListPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = usePartyGrnList({
     search: term || undefined,
     sf: sf.param,
+    // ADR-235 — Cancelled GRNs stay on the list, washed and marked Cancelled.
+    includeCancelled: true,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(page),
   });
@@ -246,10 +248,10 @@ function PartyGrnListPage(): React.JSX.Element {
             // THE shared FIT table (ADR-199). First column (GRN No.) is pinned.
             // There is no detail page for a party GRN, so a row is not clickable;
             // the ▸ reveals the per-line QC split, Received By / Remarks and the
-            // receipt's History. Every row here is a live receipt (a cancelled
-            // GRN is soft-deleted and filtered out by the API), so the only tint
-            // is the defensive cancelled wash. Row ⋯: Incoming QC (ADR-203,
-            // qc_incoming entry, only while a line waits) and Cancel (canCancel).
+            // receipt's History. Cancelled GRNs are listed too (ADR-235,
+            // includeCancelled) under the cancelled wash; their ⋯ offers only
+            // Preview / Download PDF. Live rows add Incoming QC (ADR-203,
+            // qc_incoming entry, only while a line waits) and Cancel Party GRN.
             <Panel fill bodyPadding="none">
               <DataTable
                 tableKey={TABLE_KEYS.partyGrn}
@@ -260,7 +262,7 @@ function PartyGrnListPage(): React.JSX.Element {
                 rowKey={(g) => g.id}
                 loading={isLoading}
                 emptyText={term || sf.filtering ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
-                rowClassName={(g) => (g.deletedAt ? ROW_TINT.cancelled : undefined)}
+                rowClassName={(g) => (isPartyGrnCancelled(g) ? ROW_TINT.cancelled : undefined)}
                 renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
                 onToggleExpanded={(g) => toggleExpand(g.id)}
                 rowMenu={(g) => [
@@ -268,28 +270,30 @@ function PartyGrnListPage(): React.JSX.Element {
                     key: 'preview',
                     label: 'Preview',
                     icon: 'eye',
-                    onSelect: () => partyGrnPrint('preview', g),
+                    onSelect: () =>
+                      partyGrnPrint('preview', { ...g, cancelled: isPartyGrnCancelled(g) }),
                   },
                   {
                     key: 'download',
                     label: 'Download PDF',
                     icon: 'download',
-                    onSelect: () => partyGrnPrint('download', g),
+                    onSelect: () =>
+                      partyGrnPrint('download', { ...g, cancelled: isPartyGrnCancelled(g) }),
                   },
                   {
                     key: 'incoming-qc',
                     label: 'Incoming QC',
                     icon: 'check',
                     group: 'workflow',
-                    hidden: !canQc || g.qcPendingLines <= 0,
+                    hidden: !canQc || g.qcPendingLines <= 0 || isPartyGrnCancelled(g),
                     onSelect: () => setQcRow(g),
                   },
                   {
                     key: 'cancel',
-                    label: 'Cancel GRN',
+                    label: 'Cancel Party GRN',
                     icon: 'x',
                     group: 'danger',
-                    hidden: !canCancel,
+                    hidden: !canCancel || isPartyGrnCancelled(g),
                     onSelect: () => setCancelRow(g),
                   },
                 ]}
@@ -311,7 +315,12 @@ function PartyGrnListPage(): React.JSX.Element {
             <NewPartyGrnModal initialJwId={routeSearch.jw} onClose={() => setShowModal(false)} />
           ) : null}
           {cancelRow ? (
-            <CancelPartyGrnModal row={cancelRow} onClose={() => setCancelRow(null)} />
+            <CancelDocDialog
+              docType="party_grn"
+              docId={cancelRow.id}
+              docCode={cancelRow.code}
+              onClose={() => setCancelRow(null)}
+            />
           ) : null}
           {qcRow && canQc ? <PartyGrnQcModal row={qcRow} onClose={() => setQcRow(null)} /> : null}
         </>

@@ -14475,3 +14475,30 @@ refuse while a downstream document is live, and never reuse the number.
   hide stock moves).
 - Hard delete / editing the ledger — rejected (CLAUDE.md §6 rule 8, ADR-185).
 - Amend (`DOC-0001-1`) — not now; correction = new document (owner may ask later).
+
+### Phase B (2026-10-24, migration 0218)
+
+Ten more documents enrolled through the same registry — no second cancel path:
+JW Return, Customer Material Return, Party GRN, Party Material Issue, Delivery
+Challan, Item Issue (store issue — its "Reverse" is now its Cancel), Stock Count,
+Tool Issue, Purchase Request, Purchase Order. Each module supplies
+`lockXForCancel` / `xCancelBlockers` (one rule, preview and worker) /
+`cancelXTx` (the module's own writer, in the approval's transaction); the old
+`POST /…/:id/cancel` (and `/store-issues/:id/reverse`) routes only create a
+Cancel Request. Edit / return / QC / receive / post paths refuse while a
+cancel is pending.
+
+- Party GRN / Party Material Issue keep stamping `deleted_at` (every live reader
+  unchanged) and now also carry `cancel_reason / cancelled_at / cancelled_by`;
+  their lists take `includeCancelled` and show them as Cancelled. 0218 backfills
+  old cancels from the deleted stamp and the "[Cancelled] …" remarks line.
+- PR / PO: Reject, Short Close and Close Balance stay as they are and share ONE
+  writer with Cancel. PR Cancel = nothing ordered; PO Cancel = Draft, or nothing
+  received / sent (else Short Close). The PO cancel stamp reuses the
+  `short_closed_*` columns (as stop-wholly always did); the screen labels it
+  Cancelled.
+- GRN, OSP DC, JW DC and return-to-vendor DC senders re-read the PO status after
+  locking its lines (`assertPoLinesStillOrderable`) so nothing is received / sent
+  against a PO cancelled — or with a cancel pending — a moment earlier.
+- Open: an Item Issue against a Job Card has no "material already used" blocker
+  (store qty is in kg, JC ops log pieces — owner to decide the rule).
