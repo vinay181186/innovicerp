@@ -1,11 +1,11 @@
 // Stock Count — one page for a new count, a draft being keyed in, and a
 // submitted / posted count (ADR-193 phase 2). The server owns every rule:
 // whole numbers for NOS / SET, one line per item, approver ≠ counter, the
-// snapshot on Submit and the "below booked" confirmation on Approve.
+// snapshot on Submit and the "below booked" confirmation on Approve. Cancel is
+// the ONE standard Cancel (ADR-235): CancelDocDialog + the pending banner.
 import {
   STOCK_COUNT_PURPOSE_LABELS,
   STOCK_COUNT_PURPOSES,
-  STOCK_COUNT_REASON_MIN,
   STOCK_COUNT_STATUS_LABELS,
   type StockCountPurpose,
 } from '@innovic/shared';
@@ -17,6 +17,8 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Select } from '@/ui/forms';
@@ -27,7 +29,7 @@ import {
   useStockCount,
   useStockCountAction,
 } from '../api';
-import { CancelCountPanel, ConfirmBelowBookedPanel, type ShortItem } from '../components/panels';
+import { ConfirmBelowBookedPanel, type ShortItem } from '../components/panels';
 import { StockCountAddBar } from '../components/add-bar';
 import { StockCountLinesTable } from '../components/lines-table';
 import { type DraftLine, fromServer } from '../lib/draft-line';
@@ -60,7 +62,7 @@ function StockCountPage(): React.JSX.Element {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmShort, setConfirmShort] = useState<ShortItem[] | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
-  const [cancelReason, setCancelReason] = useState<string | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   // Load the saved count into the editor once.
   const loadedFor = useRef<string | null>(null);
@@ -78,13 +80,7 @@ function StockCountPage(): React.JSX.Element {
   const replace = useReplaceStockCountLines();
   const submit = useStockCountAction('submit');
   const approve = useStockCountAction('approve');
-  const cancel = useStockCountAction('cancel');
-  const busy =
-    create.isPending ||
-    replace.isPending ||
-    submit.isPending ||
-    approve.isPending ||
-    cancel.isPending;
+  const busy = create.isPending || replace.isPending || submit.isPending || approve.isPending;
 
   // Keyed-in lines must not be lost to a stray sidebar / Back click
   // (stock-count-create#2); Ctrl+S = Save Draft.
@@ -190,20 +186,6 @@ function StockCountPage(): React.JSX.Element {
     }
   };
 
-  const doCancel = async (): Promise<void> => {
-    if (!cancelReason || cancelReason.trim().length < STOCK_COUNT_REASON_MIN) {
-      setMsg({ ok: false, text: `Give a reason (at least ${STOCK_COUNT_REASON_MIN} characters).` });
-      return;
-    }
-    try {
-      await cancel.mutateAsync({ id, reason: cancelReason.trim() });
-      setCancelReason(null);
-      setMsg({ ok: true, text: 'Cancelled.' });
-    } catch (e) {
-      setMsg({ ok: false, text: errText(e, 'Could not cancel.') });
-    }
-  };
-
   // ── Excel: Item Code · Counted Qty · Reason ──
   const importFile = async (file: File): Promise<void> => {
     setMsg(null);
@@ -236,6 +218,12 @@ function StockCountPage(): React.JSX.Element {
   const status = sc?.status ?? 'draft';
   const canApprove =
     sc?.status === 'submitted' && perms.approve && !sc.blockedApproverIds.includes(me?.id ?? '');
+  // ADR-235 — Cancel count: the Edit tick raises the request, the Approve tick
+  // decides it. Only a count that has not posted stock (draft / submitted).
+  const canCancel =
+    !isNew &&
+    (sc?.status === 'draft' || sc?.status === 'submitted') &&
+    (perms.edit || perms.approve);
 
   return (
     <div>
@@ -253,6 +241,15 @@ function StockCountPage(): React.JSX.Element {
           </span>
         ) : null}
       </div>
+
+      {!isNew && sc ? (
+        <CancelPendingBanner
+          docType="stock_count"
+          docId={sc.id}
+          cancelled={sc.status === 'cancelled'}
+          {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+        />
+      ) : null}
 
       <div className="panel">
         <div className="panel-body">
@@ -348,15 +345,6 @@ function StockCountPage(): React.JSX.Element {
           onBack={() => setConfirmShort(null)}
         />
       ) : null}
-      {cancelReason !== null ? (
-        <CancelCountPanel
-          reason={cancelReason}
-          setReason={setCancelReason}
-          busy={busy}
-          onCancel={() => void doCancel()}
-          onBack={() => setCancelReason(null)}
-        />
-      ) : null}
 
       <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         {editable && perms.entry ? (
@@ -395,15 +383,13 @@ function StockCountPage(): React.JSX.Element {
             Waiting for another user to approve.
           </span>
         ) : null}
-        {!isNew &&
-        (sc?.status === 'draft' || sc?.status === 'submitted') &&
-        perms.edit &&
-        cancelReason === null ? (
+        {canCancel ? (
           <button
             type="button"
             className="btn btn-ghost"
+            style={{ color: 'var(--red2)' }}
             disabled={busy}
-            onClick={() => setCancelReason('')}
+            onClick={() => setCancelOpen(true)}
           >
             Cancel count
           </button>
@@ -416,6 +402,14 @@ function StockCountPage(): React.JSX.Element {
             <DocumentHistory entity="StockCount" entityId={sc.id} refId={sc.code} />
           </Panel>
         </div>
+      ) : null}
+      {cancelOpen && sc ? (
+        <CancelDocDialog
+          docType="stock_count"
+          docId={sc.id}
+          docCode={sc.code}
+          onClose={() => setCancelOpen(false)}
+        />
       ) : null}
     </div>
   );

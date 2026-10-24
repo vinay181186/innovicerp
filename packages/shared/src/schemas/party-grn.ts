@@ -64,6 +64,10 @@ export const partyGrnSchema = z.object({
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
   deletedAt: z.string().nullable(),
+  /** ADR-235 — set when the GRN was cancelled (it stays visible as Cancelled;
+   *  deletedAt is stamped too, so every live reader keeps skipping it). */
+  cancelReason: z.string().nullable().default(null),
+  cancelledAt: z.string().nullable().default(null),
 });
 export type PartyGrn = z.infer<typeof partyGrnSchema>;
 
@@ -151,6 +155,12 @@ export const listPartyGrnQuerySchema = z.object({
     .optional(),
   /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
   sf: sfRawParamSchema,
+  /** ADR-235 — 'true' adds Cancelled GRNs to the list (the list screen only;
+   *  every other reader keeps live GRNs alone). */
+  includeCancelled: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

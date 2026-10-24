@@ -25,6 +25,7 @@ import {
   roundQty,
 } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { lockInstruments, setInstrumentStatus } from '../instruments/common';
 import { lockIssue, readIssue, refreshReturnStatus, requireCompany, todayIst } from './common';
 import { readToolIssueDetail } from './read';
@@ -47,6 +48,9 @@ async function openIssue(
   if (ti.returnStatus === 'cancelled') {
     throw new ConflictError(`${ti.code} is cancelled — nothing can be returned against it.`);
   }
+  // ADR-235 — no return while a cancel request waits on this issue (the
+  // return would become the cancel's blocker under the approver).
+  await assertNoPendingCancel(tx, 'tool_issue', ti.id);
   if (!ti.itemId)
     throw new ConflictError(`${ti.code}: the item was deleted — returns cannot be recorded.`);
   return ti;

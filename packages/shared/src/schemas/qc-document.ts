@@ -232,6 +232,8 @@ export interface QcDossierOrderOption {
   code: string;
   /** ADR-207: Internal SO No. (SO only; null otherwise). */
   internalSoNo: string | null;
+  /** The customer's PO number — searchable, not shown in the picker row. */
+  clientPoNo: string | null;
   customerName: string | null;
 }
 export interface QcDossierOrdersResponse {

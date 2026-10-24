@@ -5,8 +5,9 @@
 //   approve                 submitted → posted (a DIFFERENT user, approve right):
 //                           posts counted − snapshot per line through the single
 //                           stock writer, so movements after the count stay real
-//   cancel                  draft / submitted only (a posted count is corrected
-//                           by a new count, never edited)
+//   cancel                  draft / submitted only, via an approved Cancel
+//                           Request (ADR-235, cancel.ts); a posted count is
+//                           corrected by a new count, never edited
 //
 // Paper tests C1–C13: docs/specs/STORE_REDESIGN_ADR-193.md §10.
 
@@ -14,7 +15,6 @@ import {
   ActivityAction,
   type ActivityChange,
   type ApproveStockCountInput,
-  type CancelStockCountInput,
   type CreateStockCountInput,
   type ReplaceStockCountLinesInput,
   type StockCount,
@@ -33,6 +33,7 @@ import {
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { readStockPosition } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { checkLines, nextCode, writeLines } from './lines';
 import { getStockCount } from './read';
 
@@ -147,6 +148,8 @@ export async function replaceStockCountLines(
     if (h.status !== 'draft') {
       throw new ConflictError(`${h.code} is ${h.status} — only a draft can be changed.`);
     }
+    // ADR-235 — no edit while a cancel request waits on this count.
+    await assertNoPendingCancel(tx, 'stock_count', h.id);
     const byId = await checkLines(tx, companyId, input.lines);
     const old = await liveLines(tx, id);
     const keep = new Map(
@@ -237,6 +240,7 @@ export async function submitStockCount(id: string, user: AuthContext): Promise<S
   await withUserContext(user, async (tx) => {
     const h = await lockHeader(tx, companyId, id);
     if (h.status !== 'draft') throw new ConflictError(`${h.code} is already ${h.status}.`);
+    await assertNoPendingCancel(tx, 'stock_count', h.id); // ADR-235
     const ls = await liveLines(tx, id);
     if (ls.length === 0) throw new ValidationError('Add at least one item before submitting.');
     // Snapshots are taken when each line is keyed (lines.ts); Submit only
@@ -297,6 +301,8 @@ export async function approveStockCount(
           : `${h.code} is ${h.status} — submit it first.`,
       );
     }
+    // ADR-235 — no posting while a cancel request waits on this count.
+    await assertNoPendingCancel(tx, 'stock_count', h.id);
     // C7 (review): nobody who created, keyed lines on (incl. earlier saves) or
     // submitted the count may approve it.
     const keyers = await countKeyers(tx, id);
@@ -389,48 +395,6 @@ export async function approveStockCount(
         qty: roundQty(plans.reduce((s, p) => s + p.diff, 0)),
         reason: input.confirmReason ?? null,
         detail: `${h.code} posted · ${changed} of ${plans.length} item(s) changed${input.confirmReason ? ' · below booked confirmed' : ''}`,
-      },
-      companyId,
-      user,
-    );
-  });
-  return getStockCount(id, user);
-}
-
-export async function cancelStockCount(
-  id: string,
-  input: CancelStockCountInput,
-  user: AuthContext,
-): Promise<StockCount> {
-  await requireFormAccess(user, FORM, 'edit');
-  const companyId = requireCompany(user);
-  await withUserContext(user, async (tx) => {
-    const h = await lockHeader(tx, companyId, id);
-    if (h.status === 'posted') {
-      throw new ConflictError(`${h.code} is posted — correct it with a new count.`);
-    }
-    if (h.status === 'cancelled') throw new ConflictError(`${h.code} is already cancelled.`);
-    const now = new Date();
-    await tx
-      .update(stockCounts)
-      .set({
-        status: 'cancelled',
-        cancelledAt: now,
-        cancelledBy: user.id,
-        cancelReason: input.reason,
-        updatedAt: now,
-        updatedBy: user.id,
-      })
-      .where(eq(stockCounts.id, id));
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: 'StockCount',
-        entityId: h.id,
-        refId: h.code,
-        reason: input.reason,
-        detail: `${h.code} cancelled (${h.status})`,
       },
       companyId,
       user,

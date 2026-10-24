@@ -19,14 +19,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyMaterialIssuesList } from '../api';
-import { CancelIssueModal } from './cancel-issue-modal';
 import { NewPartyMaterialIssueModal } from './new-party-material-issue-modal';
-import { partyMaterialIssueColumns } from './party-material-issue-columns';
+import { isIssueCancelled, partyMaterialIssueColumns } from './party-material-issue-columns';
 import { PartyMaterialIssueExpand } from './party-material-issue-expand';
 import { ReturnToStoreModal } from './return-to-store-modal';
 
@@ -45,13 +45,12 @@ export function PartyMaterialIssueView({
 }): React.JSX.Element {
   // Tier-driven, per department (party_create sits in Store). This view renders
   // as the Issue tab of /party-grn, so it has to gate itself — the host screen
-  // passes it no access props. Cancel reverses an issued quantity, so it is the
-  // L5+ pair only L5/L6 hold: L3 has edit without approve, L4 approve without
-  // edit.
+  // passes it no access props. Cancel Issue = Edit OR Approve (ADR-235, the
+  // ONE standard Cancel): Edit sends a Cancel Request, Approve decides it.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'party_create');
   const canIssue = perms.entry;
-  const canCancel = perms.edit && perms.approve;
+  const canCancel = perms.edit || perms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
@@ -80,6 +79,8 @@ export function PartyMaterialIssueView({
     () => ({
       ...(term ? { search: term } : {}),
       ...(sf.param ? { sf: sf.param } : {}),
+      // ADR-235 — Cancelled issues stay on the register, washed.
+      includeCancelled: true,
       limit: LIST_PAGE_SIZE,
       offset: pageOffset(page),
     }),
@@ -154,10 +155,10 @@ export function PartyMaterialIssueView({
       ) : (
         // THE shared FIT table (ADR-199). First column (Issue No.) is pinned;
         // the ▸ reveals Remarks. There is no detail page for an issue, so a row
-        // is not clickable. Cancelled/reversed issues are soft-deleted and
-        // filtered out by the API, so the only tint is the defensive cancelled
-        // wash. Row ⋯: Return to store (ADR-203, canIssue) and Cancel
-        // (canCancel, as before).
+        // is not clickable. Cancelled issues are listed too (ADR-235,
+        // includeCancelled) under the cancelled wash, with nothing in their ⋯
+        // to act on. Live rows: Return to store (ADR-203, canIssue) and Cancel
+        // Issue (canCancel).
         <Panel bodyPadding="none">
           <DataTable
             tableKey={TABLE_KEYS.partyMaterialIssues}
@@ -171,7 +172,7 @@ export function PartyMaterialIssueView({
                 ? 'No Customer Material Issues match.'
                 : 'No Customer Material Issues yet.'
             }
-            rowClassName={(it) => (it.deletedAt ? ROW_TINT.cancelled : undefined)}
+            rowClassName={(it) => (isIssueCancelled(it) ? ROW_TINT.cancelled : undefined)}
             renderExpanded={(it) =>
               expanded.has(it.id) ? <PartyMaterialIssueExpand it={it} /> : null
             }
@@ -184,7 +185,7 @@ export function PartyMaterialIssueView({
                 label: 'Return to store',
                 icon: 'arrow-left',
                 group: 'workflow',
-                hidden: !canIssue,
+                hidden: !canIssue || isIssueCancelled(it),
                 disabledReason:
                   it.qty - it.returnedToStoreQty <= 0
                     ? 'All of this issue is back in store'
@@ -196,7 +197,7 @@ export function PartyMaterialIssueView({
                 label: 'Cancel Issue',
                 icon: 'x',
                 group: 'danger',
-                hidden: !canCancel,
+                hidden: !canCancel || isIssueCancelled(it),
                 onSelect: () => setCancelRow(it),
               },
             ]}
@@ -215,7 +216,14 @@ export function PartyMaterialIssueView({
       ) : null}
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
-      {cancelRow ? <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
+      {cancelRow ? (
+        <CancelDocDialog
+          docType="party_material_issue"
+          docId={cancelRow.id}
+          docCode={cancelRow.code}
+          onClose={() => setCancelRow(null)}
+        />
+      ) : null}
       {returnRow && canIssue ? (
         <ReturnToStoreModal row={returnRow} onClose={() => setReturnRow(null)} />
       ) : null}

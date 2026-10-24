@@ -9,6 +9,7 @@ import {
   updateDeliveryChallanInputSchema,
 } from './schema';
 import { listRtvCandidatesQuerySchema } from '@innovic/shared';
+import { requestCancel } from '../cancel-requests/service';
 import { listRtvCandidates } from './rtv-candidates';
 import * as service from './service';
 
@@ -72,11 +73,13 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     return service.updateDeliveryChallanOrStage(id, input, req.user);
   });
 
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/delivery-challans/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const { reason } = cancelDeliveryChallanInputSchema.parse(req.body ?? {});
-    return service.cancelDeliveryChallan(id, req.user, reason);
+    return requestCancel('delivery_challan', id, { reason, approveNow: false }, req.user);
   });
 
   // T-059b — receive-back. Auto-generates receipt code, fires stock IN +

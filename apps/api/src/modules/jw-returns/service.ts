@@ -10,6 +10,8 @@
 import { type SQL, and, count, desc, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
 import {
   ActivityAction,
+  type CancelBlocker,
+  type CancelEffect,
   type CreateJwReturnChallanInput,
   type JwReturnChallan,
   type JwReturnChallanListItem,
@@ -39,6 +41,7 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { blockerRefusal } from '../cancel-requests/messages';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JW_RETURN_SF_COLUMNS } from './sf-columns';
 
@@ -511,106 +514,220 @@ export async function createJwReturnChallan(
   });
 }
 
-export async function cancelJwReturnChallan(
+// ─── Cancel (ADR-235: only via an approved Cancel Request) ───────────────────
+//
+// Reverses a JW Return Challan (mirrors the customer dispatch cancel).
+// Creating a return bumped job_work_order_lines.returned_qty and may have
+// flipped the JWSO to 'dispatched' once every line was fully returned — this
+// unwinds both, and puts the goods back into own stock (ADR-106).
+
+/** Read the challan; `forUpdate` locks it (request / approve), the preview
+ *  reads without a lock. null = not in this company. */
+export async function lockJwReturnForCancel(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  forUpdate: boolean,
+): Promise<typeof jwReturnChallans.$inferSelect | null> {
+  const q = tx
+    .select()
+    .from(jwReturnChallans)
+    .where(
+      and(
+        eq(jwReturnChallans.id, id),
+        eq(jwReturnChallans.companyId, companyId),
+        isNull(jwReturnChallans.deletedAt),
+      ),
+    )
+    .limit(1);
+  const rows = forUpdate ? await q.for('update') : await q;
+  return rows[0] ?? null;
+}
+
+/**
+ * THE JW Return cancel refusal rule (one place — the worker, under the JWSO
+ * line lock, and the Cancel preview both call it). R10 (ADR-194): a JW invoice
+ * bills only what has been RETURNED, so cancelling may not drop returned_qty
+ * below what live JW Invoices bill on the line — each one is named. No clamp
+ * (ADR-203): a line showing less returned than this challan is out of step.
+ */
+export async function jwReturnCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const rows = (await tx.execute(sql`
+    SELECT r.qty::int AS qty, l.line_no AS "lineNo", l.returned_qty::int AS "returnedQty",
+           l.invoiced_qty::int AS "invoicedQty", jw.id AS "jwId",
+           COALESCE(jw.code, r.jw_code_text, '') AS "jwCode"
+      FROM public.jw_return_challans r
+      JOIN public.job_work_order_lines l ON l.id = r.job_work_order_line_id
+      JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
+     WHERE r.id = ${id}::uuid AND r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
+       AND l.deleted_at IS NULL
+     LIMIT 1
+  `)) as unknown as Array<{
+    qty: number;
+    lineNo: number;
+    returnedQty: number;
+    invoicedQty: number;
+    jwId: string;
+    jwCode: string;
+  }>;
+  const l = rows[0];
+  if (!l) return [];
+  const jwLine = {
+    docLabel: 'JWSO',
+    docNo: `${l.jwCode} Ln ${l.lineNo}`,
+    href: `/job-work-orders/${l.jwId}`,
+  };
+  const returnedAfter = Number(l.returnedQty) - Number(l.qty);
+  if (returnedAfter < 0) {
+    return [
+      {
+        ...jwLine,
+        reason:
+          `the line shows only ${l.returnedQty} returned, less than this challan's ${l.qty} — ` +
+          `the Returned count is out of step; report this to the administrator`,
+      },
+    ];
+  }
+  if (Number(l.invoicedQty) <= returnedAfter) return [];
+  const invoices = (await tx.execute(sql`
+    SELECT ji.code, ji.qty::int AS qty
+      FROM public.jw_invoices ji
+      JOIN public.jw_return_challans r ON r.job_work_order_line_id = ji.job_work_order_line_id
+     WHERE r.id = ${id}::uuid AND ji.company_id = ${companyId}::uuid
+       AND ji.deleted_at IS NULL AND ji.status <> 'cancelled'
+     ORDER BY ji.code
+  `)) as unknown as Array<{ code: string; qty: number }>;
+  const tail = `cancelling would leave only ${returnedAfter} returned against ${l.invoicedQty} invoiced`;
+  if (invoices.length === 0) {
+    return [
+      {
+        ...jwLine,
+        reason:
+          `the line shows ${l.invoicedQty} invoiced with no live JW Invoice behind it — ${tail}; ` +
+          `the count is out of step, report this to the administrator`,
+      },
+    ];
+  }
+  return invoices.map((ji) => ({
+    docLabel: 'JW Invoice',
+    docNo: ji.code,
+    // JW Invoices have no page of their own; they are listed on the JWSO.
+    href: `/job-work-orders/${l.jwId}`,
+    reason: `bills ${Number(ji.qty)} pcs on ${l.jwCode} Ln ${l.lineNo} — ${tail}`,
+  }));
+}
+
+/** What the cancel will do — the Cancel preview's lines. */
+export async function jwReturnCancelEffects(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelEffect[]> {
+  const rows = (await tx.execute(sql`
+    SELECT r.code, r.qty::int AS qty, l.line_no AS "lineNo",
+           COALESCE(jw.code, r.jw_code_text, 'JWSO') AS "jwCode",
+           l.item_id AS "itemId", i.code AS "itemCode"
+      FROM public.jw_return_challans r
+      JOIN public.job_work_order_lines l ON l.id = r.job_work_order_line_id
+      LEFT JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
+      LEFT JOIN public.items i ON i.id = l.item_id
+     WHERE r.id = ${id}::uuid AND r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
+     LIMIT 1
+  `)) as unknown as Array<{
+    code: string;
+    qty: number;
+    lineNo: number;
+    jwCode: string;
+    itemId: string | null;
+    itemCode: string | null;
+  }>;
+  const r = rows[0];
+  if (!r) return [];
+  const qty = Number(r.qty);
+  const out: CancelEffect[] = [];
+  // The same ledger replay the worker reverses (assembly lines: per component).
+  const moved = await returnedComponents(tx, companyId, r.code);
+  if (moved.length > 0) {
+    for (const m of moved) {
+      out.push({ kind: 'stock', text: `${m.itemCode} ${m.qty} comes back into stock`, qty: m.qty });
+    }
+  } else if (r.itemId) {
+    out.push({
+      kind: 'stock',
+      text: `${r.itemCode ?? `Ln ${r.lineNo}`} ${qty} comes back into stock`,
+      qty,
+    });
+  }
+  out.push({
+    kind: 'reopen',
+    text: `${r.jwCode} Ln ${r.lineNo} — ${qty} returned qty reopens (back to Pending)`,
+    qty,
+  });
+  return out;
+}
+
+/**
+ * The ONE JW Return cancel writer, run only by an approved Cancel Request
+ * (ADR-235). In-tx body, no rights check — the Cancel Request checks the ticks.
+ */
+export async function cancelJwReturnChallanTx(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
   reason: string,
   user: AuthContext,
 ): Promise<JwReturnChallan> {
-  // Reverses a JW Return Challan (mirrors delivery-challans.cancelDeliveryChallan).
-  // Creating a return bumped job_work_order_lines.returned_qty and may have
-  // flipped the JWSO to 'dispatched' once every line was fully returned — this
-  // unwinds both. ADR-203 — cancelling reverses a dispatched qty, so it takes
-  // the edit AND approve pair (as JW Invoice / JWSO cancels do).
-  await requireFormAccess(user, 'jw_create', 'edit');
-  await requireFormAccess(user, 'jw_create', 'approve');
-  const companyId = requireCompany(user);
   const userId = user.id;
+  const ret = await lockJwReturnForCancel(tx, companyId, id, true);
+  if (!ret) throw new NotFoundError('JW Return not found. Refresh the page.');
+  if (ret.status === 'cancelled') {
+    throw new ConflictError(`JW Return ${ret.code} is already Cancelled.`);
+  }
 
-  return withUserContext(user, async (tx) => {
-    const retRows = await tx
-      .select()
-      .from(jwReturnChallans)
-      .where(
-        and(
-          eq(jwReturnChallans.id, id),
-          eq(jwReturnChallans.companyId, companyId),
-          isNull(jwReturnChallans.deletedAt),
-        ),
-      )
-      .limit(1);
-    const ret = retRows[0];
-    if (!ret) throw new NotFoundError('JW Return not found. Refresh the page.');
-    if (ret.status === 'cancelled') {
-      throw new ConflictError(`JW Return ${ret.code} is already Cancelled.`);
-    }
+  // Lock the JW line before unwinding its returned_qty
+  await tx.execute(
+    sql`SELECT 1 FROM public.job_work_order_lines WHERE id = ${ret.jobWorkOrderLineId}::uuid FOR UPDATE`,
+  );
+  const lineRows = await tx
+    .select({
+      id: jobWorkOrderLines.id,
+      lineNo: jobWorkOrderLines.lineNo,
+      returnedQty: jobWorkOrderLines.returnedQty,
+      invoicedQty: jobWorkOrderLines.invoicedQty,
+      jwId: jobWorkOrderLines.jobWorkOrderId,
+      itemId: jobWorkOrderLines.itemId,
+    })
+    .from(jobWorkOrderLines)
+    .where(
+      and(
+        eq(jobWorkOrderLines.id, ret.jobWorkOrderLineId),
+        eq(jobWorkOrderLines.companyId, companyId),
+        isNull(jobWorkOrderLines.deletedAt),
+      ),
+    )
+    .limit(1);
+  const line = lineRows[0];
+  if (!line) throw new NotFoundError('JWSO line not found. Refresh the page.');
 
-    // Lock the JW line before unwinding its returned_qty
-    await tx.execute(
-      sql`SELECT 1 FROM public.job_work_order_lines WHERE id = ${ret.jobWorkOrderLineId}::uuid FOR UPDATE`,
-    );
-    const lineRows = await tx
-      .select({
-        id: jobWorkOrderLines.id,
-        lineNo: jobWorkOrderLines.lineNo,
-        returnedQty: jobWorkOrderLines.returnedQty,
-        invoicedQty: jobWorkOrderLines.invoicedQty,
-        jwId: jobWorkOrderLines.jobWorkOrderId,
-        itemId: jobWorkOrderLines.itemId,
-      })
-      .from(jobWorkOrderLines)
-      .where(
-        and(
-          eq(jobWorkOrderLines.id, ret.jobWorkOrderLineId),
-          eq(jobWorkOrderLines.companyId, companyId),
-          isNull(jobWorkOrderLines.deletedAt),
-        ),
-      )
-      .limit(1);
-    const line = lineRows[0];
-    if (!line) throw new NotFoundError('JWSO line not found. Refresh the page.');
+  // The refusal rule, under the JWSO line lock — before anything moves.
+  const blockers = await jwReturnCancelBlockers(tx, companyId, id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(ret.code, blockers), { blockers });
+  }
+  const returnedAfter = line.returnedQty - ret.qty;
 
-    // R10 (ADR-194): a JW invoice bills only what has been RETURNED. Cancelling
-    // this return would drop returned_qty below what is still invoiced, leaving
-    // a live invoice for goods the books say were never returned. Block it — the
-    // JW Invoice must be cancelled first.
-    // ADR-203 — no clamp: a counter that would go negative is already wrong.
-    const returnedAfter = line.returnedQty - ret.qty;
-    if (returnedAfter < 0) {
-      throw new ConflictError(
-        `Cannot cancel ${ret.code}: its JWSO line shows only ${line.returnedQty} returned, ` +
-          `less than this challan's ${ret.qty}. The line's Returned count is out of step — ` +
-          `report this to the administrator before cancelling.`,
-      );
-    }
-    if (line.invoicedQty > returnedAfter) {
-      throw new ConflictError(
-        `Cannot cancel ${ret.code}: ${line.invoicedQty} piece(s) on this line are still ` +
-          `invoiced, but cancelling would leave only ${returnedAfter} returned. ` +
-          `Cancel the JW Invoice for this line first, then cancel the return.`,
-      );
-    }
-
-    // 0) ADR-106 — the goods never left, so put them back in own stock. Written
-    // as a compensating 'in' row rather than deleting the 'out', so the ledger
-    // keeps the full history (same as a cancelled customer dispatch). For an
-    // assembly line that is one row per component, replayed from the ledger so
-    // a BOM edited in the meantime cannot unbalance it.
-    const moved = await returnedComponents(tx, companyId, ret.code);
-    if (moved.length > 0) {
-      for (const m of moved) {
-        await moveReturnStock(
-          tx,
-          companyId,
-          userId,
-          'in',
-          ret.code,
-          dateLike(ret.returnDate),
-          m.itemId,
-          m.qty,
-          { code: m.itemCode },
-        );
-      }
-    } else {
+  // 0) ADR-106 — the goods never left, so put them back in own stock. Written
+  // as a compensating 'in' row rather than deleting the 'out', so the ledger
+  // keeps the full history (same as a cancelled customer dispatch). For an
+  // assembly line that is one row per component, replayed from the ledger so
+  // a BOM edited in the meantime cannot unbalance it.
+  const moved = await returnedComponents(tx, companyId, ret.code);
+  if (moved.length > 0) {
+    for (const m of moved) {
       await moveReturnStock(
         tx,
         companyId,
@@ -618,84 +735,96 @@ export async function cancelJwReturnChallan(
         'in',
         ret.code,
         dateLike(ret.returnDate),
-        line.itemId,
-        ret.qty,
+        m.itemId,
+        m.qty,
+        { code: m.itemCode },
       );
     }
-
-    // 1) Mark the return cancelled
-    const updated = await tx
-      .update(jwReturnChallans)
-      .set({
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        cancelledBy: userId,
-        cancelReason: reason,
-        updatedAt: new Date(),
-        updatedBy: userId,
-      })
-      // Conditional (CLAUDE.md §20.2): a second cancel racing this one finds
-      // no row and is refused below, so the line is never credited twice.
-      .where(and(eq(jwReturnChallans.id, ret.id), ne(jwReturnChallans.status, 'cancelled')))
-      .returning();
-    const row = updated[0];
-    if (!row) {
-      throw new ConflictError(
-        `JW Return ${ret.code} was cancelled by someone else just now. Reload the page.`,
-      );
-    }
-
-    // 2) DECREMENT the line's returned_qty by the return's qty (checked ≥ 0 above)
-    await tx
-      .update(jobWorkOrderLines)
-      .set({ returnedQty: returnedAfter, updatedAt: new Date(), updatedBy: userId })
-      .where(eq(jobWorkOrderLines.id, line.id));
-
-    // 3) Re-derive the JWSO header status from its lines (ADR-203 — the ONE
-    // writer; 'dispatched' drops back to 'open' / 'closed' as the lines say).
-    await recomputeJwHeaderStatus(tx, line.jwId, userId);
-    const jwRows = await tx
-      .select({ code: jobWorkOrders.code })
-      .from(jobWorkOrders)
-      .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
-      .limit(1);
-    const jw = jwRows[0];
-
-    const jwCode = jw?.code ?? ret.jwCodeText ?? null;
-    await emitActivityLog(
+  } else {
+    await moveReturnStock(
       tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: 'JwReturnChallan',
-        entityId: ret.id,
-        refId: ret.code,
-        qty: ret.qty,
-        reason,
-        detail: `${ret.code} — cancelled, reversed ${ret.qty} on ${jwCode ?? ''}`,
-      },
       companyId,
-      user,
+      userId,
+      'in',
+      ret.code,
+      dateLike(ret.returnDate),
+      line.itemId,
+      ret.qty,
     );
-    // ADR-197: the JWSO line's Returned qty went back down — an opposite entry
-    // to the SEND the return wrote.
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Reverse,
-        entity: 'JobWorkOrder',
-        entityId: line.jwId,
-        refId: jwCode,
-        lineRef: `Line ${line.lineNo}`,
-        qty: ret.qty,
-        reason,
-        detail: `Reverses ${ret.code} — ${ret.qty} back to Pending on Ln ${line.lineNo}`,
-      },
-      companyId,
-      user,
-    );
+  }
 
-    return rowToReturn(row);
-  });
+  // 1) Mark the return cancelled
+  const updated = await tx
+    .update(jwReturnChallans)
+    .set({
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancelledBy: userId,
+      cancelReason: reason,
+      updatedAt: new Date(),
+      updatedBy: userId,
+    })
+    // Conditional (CLAUDE.md §20.2): a second cancel racing this one finds
+    // no row and is refused below, so the line is never credited twice.
+    .where(and(eq(jwReturnChallans.id, ret.id), ne(jwReturnChallans.status, 'cancelled')))
+    .returning();
+  const row = updated[0];
+  if (!row) {
+    throw new ConflictError(
+      `JW Return ${ret.code} was cancelled by someone else just now. Reload the page.`,
+    );
+  }
+
+  // 2) DECREMENT the line's returned_qty by the return's qty (checked ≥ 0 above)
+  await tx
+    .update(jobWorkOrderLines)
+    .set({ returnedQty: returnedAfter, updatedAt: new Date(), updatedBy: userId })
+    .where(eq(jobWorkOrderLines.id, line.id));
+
+  // 3) Re-derive the JWSO header status from its lines (ADR-203 — the ONE
+  // writer; 'dispatched' drops back to 'open' / 'closed' as the lines say).
+  await recomputeJwHeaderStatus(tx, line.jwId, userId);
+  const jwRows = await tx
+    .select({ code: jobWorkOrders.code })
+    .from(jobWorkOrders)
+    .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
+    .limit(1);
+  const jw = jwRows[0];
+
+  const jwCode = jw?.code ?? ret.jwCodeText ?? null;
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'JwReturnChallan',
+      entityId: ret.id,
+      refId: ret.code,
+      qty: ret.qty,
+      reason,
+      detail: `${ret.code} — cancelled, reversed ${ret.qty} on ${jwCode ?? ''}`,
+    },
+    companyId,
+    user,
+  );
+  // ADR-197: the JWSO line's Returned qty went back down — an opposite entry
+  // to the SEND the return wrote.
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Reverse,
+      entity: 'JobWorkOrder',
+      entityId: line.jwId,
+      refId: jwCode,
+      lineRef: `Line ${line.lineNo}`,
+      qty: ret.qty,
+      reason,
+      detail: `Reverses ${ret.code} — ${ret.qty} back to Pending on Ln ${line.lineNo}`,
+    },
+    companyId,
+    user,
+  );
+
+  return rowToReturn(row);
 }
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a user

@@ -12,6 +12,8 @@
 
 import { type SQL, and, eq, isNull, sql } from 'drizzle-orm';
 import type {
+  CancelBlocker,
+  CancelEffect,
   CreatePartyGrnInput,
   DocumentEditStagedResult,
   ListPartyGrnQuery,
@@ -31,6 +33,8 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { blockerRefusal } from '../cancel-requests/messages';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { ActivityAction, NC_STATUS_LABELS } from '@innovic/shared';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import type { UpdatePartyGrnInput } from './schema';
@@ -117,16 +121,34 @@ export async function getNextPartyGrnCode(user: AuthContext): Promise<{ code: st
   });
 }
 
-/** Per-GRN line roll-up, shared by the list rows and the summary. */
+/** The lines that belong to header `pg` as it stands: a live GRN's live lines;
+ *  a cancelled GRN's lines cancelled WITH it (the cancel stamps header and
+ *  lines with one deleted_at — a line removed earlier keeps its own, older
+ *  stamp and does not come back). For a live header this is exactly
+ *  `pgl.deleted_at IS NULL`. */
+const PGL_OF_HEADER_SQL = sql.raw(
+  '(pgl.deleted_at IS NULL OR (pg.deleted_at IS NOT NULL AND pgl.deleted_at = pg.deleted_at))',
+);
+
+/** Per-GRN line roll-up, shared by the list rows and the summary. A cancelled
+ *  GRN waits for nothing, so its lines never count as waiting for QC. */
 const LINE_AGG_SQL = sql`
   LEFT JOIN LATERAL (
     SELECT SUM(pgl.received_qty)::int AS total_received,
            SUM(pgl.accepted_qty)::int AS total_accepted,
-           COUNT(*) FILTER (WHERE ${PENDING_QC_SQL})::int AS qc_pending_lines,
+           COUNT(*) FILTER (WHERE ${PENDING_QC_SQL} AND pgl.deleted_at IS NULL)::int
+             AS qc_pending_lines,
            COUNT(*)::int AS lines_count
     FROM public.party_grn_lines pgl
-    WHERE pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
+    WHERE pgl.party_grn_id = pg.id AND ${PGL_OF_HEADER_SQL}
   ) agg ON true`;
+
+/** ADR-235: live GRNs, plus — when the list / detail asks — the Cancelled ones. */
+function headerScopeSql(includeCancelled: boolean): SQL {
+  return includeCancelled
+    ? sql`(pg.deleted_at IS NULL OR pg.cancelled_at IS NOT NULL)`
+    : sql`pg.deleted_at IS NULL`;
+}
 
 export async function listPartyGrn(
   input: ListPartyGrnQuery,
@@ -146,7 +168,7 @@ export async function listPartyGrn(
           OR EXISTS (
             SELECT 1 FROM public.party_grn_lines pgl
             WHERE pgl.party_grn_id = pg.id
-              AND pgl.deleted_at IS NULL
+              AND ${PGL_OF_HEADER_SQL}
               AND (pgl.party_material_code_text ILIKE ${term}
                    OR pgl.party_material_name ILIKE ${term})
           )
@@ -158,6 +180,7 @@ export async function listPartyGrn(
     const clientFrag = input.clientId ? sql`AND pg.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND pg.grn_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND pg.grn_date <= ${input.toDate}::date` : sql``;
+    const scopeFrag = headerScopeSql(input.includeCancelled === true);
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to the rows AND the
     // total/summary query.
@@ -180,6 +203,7 @@ export async function listPartyGrn(
         pg.created_at AS "createdAt", pg.created_by AS "createdBy",
         pg.updated_at AS "updatedAt", pg.updated_by AS "updatedBy",
         pg.deleted_at AS "deletedAt",
+        pg.cancel_reason AS "cancelReason", pg.cancelled_at AS "cancelledAt",
         c.name AS "clientName",
         COALESCE(agg.total_received, 0)::int AS "totalReceivedQty",
         COALESCE(agg.total_accepted, 0)::int AS "totalAcceptedQty",
@@ -189,7 +213,7 @@ export async function listPartyGrn(
       LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
       ${LINE_AGG_SQL}
       WHERE pg.company_id = ${companyId}::uuid
-        AND pg.deleted_at IS NULL
+        AND ${scopeFrag}
         ${searchFrag}
         ${jwFrag}
         ${clientFrag}
@@ -203,18 +227,23 @@ export async function listPartyGrn(
     // Total + summary follow the same filters as the rows (search box included),
     // so the count beside the title and the pager agree with what is listed.
     // "Today" is the IST calendar day, not UTC (UTC was yesterday before 05:30).
+    // ADR-235: `total` (the pager) counts every listed row; the summary figures
+    // count live GRNs only — a Cancelled GRN received nothing.
     const sumRows = (await tx.execute(sql`
       SELECT
-        COUNT(*)::int AS total_grns,
-        COALESCE(SUM(agg.total_received), 0)::int AS total_received,
+        COUNT(*)::int AS total_rows,
+        COUNT(*) FILTER (WHERE pg.deleted_at IS NULL)::int AS total_grns,
+        COALESCE(SUM(agg.total_received) FILTER (WHERE pg.deleted_at IS NULL), 0)::int
+          AS total_received,
         COUNT(*) FILTER (
-          WHERE pg.grn_date = (now() AT TIME ZONE 'Asia/Kolkata')::date
+          WHERE pg.deleted_at IS NULL
+            AND pg.grn_date = (now() AT TIME ZONE 'Asia/Kolkata')::date
         )::int AS today_count
       FROM public.party_grn pg
       LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
       ${LINE_AGG_SQL}
       WHERE pg.company_id = ${companyId}::uuid
-        AND pg.deleted_at IS NULL
+        AND ${scopeFrag}
         ${searchFrag}
         ${jwFrag}
         ${clientFrag}
@@ -223,7 +252,7 @@ export async function listPartyGrn(
         ${sfFrag}
     `)) as unknown as Array<Record<string, unknown>>;
     const sum = sumRows[0] ?? {};
-    const total = Number(sum['total_grns'] ?? 0);
+    const total = Number(sum['total_rows'] ?? 0);
     const summary = {
       totalGrns: Number(sum['total_grns'] ?? 0),
       totalReceived: Number(sum['total_received'] ?? 0),
@@ -254,6 +283,8 @@ function toListItem(r: Record<string, unknown>): PartyGrnListItem {
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
+    cancelReason: (r['cancelReason'] as string | null) ?? null,
+    cancelledAt: r['cancelledAt'] != null ? tsLike(r['cancelledAt']) : null,
     clientName: (r['clientName'] as string | null) ?? null,
     totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),
     totalAcceptedQty: Number(r['totalAcceptedQty'] ?? 0),
@@ -263,11 +294,14 @@ function toListItem(r: Record<string, unknown>): PartyGrnListItem {
 }
 
 /** Header + lines of one live Party GRN, inside the caller's transaction (the
- *  QC step returns it without needing the Party read gate a second time). */
+ *  QC step returns it without needing the Party read gate a second time).
+ *  `includeCancelled` (the detail page only, ADR-235) also returns a Cancelled
+ *  GRN, read-only, with the lines cancelled with it. */
 export async function loadPartyGrnDetail(
   tx: DbTransaction,
   companyId: string,
   id: string,
+  opts: { includeCancelled?: boolean } = {},
 ): Promise<PartyGrnDetail> {
   const headerRows = await tx.execute(sql`
     SELECT
@@ -284,16 +318,18 @@ export async function loadPartyGrnDetail(
       pg.created_at AS "createdAt", pg.created_by AS "createdBy",
       pg.updated_at AS "updatedAt", pg.updated_by AS "updatedBy",
       pg.deleted_at AS "deletedAt",
+      pg.cancel_reason AS "cancelReason", pg.cancelled_at AS "cancelledAt",
       c.name AS "clientName"
     FROM public.party_grn pg
     LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
     WHERE pg.id = ${id}::uuid
       AND pg.company_id = ${companyId}::uuid
-      AND pg.deleted_at IS NULL
+      AND ${headerScopeSql(opts.includeCancelled === true)}
     LIMIT 1
   `);
   const hRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
   if (!hRow) throw new NotFoundError('Party GRN not found. Refresh the page.');
+  const isCancelled = hRow['deletedAt'] != null;
 
   // ADR-236: POL off the JWSO line each GRN line was received against.
   // LEFT JOIN on the JWSO line's primary key (pgl.jw_line_id is a single FK),
@@ -307,7 +343,12 @@ export async function loadPartyGrnDetail(
       and(
         eq(partyGrnLines.partyGrnId, id),
         eq(partyGrnLines.companyId, companyId),
-        isNull(partyGrnLines.deletedAt),
+        // A cancelled GRN: the lines cancelled with it (same deleted_at stamp).
+        isCancelled
+          ? sql`${partyGrnLines.deletedAt} = (
+              SELECT pgh.deleted_at FROM public.party_grn pgh WHERE pgh.id = ${id}::uuid
+            )`
+          : isNull(partyGrnLines.deletedAt),
       ),
     )
     .orderBy(partyGrnLines.lineNo);
@@ -318,7 +359,7 @@ export async function loadPartyGrnDetail(
     ...toListItem(hRow),
     totalReceivedQty: lines.reduce((s, l) => s + l.receivedQty, 0),
     totalAcceptedQty: lines.reduce((s, l) => s + l.acceptedQty, 0),
-    qcPendingLines: lineRows.filter(isPendingQc).length,
+    qcPendingLines: isCancelled ? 0 : lineRows.filter(isPendingQc).length,
     linesCount: lines.length,
     lines,
   };
@@ -327,7 +368,9 @@ export async function loadPartyGrnDetail(
 export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<PartyGrnDetail> {
   await requirePartyGrnRead(user);
   const companyId = requireCompany(user);
-  return withUserContext(user, (tx) => loadPartyGrnDetail(tx, companyId, id));
+  return withUserContext(user, (tx) =>
+    loadPartyGrnDetail(tx, companyId, id, { includeCancelled: true }),
+  );
 }
 
 function rowToLine(
@@ -628,250 +671,482 @@ async function jwLineRegisterBalance(
   return Number(rows[0]?.balance ?? 0);
 }
 
-// ADR-102 / ADR-203 — cancel (reverse) a Party GRN.
+// ─── Cancel (ADR-102 / ADR-203; ADR-235: only via an approved Cancel Request) ─
 //
-// Soft-deletes the header + lines. Lines already through Incoming QC have their
-// accepted qty taken back out of the register (a 'reversal'/out row per line,
-// carrying its JWSO line); lines still waiting for QC never entered it and are
-// just cancelled. Refused when rejected pieces were already sent back to the
-// customer, or when the accepted pieces have moved on (issued to a Job Card or
-// returned) — reverse those first. ADR-247: every live NC raised on its lines
-// that is not already closed is closed with the GRN (an already-closed one —
-// scrapped — stays as it is). Use As Is pieces were moved into accepted_qty, so
-// the register reversal below (with its balance check) takes them back too.
-// One transaction; nothing partly applied.
-export async function cancelPartyGrn(
+// Soft-deletes the header + lines (one deleted_at stamp, so a cancelled GRN's
+// own lines are exactly those carrying its header's deleted_at) and records
+// cancel_reason / cancelled_at / cancelled_by on the header (0218) — the list
+// shows it as Cancelled. Lines already through Incoming QC have their accepted
+// qty taken back out of the register (a 'reversal'/out row per line, carrying
+// its JWSO line); lines still waiting for QC never entered it and are just
+// cancelled. Refused (partyGrnCancelBlockers) when rejected pieces were already
+// sent back to the customer, or when the accepted pieces have moved on (issued
+// to a Job Card or returned) — reverse those first. ADR-247: every live NC
+// raised on its lines that is not already closed is closed with the GRN (an
+// already-closed one — scrapped — stays as it is). Use As Is pieces were moved
+// into accepted_qty, so the register reversal below (with its balance check)
+// takes them back too. One transaction; nothing partly applied.
+
+/** Read the Party GRN header — cancelled ones included (a cancel stamps
+ *  deleted_at). `forUpdate` locks it (request / approve / the worker); the
+ *  preview reads without a lock. null = not in this company. */
+export async function lockPartyGrnForCancel(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  forUpdate: boolean,
+): Promise<{
+  id: string;
+  code: string;
+  deletedAt: unknown;
+  cancelledAt: unknown;
+} | null> {
+  const rows = (await tx.execute(sql`
+    SELECT id, code, deleted_at AS "deletedAt", cancelled_at AS "cancelledAt"
+      FROM public.party_grn
+     WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
+     ${forUpdate ? sql`FOR UPDATE` : sql``}
+  `)) as unknown as Array<{ id: string; code: string; deletedAt: unknown; cancelledAt: unknown }>;
+  return rows[0] ?? null;
+}
+
+/** The live lines a cancel reads (blockers, effects and the worker alike). */
+async function partyGrnCancelLines(tx: DbTransaction, companyId: string, id: string) {
+  return tx
+    .select({
+      id: partyGrnLines.id,
+      lineNo: partyGrnLines.lineNo,
+      jwLineId: partyGrnLines.jwLineId,
+      partyMaterialId: partyGrnLines.partyMaterialId,
+      partyMaterialCodeText: partyGrnLines.partyMaterialCodeText,
+      receivedQty: partyGrnLines.receivedQty,
+      acceptedQty: partyGrnLines.acceptedQty,
+      rejectedQty: partyGrnLines.rejectedQty,
+      rejectedReturnedQty: partyGrnLines.rejectedReturnedQty,
+      qcAt: partyGrnLines.qcAt,
+    })
+    .from(partyGrnLines)
+    .where(
+      and(
+        eq(partyGrnLines.partyGrnId, id),
+        eq(partyGrnLines.companyId, companyId),
+        isNull(partyGrnLines.deletedAt),
+      ),
+    )
+    .orderBy(partyGrnLines.lineNo);
+}
+
+type PartyGrnCancelLine = Awaited<ReturnType<typeof partyGrnCancelLines>>[number];
+
+/** Only QC'd lines put anything into the register. */
+function linesToReverse(lines: readonly PartyGrnCancelLine[]): PartyGrnCancelLine[] {
+  return lines.filter((l) => !isPendingQc(l) && l.acceptedQty > 0 && l.partyMaterialId != null);
+}
+
+/** Σ accepted this GRN put in, per JWSO line + material (legacy lines with no
+ *  JWSO link get the material-level check of the ledger writer only). */
+function needByJwLine(
+  toReverse: readonly PartyGrnCancelLine[],
+): Map<string, { jwLineId: string; qty: number; pmId: string; code: string }> {
+  const out = new Map<string, { jwLineId: string; qty: number; pmId: string; code: string }>();
+  for (const l of toReverse) {
+    if (l.jwLineId == null) continue;
+    const key = `${l.jwLineId}|${l.partyMaterialId}`;
+    const prev = out.get(key);
+    out.set(key, {
+      jwLineId: l.jwLineId,
+      qty: (prev?.qty ?? 0) + l.acceptedQty,
+      pmId: l.partyMaterialId!,
+      code: l.partyMaterialCodeText,
+    });
+  }
+  return out;
+}
+
+/**
+ * THE Party GRN cancel refusal rule (one place — the worker, under its locks,
+ * and the Cancel preview both call it). Each blocker names the document that
+ * must be undone first:
+ *  · deviated pieces of a line already sent back on a live Customer Material
+ *    Return — cancel that return first;
+ *  · a JWSO line's register balance cannot absorb what this GRN put in — the
+ *    pieces were issued to a Job Card (Party Material Issue) or returned to
+ *    the customer (Customer Material Return); every live one holding that
+ *    material on that line is named.
+ * A count with no document behind it is reported as out of step.
+ */
+export async function partyGrnCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const out: CancelBlocker[] = [];
+  const lines = await partyGrnCancelLines(tx, companyId, id);
+
+  // 1) Deviated pieces already handed back cannot be un-received.
+  const sentBack = lines.filter((l) => l.rejectedReturnedQty > 0);
+  if (sentBack.length > 0) {
+    const cmrs = (await tx.execute(sql`
+      SELECT cl.party_grn_line_id AS "lineId", r.id AS "cmrId", r.code AS "cmrCode",
+             SUM(cl.qty)::int AS qty
+        FROM public.customer_material_return_lines cl
+        JOIN public.customer_material_returns r ON r.id = cl.return_id
+       WHERE cl.party_grn_line_id IN (${sql.join(
+         sentBack.map((l) => sql`${l.id}::uuid`),
+         sql`, `,
+       )})
+         AND cl.kind = 'rejected' AND cl.deleted_at IS NULL
+         AND r.company_id = ${companyId}::uuid
+         AND r.deleted_at IS NULL AND r.status <> 'cancelled'
+       GROUP BY cl.party_grn_line_id, r.id, r.code
+       ORDER BY r.code
+    `)) as unknown as Array<{ lineId: string; cmrId: string; cmrCode: string; qty: number }>;
+    for (const l of sentBack) {
+      const mine = cmrs.filter((c) => c.lineId === l.id);
+      for (const c of mine) {
+        out.push({
+          docLabel: 'Customer Material Return',
+          docNo: c.cmrCode,
+          href: '/customer-material-returns',
+          reason: `sent back ${Number(c.qty)} deviated pcs of Ln ${l.lineNo}`,
+        });
+      }
+      if (mine.length === 0) {
+        out.push({
+          docLabel: 'Party GRN',
+          docNo: `Ln ${l.lineNo}`,
+          href: null,
+          reason:
+            `its Returned deviated count (${l.rejectedReturnedQty}) has no live Customer Material ` +
+            `Return behind it — the count is out of step; report this to the administrator`,
+        });
+      }
+    }
+  }
+
+  // 2) The register must still hold what this GRN put in, per JWSO line.
+  for (const need of needByJwLine(linesToReverse(lines)).values()) {
+    const balance = await jwLineRegisterBalance(tx, need.jwLineId, need.pmId);
+    if (balance >= need.qty) continue;
+    const jl = (
+      (await tx.execute(sql`
+        SELECT l.line_no AS "lineNo", jw.id AS "jwId", jw.code AS "jwCode"
+          FROM public.job_work_order_lines l
+          JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
+         WHERE l.id = ${need.jwLineId}::uuid
+      `)) as unknown as Array<{ lineNo: number; jwId: string; jwCode: string }>
+    )[0];
+    const where = jl ? `${jl.jwCode} Ln ${jl.lineNo}` : 'its JWSO line';
+    const tail = `— this GRN needs ${need.qty} back, only ${balance} left in the register`;
+    const issues = (await tx.execute(sql`
+      SELECT mi.code, mi.jc_code_text AS "jcCode",
+             (mi.qty - mi.returned_to_store_qty)::int AS net
+        FROM public.party_material_issues mi
+       WHERE mi.jw_line_id = ${need.jwLineId}::uuid
+         AND mi.party_material_id = ${need.pmId}::uuid
+         AND mi.company_id = ${companyId}::uuid
+         AND mi.deleted_at IS NULL
+         AND mi.qty - mi.returned_to_store_qty > 0
+       ORDER BY mi.code
+    `)) as unknown as Array<{ code: string; jcCode: string | null; net: number }>;
+    const returns = (await tx.execute(sql`
+      SELECT r.code, SUM(cl.qty)::int AS qty
+        FROM public.customer_material_return_lines cl
+        JOIN public.customer_material_returns r ON r.id = cl.return_id
+       WHERE cl.jw_line_id = ${need.jwLineId}::uuid
+         AND cl.party_material_id = ${need.pmId}::uuid
+         AND cl.kind = 'good' AND cl.deleted_at IS NULL
+         AND r.company_id = ${companyId}::uuid
+         AND r.deleted_at IS NULL AND r.status <> 'cancelled'
+       GROUP BY r.code
+       ORDER BY r.code
+    `)) as unknown as Array<{ code: string; qty: number }>;
+    for (const mi of issues) {
+      out.push({
+        docLabel: 'Party Material Issue',
+        docNo: mi.code,
+        href: null,
+        reason: `issued ${Number(mi.net)} of ${need.code} (${where}) to ${mi.jcCode ?? 'a Job Card'} ${tail}`,
+      });
+    }
+    for (const r of returns) {
+      out.push({
+        docLabel: 'Customer Material Return',
+        docNo: r.code,
+        href: '/customer-material-returns',
+        reason: `returned ${Number(r.qty)} of ${need.code} (${where}) to the customer ${tail}`,
+      });
+    }
+    if (issues.length === 0 && returns.length === 0) {
+      out.push({
+        docLabel: 'JWSO',
+        docNo: where,
+        href: jl ? `/job-work-orders/${jl.jwId}` : null,
+        reason:
+          `its customer material register holds only ${balance} of ${need.code}, less than the ` +
+          `${need.qty} this GRN put in, with no issue or return to explain it — the figures are out ` +
+          `of step; report this to the administrator`,
+      });
+    }
+  }
+  return out;
+}
+
+/** What the cancel will do — the Cancel preview's lines. */
+export async function partyGrnCancelEffects(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelEffect[]> {
+  const lines = await partyGrnCancelLines(tx, companyId, id);
+  if (lines.length === 0) return [];
+  const jwIds = Array.from(new Set(lines.flatMap((l) => (l.jwLineId ? [l.jwLineId] : []))));
+  const jwLines =
+    jwIds.length > 0
+      ? ((await tx.execute(sql`
+          SELECT l.id, l.line_no AS "lineNo", jw.code AS "jwCode"
+            FROM public.job_work_order_lines l
+            JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
+           WHERE l.id IN (${sql.join(
+             jwIds.map((x) => sql`${x}::uuid`),
+             sql`, `,
+           )})
+        `)) as unknown as Array<{ id: string; lineNo: number; jwCode: string }>)
+      : [];
+  const jwById = new Map(jwLines.map((j) => [j.id, j]));
+  const ncs = (await tx.execute(sql`
+    SELECT nc.code, nc.status::text AS status, nc.rejected_qty::int AS "rejectedQty",
+           nc.party_grn_line_id AS "lineId"
+      FROM public.nc_register nc
+      JOIN public.party_grn_lines pgl ON pgl.id = nc.party_grn_line_id
+     WHERE pgl.party_grn_id = ${id}::uuid
+       AND pgl.deleted_at IS NULL
+       AND nc.company_id = ${companyId}::uuid
+       AND nc.deleted_at IS NULL
+       AND nc.status <> 'closed'
+     ORDER BY nc.code
+  `)) as unknown as Array<{ code: string; status: string; rejectedQty: number; lineId: string }>;
+
+  const out: CancelEffect[] = [];
+  for (const l of lines) {
+    const at = `Ln ${l.lineNo} ${l.partyMaterialCodeText}`;
+    const pending = isPendingQc(l);
+    if (!pending && l.acceptedQty > 0 && l.partyMaterialId != null) {
+      out.push({
+        kind: 'stock',
+        text: `${at} — ${l.acceptedQty} leaves the customer material register`,
+        qty: -l.acceptedQty,
+      });
+    }
+    // What the line held against its JWSO line's Order Qty (partyCommittedQtySql):
+    // received while waiting for QC, else accepted + pieces of a pending NC.
+    const committed = pending
+      ? l.receivedQty
+      : l.acceptedQty +
+        ncs
+          .filter((n) => n.lineId === l.id && n.status === 'pending')
+          .reduce((s, n) => s + Number(n.rejectedQty), 0);
+    const jl = l.jwLineId ? jwById.get(l.jwLineId) : undefined;
+    if (jl && committed > 0) {
+      out.push({
+        kind: 'reopen',
+        text: `${jl.jwCode} Ln ${jl.lineNo} — ${committed} pcs can be received from the customer again`,
+        qty: committed,
+      });
+    }
+  }
+  for (const nc of ncs) {
+    out.push({ kind: 'note', text: `${nc.code} will be closed`, qty: null });
+  }
+  return out;
+}
+
+/**
+ * The ONE Party GRN cancel writer, run only by an approved Cancel Request
+ * (ADR-235). In-tx body, no rights check — the Cancel Request checks the ticks.
+ */
+export async function cancelPartyGrnTx(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
   reason: string,
   user: AuthContext,
-): Promise<{ ok: true; code: string; reversedQty: number }> {
-  // Cancel reverses a received quantity, so it needs edit AND approve (L5+).
-  await requireFormAccess(user, 'party_create', 'edit');
-  await requireFormAccess(user, 'party_create', 'approve');
-  const companyId = requireCompany(user);
+): Promise<{ code: string; reversedQty: number }> {
   const trimmed = (reason ?? '').trim();
   if (!trimmed) throw new ValidationError('Reason is required to cancel a Party GRN.');
 
-  return withUserContext(user, async (tx) => {
-    // Lock the header, THEN re-check it is live — two cancels (or a cancel and
-    // a QC) on the same GRN queue here and the second one sees deleted_at.
-    const headRows = (await tx.execute(sql`
-      SELECT id, code, remarks, deleted_at AS "deletedAt"
-        FROM public.party_grn
-       WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
-       FOR UPDATE
-    `)) as unknown as Array<{
-      id: string;
-      code: string;
-      remarks: string | null;
-      deletedAt: unknown;
-    }>;
-    const head = headRows[0];
-    if (!head) throw new NotFoundError('Party GRN not found. Refresh the page.');
-    if (head.deletedAt != null) {
-      throw new ConflictError(`${head.code} is already cancelled. Refresh the page.`);
-    }
+  // Lock the header, THEN re-check it is live — two cancels (or a cancel and
+  // a QC) on the same GRN queue here and the second one sees deleted_at.
+  const head = await lockPartyGrnForCancel(tx, companyId, id, true);
+  if (!head) throw new NotFoundError('Party GRN not found. Refresh the page.');
+  if (head.deletedAt != null || head.cancelledAt != null) {
+    throw new ConflictError(`${head.code} is already cancelled. Refresh the page.`);
+  }
 
-    // ADR-247: the NCs raised on its lines, locked BEFORE the lines (an NC
-    // disposition locks the NC first too, so the two queue instead of crossing).
-    const ncs = (await tx.execute(sql`
-      SELECT nc.id, nc.code, nc.status::text AS status, nc.rejected_qty::int AS "rejectedQty"
-        FROM public.nc_register nc
-        JOIN public.party_grn_lines pgl ON pgl.id = nc.party_grn_line_id
-       WHERE pgl.party_grn_id = ${id}::uuid
-         AND pgl.deleted_at IS NULL
-         AND nc.company_id = ${companyId}::uuid
-         AND nc.deleted_at IS NULL
-         AND nc.status <> 'closed'
-       ORDER BY nc.id
-       FOR UPDATE OF nc
-    `)) as unknown as Array<{ id: string; code: string; status: string; rejectedQty: number }>;
+  // ADR-247: the NCs raised on its lines, locked BEFORE the lines (an NC
+  // disposition locks the NC first too, so the two queue instead of crossing).
+  const ncs = (await tx.execute(sql`
+    SELECT nc.id, nc.code, nc.status::text AS status, nc.rejected_qty::int AS "rejectedQty"
+      FROM public.nc_register nc
+      JOIN public.party_grn_lines pgl ON pgl.id = nc.party_grn_line_id
+     WHERE pgl.party_grn_id = ${id}::uuid
+       AND pgl.deleted_at IS NULL
+       AND nc.company_id = ${companyId}::uuid
+       AND nc.deleted_at IS NULL
+       AND nc.status <> 'closed'
+     ORDER BY nc.id
+     FOR UPDATE OF nc
+  `)) as unknown as Array<{ id: string; code: string; status: string; rejectedQty: number }>;
 
-    const lines = await tx
-      .select({
-        id: partyGrnLines.id,
-        lineNo: partyGrnLines.lineNo,
-        jwLineId: partyGrnLines.jwLineId,
-        partyMaterialId: partyGrnLines.partyMaterialId,
-        partyMaterialCodeText: partyGrnLines.partyMaterialCodeText,
-        acceptedQty: partyGrnLines.acceptedQty,
-        rejectedQty: partyGrnLines.rejectedQty,
-        rejectedReturnedQty: partyGrnLines.rejectedReturnedQty,
-        qcAt: partyGrnLines.qcAt,
-      })
-      .from(partyGrnLines)
-      .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)))
-      .orderBy(partyGrnLines.lineNo)
-      // Code review fix: lock the lines — a Customer Material Return taking
-      // their rejected pieces locks the same rows, so the two serialise.
-      .for('update');
+  // Code review fix: lock the lines — a Customer Material Return taking their
+  // rejected pieces locks the same rows, so the two serialise.
+  await tx
+    .select({ id: partyGrnLines.id })
+    .from(partyGrnLines)
+    .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)))
+    .orderBy(partyGrnLines.lineNo)
+    .for('update');
+  const lines = await partyGrnCancelLines(tx, companyId, id);
+  const toReverse = linesToReverse(lines);
 
-    // Rejected pieces already handed back on a Customer Material Return cannot
-    // be un-received — cancel that return first.
-    const sentBack = lines.filter((l) => l.rejectedReturnedQty > 0);
-    if (sentBack.length > 0) {
+  // Lock the JWSO lines (id order) so no issue / return can move the register
+  // between the refusal rule below and the reversal.
+  const jwLineIds = Array.from(
+    new Set(toReverse.flatMap((l) => (l.jwLineId ? [l.jwLineId] : []))),
+  ).sort();
+  for (const lineId of jwLineIds) await lockJwLine(tx, companyId, lineId);
+
+  // The refusal rule, under the locks — before anything moves.
+  const blockers = await partyGrnCancelBlockers(tx, companyId, id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(head.code, blockers), { blockers });
+  }
+
+  // Post one reversal per QC'd line; the writer refuses if the material's
+  // overall balance cannot cover it.
+  let reversedQty = 0;
+  const byMaterial = new Map<string, number>();
+  for (const l of toReverse) {
+    await postPartyStockMove(tx, {
+      companyId,
+      partyMaterialId: l.partyMaterialId!,
+      jwLineId: l.jwLineId,
+      movement: 'reversal',
+      direction: 'out',
+      qty: l.acceptedQty,
+      sourceDocType: 'party_grn',
+      sourceDocId: id,
+      remarks: `${head.code} Ln ${l.lineNo} cancelled: ${trimmed}`,
+      userId: user.id,
+      qtyLabel: 'Reversal Qty',
+    });
+    reversedQty += l.acceptedQty;
+    byMaterial.set(l.partyMaterialId!, (byMaterial.get(l.partyMaterialId!) ?? 0) + l.acceptedQty);
+  }
+
+  // Lower the received_qty lifetime counter. No clamp — a counter that would
+  // go negative means the books disagree, and that must stop the cancel.
+  for (const [materialId, qty] of byMaterial) {
+    const upd = (await tx.execute(sql`
+      UPDATE public.party_materials
+         SET received_qty = received_qty - ${qty}, updated_at = now(), updated_by = ${user.id}::uuid
+       WHERE id = ${materialId}::uuid AND received_qty >= ${qty}
+      RETURNING id
+    `)) as unknown as Array<{ id: string }>;
+    if (upd.length === 0) {
       throw new ConflictError(
-        `Cannot cancel ${head.code}: deviated pieces of ` +
-          sentBack.map((l) => `Ln ${l.lineNo} (${l.rejectedReturnedQty})`).join(', ') +
-          ` were already sent back on a Customer Material Return. Cancel that return first.`,
+        `Cannot cancel ${head.code}: the received total of its customer material is lower than ` +
+          `${qty} — the figures disagree. Ask an admin to check the customer material register.`,
       );
     }
+  }
 
-    // Only QC'd lines put anything into the register.
-    const toReverse = lines.filter(
-      (l) => !isPendingQc(l) && l.acceptedQty > 0 && l.partyMaterialId != null,
-    );
-
-    // Lock the JWSO lines (id order), then check each line's register balance
-    // can absorb what this GRN put in.
-    const needByLine = new Map<string, { qty: number; pmId: string; code: string }>();
-    for (const l of toReverse) {
-      if (l.jwLineId == null) continue; // legacy line with no JWSO link — material-level check only
-      const key = `${l.jwLineId}|${l.partyMaterialId}`;
-      const prev = needByLine.get(key);
-      needByLine.set(key, {
-        qty: (prev?.qty ?? 0) + l.acceptedQty,
-        pmId: l.partyMaterialId!,
-        code: l.partyMaterialCodeText,
-      });
+  // ADR-247: close every still-open NC on its lines (§20.2 — conditional on
+  // the status read under the lock above; 0 rows = it moved, stop the cancel).
+  const ncNote = `Party GRN ${head.code} cancelled`;
+  for (const nc of ncs) {
+    const closed = (await tx.execute(sql`
+      UPDATE public.nc_register
+         SET status = 'closed',
+             -- Nothing left open on it: the receipt it came from is void.
+             failed_qty = rejected_qty - cleared_qty,
+             disposition_remarks = ${ncNote},
+             closed_at = now(), closed_by = ${user.id}::uuid,
+             updated_at = now(), updated_by = ${user.id}::uuid
+       WHERE id = ${nc.id}::uuid AND status::text = ${nc.status} AND deleted_at IS NULL
+      RETURNING id
+    `)) as unknown as Array<{ id: string }>;
+    if (closed.length === 0) {
+      throw new ConflictError(`NC ${nc.code} changed a moment ago. Refresh the page.`);
     }
-    const jwLineIds = Array.from(new Set(toReverse.map((l) => l.jwLineId).filter(Boolean))).sort();
-    const lockedLines = new Map<string, LockedJwLine>();
-    for (const lineId of jwLineIds) {
-      lockedLines.set(lineId!, await lockJwLine(tx, companyId, lineId!));
-    }
-    for (const [key, need] of needByLine) {
-      const jwLineId = key.split('|')[0]!;
-      const balance = await jwLineRegisterBalance(tx, jwLineId, need.pmId);
-      if (balance < need.qty) {
-        const jl = lockedLines.get(jwLineId);
-        const where = jl ? `${jl.jwCode} Ln ${jl.lineNo}` : 'its JWSO line';
-        throw new ConflictError(
-          `Cannot cancel ${head.code}: it put ${need.qty} of ${need.code} into the register for ${where}, ` +
-            `but only ${balance} are still there — the rest has been issued to a Job Card or returned to ` +
-            `the customer. Reverse those first, then cancel this GRN.`,
-        );
-      }
-    }
-
-    // Post one reversal per QC'd line; the writer refuses if the material's
-    // overall balance cannot cover it.
-    const now = new Date();
-    let reversedQty = 0;
-    const byMaterial = new Map<string, number>();
-    for (const l of toReverse) {
-      await postPartyStockMove(tx, {
-        companyId,
-        partyMaterialId: l.partyMaterialId!,
-        jwLineId: l.jwLineId,
-        movement: 'reversal',
-        direction: 'out',
-        qty: l.acceptedQty,
-        sourceDocType: 'party_grn',
-        sourceDocId: id,
-        remarks: `${head.code} Ln ${l.lineNo} cancelled: ${trimmed}`,
-        userId: user.id,
-        qtyLabel: 'Reversal Qty',
-      });
-      reversedQty += l.acceptedQty;
-      byMaterial.set(l.partyMaterialId!, (byMaterial.get(l.partyMaterialId!) ?? 0) + l.acceptedQty);
-    }
-
-    // Lower the received_qty lifetime counter. No clamp — a counter that would
-    // go negative means the books disagree, and that must stop the cancel.
-    for (const [materialId, qty] of byMaterial) {
-      const upd = (await tx.execute(sql`
-        UPDATE public.party_materials
-           SET received_qty = received_qty - ${qty}, updated_at = now(), updated_by = ${user.id}::uuid
-         WHERE id = ${materialId}::uuid AND received_qty >= ${qty}
-        RETURNING id
-      `)) as unknown as Array<{ id: string }>;
-      if (upd.length === 0) {
-        throw new ConflictError(
-          `Cannot cancel ${head.code}: the received total of its customer material is lower than ` +
-            `${qty} — the figures disagree. Ask an admin to check the customer material register.`,
-        );
-      }
-    }
-
-    // ADR-247: close every still-open NC on its lines (§20.2 — conditional on
-    // the status read under the lock above; 0 rows = it moved, stop the cancel).
-    const ncNote = `Party GRN ${head.code} cancelled`;
-    for (const nc of ncs) {
-      const closed = (await tx.execute(sql`
-        UPDATE public.nc_register
-           SET status = 'closed',
-               -- Nothing left open on it: the receipt it came from is void.
-               failed_qty = rejected_qty - cleared_qty,
-               disposition_remarks = ${ncNote},
-               closed_at = now(), closed_by = ${user.id}::uuid,
-               updated_at = now(), updated_by = ${user.id}::uuid
-         WHERE id = ${nc.id}::uuid AND status::text = ${nc.status} AND deleted_at IS NULL
-        RETURNING id
-      `)) as unknown as Array<{ id: string }>;
-      if (closed.length === 0) {
-        throw new ConflictError(`NC ${nc.code} changed a moment ago. Refresh the page.`);
-      }
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Close,
-          entity: 'NonConformance',
-          entityId: nc.id,
-          refId: nc.code,
-          qty: nc.rejectedQty,
-          changes: [
-            {
-              field: 'status',
-              label: 'Status',
-              before: labelOf(NC_STATUS_LABELS, nc.status),
-              after: labelOf(NC_STATUS_LABELS, 'closed'),
-            },
-          ],
-          detail: `${nc.code} — Closed: ${ncNote}`,
-        },
-        companyId,
-        user,
-      );
-    }
-
-    const stamp = softDeleteStamp(user);
-    await tx
-      .update(partyGrnLines)
-      .set({ ...stamp, updatedAt: now, updatedBy: user.id })
-      .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)));
-
-    await tx
-      .update(partyGrn)
-      .set({
-        ...stamp,
-        remarks: head.remarks
-          ? `${head.remarks}\n[Cancelled] ${trimmed}`
-          : `[Cancelled] ${trimmed}`,
-        updatedAt: now,
-        updatedBy: user.id,
-      })
-      .where(and(eq(partyGrn.id, id), isNull(partyGrn.deletedAt)));
-
     await emitActivityLog(
       tx,
       {
-        action: ActivityAction.Cancel,
-        entity: 'PartyGrn',
-        entityId: head.id,
-        refId: head.code,
-        qty: reversedQty,
-        reason: trimmed,
-        detail:
-          `${head.code} cancelled — reversed ${reversedQty} from the customer material register` +
-          (ncs.length > 0 ? `; closed ${ncs.map((n) => n.code).join(', ')}` : ''),
+        action: ActivityAction.Close,
+        entity: 'NonConformance',
+        entityId: nc.id,
+        refId: nc.code,
+        qty: nc.rejectedQty,
+        changes: [
+          {
+            field: 'status',
+            label: 'Status',
+            before: labelOf(NC_STATUS_LABELS, nc.status),
+            after: labelOf(NC_STATUS_LABELS, 'closed'),
+          },
+        ],
+        detail: `${nc.code} — Closed: ${ncNote}`,
       },
       companyId,
       user,
     );
+  }
 
-    return { ok: true as const, code: head.code, reversedQty };
-  });
+  // ONE stamp for header and lines: a cancelled GRN's own lines are exactly
+  // those whose deleted_at equals the header's (lines removed earlier keep
+  // their own, older stamp). cancelled_at is the same instant (ADR-235, 0218).
+  const stamp = softDeleteStamp(user);
+  await tx
+    .update(partyGrnLines)
+    .set({ ...stamp, updatedAt: stamp.deletedAt, updatedBy: user.id })
+    .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)));
+
+  const cancelled = await tx
+    .update(partyGrn)
+    .set({
+      ...stamp,
+      cancelReason: trimmed,
+      cancelledAt: stamp.deletedAt,
+      cancelledBy: user.id,
+      updatedAt: stamp.deletedAt,
+      updatedBy: user.id,
+    })
+    .where(and(eq(partyGrn.id, id), isNull(partyGrn.deletedAt)))
+    .returning({ id: partyGrn.id });
+  if (cancelled.length === 0) {
+    throw new ConflictError(
+      `${head.code} has just been cancelled by someone else. Refresh the page.`,
+    );
+  }
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'PartyGrn',
+      entityId: head.id,
+      refId: head.code,
+      qty: reversedQty,
+      reason: trimmed,
+      detail:
+        `${head.code} cancelled — reversed ${reversedQty} from the customer material register` +
+        (ncs.length > 0 ? `; closed ${ncs.map((n) => n.code).join(', ')}` : ''),
+    },
+    companyId,
+    user,
+  );
+
+  return { code: head.code, reversedQty };
 }
 
 // ─── Edit (ADR-202 Phase 3) ──────────────────────────────────────────────────
@@ -964,6 +1239,9 @@ export async function updatePartyGrnTx(
   if (head.deletedAt != null) {
     throw new ConflictError(`${head.code} is cancelled — it cannot be edited.`);
   }
+  // ADR-235 — no edit while a cancel request waits (this body is also the
+  // edit-approval engine's replay of an approved edit).
+  await assertNoPendingCancel(tx, 'party_grn', head.id);
 
   // Lock every live line (the waiting-QC check and any line edit read these; the
   // lock serialises against a concurrent QC or cancel of the same GRN).
@@ -1186,6 +1464,9 @@ export async function updatePartyGrnOrStage(
     input.expectedUpdatedAt,
     user,
     async (tx, target) => {
+      // ADR-235 — loadForDiff holds the GRN row; nothing stages while a cancel
+      // request waits on it.
+      await assertNoPendingCancel(tx, 'party_grn', id);
       const lines = await tx
         .select({
           id: partyGrnLines.id,
@@ -1256,5 +1537,7 @@ function rowToPartyGrn(row: typeof partyGrn.$inferSelect): PartyGrn {
     updatedAt: tsLike(row.updatedAt),
     updatedBy: row.updatedBy,
     deletedAt: row.deletedAt != null ? tsLike(row.deletedAt) : null,
+    cancelReason: row.cancelReason ?? null,
+    cancelledAt: row.cancelledAt != null ? tsLike(row.cancelledAt) : null,
   };
 }

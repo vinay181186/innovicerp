@@ -34,6 +34,7 @@ import {
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { lockInstrument, setInstrumentStatus, tsOut } from '../instruments/common';
 import { lockIssue, refreshReturnStatus, requireCompany, todayIst } from './common';
 import { TOOL_WRITEOFF_SF_COLUMNS } from './writeoff-sf-columns';
@@ -146,6 +147,8 @@ export async function decideToolWriteoff(
       throw new ValidationError('Give a reason in Remarks to reject this write-off.');
     }
     const ti = w.toolIssueId ? await lockIssue(tx, companyId, w.toolIssueId) : null;
+    // ADR-235 — no write-off decision while a cancel request waits on the issue.
+    if (ti) await assertNoPendingCancel(tx, 'tool_issue', ti.id);
     const item = await lockItemForStock(tx, companyId, w.itemId);
     const ins = w.instrumentId ? await lockInstrument(tx, companyId, w.instrumentId) : null;
     const what = `${item.code}${ins ? ` Instrument Serial No. ${ins.serialNo}` : ` × ${w.qty}`}`;

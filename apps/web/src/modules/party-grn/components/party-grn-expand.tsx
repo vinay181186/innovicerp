@@ -20,6 +20,7 @@ import {
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
 import { EditPartyGrnModal } from './edit-party-grn-modal';
+import { isPartyGrnCancelled } from './party-grn-columns';
 import { waitingQc } from '../lib/print-party-grn';
 
 function lineColumns(): DataTableColumn<PartyGrnLine>[] {
@@ -162,7 +163,9 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
   // having a line waiting for Incoming QC (a fully-QC'd receipt is settled —
   // nothing here is editable, so no Edit button). Cancel stays the way to undo.
   const canEdit = effectiveFormPerms(eff, 'party_create').edit;
-  const isLive = g.qcPendingLines > 0;
+  // ADR-235: a Cancelled GRN is read-only — no Edit, its reason shown instead.
+  const cancelled = isPartyGrnCancelled(g);
+  const isLive = g.qcPendingLines > 0 && !cancelled;
   const [editing, setEditing] = useState(false);
 
   // ADR-202 — edits staged against this receipt and awaiting a decision. Their
@@ -192,6 +195,12 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
         <span>
           <b>GRN Remarks:</b> {g.remarks ?? '—'}
         </span>
+        {cancelled ? (
+          <span style={{ color: 'var(--red2)' }}>
+            <b>Reason:</b> {g.cancelReason ?? '—'}
+            {g.cancelledAt ? ` · Cancelled ${fmtDateTime(g.cancelledAt)}` : ''}
+          </span>
+        ) : null}
         {canEdit && isLive ? (
           <button
             type="button"
@@ -269,7 +278,9 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
 
       {detailQ.isError ? (
         <div className="empty-state" style={{ color: 'var(--red2)', padding: 8 }}>
-          Could not load lines. Try again.
+          {cancelled
+            ? 'The lines of a Cancelled GRN could not be loaded.'
+            : 'Could not load lines. Try again.'}
         </div>
       ) : detailQ.isLoading ? (
         <div className="text3" style={{ fontSize: 12 }}>

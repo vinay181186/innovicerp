@@ -48,6 +48,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Send, X } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -122,6 +124,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const [scReason, setScReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  // ADR-235 — the standard Cancel dialog.
+  const [cancelOpen, setCancelOpen] = useState(false);
   // ADR-197 — the PO's own History tab. Called before the early returns
   // (hooks rule); it waits for the id / code to arrive.
   const historyTab = useHistoryTab({
@@ -226,6 +230,11 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const showApprovalActions = detail.status === 'draft' && isApprover;
   // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
   const canDelete = canDeleteRecords(eff);
+  // ADR-235 — Cancel PO: the Edit tick raises the request, the Approve tick
+  // decides it. Not on a cancelled or closed PO; a PO with receipts / DCs is
+  // refused by the server's preview (it lists what to cancel first).
+  const cancelled = detail.status === 'cancelled';
+  const canCancel = (perms.edit || perms.approve) && !cancelled && detail.status !== 'closed';
 
   async function doApprove(): Promise<void> {
     if (!detail) return;
@@ -307,6 +316,13 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to Purchase Orders
       </Link>
 
+      <CancelPendingBanner
+        docType="purchase_order"
+        docId={detail.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
+
       <div className="panel" style={{ overflow: 'hidden' }}>
         <div className="panel-hdr">
           {/* Code + status on one line: the vendor name used to sit here as a
@@ -326,7 +342,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 style={{ fontSize: 12 }}
                 title={detail.shortCloseReason ?? ''}
               >
-                Short closed {detail.shortClosedAt.slice(0, 10)} — {detail.shortCloseReason}
+                {/* A stopped-wholly / cancelled PO carries the same stamp. */}
+                {detail.status === 'cancelled' ? 'Cancelled' : 'Short closed'}{' '}
+                {detail.shortClosedAt.slice(0, 10)} — {detail.shortCloseReason}
               </span>
             ) : null}
           </div>
@@ -409,6 +427,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                     setActionError(null);
                     setScOpen(true);
                   },
+                },
+                {
+                  label: 'Cancel PO',
+                  danger: true,
+                  hidden: !canCancel,
+                  onClick: () => setCancelOpen(true),
                 },
                 {
                   label: 'Delete',
@@ -870,6 +894,14 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             </div>
           </div>
         </div>
+      ) : null}
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="purchase_order"
+          docId={detail.id}
+          docCode={detail.code}
+          onClose={() => setCancelOpen(false)}
+        />
       ) : null}
     </div>
   );

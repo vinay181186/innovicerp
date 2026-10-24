@@ -17,6 +17,14 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 
+/** ADR-235 — a Cancelled issue (listed with includeCancelled). cancelledAt is
+ *  the standard Cancel's stamp; deletedAt alone is an issue cancelled before it. */
+export function isIssueCancelled(
+  it: Pick<PartyMaterialIssueListItem, 'cancelledAt' | 'deletedAt'>,
+): boolean {
+  return Boolean(it.cancelledAt ?? it.deletedAt);
+}
+
 export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueListItem>[] {
   return [
     {
@@ -26,9 +34,19 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
       kind: 'code',
       nowrap: true,
       render: (it) => (
-        <span className="td-code" style={{ color: 'var(--cyan)' }}>
-          {it.code}
-        </span>
+        <>
+          <span className="td-code" style={{ color: 'var(--cyan)' }}>
+            {it.code}
+          </span>
+          {/* ADR-235: the register has no status column — a Cancelled issue
+              says so beside its number. */}
+          {isIssueCancelled(it) ? (
+            <>
+              {' '}
+              <span className="badge b-red">Cancelled</span>
+            </>
+          ) : null}
+        </>
       ),
     },
     {

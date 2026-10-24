@@ -26,6 +26,7 @@ import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockJwLine } from '../../lib/jw-line-state';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { autoCreatePartyGrnMaterialNc } from '../nc-register/cascades';
 import { userDisplayName } from '../nc-register/recovery';
 import { bookPartyAccepted } from './deviation';
@@ -59,6 +60,8 @@ export async function qcPartyGrn(
     if (head.deletedAt != null) {
       throw new ConflictError(`${head.code} has been cancelled — it cannot be QC'd.`);
     }
+    // ADR-235 — QC moves pieces into the register; not while a cancel waits.
+    await assertNoPendingCancel(tx, 'party_grn', head.id);
 
     const rows = await tx
       .select({

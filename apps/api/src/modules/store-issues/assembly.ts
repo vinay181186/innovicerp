@@ -7,8 +7,8 @@
 //            on the line (reserved_used_qty) so a Reverse can give it back.
 //   return   capped by the SO's Still Out for the item — fitted parts are in
 //            built units and cannot come back (P34). No re-reserve.
-//   reverse  every line ≤ the SO's Still Out for its item; then each line's
-//            reserved_used_qty goes back to the reservation.
+//   cancel   every line ≤ the SO's Still Out for its item (ADR-235 blocker);
+//            then each line's reserved_used_qty goes back to the reservation.
 //
 // Return / Reverse lock the SO row first (same lock assembly Complete takes)
 // so a unit cannot be fitted between the Still Out check and the move.
@@ -109,24 +109,17 @@ export async function assertReturnWithinStillOut(
   }
 }
 
-/** Reverse on an assembly-SO slip: every line must still be out (not fitted). */
-export async function assertReverseWithinStillOut(
+/** Cancel of an assembly-SO slip (ADR-235): the lines NOT still out — their
+ *  parts are already fitted into built units. Reads only; the cancel worker
+ *  takes lockSoRow first, so Still Out cannot move between this and the move. */
+export async function reverseFittedLines<T extends { itemId: string; qty: number }>(
   tx: DbTransaction,
   companyId: string,
   soId: string,
-  issueCode: string,
-  lines: ReadonlyArray<{ itemId: string; qty: number }>,
-): Promise<void> {
-  await lockSoRow(tx, companyId, soId);
+  lines: readonly T[],
+): Promise<T[]> {
   const out = await readPartsOut(tx, companyId, soId);
-  for (const l of lines) {
-    const p = out.get(l.itemId) ?? NO_PARTS_OUT;
-    if (roundQty(l.qty) > p.stillOut) {
-      throw new ConflictError(
-        `${issueCode}: its parts are already fitted — Undo the unit first or Return what is still out`,
-      );
-    }
-  }
+  return lines.filter((l) => roundQty(l.qty) > (out.get(l.itemId) ?? NO_PARTS_OUT).stillOut);
 }
 
 /** Reverse: each line's reserved_used_qty goes back to the SO's reservation. */

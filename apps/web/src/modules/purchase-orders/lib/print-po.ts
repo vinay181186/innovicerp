@@ -224,6 +224,8 @@ export function printPurchaseOrder(args: {
     columns: 'po',
     // ADR-202 — overlay "Draft — awaiting approval" when an edit is pending.
     draft: args.draft,
+    // ADR-235 — a cancelled PO prints with the CANCELLED stamp.
+    cancelled: po.status === 'cancelled',
     // "Our Contact Person" already names who raised it.
     hidePreparedBy: true,
     blocks: templatesToBlocks(doc, templates),

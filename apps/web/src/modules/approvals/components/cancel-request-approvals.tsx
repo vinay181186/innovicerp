@@ -31,12 +31,38 @@ import { ApprovalTab, type ApprovalView } from './approval-tab';
 /** The contract's per-call cap (listCancelRequestsQuerySchema). */
 const LOAD_LIMIT = 200;
 
-/** Where each enrolled document opens. JW Invoice has no detail page — its
- *  list opens on the JW tab, searched to that invoice. */
+/** Where each enrolled document opens. A document with no detail page opens
+ *  its list searched to that code. */
 function docHref(docType: CancelDocType, docId: string, docCode: string): string {
-  if (docType === 'invoice') return `/invoices/${docId}`;
-  if (docType === 'customer_dispatch') return `/customer-dispatches/${docId}`;
-  return `/invoices?tab=jw&search=${encodeURIComponent(docCode)}`;
+  const q = encodeURIComponent(docCode);
+  switch (docType) {
+    case 'invoice':
+      return `/invoices/${docId}`;
+    case 'jw_invoice':
+      return `/invoices?tab=jw&search=${q}`;
+    case 'customer_dispatch':
+      return `/customer-dispatches/${docId}`;
+    case 'jw_return':
+      return `/customer-dispatches?tab=jw&search=${q}`;
+    case 'customer_material_return':
+      return `/customer-material-returns?search=${q}`;
+    case 'party_grn':
+      return `/party-grn?search=${q}`;
+    case 'party_material_issue':
+      return `/party-grn?tab=issue&search=${q}`;
+    case 'delivery_challan':
+      return `/delivery-challans/${docId}`;
+    case 'store_issue':
+      return `/issue-register?search=${q}`;
+    case 'stock_count':
+      return `/stock-counts/${docId}`;
+    case 'tool_issue':
+      return `/issue-register?tab=tools&search=${q}`;
+    case 'purchase_request':
+      return `/purchase-requests/${docId}`;
+    case 'purchase_order':
+      return `/purchase-orders/${docId}`;
+  }
 }
 
 function cancelColumns(): DataTableColumn<CancelRequestRow>[] {

@@ -4,7 +4,10 @@
 //   Workflow: Approve (L4 Approver, open PRs) · Create PO (while quantity is
 //             left and the PR is convertible)
 //   Assign Task (not for the read-only viewer role — POST /tasks refuses it)
-//   ─ Reject (red, last)
+//   ─ Reject · Cancel PR (red, last)
+// Cancel PR is the ONE standard Cancel (ADR-235): Edit or Approve tick, not
+// cancelled, not short-closed; the caller opens CancelDocDialog, which reads the
+// server's preview (what blocks it — a live PO — and what it will do).
 // Reject follows the server (rejectPurchaseRequest): any PR that is not
 // cancelled (incl. 'PO created' whose PO was cancelled — nothing ordered),
 // greyed with the reason once any of it is on a live PO. Reuses the module's
@@ -22,24 +25,29 @@ export function PrListRowActions({
   canApprove,
   canCreatePo,
   canAssign,
+  canCancel,
   prApprovalOn,
   approving,
   rejecting,
   onApprove,
   onReject,
   onAssign,
+  onCancel,
   onPrint,
 }: {
   pr: PurchaseRequestListItem;
   canApprove: boolean;
   canCreatePo: boolean;
   canAssign: boolean;
+  /** pr_create Edit OR Approve tick (ADR-235). */
+  canCancel: boolean;
   prApprovalOn: boolean;
   approving: boolean;
   rejecting: boolean;
   onApprove: (pr: PurchaseRequestListItem) => void | Promise<void>;
   onReject: (pr: PurchaseRequestListItem) => void | Promise<void>;
   onAssign: (pr: PurchaseRequestListItem) => void;
+  onCancel: (pr: PurchaseRequestListItem) => void;
   onPrint: (action: 'preview' | 'download', pr: PurchaseRequestListItem) => Promise<void>;
 }): React.JSX.Element {
   const bal = prOrderBalance(pr);
@@ -92,6 +100,14 @@ export function PrListRowActions({
           hidden: !canApprove || pr.status === 'cancelled',
           disabledReason: bal.ordered > 0 ? 'Already on a PO' : rejecting ? 'Working…' : undefined,
           onSelect: () => onReject(pr),
+        },
+        {
+          key: 'cancel',
+          label: 'Cancel PR',
+          icon: 'x',
+          group: 'danger',
+          hidden: !canCancel || pr.status === 'cancelled' || bal.closed,
+          onSelect: () => onCancel(pr),
         },
       ]}
     />

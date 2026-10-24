@@ -53,6 +53,8 @@ export function printJwReturnChallan(
     title: 'Job Work Return Challan',
     windowTitle: `JW Return Challan ${r.code}`,
     columns: 'challan',
+    // ADR-235 — a Cancelled return prints the CANCELLED stamp.
+    cancelled: r.status === 'cancelled' || Boolean(r.cancelledAt),
     blocks: {},
     data: {},
     company: buildDocCompany(company),

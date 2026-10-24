@@ -75,13 +75,11 @@ export function useReplaceStockCountLines() {
   });
 }
 
-export function useStockCountAction(action: 'submit' | 'approve' | 'cancel') {
+/** Submit / Approve. Cancel is the ONE standard Cancel (ADR-235) —
+ *  cancel-requests CancelDocDialog, docType 'stock_count'. */
+export function useStockCountAction(action: 'submit' | 'approve') {
   const qc = useQueryClient();
-  return useMutation<
-    StockCount,
-    Error,
-    { id: string } & Partial<ApproveStockCountInput> & { reason?: string }
-  >({
+  return useMutation<StockCount, Error, { id: string } & Partial<ApproveStockCountInput>>({
     mutationFn: ({ id, ...body }) =>
       apiFetch<StockCount>(`/stock-counts/${id}/${action}`, { method: 'POST', json: body }),
     onSuccess: () => invalidateStock(qc),

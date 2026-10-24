@@ -59,7 +59,7 @@ export function printStoreIssue(args: {
   if (issue.remarks) documentFields.push({ label: 'Remarks', value: issue.remarks });
   if (issue.reversedAt)
     documentFields.push({
-      label: 'Reversed',
+      label: 'Cancelled',
       value: [challanDate(issue.reversedAt.slice(0, 10)), issue.reversalReason]
         .filter(Boolean)
         .join(' — '),
@@ -71,6 +71,8 @@ export function printStoreIssue(args: {
 
   const model: SheetPrintModel = {
     title: 'Item Issue Slip',
+    // ADR-235 — a cancelled (reversed) slip prints with the CANCELLED stamp.
+    cancelled: Boolean(issue.reversedAt),
     windowTitle: 'Item Issue Slip',
     columns: 'challan',
     blocks: {},

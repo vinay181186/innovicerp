@@ -17,6 +17,14 @@ import type { PartyGrnListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 
+/** ADR-235 — a Cancelled GRN (listed with includeCancelled). cancelledAt is
+ *  the standard Cancel's stamp; deletedAt alone is a GRN cancelled before it. */
+export function isPartyGrnCancelled(
+  g: Pick<PartyGrnListItem, 'cancelledAt' | 'deletedAt'>,
+): boolean {
+  return Boolean(g.cancelledAt ?? g.deletedAt);
+}
+
 /** Columns off by default (DataTable `defaultHidden`); Columns ▾ shows them. */
 export const PARTY_GRN_HIDDEN_COLUMNS = ['created_on'] as const;
 
@@ -112,11 +120,14 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       // ADR-203 (owner D4): Incoming QC is a separate step after the receipt.
+      // ADR-235: a Cancelled GRN reads "Cancelled" here instead.
       id: 'qc_status',
       header: 'QC Status',
       nowrap: true,
       render: (g) =>
-        g.qcPendingLines > 0 ? (
+        isPartyGrnCancelled(g) ? (
+          <span className="badge b-red">Cancelled</span>
+        ) : g.qcPendingLines > 0 ? (
           <span
             className="badge b-amber"
             title={`${g.qcPendingLines} line(s) waiting for Incoming QC`}

@@ -16,16 +16,17 @@ import { type JwReturnChallanListItem, type ListJwReturnChallansQuery } from '@i
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
+import { fmtDateTime } from '@/lib/date';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useJwReturnsList } from '../api';
-import { CancelJwReturnModal } from './cancel-jw-return-modal';
 import { jwReturnColumns } from './jw-returns-columns';
 import { NewJwReturnModal } from './new-jw-return-modal';
 import { usePrintJwReturn } from './use-print-jw-return';
@@ -44,11 +45,12 @@ export function JwDispatchView({
   initialSearch?: string | undefined;
 }): React.JSX.Element {
   // ADR-232 — the ticks alone, matching the server (jw-returns service):
-  // New Return = jw_create Entry; Cancel Return = jw_create Edit AND Approve.
+  // New Return = jw_create Entry; Cancel JW Return = jw_create Edit OR Approve
+  // (ADR-235, the ONE standard Cancel: Edit requests, Approve decides).
   const { data: eff } = useMyAccess();
   const jwPerms = effectiveFormPerms(eff, 'jw_create');
   const canCreate = jwPerms.entry;
-  const canCancel = jwPerms.edit && jwPerms.approve;
+  const canCancel = jwPerms.edit || jwPerms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
@@ -88,8 +90,7 @@ export function JwDispatchView({
   const onPage = useCallback((p: number) => setPage(p), []);
   useClampPage(page, data?.total, onPage);
 
-  // The return the Cancel dialog is asking about, or null when closed. The
-  // dialog captures a reason (R10, ADR-194) and runs the mutation itself.
+  // The return the standard Cancel dialog (ADR-235) is open for, or null.
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
   // ADR-197: the return whose History is open, or null. JW Return has no
   // detail page, so its History opens over the list.
@@ -156,21 +157,20 @@ export function JwDispatchView({
             renderExpanded={(r) => (expanded.has(r.id) ? <ExpandedReturn row={r} /> : null)}
             onToggleExpanded={(r) => toggleExpand(r.id)}
             rowActionsWidth="1%"
-            // ⋯ Preview · Download PDF · History · ─ · Cancel. A cancelled
-            // return offers no Preview / Download; its Cancel is greyed.
+            // ⋯ Preview · Download PDF · History · ─ · Cancel JW Return. A
+            // cancelled return prints with the CANCELLED stamp and offers no
+            // Cancel.
             rowMenu={(r: JwReturnChallanListItem) => [
               {
                 key: 'preview',
                 label: 'Preview',
                 icon: 'eye',
-                hidden: r.status === 'cancelled',
                 onSelect: () => printReturn.preview({ row: r }),
               },
               {
                 key: 'download',
                 label: 'Download PDF',
                 icon: 'download',
-                hidden: r.status === 'cancelled',
                 onSelect: () => printReturn.download({ row: r }),
               },
               {
@@ -181,11 +181,10 @@ export function JwDispatchView({
               },
               {
                 key: 'cancel',
-                label: 'Cancel Return',
+                label: 'Cancel JW Return',
                 icon: 'x',
                 group: 'danger',
-                hidden: !canCancel,
-                disabledReason: r.status === 'cancelled' ? 'Already Cancelled' : undefined,
+                hidden: !canCancel || r.status === 'cancelled',
                 onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
               },
             ]}
@@ -215,9 +214,10 @@ export function JwDispatchView({
         </Modal>
       ) : null}
       {cancelTarget ? (
-        <CancelJwReturnModal
-          id={cancelTarget.id}
-          code={cancelTarget.code}
+        <CancelDocDialog
+          docType="jw_return"
+          docId={cancelTarget.id}
+          docCode={cancelTarget.code}
           onClose={() => setCancelTarget(null)}
         />
       ) : null}
@@ -239,6 +239,14 @@ function ExpandedReturn({ row }: { row: JwReturnChallanListItem }): React.JSX.El
     >
       <b>Transporter:</b> {row.transport ?? '—'} &nbsp;·&nbsp; <b>Vehicle No.:</b>{' '}
       <span className="mono">{row.vehicleNo ?? '—'}</span>
+      {/* ADR-235: why and when a Cancelled return was cancelled. */}
+      {row.status === 'cancelled' ? (
+        <span style={{ color: 'var(--red2)' }}>
+          {' '}
+          &nbsp;·&nbsp; <b>Reason:</b> {row.cancelReason ?? '—'}
+          {row.cancelledAt ? ` · Cancelled ${fmtDateTime(row.cancelledAt)}` : ''}
+        </span>
+      ) : null}
     </div>
   );
 }
