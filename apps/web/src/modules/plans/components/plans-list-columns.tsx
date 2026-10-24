@@ -64,6 +64,10 @@ const STATUS_OPTIONS = [
     label: STATUS_BADGE[value].label,
   })),
   { value: 'route_card_pending', label: DERIVED_LABEL.route_card_pending },
+  {
+    value: 'route_card_approval_pending',
+    label: DERIVED_LABEL.route_card_approval_pending,
+  },
   { value: 'gen_production_order', label: DERIVED_LABEL.gen_production_order },
 ];
 
@@ -88,6 +92,7 @@ export function planRowTint(row: PlanRow): string | undefined {
     return ROW_TINT.done;
   if (
     row.derivedStatus === 'route_card_pending' ||
+    row.derivedStatus === 'route_card_approval_pending' ||
     (!row.derivedStatus && row.planStatus === 'in_planning')
   )
     return ROW_TINT.pending;

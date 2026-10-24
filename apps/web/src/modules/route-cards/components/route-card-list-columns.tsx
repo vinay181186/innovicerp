@@ -6,6 +6,7 @@ import type { RouteCardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { RcApprovalBadge } from './rc-approval-badge';
 
 // The sheet's columns. The sheet lays out AUTO (2026-09-26 list standard):
 // only Sr No keeps a width; codes, revs, counts and dates sit on one line
@@ -96,6 +97,24 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
       className: 'mono fw-700',
       nowrap: true,
       render: (rc) => <span style={{ color: 'var(--cyan)' }}>R{rc.currentRevision}</span>,
+    },
+    {
+      // ADR-253 — only an Approved card can be used for a Production Order.
+      // No sortFilterField: the list's Sort & Filter map has no approval
+      // column (apps/api/.../route-cards/sf-columns.ts).
+      id: 'approval_status',
+      header: 'RC Status',
+      nowrap: true,
+      render: (rc) => (
+        <RcApprovalBadge
+          status={rc.approvalStatus}
+          title={
+            rc.approvalStatus === 'rejected' && rc.rejectionReason
+              ? `Rejected: ${rc.rejectionReason}`
+              : undefined
+          }
+        />
+      ),
     },
     {
       id: 'updated_at',

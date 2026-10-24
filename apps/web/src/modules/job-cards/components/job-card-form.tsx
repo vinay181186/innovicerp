@@ -1195,7 +1195,7 @@ export function JobCardForm({
                 <>
                   Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span>{' '}
                   created (Rev {savedNote.rc.routeCardRevision}) from this Job Card&apos;s
-                  operations.
+                  operations — waiting for approval before it can be used.
                 </>
               ) : (
                 <>

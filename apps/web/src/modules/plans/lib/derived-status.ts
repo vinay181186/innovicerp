@@ -29,6 +29,8 @@ export const STORED_BADGE: Record<PlanStatus, string> = {
 // same plan's state differently.
 export const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'RC Pending',
+  // ADR-253 — the item's Route Card exists but is not approved yet.
+  route_card_approval_pending: 'RC Awaiting Approval',
   gen_production_order: 'RC Created',
   in_production: 'In Production',
   production_complete: 'Completed',
@@ -38,6 +40,8 @@ export const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
 // Production Order, amber = order open, green = done.
 export const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'b-grey',
+  // ADR-253 — same tone as RC Pending: still no way forward.
+  route_card_approval_pending: 'b-grey',
   gen_production_order: 'b-blue',
   // Same colour as the stored 'in_production' badge (list STATUS_BADGE): one
   // status, one colour, whichever kind of plan the row is.

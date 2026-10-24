@@ -27,6 +27,13 @@ const STATUS_TILES: StatusTile[] = [
   { status: 'planned', label: 'Planned', color: 'var(--blue)', kpiKey: 'planned' },
   // ADR-185 — route-card plans are counted by the status their row shows.
   { status: 'route_card_pending', label: 'RC Pending', color: 'var(--text2)', kpiKey: 'rcPending' },
+  // ADR-253 — a card exists but is waiting for approval.
+  {
+    status: 'route_card_approval_pending',
+    label: 'RC Awaiting Approval',
+    color: 'var(--text2)',
+    kpiKey: 'rcApprovalPending',
+  },
   {
     status: 'gen_production_order',
     label: 'RC Created',

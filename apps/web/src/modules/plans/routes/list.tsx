@@ -71,7 +71,7 @@ const NEEDS_PLANNING = '__needs_planning';
 // Status → the planning-dashboard KPI key that counts it (same keys the old
 // tiles read). Cancelled has no tile, so no count.
 const STATUS_KPI_KEY: Record<
-  PlanStatus | 'route_card_pending' | 'gen_production_order',
+  PlanStatus | 'route_card_pending' | 'route_card_approval_pending' | 'gen_production_order',
   string | undefined
 > = {
   in_planning: 'inPlanning',
@@ -82,6 +82,7 @@ const STATUS_KPI_KEY: Record<
   complete: 'complete',
   cancelled: undefined,
   route_card_pending: 'rcPending',
+  route_card_approval_pending: 'rcApprovalPending',
   gen_production_order: 'rcCreated',
 };
 
@@ -247,6 +248,12 @@ function PlansListPage(): React.JSX.Element {
               {/* ADR-185 — the two route-card states with no stored twin. */}
               <option value="route_card_pending">
                 {withCount(DERIVED_LABEL.route_card_pending, STATUS_KPI_KEY.route_card_pending)}
+              </option>
+              <option value="route_card_approval_pending">
+                {withCount(
+                  DERIVED_LABEL.route_card_approval_pending,
+                  STATUS_KPI_KEY.route_card_approval_pending,
+                )}
               </option>
               <option value="gen_production_order">
                 {withCount(DERIVED_LABEL.gen_production_order, STATUS_KPI_KEY.gen_production_order)}

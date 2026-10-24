@@ -178,6 +178,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
   },
   planderived: {
     route_card_pending: 'grey',
+    route_card_approval_pending: 'grey', // ADR-253
     gen_production_order: 'blue',
     in_production: 'amber',
     production_complete: 'green',
@@ -300,6 +301,7 @@ const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
   // other screens that print it.
   planderived: {
     route_card_pending: 'RC Pending',
+    route_card_approval_pending: 'RC Awaiting Approval', // ADR-253
     gen_production_order: 'Ready for Production Order',
     in_production: 'In Production',
     production_complete: 'Completed',

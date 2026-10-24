@@ -14,6 +14,7 @@ import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { approvalsKeys } from '@/modules/approvals/api';
 
 export const routeCardsKeys = {
   all: ['route-cards'] as const,
@@ -159,4 +160,40 @@ export function useDeleteRouteCard() {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.nextCode() });
     },
   });
+}
+
+// ADR-253 — a NEW Route Card is approved (or rejected with a reason) before it
+// can be used. Both answer with the card; a 409 (already decided, no right…)
+// throws with the server's words, which the caller shows as-is.
+function useRouteCardDecision<TVars extends { id: string }>(
+  action: 'approve' | 'reject',
+  body: (v: TVars) => Record<string, unknown>,
+) {
+  const qc = useQueryClient();
+  return useMutation<RouteCardDetail, Error, TVars>({
+    mutationFn: (v) =>
+      apiFetch<RouteCardDetail>(`/route-cards/${v.id}/${action}`, {
+        method: 'POST',
+        json: body(v),
+      }),
+    onSuccess: (updated) => {
+      qc.setQueryData(routeCardsKeys.detail(updated.id), updated);
+      void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
+      void qc.invalidateQueries({ queryKey: routeCardsKeys.detail(updated.id) });
+      void qc.invalidateQueries({ queryKey: approvalsKeys.inbox() });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
+  });
+}
+
+export function useApproveRouteCard() {
+  return useRouteCardDecision<{ id: string; remarks?: string }>('approve', (v) =>
+    v.remarks ? { remarks: v.remarks } : {},
+  );
+}
+
+export function useRejectRouteCard() {
+  return useRouteCardDecision<{ id: string; reason: string }>('reject', (v) => ({
+    reason: v.reason,
+  }));
 }
