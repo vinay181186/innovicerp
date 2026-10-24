@@ -71,7 +71,7 @@ const NEEDS_PLANNING = '__needs_planning';
 // Status → the planning-dashboard KPI key that counts it (same keys the old
 // tiles read). Cancelled has no tile, so no count.
 const STATUS_KPI_KEY: Record<
-  PlanStatus | 'route_card_pending' | 'gen_production_order',
+  PlanStatus | 'route_card_pending' | 'route_card_approval_pending' | 'gen_production_order',
   string | undefined
 > = {
   in_planning: 'inPlanning',
@@ -82,6 +82,7 @@ const STATUS_KPI_KEY: Record<
   complete: 'complete',
   cancelled: undefined,
   route_card_pending: 'rcPending',
+  route_card_approval_pending: 'rcApprovalPending',
   gen_production_order: 'rcCreated',
 };
 
@@ -113,7 +114,9 @@ function PlansListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'plan_create');
   // The ⋯ menu's next steps: each one is the action that moves the plan out of
   // the state it shows, offered only to someone allowed to take it.
-  const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
+  const rcPerms = effectiveFormPerms(eff, 'routecard_create');
+  const canCreateRouteCard = rcPerms.entry;
+  const canViewRouteCard = rcPerms.view;
   const proPerms = effectiveFormPerms(eff, 'prodorder_create');
   const canProductionOrder = proPerms.entry;
   // Closing an order moves it to its next step — Advance, not Entry (ADR-231).
@@ -248,6 +251,12 @@ function PlansListPage(): React.JSX.Element {
               <option value="route_card_pending">
                 {withCount(DERIVED_LABEL.route_card_pending, STATUS_KPI_KEY.route_card_pending)}
               </option>
+              <option value="route_card_approval_pending">
+                {withCount(
+                  DERIVED_LABEL.route_card_approval_pending,
+                  STATUS_KPI_KEY.route_card_approval_pending,
+                )}
+              </option>
               <option value="gen_production_order">
                 {withCount(DERIVED_LABEL.gen_production_order, STATUS_KPI_KEY.gen_production_order)}
               </option>
@@ -333,6 +342,7 @@ function PlansListPage(): React.JSX.Element {
               rowMenu={(row) =>
                 planRowMenu(row, {
                   canCreateRouteCard,
+                  canViewRouteCard,
                   canProductionOrder,
                   canCloseProductionOrder,
                   canOpenJobCard,

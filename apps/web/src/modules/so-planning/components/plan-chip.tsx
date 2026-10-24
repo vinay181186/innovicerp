@@ -47,6 +47,7 @@ const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
 
 const DERIVED_STATUS_COLOR: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'var(--text3)',
+  route_card_approval_pending: 'var(--text3)', // ADR-253
   gen_production_order: 'var(--blue)',
   in_production: 'var(--amber)',
   production_complete: 'var(--green)',

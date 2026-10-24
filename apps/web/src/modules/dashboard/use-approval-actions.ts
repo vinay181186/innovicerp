@@ -12,10 +12,11 @@ import { approvalsKeys } from '@/modules/approvals/api';
 import { useDecideOpLogTimeChange } from '@/modules/op-entry/api';
 import { useApprovePurchaseOrder, useRejectPurchaseOrder } from '@/modules/purchase-orders/api';
 import { useApprovePr, useRejectPr } from '@/modules/purchase-requests/api';
+import { useApproveRouteCard, useRejectRouteCard } from '@/modules/route-cards/api';
 import { useToast } from '@/ui/feedback';
 import { dashboardKeys } from './api';
 
-export type InboxKind = 'pr' | 'po' | 'logEntry';
+export type InboxKind = 'pr' | 'po' | 'rc' | 'logEntry';
 export interface InboxItem {
   kind: InboxKind;
   row: ApprovalInboxRow;
@@ -36,6 +37,9 @@ export function useApprovalActions(presentKeys: string) {
   const approvePo = useApprovePurchaseOrder();
   const rejectPo = useRejectPurchaseOrder();
   const decideLog = useDecideOpLogTimeChange();
+  // ADR-253 — NEW Route Cards.
+  const approveRc = useApproveRouteCard();
+  const rejectRc = useRejectRouteCard();
   // Rows locked after a click until the refetch drops them — no double tick.
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -66,12 +70,14 @@ export function useApprovalActions(presentKeys: string) {
   async function approveOne(i: InboxItem): Promise<void> {
     if (i.kind === 'pr') await approvePr.mutateAsync(i.row.id);
     else if (i.kind === 'po') await approvePo.mutateAsync({ id: i.row.id });
+    else if (i.kind === 'rc') await approveRc.mutateAsync({ id: i.row.id });
     else await decideLog.mutateAsync({ id: i.row.id, decision: 'approve' });
   }
 
   async function rejectOne(i: InboxItem, reason: string): Promise<void> {
     if (i.kind === 'pr') await rejectPr.mutateAsync({ id: i.row.id, reason });
     else if (i.kind === 'po') await rejectPo.mutateAsync({ id: i.row.id, reason });
+    else if (i.kind === 'rc') await rejectRc.mutateAsync({ id: i.row.id, reason });
     else await decideLog.mutateAsync({ id: i.row.id, decision: 'reject', decisionReason: reason });
   }
 

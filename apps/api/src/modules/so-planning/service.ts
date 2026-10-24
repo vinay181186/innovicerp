@@ -55,6 +55,8 @@ import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/er
 import { derivePlanStatus } from '../../lib/plan-derived-status';
 import {
   PLAN_ACTIVE_ORDER_COUNT_SQL,
+  PLAN_HAS_ROUTE_CARD_SQL,
+  PLAN_HAS_USABLE_ROUTE_CARD_SQL,
   PLAN_LATEST_ORDER_CODE_SQL,
   PLAN_LATEST_ORDER_ID_SQL,
   PLAN_LATEST_ORDER_STATUS_SQL,
@@ -81,12 +83,11 @@ import { nextSeriesCode } from '../op-entry/osp-cascade';
 // orders now, and a LEFT JOIN on plan_id would return one copy of the plan per
 // order — the same plan would appear twice in the SO Planning pane. Every order
 // fact is a correlated scalar (lib/plan-order-coverage.ts) instead.
-const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
-  SELECT 1 FROM public.route_cards rc
-  WHERE rc.company_id = ${plans.companyId}
-    AND rc.item_id = ${plans.itemId}
-    AND rc.deleted_at IS NULL
-)`;
+//
+// ADR-253 — "has a live card" and "that card is approved" come from the ONE
+// shared fragment in lib/plan-order-coverage.ts, same as the Plans list.
+const HAS_ROUTE_CARD_SQL = PLAN_HAS_ROUTE_CARD_SQL;
+const ROUTE_CARD_USABLE_SQL = PLAN_HAS_USABLE_ROUTE_CARD_SQL;
 /** The ADR-170 fields every plan summary carries, from one row. */
 function routeCardPlanFields(r: {
   plan: typeof plans.$inferSelect;
@@ -94,6 +95,7 @@ function routeCardPlanFields(r: {
   poCode: string | null;
   poStatus: string | null;
   hasRouteCard: boolean | null;
+  routeCardUsable: boolean | null;
   activeOrderCount: number | null;
   openOrderCount: number | null;
   pendingQty: number | null;
@@ -115,6 +117,7 @@ function routeCardPlanFields(r: {
       opsSource: r.plan.opsSource,
       planStatus: r.plan.planStatus,
       hasRouteCard: Boolean(r.hasRouteCard),
+      routeCardUsable: Boolean(r.routeCardUsable),
       activeOrderCount: Number(r.activeOrderCount ?? 0),
       openOrderCount: Number(r.openOrderCount ?? 0),
       pendingQty: Number(r.pendingQty ?? 0),
@@ -627,6 +630,7 @@ export async function getPlanningSoDetail(
               openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
               pendingQty: PLAN_PENDING_QTY_SQL,
               hasRouteCard: HAS_ROUTE_CARD_SQL,
+              routeCardUsable: ROUTE_CARD_USABLE_SQL,
             })
             .from(plans)
             .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
@@ -1159,6 +1163,7 @@ async function getJwPlanningDetail(
             openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
             pendingQty: PLAN_PENDING_QTY_SQL,
             hasRouteCard: HAS_ROUTE_CARD_SQL,
+            routeCardUsable: ROUTE_CARD_USABLE_SQL,
           })
           .from(plans)
           .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
@@ -1526,6 +1531,7 @@ export async function getPlanningBom(
         openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
         pendingQty: PLAN_PENDING_QTY_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        routeCardUsable: ROUTE_CARD_USABLE_SQL,
       })
       .from(plans)
       .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))

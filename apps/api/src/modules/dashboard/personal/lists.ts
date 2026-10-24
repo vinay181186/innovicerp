@@ -25,6 +25,7 @@ import { poDraftSql, poOverdueSql, poToDcSql, prPendingSql, prToPoSql } from './
 import { bomPendingSql, planToProSql, soToPlanSql } from './rows-planning';
 import { jcRunningSql, opsReadySql, opsRunningSql } from './rows-production';
 import { capaMineSql, grnQcSql, qcReportMissingSql } from './rows-qc';
+import { rcPendingSql } from './rows-route-card';
 import { codePart, entityHref, runningStatus, shortDate, statusFor } from './util';
 
 export interface ListCtx {
@@ -37,7 +38,7 @@ type Right = readonly [AccessFormKey, AccessAction];
 type Candidate = Omit<DashAction, 'taskFor'>;
 
 export interface ListDef {
-  key: DashListKey | 'pr_pending' | 'po_draft';
+  key: DashListKey | 'pr_pending' | 'po_draft' | 'rc_pending';
   title: string;
   head: DashList['head'];
   href: string;
@@ -303,7 +304,7 @@ export const LIST_DEFS: readonly ListDef[] = [
 ];
 
 /** Waiting-for-approval sources (Sent for approval block) — not home lists. */
-export const APPROVAL_DEFS: Record<'pr_pending' | 'po_draft', ListDef> = {
+export const APPROVAL_DEFS: Record<'pr_pending' | 'po_draft' | 'rc_pending', ListDef> = {
   pr_pending: {
     ...LIST_DEFS.find((d) => d.key === 'pr_to_po')!,
     key: 'pr_pending',
@@ -318,6 +319,21 @@ export const APPROVAL_DEFS: Record<'pr_pending' | 'po_draft', ListDef> = {
     query: (c, f) => poDraftSql(c.cid, c.today, f),
     actions: () => [],
   },
+  // ADR-253 — a NEW Route Card waiting for its approver (Route Card Master
+  // Approve tick). No money and no due date: the status cell reads its age.
+  rc_pending: {
+    key: 'rc_pending',
+    title: 'Route Cards waiting for approval',
+    head: ['RC No.', 'Item', 'Ops', 'Status'],
+    href: '/route-cards',
+    rights: [['routecard_create', 'approve']],
+    priceForm: null,
+    query: (c, f) => rcPendingSql(c.cid, f),
+    docHref: (r) => `/route-cards/${r.id}`,
+    refType: () => 'route_card',
+    sub: () => [],
+    actions: () => [],
+  },
 };
 
 export const listDef = (key: string): ListDef | undefined => LIST_DEFS.find((d) => d.key === key);
@@ -330,12 +346,14 @@ export function holdsRights(a: DashAccess, d: ListDef): boolean {
   return d.rights.every(([form, action]) => hasTick(a, form, action));
 }
 
-/** Approvals block: shown to whoever may decide PRs, POs or log entries —
- *  the same ticks getApprovalInbox itself checks per section. */
+/** Approvals block: shown to whoever may decide PRs, POs, Route Cards
+ *  (ADR-253) or log entries — the same ticks getApprovalInbox itself checks
+ *  per section. */
 export function holdsAnyApprove(a: DashAccess): boolean {
   return (
     hasTick(a, 'pr_create', 'approve') ||
     hasTick(a, 'po_create', 'approve') ||
+    hasTick(a, 'routecard_create', 'approve') ||
     hasTick(a, 'op_entry', 'approve') ||
     hasTick(a, 'qc_submit', 'approve')
   );

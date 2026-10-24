@@ -5,6 +5,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useToast } from '@/ui/feedback';
 import { useCreateRouteCard } from '../api';
 import {
   RouteCardForm,
@@ -38,6 +39,7 @@ function RouteCardNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
+  const toast = useToast();
   const goBack = useCallback(() => void navigate({ to: '/route-cards' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
 
@@ -59,6 +61,8 @@ function RouteCardNewPage(): React.JSX.Element {
         planType: header.planType,
         ops: opsToInput(ops),
       });
+      // ADR-253 — every new card starts Pending Approval.
+      toast.ok('Route Card saved — sent for approval.');
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');

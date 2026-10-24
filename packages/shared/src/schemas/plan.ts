@@ -488,6 +488,8 @@ export const planningDashboardKpiSchema = z.object({
   /** ADR-185 — route-card plans waiting for a route card / for a Production
    *  Order. Every tile counts plans by the status their row shows. */
   rcPending: z.number().int().nonnegative().default(0),
+  /** ADR-253 — route-card plans whose item card is waiting for approval. */
+  rcApprovalPending: z.number().int().nonnegative().default(0),
   rcCreated: z.number().int().nonnegative().default(0),
 });
 export type PlanningDashboardKpi = z.infer<typeof planningDashboardKpiSchema>;

@@ -7,6 +7,7 @@
 //
 //   pr       — purchase-requests/approval-inbox.ts (approvePurchaseRequest's rules)
 //   po       — purchase-orders/approval-inbox.ts   (approvePurchaseOrder's rules)
+//   rc       — route-cards/approval-inbox.ts       (approveRouteCard's rules, ADR-253)
 //   logEntry — op-entry's pending date/time corrections (ADR-130), shown to
 //              whoever holds Approve on Operation Entry or QC Submit (ADR-232, D7)
 
@@ -20,6 +21,7 @@ import { selectTimeChangeRequests } from '../op-entry/service';
 import { decidableTimeChangeScope } from '../op-entry/time-change-page';
 import { listPoApprovalInbox, loadPoInboxAccess } from '../purchase-orders/approval-inbox';
 import { listPrApprovalInbox, loadPrInboxAccess } from '../purchase-requests/approval-inbox';
+import { listRcApprovalInbox, loadRcInboxAccess } from '../route-cards/approval-inbox';
 
 /** The most log-entry requests the list endpoint will return in one read. */
 const LOG_ENTRY_LIMIT = 200;
@@ -32,9 +34,10 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   // inside the inbox transaction below (see clients/related.ts).
   // Independent reads, so they run together (the access row is remembered for
   // the request, ADR-229).
-  const [prAccess, poAccess, opApprove, qcApprove] = await Promise.all([
+  const [prAccess, poAccess, rcAccess, opApprove, qcApprove] = await Promise.all([
     loadPrInboxAccess(user),
     loadPoInboxAccess(user),
+    loadRcInboxAccess(user),
     hasFormAccess(user, 'op_entry', 'approve'),
     hasFormAccess(user, 'qc_submit', 'approve'),
   ]);
@@ -46,6 +49,7 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   const prPo = withUserContext(user, async (tx) => ({
     pr: await listPrApprovalInbox(tx, companyId, user, prAccess),
     po: await listPoApprovalInbox(tx, companyId, user, poAccess),
+    rc: await listRcApprovalInbox(tx, companyId, rcAccess),
   }));
   // If the log-entry reads throw first, this must not become an unhandled
   // rejection (it would crash the process); its own error surfaces at the await.
@@ -95,11 +99,12 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
     }));
   }
 
-  const { pr, po } = await prPo;
+  const { pr, po, rc } = await prPo;
   return {
-    counts: { pr: pr.length, po: po.length, logEntry: logEntryCount },
+    counts: { pr: pr.length, po: po.length, logEntry: logEntryCount, rc: rc.length },
     pr,
     po,
     logEntry,
+    rc,
   };
 }

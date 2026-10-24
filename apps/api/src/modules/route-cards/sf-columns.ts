@@ -18,4 +18,7 @@ export const RC_SF_COLUMNS: SfColumnMap = {
   opCount: { sql: sql`COALESCE(op_agg.op_count, 0)`, type: 'num' },
   currentRevision: { sql: sql`rc.current_revision`, type: 'num' },
   updatedOn: { sql: sql`(rc.updated_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-253 — RC Status: pending / approved / rejected (stored values; the
+  // screen shows ROUTE_CARD_APPROVAL_LABEL).
+  approvalStatus: { sql: sql`rc.approval_status`, type: 'list' },
 };

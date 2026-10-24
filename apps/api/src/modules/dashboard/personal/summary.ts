@@ -10,6 +10,13 @@ export interface ListWithLate {
   lateTotal: number;
 }
 
+/** Everything waiting for the caller's sign-off — every inbox section,
+ *  Route Cards included (ADR-253). One sum for the cue and the headline. */
+export function toApproveCount(approvals: ApprovalInboxResponse): number {
+  const c = approvals.counts;
+  return c.pr + c.po + c.logEntry + (c.rc ?? 0);
+}
+
 export function buildCues(
   lists: readonly ListWithLate[],
   approvals: ApprovalInboxResponse | null,
@@ -25,7 +32,7 @@ export function buildCues(
     href: list.href,
   }));
   if (approvals) {
-    const n = approvals.counts.pr + approvals.counts.po + approvals.counts.logEntry;
+    const n = toApproveCount(approvals);
     cues.unshift({
       key: 'approvals',
       label: 'To approve',
@@ -55,9 +62,7 @@ export function buildHeadline(
   approvals: ApprovalInboxResponse | null,
 ): DashText {
   const out: DashText = [];
-  const toApprove = approvals
-    ? approvals.counts.pr + approvals.counts.po + approvals.counts.logEntry
-    : 0;
+  const toApprove = approvals ? toApproveCount(approvals) : 0;
   if (toApprove > 0)
     out.push({ text: `${plural(toApprove, 'document')} waiting for your approval. ` });
 

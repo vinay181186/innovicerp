@@ -93,6 +93,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
+import { assertRouteCardUsable } from '../../lib/route-card-usable';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { diffFields, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
@@ -1247,6 +1248,7 @@ export async function createProductionOrder(
           itemId: routeCards.itemId,
           currentRevision: routeCards.currentRevision,
           planType: routeCards.planType,
+          approvalStatus: routeCards.approvalStatus,
         })
         .from(routeCards)
         .where(
@@ -1256,7 +1258,13 @@ export async function createProductionOrder(
             isNull(routeCards.deletedAt),
           ),
         )
-        .limit(1);
+        .limit(1)
+        // ADR-253 / §20.3 — FOR SHARE so an Approve / Reject / edit-back-to-
+        // Pending of this card waits for this create to finish, and the
+        // approval status checked below is still the status when the order is
+        // inserted. Lock order stays plans → route_cards (plan locked above),
+        // the same order executePlan and updateRouteCard use.
+        .for('share');
       const rc = rcRows[0];
       if (!rc) {
         // Say whether the ITEM has a card at all, so the message tells the user
@@ -1282,6 +1290,9 @@ export async function createProductionOrder(
       if (rc.itemId !== itemId) {
         throw new ValidationError(`Route Card ${rc.code} is not for item ${itemLabel}.`);
       }
+      // ADR-253 — only an APPROVED Route Card may raise a Production Order. A
+      // Pending Approval / Rejected card is refused with a 409 naming it.
+      assertRouteCardUsable(rc);
 
       const rcOps = await tx
         .select()

@@ -4,6 +4,9 @@
 //   route_card_pending   → Create Route Card (one card per ITEM, reused by
 //                          every plan for that item — so it carries the item,
 //                          not the plan; the server refuses a second card)
+//   route_card_approval_pending → Open the Route Card (ADR-253: the item's
+//                          card exists but is not approved yet — a Production
+//                          Order is refused until it is; the step is the card)
 //   gen_production_order → Create Production Order (carries the plan; the
 //                          server caps it at the plan's Pending under a lock)
 
@@ -28,6 +31,15 @@ export function newRouteCardTo(plan: {
     itemCode: plan.itemCode ?? plan.itemCodeText,
     itemName: plan.itemName ?? plan.itemNameText,
   });
+}
+
+/** Route Card Master narrowed to the plan's item (its search covers item
+ *  code) — the plans carry no route-card id, so the list is the way in. */
+export function routeCardForItemTo(plan: {
+  itemCode?: string | null;
+  itemCodeText?: string | null;
+}): string {
+  return withQuery('/route-cards', { search: plan.itemCode ?? plan.itemCodeText });
 }
 
 /** New Production Order screen, plan pre-selected. */
