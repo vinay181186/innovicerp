@@ -87,6 +87,11 @@ export interface RouteCardFormOpDraft {
   // Resolved on machine-code change (or null when QC/OSP).
   machineId: string;
   machineCodeText: string; // displayed value; also stored as fallback
+  // DISPLAY-ONLY, never sent: the saved card's machine name and group code, so
+  // a copied/opened row still reads "CODE — Name" and its group even when that
+  // machine is not in the loaded machines list. Cleared when the user re-picks.
+  machineName?: string;
+  machineGroupCode?: string;
   operation: string;
   opType: RouteCardOpType;
   cycleTimeMin: string; // MINUTES per piece
@@ -160,6 +165,8 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
     machineGroupId: null,
     machineId: op.machineId ?? '',
     machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
+    machineName: op.machineName ?? '',
+    machineGroupCode: op.machineGroupCode ?? '',
     operation: op.operation,
     opType: op.opType,
     // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
@@ -175,6 +182,28 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
     ospVendorName: op.ospVendorName ?? '',
     ospLeadDays: op.ospLeadDays != null ? String(op.ospLeadDays) : '',
   }));
+}
+
+/** Group is display-only and not stored, so rows that arrive from a saved card
+ *  (Edit, or "Copy ops from Route Card…") hold a machine but no group. Fill the
+ *  group from the machine master for machine rows whose group is still blank;
+ *  a group the user picked (or cleared to "— None —" after arrival) is never
+ *  touched here, because this runs only when rows arrive or machines load.
+ *  Returns the same array when nothing changed. */
+function fillGroupsFromMachines(
+  rows: RouteCardFormOpDraft[],
+  machines: Machine[],
+): RouteCardFormOpDraft[] {
+  if (!machines.length) return rows;
+  let changed = false;
+  const next = rows.map((o) => {
+    if (o.opType !== 'process' || o.machineGroupId != null || !o.machineId) return o;
+    const m = machines.find((x) => x.id === o.machineId);
+    if (!m?.machineGroupId) return o;
+    changed = true;
+    return { ...o, machineGroupId: m.machineGroupId };
+  });
+  return changed ? next : rows;
 }
 
 /** A row counts as typed when ANY field the user fills is filled — not just
@@ -344,7 +373,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const opsRef = useRef(ops);
   opsRef.current = ops;
   const applyCopy = (detail: RouteCardDetail): void => {
-    setOps(detailOpsToDrafts(detail.ops));
+    // The machines list has usually loaded before a copy, so the "fill groups
+    // when machines load" effect below will not run again — fill them here.
+    setOps(fillGroupsFromMachines(detailOpsToDrafts(detail.ops), machinesList?.machines ?? []));
     setCopiedFrom({ id: detail.id, label: `${detail.code} Rev ${detail.currentRevision}` });
     setCopyFromId(detail.id);
   };
@@ -439,6 +470,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     updateOp(idx, {
       machineCodeText: code,
       machineId: match?.id ?? '',
+      machineName: '',
+      machineGroupCode: '',
       ...(current && current.machineGroupId == null && match?.machineGroupId
         ? { machineGroupId: match.machineGroupId }
         : {}),
@@ -458,28 +491,17 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     const mismatch = groupId != null && machine != null && machine.machineGroupId !== groupId;
     updateOp(idx, {
       machineGroupId: groupId,
-      ...(mismatch ? { machineId: '', machineCodeText: '' } : {}),
+      machineGroupCode: '',
+      ...(mismatch ? { machineId: '', machineCodeText: '', machineName: '' } : {}),
     });
   };
 
-  // Group is display-only and is not stored, so a card opened for editing has
-  // every row's group empty even though its machine belongs to one. Read it
-  // back off the master once the machine list is in, for rows that have a
-  // machine but no group yet.
+  // A card opened for editing has every row's group empty (see
+  // fillGroupsFromMachines). Fill them once the machine list is in.
   useEffect(() => {
     const rows = machinesList?.machines;
     if (!rows?.length) return;
-    setOps((prev) => {
-      let changed = false;
-      const next = prev.map((o) => {
-        if (o.opType !== 'process' || o.machineGroupId != null || !o.machineId) return o;
-        const m = rows.find((x) => x.id === o.machineId);
-        if (!m?.machineGroupId) return o;
-        changed = true;
-        return { ...o, machineGroupId: m.machineGroupId };
-      });
-      return changed ? next : prev;
-    });
+    setOps((prev) => fillGroupsFromMachines(prev, rows));
   }, [machinesList]);
 
   const onOpVendorChange = (idx: number, v: Vendor | null): void => {
