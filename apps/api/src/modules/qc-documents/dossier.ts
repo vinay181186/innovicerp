@@ -58,14 +58,14 @@ export async function listQcDossierOrders(
                  OR o.customer_name ILIKE ${term} ESCAPE '\\')`
       : sql``;
     const rs = (await tx.execute(sql`
-      SELECT x.kind, x.id, x.code, x.internal_so_no, x.customer_name FROM (
-        SELECT 'so' AS kind, o.id, o.code, o.internal_so_no, o.customer_name,
+      SELECT x.kind, x.id, x.code, x.internal_so_no, x.client_po_no, x.customer_name FROM (
+        SELECT 'so' AS kind, o.id, o.code, o.internal_so_no, o.client_po_no, o.customer_name,
                o.so_date AS order_date, o.created_at
         FROM public.sales_orders o
         WHERE o.company_id = ${cid}::uuid AND o.deleted_at IS NULL AND o.status <> 'cancelled'
           ${soMatch}
         UNION ALL
-        SELECT 'jwso', o.id, o.code, NULL::text, o.customer_name, o.jw_date, o.created_at
+        SELECT 'jwso', o.id, o.code, NULL::text, o.client_po_no, o.customer_name, o.jw_date, o.created_at
         FROM public.job_work_orders o
         WHERE o.company_id = ${cid}::uuid AND o.deleted_at IS NULL AND o.status <> 'cancelled'
           ${jwMatch}
@@ -79,6 +79,7 @@ export async function listQcDossierOrders(
         id: String(r['id']),
         code: String(r['code']),
         internalSoNo: (r['internal_so_no'] as string | null) ?? null,
+        clientPoNo: (r['client_po_no'] as string | null) ?? null,
         customerName: (r['customer_name'] as string | null) ?? null,
       })),
     };
