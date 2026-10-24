@@ -39,6 +39,7 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { routeCardUnusableMessage } from '../../lib/route-card-usable';
 import { emitActivityLog } from '../activity-log/service';
 import { createPlanInTx } from '../plans/service';
 import { insertPurchaseRequestTx } from '../purchase-requests/service';
@@ -108,24 +109,44 @@ async function readNodes(
   return out;
 }
 
-/** Route Card facts per item: its plan type and how many live ops it has. */
+/** Route Card facts per item: its code, plan type, how many live ops it has,
+ *  and (ADR-253) its approval status — only an approved card may raise. */
+interface RouteCardFacts {
+  code: string;
+  planType: string;
+  opCount: number;
+  approvalStatus: string;
+}
+
 async function readRouteCards(
   tx: DbTransaction,
   companyId: string,
   itemIds: readonly string[],
-): Promise<Map<string, { planType: string; opCount: number }>> {
-  const out = new Map<string, { planType: string; opCount: number }>();
+): Promise<Map<string, RouteCardFacts>> {
+  const out = new Map<string, RouteCardFacts>();
   if (itemIds.length === 0) return out;
   const rows = (await tx.execute(sql`
-    SELECT rc.item_id, rc.plan_type::text AS plan_type,
+    SELECT rc.item_id, rc.code, rc.plan_type::text AS plan_type,
+           rc.approval_status::text AS approval_status,
            (SELECT COUNT(*)::int FROM public.route_card_ops o
             WHERE o.route_card_id = rc.id AND o.deleted_at IS NULL) AS op_count
     FROM public.route_cards rc
     WHERE rc.company_id = ${companyId}::uuid AND rc.deleted_at IS NULL
       AND rc.item_id = ANY(${sql.param(Array.from(new Set(itemIds)))}::uuid[])
-  `)) as unknown as Array<{ item_id: string; plan_type: string; op_count: number }>;
+  `)) as unknown as Array<{
+    item_id: string;
+    code: string;
+    plan_type: string;
+    approval_status: string;
+    op_count: number;
+  }>;
   for (const r of rows) {
-    out.set(String(r.item_id), { planType: String(r.plan_type), opCount: Number(r.op_count) });
+    out.set(String(r.item_id), {
+      code: String(r.code),
+      planType: String(r.plan_type),
+      opCount: Number(r.op_count),
+      approvalStatus: String(r.approval_status),
+    });
   }
   return out;
 }
@@ -289,7 +310,10 @@ export async function raiseMlPlanOrdersTx(
     }
     if (kind === 'plan') {
       const card = cards.get(node.itemId);
+      // ADR-253 — a card waiting for approval (or rejected) may not raise.
+      const unusable = card ? routeCardUnusableMessage(card) : null;
       if (!card) blocked.push(`${item} has no Route Card — make one first.`);
+      else if (unusable) blocked.push(`${item}: ${unusable}`);
       else if (card.opCount === 0) {
         blocked.push(`${item}'s Route Card has no operations — add them first.`);
       } else if (card.planType === 'direct_purchase') {

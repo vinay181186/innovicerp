@@ -31,6 +31,12 @@ import { TabStrip } from '@/ui/navigation';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
 import { useDeleteRouteCard, useRouteCard } from '../api';
+import {
+  RcApprovalActions,
+  RcApprovalBanner,
+  rcApprovalLine,
+} from '../components/rc-approval-actions';
+import { RcApprovalBadge } from '../components/rc-approval-badge';
 import { RouteCardOpsTable } from '../components/route-card-ops-table';
 import { RouteCardRevisionHistory } from '../components/route-card-revision-history';
 import { printRouteCard } from '../lib/print-route-card';
@@ -144,7 +150,10 @@ function RouteCardDetailPage(): React.JSX.Element {
         </span>
         <span className="panel-title">Route Card</span>
         <span className="badge b-blue">Route Card Rev {detail.currentRevision}</span>
+        <RcApprovalBadge status={detail.approvalStatus} />
         <span style={{ flex: 1 }} />
+        {/* ADR-253 — Approve / Reject a pending card (Approve tick only). */}
+        <RcApprovalActions detail={detail} canApprove={perms.approve} />
         <button type="button" className="btn btn-ghost" onClick={onPrint}>
           <Eye size={13} /> Preview
         </button>
@@ -175,6 +184,7 @@ function RouteCardDetailPage(): React.JSX.Element {
         )}
       </div>
 
+      <RcApprovalBanner detail={detail} />
       {hasPendingEdit ? (
         <div style={{ marginBottom: 'var(--panel-gap)' }}>
           <Banner tone="info" role="status" flush>
@@ -249,6 +259,13 @@ function RouteCardDetailPage(): React.JSX.Element {
               value={detail.rmQtyPerPiece == null ? '—' : String(detail.rmQtyPerPiece)}
             />
           </Cluster>
+
+          {/* ADR-253 — who decided this card, and when. */}
+          {detail.approvalStatus !== 'pending' ? (
+            <Cluster name="Approval">
+              <ClusterFact span={4} wrap label="RC Status" value={rcApprovalLine(detail)} />
+            </Cluster>
+          ) : null}
 
           <Cluster name="Notes">
             <ClusterFact

@@ -52,7 +52,7 @@ export const approvalsRoute = createRoute({
 // DOCUMENT_EDIT_LABEL (JWSO is the registered name for Job Work Order; Client →
 // Customer, etc.).
 type TabDef =
-  | { key: 'pr' | 'po'; kind: 'inbox'; section: 'pr' | 'po'; label: string }
+  | { key: 'pr' | 'po' | 'rc'; kind: 'inbox'; section: 'pr' | 'po' | 'rc'; label: string }
   | { key: 'logEntry'; kind: 'opEntry'; label: string }
   | { key: 'masters'; kind: 'masters'; label: string }
   | { key: 'cancel'; kind: 'cancel'; label: string }
@@ -61,7 +61,7 @@ type TabDef =
 type MasterEntity = (typeof DOCUMENT_EDIT_MASTER_ENTITIES)[number];
 const MASTER_SET: ReadonlySet<DocumentEditEntity> = new Set(DOCUMENT_EDIT_MASTER_ENTITIES);
 
-// PR · PO · (edit documents) · Masters · Op Entry — the order the owner named.
+// PR · PO · Route Card (New) · (edit documents) · Masters · Op Entry — the order the owner named.
 // PR is the stable default (always present), so the page never has to index an
 // array.
 const PR_TAB: TabDef = { key: 'pr', kind: 'inbox', section: 'pr', label: 'PR' };
@@ -69,6 +69,9 @@ const PR_TAB: TabDef = { key: 'pr', kind: 'inbox', section: 'pr', label: 'PR' };
 const FIXED_TABS: TabDef[] = [
   PR_TAB,
   { key: 'po', kind: 'inbox', section: 'po', label: 'PO' },
+  // ADR-253 — NEW Route Cards waiting for approval. Named apart from the
+  // "Route Card" edit tab below (changes to an approved card).
+  { key: 'rc', kind: 'inbox', section: 'rc', label: 'Route Card (New)' },
   ...DOCUMENT_EDIT_ENTITIES.filter((e) => !MASTER_SET.has(e)).map(
     (entity): TabDef => ({
       key: `doc:${entity}`,

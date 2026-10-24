@@ -31,6 +31,9 @@ export interface PlanDerivedStatusInput {
   planStatus: string;
   /** True when the plan's item has an active (not deleted) route card. */
   hasRouteCard: boolean;
+  /** ADR-253 — true when that live route card is APPROVED (may drive work).
+   *  A live card that is Pending Approval / Rejected gives false. */
+  routeCardUsable: boolean;
   /** ADR-182 — how many LIVE, non-short-closed Production Orders the plan has.
    *  Kept for callers; since ADR-184 the status no longer branches on it. */
   activeOrderCount: number;
@@ -52,7 +55,9 @@ export interface PlanDerivedStatusInput {
  *                                      a plan with live work is in production
  *                                      even if the Route Card has since gone.
  *   2. Pending > 0 (nothing being made) → route card missing?
- *                                      'route_card_pending' else
+ *                                      'route_card_pending'; live but not
+ *                                      approved (ADR-253)?
+ *                                      'route_card_approval_pending'; else
  *                                      'gen_production_order'. This covers a
  *                                      plan with no order yet AND a plan whose
  *                                      orders all stopped short: an order that
@@ -73,7 +78,9 @@ export function derivePlanStatus(input: PlanDerivedStatusInput): PlanDerivedStat
   if (input.planStatus === 'cancelled') return null;
   if (input.openOrderCount > 0) return 'in_production';
   if (input.pendingQty > 0) {
-    return input.hasRouteCard ? 'gen_production_order' : 'route_card_pending';
+    if (!input.hasRouteCard) return 'route_card_pending';
+    // ADR-253 — a card that exists but is not approved may not raise an order.
+    return input.routeCardUsable ? 'gen_production_order' : 'route_card_approval_pending';
   }
   return 'production_complete';
 }

@@ -97,6 +97,8 @@ import {
 import {
   PLAN_ACTIVE_ORDER_COUNT_SQL,
   PLAN_COVERED_QTY_SQL,
+  PLAN_HAS_ROUTE_CARD_SQL,
+  PLAN_HAS_USABLE_ROUTE_CARD_SQL,
   PLAN_LATEST_ORDER_CODE_SQL,
   PLAN_LATEST_ORDER_ID_SQL,
   PLAN_LATEST_ORDER_STATUS_SQL,
@@ -105,6 +107,7 @@ import {
   planDerivedStatusSql,
   readPlanOrderCoverage,
 } from '../../lib/plan-order-coverage';
+import { isRouteCardUsable } from '../../lib/route-card-usable';
 import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
@@ -368,14 +371,15 @@ const SO_LINE_CLIENT_PO_LINE_NO = polOf(
 // several live orders, and a LEFT JOIN on plan_id would return one copy of the
 // plan row per order. Every order fact is read as a correlated scalar instead
 // (lib/plan-order-coverage.ts), so the list is one row per plan again.
-const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
-  SELECT 1 FROM public.route_cards rc
-  WHERE rc.company_id = ${plans.companyId}
-    AND rc.item_id = ${plans.itemId}
-    AND rc.deleted_at IS NULL
-)`;
+//
+// ADR-253 — the route-card facts come from ONE shared fragment
+// (lib/plan-order-coverage.ts PLAN_ROUTE_CARD_USABLE_SQL): "has a live card"
+// and "that card is approved" are both read off it, so a Pending Approval card
+// shows 'route_card_approval_pending', never 'gen_production_order'.
+const HAS_ROUTE_CARD_SQL = PLAN_HAS_ROUTE_CARD_SQL;
+const ROUTE_CARD_USABLE_SQL = PLAN_HAS_USABLE_ROUTE_CARD_SQL;
 
-const DERIVED_STATUS_SQL = planDerivedStatusSql(HAS_ROUTE_CARD_SQL);
+const DERIVED_STATUS_SQL = planDerivedStatusSql();
 
 /** ADR-193 phase 3a — the plan's raw-material item code, for display. A scalar
  *  so it cannot multiply the plan row; no deleted_at filter, so a plan keeps
@@ -489,6 +493,7 @@ export async function listPlans(
         // Close only when the card is actually finished.
         jcStatus: sql<string | null>`jcs.computed_status`,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        routeCardUsable: ROUTE_CARD_USABLE_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
         mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
         soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
@@ -568,6 +573,7 @@ export async function listPlans(
             opsSource: r.plan.opsSource,
             planStatus: r.plan.planStatus,
             hasRouteCard,
+            routeCardUsable: Boolean(r.routeCardUsable),
             activeOrderCount: Number(r.activeOrderCount ?? 0),
             openOrderCount: Number(r.openOrderCount ?? 0),
             pendingQty: Number(r.pendingQty ?? 0),
@@ -624,6 +630,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
         openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        routeCardUsable: ROUTE_CARD_USABLE_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
         mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
         soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
@@ -666,6 +673,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         opsSource: row.plan.opsSource,
         planStatus: row.plan.planStatus,
         hasRouteCard: Boolean(row.hasRouteCard),
+        routeCardUsable: Boolean(row.routeCardUsable),
         activeOrderCount: Number(row.activeOrderCount ?? 0),
         openOrderCount: Number(row.openOrderCount ?? 0),
         pendingQty: Number(row.pendingQty ?? 0),
@@ -1929,6 +1937,7 @@ export async function getDefaultRouteOpsForItem(
         id: routeCards.id,
         code: routeCards.code,
         currentRevision: routeCards.currentRevision,
+        approvalStatus: routeCards.approvalStatus,
         rawMaterialGradeId: routeCards.rawMaterialGradeId,
         rawMaterialGradeText: routeCards.rawMaterialGradeText,
         rawMaterialSizeId: routeCards.rawMaterialSizeId,
@@ -1986,17 +1995,21 @@ export async function getDefaultRouteOpsForItem(
       outsourceCost: 0,
     }));
 
+    // ADR-253: ops may prefill from any live card, but raw material reaches a
+    // plan / Job Card only from an APPROVED card (the readRouteCardRawMaterial
+    // rule) — a pending or rejected card's RM stays on the card.
+    const rmOk = isRouteCardUsable(rc.approvalStatus);
     return {
       ops: mapped,
       routeCardCode: rc.code,
       routeCardRevision: rc.currentRevision,
-      rawMaterialGradeId: rc.rawMaterialGradeId,
-      rawMaterialGradeText: rc.rawMaterialGradeText,
-      rawMaterialSizeId: rc.rawMaterialSizeId,
-      rawMaterialSizeText: rc.rawMaterialSizeText,
-      rawMaterialItemId: rc.rawMaterialItemId,
-      rawMaterialItemCode: rc.rawMaterialItemCode ?? null,
-      rmQtyPerPiece: rc.rmQtyPerPiece,
+      rawMaterialGradeId: rmOk ? rc.rawMaterialGradeId : null,
+      rawMaterialGradeText: rmOk ? rc.rawMaterialGradeText : null,
+      rawMaterialSizeId: rmOk ? rc.rawMaterialSizeId : null,
+      rawMaterialSizeText: rmOk ? rc.rawMaterialSizeText : null,
+      rawMaterialItemId: rmOk ? rc.rawMaterialItemId : null,
+      rawMaterialItemCode: rmOk ? (rc.rawMaterialItemCode ?? null) : null,
+      rmQtyPerPiece: rmOk ? rc.rmQtyPerPiece : null,
     };
   });
 }
@@ -2773,6 +2786,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         prCreated: byStatus.get('pr_created') ?? 0,
         inProduction: byStatus.get('in_production') ?? 0,
         rcPending: byStatus.get('route_card_pending') ?? 0,
+        rcApprovalPending: byStatus.get('route_card_approval_pending') ?? 0,
         rcCreated: byStatus.get('gen_production_order') ?? 0,
         complete: byStatus.get('complete') ?? 0,
       },
@@ -2856,6 +2870,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
       openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
       hasRouteCard: HAS_ROUTE_CARD_SQL,
+      routeCardUsable: ROUTE_CARD_USABLE_SQL,
       rmItemCode: PLAN_RM_ITEM_CODE_SQL,
       mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
       soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
@@ -2899,6 +2914,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       opsSource: row.plan.opsSource,
       planStatus: row.plan.planStatus,
       hasRouteCard: Boolean(row.hasRouteCard),
+      routeCardUsable: Boolean(row.routeCardUsable),
       activeOrderCount: Number(row.activeOrderCount ?? 0),
       openOrderCount: Number(row.openOrderCount ?? 0),
       pendingQty: Number(row.pendingQty ?? 0),

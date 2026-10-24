@@ -5,7 +5,10 @@
 //   route_card_pending   — the item has no active Route Card yet, so no
 //                          Production Order can be raised ("no route card, no
 //                          way forward").
-//   gen_production_order — Route Card exists, no Production Order yet.
+//   route_card_approval_pending — ADR-253: the item's Route Card exists but
+//                          is Pending Approval / Rejected, so it may not be
+//                          used yet.
+//   gen_production_order — an APPROVED Route Card exists, no Production Order yet.
 //   in_production        — Production Order is open (Job Card in progress or
 //                          complete but not yet closed).
 //   production_complete  — Production Order closed; stock credited.
@@ -14,6 +17,7 @@
 // `plan_status` label unchanged.
 export const PLAN_DERIVED_STATUSES = [
   'route_card_pending',
+  'route_card_approval_pending',
   'gen_production_order',
   'in_production',
   'production_complete',
@@ -22,6 +26,7 @@ export type PlanDerivedStatus = (typeof PLAN_DERIVED_STATUSES)[number];
 
 export const PLAN_DERIVED_STATUS_LABEL: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'Route card pending',
+  route_card_approval_pending: 'Route card awaiting approval',
   gen_production_order: 'Gen production order',
   in_production: 'In production',
   production_complete: 'Production complete',

@@ -1498,8 +1498,9 @@ input[type='radio'] {
   border: 0;
   border-radius: var(--radius);
   background: transparent;
-  color: var(--text3);
+  color: var(--text2);
   font-size: var(--fs-sm);
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }

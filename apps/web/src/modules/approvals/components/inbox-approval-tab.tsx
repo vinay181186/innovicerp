@@ -19,11 +19,9 @@ import { useNavigate } from '@tanstack/react-router';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import {
-  useApprovePurchaseOrder,
-  useRejectPurchaseOrder,
-} from '@/modules/purchase-orders/api';
+import { useApprovePurchaseOrder, useRejectPurchaseOrder } from '@/modules/purchase-orders/api';
 import { useApprovePr, useRejectPr } from '@/modules/purchase-requests/api';
+import { useApproveRouteCard, useRejectRouteCard } from '@/modules/route-cards/api';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
@@ -31,17 +29,28 @@ import { approvalsKeys, useApprovalInboxList } from '../api';
 import { ApprovalTab, type ApprovalView } from './approval-tab';
 import { prPoColumns } from './pr-po-columns';
 
-type Section = 'pr' | 'po';
+type Section = 'pr' | 'po' | 'rc';
 
-const TITLE: Record<Section, string> = { pr: 'PR Approvals', po: 'PO Approvals' };
-const NOUN: Record<Section, string> = { pr: 'request', po: 'order' };
+const TITLE: Record<Section, string> = {
+  pr: 'PR Approvals',
+  po: 'PO Approvals',
+  rc: 'Route Card Approvals',
+};
+const NOUN: Record<Section, string> = { pr: 'request', po: 'order', rc: 'card' };
+const DOC_PLURAL: Record<Section, string> = {
+  pr: 'Purchase Requests',
+  po: 'Purchase Orders',
+  rc: 'Route Cards',
+};
 const EMPTY_PENDING: Record<Section, string> = {
   pr: 'No Purchase Requests waiting for your approval.',
   po: 'No Purchase Orders waiting for your approval.',
+  rc: 'No new Route Cards waiting for your approval.',
 };
 const NO_MATCH: Record<Section, string> = {
   pr: 'No Purchase Requests match.',
   po: 'No Purchase Orders match.',
+  rc: 'No Route Cards match.',
 };
 
 /** ₹ before GST, formatted like the amount column. */
@@ -50,19 +59,37 @@ const fmtAmount = (n: number): string =>
 
 /** The ▸ read-only summary (requirement E): the document's figures from the
  *  inbox row — vendor, item, qty, amount, who raised it and when. */
-function InboxSummary({ r, section }: { r: ApprovalInboxRow; section: Section }): React.JSX.Element {
-  const items: Array<[string, React.ReactNode]> = [
-    ['Vendor', r.vendorName ?? '—'],
-    ['Item Code', r.itemCode ?? '—'],
-    ['Item Name', r.itemName ?? '—'],
-    [section === 'pr' ? 'PR Qty' : 'PO Qty', r.docQty == null ? '—' : r.docQty.toLocaleString('en-IN')],
-    [
-      section === 'pr' ? 'Est. Amount' : 'Subtotal',
-      r.docAmount == null ? '—' : fmtAmount(r.docAmount),
-    ],
-    ['Raised By', r.createdByName ?? '—'],
-    ['Raised On', fmtDate(r.createdAt)],
-  ];
+function InboxSummary({
+  r,
+  section,
+}: {
+  r: ApprovalInboxRow;
+  section: Section;
+}): React.JSX.Element {
+  // A Route Card has no vendor, qty or amount (ADR-253).
+  const items: Array<[string, React.ReactNode]> =
+    section === 'rc'
+      ? [
+          ['Item Code', r.itemCode ?? '—'],
+          ['Item Name', r.itemName ?? '—'],
+          ['Created By', r.createdByName ?? '—'],
+          ['Created At', fmtDate(r.createdAt)],
+        ]
+      : [
+          ['Vendor', r.vendorName ?? '—'],
+          ['Item Code', r.itemCode ?? '—'],
+          ['Item Name', r.itemName ?? '—'],
+          [
+            section === 'pr' ? 'PR Qty' : 'PO Qty',
+            r.docQty == null ? '—' : r.docQty.toLocaleString('en-IN'),
+          ],
+          [
+            section === 'pr' ? 'Est. Amount' : 'Subtotal',
+            r.docAmount == null ? '—' : fmtAmount(r.docAmount),
+          ],
+          ['Raised By', r.createdByName ?? '—'],
+          ['Raised On', fmtDate(r.createdAt)],
+        ];
   return (
     <div
       style={{
@@ -139,6 +166,8 @@ export function InboxApprovalTab({
   const rejectPr = useRejectPr();
   const approvePo = useApprovePurchaseOrder();
   const rejectPo = useRejectPurchaseOrder();
+  const approveRc = useApproveRouteCard();
+  const rejectRc = useRejectRouteCard();
   const refreshInbox = (): void => {
     void qc.invalidateQueries({ queryKey: approvalsKeys.inbox() });
   };
@@ -161,7 +190,11 @@ export function InboxApprovalTab({
       title={TITLE[section]}
       noun={NOUN[section]}
       count={pending && !list.isLoading ? total : undefined}
-      searchPlaceholder="Search number, vendor, item, raised by…"
+      searchPlaceholder={
+        section === 'rc'
+          ? 'Search RC no., item code, item name, created by…'
+          : 'Search number, vendor, item, raised by…'
+      }
       term={term}
       onSearch={setTerm}
       searching={q !== undefined || sf.filtering}
@@ -179,7 +212,7 @@ export function InboxApprovalTab({
       isError={pending && list.isError}
       errorMessage={list.error instanceof Error ? list.error.message : undefined}
       emptyPending={EMPTY_PENDING[section]}
-      emptyDecided={`Decided ${section === 'pr' ? 'Purchase Requests' : 'Purchase Orders'} are not listed here — each document's History tab shows who approved or rejected it, and when.`}
+      emptyDecided={`Decided ${DOC_PLURAL[section]} are not listed here — each document's History tab shows who approved or rejected it, and when.`}
       emptyNoMatch={NO_MATCH[section]}
       {...(pending ? { sortFilterServer: sf } : {})}
       renderExpanded={(r) => (expanded.has(r.id) ? <InboxSummary r={r} section={section} /> : null)}
@@ -198,11 +231,13 @@ export function InboxApprovalTab({
       }
       approveRow={async (r) => {
         if (section === 'pr') await approvePr.mutateAsync(r.id);
+        else if (section === 'rc') await approveRc.mutateAsync({ id: r.id });
         else await approvePo.mutateAsync({ id: r.id });
         refreshInbox();
       }}
       rejectRow={async (r, reason) => {
         if (section === 'pr') await rejectPr.mutateAsync({ id: r.id, reason });
+        else if (section === 'rc') await rejectRc.mutateAsync({ id: r.id, reason });
         else await rejectPo.mutateAsync({ id: r.id, reason });
         refreshInbox();
       }}

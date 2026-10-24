@@ -168,6 +168,8 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
           id: `${o.kind}:${o.id}`,
           code: o.internalSoNo ? `${o.code} · ${o.internalSoNo}` : o.code,
           name: o.customerName ?? '',
+          // The server also matched Client PO No.; keep that row through the box's own filter.
+          searchText: o.clientPoNo,
         }))}
       />
     </div>
@@ -197,10 +199,14 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
         )
       }
       filtersActive={!!orderId && term.trim() !== ''}
-      onClearFilters={() => {
-        setTerm('');
-        void navigate({ search: (p) => ({ ...p, search: undefined }), replace: true });
-      }}
+      onClearFilters={
+        !orderId
+          ? undefined
+          : () => {
+              setTerm('');
+              void navigate({ search: (p) => ({ ...p, search: undefined }), replace: true });
+            }
+      }
       tools={
         <>
           {toggle}

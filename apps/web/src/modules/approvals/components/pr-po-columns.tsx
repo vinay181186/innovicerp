@@ -22,9 +22,10 @@ const fmtAmount = (n: number): string =>
  * exactly as the old table did.
  */
 export function prPoColumns(
-  section: 'pr' | 'po',
+  section: 'pr' | 'po' | 'rc',
   showAmount: boolean,
 ): DataTableColumn<ApprovalInboxRow>[] {
+  if (section === 'rc') return rcColumns();
   return [
     {
       id: 'doc_code',
@@ -100,6 +101,58 @@ export function prPoColumns(
       sortFilterField: 'createdAt',
       kind: 'date',
       header: 'Raised On',
+      render: (r) => fmtDate(r.createdAt),
+    },
+  ];
+}
+
+/** ADR-253 — NEW Route Cards waiting for approval: no vendor, qty or amount. */
+function rcColumns(): DataTableColumn<ApprovalInboxRow>[] {
+  return [
+    {
+      id: 'doc_code',
+      sortFilterField: 'docCode',
+      kind: 'code',
+      header: 'RC No.',
+      className: 'mono fw-700',
+      render: (r) => r.docCode,
+      title: (r) => r.docCode,
+    },
+    {
+      id: 'item_code',
+      sortFilterField: 'itemCode',
+      kind: 'code',
+      header: 'Item Code',
+      className: 'mono fw-700',
+      render: (r) =>
+        r.itemCode ? <span style={{ color: 'var(--text)' }}>{r.itemCode}</span> : '—',
+    },
+    {
+      id: 'item_name',
+      sortFilterField: 'itemName',
+      kind: 'text',
+      header: 'Item Name',
+      align: 'left',
+      ellipsis: true,
+      className: 'text3',
+      render: (r) => r.itemName ?? '—',
+      title: (r) => r.itemName ?? '',
+    },
+    {
+      id: 'created_by',
+      sortFilterField: 'createdByName',
+      kind: 'text',
+      header: 'Created By',
+      align: 'left',
+      ellipsis: true,
+      render: (r) => r.createdByName ?? '—',
+      title: (r) => r.createdByName ?? '',
+    },
+    {
+      id: 'created_at',
+      sortFilterField: 'createdAt',
+      kind: 'date',
+      header: 'Created At',
       render: (r) => fmtDate(r.createdAt),
     },
   ];

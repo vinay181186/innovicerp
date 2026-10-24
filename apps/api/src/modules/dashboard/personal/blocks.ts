@@ -138,7 +138,8 @@ async function ownRows(
   return { rows: out, total };
 }
 
-/** PRs (open) and POs (draft) the caller raised, waiting for an approver —
+/** PRs (open), POs (draft) and new Route Cards (pending, ADR-253) the caller
+ *  raised, waiting for an approver —
  *  named by the same eligibility the approval inbox applies. */
 export async function sentForApproval(
   tx: DbTransaction,
@@ -163,7 +164,16 @@ export async function sentForApproval(
     (r) => holders.poApproversFor(r.amount ?? 0),
     canRemind,
   );
-  return [...pr.rows, ...po.rows];
+  // ADR-253 — new Route Cards the caller made, waiting for an approver.
+  const rcRows = await ownRows(
+    tx,
+    APPROVAL_DEFS.rc_pending,
+    c,
+    rc,
+    () => holders.of('routecard_create', 'approve'),
+    canRemind,
+  );
+  return [...pr.rows, ...po.rows, ...rcRows.rows];
 }
 
 /** The hand-offs the Waiting block follows (approved PR → PO, JW PO → DC,

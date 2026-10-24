@@ -210,6 +210,44 @@ describe('notifications', () => {
     );
     expect(got.map((g) => g.ev.id)).toEqual(['a']);
   });
+
+  it('ADR-253 Route Card: approvers hear a card return to pending; the creator hears the decision', () => {
+    const rc = { entity: 'RouteCard', refId: 'IN-RC-00009', entityId: 'rc1' };
+    // Approver (planning L4): created, resubmitted (RC Status → Pending Approval) and restored.
+    const approverRules = notes.rulesFor(dash({ departments: { planning: 'L4' } }));
+    const forApprover = notes.candidates(
+      [
+        ev({ id: 'new', ...rc, action: 'CREATE' }),
+        ev({ id: 'resent', ...rc, action: 'EDIT', toPending: true }),
+        ev({ id: 'plain-edit', ...rc, action: 'EDIT', toPending: false }),
+        ev({ id: 'restored', ...rc, action: 'RESTORE' }),
+      ],
+      approverRules,
+      'me',
+    );
+    expect(forApprover.filter((g) => g.rule.open === 'approval_rc').map((g) => g.ev.id)).toEqual([
+      'new',
+      'resent',
+      'restored',
+    ]);
+
+    // Creator with only View on Route Card Master: told of the reject (with its
+    // reason) and of the approval.
+    const viewerRules = notes.rulesFor(dash({ departments: { planning: 'L1' } }));
+    const forCreator = notes.candidates(
+      [
+        ev({ id: 'rej', ...rc, action: 'REJECT', reason: 'Wrong machine' }),
+        ev({ id: 'ok', ...rc, action: 'APPROVE' }),
+      ],
+      viewerRules,
+      'me',
+    );
+    const rej = forCreator.find((g) => g.ev.id === 'rej')!;
+    expect(rej.rule.open).toBe('raiser_rc');
+    expect(rej.rule.withReason).toBe(true);
+    expect(rej.ev.reason).toBe('Wrong machine');
+    expect(forCreator.find((g) => g.ev.id === 'ok')!.rule.open).toBe('raiser_rc_approved');
+  });
 });
 
 describe('seen time', () => {
