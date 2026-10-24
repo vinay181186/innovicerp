@@ -19,6 +19,7 @@ export type PlanStatus = (typeof PLAN_STATUSES)[number];
 export const PLAN_EFFECTIVE_STATUSES = [
   ...PLAN_STATUSES,
   'route_card_pending',
+  'route_card_approval_pending',
   'gen_production_order',
 ] as const;
 

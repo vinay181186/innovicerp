@@ -160,6 +160,7 @@ export * from './enums/activity';
 export * from './enums/production-order-status';
 export * from './enums/plan-ops-source';
 export * from './enums/plan-derived-status';
+export * from './enums/route-card-approval';
 export * from './schemas/access-control';
 export * from './schemas/approval-config';
 export * from './schemas/document-edit';
