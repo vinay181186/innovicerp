@@ -10,10 +10,17 @@
 // with the first one's row.
 
 import type { CreateQcDocumentInput } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { useSaveKey } from '@/lib/use-save-key';
-import { QC_REPORT_ACCEPT, QC_REPORT_MAX_BYTES, uploadQcFile, useCreateQcDocument } from '../api';
+import {
+  QC_REPORT_ACCEPT,
+  QC_REPORT_MAX_BYTES,
+  qcDocumentsKeys,
+  uploadQcFile,
+  useCreateQcDocument,
+} from '../api';
 
 /** What the picked file belongs to. */
 export type UploadTarget =
@@ -22,13 +29,27 @@ export type UploadTarget =
 
 const ALLOWED = QC_REPORT_ACCEPT.split(',');
 
+/** One key per upload slot: a QC entry, or a report folder on one POL. */
+export function uploadSlotKey(
+  t:
+    | { opLogId: string }
+    | { reportTypeId: string; soLineId?: string | undefined; jwLineId?: string | undefined },
+): string {
+  return 'opLogId' in t
+    ? `op:${t.opLogId}`
+    : `rt:${t.reportTypeId}:${t.soLineId ?? ''}:${t.jwLineId ?? ''}`;
+}
+
 export function useDossierUpload(): {
   start: (t: UploadTarget) => void;
   input: React.JSX.Element;
   busyLabel: string | null;
   err: string | null;
   clearErr: () => void;
+  /** Slots (uploadSlotKey) whose upload saved but whose refetched dossier has not arrived. */
+  refreshing: ReadonlySet<string>;
 } {
+  const qc = useQueryClient();
   const companyId = useSession().data?.companyId ?? null;
   const saveKey = useSaveKey();
   const create = useCreateQcDocument(saveKey);
@@ -38,6 +59,7 @@ export function useDossierUpload(): {
   const keyOwner = useRef<string | null>(null);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState<ReadonlySet<string>>(new Set());
 
   function start(t: UploadTarget): void {
     setErr(null);
@@ -93,6 +115,21 @@ export function useDossierUpload(): {
             }),
       };
       await create.mutateAsync(input);
+      // Saved. Until the refetched dossier arrives the row still reads "no report"
+      // with a live ＋ — mark the slot so a second upload cannot start meanwhile.
+      const slot = uploadSlotKey(t);
+      setRefreshing((prev) => new Set(prev).add(slot));
+      setBusyLabel(null);
+      try {
+        // cancelRefetch:false joins the refetch the mutation's onSuccess began.
+        await qc.invalidateQueries({ queryKey: qcDocumentsKeys.all }, { cancelRefetch: false });
+      } finally {
+        setRefreshing((prev) => {
+          const next = new Set(prev);
+          next.delete(slot);
+          return next;
+        });
+      }
     } catch (e2) {
       // The server's own words (e.g. "This QC entry belongs to another order").
       setErr(e2 instanceof Error ? e2.message : 'Could not upload the report. Try again.');
@@ -110,5 +147,5 @@ export function useDossierUpload(): {
       onChange={(e) => void onPick(e)}
     />
   );
-  return { start, input, busyLabel, err, clearErr: () => setErr(null) };
+  return { start, input, busyLabel, err, clearErr: () => setErr(null), refreshing };
 }

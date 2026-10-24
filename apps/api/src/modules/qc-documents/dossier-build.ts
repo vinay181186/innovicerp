@@ -300,7 +300,7 @@ export function buildDossier(raw: DossierRaw): DossierBuilt {
         if (!rt) continue;
         const acc = ensure(rt, true, s.opSeq);
         const all = entriesByOp.get(s.jcOpId) ?? [];
-        if (all.length === 0) acc.notDone = true;
+        if (all.length === 0 || !s.opDone) acc.notDone = true;
         for (const e of all) if (e.qty > 0) acc.folder.entries.push(toEntry(e, s));
       }
       for (const { rt, files } of folderFiles.get(l.lineId)?.values() ?? []) {
@@ -319,7 +319,10 @@ export function buildDossier(raw: DossierRaw): DossierBuilt {
         })
         .map(({ folder, notDone: nd }) => {
           const missing = folder.entries.filter((e) => e.state === 'report_missing').length;
-          fileCount += folder.files.length + folder.entries.reduce((n, e) => n + e.files.length, 0);
+          // Current files only: an earlier revision is not another report.
+          fileCount +=
+            folder.files.length +
+            folder.entries.reduce((n, e) => n + e.files.filter((f) => f.current).length, 0);
           if (folder.isStep) {
             missingCount += missing;
             if (nd) notDone = true;

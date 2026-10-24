@@ -26,6 +26,9 @@ export interface DossierStepRow {
   reportTypeId: string | null;
   reportName: string | null;
   mandatory: boolean;
+  /** The QC op is complete (v_jc_op_status) — nothing left to inspect. A line
+   *  is never 'complete' while a step still has pieces to inspect. */
+  opDone: boolean;
 }
 /** One live QC entry (op_log log_type 'qc', not reversed). */
 export interface DossierEntryRow {

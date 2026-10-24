@@ -77,16 +77,18 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
   const savedReportTypeId = defaults.reportTypeId;
   const reportOptions = (reportTypes.data?.items ?? []).filter((t) => t.status === 'Active');
   const savedIsActiveOption = reportOptions.some((t) => t.id === savedReportTypeId);
+  // The saved value can only show once its <option> exists.
+  const optionsLoaded = reportTypes.data !== undefined;
+  // While the list loads, show the saved name plain — "(inactive)" only once the
+  // loaded list proves it is not an active type.
   const savedInactiveLabel =
     savedReportTypeId && !savedIsActiveOption
       ? `${
           (reportTypes.data?.items ?? []).find((t) => t.id === savedReportTypeId)?.name ??
           (isEdit ? props.detail.reportTypeName : null) ??
           'Report type'
-        } (inactive)`
+        }${optionsLoaded ? ' (inactive)' : ''}`
       : null;
-  // The saved value can only show once its <option> exists.
-  const optionsLoaded = reportTypes.data !== undefined;
   useEffect(() => {
     if (optionsLoaded && savedReportTypeId) setValue('reportTypeId', savedReportTypeId);
   }, [optionsLoaded, savedReportTypeId, setValue]);

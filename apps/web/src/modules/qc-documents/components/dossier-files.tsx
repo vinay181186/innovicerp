@@ -18,7 +18,14 @@ import { saveQcDoc, useDeleteQcDocument } from '../api';
 import { entryLabel, folderFiles, SOURCE_LABEL, type DossierRow } from './dossier-model';
 import { polLabel } from './dossier-tree';
 import { openStoragePath } from './qc-doc-shared';
-import type { UploadTarget } from './use-dossier-upload';
+import { uploadSlotKey, type UploadTarget } from './use-dossier-upload';
+
+const NO_SLOTS: ReadonlySet<string> = new Set();
+
+/** Shown in place of ＋ / ↻ once an upload saved, until the dossier refetches. */
+function Refreshing(): React.JSX.Element {
+  return <span className="text3">uploaded — refreshing…</span>;
+}
 
 export interface DossierRights {
   canUpload: boolean;
@@ -56,6 +63,7 @@ export function DossierLineHead({
   rights,
   onUpload,
   zipButton,
+  refreshing = NO_SLOTS,
 }: {
   line: QcDossierLine;
   kind: QcDossierOrderKind;
@@ -63,6 +71,7 @@ export function DossierLineHead({
   rights: DossierRights;
   onUpload: (t: UploadTarget) => void;
   zipButton: React.ReactNode;
+  refreshing?: ReadonlySet<string>;
 }): React.JSX.Element {
   const f = folder ? line.folders.find((x) => x.reportName === folder) : undefined;
   const steps = line.folders.filter((x) => x.isStep);
@@ -81,7 +90,16 @@ export function DossierLineHead({
           JC No. <b className="mono">{line.jobCards.map((j) => j.code).join(', ') || '—'}</b>
         </span>
         <span style={{ flex: 1 }} />
-        {rights.canUpload && f?.reportTypeId ? (
+        {rights.canUpload &&
+        f?.reportTypeId &&
+        refreshing.has(
+          uploadSlotKey({
+            reportTypeId: f.reportTypeId,
+            ...(kind === 'so' ? { soLineId: line.lineId } : { jwLineId: line.lineId }),
+          }),
+        ) ? (
+          <Refreshing />
+        ) : rights.canUpload && f?.reportTypeId ? (
           <button
             type="button"
             className="btn btn-primary btn-sm"
@@ -127,6 +145,7 @@ export function DossierFileSheet({
   showReport,
   rights,
   onUpload,
+  refreshing = NO_SLOTS,
 }: {
   rows: DossierRow[];
   /** What the access log calls this order. */
@@ -134,6 +153,7 @@ export function DossierFileSheet({
   showReport: boolean;
   rights: DossierRights;
   onUpload: (t: UploadTarget) => void;
+  refreshing?: ReadonlySet<string>;
 }): React.JSX.Element {
   const del = useDeleteQcDocument();
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
@@ -221,7 +241,9 @@ export function DossierFileSheet({
         render: (r) => (
           <span className="qd-acts">
             {r.kind === 'missing' ? (
-              rights.canUpload ? (
+              refreshing.has(uploadSlotKey({ opLogId: r.entry.opLogId })) ? (
+                <Refreshing />
+              ) : rights.canUpload ? (
                 <Sym
                   title={`Upload ${r.reportName} report`}
                   onClick={() => onUpload({ opLogId: r.entry.opLogId, label: r.reportName })}
@@ -249,7 +271,11 @@ export function DossierFileSheet({
                     ⬇
                   </Sym>
                 ) : null}
-                {rights.canUpload && r.entry && r.file.current ? (
+                {r.entry &&
+                r.file.current &&
+                refreshing.has(uploadSlotKey({ opLogId: opLogIdOf(r) })) ? (
+                  <Refreshing />
+                ) : rights.canUpload && r.entry && r.file.current ? (
                   <Sym
                     title="Replace — upload a newer file; this one stays as earlier"
                     onClick={() => onUpload({ opLogId: opLogIdOf(r), label: r.reportName })}
@@ -274,7 +300,7 @@ export function DossierFileSheet({
       },
     ];
     return showReport ? cols : cols.filter((c) => c.id !== 'report');
-  }, [showReport, rights, onUpload, orderCode]);
+  }, [showReport, rights, onUpload, orderCode, refreshing]);
 
   return (
     <>
