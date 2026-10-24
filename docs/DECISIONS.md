@@ -14484,3 +14484,60 @@ refuse while a downstream document is live, and never reuse the number.
   hide stock moves).
 - Hard delete / editing the ledger — rejected (CLAUDE.md §6 rule 8, ADR-185).
 - Amend (`DOC-0001-1`) — not now; correction = new document (owner may ask later).
+
+## ADR-253: A new Route Card must be approved before it is used
+
+**Date:** 2026-10-24
+**Status:** Accepted (owner, 2026-10-24)
+
+### Context
+
+The owner asked that Route Cards follow the PO standard: a newly created card
+goes for approval, and an edit goes for approval. Edit approval already existed
+(ADR-249 Step B — the document-edits engine, entity `RouteCard`) but only while
+the company `doc_edit_approval` switch is ON (OFF on PROD 2026-10-24). A new
+card had no approval step at all and was usable the moment it was saved — from
+the RC screen, or created silently by a Job Card / Plan Execute for an item
+with no card.
+
+### Decision
+
+1. `route_cards.approval_status` pending | approved | rejected (0219), plus
+   approved_by/at, rejected_by/at, rejection_reason. The 43 PROD cards
+   existing at release are `approved` (owner: yes).
+2. EVERY new card is `pending` — RC screen and the Job Card / Plan Execute
+   insert — always, no switch (owner).
+3. Approve / Reject: Approve tick on Route Card Master; creator may approve
+   their own card (same as PO / PR). Reject needs a reason. PR/PO pattern:
+   plan locks → card FOR UPDATE → conditional UPDATE `WHERE approval_status =
+   'pending'` + assertRowUpdated (§20.2). History + activity log.
+4. A pending / rejected card is not in use, so editing it saves directly; a
+   rejected card that is saved goes back to `pending`. An APPROVED card's edits
+   keep the ADR-249 engine: held for approval while the company switch is ON
+   (`isLive` = approved only).
+5. One rule, `apps/api/src/lib/route-card-usable.ts`: only an approved card may
+   raise a Production Order / ML-plan order, feed raw material to plans (moved
+   from save time to approval time), or make a plan read "Gen production
+   order". A plan whose item card is not approved reads the new derived state
+   `route_card_approval_pending` ("Route card awaiting approval").
+6. A Job Card / Plan Execute never fails over the card: an existing pending /
+   rejected card is left alone; a new one is created `pending`.
+7. Approvals page: "Route Card (New)" inbox section next to PR / PO; home
+   dashboard counts and notifies approvers.
+
+### Alternatives Considered
+
+- A Route Card approval switch (like `po_approval`) — rejected by the owner:
+  new cards always need approval.
+- Turning the company edit switch ON for edit approval — left to the owner; it
+  also holds edits on ~27 other document types.
+- Staging the new card in `document_edit_requests` — rejected: that engine is
+  edit-only and keyed on an existing live document.
+
+### Consequences
+
+- Positive: no routing reaches the shop floor without a second person's OK.
+- Negative: a new item cannot get a Production Order until someone with the
+  Approve tick acts (Kiran L5, Tejas L4, full-access admins on 2026-10-24).
+- Risks: a reader of route cards missed → a pending card used; mitigated by the
+  single helper and the server-side check in PRO create.
