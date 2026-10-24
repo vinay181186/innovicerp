@@ -8,7 +8,7 @@
 // dashboard's "QC report missing" rows deep-link straight to a POL.
 
 import type { QcDossierLine, QcDossierOrderKind } from '@innovic/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -53,28 +53,17 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
   const [pickSearch, setPickSearch] = useState('');
   const orders = useQcDossierOrders(pickSearch);
   const options = orders.data?.orders ?? [];
-  // No order in the URL on FIRST load → open the newest one in the picker (as the
-  // Matrix does) and pin it into the URL, so later picker searches never swap it.
-  const defaultPending = useRef(!search.orderId);
-  const first = defaultPending.current && pickSearch === '' ? options[0] : undefined;
-  const kind: QcDossierOrderKind | undefined = search.orderId ? (search.kind ?? 'so') : first?.kind;
-  const orderId = search.orderId ?? first?.id;
-  useEffect(() => {
-    if (search.orderId) {
-      defaultPending.current = false;
-      return;
-    }
-    if (!defaultPending.current || !first) return;
-    defaultPending.current = false;
-    void navigate({
-      search: (p) => ({ ...p, kind: first.kind, orderId: first.id }),
-      replace: true,
-    });
-  }, [search.orderId, first, navigate]);
+  // Nothing opens by itself: the order comes only from the URL, i.e. the one the
+  // user picked (or a dashboard link named). No order → the empty page below.
+  const orderId = search.orderId;
+  const kind: QcDossierOrderKind | undefined = orderId ? (search.kind ?? 'so') : undefined;
   const pickEmptyText = pickSearch
     ? `No SO or JWSO matches "${pickSearch}".`
     : 'No SO or JWSO yet.';
-  const { data: dossier, isLoading, isFetching, isError, error } = useQcDossier(kind, orderId);
+  const dq = useQcDossier(kind, orderId);
+  // placeholderData keeps the last order's data after the field is cleared — never show it then.
+  const dossier = orderId ? dq.data : undefined;
+  const { isLoading, isFetching, isError, error } = dq;
 
   const [term, setTerm] = useState(search.search ?? '');
   const q = search.search ?? '';
@@ -143,9 +132,11 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
     zip ? `Zipping ${zip.done}/${zip.total}…` : `⬇ ZIP (${what})`;
 
   const picker = (
-    <div style={{ minWidth: 340 }}>
+    <div className="qd-order-pick">
       <SearchableSelect
         id="qc-dossier-order"
+        clearable
+        ariaLabel="SO / JWSO"
         value={kind && orderId ? `${kind}:${orderId}` : null}
         valueLabel={
           dossier
@@ -153,9 +144,10 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
             : undefined
         }
         onChange={(v) => {
-          // Clearing / typing to search keeps the open order until a new one is picked.
-          if (!v) return;
-          const [k, id] = v.split(':');
+          // Clearing the field (or typing a new search) closes the open order;
+          // the next pick opens its dossier.
+          const [k, id] = v ? v.split(':') : [];
+          setTerm('');
           void navigate({
             search: (p) => ({
               ...p,
@@ -163,6 +155,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
               orderId: id || undefined,
               lineId: undefined,
               folder: undefined,
+              search: undefined,
             }),
             replace: true,
           });
@@ -170,7 +163,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
         onSearch={setPickSearch}
         loading={orders.isFetching}
         emptyText={pickEmptyText}
-        placeholder="Search SO / JWSO No., Internal SO No., customer…"
+        placeholder="Search SO / JWSO No., Internal SO No., Client PO No., customer…"
         options={options.map((o) => ({
           id: `${o.kind}:${o.id}`,
           code: o.internalSoNo ? `${o.code} · ${o.internalSoNo}` : o.code,
@@ -189,20 +182,21 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
       updating={isFetching && !isLoading}
       searchSlot={picker}
       filters={
-        <input
-          className="innovic-input"
-          style={{ minWidth: 260 }}
-          placeholder="Search POL, item code, item name, JC No., report, file…"
-          aria-label="Search the dossier"
-          value={term}
-          onChange={(e) => {
-            setTerm(e.target.value);
-            const n = normalizeSearchTerm(e.target.value);
-            void navigate({ search: (p) => ({ ...p, search: n || undefined }), replace: true });
-          }}
-        />
+        !orderId ? undefined : (
+          <input
+            className="innovic-input qd-pol-search"
+            placeholder="Search POL, item code, item name, JC No., report, file…"
+            aria-label="Search the dossier"
+            value={term}
+            onChange={(e) => {
+              setTerm(e.target.value);
+              const n = normalizeSearchTerm(e.target.value);
+              void navigate({ search: (p) => ({ ...p, search: n || undefined }), replace: true });
+            }}
+          />
+        )
       }
-      filtersActive={term.trim() !== ''}
+      filtersActive={!!orderId && term.trim() !== ''}
       onClearFilters={() => {
         setTerm('');
         void navigate({ search: (p) => ({ ...p, search: undefined }), replace: true });
@@ -230,10 +224,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
     return (
       <div>
         {header}
-        <PageState
-          state={orders.isLoading ? 'loading' : 'empty'}
-          message={orders.isLoading ? 'Loading…' : pickEmptyText}
-        />
+        <PageState state="empty" message="Type an SO or JWSO No. to open its QC folders." />
       </div>
     );
   }

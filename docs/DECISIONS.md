@@ -14424,6 +14424,15 @@ one location: SO No. → POL folders → MIR / DIR / … folders.
 - Negative: Op Entry / TPI / QC Call Register refuse a MIR/DIR/MCR/TPI result without
   its file. Storage-folder policies (all modules) are still company-wide — separate change.
 
+### Addendum 2026-10-24 (owner)
+
+- The Dossier opens with the order field empty — no order is picked for the user. Typing
+  SO / JWSO No., Internal SO No., **Client PO No.** or customer finds it; clearing the field
+  closes it. A link naming an order (home dashboard, refresh) still opens it directly.
+- The **Matrix tab is removed** (owner: not needed — the Dossier shows the same per-POL
+  status for SO and JWSO, with upload and ZIP). Old `view=matrix` links land on the
+  Dossier. The `/qc-documents/matrix` API stays for now (no screen uses it).
+
 ## ADR-235: One standard Cancel — reason → Cancel Request → Approve → Cancelled, stock reversed, never cascade
 
 **Date:** 2026-10-24

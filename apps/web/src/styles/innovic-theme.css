@@ -1486,6 +1486,28 @@ input[type='radio'] {
   font-size: var(--fs-sm);
   color: var(--text3);
 }
+/* SearchableSelect `clearable` × — sits inside the field's right edge. */
+.ss-clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text3);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+.ss-clear:hover,
+.ss-clear:focus-visible {
+  background: var(--bg3);
+  color: var(--text);
+}
 .form-error {
   font-size: var(--fs-label);
   color: var(--red2);

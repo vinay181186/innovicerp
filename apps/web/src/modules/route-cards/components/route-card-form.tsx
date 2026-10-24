@@ -177,6 +177,28 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
   }));
 }
 
+/** Group is display-only and not stored, so rows that arrive from a saved card
+ *  (Edit, or "Copy ops from Route Card…") hold a machine but no group. Fill the
+ *  group from the machine master for machine rows whose group is still blank;
+ *  a group the user picked (or cleared to "— None —" after arrival) is never
+ *  touched here, because this runs only when rows arrive or machines load.
+ *  Returns the same array when nothing changed. */
+function fillGroupsFromMachines(
+  rows: RouteCardFormOpDraft[],
+  machines: Machine[],
+): RouteCardFormOpDraft[] {
+  if (!machines.length) return rows;
+  let changed = false;
+  const next = rows.map((o) => {
+    if (o.opType !== 'process' || o.machineGroupId != null || !o.machineId) return o;
+    const m = machines.find((x) => x.id === o.machineId);
+    if (!m?.machineGroupId) return o;
+    changed = true;
+    return { ...o, machineGroupId: m.machineGroupId };
+  });
+  return changed ? next : rows;
+}
+
 /** A row counts as typed when ANY field the user fills is filled — not just
  *  the operation name — so a copy never silently drops a picked machine, a
  *  cycle time, a vendor, a program, a tool or a remark. */
@@ -343,8 +365,14 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   // they are THEN, not as they were when the pick was made.
   const opsRef = useRef(ops);
   opsRef.current = ops;
+  // Read after the copy's fetch through a ref, so a machines list that landed
+  // DURING the fetch is seen (the render's own value would be stale).
+  const machinesRef = useRef(machinesList?.machines);
+  machinesRef.current = machinesList?.machines;
   const applyCopy = (detail: RouteCardDetail): void => {
-    setOps(detailOpsToDrafts(detail.ops));
+    // The machines list has usually loaded before a copy, so the "fill groups
+    // when machines load" effect below will not run again — fill them here.
+    setOps(fillGroupsFromMachines(detailOpsToDrafts(detail.ops), machinesRef.current ?? []));
     setCopiedFrom({ id: detail.id, label: `${detail.code} Rev ${detail.currentRevision}` });
     setCopyFromId(detail.id);
   };
@@ -462,24 +490,12 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     });
   };
 
-  // Group is display-only and is not stored, so a card opened for editing has
-  // every row's group empty even though its machine belongs to one. Read it
-  // back off the master once the machine list is in, for rows that have a
-  // machine but no group yet.
+  // A card opened for editing has every row's group empty (see
+  // fillGroupsFromMachines). Fill them once the machine list is in.
   useEffect(() => {
     const rows = machinesList?.machines;
     if (!rows?.length) return;
-    setOps((prev) => {
-      let changed = false;
-      const next = prev.map((o) => {
-        if (o.opType !== 'process' || o.machineGroupId != null || !o.machineId) return o;
-        const m = rows.find((x) => x.id === o.machineId);
-        if (!m?.machineGroupId) return o;
-        changed = true;
-        return { ...o, machineGroupId: m.machineGroupId };
-      });
-      return changed ? next : prev;
-    });
+    setOps((prev) => fillGroupsFromMachines(prev, rows));
   }, [machinesList]);
 
   const onOpVendorChange = (idx: number, v: Vendor | null): void => {

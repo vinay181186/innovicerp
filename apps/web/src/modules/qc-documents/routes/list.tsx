@@ -1,11 +1,10 @@
 // QC Documents (legacy renderQCDocuments L23039). SO-pivoted QC-completion.
 //
 // This file is the slim page shell only: the permission gate, the
-// Dossier | Matrix | File Register | SO Status view switch, and the route.
+// Dossier | File Register | SO Status view switch, and the route.
 // Dossier (ADR-252) is the first tab and the default. Each view is
 // its own component under ../components (ADR-199 split — the old single file was
 // 1641 lines, well over the 400-line ceiling), and each is a shared FIT table:
-//   • Matrix        → <DataTable tableKey={qcDocsMatrix}>  (dynamic op columns)
 //   • File Register → <DataTable tableKey={qcDocsRegister}>
 //   • SO Status     → <DataTable tableKey={qcDocsStatus}>  (totals footer)
 
@@ -16,11 +15,11 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { pageSearchParam } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DossierView } from '../components/dossier-view';
-import { MatrixView } from '../components/matrix-view';
 import { RegisterView } from '../components/register-view';
 import { SoStatusView } from '../components/so-status-view';
 
 const searchSchema = z.object({
+  /** 'matrix' is the retired Matrix tab: old links land on the Dossier. */
   view: z.enum(['dossier', 'matrix', 'register', 'status']).optional(),
   so: z.string().optional(),
   /** ADR-252 Dossier: the order (SO / JWSO), the POL line and the report folder. */
@@ -44,7 +43,7 @@ export const qcDocumentsListRoute = createRoute({
 function QcDocumentsPage(): React.JSX.Element {
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
-  const view = search.view ?? 'dossier';
+  const view = search.view === 'matrix' ? 'dossier' : (search.view ?? 'dossier');
   const { data: eff } = useMyAccess();
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -59,10 +58,10 @@ function QcDocumentsPage(): React.JSX.Element {
     );
   }
 
-  // Dossier | Matrix | File Register | SO Status — the view switch sits in every
+  // Dossier | File Register | SO Status — the view switch sits in every
   // view's ListHeader tools, so each view owns its own count, search and
   // actions. The search box term belongs to one view, so it does not follow.
-  const setView = (v: 'dossier' | 'matrix' | 'register' | 'status'): void =>
+  const setView = (v: 'dossier' | 'register' | 'status'): void =>
     void navigate({
       search: (p) => ({ ...p, view: v, search: undefined, page: 1 }),
       replace: true,
@@ -72,7 +71,6 @@ function QcDocumentsPage(): React.JSX.Element {
       {(
         [
           ['dossier', 'Dossier'],
-          ['matrix', 'Matrix'],
           ['register', 'File Register'],
           ['status', 'SO Status'],
         ] as const
@@ -91,7 +89,6 @@ function QcDocumentsPage(): React.JSX.Element {
   );
 
   if (view === 'dossier') return <DossierView toggle={toggle} />;
-  if (view === 'matrix') return <MatrixView toggle={toggle} />;
   if (view === 'register') return <RegisterView toggle={toggle} />;
   return <SoStatusView toggle={toggle} />;
 }
