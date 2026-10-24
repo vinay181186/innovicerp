@@ -39,7 +39,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
 import { fetchDispatchRegister, useDispatchRegister } from '../api';
-import { CancelDispatchModal } from '../components/cancel-dispatch-modal';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { type DispatchGroup, groupByDispatch } from '../components/dispatch-group';
 import { DispatchExpanded } from '../components/dispatch-expanded';
 import { DispatchItemSummary } from '../components/dispatch-item-summary';
@@ -87,7 +87,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const canAdd = perms.entry;
-  const canCancel = perms.edit && perms.approve;
+  // ADR-235 — the ONE standard Cancel: Edit requests, Approve decides.
+  const canCancel = perms.edit || perms.approve;
   const canInvoice = useCanOpen()('/invoices/new');
   // Lazy initial: the URL seeds the box once; keystrokes stay local after that.
   // Only when the landing targets THIS tab — a `?tab=jw` landing must not
@@ -404,9 +405,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
         </>
       )}
       {cancelling ? (
-        <CancelDispatchModal
-          id={cancelling.dispatchId}
-          code={cancelling.code}
+        <CancelDocDialog
+          docType="customer_dispatch"
+          docId={cancelling.dispatchId}
+          docCode={cancelling.code}
           onClose={() => setCancelling(null)}
         />
       ) : null}

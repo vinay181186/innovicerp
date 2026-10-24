@@ -19,7 +19,7 @@ import {
   linePendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { runPrint } from '@/lib/print/preview-host';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
@@ -27,6 +27,9 @@ import { useClient } from '@/modules/clients/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { PageHeader, PageState } from '@/ui/layout';
 import { useDispatchDetail } from '../api';
 import { dispatchSheetHtml, printDispatchChallan } from '../lib/print-dc';
@@ -54,6 +57,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
   // so the chip is added beside the title rather than replacing a badge.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const [previewHeight, setPreviewHeight] = useState(1123);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const docHtml = useMemo(
     () =>
@@ -80,6 +84,8 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
   }
 
   const cancelled = d.status === 'cancelled';
+  // ADR-235 — the ONE standard Cancel: Edit requests, Approve decides.
+  const canCancel = (perms.edit || perms.approve) && !cancelled;
 
   return (
     <div>
@@ -150,9 +156,38 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
                 🧾 Create Invoice
               </ActionLink>
             ) : null}
+            {canCancel ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ color: 'var(--red2)' }}
+                onClick={() => setCancelOpen(true)}
+              >
+                Cancel Dispatch
+              </button>
+            ) : null}
           </>
         }
       />
+
+      <CancelPendingBanner
+        docType="customer_dispatch"
+        docId={d.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
+      {cancelled ? (
+        <div className="mb-2">
+          <Banner tone="error" accent title="Cancelled — this dispatch was reversed">
+            <div className="text3" style={{ fontSize: 11 }}>
+              {d.cancelReason
+                ? `Reason: ${d.cancelReason}${d.cancelledAt ? ` · ${fmtDateTime(d.cancelledAt)}` : ''}. `
+                : ''}
+              Its stock went back to the store. Who cancelled it is in History below.
+            </div>
+          </Banner>
+        </div>
+      ) : null}
 
       {/* ADR-202 — edits staged against this dispatch and waiting for approval.
           The challan body is a print preview (an iframe), so the pending-change
@@ -237,6 +272,14 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
       <Panel title="History" bodyPadding="none">
         <DocumentHistory entity="Dispatch" entityId={d.id} refId={d.code} />
       </Panel>
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="customer_dispatch"
+          docId={d.id}
+          docCode={d.code}
+          onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

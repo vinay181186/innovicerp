@@ -6,6 +6,7 @@ import {
 } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -57,10 +58,12 @@ export async function invoicesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ADR-202 Phase 3: cancel an invoice (reason-logged cancel-and-reissue).
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/invoices/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = service.cancelInvoiceInputSchema.parse(req.body);
-    return service.cancelInvoice(id, body, req.user);
+    return requestCancel('invoice', id, { reason: body.reason, approveNow: false }, req.user);
   });
 }

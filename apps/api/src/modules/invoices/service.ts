@@ -4,6 +4,7 @@
 
 import type {
   AddPaymentInput,
+  CancelBlocker,
   CreateInvoiceInput,
   DocumentTraceability,
   InvoiceDetail,
@@ -43,6 +44,8 @@ import { changedByOtherError } from '../../lib/row-lock';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { INVOICE_SF_COLUMNS } from './sf-columns';
 import { emitActivityLog } from '../activity-log/service';
+import { blockerRefusal } from '../cancel-requests/messages';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { DEFAULT_PAYMENT_TERMS_DAYS } from './constants';
 import {
@@ -907,6 +910,8 @@ export async function addPayment(
       .for('update');
     const inv = rows[0];
     if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
+    // ADR-235 — a payment would turn a pending cancel into one that can't run.
+    await assertNoPendingCancel(tx, 'invoice', inv.id);
 
     const grand = n(inv.grandTotal);
     const paid = n(inv.totalPaid);
@@ -976,90 +981,136 @@ export async function addPayment(
 // ADR-202 Phase 3 — cancel an invoice (cancel-and-reissue).
 //
 // An invoice is a statutory GST document, so a correction is NOT an edit: it is
-// a reason-logged CANCEL, mirroring the JW invoice (ADR-194, cancelJwInvoice).
+// a reason-logged CANCEL, mirroring the JW invoice (ADR-194, cancelJwInvoiceTx).
 // The INV-#### series is NEVER renumbered or deleted — the cancelled row is kept
 // so the number series stays intact. No stock moves (an invoice moves no stock).
-// Cancelling is a high-trust action, so — like cancelDeliveryChallan /
-// cancelPartyGrn — it takes the edit AND approve pair only L5 Department Admin
-// and above hold. Refused if a payment has been recorded (reverse the receipts
-// first) and refused on a double-cancel.
-export async function cancelInvoice(
+// ADR-235: the only way in is an approved Cancel Request
+// (modules/cancel-requests) — the Edit tick requests, the Approve tick approves.
+// Refused if a payment has been recorded (reverse the receipts first) and
+// refused on a double-cancel.
+
+/** Read the invoice row; `forUpdate` locks it (request / approve), the preview
+ *  reads without a lock. */
+export async function lockInvoiceForCancel(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
-  input: CancelInvoiceInput,
+  forUpdate: boolean,
+): Promise<typeof invoices.$inferSelect | null> {
+  const q = tx
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
+    .limit(1);
+  const rows = forUpdate ? await q.for('update') : await q;
+  return rows[0] ?? null;
+}
+
+/**
+ * THE invoice cancel refusal rule (one place — the worker and the Cancel
+ * preview both call it): any payment row, or a Paid amount, blocks. A payment
+ * row with only TDS / short amount (amount 0) counts too.
+ */
+export async function invoiceCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const rows = (await tx.execute(sql`
+    SELECT inv.code, COALESCE(inv.total_paid, 0)::float AS paid,
+      p.id AS "paymentId", p.payment_date::text AS "paymentDate", p.mode, p.ref_no AS "refNo"
+    FROM public.invoices inv
+    LEFT JOIN public.invoice_payments p ON p.invoice_id = inv.id AND p.deleted_at IS NULL
+    WHERE inv.id = ${id}::uuid AND inv.company_id = ${companyId}::uuid
+    ORDER BY p.payment_date, p.created_at
+  `)) as unknown as Array<{
+    code: string;
+    paid: number;
+    paymentId: string | null;
+    paymentDate: string | null;
+    mode: string | null;
+    refNo: string | null;
+  }>;
+  const href = `/invoices/${id}`;
+  const out: CancelBlocker[] = rows
+    .filter((r) => r.paymentId)
+    .map((r) => ({
+      docLabel: 'Payment',
+      docNo: r.refNo?.trim() || (r.paymentDate ?? ''),
+      href,
+      reason: `received ${r.paymentDate ?? ''}${r.mode ? ` (${r.mode})` : ''} — reverse the receipt first`,
+    }));
+  const head = rows[0];
+  if (out.length === 0 && head && Number(head.paid) > 0) {
+    out.push({
+      docLabel: 'Invoice',
+      docNo: head.code,
+      href,
+      reason: 'shows a Paid amount — reverse the receipts first',
+    });
+  }
+  return out;
+}
+
+/**
+ * The ONE invoice cancel writer, run only by an approved Cancel Request
+ * (ADR-235). In-tx body, no rights check — the Cancel Request checks the ticks.
+ * Row lock first, refusal rule, conditional status write, activity log.
+ */
+export async function cancelInvoiceTx(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  rawReason: string,
   user: AuthContext,
-): Promise<InvoiceDetail> {
-  await requireFormAccess(user, 'invoice_create', 'edit');
-  await requireFormAccess(user, 'invoice_create', 'approve');
-  const showMoney = await canSeeFormPrice(user, 'invoice_create');
-  const companyId = requireCompany(user);
+): Promise<void> {
   const userId = user.id;
-  const reason = input.reason.trim();
+  const reason = rawReason.trim();
   if (!reason) throw new ValidationError('Reason is required to cancel an invoice.');
 
-  return withUserContext(user, async (tx) => {
-    // Cancel once. Lock the invoice row FIRST so a second cancel waits here,
-    // reads 'cancelled' and is refused (never credits the series twice).
-    const rows = await tx
-      .select()
-      .from(invoices)
-      .where(
-        and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)),
-      )
-      .limit(1)
-      .for('update');
-    const inv = rows[0];
-    if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
-    if (inv.status === 'cancelled') {
-      throw new ConflictError(
-        `Invoice ${inv.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
-      );
-    }
-
-    // Refuse when any money is recorded against it: the receipts must be
-    // reversed first. totalPaid covers money received; a payment row with only
-    // TDS / short amount (amount 0) is caught by the row count.
-    const [payAgg] = await tx
-      .select({ c: sql<number>`count(*)::int` })
-      .from(invoicePayments)
-      .where(and(eq(invoicePayments.invoiceId, inv.id), isNull(invoicePayments.deletedAt)));
-    const paymentCount = Number(payAgg?.c ?? 0);
-    if (n(inv.totalPaid) > 0 || paymentCount > 0) {
-      throw new ConflictError(
-        `Cannot cancel ${inv.code}: payments are recorded. Reverse the receipts first.`,
-      );
-    }
-
-    // S2 (CLAUDE.md §20) — conditional status write: refuse if the status moved
-    // under us (0 rows updated → someone else got there first).
-    const updated = await tx
-      .update(invoices)
-      .set({
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        cancelledBy: userId,
-        cancelReason: reason,
-        updatedAt: new Date(),
-        updatedBy: userId,
-      })
-      .where(and(eq(invoices.id, inv.id), ne(invoices.status, 'cancelled')))
-      .returning();
-    if (!updated[0]) throw changedByOtherError(`Invoice ${inv.code}`);
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: 'Invoice',
-        entityId: inv.id,
-        refId: inv.code,
-        reason,
-        detail: `${inv.code} cancelled — ${inv.soCodeText ?? ''}`,
-      },
-      companyId,
-      user,
+  // Cancel once. Lock the invoice row FIRST so a second cancel waits here,
+  // reads 'cancelled' and is refused (never credits the series twice). A
+  // payment also locks this row first (addPayment), so the rule below is
+  // checked against a settled set of payments.
+  const inv = await lockInvoiceForCancel(tx, companyId, id, true);
+  if (!inv) throw new NotFoundError('Invoice not found. Refresh the page.');
+  if (inv.status === 'cancelled') {
+    throw new ConflictError(
+      `Invoice ${inv.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
     );
+  }
+  const blockers = await invoiceCancelBlockers(tx, companyId, inv.id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(inv.code, blockers), { blockers });
+  }
 
-    const detail = await getInvoiceInternal(tx, inv.id, companyId);
-    return showMoney ? detail : hideInvoiceDetailMoney(detail);
-  });
+  // S2 (CLAUDE.md §20) — conditional status write: refuse if the status moved
+  // under us (0 rows updated → someone else got there first).
+  const updated = await tx
+    .update(invoices)
+    .set({
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancelledBy: userId,
+      cancelReason: reason,
+      updatedAt: new Date(),
+      updatedBy: userId,
+    })
+    .where(and(eq(invoices.id, inv.id), ne(invoices.status, 'cancelled')))
+    .returning({ id: invoices.id });
+  if (!updated[0]) throw changedByOtherError(`Invoice ${inv.code}`);
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'Invoice',
+      entityId: inv.id,
+      refId: inv.code,
+      reason,
+      detail: `${inv.code} cancelled — ${inv.soCodeText ?? ''}`,
+    },
+    companyId,
+    user,
+  );
 }

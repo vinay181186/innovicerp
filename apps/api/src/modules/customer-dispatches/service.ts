@@ -4,6 +4,7 @@
 // decrement on cancel). Mirror of legacy dispatchLog / renderDispatchRegister.
 
 import type {
+  CancelBlocker,
   CreateCustomerDispatchInput,
   CustomerDispatchDetail,
   CustomerDispatchLineRow,
@@ -47,6 +48,8 @@ import { diffFields } from '../../lib/audit-trail';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { emitActivityLog } from '../activity-log/service';
+import { blockerRefusal } from '../cancel-requests/messages';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
@@ -247,7 +250,7 @@ async function dispatchLineOut(
 // and put the stock back on the shelf, replaying the EXACT ledger rows this
 // dispatch wrote (loadDispatchedComponents) so a BOM edited between dispatch and
 // reversal never unbalances the ledger. `code` is the code the original 'out'
-// rows carry. Used by cancelDispatch and by the edit REVERSE.
+// rows carry. Used by cancelDispatchTx and by the edit REVERSE.
 async function reverseDispatchLineStock(
   tx: DbTransaction,
   companyId: string,
@@ -716,6 +719,8 @@ function rowToHeader(
     transport: r.transport,
     vehicleNo: r.vehicleNo,
     status: r.status,
+    cancelReason: r.cancelReason ?? null,
+    cancelledAt: r.cancelledAt ? r.cancelledAt.toISOString() : null,
     remarks: r.remarks,
     lineCount,
     totalQty,
@@ -1091,138 +1096,262 @@ export async function createDispatch(
   });
 }
 
-export async function cancelDispatch(
+// ─── Cancel (ADR-235: only via an approved Cancel Request) ───────────────────
+
+/** Read the dispatch header; `forUpdate` locks it (request / approve), the
+ *  preview reads without a lock. */
+export async function lockDispatchForCancel(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  forUpdate: boolean,
+): Promise<typeof customerDispatches.$inferSelect | null> {
+  const q = tx
+    .select()
+    .from(customerDispatches)
+    .where(
+      and(
+        eq(customerDispatches.id, id),
+        eq(customerDispatches.companyId, companyId),
+        isNull(customerDispatches.deletedAt),
+      ),
+    )
+    .limit(1);
+  const rows = forUpdate ? await q.for('update') : await q;
+  return rows[0] ?? null;
+}
+
+/**
+ * THE dispatch cancel refusal rule (one place — the worker and the Cancel
+ * preview both call it): reversing dispatched_qty below what live invoices bill
+ * would leave an invoice billing goods no longer recorded as dispatched.
+ *
+ * Aggregated PER SO LINE: blocked when invoiced > dispatched − Σ(this
+ * dispatch's qty on that SO line). Two lines of one dispatch on the same SO
+ * line (5 + 5, 5 invoiced) are checked together, not one at a time. Each live
+ * invoice on a blocked SO line is named; an SO line whose dispatched count is
+ * already below this dispatch's qty with nothing invoiced is reported as out of
+ * step (the per-line check used to refuse that too).
+ */
+export async function dispatchCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const rows = (await tx.execute(sql`
+    WITH mine AS (
+      SELECT cdl.sales_order_line_id AS sol_id, SUM(cdl.qty)::int AS qty,
+        string_agg(cdl.line_no::text, ', ' ORDER BY cdl.line_no) AS line_nos
+      FROM public.customer_dispatch_lines cdl
+      JOIN public.customer_dispatches cd ON cd.id = cdl.customer_dispatch_id
+      WHERE cdl.customer_dispatch_id = ${id}::uuid AND cd.company_id = ${companyId}::uuid
+        AND cdl.deleted_at IS NULL AND cdl.sales_order_line_id IS NOT NULL
+      GROUP BY cdl.sales_order_line_id
+    ), chk AS (
+      SELECT m.sol_id, m.qty, m.line_nos, sol.line_no AS so_line_no,
+        COALESCE(so.code, '') AS so_code, so.id AS so_id,
+        COALESCE(sol.dispatched_qty, 0)::int AS dispatched,
+        COALESCE((
+          SELECT SUM(il.qty) FROM public.invoice_lines il
+          JOIN public.invoices inv ON inv.id = il.invoice_id
+          WHERE il.sales_order_line_id = m.sol_id
+            AND inv.deleted_at IS NULL AND inv.status <> 'cancelled' AND il.deleted_at IS NULL
+        ), 0)::int AS invoiced
+      FROM mine m
+      JOIN public.sales_order_lines sol ON sol.id = m.sol_id
+      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id
+    )
+    SELECT chk.line_nos AS "lineNos", chk.so_code AS "soCode", chk.so_id AS "soId",
+      chk.so_line_no AS "soLineNo", chk.dispatched, chk.qty,
+      inv.id AS "invoiceId", inv.code AS "invoiceCode", SUM(il.qty)::int AS "invoicedQty"
+    FROM chk
+    LEFT JOIN public.invoice_lines il
+      ON il.sales_order_line_id = chk.sol_id AND il.deleted_at IS NULL
+    LEFT JOIN public.invoices inv
+      ON inv.id = il.invoice_id AND inv.deleted_at IS NULL AND inv.status <> 'cancelled'
+    WHERE chk.invoiced > chk.dispatched - chk.qty
+    GROUP BY chk.line_nos, chk.so_code, chk.so_id, chk.so_line_no, chk.dispatched, chk.qty,
+      inv.id, inv.code
+    ORDER BY chk.line_nos, inv.code
+  `)) as unknown as Array<{
+    lineNos: string;
+    soCode: string;
+    soId: string | null;
+    soLineNo: number | null;
+    dispatched: number;
+    qty: number;
+    invoiceId: string | null;
+    invoiceCode: string | null;
+    invoicedQty: number | null;
+  }>;
+  const out: CancelBlocker[] = [];
+  const blockedLines = new Set<string>();
+  for (const r of rows) {
+    blockedLines.add(r.lineNos);
+    if (!r.invoiceId || !r.invoiceCode) continue;
+    out.push({
+      docLabel: 'Invoice',
+      docNo: r.invoiceCode,
+      href: `/invoices/${r.invoiceId}`,
+      reason: `Ln ${r.lineNos} is invoiced (${Number(r.invoicedQty ?? 0)} pcs)`,
+    });
+  }
+  for (const lineNos of blockedLines) {
+    if (out.some((b) => b.reason.startsWith(`Ln ${lineNos} `))) continue;
+    const r = rows.find((x) => x.lineNos === lineNos)!;
+    out.push({
+      docLabel: 'SO',
+      docNo: `${r.soCode} Ln ${r.soLineNo ?? '?'}`,
+      href: r.soId ? `/sales-orders/${r.soId}` : null,
+      reason:
+        `its Dispatched count (${Number(r.dispatched)}) is below this dispatch's ${Number(r.qty)} — ` +
+        `the count is out of step; report this to the administrator`,
+    });
+  }
+  return out;
+}
+
+/** The ledger rows this dispatch wrote one-per-component (old dispatches,
+ *  before ADR-115), for EVERY line in one read — the Cancel preview's stock
+ *  lines. Same rows loadDispatchedComponents replays per line on cancel. */
+export async function loadDispatchedComponentsByLine(
+  tx: DbTransaction,
+  companyId: string,
+  code: string,
+): Promise<Map<number, Array<{ itemCode: string; qty: number }>>> {
+  const prefix = `${code} / ln `;
+  const rows = (await tx.execute(sql`
+    SELECT st.source_ref, st.item_id, st.qty, i.code AS item_code
+    FROM public.store_transactions st
+    LEFT JOIN public.items i ON i.id = st.item_id
+    WHERE st.company_id = ${companyId}::uuid
+      AND st.source_type = 'dispatch'
+      AND st.txn_type = 'out'
+      AND st.source_ref LIKE ${prefix} || '%'
+  `)) as unknown as Array<{
+    source_ref: string;
+    item_id: string | null;
+    qty: number;
+    item_code: string | null;
+  }>;
+  const out = new Map<number, Array<{ itemCode: string; qty: number }>>();
+  for (const r of rows) {
+    // Component rows are "<code> / ln <n> / <component>"; the parent row has no
+    // third part and is not a component (loadDispatchedComponents' prefix).
+    const m = /^(\d+) \/ /.exec(r.source_ref.slice(prefix.length));
+    if (!m || !r.item_id) continue;
+    const lineNo = Number(m[1]);
+    const list = out.get(lineNo) ?? [];
+    list.push({ itemCode: r.item_code ?? r.item_id.slice(0, 8), qty: n(r.qty) });
+    out.set(lineNo, list);
+  }
+  return out;
+}
+
+/**
+ * The ONE dispatch cancel writer, run only by an approved Cancel Request
+ * (ADR-235). In-tx body, no rights check — the Cancel Request checks the
+ * ticks. Gives the SO dispatched qty and the stock back exactly once (row lock
+ * first, conditional status write).
+ */
+export async function cancelDispatchTx(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
   reason: string,
   user: AuthContext,
-): Promise<CustomerDispatchDetail> {
-  await requireFormAccess(user, 'dispatch_create', 'edit');
-  await requireFormAccess(user, 'dispatch_create', 'approve');
-  const companyId = requireCompany(user);
-
-  return withUserContext(user, async (tx) => {
-    // S4 — cancel once. The dispatch row is locked FIRST, so a second Cancel
-    // (double click, another tab) waits here, then reads 'cancelled' and is
-    // refused — the SO dispatched qty and the stock go back exactly once.
-    const rows = await tx
-      .select()
-      .from(customerDispatches)
-      .where(
-        and(
-          eq(customerDispatches.id, id),
-          eq(customerDispatches.companyId, companyId),
-          isNull(customerDispatches.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const h = rows[0];
-    if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
-    if (h.status === 'cancelled')
-      throw new ConflictError(
-        `Dispatch ${h.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
-      );
-
-    const lineRows = await tx
-      .select()
-      .from(customerDispatchLines)
-      .where(
-        and(
-          eq(customerDispatchLines.customerDispatchId, id),
-          isNull(customerDispatchLines.deletedAt),
-        ),
-      );
-
-    // Lock the SO lines being given back, in the same id order dispatch and
-    // invoice create use (no deadlock), so an invoice cannot be raised on
-    // them between the "already invoiced?" check below and the reversal.
-    const soLineIds = [
-      ...new Set(lineRows.flatMap((l) => (l.salesOrderLineId ? [l.salesOrderLineId] : []))),
-    ];
-    if (soLineIds.length > 0) {
-      await tx
-        .select({ id: salesOrderLines.id })
-        .from(salesOrderLines)
-        .where(
-          and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)),
-        )
-        .orderBy(asc(salesOrderLines.id))
-        .for('update');
-    }
-
-    // Guard: don't cancel a dispatch that has already been invoiced — reversing
-    // dispatched_qty below invoiced_qty leaves a live invoice billing goods no
-    // longer recorded as dispatched. Pre-check ALL lines before mutating.
-    for (const l of lineRows) {
-      if (!l.salesOrderLineId) continue;
-      const chk = (await tx.execute(sql`
-        SELECT sol.dispatched_qty::int AS dispatched,
-          COALESCE((
-            SELECT SUM(il.qty) FROM public.invoice_lines il
-            JOIN public.invoices inv ON inv.id = il.invoice_id
-            WHERE il.sales_order_line_id = sol.id
-              AND inv.deleted_at IS NULL AND inv.status <> 'cancelled'
-              AND il.deleted_at IS NULL
-          ), 0)::int AS invoiced
-        FROM public.sales_order_lines sol
-        WHERE sol.id = ${l.salesOrderLineId}::uuid
-        LIMIT 1
-      `)) as unknown as Array<{ dispatched: number; invoiced: number }>;
-      const dispatched = Number(chk[0]?.dispatched ?? 0);
-      const invoiced = Number(chk[0]?.invoiced ?? 0);
-      if (invoiced > dispatched - l.qty) {
-        throw new ValidationError(
-          `Cannot cancel Dispatch ${h.code}: Ln ${l.lineNo} is already invoiced ` +
-            `(Invoiced ${invoiced}, Dispatched ${dispatched}). Cancel the invoice first.`,
-        );
-      }
-    }
-
-    // Reverse the dispatched-qty bump + add the stock back on each line.
-    for (const l of lineRows) {
-      await reverseDispatchLineStock(tx, companyId, user, h.code, h.dispatchDate, {
-        salesOrderLineId: l.salesOrderLineId,
-        lineNo: l.lineNo,
-        itemId: l.itemId,
-        qty: Number(l.qty),
-      });
-    }
-
-    // The goods are back on the shelf, so the booking they were shipped against
-    // must hold them again (ADR-180) — otherwise the pieces return as FREE
-    // stock and the customer's order silently loses its cover. Replayed from
-    // this dispatch's own consume events, so it can give back only what this
-    // dispatch actually took.
-    await unconsumeForDispatch(tx, { companyId, customerDispatchId: id }, user);
-
-    // Fix A — a cancel may drop the SO below fully-shipped; revert the header
-    // from `dispatched` back to closed/open to match.
-    await syncSoDispatchStatus(tx, companyId, h.salesOrderId, h.soCodeText ?? h.code, user);
-
-    const cancelledRows = await tx
-      .update(customerDispatches)
-      .set({ status: 'cancelled', updatedBy: user.id, updatedAt: new Date() })
-      .where(and(eq(customerDispatches.id, id), eq(customerDispatches.status, h.status)))
-      .returning({ id: customerDispatches.id });
-    assertRowUpdated(cancelledRows, `Dispatch ${h.code}`);
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: 'Dispatch',
-        entityId: h.id,
-        refId: h.code,
-        qty: lineRows.reduce((sum, l) => sum + Number(l.qty), 0),
-        reason,
-        detail: `${h.code} cancelled`,
-      },
-      companyId,
-      user,
+): Promise<void> {
+  // S4 — cancel once. The dispatch row is locked FIRST, so a second Cancel
+  // (double click, another tab) waits here, then reads 'cancelled' and is
+  // refused — the SO dispatched qty and the stock go back exactly once.
+  const h = await lockDispatchForCancel(tx, companyId, id, true);
+  if (!h) throw new NotFoundError('Dispatch not found. Refresh the page.');
+  if (h.status === 'cancelled')
+    throw new ConflictError(
+      `Dispatch ${h.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
     );
 
-    return getDispatchInternal(tx, id, companyId);
-  });
+  const lineRows = await tx
+    .select()
+    .from(customerDispatchLines)
+    .where(
+      and(
+        eq(customerDispatchLines.customerDispatchId, id),
+        isNull(customerDispatchLines.deletedAt),
+      ),
+    );
+
+  // Lock the SO lines being given back, in the same id order dispatch and
+  // invoice create use (no deadlock), so an invoice cannot be raised on
+  // them between the "already invoiced?" check below and the reversal.
+  const soLineIds = [
+    ...new Set(lineRows.flatMap((l) => (l.salesOrderLineId ? [l.salesOrderLineId] : []))),
+  ];
+  if (soLineIds.length > 0) {
+    await tx
+      .select({ id: salesOrderLines.id })
+      .from(salesOrderLines)
+      .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)))
+      .orderBy(asc(salesOrderLines.id))
+      .for('update');
+  }
+
+  // The refusal rule, under the SO-line locks — before anything moves.
+  const blockers = await dispatchCancelBlockers(tx, companyId, id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(h.code, blockers), { blockers });
+  }
+
+  // Reverse the dispatched-qty bump + add the stock back on each line.
+  for (const l of lineRows) {
+    await reverseDispatchLineStock(tx, companyId, user, h.code, h.dispatchDate, {
+      salesOrderLineId: l.salesOrderLineId,
+      lineNo: l.lineNo,
+      itemId: l.itemId,
+      qty: Number(l.qty),
+    });
+  }
+
+  // The goods are back on the shelf, so the booking they were shipped against
+  // must hold them again (ADR-180) — otherwise the pieces return as FREE
+  // stock and the customer's order silently loses its cover. Replayed from
+  // this dispatch's own consume events, so it can give back only what this
+  // dispatch actually took.
+  await unconsumeForDispatch(tx, { companyId, customerDispatchId: id }, user);
+
+  // Fix A — a cancel may drop the SO below fully-shipped; revert the header
+  // from `dispatched` back to closed/open to match.
+  await syncSoDispatchStatus(tx, companyId, h.salesOrderId, h.soCodeText ?? h.code, user);
+
+  const cancelledRows = await tx
+    .update(customerDispatches)
+    .set({
+      status: 'cancelled',
+      // ADR-235 (0217) — the reason on the row, as invoices carry it.
+      cancelReason: reason,
+      cancelledAt: new Date(),
+      cancelledBy: user.id,
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(customerDispatches.id, id), eq(customerDispatches.status, h.status)))
+    .returning({ id: customerDispatches.id });
+  assertRowUpdated(cancelledRows, `Dispatch ${h.code}`);
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'Dispatch',
+      entityId: h.id,
+      refId: h.code,
+      qty: lineRows.reduce((sum, l) => sum + Number(l.qty), 0),
+      reason,
+      detail: `${h.code} cancelled`,
+    },
+    companyId,
+    user,
+  );
 }
 
 // ─── Edit (ADR-202 Phase 3) ──────────────────────────────────────────────────
@@ -1281,12 +1410,17 @@ export async function updateCustomerDispatchTx(
       `Dispatch ${h.code} is Cancelled — a cancelled dispatch can't be edited.`,
     );
   }
+  // ADR-235 — no edit (which reverses + reposts stock) while a cancel waits.
+  await assertNoPendingCancel(tx, 'customer_dispatch', h.id);
 
   const currentLines = await tx
     .select()
     .from(customerDispatchLines)
     .where(
-      and(eq(customerDispatchLines.customerDispatchId, id), isNull(customerDispatchLines.deletedAt)),
+      and(
+        eq(customerDispatchLines.customerDispatchId, id),
+        isNull(customerDispatchLines.deletedAt),
+      ),
     )
     .orderBy(asc(customerDispatchLines.lineNo));
 
@@ -1352,8 +1486,9 @@ export async function updateCustomerDispatchTx(
   // INVOICE GUARD per line, against the NEW qty. The SO line's dispatched_qty
   // moves by (newQty - currentQty) and must not fall below what is already
   // invoiced on that SO line (else a live invoice bills goods no longer recorded
-  // as dispatched). Same invoiced SQL as cancelDispatch; general form of the
-  // cancel guard (newQty = 0). For one-dispatch-per-line this is "invoiced > newQty".
+  // as dispatched). Same invoiced SQL as the cancel rule (dispatchCancelBlockers);
+  // general form of the cancel guard (newQty = 0). For one-dispatch-per-line
+  // this is "invoiced > newQty".
   for (const c of currentLines) {
     if (!c.salesOrderLineId) continue;
     const newQty = newQtyById.get(c.id)!;
@@ -1556,6 +1691,8 @@ export async function updateCustomerDispatchOrStage(
     input.expectedUpdatedAt,
     user,
     async (tx) => {
+      // ADR-235 — no edit staged while a cancel request waits on this dispatch.
+      await assertNoPendingCancel(tx, 'customer_dispatch', id);
       // Refuse add / remove at stage time too, so a staged edit never silently
       // drops or invents a line (the registry's applyEdit rebuilds from current
       // lines; this gives the user a clear message instead).

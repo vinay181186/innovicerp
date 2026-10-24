@@ -14423,3 +14423,55 @@ one location: SO No. → POL folders → MIR / DIR / … folders.
 - Positive: one place, same ✓ counts on Dossier, Matrix, SO QC Status and the home.
 - Negative: Op Entry / TPI / QC Call Register refuse a MIR/DIR/MCR/TPI result without
   its file. Storage-folder policies (all modules) are still company-wide — separate change.
+
+## ADR-235: One standard Cancel — reason → Cancel Request → Approve → Cancelled, stock reversed, never cascade
+
+**Date:** 2026-10-24
+**Status:** Accepted (owner rule 2026-10-16 "to cancel any doc user must write reason, doc go for approval, system must store reason, after approved doc become cancelled"; audit + plan approved 2026-10-24 "continue")
+
+### Context
+
+The 2026-10-23 audit of every document found no single Cancel: Reject, Short Close,
+Delete, Reverse and Cancel were mixed per module; GRN, Incoming QC, JW DC, JWSO, Plan,
+PRO and Job Card had no real cancel; Party GRN / Party Material Issue "cancel" hid the
+document; SO header cancel left stock bookings; Job Card delete checked almost nothing;
+the reason sat only in the activity log on ~9 documents. ERPNext / SAP B1 / Odoo all
+keep a posted document and mark it Cancelled, reverse stock with opposite entries,
+refuse while a downstream document is live, and never reuse the number.
+
+### Decision
+
+1. A live document is never deleted — only Cancelled. Delete (Trash) stays for drafts /
+   never-used records (Phase D).
+2. Cancel = mandatory reason → `cancel_requests` row (one pending per document) →
+   approved by a holder of the Approve tick on that document's page (the requester may
+   approve their own; "Cancel now" = request + approve at once) → the document's own
+   cancel worker runs in ONE transaction with blockers re-checked. Edit tick = may request.
+3. Never cascade. A live downstream document blocks; the preview lists every blocker
+   in cancel order with a link ("cancel these first").
+4. Stock and counters are reversed by the document's existing single writer
+   (`postStockMove` / `postPartyStockMove` opposite entries; §20.1) — the ledger is
+   never edited. A cancel that would need stock already used is refused, naming the
+   document that used it.
+5. The cancelled document stays visible and read-only with its reason, who and when;
+   lists filter it; print carries a CANCELLED mark. Numbers are never reused; a
+   correction is a new document.
+6. While a request is pending the document cannot be edited.
+7. One registry (`modules/cancel-requests/registry.ts`): each document type supplies
+   lock / blockers / effects / run. Routes: `GET /cancel/:type/:id/preview`,
+   `POST /cancel/:type/:id`, `POST /cancel-requests/:id/decide | withdraw`,
+   `GET /cancel-requests`. Approvals inbox has a Cancel Requests tab.
+8. Phases: A foundation + Invoice, JW Invoice, Customer Dispatch (migration 0217);
+   B the other existing cancels (JW Return, CMR, Party GRN / Issue made visible, DC,
+   Store Issue, Stock Count, Tool Issue, PR, PO); C new cancels (SO, JWSO, Plan, PRO,
+   Job Card, GRN + Incoming QC, DC receipt, JW DC); D delete-only-drafts, master
+   in-use checks, Trash restore recompute.
+9. GST: the system raises no e-invoice IRN / e-way bill; the invoice cancel dialog
+   reminds the user to cancel an IRN / e-way bill on the portal within 24 h.
+
+### Alternatives Considered
+
+- Cascade cancel of the chain — rejected (ERP standard is block; silent chain cancels
+  hide stock moves).
+- Hard delete / editing the ledger — rejected (CLAUDE.md §6 rule 8, ADR-185).
+- Amend (`DOC-0001-1`) — not now; correction = new document (owner may ask later).

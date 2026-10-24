@@ -52,7 +52,8 @@ import { Banner } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
 import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
-import { CancelInvoiceModal } from '../components/cancel-invoice-modal';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { invoiceSheetHtml, printInvoice } from '../lib/print';
 import { signedRoundOff } from '@/modules/sales-orders/lib/gst-rows';
@@ -173,12 +174,12 @@ function InvoiceDetailPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = inv.priceVisible === false;
   // ADR-202 Phase 3 — an invoice is never edited; a correction is a reason-logged
-  // cancel. Offer it only to someone who can both edit AND approve this form, only
-  // while the invoice is live, and only before any payment lands (a settled
-  // invoice cannot be unwound here). totalPaid is null when prices are hidden —
-  // those users don't get the action, which is the safe default.
+  // cancel. ADR-235: the ONE standard Cancel — Edit sends a Cancel Request,
+  // Approve decides it. The dialog's server preview says what blocks it (a
+  // payment, a later document), so the action is offered to either tick
+  // holder while the invoice is live.
   const isCancelled = inv.status === 'cancelled';
-  const canCancel = perms.edit && perms.approve && !isCancelled && (inv.totalPaid ?? 0) === 0;
+  const canCancel = (perms.edit || perms.approve) && !isCancelled;
   const taxSplit = invoiceTaxSplit({
     gstPercent: inv.gstPercent ?? 0,
     gstAmount: inv.gstAmount ?? 0,
@@ -280,6 +281,12 @@ function InvoiceDetailPage(): React.JSX.Element {
         </div>
       </div>
 
+      <CancelPendingBanner
+        docType="invoice"
+        docId={inv.id}
+        cancelled={isCancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
       {isCancelled ? (
         <div className="mb-2">
           <Banner
@@ -522,7 +529,12 @@ function InvoiceDetailPage(): React.JSX.Element {
       </Panel>
 
       {cancelOpen ? (
-        <CancelInvoiceModal id={inv.id} code={inv.code} onClose={() => setCancelOpen(false)} />
+        <CancelDocDialog
+          docType="invoice"
+          docId={inv.id}
+          docCode={inv.code}
+          onClose={() => setCancelOpen(false)}
+        />
       ) : null}
     </div>
   );

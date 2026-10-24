@@ -202,19 +202,3 @@ export function useUpdateCustomerDispatch(id: string, saveKey?: SaveKey) {
     },
   });
 }
-
-/** Cancel reverses the dispatch; the reason is required (ADR-197). */
-export function useCancelDispatch() {
-  const qc = useQueryClient();
-  return useMutation<CustomerDispatchDetail, Error, { id: string; reason: string }>({
-    mutationFn: ({ id, reason }) =>
-      apiFetch<CustomerDispatchDetail>(`/customer-dispatches/${id}/cancel`, {
-        method: 'POST',
-        json: { reason },
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: dispatchKeys.all });
-      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-    },
-  });
-}

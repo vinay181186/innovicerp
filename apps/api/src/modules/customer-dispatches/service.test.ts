@@ -33,8 +33,8 @@ import {
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
+import { requestCancel } from '../cancel-requests/service';
 import {
-  cancelDispatch,
   createDispatch,
   getDispatchableSo,
   updateCustomerDispatch,
@@ -368,7 +368,12 @@ describe('customer dispatch — assembly finished-good stock legs', () => {
     expect(await onHand(parentId)).toBe(6);
 
     // Cancel puts the 4 back on the parent.
-    await cancelDispatch(dispatch.id, 'Test cancel', admin);
+    await requestCancel(
+      'customer_dispatch',
+      dispatch.id,
+      { reason: 'Test cancel', approveNow: true },
+      admin,
+    );
     const ins = (
       await db.select().from(storeTransactions).where(eq(storeTransactions.sourceType, 'dispatch'))
     )
@@ -578,17 +583,25 @@ describe('updateCustomerDispatch — ticks decide (ADR-232)', () => {
     await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
   });
 
-  it('cancelDispatch (not a delete): Sales L5 with role operator passes the gate', async () => {
+  // ADR-235 — cancel is a Cancel Request: Edit requests, Approve approves.
+  it('cancel (not a delete): Sales L5 with role operator may approveNow', async () => {
     const user = asAccess(admin, { departments: { sales: 'L5' } }, 'operator');
-    await expect(cancelDispatch(UNKNOWN_ID, 'test', user)).rejects.not.toBeInstanceOf(
-      AuthorizationError,
-    );
+    await expect(
+      requestCancel('customer_dispatch', UNKNOWN_ID, { reason: 'test', approveNow: true }, user),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
   });
 
-  it('cancelDispatch: Sales L3 (Edit but no Approve) is refused', async () => {
+  it('cancel: Sales L3 (Edit but no Approve) may request', async () => {
     const user = asAccess(admin, { departments: { sales: 'L3' } }, 'manager');
-    await expect(cancelDispatch(UNKNOWN_ID, 'test', user)).rejects.toBeInstanceOf(
-      AuthorizationError,
-    );
+    await expect(
+      requestCancel('customer_dispatch', UNKNOWN_ID, { reason: 'test', approveNow: false }, user),
+    ).rejects.not.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('cancel: Sales L3 (Edit but no Approve) is refused approveNow', async () => {
+    const user = asAccess(admin, { departments: { sales: 'L3' } }, 'manager');
+    await expect(
+      requestCancel('customer_dispatch', UNKNOWN_ID, { reason: 'test', approveNow: true }, user),
+    ).rejects.toBeInstanceOf(AuthorizationError);
   });
 });

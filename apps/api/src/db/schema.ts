@@ -1594,6 +1594,85 @@ export const documentEditRequests = pgTable(
 
 export type DocumentEditRequestRow = typeof documentEditRequests.$inferSelect;
 
+// ─── Cancel Requests (migration 0217, ADR-235 Phase A) ──────────────────────
+// ONE standard Cancel: a live document is never deleted, only Cancelled, after
+// a holder of the Approve tick on its page approves a Cancel Request. While a
+// row is 'pending' the document is untouched (its edit paths refuse); approving
+// runs the document's own cancel worker in the same transaction. doc_type is a
+// named CHECK (not an enum) so a later phase widens it with a new migration.
+export const cancelRequests = pgTable(
+  'cancel_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    // packages/shared CANCEL_DOC_TYPES: 'invoice' | 'jw_invoice' | 'customer_dispatch'.
+    docType: text('doc_type').notNull(),
+    docId: uuid('doc_id').notNull(),
+    // Snapshot of the document code for the inbox (no join back per type).
+    docCode: text('doc_code').notNull(),
+    reason: text('reason').notNull(),
+    // 'pending' | 'approved' | 'rejected' | 'withdrawn'
+    status: text('status').notNull().default('pending'),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionNote: text('decision_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check(
+      'cancel_requests_doc_type_chk',
+      sql`${t.docType} IN ('invoice', 'jw_invoice', 'customer_dispatch')`,
+    ),
+    check(
+      'cancel_requests_status_chk',
+      sql`${t.status} IN ('pending', 'approved', 'rejected', 'withdrawn')`,
+    ),
+    check('cancel_requests_reason_chk', sql`length(btrim(${t.reason})) > 0`),
+    // One open Cancel Request per document.
+    uniqueIndex('cancel_requests_pending_uq')
+      .on(t.docType, t.docId)
+      .where(sql`${t.status} = 'pending' and ${t.deletedAt} is null`),
+    index('cancel_requests_company_status_idx')
+      .on(t.companyId, t.status, t.requestedAt)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('cancel_requests_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // Coarse RLS backstop; the service's Edit tick check is the real gate.
+    pgPolicy('cancel_requests_request_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`company_id = current_company_id() AND current_user_role() IN ('admin', 'manager', 'operator', 'qc', 'procurement', 'dispatch', 'design')`,
+    }),
+    // The API checks the Approve tick (ADR-232); this only fences other companies.
+    pgPolicy('cancel_requests_decide', {
+      for: 'update',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type CancelRequestDbRow = typeof cancelRequests.$inferSelect;
+
 export const runningOps = pgTable(
   'running_ops',
   {
@@ -6617,6 +6696,11 @@ export const customerDispatches = pgTable(
     vehicleNo: text('vehicle_no'),
     status: customerDispatchStatusEnum('status').notNull().default('dispatched'),
     remarks: text('remarks'),
+    // ADR-235 (0217) — the reason on the cancelled row, as invoices carry.
+    // NULL on dispatches cancelled before 0217 (reason is in the activity log).
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

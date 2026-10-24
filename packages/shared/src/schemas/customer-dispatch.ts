@@ -117,6 +117,10 @@ export const customerDispatchRowSchema = z.object({
   transport: z.string().nullable(),
   vehicleNo: z.string().nullable(),
   status: z.enum(CUSTOMER_DISPATCH_STATUSES),
+  /** ADR-235 — why / when it was cancelled (null while live, and on dispatches
+   *  cancelled before 0217, whose reason is only in History). */
+  cancelReason: z.string().nullable().default(null),
+  cancelledAt: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),

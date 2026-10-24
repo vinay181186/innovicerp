@@ -21,8 +21,8 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { useJwInvoicesList } from '../api';
-import { CancelJwInvoiceModal } from './cancel-jw-invoice-modal';
 import { jwInvoiceColumns } from './jw-invoice-columns';
 import { JwInvoiceExpand } from './jw-invoice-expand';
 import { NewJwInvoiceModal } from './new-jw-invoice-modal';
@@ -52,7 +52,8 @@ export function JwInvoiceView({
   // ADR-234 — false while access loads, so neither the button nor the `?jw=`
   // auto-opened form shows to someone who turns out to lack Entry.
   const canWrite = !!eff && invPerms.entry;
-  const canCancel = invPerms.edit && invPerms.approve;
+  // ADR-235 — the ONE standard Cancel: Edit requests, Approve decides.
+  const canCancel = invPerms.edit || invPerms.approve;
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(() => Boolean(initialJwId));
@@ -193,8 +194,7 @@ export function JwInvoiceView({
                 label: 'Cancel Invoice',
                 icon: 'x',
                 group: 'danger',
-                hidden: !canCancel,
-                disabledReason: r.status === 'cancelled' ? 'Already Cancelled' : undefined,
+                hidden: !canCancel || r.status === 'cancelled',
                 onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
               },
             ]}
@@ -226,9 +226,10 @@ export function JwInvoiceView({
         </Modal>
       ) : null}
       {cancelTarget && canCancel ? (
-        <CancelJwInvoiceModal
-          id={cancelTarget.id}
-          code={cancelTarget.code}
+        <CancelDocDialog
+          docType="jw_invoice"
+          docId={cancelTarget.id}
+          docCode={cancelTarget.code}
           onClose={() => setCancelTarget(null)}
         />
       ) : null}

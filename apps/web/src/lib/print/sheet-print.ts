@@ -156,6 +156,9 @@ export interface SheetPrintModel {
   /** Edit-approval (ADR-202): the document has an edit awaiting approval — print
    *  the "Draft — awaiting approval" mark on every page. Off by default. */
   draft?: boolean | undefined;
+  /** ADR-235: the document is Cancelled — draw a large diagonal "CANCELLED"
+   *  across every printed page. Off by default (byte-identical sheet). */
+  cancelled?: boolean | undefined;
   opts?: { testBanner?: boolean };
 }
 
@@ -259,6 +262,17 @@ export const SHEET_STYLE = `
      passed, so every other document is byte-identical. */
   .doc-draft{font-family:var(--f-label);font-weight:700;font-size:9pt;letter-spacing:.16em;
              text-transform:uppercase;color:#B00020;text-align:center;margin:.7mm 0 0}
+  /* ADR-235: a Cancelled document. A big grey diagonal stamp over the sheet --
+     one per .page once the paginator has split it (so every printed page
+     carries it), else one over the whole un-paginated sheet. It is a pseudo-
+     element, so it adds no rows and the paginator's measuring is unchanged. */
+  .sheet.is-cancelled,.sheet.is-cancelled .page{position:relative}
+  .sheet.is-cancelled::after,.sheet.is-cancelled .page::after{content:'CANCELLED';
+    position:absolute;left:50%;top:45%;transform:translate(-50%,-50%) rotate(-30deg);
+    font-family:var(--f-label);font-weight:700;font-size:78pt;letter-spacing:.12em;
+    line-height:1;padding:2mm 7mm;white-space:nowrap;pointer-events:none;z-index:5;
+    color:rgba(0,0,0,.16);border:5px solid rgba(0,0,0,.16);border-radius:3mm}
+  .sheet.is-cancelled:has(.page)::after{content:none}
 
   .colh{font-family:var(--f-label);font-weight:700;font-size:9pt;letter-spacing:.08em;
         text-transform:uppercase;background:var(--paper-band);padding:1.3mm 2.5mm!important;
@@ -798,7 +812,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
     <button onclick="window.close()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">✕ Close</button>
     <span style="margin-left:10px;font-size:12px;color:#6b7280">To download: press Print, then choose “Save as PDF”.</span>
   </div>
-  <article class="sheet">
+  <article class="sheet${model.cancelled ? ' is-cancelled' : ''}">
     <table class="doc">
       <thead><tr><th class="lh" colspan="${cols}">${letterhead}</th></tr></thead>
       <tfoot><tr><td class="pgfoot" colspan="${cols}"><div></div></td></tr></tfoot>

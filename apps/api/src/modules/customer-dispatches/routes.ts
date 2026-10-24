@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import { listDispatchRegister } from './register';
 import { updateCustomerDispatchInputSchema } from './schema';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -66,10 +67,12 @@ export async function customerDispatchesRoutes(app: FastifyInstance): Promise<vo
     return service.updateCustomerDispatchOrStage(id, body, req.user);
   });
 
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/customer-dispatches/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const { reason } = cancelDispatchBodySchema.parse(req.body ?? {});
-    return service.cancelDispatch(id, reason, req.user);
+    return requestCancel('customer_dispatch', id, { reason, approveNow: false }, req.user);
   });
 }

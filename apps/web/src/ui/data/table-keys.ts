@@ -49,6 +49,8 @@ export const TABLE_KEYS = {
   approvalsPrPo: 'approvals-pr-po',
   approvalsOpEntry: 'approvals-op-entry',
   editApprovalsInbox: 'edit-approvals-inbox',
+  /** Settings → Approvals → Cancel Requests (ADR-235). */
+  approvalsCancel: 'approvals-cancel',
 
   // ADR-199 conversions — Store (batch S)
   grnList: 'grn-list',

@@ -1,6 +1,7 @@
 // Invoice cancel guard tests (ADR-202 Phase 3). An invoice is a statutory GST
 // document, so a correction is a reason-logged CANCEL, not an edit. Fixtures
-// (SO + invoice rows) are inserted directly; cancel is tested in isolation.
+// (SO + invoice rows) are inserted directly. ADR-235: the cancel runs through
+// the standard Cancel Request (requestCancel, approveNow = request + approve).
 
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,6 +16,7 @@ import {
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -91,8 +93,14 @@ afterAll(async () => {
 describe('invoices cancel (ADR-202 Phase 3)', () => {
   it('cancels an unpaid invoice: status cancelled, stamps set, row kept', async () => {
     const id = await insertInvoice('ok');
-    const out = await service.cancelInvoice(id, { reason: 'Wrong GST rate — reissue' }, admin);
-    expect(out.status).toBe('cancelled');
+    const out = await requestCancel(
+      'invoice',
+      id,
+      { reason: 'Wrong GST rate — reissue', approveNow: true },
+      admin,
+    );
+    expect(out.cancelled).toBe(true);
+    expect(out.request.status).toBe('approved');
 
     // Row is kept (the INV-#### series is never deleted) and the cancel stamps
     // are written.
@@ -115,7 +123,12 @@ describe('invoices cancel (ADR-202 Phase 3)', () => {
       updatedBy: admin.id,
     });
     await expect(
-      service.cancelInvoice(id, { reason: 'Customer paid, still want to cancel' }, admin),
+      requestCancel(
+        'invoice',
+        id,
+        { reason: 'Customer paid, still want to cancel', approveNow: true },
+        admin,
+      ),
     ).rejects.toBeInstanceOf(ConflictError);
 
     // Untouched — still live.
@@ -125,9 +138,9 @@ describe('invoices cancel (ADR-202 Phase 3)', () => {
 
   it('refuses a double-cancel', async () => {
     const id = await insertInvoice('double');
-    await service.cancelInvoice(id, { reason: 'First cancel' }, admin);
+    await requestCancel('invoice', id, { reason: 'First cancel', approveNow: true }, admin);
     await expect(
-      service.cancelInvoice(id, { reason: 'Second cancel' }, admin),
+      requestCancel('invoice', id, { reason: 'Second cancel', approveNow: true }, admin),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });

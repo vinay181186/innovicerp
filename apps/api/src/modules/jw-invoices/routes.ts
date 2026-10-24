@@ -6,6 +6,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -33,10 +34,12 @@ export async function jwInvoicesRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // R5 (ADR-194): cancel an issued JW invoice (reverses the billed qty).
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/jw-invoices/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);
     const input = cancelJwInvoiceInputSchema.parse(req.body);
-    return service.cancelJwInvoice(id, input, req.user);
+    return requestCancel('jw_invoice', id, { reason: input.reason, approveNow: false }, req.user);
   });
 }
