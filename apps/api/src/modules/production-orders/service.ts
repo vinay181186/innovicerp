@@ -1214,7 +1214,15 @@ export async function createProductionOrder(
       // live children is a SUB-ASSEMBLY (or the top assembly): its material is
       // its child parts, issued against its Job Card, not a raw-material bar.
       // Only asked when the plan has no RM, so every other plan is untouched.
-      if (!planHasRmGrade && !planHasRmSize && !(await planIsMlAssembly(tx, companyId, plan.id))) {
+      // Owner 2026-10-24: a JWSO-line plan needs no RM either — the customer
+      // supplies the material, so a Route Card without RM must not block it.
+      // The "Raw Material Available" tick above stays compulsory for it.
+      if (
+        !planHasRmGrade &&
+        !planHasRmSize &&
+        !plan.jwLineId &&
+        !(await planIsMlAssembly(tx, companyId, plan.id))
+      ) {
         throw new ValidationError(
           // ADR-218: the plan screens no longer set material, so name the two
           // places that do and the re-save that pulls it through.
