@@ -132,9 +132,11 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
     zip ? `Zipping ${zip.done}/${zip.total}…` : `⬇ ZIP (${what})`;
 
   const picker = (
-    <div style={{ minWidth: 340 }}>
+    <div className="qd-order-pick">
       <SearchableSelect
         id="qc-dossier-order"
+        clearable
+        ariaLabel="SO / JWSO"
         value={kind && orderId ? `${kind}:${orderId}` : null}
         valueLabel={
           dossier
@@ -182,8 +184,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
       filters={
         !orderId ? undefined : (
           <input
-            className="innovic-input"
-            style={{ minWidth: 260 }}
+            className="innovic-input qd-pol-search"
             placeholder="Search POL, item code, item name, JC No., report, file…"
             aria-label="Search the dossier"
             value={term}

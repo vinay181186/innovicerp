@@ -59,6 +59,9 @@ export interface SearchableSelectProps {
    *  the server's reason instead of `emptyText`, so a refused list (403) no longer
    *  reads as "No matches". */
   error?: unknown;
+  /** Opt-in × at the right end while a value is picked: empties the box, calls
+   *  onChange(null) and keeps the cursor in the field. Off by default. */
+  clearable?: boolean | undefined;
 }
 
 function optionLabel(o: SearchableOption): string {
@@ -88,6 +91,7 @@ export function SearchableSelect({
   ariaLabel,
   emptyText = 'No matches',
   error,
+  clearable = false,
 }: SearchableSelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -331,6 +335,15 @@ export function SearchableSelect({
   }
 
   const activeOptionId = open && filtered[highlight] ? `${baseId}-opt-${highlight}` : undefined;
+  const showClear = clearable && !disabled && !!value;
+
+  function clear(): void {
+    shownLabelRef.current = undefined;
+    setQuery('');
+    onChange(null);
+    runSearch('');
+    inputRef.current?.focus();
+  }
 
   return (
     <div ref={containerRef} className={cn('relative', className)}>
@@ -353,11 +366,18 @@ export function SearchableSelect({
         disabled={disabled}
         placeholder={placeholder}
         value={query}
+        {...(clearable && query ? { title: query } : {})}
+        {...(showClear ? { style: { paddingRight: 24 } } : {})}
         onChange={handleInput}
         onFocus={() => setOpen(true)}
         onClick={() => setOpen(true)}
         onKeyDown={handleKeyDown}
       />
+      {showClear ? (
+        <button type="button" className="ss-clear" aria-label="Clear" title="Clear" onClick={clear}>
+          ×
+        </button>
+      ) : null}
       {open && rect
         ? createPortal(
             <ul

@@ -122,3 +122,21 @@
   font-size: var(--fs-xs);
   padding: var(--sp-1) var(--sp-3);
 }
+
+/* Order field + POL search: wider than the filter bar's 168px default so the
+   picked order (SO No. · Internal SO No. · customer) and the hints read in full.
+   Both wrap to their own line on a narrow screen. */
+.list-filterbar .qd-order-pick {
+  width: 420px;
+  max-width: 100%;
+  flex: 0 1 auto;
+}
+.list-filterbar .qd-order-pick input.innovic-input {
+  width: 100% !important;
+  text-overflow: ellipsis;
+}
+.list-filterbar input.innovic-input.qd-pol-search {
+  width: 300px !important;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
