@@ -51,14 +51,3 @@ export async function openStoragePath(path: string, refCode?: string | null): Pr
     window.alert(e instanceof Error ? e.message : 'Could not open file. Try again.');
   }
 }
-
-/** The matrix Overall column's screen word for each stored overall code. */
-export function overallLabel(ov: string): string {
-  return ov === 'complete'
-    ? 'Completed'
-    : ov === 'partial'
-      ? 'Partly Completed'
-      : ov === 'no_jc'
-        ? 'No JC'
-        : 'No QC';
-}
