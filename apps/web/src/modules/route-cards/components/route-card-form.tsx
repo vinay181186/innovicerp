@@ -87,11 +87,6 @@ export interface RouteCardFormOpDraft {
   // Resolved on machine-code change (or null when QC/OSP).
   machineId: string;
   machineCodeText: string; // displayed value; also stored as fallback
-  // DISPLAY-ONLY, never sent: the saved card's machine name and group code, so
-  // a copied/opened row still reads "CODE — Name" and its group even when that
-  // machine is not in the loaded machines list. Cleared when the user re-picks.
-  machineName?: string;
-  machineGroupCode?: string;
   operation: string;
   opType: RouteCardOpType;
   cycleTimeMin: string; // MINUTES per piece
@@ -165,8 +160,6 @@ export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpD
     machineGroupId: null,
     machineId: op.machineId ?? '',
     machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
-    machineName: op.machineName ?? '',
-    machineGroupCode: op.machineGroupCode ?? '',
     operation: op.operation,
     opType: op.opType,
     // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
@@ -372,10 +365,14 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   // they are THEN, not as they were when the pick was made.
   const opsRef = useRef(ops);
   opsRef.current = ops;
+  // Read after the copy's fetch through a ref, so a machines list that landed
+  // DURING the fetch is seen (the render's own value would be stale).
+  const machinesRef = useRef(machinesList?.machines);
+  machinesRef.current = machinesList?.machines;
   const applyCopy = (detail: RouteCardDetail): void => {
     // The machines list has usually loaded before a copy, so the "fill groups
     // when machines load" effect below will not run again — fill them here.
-    setOps(fillGroupsFromMachines(detailOpsToDrafts(detail.ops), machinesList?.machines ?? []));
+    setOps(fillGroupsFromMachines(detailOpsToDrafts(detail.ops), machinesRef.current ?? []));
     setCopiedFrom({ id: detail.id, label: `${detail.code} Rev ${detail.currentRevision}` });
     setCopyFromId(detail.id);
   };
@@ -470,8 +467,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     updateOp(idx, {
       machineCodeText: code,
       machineId: match?.id ?? '',
-      machineName: '',
-      machineGroupCode: '',
       ...(current && current.machineGroupId == null && match?.machineGroupId
         ? { machineGroupId: match.machineGroupId }
         : {}),
@@ -491,8 +486,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     const mismatch = groupId != null && machine != null && machine.machineGroupId !== groupId;
     updateOp(idx, {
       machineGroupId: groupId,
-      machineGroupCode: '',
-      ...(mismatch ? { machineId: '', machineCodeText: '', machineName: '' } : {}),
+      ...(mismatch ? { machineId: '', machineCodeText: '' } : {}),
     });
   };
 

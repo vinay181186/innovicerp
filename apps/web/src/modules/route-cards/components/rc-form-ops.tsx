@@ -163,11 +163,9 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   const rowMachines = op.machineGroupId
     ? machinesList.filter((m) => m.machineGroupId === op.machineGroupId)
     : machinesList;
-  // Master first; the saved card's group code only as a fallback, for a row
-  // whose machine/group is not in the loaded lists (cleared on any re-pick).
-  const groupCode =
-    (op.machineGroupId ? machineGroupCodeById.get(op.machineGroupId) : undefined) ??
-    (op.machineGroupCode || null);
+  const groupCode = op.machineGroupId
+    ? (machineGroupCodeById.get(op.machineGroupId) ?? null)
+    : null;
   const rowBg =
     op.opType === 'qc' ? 'var(--green3)' : op.opType === 'outsource' ? 'var(--purple3)' : undefined;
   const accent =
@@ -262,7 +260,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
                   op.machineId
                     ? pickedMachine
                       ? codeAndName(pickedMachine.code, pickedMachine.name)
-                      : codeAndName(op.machineCodeText, op.machineName)
+                      : op.machineCodeText
                     : undefined
                 }
                 selectedLabel={(o) => (o.code ? codeAndName(o.code, o.name) : o.name)}
