@@ -49,6 +49,8 @@ export const TABLE_KEYS = {
   approvalsPrPo: 'approvals-pr-po',
   approvalsOpEntry: 'approvals-op-entry',
   editApprovalsInbox: 'edit-approvals-inbox',
+  /** Settings → Approvals → Cancel Requests (ADR-235). */
+  approvalsCancel: 'approvals-cancel',
 
   // ADR-199 conversions — Store (batch S)
   grnList: 'grn-list',
@@ -117,9 +119,11 @@ export const TABLE_KEYS = {
   qcCommandRework: 'qc-command-rework',
   ncRegister: 'nc-register',
   capaList: 'capa-list',
-  qcDocsMatrix: 'qc-docs-matrix',
   qcDocsRegister: 'qc-docs-register',
   qcDocsStatus: 'qc-docs-status',
+  /** ADR-252 QC Dossier — order summary (one row per POL) and the file sheet. */
+  qcDocsDossier: 'qc-docs-dossier',
+  qcDocsDossierFiles: 'qc-docs-dossier-files',
   reportTypes: 'report-types',
 
   // ADR-199 conversions — Design / Tasks / System / Dashboards (batch D)

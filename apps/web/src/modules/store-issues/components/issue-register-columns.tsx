@@ -40,9 +40,9 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
           {iss.reversedAt ? (
             <div
               style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}
-              title={`Reversed ${fmtDate(iss.reversedAt.slice(0, 10))} — ${iss.reversalReason ?? ''}`}
+              title={`Cancelled ${fmtDate(iss.reversedAt.slice(0, 10))} — ${iss.reversalReason ?? ''}`}
             >
-              Reversed
+              Cancelled
             </div>
           ) : null}
         </>

@@ -84,24 +84,36 @@ export interface ListQcDocumentsResponse {
   total: number;
 }
 
-export const createQcDocumentInputSchema = z.object({
-  jobCardId: z.string().uuid().optional(),
-  jcCodeText: z.string().max(64).optional(),
-  salesOrderId: z.string().uuid().optional(),
-  soCodeText: z.string().max(64).optional(),
-  category: qcDocCategorySchema.default('qc-docs'),
-  docType: z.string().min(1).max(80),
-  fileName: z.string().min(1).max(255),
-  storagePath: z.string().min(1).max(512),
-  // QC-completion matrix link (migration 0043): which JC QC op this doc
-  // certifies + the piece serial-range it covers. Drives the SO-pivoted
-  // matrix in renderQCDocuments. All optional so the flat-register upload
-  // path keeps working unchanged.
-  jcOpId: z.string().uuid().optional(),
-  qcOpName: z.string().max(120).optional(),
-  srFrom: z.number().int().min(1).optional(),
-  srTo: z.number().int().min(1).optional(),
-});
+export const createQcDocumentInputSchema = z
+  .object({
+    jobCardId: z.string().uuid().optional(),
+    jcCodeText: z.string().max(64).optional(),
+    salesOrderId: z.string().uuid().optional(),
+    soCodeText: z.string().max(64).optional(),
+    category: qcDocCategorySchema.default('qc-docs'),
+    /** Free-text type for the File Register path. With reportTypeId the server
+     *  writes the Report Type's own name here instead. */
+    docType: z.string().min(1).max(80).optional(),
+    fileName: z.string().min(1).max(255),
+    storagePath: z.string().min(1).max(512),
+    /** ADR-252 — the QC entry (op_log, log_type 'qc') this report belongs to.
+     *  The server derives the JC, JC op, SO / JWSO line and report type from
+     *  it; values sent for those are ignored. */
+    opLogId: z.string().uuid().optional(),
+    /** ADR-252 — the Report Type (folder). Required unless opLogId names one. */
+    reportTypeId: z.string().uuid().optional(),
+    /** ADR-252 — the order line (POL folder) for a report with no QC entry,
+     *  e.g. a customer certificate. Exactly one of the two, or neither when a
+     *  jobCardId is sent (the server takes the card's line). */
+    soLineId: z.string().uuid().optional(),
+    jwLineId: z.string().uuid().optional(),
+  })
+  .refine((i) => i.docType || i.reportTypeId || i.opLogId, {
+    message: 'Pick the report type',
+  })
+  .refine((i) => !(i.soLineId && i.jwLineId), {
+    message: 'A report belongs to one order line',
+  });
 export type CreateQcDocumentInput = z.infer<typeof createQcDocumentInputSchema>;
 
 // ─── SO-pivoted QC-completion matrix (legacy renderQCDocuments L23039) ──────
@@ -193,64 +205,165 @@ export interface ListQcMatrixSosResponse {
   sos: QcMatrixSoOption[];
 }
 
-// ─── Line-detail modal (legacy _qcDocLineDetail L23226) ─────────────────────
+// Line-detail modal (pieces from–to) removed by ADR-252: a report belongs to
+// its QC entry; the Dossier shows each entry's accepted qty and date.
 
-/** A QC inspection batch (op_log type='qc') with a derived serial range. */
-export interface QcLineBatch {
-  logId: string;
-  logNo: string;
-  date: string | null;
-  opSeq: number;
-  operation: string;
-  accepted: number;
-  rejected: number;
-  /** Running serial range derived across batches (legacy L23274-23288). */
-  srFrom: number;
-  srTo: number;
+// ─── ADR-252 QC Dossier: SO / JWSO → POL → report folders → QC entries ─────
+// ONE read over every place a QC report is kept: the QC entry itself
+// (op_log.qc_report_path, Op Entry / TPI / QC Call Register), QC Documents
+// uploads (qc_documents), the Job Card form's QC files (file_registry
+// 'qc-docs'). Folders are labels on each file, never storage paths.
+
+export const QC_DOSSIER_ORDER_KINDS = ['so', 'jwso'] as const;
+export const qcDossierOrderKindSchema = z.enum(QC_DOSSIER_ORDER_KINDS);
+export type QcDossierOrderKind = (typeof QC_DOSSIER_ORDER_KINDS)[number];
+
+/** GET /qc-documents/dossier/orders — the order picker (server search). */
+export const qcDossierOrdersQuerySchema = z.object({
+  search: z.string().min(1).max(100).optional(),
+  limit: z.coerce.number().int().positive().max(50).default(20),
+});
+export type QcDossierOrdersQuery = z.infer<typeof qcDossierOrdersQuerySchema>;
+
+export interface QcDossierOrderOption {
+  kind: QcDossierOrderKind;
+  id: string;
+  /** IN-SO-##### or IN-JW-#####. */
+  code: string;
+  /** ADR-207: Internal SO No. (SO only; null otherwise). */
+  internalSoNo: string | null;
+  /** The customer's PO number — searchable, not shown in the picker row. */
+  clientPoNo: string | null;
+  customerName: string | null;
+}
+export interface QcDossierOrdersResponse {
+  orders: QcDossierOrderOption[];
 }
 
-/** One uploaded doc within a doc-type section (legacy L23324-23340). */
-export interface QcLineDoc {
-  id: string;
-  docType: string;
-  srFrom: number | null;
-  srTo: number | null;
+/** GET /qc-documents/dossier?kind=&orderId= */
+export const qcDossierQuerySchema = z.object({
+  kind: qcDossierOrderKindSchema,
+  orderId: z.string().uuid(),
+});
+export type QcDossierQuery = z.infer<typeof qcDossierQuerySchema>;
+
+export const QC_DOSSIER_FILE_SOURCES = ['qc_entry', 'qc_document', 'job_card'] as const;
+export type QcDossierFileSource = (typeof QC_DOSSIER_FILE_SOURCES)[number];
+
+export interface QcDossierFile {
+  /** Unique in the response: '<source>:<row id>'. */
+  key: string;
+  source: QcDossierFileSource;
+  /** qc_documents.id — only these can be deleted from the Dossier. */
+  qcDocumentId: string | null;
   fileName: string;
   storagePath: string;
-  uploadedByText: string | null;
-  createdAt: string;
+  /** Uploader's full name (users.full_name), else the stored email/text. */
+  uploadedByName: string | null;
+  /** ISO timestamp. */
+  uploadedAt: string;
+  jcCode: string | null;
+  /** Newest file of its QC entry (older ones are earlier revisions, D4). */
+  current: boolean;
 }
 
-/** A doc-type section in the modal (legacy L23295-23357). */
-export interface QcLineDocSection {
-  docType: string;
-  fullName: string;
-  /** From report_types.default_mandatory (true when no config = optional). */
-  mandatory: boolean;
-  docs: QcLineDoc[];
-}
+export const QC_ENTRY_REPORT_STATES = ['report_in', 'report_missing'] as const;
+export type QcEntryReportState = (typeof QC_ENTRY_REPORT_STATES)[number];
 
-export interface QcLineDetailResponse {
+/** One QC entry (op_log, log_type 'qc', accepted qty > 0) on a QC step. */
+export interface QcDossierEntry {
+  opLogId: string;
+  logNo: string;
   jobCardId: string;
   jcCode: string;
-  itemCode: string | null;
-  /** The customer's drawing revision for this job card's part, read off the SO
-   *  line it was raised against (job_cards.source_so_line_id →
-   *  sales_order_lines.revision). Null for a card with no SO line behind it,
-   *  which shows the bare item code. Never items.revision. */
-  itemRevision: string | null;
-  /** The customer's PO line number (`POL`) for the SO line behind this row.
-   *  Null when there is none. Read-only — typed only on the Sales Order. */
-  clientPoLineNo: string | null;
-  itemName: string | null;
-  orderQty: number;
-  /** Total accepted qty across QC batches (drives Sr range upper bound). */
-  totalAccepted: number;
-  batches: QcLineBatch[];
-  sections: QcLineDocSection[];
+  /** YYYY-MM-DD. */
+  inspectedOn: string | null;
+  acceptedQty: number;
+  rejectedQty: number;
+  /** op_log.report_required as stamped at Submit QC; null = saved before
+   *  ADR-252 (shown red here, never on the dashboard — D8). */
+  reportRequired: boolean | null;
+  state: QcEntryReportState;
+  /** Newest first. */
+  files: QcDossierFile[];
 }
 
-export const qcLineDetailQuerySchema = z.object({
-  jobCardId: z.string().uuid(),
+export const QC_FOLDER_STATES = ['qc_not_done', 'report_missing', 'report_in', 'no_step'] as const;
+export type QcFolderState = (typeof QC_FOLDER_STATES)[number];
+
+export interface QcDossierFolder {
+  /** report_types.id; null for the Other folder. */
+  reportTypeId: string | null;
+  reportName: string;
+  mandatory: boolean;
+  /** A QC step on this line's job cards produces this report. */
+  isStep: boolean;
+  /** no_step = a folder holding only extra files (no QC step behind it). */
+  state: QcFolderState;
+  entries: QcDossierEntry[];
+  /** Files in this folder not tied to a QC entry (customer certificates…). */
+  files: QcDossierFile[];
+}
+
+export const QC_LINE_STATES = [
+  'no_jc',
+  'no_qc_steps',
+  'qc_pending',
+  'report_missing',
+  'complete',
+] as const;
+export type QcLineState = (typeof QC_LINE_STATES)[number];
+
+export interface QcDossierLine {
+  /** sales_order_lines.id or job_work_order_lines.id. */
+  lineId: string;
+  lineNo: number;
+  clientPoLineNo: string | null;
+  itemCode: string | null;
+  itemRevision: string | null;
+  itemName: string | null;
+  orderQty: number;
+  /** Every live job card on this line, rework / repair children included. */
+  jobCards: Array<{ id: string; code: string }>;
+  /** no_jc → no_qc_steps → report_missing → qc_pending → complete (D2). */
+  state: QcLineState;
+  /** QC entries with accepted qty and no report. */
+  missingCount: number;
+  fileCount: number;
+  /** Folders: QC-step reports in route order, then extra-file folders. */
+  folders: QcDossierFolder[];
+}
+
+export interface QcDossierResponse {
+  order: {
+    kind: QcDossierOrderKind;
+    id: string;
+    code: string;
+    internalSoNo: string | null;
+    customerName: string | null;
+    clientPoNo: string | null;
+  };
+  lines: QcDossierLine[];
+  totals: {
+    complete: number;
+    reportMissing: number;
+    qcPending: number;
+    noQc: number;
+    missingReports: number;
+    files: number;
+  };
+  /** Files on this order that trace to no line (old rows, SO-only uploads). */
+  unlinked: QcDossierFile[];
+}
+
+/** POST /qc-documents/dossier/urls — signed links for a ZIP / bulk download.
+ *  Every path must belong to a file of this order; each open is logged. */
+export const qcDossierUrlsInputSchema = z.object({
+  kind: qcDossierOrderKindSchema,
+  orderId: z.string().uuid(),
+  storagePaths: z.array(z.string().min(1).max(512)).min(1).max(300),
 });
-export type QcLineDetailQuery = z.infer<typeof qcLineDetailQuerySchema>;
+export type QcDossierUrlsInput = z.infer<typeof qcDossierUrlsInputSchema>;
+export interface QcDossierUrlsResponse {
+  urls: Array<{ storagePath: string; url: string }>;
+}

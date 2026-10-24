@@ -35,6 +35,9 @@ const DB_GUARD_MESSAGES: Record<string, string> = {
     'Returned Qty cannot be more than the Qty sent to the vendor on this operation. Reload the page and try again.',
   item_stock_balances_on_hand_nonneg:
     'Stock cannot go below zero for this item. Someone else may have used the stock just now — reload and try again.',
+  // ADR-235 (0217) — one open Cancel Request per document.
+  cancel_requests_pending_uq:
+    'A cancel request for this document is already pending — someone else sent it just now. Reload the page.',
 };
 
 /** SQLSTATE 23505 (unique) / 23514 (check) on one of the 0181 guards → its

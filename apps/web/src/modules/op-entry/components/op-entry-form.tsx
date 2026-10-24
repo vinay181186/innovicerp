@@ -26,6 +26,11 @@ import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { useOperatorsList } from '@/modules/operators/api';
 import {
+  QcReportRequiredNote,
+  reportMissingReason,
+  useQcReportRule,
+} from '@/modules/qc-processes/use-qc-report-rule';
+import {
   useGenerateOspPr,
   useRunningOps,
   useStartOp,
@@ -410,6 +415,11 @@ export function OpEntryForm({
   // T-040d: QC-bearing op = dedicated QC op OR process op with qc_required.
   const isQcOp = op.opType === 'qc';
   const isQcBearing = isQcOp || op.qcRequired;
+  // ADR-252 — the op's QC process may make its report compulsory. Only a
+  // dedicated QC op has a QC process behind it; the server applies the rule
+  // only when opType === 'qc' (a process op with qc_required expects none).
+  const qcReportRule = useQcReportRule(op.operation, Number(qty || '0'), isQcOp);
+  const qcReportMissing = reportMissingReason(qcReportRule, qcReportPath !== null);
   const noQcPending = isQcBearing && op.qcPending <= 0;
   const isQcPending = op.computedStatus === 'qc_pending';
   const noAvailable = op.available <= 0;
@@ -951,6 +961,7 @@ export function OpEntryForm({
               </div>
             </div>
             <div style={{ marginTop: 10 }}>
+              <QcReportRequiredNote rule={qcReportRule} hasReport={qcReportPath !== null} />
               <QcReportAttach
                 companyId={companyId}
                 fileName={qcReportName}
@@ -972,7 +983,10 @@ export function OpEntryForm({
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={blockedReason !== null || submitQc.isPending}
+                  disabled={
+                    blockedReason !== null || submitQc.isPending || qcReportMissing !== null
+                  }
+                  title={qcReportMissing ?? undefined}
                 >
                   {submitQc.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

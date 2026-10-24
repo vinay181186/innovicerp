@@ -21,6 +21,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors'
 import { type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 
 export async function applyPartyGrnUseAsIs(
   tx: DbTransaction,
@@ -87,6 +88,9 @@ export async function applyPartyGrnUseAsIs(
     );
   }
   const at = `${l.partyGrnCode} Ln ${l.lineNo}`;
+  // ADR-235 — Use As Is moves pieces into the register; not while a cancel of
+  // the Party GRN waits (its preview would no longer say what it reverses).
+  await assertNoPendingCancel(tx, 'party_grn', l.partyGrnId);
 
   // 3) §20.2 — conditional move Deviated → Accepted; only pieces still held.
   const moved = (await tx.execute(sql`

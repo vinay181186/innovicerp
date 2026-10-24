@@ -27,6 +27,7 @@ export const partyGrnKeys = {
       q.fromDate ?? null,
       q.toDate ?? null,
       q.sf ?? null,
+      q.includeCancelled ?? false,
       q.limit,
       q.offset,
     ] as const,
@@ -44,6 +45,8 @@ function buildSearch(q: ListPartyGrnQuery): string {
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
   if (q.sf) params.set('sf', q.sf);
+  // ADR-235 — the list screen shows Cancelled GRNs too (other readers do not).
+  if (q.includeCancelled) params.set('includeCancelled', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -151,26 +154,9 @@ export function useUpdatePartyGrn(id: string, saveKey?: SaveKey) {
   });
 }
 
-/** ADR-102 — reverse a wrong receipt. Credits the qty back off party stock. */
-export function useCancelPartyGrn() {
-  const qc = useQueryClient();
-  return useMutation<
-    { ok: true; code: string; reversedQty: number },
-    Error,
-    { id: string; reason: string }
-  >({
-    mutationFn: ({ id, reason }) =>
-      apiFetch<{ ok: true; code: string; reversedQty: number }>(`/party-grn/${id}/cancel`, {
-        method: 'POST',
-        json: { reason },
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
-      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      void qc.invalidateQueries({ queryKey: ['party-materials'] });
-    },
-  });
-}
+// ADR-235 — Cancel moved to the ONE standard Cancel (cancel-requests module:
+// CancelDocDialog, docType 'party_grn'). The old POST /party-grn/:id/cancel
+// hook is gone; the dialog uses the generic /cancel routes.
 
 /** ADR-203 (owner D4): Incoming QC on a Party GRN — a separate step after the
  *  receipt, gated by qc_incoming · entry. Only the accepted qty enters the

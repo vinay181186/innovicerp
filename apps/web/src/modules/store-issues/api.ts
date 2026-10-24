@@ -1,11 +1,12 @@
 // Item Issue (ADR-193 phase 3b) — TanStack Query hooks. A slip has lines; it is
-// issued against a Job Card, an Assembly SO or for general use.
+// issued against a Job Card, an Assembly SO or for general use. Cancelling a
+// whole slip (it used to be "Reverse") goes through the ONE standard Cancel
+// (ADR-235): cancel-requests CancelDocDialog, docType 'store_issue'.
 import type {
   CreateStoreIssueInput,
   ListStoreIssuesQuery,
   ListStoreIssuesResponse,
   ReturnStoreIssueInput,
-  ReverseStoreIssueInput,
   StoreIssueDetail,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -94,18 +95,6 @@ export function useReturnStoreIssue() {
   return useMutation<StoreIssueDetail, Error, { id: string } & ReturnStoreIssueInput>({
     mutationFn: ({ id, ...body }) =>
       apiFetch<StoreIssueDetail>(`/store-issues/${id}/returns`, { method: 'POST', json: body }),
-    onSuccess: () => invalidate(qc),
-  });
-}
-
-export function useReverseStoreIssue() {
-  const qc = useQueryClient();
-  return useMutation<StoreIssueDetail, Error, { id: string } & ReverseStoreIssueInput>({
-    mutationFn: ({ id, reason }) =>
-      apiFetch<StoreIssueDetail>(`/store-issues/${id}/reverse`, {
-        method: 'POST',
-        json: { reason },
-      }),
     onSuccess: () => invalidate(qc),
   });
 }

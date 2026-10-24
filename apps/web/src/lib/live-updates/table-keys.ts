@@ -13,6 +13,7 @@ import type { LiveTable } from '@innovic/shared';
 import type { QueryKey } from '@tanstack/react-query';
 import { approvalsKeys } from '@/modules/approvals/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
+import { cancelKeys } from '@/modules/cancel-requests/api';
 import { documentEditsKeys } from '@/modules/document-edits/api';
 import { goodsReceiptNotesKeys } from '@/modules/goods-receipt-notes/api';
 import { incomingQcKeys } from '@/modules/incoming-qc/api';
@@ -111,6 +112,16 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
     dashboardKeys.home(),
   ],
   document_edit_requests: [documentEditsKeys.all, approvalsKeys.all, dashboardKeys.home()],
+  // ADR-235: a Cancel Request raised / decided — the dialog, the Approvals tab and
+  // the documents it may have just cancelled.
+  cancel_requests: [
+    cancelKeys.all,
+    approvalsKeys.all,
+    dashboardKeys.home(),
+    ['invoices'],
+    ['jw-invoices'],
+    ['customer-dispatches'],
+  ],
   production_orders: [...PRODUCTION_ORDER_VIEWS, dashboardKeys.home()],
   production_order_closes: PRODUCTION_ORDER_VIEWS,
 };

@@ -25,7 +25,7 @@ const PARTY_GRN_FORM_KEY: AccessFormKey = 'party_create';
 
 /** THE "does an edit of this Party GRN go for approval?" rule (ADR-249 Step
  *  B1): every Party GRN that is not cancelled. A cancelled Party GRN is
- *  soft-deleted (cancelPartyGrn sets deleted_at — there is no status column),
+ *  soft-deleted (cancelPartyGrnTx sets deleted_at — there is no status column),
  *  is never loaded by loadForDiff, and its writer refuses the edit as before.
  *  Before B1 only a GRN with a line still waiting for Incoming QC was live, so
  *  a fully QC'd GRN's header edit saved straight through, unapproved. */
@@ -71,7 +71,9 @@ export const partyGrnEditRegistryEntry: DocEditRegistryEntry = {
     const rows = await tx
       .select()
       .from(partyGrn)
-      .where(and(eq(partyGrn.id, id), eq(partyGrn.companyId, companyId), isNull(partyGrn.deletedAt)))
+      .where(
+        and(eq(partyGrn.id, id), eq(partyGrn.companyId, companyId), isNull(partyGrn.deletedAt)),
+      )
       .limit(1)
       .for('update');
     const pg = rows[0];
@@ -151,7 +153,10 @@ export const partyGrnEditRegistryEntry: DocEditRegistryEntry = {
   buildFilteredInput(proposedPayload, approvedFields) {
     const input = proposedPayload as UpdatePartyGrnInput;
     const out: UpdatePartyGrnInput = {};
-    const lineOut = new Map<string, { id: string; receivedQty?: number; remarks?: string | null }>();
+    const lineOut = new Map<
+      string,
+      { id: string; receivedQty?: number; remarks?: string | null }
+    >();
     const proposedById = new Map((input.lines ?? []).map((l) => [l.id, l]));
 
     for (const field of approvedFields) {
@@ -175,7 +180,8 @@ export const partyGrnEditRegistryEntry: DocEditRegistryEntry = {
           line = { id: lineId };
           lineOut.set(lineId, line);
         }
-        if (attr === 'qty' && proposed.receivedQty !== undefined) line.receivedQty = proposed.receivedQty;
+        if (attr === 'qty' && proposed.receivedQty !== undefined)
+          line.receivedQty = proposed.receivedQty;
         if (attr === 'remarks' && proposed.remarks !== undefined) line.remarks = proposed.remarks;
       }
     }

@@ -23,6 +23,12 @@ const BILLED_BADGE: Record<
   full: { label: 'Billed', className: 'badge b-green' },
 };
 
+/** Dispatch status values for the ▾ list filter (sf-columns `status`). */
+const DISPATCH_STATUS_OPTIONS = [
+  { value: 'dispatched', label: 'Dispatched' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
 export function dispatchListColumns(
   billedOf: (dispatchId: string) => CustomerDispatchRow['billedStatus'],
   /** ADR-202 — dispatch ids with a pending edit; their status cell shows "Draft". */
@@ -114,6 +120,11 @@ export function dispatchListColumns(
       kind: 'badge',
       header: 'Billed Status',
       nowrap: true,
+      // ADR-235 — the ▾ filters on the dispatch's own status, so Cancelled
+      // dispatches can be picked out (or left out) of the register.
+      sortFilterField: 'status',
+      filterType: 'list',
+      filterOptions: DISPATCH_STATUS_OPTIONS,
       render: (g) => {
         // ADR-202 — a pending edit overlays grey "Draft" in place of the status.
         if (draftIds?.has(g.dispatchId))
@@ -122,7 +133,7 @@ export function dispatchListColumns(
               Draft
             </span>
           );
-        if (g.status === 'cancelled') return <span className="badge b-grey">Cancelled</span>;
+        if (g.status === 'cancelled') return <span className="badge b-red">Cancelled</span>;
         const billed = billedOf(g.dispatchId);
         return billed ? (
           <span className={BILLED_BADGE[billed].className}>{BILLED_BADGE[billed].label}</span>

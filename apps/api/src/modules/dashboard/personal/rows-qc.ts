@@ -10,9 +10,18 @@
 //   capa_mine — open CAPAs where the caller is the Responsible person
 //               (capa_records.responsible holds the person's name).
 //               x1 = the next step, x2 = the problem.
+//   qc_report_missing — ADR-252: one row per QC entry saved with
+//               report_required = true, accepted qty > 0, not reversed, and
+//               no report (neither op_log.qc_report_path nor a qc_documents
+//               row on the entry). Entries saved before 0216 (NULL) never
+//               show here (D8). id = the job card; row_key = the entry;
+//               kind = 'so' | 'jwso'; party = the report's name;
+//               x1 = the order id, x2 = the order line id, x3 = POL.
 
 import { type SQL, sql } from 'drizzle-orm';
 import { PENDING_QC_SQL } from '../../party-grn/service';
+import { polSql } from '../../../lib/pol';
+import { qcProcessReportJoin } from '../../../lib/qc-process-report';
 import { grnTypeSql } from '../../qc-history/register-incoming';
 import { filterFrag, type ListFilter } from './list-query';
 
@@ -83,4 +92,40 @@ export function capaMineSql(cid: string, today: string, myName: string, f: ListF
       AND btrim(${myName}) <> ''
       AND lower(btrim(COALESCE(c.responsible, ''))) = lower(btrim(${myName}))
       ${filterFrag(f, 'c.id', null)}`;
+}
+
+export function qcReportMissingSql(cid: string, f: ListFilter): SQL {
+  return sql`
+    SELECT ol.id::text AS row_key, jc.id, jc.code,
+           (CASE WHEN jc.source_so_line_id IS NULL AND jc.source_jw_line_id IS NOT NULL
+                 THEN 'jwso' ELSE 'so' END)::text AS kind,
+           ol.log_date::text AS doc_date, NULL::text AS due_date, ol.log_date::text AS sort_key,
+           COALESCE(pr.report_name, jo.operation)::text AS party,
+           COALESCE(i.code, sol.item_code_text, jwl.item_code_text)::text AS item_code,
+           COALESCE(i.name, sol.part_name, jwl.part_name)::text AS item_name,
+           ol.qty::numeric AS qty, i.uom::text AS uom, NULL::numeric AS amount,
+           ol.created_by::text AS created_by, 0::int AS is_late,
+           COALESCE(sol.sales_order_id, jwl.job_work_order_id)::text AS x1,
+           COALESCE(sol.id, jwl.id)::text AS x2,
+           ${polSql('sol', 'jwl')}::text AS x3
+    FROM public.op_log ol
+    JOIN public.jc_ops jo ON jo.id = ol.jc_op_id AND jo.deleted_at IS NULL
+    JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+    LEFT JOIN public.items i ON i.id = jc.item_id
+    LEFT JOIN public.sales_order_lines sol
+      ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+    LEFT JOIN public.job_work_order_lines jwl
+      ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+    ${qcProcessReportJoin(cid, 'jo.operation', 'pr')}
+    -- log_type / report_required / the blank-path test are
+    -- op_log_qc_report_owed_idx's predicate (0216) word for word — keep them
+    -- identical or the planner can no longer use that index.
+    WHERE ol.company_id = ${cid}::uuid AND ol.log_type = 'qc'
+      AND ol.report_required = true AND ol.qty > 0
+      AND ol.reversal_of_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM public.op_log rv WHERE rv.reversal_of_id = ol.id)
+      AND NULLIF(btrim(COALESCE(ol.qc_report_path, '')), '') IS NULL
+      AND NOT EXISTS (SELECT 1 FROM public.qc_documents qd
+                      WHERE qd.op_log_id = ol.id AND qd.deleted_at IS NULL)
+      ${filterFrag(f, 'jc.id', 'ol.created_by')}`;
 }

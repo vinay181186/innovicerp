@@ -7,6 +7,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import { qcPartyGrn } from './qc';
 import { updatePartyGrnInputSchema } from './schema';
 import * as service from './service';
@@ -57,11 +58,12 @@ export async function partyGrnRoutes(app: FastifyInstance): Promise<void> {
     return qcPartyGrn(id, input, req.user);
   });
 
-  // ADR-102 — reverse a wrong receipt (soft-delete + credit party stock back).
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/party-grn/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);
     const { reason } = cancelPartyGrnInputSchema.parse(req.body);
-    return service.cancelPartyGrn(id, reason, req.user);
+    return requestCancel('party_grn', id, { reason, approveNow: false }, req.user);
   });
 }

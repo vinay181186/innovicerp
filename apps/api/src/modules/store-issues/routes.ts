@@ -7,6 +7,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParams = z.object({ id: z.string().uuid() });
@@ -46,10 +47,12 @@ export async function storeIssuesRoutes(app: FastifyInstance): Promise<void> {
     return result;
   });
 
+  // ADR-235: Cancel of an Item Issue (the full reversal) is a Cancel Request —
+  // the Approve-tick holder approves it. Returns the CancelRequestResult.
   app.post('/store-issues/:id/reverse', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParams.parse(req.params);
-    const input = reverseStoreIssueInputSchema.parse(req.body);
-    return service.reverseStoreIssue(id, input, req.user);
+    const { reason } = reverseStoreIssueInputSchema.parse(req.body);
+    return requestCancel('store_issue', id, { reason, approveNow: false }, req.user);
   });
 }

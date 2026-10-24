@@ -245,22 +245,9 @@ export function useUpdateDeliveryChallan(id: string, saveKey?: SaveKey) {
   });
 }
 
-/** Cancel takes a reason (ADR-197) — written on the DC's CANCEL history row. */
-export function useCancelDeliveryChallan() {
-  const qc = useQueryClient();
-  return useMutation<DeliveryChallanWithLines, Error, { id: string; reason: string }>({
-    mutationFn: ({ id, reason }) =>
-      apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}/cancel`, {
-        method: 'POST',
-        json: { reason },
-      }),
-    onSuccess: (cancelled) => {
-      void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
-      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      qc.setQueryData(deliveryChallansKeys.detail(cancelled.id), cancelled);
-    },
-  });
-}
+// ADR-235 — Cancel moved to the ONE standard Cancel (cancel-requests module:
+// CancelDocDialog, docType 'delivery_challan'). The old POST
+// /delivery-challans/:id/cancel hook is gone.
 
 // T-059b — receive-back. POST input is the receipt body; URL carries the DC id.
 // The response is the refreshed DC plus `autoGrn` — the GRN the receive just

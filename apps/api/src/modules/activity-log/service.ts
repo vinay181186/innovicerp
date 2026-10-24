@@ -233,6 +233,18 @@ export async function emitActivityLog(
   companyId: string,
   user: AuthContext,
 ): Promise<void> {
+  await emitActivityLogBatch(tx, [input], companyId, user);
+}
+
+/** Same row shape as emitActivityLog, many rows in ONE insert (one DB trip).
+ *  emitActivityLog is this with a single input — one place builds the row. */
+export async function emitActivityLogBatch(
+  tx: DbTransaction,
+  inputs: ReadonlyArray<ActivityLogInput>,
+  companyId: string,
+  user: AuthContext,
+): Promise<void> {
+  if (inputs.length === 0) return;
   // The user's name is snapshotted on every row (ADR-197). The auth plugin
   // sets `fullName`; only a caller that built its own AuthContext (tests,
   // scripts) leaves it undefined, and then it is read from users.
@@ -246,29 +258,33 @@ export async function emitActivityLog(
     fullName = u[0]?.fullName ?? null;
   }
 
-  let qty: string | null = null;
-  if (input.qty !== undefined && input.qty !== null && input.qty !== '') {
-    const n = Number(input.qty);
-    if (Number.isFinite(n)) qty = String(n);
-  }
-
-  await tx.insert(activityLog).values({
-    companyId,
-    ts: new Date(),
-    userId: user.id,
-    userName: user.email,
-    userFullName: blankToNull(fullName),
-    action: input.action,
-    entity: input.entity,
-    detail: input.detail ?? '',
-    refId: input.refId ?? null,
-    entityId: input.entityId ?? null,
-    lineRef: blankToNull(input.lineRef),
-    opRef: blankToNull(input.opRef),
-    qty,
-    changes: input.changes && input.changes.length > 0 ? input.changes : null,
-    reason: blankToNull(input.reason),
-    operatorName: blankToNull(input.operatorName),
-    createdBy: user.id,
-  });
+  const ts = new Date();
+  await tx.insert(activityLog).values(
+    inputs.map((input) => {
+      let qty: string | null = null;
+      if (input.qty !== undefined && input.qty !== null && input.qty !== '') {
+        const n = Number(input.qty);
+        if (Number.isFinite(n)) qty = String(n);
+      }
+      return {
+        companyId,
+        ts,
+        userId: user.id,
+        userName: user.email,
+        userFullName: blankToNull(fullName),
+        action: input.action,
+        entity: input.entity,
+        detail: input.detail ?? '',
+        refId: input.refId ?? null,
+        entityId: input.entityId ?? null,
+        lineRef: blankToNull(input.lineRef),
+        opRef: blankToNull(input.opRef),
+        qty,
+        changes: input.changes && input.changes.length > 0 ? input.changes : null,
+        reason: blankToNull(input.reason),
+        operatorName: blankToNull(input.operatorName),
+        createdBy: user.id,
+      };
+    }),
+  );
 }

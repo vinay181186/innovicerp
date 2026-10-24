@@ -13,6 +13,7 @@ import { accessControlRoutes } from './modules/access-control/routes';
 import { activityLogRoutes } from './modules/activity-log/routes';
 import { approvalConfigRoutes } from './modules/approval-config/routes';
 import { approvalsRoutes } from './modules/approvals/routes';
+import { cancelRequestsRoutes } from './modules/cancel-requests/routes';
 import { documentEditsRoutes } from './modules/document-edits/routes';
 import { authRecoveryRoutes } from './modules/auth-recovery/routes';
 import { backupRoutes } from './modules/backup/routes';
@@ -271,6 +272,8 @@ await app.register(companiesRoutes);
 await app.register(accessControlRoutes);
 await app.register(approvalConfigRoutes);
 await app.register(approvalsRoutes);
+// ADR-235 — the standard Cancel Request (preview / request / decide / withdraw).
+await app.register(cancelRequestsRoutes);
 await app.register(opLogViewerRoutes);
 await app.register(ospProcessesRoutes);
 await app.register(dataIntegrityRoutes);

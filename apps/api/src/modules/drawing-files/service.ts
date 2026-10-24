@@ -17,12 +17,16 @@
 // button restricted to named people, a server that refuses a hand-crafted
 // request from anyone else, and a log of every view and every download.
 
-import { canDownloadDrawings, type DrawingUrlQuery, type DrawingUrlResponse } from '@innovic/shared';
+import {
+  canDownloadDrawings,
+  type DrawingUrlQuery,
+  type DrawingUrlResponse,
+} from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { supabaseAdmin } from '../../lib/supabase-admin';
-import { appendActivityLog } from '../activity-log/service';
+import { appendActivityLog, emitActivityLogBatch } from '../activity-log/service';
 import { getMyAccess } from '../access-control/service';
 
 /** Every drawing in the system lives in this one private bucket (0039). */
@@ -63,7 +67,7 @@ const SOURCE_LABEL: Record<string, string> = {
  * the shape of every one of them — so it must never be taken on trust. The only
  * safe definition of "a file you may open" is "a file some row you own points
  * at", and that is literally what this asks: is the path referenced by at least
- * one live row in this company, in any of the seven tables that can hold one?
+ * one live row in this company, in any of the eight tables that can hold one?
  *
  * Every branch carries `company_id = :companyId`, so a path belonging to
  * another company matches nothing and is refused as Not Found — the caller
@@ -76,8 +80,8 @@ const SOURCE_LABEL: Record<string, string> = {
  * it is append-only by design (no deleted_at column at all), which is what lets
  * the drawing-history tab still open superseded revisions of a live line.
  *
- * EXISTS, not COUNT: Postgres stops at the first match, so the seven branches
- * cost one index probe in the common case rather than seven full scans.
+ * EXISTS, not COUNT: Postgres stops at the first match, so the eight branches
+ * cost one index probe in the common case rather than eight full scans.
  */
 async function pathBelongsToCompany(
   user: AuthContext,
@@ -119,6 +123,12 @@ async function pathBelongsToCompany(
         SELECT 1 FROM public.file_registry
          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
            AND storage_path = ${path}
+        UNION ALL
+        -- ADR-252: the report attached to a QC entry at Submit QC, which the
+        -- QC Dossier lists beside the uploads. op_log is append-only (no
+        -- deleted_at); index op_log_qc_report_path_idx (0216).
+        SELECT 1 FROM public.op_log
+         WHERE company_id = ${companyId}::uuid AND qc_report_path = ${path}
       ))::int AS "owned"
     `);
     const row = (rs as unknown as Array<Record<string, unknown>>)[0];
@@ -203,7 +213,7 @@ export async function getDrawingUrl(
     .from(DRAWING_BUCKET)
     .createSignedUrl(path, expiresIn, {
       download:
-        input.mode === 'download' ? (input.fileName?.trim() || path.split('/').pop() || true) : false,
+        input.mode === 'download' ? input.fileName?.trim() || path.split('/').pop() || true : false,
     });
   if (error || !data?.signedUrl) {
     // Storage says there is no such object even though a row points at it —
@@ -227,4 +237,65 @@ export async function getDrawingUrl(
   );
 
   return { url: data.signedUrl, expiresIn, mode: input.mode };
+}
+
+/**
+ * ADR-252 — download links for a QC Dossier bulk download. The caller has
+ * already proved every path is a file of that order's dossier (the dossier
+ * is the ownership test here — it also covers op_log.qc_report_path, which
+ * pathBelongsToCompany does not list). Same rules as getDrawingUrl's download
+ * branch: canDownloadDrawings decides BEFORE anything is signed, a refusal is
+ * logged, and every link handed out is logged (one row per file, one
+ * transaction).
+ */
+export async function signQcDossierFiles(
+  files: ReadonlyArray<{ path: string; fileName: string }>,
+  orderCode: string,
+  user: AuthContext,
+): Promise<Array<{ storagePath: string; url: string }>> {
+  const companyId = requireCompany(user);
+  const eff = await getMyAccess(user);
+  if (!canDownloadDrawings(eff, user.role)) {
+    await appendActivityLog(
+      {
+        action: 'drawing_download_refused',
+        entity: 'qc_document',
+        detail: `Download refused (no drawing-download permission) — QC Dossier ${orderCode}, ${files.length} file(s)`,
+        refId: orderCode,
+      },
+      user,
+    );
+    throw new AuthorizationError(
+      'You do not have permission to download drawing files. Ask an admin to enable it for you.',
+    );
+  }
+  if (files.length === 0) return [];
+  const { data, error } = await supabaseAdmin.storage.from(DRAWING_BUCKET).createSignedUrls(
+    files.map((f) => f.path),
+    DOWNLOAD_EXPIRY_SECONDS,
+    { download: true },
+  );
+  if (error || !data) {
+    throw new NotFoundError('The QC files could not be fetched from storage. Try again.');
+  }
+  const out: Array<{ storagePath: string; url: string }> = [];
+  for (const d of data) {
+    if (d.path && d.signedUrl && !d.error) out.push({ storagePath: d.path, url: d.signedUrl });
+  }
+  const byPath = new Map(files.map((f) => [f.path, f.fileName]));
+  // One row per file handed out, written in ONE multi-row insert.
+  await withUserContext(user, async (tx) => {
+    await emitActivityLogBatch(
+      tx,
+      out.map((u) => ({
+        action: 'drawing_download',
+        entity: 'qc_document',
+        detail: `${SOURCE_LABEL['qc_document']} ${orderCode} — ${byPath.get(u.storagePath) ?? u.storagePath}`,
+        refId: orderCode,
+      })),
+      companyId,
+      user,
+    );
+  });
+  return out;
 }

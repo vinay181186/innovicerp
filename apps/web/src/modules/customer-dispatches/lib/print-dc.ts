@@ -83,6 +83,8 @@ function dispatchSheetModel(
     })),
     totalQty: totalQty.toFixed(2),
     totalUom: uoms.size === 1 ? ([...uoms][0] ?? '') : '',
+    // ADR-235 — a Cancelled dispatch's challan prints with the CANCELLED stamp.
+    cancelled: d.status === 'cancelled',
   };
 }
 

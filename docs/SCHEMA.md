@@ -765,6 +765,46 @@ RLS (copied from `op_log_time_change_requests`):
 - `document_edit_request_insert` — admin/manager/operator/qc/procurement/dispatch/design, same company. The real per-form gate is the service's `requireFormAccess(formKey, 'edit')`; this is the coarse backstop
 - `document_edit_decide` (UPDATE) — **admin/manager only**
 
+### `cancel_requests`
+
+A Cancel Request on a live document, waiting for a holder of the Approve tick on
+that document's page (0217 / ADR-235 Phase A — the standard Cancel). While a row
+is `pending` the document is **untouched** and its edit / payment paths refuse
+(`assertNoPendingCancel`). Approving runs the document's own cancel worker in the
+same transaction; rejecting / withdrawing changes nothing on the document.
+Phase A enrols `invoice`, `jw_invoice`, `customer_dispatch`.
+
+| Column                                            | Type          | Notes                                                                                           |
+| ------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------- |
+| `id`                                              | `uuid`        | PK                                                                                              |
+| `company_id`                                      | `uuid`        | not null, FK                                                                                    |
+| `doc_type`                                        | `text`        | not null. CHECK `cancel_requests_doc_type_chk` IN (`invoice`, `jw_invoice`, `customer_dispatch`, `jw_return`, `customer_material_return`, `party_grn`, `party_material_issue`, `delivery_challan`, `store_issue`, `stock_count`, `tool_issue`, `purchase_request`, `purchase_order`) (0218) — each phase widens it by dropping + re-adding the named CHECK |
+| `doc_id`                                          | `uuid`        | not null. The document's header-row id                                                          |
+| `doc_code`                                        | `text`        | not null. Snapshot of the document code for the inbox                                           |
+| `reason`                                          | `text`        | not null, CHECK non-blank. The requester's reason; written on the document's row on approval    |
+| `status`                                          | `text`        | not null, default `'pending'`. CHECK `pending \| approved \| rejected \| withdrawn`            |
+| `requested_by`                                    | `uuid`        | not null, FK → `users(id)`                                                                      |
+| `requested_at`                                    | `timestamptz` | not null, default `now()`                                                                       |
+| `decided_by`                                      | `uuid`        | nullable, FK → `users(id)`                                                                      |
+| `decided_at`                                      | `timestamptz` | nullable                                                                                        |
+| `decision_note`                                   | `text`        | nullable. Required (by the API) on reject                                                       |
+| `created_at/by`, `updated_at/by`, `deleted_at/by` |               | standard columns per CLAUDE.md rule 3                                                           |
+
+Indexes:
+
+- `cancel_requests_pending_uq (doc_type, doc_id) where status = 'pending' and deleted_at is null` — **unique**. One open Cancel Request per document
+- `cancel_requests_company_status_idx (company_id, status, requested_at) where deleted_at is null` — the inbox read
+
+RLS:
+
+- `cancel_requests_company_read` (any role, same company)
+- `cancel_requests_request_insert` — admin/manager/operator/qc/procurement/dispatch/design, same company (coarse backstop; the API checks the Edit tick)
+- `cancel_requests_decide` (UPDATE) — any authenticated user of the company; the API checks the Approve tick (ADR-232)
+
+Realtime: added to `supabase_realtime` (guarded DO block, as 0209).
+
+`customer_dispatches` gained `cancel_reason text`, `cancelled_at timestamptz`, `cancelled_by uuid → users(id)` in the same migration (all nullable; NULL on dispatches cancelled before 0217), matching `invoices` / `jw_invoices`.
+
 RLS:
 
 - `op_log_company_read` (any role)
@@ -1917,3 +1957,6 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-10-09 | `0204_ml_plan_orders.sql` (hand-written, idempotent, additive) | **Multi-Level Plan raises orders (ADR-225 phase 4).** `plans` += `ml_plan_node_id uuid → ml_plan_nodes`, `purchase_requests` += `ml_plan_node_id uuid → ml_plan_nodes`, partial index on each. Plan / PR / Job Card material / Production Order code reads these columns, so 0204 must precede the code on every database. |
 | 2026-10-16 | `0210_jwso_line_pol.sql` (hand-written, idempotent, additive) | **POL on JWSO lines (ADR-236).** `job_work_order_lines.client_po_line_no text` (nullable; compulsory on input). Downstream reads take SO POL else JWSO POL via `apps/api/src/lib/pol.ts`. Rollback: drop the column |
 | 2026-10-16 | `0211_so_jwso_line_remarks.sql` (hand-written, idempotent, additive) | **Line Remarks (ADR-236).** `sales_order_lines.remarks`, `job_work_order_lines.remarks` (text, nullable, optional). Rollback: drop both columns |
+| 2026-10-23 | `0216_qc_dossier.sql` (hand-written, idempotent, additive) | **QC Dossier (ADR-252).** `qc_documents` += `so_line_id` → sales_order_lines, `jw_line_id` → job_work_order_lines (CHECK `qc_documents_one_line`: at most one), `op_log_id` → op_log (the QC Entry a report belongs to), `report_type_id` → report_types (all ON DELETE SET NULL); backfill line from the job card; indexes `(company_id, so_line_id)`, `(company_id, jw_line_id)`, `(op_log_id)`, `(company_id, sales_order_id)`, `qc_documents_jc_op_idx` (drift from 0043), all `WHERE deleted_at IS NULL`. `qc_processes.report_type_id` → report_types (+ index). `op_log.report_required boolean` (stamped at Submit QC; NULL = before ADR-252) + `op_log_qc_report_path_idx (company_id, qc_report_path)`. Seeds `report_types` per company where the name is absent: MIR, DIR, MCR, TPI mandatory; Final Inspection, ICS, Incoming QC, COC, Calibration, Other optional; links QC processes to the report type their code names. Partial index `op_log_qc_report_owed_idx (company_id) WHERE log_type='qc' AND report_required AND no report path` (home list Reports to upload). RLS unchanged: `qc_documents_qc_write` (role admin/manager/qc) re-stated as in 0039 — the API bypasses RLS and checks ticks. |
+| 2026-10-24 | `0217_cancel_requests.sql` (hand-written, idempotent, additive) | **Standard Cancel, Phase A (ADR-235).** New table `cancel_requests` (doc_type CHECK `invoice`/`jw_invoice`/`customer_dispatch`, doc_id, doc_code, reason NOT NULL non-blank, status CHECK `pending`/`approved`/`rejected`/`withdrawn` default `pending`, requested_by/at, decided_by/at, decision_note + standard columns); partial unique `cancel_requests_pending_uq (doc_type, doc_id) WHERE status='pending' AND deleted_at IS NULL`; index `(company_id, status, requested_at) WHERE deleted_at IS NULL`; RLS company read / insert (page-editor roles) / update (same company — API checks ticks). `customer_dispatches` += `cancel_reason`, `cancelled_at`, `cancelled_by` (nullable). `cancel_requests` added to the `supabase_realtime` publication (guarded). New routes `GET /cancel/:docType/:docId/preview`, `POST /cancel/:docType/:docId`, `POST /cancel-requests/:id/decide`, `POST /cancel-requests/:id/withdraw`, `GET /cancel-requests`. **Must run on TEST and PROD before the API deploy** — the dispatch cancel writes the new columns and every dispatch read selects them. |
+| 2026-10-24 | `0218_cancel_requests_phase_b.sql` (hand-written, idempotent, additive + guarded backfill) | **Standard Cancel, Phase B (ADR-235).** `cancel_requests_doc_type_chk` widened to the ten Phase B types. `party_grn` and `party_material_issues` += `cancel_reason`, `cancelled_at`, `cancelled_by` (nullable) + partial index `(company_id, cancelled_at) WHERE cancelled_at IS NOT NULL`. Backfill: every soft-deleted header (only the cancel deletes them) gets `cancelled_at/_by` = `deleted_at/_by` and `cancel_reason` from its `[Cancelled] …` remarks line (else a fixed sentence). The cancel still stamps `deleted_at`. **Must run before the API deploy** — Party GRN / Issue reads select the new columns. |

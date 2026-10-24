@@ -241,6 +241,8 @@ export function printJwInvoice(args: {
     // Viewers who may not see prices get the qty-only invoice — no Rate /
     // Amount columns, no money block, no amount-in-words.
     hideMoney: priceHidden,
+    // ADR-235 — a Cancelled JW invoice prints with the CANCELLED stamp.
+    cancelled: invoice.status === 'cancelled',
     ...(priceHidden
       ? {}
       : {

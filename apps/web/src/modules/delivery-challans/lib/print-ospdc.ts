@@ -41,6 +41,8 @@ export function printOspDc(args: {
   currentUser?: string | undefined;
   /** ADR-202 — the DC has a pending edit; the sheet prints "Draft — awaiting approval". */
   draft?: boolean | undefined;
+  /** ADR-235 — stamp CANCELLED; also read off the DC's own status. */
+  cancelled?: boolean | undefined;
 }): boolean {
   const { dc, vendor, company, templates } = args;
 
@@ -124,6 +126,7 @@ export function printOspDc(args: {
     windowTitle: 'OSP Delivery Challan',
     // ADR-202 — overlay "Draft — awaiting approval" when an edit is pending.
     draft: args.draft,
+    cancelled: Boolean(args.cancelled) || dc.status === 'cancelled',
     blocks,
     data,
     company: buildDocCompany(company),

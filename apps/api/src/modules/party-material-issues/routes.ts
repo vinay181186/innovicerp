@@ -7,6 +7,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -33,12 +34,13 @@ export async function partyMaterialIssuesRoutes(app: FastifyInstance): Promise<v
     return result;
   });
 
-  // ADR-103 — reverse a wrong issue (puts the qty back on party stock).
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/party-material-issues/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);
     const { reason } = cancelPartyMaterialIssueInputSchema.parse(req.body);
-    return service.cancelPartyMaterialIssue(id, reason, req.user);
+    return requestCancel('party_material_issue', id, { reason, approveNow: false }, req.user);
   });
 
   // ADR-203 - put unused pieces back from the Job Card into the register.

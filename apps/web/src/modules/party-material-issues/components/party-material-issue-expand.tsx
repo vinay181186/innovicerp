@@ -3,6 +3,8 @@
 // on the list row, so no extra fetch.
 
 import type { PartyMaterialIssueListItem } from '@innovic/shared';
+import { fmtDateTime } from '@/lib/date';
+import { isIssueCancelled } from './party-material-issue-columns';
 
 export function PartyMaterialIssueExpand({
   it,
@@ -20,6 +22,13 @@ export function PartyMaterialIssueExpand({
       <span>
         <b>Remarks:</b> {it.remarks ?? '—'}
       </span>
+      {/* ADR-235: why and when a Cancelled issue was cancelled. */}
+      {isIssueCancelled(it) ? (
+        <span style={{ marginLeft: 'var(--sp-4)', color: 'var(--red2)' }}>
+          <b>Reason:</b> {it.cancelReason ?? '—'}
+          {it.cancelledAt ? ` · Cancelled ${fmtDateTime(it.cancelledAt)}` : ''}
+        </span>
+      ) : null}
     </div>
   );
 }

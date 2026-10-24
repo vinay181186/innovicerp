@@ -9,6 +9,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -65,12 +66,12 @@ export async function stockCountsRoutes(app: FastifyInstance): Promise<void> {
     );
   });
 
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/stock-counts/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.cancelStockCount(
-      idParam.parse(req.params).id,
-      cancelStockCountInputSchema.parse(req.body),
-      req.user,
-    );
+    const { id } = idParam.parse(req.params);
+    const { reason } = cancelStockCountInputSchema.parse(req.body);
+    return requestCancel('stock_count', id, { reason, approveNow: false }, req.user);
   });
 }

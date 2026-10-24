@@ -12,6 +12,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -60,13 +61,13 @@ export async function toolIssuesRoutes(app: FastifyInstance): Promise<void> {
     );
   });
 
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/tool-issues/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.cancelToolIssue(
-      idParamSchema.parse(req.params).id,
-      cancelToolIssueInputSchema.parse(req.body),
-      req.user,
-    );
+    const { id } = idParamSchema.parse(req.params);
+    const { reason } = cancelToolIssueInputSchema.parse(req.body);
+    return requestCancel('tool_issue', id, { reason, approveNow: false }, req.user);
   });
 
   app.get('/tool-writeoffs', async (req) => {

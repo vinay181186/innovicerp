@@ -6,7 +6,8 @@
 //                             an overall % and expandable detail arrays.
 // Mirrors legacy renderSOQCStatus (HTML L18347). Raw SQL over sales_order_lines
 // -> job_cards (source_so_line_id) -> v_jc_op_status + jc_ops + op_log (is_tpi),
-// goods_receipt_note_lines, qc_documents. RLS via base tables.
+// goods_receipt_note_lines; QC reports via the QC Dossier helper (ADR-252).
+// RLS via base tables.
 //
 // The per-GRN-line / per-TPI "Report View" download link (legacy _viewQCReport)
 // is surfaced via qcReportPath/qcReportName on the GRN + TPI detail rows
@@ -27,6 +28,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { buildOrderDossier } from '../qc-documents/dossier';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -101,8 +103,7 @@ function overallPctOf(line: {
   docCount: number;
   docUploaded: number;
 }): number {
-  const totalItems =
-    line.qcOpsTotal + line.grnTotal + (line.tpiCount > 0 ? 1 : 0) + line.docCount;
+  const totalItems = line.qcOpsTotal + line.grnTotal + (line.tpiCount > 0 ? 1 : 0) + line.docCount;
   const doneItems = line.qcOpsPassed + line.grnDone + line.tpiCount + line.docUploaded;
   return totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
 }
@@ -374,35 +375,33 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
       }
     }
 
-    // ── Per-line QC Documents aggregate + detail — qc_documents registered
-    // against the line's JCs. Every row carries a file (uploaded = true). ──
-    const docRows = await tx.execute(sql`
-      SELECT
-        jc.source_so_line_id AS "soLineId",
-        jc.code AS "jcCode",
-        qd.doc_type AS "docType",
-        qd.file_name AS "fileName"
-      FROM public.qc_documents qd
-      JOIN public.job_cards jc ON jc.id = qd.job_card_id AND jc.deleted_at IS NULL
-      JOIN public.sales_order_lines sol4
-        ON sol4.id = jc.source_so_line_id AND sol4.deleted_at IS NULL
-      WHERE qd.company_id = ${companyId}::uuid
-        AND qd.deleted_at IS NULL
-        AND sol4.sales_order_id = ${soId}::uuid
-      ORDER BY jc.code, qd.doc_type
-    `);
+    // ── Per-line QC reports (ADR-252) — from the QC Dossier helper, so this
+    // screen, the Dossier and the QC Matrix count the same reports. One row
+    // per QC entry that accepted pieces on a report-producing step (uploaded =
+    // it carries its report), plus every extra file in the line's folders. ──
+    const dossier = await buildOrderDossier(tx, companyId, 'so', soId);
     const docByLine = new Map<string, SoQcDocDetail[]>();
-    for (const r of rows(docRows)) {
-      const lineId = r['soLineId'] as string;
-      const detail: SoQcDocDetail = {
-        jcCode: (r['jcCode'] as string) ?? '',
-        docType: (r['docType'] as string) ?? 'QC Doc',
-        fileName: (r['fileName'] as string | null) ?? null,
-        uploaded: true,
-      };
-      const arr = docByLine.get(lineId);
-      if (arr) arr.push(detail);
-      else docByLine.set(lineId, [detail]);
+    for (const l of dossier.lines) {
+      const detail: SoQcDocDetail[] = [];
+      for (const f of l.folders) {
+        for (const e of f.entries) {
+          detail.push({
+            jcCode: e.jcCode,
+            docType: f.reportName,
+            fileName: e.files[0]?.fileName ?? null,
+            uploaded: e.files.length > 0,
+          });
+        }
+        for (const file of f.files) {
+          detail.push({
+            jcCode: file.jcCode ?? '',
+            docType: f.reportName,
+            fileName: file.fileName,
+            uploaded: true,
+          });
+        }
+      }
+      if (detail.length > 0) docByLine.set(l.lineId, detail);
     }
 
     const lines: SoQcLine[] = rows(lineRows).map((r) => {
@@ -426,8 +425,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
       const docCount = docDetail.length;
       const docUploaded = docDetail.filter((d) => d.uploaded).length;
 
-      const hasAnyQc =
-        qcOpsTotal > 0 || tpiCount > 0 || grnAgg.total > 0 || docCount > 0;
+      const hasAnyQc = qcOpsTotal > 0 || tpiCount > 0 || grnAgg.total > 0 || docCount > 0;
 
       const overallPct = overallPctOf({
         qcOpsTotal,

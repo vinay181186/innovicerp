@@ -25,6 +25,7 @@ import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
 import { invoiceListColumns } from '../components/invoice-list-columns';
 import { useInvoicePrint } from '../components/use-invoice-print';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 
 // Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
 // JW tab with its box pre-filled. Read ONCE into local state — tab clicks and
@@ -94,6 +95,9 @@ function InvoiceListPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
   const invoicePrint = useInvoicePrint();
+  // ADR-235 — the ONE standard Cancel: Edit requests, Approve decides.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
   // ADR-232: Add Payment is the Entry tick on Invoices alone.
 
   if (eff && !perms.view) return <PageState as="page" state="noaccess" />;
@@ -258,6 +262,14 @@ function InvoiceListPage(): React.JSX.Element {
                   hidden: !perms.entry,
                   disabledReason: inv.status === 'paid' ? 'Already Paid' : undefined,
                 },
+                {
+                  key: 'cancel',
+                  label: 'Cancel Invoice',
+                  icon: 'x',
+                  group: 'danger',
+                  hidden: !canCancel || inv.status === 'cancelled',
+                  onSelect: () => setCancelTarget({ id: inv.id, code: inv.code }),
+                },
               ]}
             />
           </Panel>
@@ -272,6 +284,14 @@ function InvoiceListPage(): React.JSX.Element {
           ) : null}
         </>
       )}
+      {cancelTarget ? (
+        <CancelDocDialog
+          docType="invoice"
+          docId={cancelTarget.id}
+          docCode={cancelTarget.code}
+          onClose={() => setCancelTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

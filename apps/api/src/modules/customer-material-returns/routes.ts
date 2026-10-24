@@ -6,6 +6,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -40,10 +41,12 @@ export async function customerMaterialReturnsRoutes(app: FastifyInstance): Promi
     return result;
   });
 
+  // ADR-235: no direct cancel any more — this sends a Cancel Request (the
+  // Approve-tick holder approves it) and returns the CancelRequestResult.
   app.post('/customer-material-returns/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);
     const { reason } = cancelCustomerMaterialReturnInputSchema.parse(req.body);
-    return service.cancelCustomerMaterialReturn(id, reason, req.user);
+    return requestCancel('customer_material_return', id, { reason, approveNow: false }, req.user);
   });
 }

@@ -40,6 +40,8 @@ import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 import { onNcChallanCancelled, onNcChallanReceived } from '../nc-register/recovery';
+import { blockerRefusal } from '../cancel-requests/messages';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import {
   applyOutwardToJcOp,
   jobWorkUnlinkedRefusal,
@@ -59,6 +61,7 @@ import {
   withDocRevision,
 } from '@innovic/shared';
 import type {
+  CancelBlocker,
   DocumentEditStagedResult,
   DocumentTraceability,
   ReceiveDeliveryChallanResponse,
@@ -1318,163 +1321,256 @@ export async function createDeliveryChallan(
   });
 }
 
-export async function cancelDeliveryChallan(
+// ─── Cancel (ADR-235: only via an approved Cancel Request) ───────────────────
+
+/** Read the DC header; `forUpdate` locks it (request / approve), the preview
+ *  reads without a lock. null = not found in this company. */
+export async function lockDeliveryChallanForCancel(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
-  user: AuthContext,
-  /** Why (ADR-197) — required at the route (`cancelDeliveryChallanInputSchema`). */
-  reason?: string,
-): Promise<DeliveryChallanWithLines> {
-  // Destructive: reverses jc_op state + writes compensating stock ledger rows.
-  // Cancel is not one of the four tier actions, so it is expressed as the pair
-  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
-  // has edit but not approve; L4 Approver has approve but not edit. Previously
-  // this was admin-only, which locked out the very tier meant to run the dept.
-  await requireFormAccess(user, 'ospdc_create', 'edit');
-  await requireFormAccess(user, 'ospdc_create', 'approve');
-  const companyId = requireCompany(user);
+  forUpdate: boolean,
+): Promise<typeof deliveryChallans.$inferSelect | null> {
+  const q = tx
+    .select()
+    .from(deliveryChallans)
+    .where(
+      and(
+        eq(deliveryChallans.id, id),
+        eq(deliveryChallans.companyId, companyId),
+        isNull(deliveryChallans.deletedAt),
+      ),
+    )
+    .limit(1);
+  const rows = forUpdate ? await q.for('update') : await q;
+  return rows[0] ?? null;
+}
 
-  return withUserContext(user, async (tx) => {
-    // S6 — lock the challan first. A cancel racing a receive (or a second
-    // cancel) waits here, then re-reads the committed status / receipts and is
-    // refused by the checks below, so the op's sent qty is reversed only once.
-    const headerRows = await tx
-      .select()
-      .from(deliveryChallans)
-      .where(
-        and(
-          eq(deliveryChallans.id, id),
-          eq(deliveryChallans.companyId, companyId),
-          isNull(deliveryChallans.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const header = headerRows[0];
-    if (!header) throw new NotFoundError('DC not found. Refresh the page.');
-    if (header.status === 'cancelled') {
-      throw new ConflictError(
-        `DC ${header.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
-      );
-    }
-    if (header.status === 'received') {
-      throw new ConflictError(`Cannot cancel DC ${header.code}: it is Received.`);
-    }
-    // T-059b — block cancel once receipts exist. Reversing receipts cleanly
-    // (reverse the stock IN, unwind any auto-NC, restore JC status) is out
-    // of scope for this slice. Admin must void the receipts first if that
-    // flow is ever needed (no UI today).
-    if (await dcHasActiveReceipts(tx, id)) {
-      throw new ConflictError(
-        `Cannot cancel DC ${header.code}: receipts are recorded. Cancel those receipts first.`,
-      );
-    }
+/**
+ * THE DC cancel refusal rule (one place — the worker and the Cancel preview
+ * both call it). Each entry names what must be undone first:
+ *   · a receipt booked against the challan (T-059b — material already came
+ *     back from the vendor; a receipt is never unwound by a cancel);
+ *   · a Received challan with no receipt line left (out of step);
+ *   · a return-to-vendor challan (ADR-166) whose NC already got pieces back,
+ *     no longer points at this challan, or is no longer Sent to Vendor — the
+ *     same rules onNcChallanCancelled refuses on.
+ */
+export async function deliveryChallanCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const header = await lockDeliveryChallanForCancel(tx, companyId, id, false);
+  if (!header) return [];
+  const out: CancelBlocker[] = [];
 
-    const lineRows = await tx
-      .select()
-      .from(deliveryChallanLines)
-      .where(
-        and(eq(deliveryChallanLines.deliveryChallanId, id), isNull(deliveryChallanLines.deletedAt)),
-      )
-      .orderBy(asc(deliveryChallanLines.id))
-      .for('update');
+  const receipts = (await tx.execute(sql`
+    SELECT r.receipt_code AS "receiptCode",
+      SUM(COALESCE(rl.received_qty, 0) + COALESCE(rl.rejected_qty, 0))::float8 AS qty
+    FROM public.delivery_challan_receipt_lines rl
+    JOIN public.delivery_challan_lines dl ON dl.id = rl.delivery_challan_line_id
+    JOIN public.delivery_challan_receipts r ON r.id = rl.receipt_id
+    WHERE dl.delivery_challan_id = ${id}::uuid
+      AND r.company_id = ${companyId}::uuid
+      AND rl.deleted_at IS NULL
+    GROUP BY r.receipt_code
+    ORDER BY r.receipt_code
+  `)) as unknown as Array<{ receiptCode: string; qty: number | null }>;
+  for (const r of receipts) {
+    out.push({
+      docLabel: 'DC Receipt',
+      docNo: r.receiptCode,
+      href: `/delivery-challans/${id}`,
+      reason: `${roundQty(Number(r.qty ?? 0))} pcs already received back against this DC`,
+    });
+  }
+  if (receipts.length === 0 && header.status === 'received') {
+    out.push({
+      docLabel: 'DC',
+      docNo: header.code,
+      href: `/delivery-challans/${id}`,
+      reason: 'it is Received — report this to the administrator',
+    });
+  }
 
-    const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
-    if (header.ncId) {
-      // Return-to-vendor challan (createNcDc, ADR-166). Its one line carries
-      // the origin op's PO line for the print, but createNcDc never added its
-      // qty to jc_ops.outsource_sent_qty (that column counts ordinary sends
-      // only), so reverseOutwardFromJcOp must NOT run here — it would subtract
-      // pieces that were never added. What has to be unwound instead is the
-      // NC's rtv ledger, the op status createNcDc demoted, and the PO line
-      // received_qty the ADR-165 formula lowered when the challan went out.
-      // Receipts are already ruled out above (dcHasActiveReceipts).
-      await onNcChallanCancelled(
-        tx,
-        { ncId: header.ncId, deliveryChallanId: id, reason },
-        companyId,
-        user,
-      );
-    }
-    for (const dl of lineRows) {
-      // reverseOutwardFromJcOp takes back whole pieces from the op (its sent
-      // counter is a piece count); a buying line's decimals never reach it.
-      const lineQty = roundQty(Number(dl.qty));
-      // Option A (ADR-067): OSP send no longer touches stock, so cancel has no
-      // ledger movement to reverse — only the jc_op sent-qty is unwound below.
-      if (dl.purchaseOrderLineId && !header.ncId) {
-        const result = await reverseOutwardFromJcOp({
-          tx,
-          companyId,
-          adminUserId: user.id,
-          dcCode: header.code,
-          dcDate: header.dcDate,
-          purchaseOrderLineId: dl.purchaseOrderLineId,
-          qty: lineQty,
+  if (header.ncId) {
+    const ncRows = (await tx.execute(sql`
+      SELECT id, code, status::text AS status, delivery_challan_id AS "dcId",
+        rtv_received_qty::float8 AS "rtvReceived"
+      FROM public.nc_register
+      WHERE id = ${header.ncId}::uuid AND company_id = ${companyId}::uuid
+    `)) as unknown as Array<{
+      id: string;
+      code: string;
+      status: string;
+      dcId: string | null;
+      rtvReceived: number;
+    }>;
+    const nc = ncRows[0];
+    if (nc) {
+      const href = `/nc-register/${nc.id}`;
+      const back = roundQty(Number(nc.rtvReceived ?? 0));
+      if (back > 0) {
+        out.push({
+          docLabel: 'NC',
+          docNo: nc.code,
+          href,
+          reason: `${back} pcs already came back from the vendor on it`,
         });
-        if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
-          opCascades.push({
-            jcCode: result.jcCode,
-            jobCardId: result.jobCardId,
-            opSeq: result.opSeq,
-            qty: Math.round(lineQty),
-          });
-        }
+      } else if (nc.dcId !== id) {
+        out.push({
+          docLabel: 'NC',
+          docNo: nc.code,
+          href,
+          reason: 'this DC is no longer its return-to-vendor challan',
+        });
+      } else if (nc.status !== 'sent_to_vendor') {
+        out.push({
+          docLabel: 'NC',
+          docNo: nc.code,
+          href,
+          reason: `it is no longer Sent to Vendor (${nc.status.replace(/_/g, ' ')})`,
+        });
       }
     }
+  }
+  return out;
+}
 
-    const cancelledAt = new Date();
-    const cancelledRows = await tx
-      .update(deliveryChallans)
-      .set({
-        status: 'cancelled',
-        // ADR-197: who cancelled, and when (the reason is on the CANCEL log row).
-        cancelledBy: user.id,
-        cancelledAt,
-        updatedBy: user.id,
-        updatedAt: cancelledAt,
-      })
-      // Cancel once: only from the status read under the lock above.
-      .where(and(eq(deliveryChallans.id, id), eq(deliveryChallans.status, header.status)))
-      .returning({ id: deliveryChallans.id });
-    assertRowUpdated(cancelledRows, `DC ${header.code}`);
+/**
+ * The ONE DC cancel writer, run only by an approved Cancel Request (ADR-235).
+ * In-tx body, no rights check — the Cancel Request checks the ticks. Takes the
+ * op's sent qty back exactly once (row lock first, conditional status write).
+ */
+export async function cancelDeliveryChallanTx(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<void> {
+  // S6 — lock the challan first. A cancel racing a receive (or a second
+  // cancel) waits here, then re-reads the committed status / receipts and is
+  // refused by the checks below, so the op's sent qty is reversed only once.
+  const header = await lockDeliveryChallanForCancel(tx, companyId, id, true);
+  if (!header) throw new NotFoundError('DC not found. Refresh the page.');
+  if (header.status === 'cancelled') {
+    throw new ConflictError(
+      `DC ${header.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
+    );
+  }
 
-    const cancelledQty = roundQty(lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0));
+  const lineRows = await tx
+    .select()
+    .from(deliveryChallanLines)
+    .where(
+      and(eq(deliveryChallanLines.deliveryChallanId, id), isNull(deliveryChallanLines.deletedAt)),
+    )
+    .orderBy(asc(deliveryChallanLines.id))
+    .for('update');
+
+  // The refusal rule, under the DC + line locks (a receipt locks the same DC
+  // row first) — before anything moves.
+  const blockers = await deliveryChallanCancelBlockers(tx, companyId, id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(header.code, blockers), { blockers });
+  }
+
+  const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
+  if (header.ncId) {
+    // Return-to-vendor challan (createNcDc, ADR-166). Its one line carries
+    // the origin op's PO line for the print, but createNcDc never added its
+    // qty to jc_ops.outsource_sent_qty (that column counts ordinary sends
+    // only), so reverseOutwardFromJcOp must NOT run here — it would subtract
+    // pieces that were never added. What has to be unwound instead is the
+    // NC's rtv ledger, the op status createNcDc demoted, and the PO line
+    // received_qty the ADR-165 formula lowered when the challan went out.
+    // Receipts are already ruled out above (blockers).
+    await onNcChallanCancelled(
+      tx,
+      { ncId: header.ncId, deliveryChallanId: id, reason },
+      companyId,
+      user,
+    );
+  }
+  for (const dl of lineRows) {
+    // reverseOutwardFromJcOp takes back whole pieces from the op (its sent
+    // counter is a piece count); a buying line's decimals never reach it.
+    const lineQty = roundQty(Number(dl.qty));
+    // Option A (ADR-067): OSP send no longer touches stock, so cancel has no
+    // ledger movement to reverse — only the jc_op sent-qty is unwound below.
+    if (dl.purchaseOrderLineId && !header.ncId) {
+      const result = await reverseOutwardFromJcOp({
+        tx,
+        companyId,
+        adminUserId: user.id,
+        dcCode: header.code,
+        dcDate: header.dcDate,
+        purchaseOrderLineId: dl.purchaseOrderLineId,
+        qty: lineQty,
+      });
+      if (result.fired && result.jcCode && result.jobCardId && result.opSeq) {
+        opCascades.push({
+          jcCode: result.jcCode,
+          jobCardId: result.jobCardId,
+          opSeq: result.opSeq,
+          qty: Math.round(lineQty),
+        });
+      }
+    }
+  }
+
+  const cancelledAt = new Date();
+  const cancelledRows = await tx
+    .update(deliveryChallans)
+    .set({
+      status: 'cancelled',
+      // ADR-197: who cancelled, and when (the reason is on the CANCEL log row).
+      cancelledBy: user.id,
+      cancelledAt,
+      updatedBy: user.id,
+      updatedAt: cancelledAt,
+    })
+    // Cancel once: only from the status read under the lock above.
+    .where(and(eq(deliveryChallans.id, id), eq(deliveryChallans.status, header.status)))
+    .returning({ id: deliveryChallans.id });
+  assertRowUpdated(cancelledRows, `DC ${header.code}`);
+
+  const cancelledQty = roundQty(lineRows.reduce((sum, dl) => sum + Number(dl.qty), 0));
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'DeliveryChallan',
+      entityId: id,
+      refId: header.code,
+      qty: cancelledQty,
+      reason,
+      detail: `${dcDetail(header.code, header.vendorCodeText)} — cancelled`,
+    },
+    companyId,
+    user,
+  );
+  // The send each op received from this challan is taken back: a REVERSE
+  // on the Job Card naming the challan, with the same reason.
+  for (const op of opCascades) {
     await emitActivityLog(
       tx,
       {
-        action: ActivityAction.Cancel,
-        entity: 'DeliveryChallan',
-        entityId: id,
-        refId: header.code,
-        qty: cancelledQty,
-        reason: reason ?? null,
-        detail: `${dcDetail(header.code, header.vendorCodeText)} — cancelled`,
+        action: ActivityAction.Reverse,
+        entity: 'JobCard',
+        entityId: op.jobCardId,
+        refId: op.jcCode,
+        opRef: `Op ${opSrNo(op.opSeq)}`,
+        qty: op.qty,
+        reason,
+        detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — reversed ${op.qty} pcs sent on ${header.code} (DC cancelled)`,
       },
       companyId,
       user,
     );
-    // The send each op received from this challan is taken back: a REVERSE
-    // on the Job Card naming the challan, with the same reason.
-    for (const op of opCascades) {
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Reverse,
-          entity: 'JobCard',
-          entityId: op.jobCardId,
-          refId: op.jcCode,
-          opRef: `Op ${opSrNo(op.opSeq)}`,
-          qty: op.qty,
-          reason: reason ?? null,
-          detail: `${op.jcCode} Op ${opSrNo(op.opSeq)} — reversed ${op.qty} pcs sent on ${header.code} (DC cancelled)`,
-        },
-        companyId,
-        user,
-      );
-    }
-
-    return loadDeliveryChallanWithLines(tx, id, companyId);
-  });
+  }
 }
 
 // ─── Writes (ADR-202 Phase 3 — EDIT an issued OSP DC) ───────────────────────
@@ -1544,6 +1640,9 @@ export async function updateDeliveryChallanTx(
       `Cannot edit DC ${header.code}: receipts are recorded against it. Cancel those receipts first.`,
     );
   }
+  // ADR-235 — no edit (which reverses + reposts the op's sent qty) while a
+  // cancel request waits on this DC.
+  await assertNoPendingCancel(tx, 'delivery_challan', header.id);
   // Return-to-vendor challan (header.ncId): its pieces were counted when they
   // first went out, so it never adds to outsource_sent_qty and the reverse /
   // repost below would subtract pieces that were never added. That NC sub-flow
@@ -1870,6 +1969,8 @@ export async function updateDeliveryChallanOrStage(
     input.expectedUpdatedAt,
     user,
     async (tx) => {
+      // ADR-235 — no edit staged while a cancel request waits on this DC.
+      await assertNoPendingCancel(tx, 'delivery_challan', id);
       // Refuse add / remove at stage time too, so a staged edit never silently
       // drops or invents a line.
       const currentIds = (
@@ -1982,6 +2083,9 @@ export async function receiveAgainstDeliveryChallan(
         `Cannot receive against DC ${dcHeader.code}: it is already fully Received.`,
       );
     }
+    // ADR-235 — no receipt while a cancel request waits on this DC (the
+    // receipt would become the cancel's blocker under the approver).
+    await assertNoPendingCancel(tx, 'delivery_challan', dcHeader.id);
 
     // Load outward lines for this DC + validate every input line belongs to it.
     const dcLineRows = await tx

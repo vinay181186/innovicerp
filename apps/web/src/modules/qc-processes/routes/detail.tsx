@@ -44,7 +44,7 @@ import {
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Button, Icon, StatusBadge } from '@/ui/core';
+import { Badge, Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
 import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { useQcProcess, useSoftDeleteQcProcess } from '../api';
@@ -215,6 +215,25 @@ function QcProcessFacts(props: {
         label="Active"
         size="lg"
         value={readWithChip(qcProcess.isActive ? 'Active' : 'Inactive', pc, 'isActive')}
+      />
+      {/* ADR-252 — the report this QC step produces. */}
+      <ReadField
+        label="Report Type"
+        size="full"
+        value={readWithChip(
+          qcProcess.reportTypeName ? (
+            <>
+              {qcProcess.reportTypeName}
+              {qcProcess.reportMandatory ? (
+                <Badge tone="red" style={{ marginLeft: 6 }}>
+                  Mandatory
+                </Badge>
+              ) : null}
+            </>
+          ) : null,
+          pc,
+          'reportTypeId',
+        )}
       />
     </ReadGrid>
   );

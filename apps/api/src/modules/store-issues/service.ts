@@ -8,9 +8,9 @@
 //            SO line over its To Issue needs confirmation (guard.ts)
 //   returns  issue_create entry — leftovers put back ('in', source
 //            'store_return'), any qty up to what is still out on the line
-//   reverse  issue_create edit — the whole slip put back, only while nothing
-//            was returned from it (ADR-189: an opposite ledger entry, never an
-//            edit of the 'out')
+//   cancel   ADR-235 — only via an approved Cancel Request (cancel.ts): the
+//            whole slip put back, only while nothing was returned from it
+//            (ADR-189: an opposite ledger entry, never an edit of the 'out')
 //
 // ADR-193 3c — against an assembly SO a line may also use the SO's own
 // reservation, and Return / Reverse are capped by its Still Out (assembly.ts).
@@ -21,28 +21,19 @@
 import {
   ActivityAction,
   ITEM_TYPE_RULES,
-  ISSUE_AGAINST_LABELS,
-  STORE_ISSUE_REVERSE_REASON_MIN,
   type CreateStoreIssueInput,
-  type IssueAgainst,
   type ReturnStoreIssueInput,
-  type ReverseStoreIssueInput,
   type StoreIssueDetail,
 } from '@innovic/shared';
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { storeIssueLines, storeIssueReturns, storeIssues } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
-import {
-  assertReturnWithinStillOut,
-  assertReverseWithinStillOut,
-  checkAssemblyAllowance,
-  giveBackLineReservations,
-  useOwnReservation,
-} from './assembly';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
+import { assertReturnWithinStillOut, checkAssemblyAllowance, useOwnReservation } from './assembly';
 import { enforceOverToIssue, resolveTargetAndCap } from './guard';
 import { lockSlip, nextStoreIssueCode, readSlipLines, resolveIssuedTo, today } from './slip';
 import { readStoreIssueDetail, requireCompany } from './read';
@@ -219,6 +210,9 @@ export async function returnStoreIssue(
     if (iss.reversedAt) {
       throw new ConflictError(`${iss.code} is reversed — nothing is left to return.`);
     }
+    // ADR-235 — no Return while a cancel request waits on this slip (the
+    // return would become the cancel's blocker under the approver).
+    await assertNoPendingCancel(tx, 'store_issue', iss.id);
     const { lines, returned } = await readSlipLines(tx, iss.id);
     const byId = new Map(lines.map((l) => [l.id, l]));
 
@@ -313,99 +307,6 @@ export async function returnStoreIssue(
         user,
       );
     }
-    return readStoreIssueDetail(tx, companyId, iss.id);
-  });
-}
-
-/**
- * ADR-189 — undo a whole slip by OPPOSITE ledger entries ('in' of each line),
- * never by editing the 'out'. Stays on the register, stamped who / when / why.
- * Only while nothing was returned from it — after a Return, use Return.
- */
-export async function reverseStoreIssue(
-  id: string,
-  input: ReverseStoreIssueInput,
-  user: AuthContext,
-): Promise<StoreIssueDetail> {
-  await requireFormAccess(user, 'issue_create', 'edit');
-  const companyId = requireCompany(user);
-  const reason = input.reason.trim();
-  if (reason.length < STORE_ISSUE_REVERSE_REASON_MIN) {
-    throw new ValidationError(
-      `Give a reason for the reversal (at least ${STORE_ISSUE_REVERSE_REASON_MIN} characters).`,
-    );
-  }
-  return withUserContext(user, async (tx) => {
-    const iss = await lockSlip(tx, companyId, id);
-    if (iss.reversedAt) throw new ConflictError(`${iss.code} is already reversed.`);
-    const { lines, returned } = await readSlipLines(tx, iss.id);
-    if ([...returned.values()].some((q) => q > 0)) {
-      throw new ConflictError(
-        `${iss.code}: part of it was already returned, so the slip cannot be reversed — use Return for what is still out.`,
-      );
-    }
-    if (lines.length === 0) {
-      throw new ConflictError(`${iss.code} has no items on it, so there is no stock to put back.`);
-    }
-    const assemblySoId =
-      iss.issueAgainst === 'assembly_so' && iss.salesOrderId ? iss.salesOrderId : null;
-    if (assemblySoId) {
-      await assertReverseWithinStillOut(tx, companyId, assemblySoId, iss.code, lines);
-    }
-
-    const date = today();
-    const done: string[] = [];
-    const byLine = new Map<string, string>();
-    for (const line of [...lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
-      const mv = await postStockMove(tx, {
-        companyId,
-        itemId: line.itemId,
-        txnType: 'in',
-        qty: line.qty,
-        sourceType: 'store_return',
-        sourceRef: `${iss.code} reversal · ${line.itemCodeText}`,
-        remarks: `Item Issue reversed · ${reason}`,
-        txnDate: date,
-        userId: user.id,
-        itemCodeText: line.itemCodeText,
-        guard: 'none',
-      });
-      byLine.set(line.id, mv.id);
-      done.push(`${line.itemCodeText} × ${line.qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
-    }
-    const firstTxnId = byLine.get(lines[0]!.id) ?? null;
-    // ADR-193 3c — what the slip used of the SO's reservation is held again.
-    if (assemblySoId) {
-      await giveBackLineReservations(tx, { companyId, soId: assemblySoId, userId: user.id }, lines);
-    }
-
-    const now = new Date();
-    await tx
-      .update(storeIssues)
-      .set({
-        reversedAt: now,
-        reversedBy: user.id,
-        reversalReason: reason,
-        reversalStoreTransactionId: firstTxnId,
-        updatedBy: user.id,
-        updatedAt: now,
-      })
-      .where(eq(storeIssues.id, iss.id));
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Reverse,
-        entity: 'StoreIssue',
-        entityId: iss.id,
-        refId: iss.code,
-        qty: roundQty(lines.reduce((sum, l) => sum + Number(l.qty), 0)),
-        reason,
-        detail: `${iss.code} (${ISSUE_AGAINST_LABELS[iss.issueAgainst as IssueAgainst] ?? iss.issueAgainst}) put back ${done.join(', ')}`,
-      },
-      companyId,
-      user,
-    );
     return readStoreIssueDetail(tx, companyId, iss.id);
   });
 }

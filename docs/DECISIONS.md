@@ -14367,3 +14367,147 @@ layout (tile strip, two-tab FIT tables) unlike the QC Call Register.
   are gone from Incoming QC, as on the QC Call Register.
 - No write path changed; both QC saves (`/incoming-qc/:line/inspect`,
   `/party-grn/:id/qc`) keep their §20.2 conditional updates. No migration.
+
+## ADR-252: QC Dossier — SO / JWSO → POL → report folders; mandatory report on Submit QC
+
+**Date:** 2026-10-23
+**Status:** Accepted (owner, 2026-10-23)
+
+### Context
+
+QC reports were kept in four places that never met: the QC entry itself
+(`op_log.qc_report_path`, Op Entry / TPI / QC Call Register), QC Documents uploads
+(`qc_documents`), the Job Card form (`file_registry` 'qc-docs') and GRN lines. The QC
+Documents matrix only counted `qc_documents`, so a report attached in Op Entry showed
+"report missing". No QC file carried a POL; JWSO jobs were not covered; report names
+were free text that never matched the matrix; a line counted complete with reports
+missing; "Download All" saved files one by one. The owner asked for all QC reports at
+one location: SO No. → POL folders → MIR / DIR / … folders.
+
+### Decision
+
+1. A **Dossier** tab on QC Documents: order (SO or JWSO, D1) → POL → report folders →
+   files. Folders are labels on each file, never storage paths. One server read over
+   all the stores; no files are moved.
+2. A line's folders are the reports produced by the QC steps on its job cards (rework
+   children included): `jc_ops.operation` → QC Process Master code (trimmed,
+   case-insensitive, `packages/shared/src/lib/qc-report.ts`) → `qc_processes.report_type_id`
+   → `report_types`. No QC step = "No QC steps" (nothing missing); no JC = "No JC yet".
+3. A report belongs to its **QC Entry** (`op_log` log_type 'qc'). Missing is counted per
+   entry with accepted qty > 0; a step with no entry is "QC not done", not missing. The
+   Pieces from–to box is dropped (D6) — it only numbered accepted qty.
+4. **Mandatory** report types (MIR, DIR, MCR, TPI — `report_types.default_mandatory`):
+   `submitQcLog` refuses a QC entry with accepted qty and no report (D7, the one writer
+   of QC entries, used by Op Entry, TPI and QC Call Register). Optional ones save and
+   stay missing until uploaded. `op_log.report_required` is stamped at submit; entries
+   from before this change (NULL) show red in the Dossier only (D8).
+5. A line is ✓ only when every QC step has entries and every entry has its report (D2).
+6. Home list **Reports to upload** (`qc_report_missing`) + bell, for `qcdocs_upload`
+   entry holders only (ADR-250 rights rule).
+7. ZIP download in the browser (JSZip, D3): `SO/POL-n_item/Report/file`. Replacing a
+   report keeps the old file as an earlier revision (D4).
+8. Every QC Documents read needs `qcdocs_upload` view; uploads need `qcdocs_upload`
+   entry (ticks, ADR-232). The API connects as postgres and bypasses RLS, so the
+   role-based write policy on `qc_documents` (admin / manager / qc) stays as the guard
+   on direct browser writes. Every stored report path must sit under the company's own
+   folder (`lib/storage-path.ts`). Migration 0216.
+
+### Alternatives Considered
+
+- Real storage folders per SO/POL — rejected: a renamed POL or moved JC breaks paths.
+- Copying op_log reports into qc_documents — rejected: two writers of one fact (§20.1).
+- Block every report type — owner chose mandatory only (D7 "A for mandatory").
+
+### Consequences
+
+- Positive: one place, same ✓ counts on Dossier, Matrix, SO QC Status and the home.
+- Negative: Op Entry / TPI / QC Call Register refuse a MIR/DIR/MCR/TPI result without
+  its file. Storage-folder policies (all modules) are still company-wide — separate change.
+
+### Addendum 2026-10-24 (owner)
+
+- The Dossier opens with the order field empty — no order is picked for the user. Typing
+  SO / JWSO No., Internal SO No., **Client PO No.** or customer finds it; clearing the field
+  closes it. A link naming an order (home dashboard, refresh) still opens it directly.
+- The **Matrix tab is removed** (owner: not needed — the Dossier shows the same per-POL
+  status for SO and JWSO, with upload and ZIP). Old `view=matrix` links land on the
+  Dossier. The `/qc-documents/matrix` API stays for now (no screen uses it).
+
+## ADR-235: One standard Cancel — reason → Cancel Request → Approve → Cancelled, stock reversed, never cascade
+
+**Date:** 2026-10-24
+**Status:** Accepted (owner rule 2026-10-16 "to cancel any doc user must write reason, doc go for approval, system must store reason, after approved doc become cancelled"; audit + plan approved 2026-10-24 "continue")
+
+### Context
+
+The 2026-10-23 audit of every document found no single Cancel: Reject, Short Close,
+Delete, Reverse and Cancel were mixed per module; GRN, Incoming QC, JW DC, JWSO, Plan,
+PRO and Job Card had no real cancel; Party GRN / Party Material Issue "cancel" hid the
+document; SO header cancel left stock bookings; Job Card delete checked almost nothing;
+the reason sat only in the activity log on ~9 documents. ERPNext / SAP B1 / Odoo all
+keep a posted document and mark it Cancelled, reverse stock with opposite entries,
+refuse while a downstream document is live, and never reuse the number.
+
+### Decision
+
+1. A live document is never deleted — only Cancelled. Delete (Trash) stays for drafts /
+   never-used records (Phase D).
+2. Cancel = mandatory reason → `cancel_requests` row (one pending per document) →
+   approved by a holder of the Approve tick on that document's page (the requester may
+   approve their own; "Cancel now" = request + approve at once) → the document's own
+   cancel worker runs in ONE transaction with blockers re-checked. Edit tick = may request.
+3. Never cascade. A live downstream document blocks; the preview lists every blocker
+   in cancel order with a link ("cancel these first").
+4. Stock and counters are reversed by the document's existing single writer
+   (`postStockMove` / `postPartyStockMove` opposite entries; §20.1) — the ledger is
+   never edited. A cancel that would need stock already used is refused, naming the
+   document that used it.
+5. The cancelled document stays visible and read-only with its reason, who and when;
+   lists filter it; print carries a CANCELLED mark. Numbers are never reused; a
+   correction is a new document.
+6. While a request is pending the document cannot be edited.
+7. One registry (`modules/cancel-requests/registry.ts`): each document type supplies
+   lock / blockers / effects / run. Routes: `GET /cancel/:type/:id/preview`,
+   `POST /cancel/:type/:id`, `POST /cancel-requests/:id/decide | withdraw`,
+   `GET /cancel-requests`. Approvals inbox has a Cancel Requests tab.
+8. Phases: A foundation + Invoice, JW Invoice, Customer Dispatch (migration 0217);
+   B the other existing cancels (JW Return, CMR, Party GRN / Issue made visible, DC,
+   Store Issue, Stock Count, Tool Issue, PR, PO); C new cancels (SO, JWSO, Plan, PRO,
+   Job Card, GRN + Incoming QC, DC receipt, JW DC); D delete-only-drafts, master
+   in-use checks, Trash restore recompute.
+9. GST: the system raises no e-invoice IRN / e-way bill; the invoice cancel dialog
+   reminds the user to cancel an IRN / e-way bill on the portal within 24 h.
+
+### Alternatives Considered
+
+- Cascade cancel of the chain — rejected (ERP standard is block; silent chain cancels
+  hide stock moves).
+- Hard delete / editing the ledger — rejected (CLAUDE.md §6 rule 8, ADR-185).
+- Amend (`DOC-0001-1`) — not now; correction = new document (owner may ask later).
+
+### Phase B (2026-10-24, migration 0218)
+
+Ten more documents enrolled through the same registry — no second cancel path:
+JW Return, Customer Material Return, Party GRN, Party Material Issue, Delivery
+Challan, Item Issue (store issue — its "Reverse" is now its Cancel), Stock Count,
+Tool Issue, Purchase Request, Purchase Order. Each module supplies
+`lockXForCancel` / `xCancelBlockers` (one rule, preview and worker) /
+`cancelXTx` (the module's own writer, in the approval's transaction); the old
+`POST /…/:id/cancel` (and `/store-issues/:id/reverse`) routes only create a
+Cancel Request. Edit / return / QC / receive / post paths refuse while a
+cancel is pending.
+
+- Party GRN / Party Material Issue keep stamping `deleted_at` (every live reader
+  unchanged) and now also carry `cancel_reason / cancelled_at / cancelled_by`;
+  their lists take `includeCancelled` and show them as Cancelled. 0218 backfills
+  old cancels from the deleted stamp and the "[Cancelled] …" remarks line.
+- PR / PO: Reject, Short Close and Close Balance stay as they are and share ONE
+  writer with Cancel. PR Cancel = nothing ordered; PO Cancel = Draft, or nothing
+  received / sent (else Short Close). The PO cancel stamp reuses the
+  `short_closed_*` columns (as stop-wholly always did); the screen labels it
+  Cancelled.
+- GRN, OSP DC, JW DC and return-to-vendor DC senders re-read the PO status after
+  locking its lines (`assertPoLinesStillOrderable`) so nothing is received / sent
+  against a PO cancelled — or with a cancel pending — a moment earlier.
+- Open: an Item Issue against a Job Card has no "material already used" blocker
+  (store qty is in kg, JC ops log pieces — owner to decide the rule).

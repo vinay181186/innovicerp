@@ -49,6 +49,8 @@ import { emitActivityLog } from '../activity-log/service';
 import { assertMlNodeCapOnEdit, assertMlNodeItemUnchanged } from '../ml-plan/edit-cap';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
+import { markPrCancelledTx, releaseSourceJcOps } from './pr-cancel-writer';
 import { prSfColumns } from './sf-columns';
 import type {
   ClosePurchaseRequestBalanceInput,
@@ -1209,6 +1211,8 @@ export async function updatePurchaseRequestTx(
   }
   // R5: refuse the save if someone else edited the PR after this form opened it.
   assertUnchangedSinceOpened(existing[0]!.updatedAt, input.expectedUpdatedAt);
+  // ADR-235 — the PR must not change under a pending Cancel Request's approver.
+  await assertNoPendingCancel(tx, 'purchase_request', id);
   // A PR with quantity on a LIVE purchase order is locked — no further edits.
   //
   // This used to test the boolean (`po_id IS NOT NULL OR status='po_created'`),
@@ -1241,8 +1245,7 @@ export async function updatePurchaseRequestTx(
   // updatePurchaseOrder). Any `status` in the payload is ignored so the edit
   // form can never skip the approvedBy/approvedAt stamp (ISSUE-025).
   if (input.vendorId !== undefined) updates['vendorId'] = input.vendorId ?? null;
-  if (input.vendorCodeText !== undefined)
-    updates['vendorCodeText'] = input.vendorCodeText ?? null;
+  if (input.vendorCodeText !== undefined) updates['vendorCodeText'] = input.vendorCodeText ?? null;
   // Same back-stop on edit: a changed code that names a real master item
   // re-links the PR instead of leaving it as bare text.
   if (input.itemId !== undefined) {
@@ -1304,8 +1307,7 @@ export async function updatePurchaseRequestTx(
   ) {
     throw new ValidationError('The Job Card operation link of a PR is set by the system only.');
   }
-  if (input.sourceSoLineId !== undefined)
-    updates['sourceSoLineId'] = input.sourceSoLineId ?? null;
+  if (input.sourceSoLineId !== undefined) updates['sourceSoLineId'] = input.sourceSoLineId ?? null;
   if (input.operation !== undefined) updates['operation'] = input.operation ?? null;
   if (input.remarks !== undefined) updates['remarks'] = input.remarks ?? null;
 
@@ -1393,6 +1395,9 @@ export async function updatePurchaseRequestOrStage(
     input,
     input.expectedUpdatedAt,
     user,
+    // ADR-235 — no edit staged while a cancel request waits on this PR (runs
+    // under the engine's PR row lock).
+    (tx) => assertNoPendingCancel(tx, 'purchase_request', id),
   );
   if (request) return { staged: true, request };
 
@@ -1432,6 +1437,8 @@ export async function approvePurchaseRequest(
       .for('update');
     const pr = existing[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
+    // ADR-235 — no approve / reject / short close while a cancel request waits.
+    await assertNoPendingCancel(tx, 'purchase_request', id);
     // Only a pre-approval PR ('open') can be approved.
     if (pr.status !== 'open') {
       throw new ConflictError(
@@ -1510,6 +1517,8 @@ export async function rejectPurchaseRequest(
       .for('update');
     const pr = existing[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
+    // ADR-235 — no approve / reject / short close while a cancel request waits.
+    await assertNoPendingCancel(tx, 'purchase_request', id);
     // Quantity already on a LIVE purchase order carries the procurement
     // obligation on that PO; a cancelled PR is terminal. Same change as the edit
     // guard: this asks how much is actually on order instead of reading the
@@ -1524,32 +1533,10 @@ export async function rejectPurchaseRequest(
       );
     }
 
-    // ADR-197 (0178): who / when / why are stamped on the dedicated columns.
-    // The reason is ALSO still appended to remarks, because the PR screens read
-    // the rejection from there (the shared PR contract does not carry the new
-    // columns yet).
-    const stampedRemarks = pr.remarks
-      ? `${pr.remarks}\n[Rejected] ${trimmedReason}`
-      : `[Rejected] ${trimmedReason}`;
-
-    const now = new Date();
-    const rejectedRows = await tx
-      .update(purchaseRequests)
-      .set({
-        status: 'cancelled',
-        remarks: stampedRemarks,
-        rejectedBy: user.id,
-        rejectedAt: now,
-        rejectionReason: trimmedReason,
-        updatedBy: user.id,
-        updatedAt: now,
-      })
-      // Expected status: the one read under the lock (never 'cancelled').
-      .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.status, pr.status)))
-      .returning({ id: purchaseRequests.id });
-    assertRowUpdated(rejectedRows, `PR ${pr.code}`);
-
-    const released = await releaseSourceJcOps(tx, id, user);
+    // ADR-197 (0178): who / when / why are stamped on the dedicated columns;
+    // the reason is ALSO appended to remarks (the PR screens read it there).
+    // The ONE "PR is dead" writer, shared with the standard Cancel (ADR-235).
+    const released = await markPrCancelledTx(tx, pr, 'rejected', trimmedReason, user);
 
     const reread = await tx
       .select()
@@ -1622,6 +1609,8 @@ export async function closePurchaseRequestBalance(
       .for('update');
     const pr = existing[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
+    // ADR-235 — no approve / reject / short close while a cancel request waits.
+    await assertNoPendingCancel(tx, 'purchase_request', id);
     if (pr.deletedAt !== null) {
       throw new ValidationError(`PR ${pr.code} is in Trash. It cannot be Short Closed.`);
     }
@@ -1692,38 +1681,6 @@ export async function closePurchaseRequestBalance(
     // Only the balance the row reports drops to 0.
     return toPurchaseRequest(row, orderedQty);
   });
-}
-
-// ADR-101 — un-stamp the JC op(s) a dead PR was raised against.
-//
-// `jc_ops.outsource_pr_id` + `outsource_status` are what the JC-edit lock guard
-// (job-cards/service.ts) reads to decide "this op is committed to procurement".
-// Cancelling or deleting the PR used to leave that stamp behind, so the op was
-// frozen forever — no retype to in-house, no removal — even though the user had
-// done exactly what the error message told them to do. Clearing it here also
-// makes the op eligible for a fresh PR again, which is the correct next state
-// for an outsource op with no live paperwork.
-//
-// Ops that carry a PO line, or whose status is past PO issue, are left alone:
-// those are real commitments and are not reachable from a pre-PO PR anyway.
-async function releaseSourceJcOps(
-  tx: DbTransaction,
-  prId: string,
-  user: AuthContext,
-): Promise<number> {
-  const rows = await tx
-    .update(jcOps)
-    .set({ outsourcePrId: null, outsourceStatus: null, updatedBy: user.id, updatedAt: new Date() })
-    .where(
-      and(
-        eq(jcOps.outsourcePrId, prId),
-        isNull(jcOps.outsourcePoLineId),
-        isNull(jcOps.deletedAt),
-        inArray(jcOps.outsourceStatus, ['pending', 'pr_raised']),
-      ),
-    )
-    .returning({ id: jcOps.id });
-  return rows.length;
 }
 
 export async function softDeletePurchaseRequest(

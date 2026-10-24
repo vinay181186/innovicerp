@@ -31,7 +31,8 @@ import type { AuthContext } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
 import * as bomService from '../bom-master/service';
 import * as jwService from '../job-work-orders/service';
-import { cancelJwReturnChallan, createJwReturnChallan } from './service';
+import { requestCancel } from '../cancel-requests/service';
+import { createJwReturnChallan } from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const P = 'TJWBOM-';
@@ -63,7 +64,11 @@ async function makeItem(code: string, name: string): Promise<string> {
 
 async function makeBom(
   tag: string,
-  lines: Array<{ itemId: string; qtyPerSet: number; bomType: 'manufacture' | 'purchase' | 'outsource' }>,
+  lines: Array<{
+    itemId: string;
+    qtyPerSet: number;
+    bomType: 'manufacture' | 'purchase' | 'outsource';
+  }>,
 ): Promise<string> {
   const bom = await bomService.createBomMaster(
     {
@@ -158,7 +163,10 @@ async function cleanup(): Promise<void> {
   const ids = itemIds.filter(Boolean);
 
   const jwIds = (
-    await db.select({ id: jobWorkOrders.id }).from(jobWorkOrders).where(like(jobWorkOrders.code, `${P}%`))
+    await db
+      .select({ id: jobWorkOrders.id })
+      .from(jobWorkOrders)
+      .where(like(jobWorkOrders.code, `${P}%`))
   ).map((r) => r.id);
   if (jwIds.length > 0) {
     const lineIds = (
@@ -168,7 +176,9 @@ async function cleanup(): Promise<void> {
         .where(inArray(jobWorkOrderLines.jobWorkOrderId, jwIds))
     ).map((r) => r.id);
     if (lineIds.length > 0) {
-      await db.delete(jwReturnChallans).where(inArray(jwReturnChallans.jobWorkOrderLineId, lineIds));
+      await db
+        .delete(jwReturnChallans)
+        .where(inArray(jwReturnChallans.jobWorkOrderLineId, lineIds));
     }
   }
 
@@ -189,7 +199,10 @@ async function cleanup(): Promise<void> {
   if (jwIds.length > 0) await db.delete(jobWorkOrders).where(inArray(jobWorkOrders.id, jwIds));
 
   const bomIds = (
-    await db.select({ id: bomMasters.id }).from(bomMasters).where(like(bomMasters.bomNo, `${P}%`))
+    await db
+      .select({ id: bomMasters.id })
+      .from(bomMasters)
+      .where(like(bomMasters.bomNo, `${P}%`))
   ).map((r) => r.id);
   if (bomIds.length > 0) {
     await db.delete(bomMasterLines).where(inArray(bomMasterLines.bomMasterId, bomIds));
@@ -301,10 +314,7 @@ describe('assembly job work — readiness and stock', () => {
     );
 
     const outs = (
-      await db
-        .select()
-        .from(storeTransactions)
-        .where(eq(storeTransactions.sourceType, 'jw_return'))
+      await db.select().from(storeTransactions).where(eq(storeTransactions.sourceType, 'jw_return'))
     ).filter((r) => (r.sourceRef ?? '').startsWith(challan.code) && r.txnType === 'out');
 
     expect(outs).toHaveLength(2);
@@ -313,12 +323,15 @@ describe('assembly job work — readiness and stock', () => {
     expect(outs.some((r) => r.itemId === parentId)).toBe(false);
 
     // Cancel puts back exactly what went out.
-    await cancelJwReturnChallan(challan.id, 'test cancel', admin);
+    // ADR-235: through the standard Cancel Request (request + approve at once).
+    await requestCancel(
+      'jw_return',
+      challan.id,
+      { reason: 'test cancel', approveNow: true },
+      admin,
+    );
     const ins = (
-      await db
-        .select()
-        .from(storeTransactions)
-        .where(eq(storeTransactions.sourceType, 'jw_return'))
+      await db.select().from(storeTransactions).where(eq(storeTransactions.sourceType, 'jw_return'))
     ).filter((r) => (r.sourceRef ?? '').startsWith(challan.code) && r.txnType === 'in');
     expect(ins).toHaveLength(2);
     expect(ins.find((r) => r.itemId === c1Id)!.qty).toBe(4);
@@ -350,10 +363,7 @@ describe('assembly job work — readiness and stock', () => {
       admin,
     );
     const outs = (
-      await db
-        .select()
-        .from(storeTransactions)
-        .where(eq(storeTransactions.sourceType, 'jw_return'))
+      await db.select().from(storeTransactions).where(eq(storeTransactions.sourceType, 'jw_return'))
     ).filter((r) => (r.sourceRef ?? '').startsWith(ok.code) && r.txnType === 'out');
     // 2 assemblies x 2 per set = 4 of C2.
     expect(outs.find((r) => r.itemId === c2Id)!.qty).toBe(4);

@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -115,6 +116,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
   // Receive against a DC: the server accepts DC entry or GRN entry (a GRN
   // storekeeper books the receipt too) — same rule on the ⋯ item.
   const canReceive = perms.entry || effectiveFormPerms(eff, 'grn_create').entry;
+  // ADR-235 — the ONE standard Cancel: Edit requests, Approve decides. The
+  // dialog reads the server's preview (blockers, which button this user gets).
+  const canCancel = perms.edit || perms.approve;
+  const [cancelling, setCancelling] = useState<{ id: string; code: string } | null>(null);
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -378,6 +383,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
                         to: `/delivery-challans/${dc.id}/receive`,
                         hidden: dc.status !== 'issued' || !canReceive,
                       },
+                      {
+                        key: 'cancel',
+                        label: 'Cancel DC',
+                        icon: 'x',
+                        group: 'danger',
+                        hidden: !canCancel || dc.status === 'cancelled',
+                        onSelect: () => setCancelling({ id: dc.id, code: dc.code }),
+                      },
                     ]}
                   />
                 )}
@@ -399,6 +412,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
           />
         </>
       )}
+      {cancelling ? (
+        <CancelDocDialog
+          docType="delivery_challan"
+          docId={cancelling.id}
+          docCode={cancelling.code}
+          onClose={() => setCancelling(null)}
+        />
+      ) : null}
     </div>
   );
 }

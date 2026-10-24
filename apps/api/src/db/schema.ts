@@ -731,6 +731,12 @@ export const qcProcesses = pgTable(
       .notNull()
       .default('0'),
     isActive: boolean('is_active').notNull().default(true),
+    // ADR-252 (migration 0216) — the Report Type this QC process produces.
+    // Null = the step expects no report. report_types.default_mandatory says
+    // whether Submit QC refuses an entry without it.
+    reportTypeId: uuid('report_type_id').references((): AnyPgColumn => reportTypes.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -743,6 +749,9 @@ export const qcProcesses = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
+    index('qc_processes_report_type_idx')
+      .on(t.reportTypeId)
+      .where(sql`${t.deletedAt} is null`),
     uniqueIndex('qc_processes_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -1338,6 +1347,10 @@ export const opLog = pgTable(
     // file name for a report attached to this QC/TPI entry. Migration 0043.
     qcReportPath: text('qc_report_path'),
     qcReportName: text('qc_report_name'),
+    // ADR-252 (migration 0216) — stamped at Submit QC: true when the op's QC
+    // process produces a report, false when it does not. NULL = an entry saved
+    // before 0216 (red in the QC Dossier, never on the dashboard — D8).
+    reportRequired: boolean('report_required'),
     // The one permitted mutation on an append-only table (0097 / ADR-127): a
     // wrong log_date or start_time can be corrected. Stamped by the BEFORE
     // UPDATE trigger op_log_timing_only_update, which refuses the write if any
@@ -1361,6 +1374,17 @@ export const opLog = pgTable(
       .on(t.reversalOfId)
       .where(sql`${t.reversalOfId} is not null`),
     index('op_log_company_op_date_idx').on(t.companyId, t.jcOpId, t.logDate),
+    // ADR-252 (0216) — the QC Dossier opens a Submit QC report by its path.
+    index('op_log_qc_report_path_idx')
+      .on(t.companyId, t.qcReportPath)
+      .where(sql`${t.qcReportPath} is not null`),
+    // ADR-252 (0216) — home "Reports to upload" list (rows-qc.ts); predicate
+    // matches that query's WHERE word for word so the planner can use it.
+    index('op_log_qc_report_owed_idx')
+      .on(t.companyId)
+      .where(
+        sql`${t.logType} = 'qc' and ${t.reportRequired} = true and nullif(btrim(coalesce(${t.qcReportPath}, '')), '') is null`,
+      ),
     index('op_log_company_tpi_idx')
       .on(t.companyId, t.logDate)
       .where(sql`${t.isTpi} = true`),
@@ -1569,6 +1593,85 @@ export const documentEditRequests = pgTable(
 ).enableRLS();
 
 export type DocumentEditRequestRow = typeof documentEditRequests.$inferSelect;
+
+// ─── Cancel Requests (migration 0217, ADR-235 Phase A) ──────────────────────
+// ONE standard Cancel: a live document is never deleted, only Cancelled, after
+// a holder of the Approve tick on its page approves a Cancel Request. While a
+// row is 'pending' the document is untouched (its edit paths refuse); approving
+// runs the document's own cancel worker in the same transaction. doc_type is a
+// named CHECK (not an enum) so a later phase widens it with a new migration.
+export const cancelRequests = pgTable(
+  'cancel_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    // packages/shared CANCEL_DOC_TYPES: 'invoice' | 'jw_invoice' | 'customer_dispatch'.
+    docType: text('doc_type').notNull(),
+    docId: uuid('doc_id').notNull(),
+    // Snapshot of the document code for the inbox (no join back per type).
+    docCode: text('doc_code').notNull(),
+    reason: text('reason').notNull(),
+    // 'pending' | 'approved' | 'rejected' | 'withdrawn'
+    status: text('status').notNull().default('pending'),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionNote: text('decision_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check(
+      'cancel_requests_doc_type_chk',
+      sql`${t.docType} IN ('invoice', 'jw_invoice', 'customer_dispatch')`,
+    ),
+    check(
+      'cancel_requests_status_chk',
+      sql`${t.status} IN ('pending', 'approved', 'rejected', 'withdrawn')`,
+    ),
+    check('cancel_requests_reason_chk', sql`length(btrim(${t.reason})) > 0`),
+    // One open Cancel Request per document.
+    uniqueIndex('cancel_requests_pending_uq')
+      .on(t.docType, t.docId)
+      .where(sql`${t.status} = 'pending' and ${t.deletedAt} is null`),
+    index('cancel_requests_company_status_idx')
+      .on(t.companyId, t.status, t.requestedAt)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('cancel_requests_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // Coarse RLS backstop; the service's Edit tick check is the real gate.
+    pgPolicy('cancel_requests_request_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`company_id = current_company_id() AND current_user_role() IN ('admin', 'manager', 'operator', 'qc', 'procurement', 'dispatch', 'design')`,
+    }),
+    // The API checks the Approve tick (ADR-232); this only fences other companies.
+    pgPolicy('cancel_requests_decide', {
+      for: 'update',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type CancelRequestDbRow = typeof cancelRequests.$inferSelect;
 
 export const runningOps = pgTable(
   'running_ops',
@@ -5153,6 +5256,11 @@ export const partyGrn = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0218) — the cancel's reason / stamp; the cancel stamps deleted_at
+    // too, so live readers keep skipping it. List screens show it as Cancelled.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('party_grn_company_code_uniq')
@@ -5370,6 +5478,11 @@ export const partyMaterialIssues = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0218) — the cancel's reason / stamp; the cancel stamps deleted_at
+    // too, so live readers keep skipping it. List screens show it as Cancelled.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('party_material_issues_company_code_uniq')
@@ -6593,6 +6706,11 @@ export const customerDispatches = pgTable(
     vehicleNo: text('vehicle_no'),
     status: customerDispatchStatusEnum('status').notNull().default('dispatched'),
     remarks: text('remarks'),
+    // ADR-235 (0217) — the reason on the cancelled row, as invoices carry.
+    // NULL on dispatches cancelled before 0217 (reason is in the activity log).
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -7336,6 +7454,18 @@ export const qcDocuments = pgTable(
     qcOpName: text('qc_op_name'),
     srFrom: integer('sr_from'),
     srTo: integer('sr_to'),
+    // ADR-252 (migration 0216) — the order line (POL folder), the QC entry and
+    // the report folder this file is. At most one of the two line links.
+    soLineId: uuid('so_line_id').references((): AnyPgColumn => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    opLogId: uuid('op_log_id').references((): AnyPgColumn => opLog.id, { onDelete: 'set null' }),
+    reportTypeId: uuid('report_type_id').references((): AnyPgColumn => reportTypes.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -7354,11 +7484,32 @@ export const qcDocuments = pgTable(
     index('qc_documents_company_cat_idx')
       .on(t.companyId, t.category)
       .where(sql`${t.deletedAt} is null`),
+    // 0043 — was in the database but missing here.
+    index('qc_documents_jc_op_idx')
+      .on(t.jcOpId)
+      .where(sql`${t.deletedAt} is null`),
+    // ADR-252 (0216).
+    index('qc_documents_company_so_line_idx')
+      .on(t.companyId, t.soLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_documents_company_jw_line_idx')
+      .on(t.companyId, t.jwLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_documents_op_log_idx')
+      .on(t.opLogId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_documents_company_so_idx')
+      .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    check('qc_documents_one_line', sql`num_nonnulls(${t.soLineId}, ${t.jwLineId}) <= 1`),
     pgPolicy('qc_documents_company_read', {
       for: 'select',
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
+    // 0039, kept by ADR-252 (0216): guards DIRECT browser -> PostgREST writes
+    // only. The API connects as postgres (BYPASSRLS) and decides by the Access
+    // Control ticks (qcdocs_upload entry; delete = Super Admin, ADR-232).
     pgPolicy('qc_documents_qc_write', {
       for: 'all',
       to: 'authenticated',

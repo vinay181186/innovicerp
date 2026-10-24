@@ -199,6 +199,8 @@ function invoiceSheetModel(
     totalQty: qtyText(totalQty),
     totalUom: uoms.size === 1 ? ([...uoms][0] ?? '') : '',
     hideMoney: priceHidden,
+    // ADR-235 — a Cancelled invoice prints with the CANCELLED stamp.
+    cancelled: inv.status === 'cancelled',
     ...(priceHidden
       ? {}
       : {

@@ -14,8 +14,22 @@
 // Unused pieces go back to the register with Return to store (partial reversal);
 // a whole wrong issue is cancelled.
 
-import { type SQL, and, count, desc, eq, ilike, isNull, like, or, sql } from 'drizzle-orm';
+import {
+  type SQL,
+  and,
+  count,
+  desc,
+  eq,
+  ilike,
+  isNotNull,
+  isNull,
+  like,
+  or,
+  sql,
+} from 'drizzle-orm';
 import type {
+  CancelBlocker,
+  CancelEffect,
   CreatePartyMaterialIssueInput,
   ListPartyMaterialIssuesQuery,
   ListPartyMaterialIssuesResponse,
@@ -43,6 +57,8 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { blockerRefusal } from '../cancel-requests/messages';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { PARTY_ISSUE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction } from '@innovic/shared';
@@ -130,6 +146,8 @@ function rowToIssue(
     updatedAt: row.updatedAt.toISOString(),
     updatedBy: row.updatedBy,
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
+    cancelReason: row.cancelReason ?? null,
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
   };
 }
 
@@ -409,109 +427,208 @@ async function lockIssue(
   return { ...iss, jwLineId: iss.jwLineId ?? lineId ?? null };
 }
 
-// ADR-103 / ADR-203 — cancel (reverse) a whole Party Material Issue.
+// ─── Cancel (ADR-103 / ADR-203; ADR-235: only via an approved Cancel Request) ─
 //
-// GUARD: material that has already been worked cannot be un-issued. "Used" is
-// the first operation's good + rejected pieces (ADR-183); the Job Card's net
-// issued after the cancel must still cover it. An issue that already had pieces
-// returned to store is refused — return the rest to store instead, so the
-// history stays one story.
-export async function cancelPartyMaterialIssue(
+// Reverses a whole Party Material Issue: the qty goes back into the customer
+// material register, issued_qty comes down, and the row is soft-deleted AND
+// stamped cancel_reason / cancelled_at / cancelled_by (0218) — the register
+// shows it as Cancelled. GUARD (partyMaterialIssueCancelBlockers): material
+// already worked cannot be un-issued ("used" is the first operation's good +
+// rejected pieces plus pieces sent to an OSP vendor, ADR-183/208 — the Job
+// Card's net issued after the cancel must still cover it); an issue that
+// already had pieces returned to store is refused — return the rest to store
+// instead, so the history stays one story.
+
+/** Read the issue — cancelled ones included (a cancel stamps deleted_at).
+ *  `forUpdate` takes the same lock order as lockIssue (JWSO line first, then
+ *  the issue row) so a Cancel Request and a Return to store queue instead of
+ *  crossing. null = not in this company. */
+export async function lockPartyMaterialIssueForCancel(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  forUpdate: boolean,
+): Promise<typeof partyMaterialIssues.$inferSelect | null> {
+  if (forUpdate) {
+    const pre = (await tx.execute(sql`
+      SELECT COALESCE(mi.jw_line_id, jc.source_jw_line_id) AS "lineId"
+        FROM public.party_material_issues mi
+        LEFT JOIN public.job_cards jc ON jc.id = mi.job_card_id
+       WHERE mi.id = ${id}::uuid AND mi.company_id = ${companyId}::uuid
+    `)) as unknown as Array<{ lineId: string | null }>;
+    if (!pre[0]) return null;
+    const lineId = pre[0].lineId;
+    // Plain row lock (not lockJwLine): a reject / withdraw on an old issue must
+    // not fail because its JWSO line is gone.
+    if (lineId) {
+      await tx.execute(sql`
+        SELECT 1 FROM public.job_work_order_lines WHERE id = ${lineId}::uuid FOR UPDATE
+      `);
+    }
+    await tx.execute(sql`
+      SELECT 1 FROM public.party_material_issues WHERE id = ${id}::uuid FOR UPDATE
+    `);
+  }
+  const rows = await tx
+    .select()
+    .from(partyMaterialIssues)
+    .where(and(eq(partyMaterialIssues.id, id), eq(partyMaterialIssues.companyId, companyId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * THE Party Material Issue cancel refusal rule (one place — the worker, under
+ * its locks, and the Cancel preview both call it).
+ */
+export async function partyMaterialIssueCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const iss = await lockPartyMaterialIssueForCancel(tx, companyId, id, false);
+  if (!iss || iss.deletedAt) return [];
+  const out: CancelBlocker[] = [];
+  if (iss.returnedToStoreQty > 0) {
+    out.push({
+      docLabel: 'Party Material Issue',
+      docNo: iss.code,
+      href: null,
+      reason:
+        `${iss.returnedToStoreQty} piece(s) of it were already returned to store — ` +
+        `use Return to store for the rest instead`,
+    });
+  }
+  if (iss.jobCardId) {
+    const jcm = await jcMaterial(tx, companyId, iss.jobCardId);
+    const netAfter = jcm.netIssued - (iss.qty - iss.returnedToStoreQty);
+    if (netAfter < jcm.used) {
+      out.push({
+        docLabel: 'Job Card',
+        docNo: iss.jcCodeText ?? 'Job Card',
+        href: `/job-cards/${iss.jobCardId}`,
+        reason:
+          `${jcm.used} piece(s) already used (good + deviated on the first operation, plus any ` +
+          `sent out to an OSP vendor) against ${jcm.netIssued} issued — cancelling would leave ` +
+          `it short by ${jcm.used - netAfter}; return the unused pieces to store instead`,
+      });
+    }
+  }
+  return out;
+}
+
+/** What the cancel will do — the Cancel preview's lines. */
+export async function partyMaterialIssueCancelEffects(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelEffect[]> {
+  const iss = await lockPartyMaterialIssueForCancel(tx, companyId, id, false);
+  if (!iss || iss.deletedAt) return [];
+  const material = iss.partyMaterialCodeText ?? 'customer material';
+  const out: CancelEffect[] = [
+    {
+      kind: 'stock',
+      text: `${material} ${iss.qty} comes back into the customer material register`,
+      qty: iss.qty,
+    },
+  ];
+  if (iss.jobCardId) {
+    out.push({
+      kind: 'reopen',
+      text: `${iss.jcCodeText ?? 'The Job Card'} — ${iss.qty} pcs can be issued to it again`,
+      qty: iss.qty,
+    });
+  }
+  return out;
+}
+
+/**
+ * The ONE Party Material Issue cancel writer, run only by an approved Cancel
+ * Request (ADR-235). In-tx body, no rights check — the Cancel Request checks
+ * the ticks.
+ */
+export async function cancelPartyMaterialIssueTx(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
   reason: string,
   user: AuthContext,
-): Promise<{ ok: true; code: string; reversedQty: number }> {
-  // Cancelling puts the issued quantity back on party stock — a department-admin
-  // action. edit AND approve is the pair only L5/L6 hold.
-  await requireFormAccess(user, 'party_create', 'edit');
-  await requireFormAccess(user, 'party_create', 'approve');
-  const companyId = requireCompany(user);
+): Promise<{ code: string; reversedQty: number }> {
   const trimmed = (reason ?? '').trim();
   if (!trimmed) throw new ValidationError('Reason is required to cancel a Party Material Issue.');
 
-  return withUserContext(user, async (tx) => {
-    const iss = await lockIssue(tx, companyId, id);
+  const iss = await lockIssue(tx, companyId, id);
+  // The first-op row lock (op-entry takes it too), then the refusal rule —
+  // before anything moves.
+  if (iss.jobCardId) await jcMaterial(tx, companyId, iss.jobCardId, { lockFirstOp: true });
+  const blockers = await partyMaterialIssueCancelBlockers(tx, companyId, id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(iss.code, blockers), { blockers });
+  }
 
-    if (iss.returnedToStoreQty > 0) {
-      throw new ConflictError(
-        `Cannot cancel ${iss.code}: ${iss.returnedToStoreQty} piece(s) of it were already returned to store. ` +
-          `Use Return to store for the rest instead.`,
-      );
-    }
-
-    if (iss.jobCardId) {
-      const jcm = await jcMaterial(tx, companyId, iss.jobCardId, { lockFirstOp: true });
-      const netAfter = jcm.netIssued - (iss.qty - iss.returnedToStoreQty);
-      if (netAfter < jcm.used) {
-        throw new ValidationError(
-          `Cannot cancel ${iss.code}: ${jcm.used} piece(s) have already been used on ` +
-            `${iss.jcCodeText ?? 'this JC'} (good + deviated on the first operation, plus any ` +
-            `pieces sent out to an OSP vendor) against ` +
-            `${jcm.netIssued} issued. Cancelling would leave it short by ${jcm.used - netAfter}. ` +
-            `Return the unused pieces to store instead.`,
-        );
-      }
-    }
-
-    const now = new Date();
-    // The ledger writer puts the qty back into the register (a 'reversal'/'in'
-    // row on the same JWSO line) and raises stock_qty; issued_qty comes down.
-    await postPartyStockMove(tx, {
-      companyId,
-      partyMaterialId: iss.partyMaterialId,
-      jwLineId: iss.jwLineId,
-      movement: 'reversal',
-      direction: 'in',
-      qty: iss.qty,
-      sourceDocType: 'party_material_issue',
-      sourceDocId: id,
-      remarks: `${iss.code} cancelled: ${trimmed}`,
-      userId: user.id,
-      qtyLabel: 'Reversal Qty',
-    });
-    await lowerIssuedQty(
-      tx,
-      iss.partyMaterialId,
-      iss.qty,
-      user.id,
-      iss.partyMaterialCodeText ?? iss.code,
-    );
-
-    const cancelled = await tx
-      .update(partyMaterialIssues)
-      .set({
-        ...softDeleteStamp(user),
-        remarks: iss.remarks ? `${iss.remarks}\n[Cancelled] ${trimmed}` : `[Cancelled] ${trimmed}`,
-        updatedAt: now,
-        updatedBy: user.id,
-      })
-      .where(and(eq(partyMaterialIssues.id, id), isNull(partyMaterialIssues.deletedAt)))
-      .returning({ id: partyMaterialIssues.id });
-    if (cancelled.length === 0) {
-      throw new ConflictError(
-        `${iss.code} has just been cancelled by someone else. Refresh the page.`,
-      );
-    }
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: 'PartyMaterialIssue',
-        entityId: iss.id,
-        refId: iss.code,
-        qty: iss.qty,
-        reason: trimmed,
-        detail:
-          `${iss.code} cancelled — returned ${iss.qty} of ` +
-          `${iss.partyMaterialCodeText ?? 'material'} to party stock`,
-      },
-      companyId,
-      user,
-    );
-
-    return { ok: true as const, code: iss.code, reversedQty: iss.qty };
+  // The ledger writer puts the qty back into the register (a 'reversal'/'in'
+  // row on the same JWSO line) and raises stock_qty; issued_qty comes down.
+  await postPartyStockMove(tx, {
+    companyId,
+    partyMaterialId: iss.partyMaterialId,
+    jwLineId: iss.jwLineId,
+    movement: 'reversal',
+    direction: 'in',
+    qty: iss.qty,
+    sourceDocType: 'party_material_issue',
+    sourceDocId: id,
+    remarks: `${iss.code} cancelled: ${trimmed}`,
+    userId: user.id,
+    qtyLabel: 'Reversal Qty',
   });
+  await lowerIssuedQty(
+    tx,
+    iss.partyMaterialId,
+    iss.qty,
+    user.id,
+    iss.partyMaterialCodeText ?? iss.code,
+  );
+
+  // deleted_at keeps every live reader skipping it; cancelled_at is the same
+  // instant (ADR-235, 0218).
+  const stamp = softDeleteStamp(user);
+  const cancelled = await tx
+    .update(partyMaterialIssues)
+    .set({
+      ...stamp,
+      cancelReason: trimmed,
+      cancelledAt: stamp.deletedAt,
+      cancelledBy: user.id,
+      updatedAt: stamp.deletedAt,
+      updatedBy: user.id,
+    })
+    .where(and(eq(partyMaterialIssues.id, id), isNull(partyMaterialIssues.deletedAt)))
+    .returning({ id: partyMaterialIssues.id });
+  if (cancelled.length === 0) {
+    throw new ConflictError(
+      `${iss.code} has just been cancelled by someone else. Refresh the page.`,
+    );
+  }
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'PartyMaterialIssue',
+      entityId: iss.id,
+      refId: iss.code,
+      qty: iss.qty,
+      reason: trimmed,
+      detail:
+        `${iss.code} cancelled — returned ${iss.qty} of ` +
+        `${iss.partyMaterialCodeText ?? 'material'} to party stock`,
+    },
+    companyId,
+    user,
+  );
+
+  return { code: iss.code, reversedQty: iss.qty };
 }
 
 // ADR-203 — Return to store: put UNUSED pieces of an issue back from the Job
@@ -532,6 +649,8 @@ export async function returnPartyMaterialIssueToStore(
 
   return withUserContext(user, async (tx) => {
     const iss = await lockIssue(tx, companyId, id);
+    // ADR-235 — a return changes what a cancel would reverse; not while one waits.
+    await assertNoPendingCancel(tx, 'party_material_issue', iss.id);
 
     const left = iss.qty - iss.returnedToStoreQty;
     if (input.qty > left) {
@@ -649,10 +768,12 @@ export async function listPartyMaterialIssues(
 ): Promise<ListPartyMaterialIssuesResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const conditions: SQL[] = [
-      eq(partyMaterialIssues.companyId, companyId),
-      isNull(partyMaterialIssues.deletedAt),
-    ];
+    // ADR-235: live issues, plus — when the register asks — the Cancelled ones.
+    const scope = input.includeCancelled
+      ? or(isNull(partyMaterialIssues.deletedAt), isNotNull(partyMaterialIssues.cancelledAt))
+      : isNull(partyMaterialIssues.deletedAt);
+    const conditions: SQL[] = [eq(partyMaterialIssues.companyId, companyId)];
+    if (scope) conditions.push(scope);
     if (input.search) {
       // Search covers every column the Party Material Issue register
       // (apps/web/src/modules/party-material-issues/components/

@@ -921,6 +921,9 @@ export async function disposeNcCascade(
         operatorId,
         operatorName: ctx.userName,
         remarks: opLogRemarks,
+        // ADR-252 — a system-carried re-entry expects no report: only Submit QC
+        // can block on one.
+        reportRequired: false,
         createdBy: ctx.userId,
       })
       .returning({ id: opLog.id });

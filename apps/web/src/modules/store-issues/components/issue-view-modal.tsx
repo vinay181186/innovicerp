@@ -1,29 +1,37 @@
 // One Item Issue slip: its lines with Issue Qty / Returned / Still Out, plus the
 // two ways back — Return (leftovers, any qty up to Still Out, the slip stays) and
-// Reverse (the whole slip, only while nothing was returned from it).
+// Cancel Issue (the whole slip, only while nothing was returned from it). Cancel
+// is the ONE standard Cancel (ADR-235): the caller opens CancelDocDialog — a
+// request with a reason that an Approve-tick holder decides; until then the
+// orange "Cancel requested" banner shows here.
 import { ISSUE_AGAINST_LABELS, STORE_ISSUE_REVERSE_REASON_MIN } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { Panel } from '@/ui/data';
-import { useReturnStoreIssue, useReverseStoreIssue, useStoreIssue } from '../api';
+import { useReturnStoreIssue, useStoreIssue } from '../api';
 import { useStoreIssuePrint } from './use-store-issue-print';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
 
-type Mode = 'view' | 'return' | 'reverse';
+type Mode = 'view' | 'return';
 
 export function IssueViewModal({
   issueId,
   canReturn,
-  canReverse,
+  canCancel,
+  onCancel,
   onClose,
 }: {
   issueId: string;
   canReturn: boolean;
-  canReverse: boolean;
+  /** issue_create Edit OR Approve tick — may open the Cancel Issue dialog. */
+  canCancel: boolean;
+  /** Opens the standard Cancel dialog for this slip (the caller owns it). */
+  onCancel: (iss: { id: string; code: string }) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const { data: iss, isLoading, isError, error } = useStoreIssue(issueId);
@@ -33,12 +41,11 @@ export function IssueViewModal({
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const returnMut = useReturnStoreIssue();
-  const reverseMut = useReverseStoreIssue();
   const issuePrint = useStoreIssuePrint();
 
   const anyReturned = (iss?.lines ?? []).some((l) => l.returnedQty > 0);
   const anyUnused = (iss?.lines ?? []).some((l) => l.qty - l.returnedQty > 0);
-  const busy = returnMut.isPending || reverseMut.isPending;
+  const busy = returnMut.isPending;
 
   const start = (m: Mode): void => {
     setMode(m);
@@ -75,23 +82,6 @@ export function IssueViewModal({
           setMsg('Returned — stock updated.');
         },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not return. Try again.'),
-      },
-    );
-  };
-
-  const doReverse = (): void => {
-    if (!iss) return;
-    setErr(null);
-    if (reason.trim().length < STORE_ISSUE_REVERSE_REASON_MIN)
-      return setErr(`Give a reason (at least ${STORE_ISSUE_REVERSE_REASON_MIN} characters).`);
-    reverseMut.mutate(
-      { id: iss.id, reason: reason.trim() },
-      {
-        onSuccess: () => {
-          setMode('view');
-          setMsg('Reversed — every line is back in stock.');
-        },
-        onError: (e) => setErr(e instanceof Error ? e.message : 'Could not reverse. Try again.'),
       },
     );
   };
@@ -153,9 +143,18 @@ export function IssueViewModal({
               </div>
               {iss.reversedAt ? (
                 <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>
-                  Reversed {fmtDate(iss.reversedAt.slice(0, 10))} — {iss.reversalReason ?? ''}
+                  Cancelled {fmtDate(iss.reversedAt.slice(0, 10))} — {iss.reversalReason ?? ''}
                 </div>
-              ) : null}
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  <CancelPendingBanner
+                    docType="store_issue"
+                    docId={iss.id}
+                    cancelled={false}
+                    {...(canCancel ? { onOpen: () => onCancel(iss) } : {})}
+                  />
+                </div>
+              )}
 
               <div className="tbl-wrap" style={{ marginTop: 10 }}>
                 <table className="innovic-table tbl-grid">
@@ -223,20 +222,10 @@ export function IssueViewModal({
                   <input
                     type="text"
                     className="innovic-input"
-                    placeholder={
-                      mode === 'return'
-                        ? 'e.g. 2 pcs left over after the job'
-                        : 'e.g. issued against the wrong job card'
-                    }
+                    placeholder="e.g. 2 pcs left over after the job"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                   />
-                  {mode === 'reverse' ? (
-                    <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                      Puts every line back into stock with an opposite entry. The slip stays on the
-                      register, marked Reversed. This cannot be undone.
-                    </div>
-                  ) : null}
                 </div>
               ) : (
                 <div style={{ marginTop: 10 }}>
@@ -280,9 +269,14 @@ export function IssueViewModal({
                   </button>
                 </>
               ) : null}
-              {iss && !iss.reversedAt && canReverse && !anyReturned ? (
-                <button type="button" className="btn btn-ghost" onClick={() => start('reverse')}>
-                  Reverse
+              {iss && !iss.reversedAt && canCancel && !anyReturned ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ color: 'var(--red2)' }}
+                  onClick={() => onCancel(iss)}
+                >
+                  Cancel Issue
                 </button>
               ) : null}
               {iss && !iss.reversedAt && canReturn && anyUnused ? (
@@ -296,20 +290,13 @@ export function IssueViewModal({
               <button type="button" className="btn btn-ghost" onClick={() => start('view')}>
                 Back
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy}
-                onClick={mode === 'return' ? doReturn : doReverse}
-              >
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={doReturn}>
                 {busy ? (
                   <>
                     <Loader2 size={14} className="inline animate-spin" /> Saving…
                   </>
-                ) : mode === 'return' ? (
-                  'Save Return'
                 ) : (
-                  'Reverse'
+                  'Save Return'
                 )}
               </button>
             </>

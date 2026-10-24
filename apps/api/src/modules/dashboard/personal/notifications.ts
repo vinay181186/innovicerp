@@ -35,7 +35,8 @@ type Open =
   | 'grn_qc'
   | 'so_to_plan'
   | 'plan_to_pro'
-  | 'ops_ready';
+  | 'ops_ready'
+  | 'qc_report_missing';
 
 export interface NoteRule {
   entity: string;
@@ -146,6 +147,19 @@ export const NOTE_RULES: readonly NoteRule[] = [
     opQc: true,
   },
   {
+    // ADR-252 — the same QC activity, for whoever uploads QC reports: kept
+    // only while that job card still has an entry without its report
+    // (the qc_report_missing list's own query answers "still open?").
+    entity: 'JobCard',
+    action: 'QC',
+    right: ['qcdocs_upload', 'entry'],
+    open: 'qc_report_missing',
+    verb: 'accepted',
+    tail: ' — upload the QC report',
+    tone: 'due',
+    opQc: true,
+  },
+  {
     entity: 'PurchaseRequest',
     action: 'REJECT',
     right: ['pr_create', 'entry'],
@@ -196,19 +210,25 @@ export interface ActivityEvent {
   opRef: string | null;
 }
 
-/** Events that become candidate notes: a held rule, not the caller's own. */
+/** Events that become candidate notes: a held rule, not the caller's own.
+ *  One event can feed several next steps (a QC entry: next op can start AND
+ *  upload its report) — one note per held rule, the first keyed by the event
+ *  id as before, the others by event id + next step. */
 export function candidates(
   events: readonly ActivityEvent[],
   rules: readonly NoteRule[],
   me: string,
-): Array<{ ev: ActivityEvent; rule: NoteRule }> {
-  const out: Array<{ ev: ActivityEvent; rule: NoteRule }> = [];
+): Array<{ ev: ActivityEvent; rule: NoteRule; key: string }> {
+  const out: Array<{ ev: ActivityEvent; rule: NoteRule; key: string }> = [];
   for (const ev of events) {
     if (ev.userId === me) continue;
-    const rule = rules.find((r) => r.entity === ev.entity && r.action === ev.action);
-    if (!rule) continue;
-    if (rule.opQc && (!ev.opRef || !(Number(ev.qty) > 0))) continue;
-    out.push({ ev, rule });
+    let first = true;
+    for (const rule of rules) {
+      if (rule.entity !== ev.entity || rule.action !== ev.action) continue;
+      if (rule.opQc && (!ev.opRef || !(Number(ev.qty) > 0))) continue;
+      out.push({ ev, rule, key: first ? ev.id : `${ev.id}:${rule.open}` });
+      first = false;
+    }
   }
   return out;
 }
@@ -295,8 +315,8 @@ export async function buildNotifications(
   const items: DashNote[] = cands
     .filter(({ ev, rule }) => stillOpen.get(rule.open)?.has(ev.entityId))
     .slice(0, NOTE_MAX)
-    .map(({ ev, rule }) => ({
-      key: ev.id,
+    .map(({ ev, rule, key }) => ({
+      key,
       ts: ev.ts.toISOString(),
       tone: rule.tone,
       text: [

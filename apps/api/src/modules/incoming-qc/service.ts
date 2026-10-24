@@ -41,6 +41,7 @@ import {
   autoCreateNcFromQcReject,
 } from '../nc-register/cascades';
 import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
+import { assertCompanyStoragePath } from '../../lib/storage-path';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 
@@ -226,6 +227,9 @@ async function mirrorIncomingQcOntoNextQcOp(
       // No machine on QC: inspection is not machining (op-entry, ISSUE-010).
       machineId: null,
       remarks: 'Incoming QC (from the same inspection)',
+      // ADR-252 — a system-carried entry expects no report: only Submit QC
+      // can block on one, and Incoming QC's report is optional.
+      reportRequired: false,
       createdBy: user.id,
     })
     .returning({ id: opLog.id });
@@ -318,6 +322,9 @@ export async function submitIncomingQc(
   // ADR-232 — the Access Control tick alone decides: Incoming QC `entry`.
   await requireFormAccess(user, 'qc_incoming', 'entry');
   const companyId = requireCompany(user);
+  // The stored report path is trusted later as proof of ownership — it must
+  // sit in this company's Storage folder.
+  assertCompanyStoragePath(input.qcReportPath, companyId);
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select({

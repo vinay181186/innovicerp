@@ -8,7 +8,7 @@
 
 import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
 import type {
-  CancelJwInvoiceInput,
+  CancelBlocker,
   CreateJwInvoiceInput,
   JwInvoice,
   JwInvoiceableLinesResponse,
@@ -27,6 +27,7 @@ import {
 import { changedByOtherError } from '../../lib/row-lock';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { emitActivityLog } from '../activity-log/service';
+import { blockerRefusal } from '../cancel-requests/messages';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JW_INVOICE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction, computeGstTotals } from '@innovic/shared';
@@ -273,106 +274,145 @@ export async function createJwInvoice(
 // A JW invoice bumped job_work_order_lines.invoiced_qty; cancelling gives that
 // billed qty back so the line can be re-billed, and flags the row so it never
 // prints as a live tax document. Refused when already cancelled (double-cancel
-// would credit the line twice). Cancelling reverses a billed quantity, so — like
-// the other job-work cancels — it takes the edit AND approve pair only L5
-// Department Admin and above hold.
-export async function cancelJwInvoice(
+// would credit the line twice). ADR-235: the only way in is an approved Cancel
+// Request (modules/cancel-requests) — Edit requests, Approve approves, on the
+// JW invoice page's ONE form key (ADR-203, invoice_create).
+
+/** Read the JW invoice row; `forUpdate` locks it (request / approve), the
+ *  preview reads without a lock. */
+export async function lockJwInvoiceForCancel(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
-  input: CancelJwInvoiceInput,
+  forUpdate: boolean,
+): Promise<typeof jwInvoices.$inferSelect | null> {
+  const q = tx
+    .select()
+    .from(jwInvoices)
+    .where(
+      and(eq(jwInvoices.id, id), eq(jwInvoices.companyId, companyId), isNull(jwInvoices.deletedAt)),
+    )
+    .limit(1);
+  const rows = forUpdate ? await q.for('update') : await q;
+  return rows[0] ?? null;
+}
+
+/**
+ * THE JW invoice cancel refusal rule (one place — the worker and the Cancel
+ * preview both call it). No clamp (ADR-203): a JWSO line whose invoiced qty is
+ * below this invoice's qty means the counter is already wrong — refuse rather
+ * than hide it at 0. The worker calls it after locking the JW line.
+ */
+export async function jwInvoiceCancelBlockers(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelBlocker[]> {
+  const rows = (await tx.execute(sql`
+    SELECT ji.qty::int AS qty, jwl.invoiced_qty::int AS "invoicedQty", jwl.line_no AS "lineNo",
+      jw.id AS "jwId", COALESCE(jw.code, ji.jw_code_text, '') AS "jwCode"
+    FROM public.jw_invoices ji
+    JOIN public.job_work_order_lines jwl ON jwl.id = ji.job_work_order_line_id
+    JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
+    WHERE ji.id = ${id}::uuid AND ji.company_id = ${companyId}::uuid
+    LIMIT 1
+  `)) as unknown as Array<{
+    qty: number;
+    invoicedQty: number;
+    lineNo: number;
+    jwId: string;
+    jwCode: string;
+  }>;
+  const l = rows[0];
+  if (!l || Number(l.invoicedQty) - Number(l.qty) >= 0) return [];
+  return [
+    {
+      docLabel: 'JWSO',
+      docNo: `${l.jwCode} Ln ${l.lineNo}`,
+      href: `/job-work-orders/${l.jwId}`,
+      reason:
+        `the line shows only ${l.invoicedQty} invoiced, less than this invoice's ${l.qty} — ` +
+        `the Invoiced count is out of step; report this to the administrator`,
+    },
+  ];
+}
+
+/**
+ * The ONE JW invoice cancel writer (R5 / ADR-194), run only by an approved
+ * Cancel Request (ADR-235). In-tx body, no rights check. The only writer that
+ * gives job_work_order_lines.invoiced_qty back.
+ */
+export async function cancelJwInvoiceTx(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  rawReason: string,
   user: AuthContext,
-): Promise<JwInvoice> {
-  // ADR-203 — the JW invoice page's ONE form key (it lives on the Invoices
-  // page, formKey invoice_create), for create, cancel and price alike.
-  await requireFormAccess(user, JW_INVOICE_FORM_KEY, 'edit');
-  await requireFormAccess(user, JW_INVOICE_FORM_KEY, 'approve');
-  const showMoney = await canSeeFormPrice(user, JW_INVOICE_FORM_KEY);
-  const companyId = requireCompany(user);
+): Promise<void> {
   const userId = user.id;
-  const reason = input.reason.trim();
+  const reason = rawReason.trim();
   if (!reason) throw new ValidationError('Reason is required to cancel a JW Invoice.');
 
-  return withUserContext(user, async (tx) => {
-    // S4 — cancel once. Lock the invoice row FIRST (the status used to be read
-    // before any lock, so two cancels both passed and the billed qty came off
-    // the JW line twice). A second cancel now waits here, reads 'cancelled'
-    // and is refused.
-    const rows = await tx
-      .select()
-      .from(jwInvoices)
-      .where(
-        and(
-          eq(jwInvoices.id, id),
-          eq(jwInvoices.companyId, companyId),
-          isNull(jwInvoices.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const inv = rows[0];
-    if (!inv) throw new NotFoundError('JW Invoice not found. Refresh the page.');
-    if (inv.status === 'cancelled') {
-      throw new ConflictError(
-        `JW Invoice ${inv.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
-      );
-    }
-
-    // Lock the JW line, then give the billed qty back. No clamp (ADR-203): a
-    // line whose invoiced qty is below this invoice's qty means the counter
-    // is already wrong — refuse rather than hide it at 0.
-    const lockedRows = (await tx.execute(
-      sql`SELECT invoiced_qty AS "invoicedQty" FROM public.job_work_order_lines
-          WHERE id = ${inv.jobWorkOrderLineId}::uuid FOR UPDATE`,
-    )) as unknown as Array<{ invoicedQty: number }>;
-    const invoicedNow = Number(lockedRows[0]?.invoicedQty ?? 0);
-    if (invoicedNow - inv.qty < 0) {
-      throw new ConflictError(
-        `Cannot cancel ${inv.code}: its JWSO line shows only ${invoicedNow} invoiced, ` +
-          `less than this invoice's ${inv.qty}. The line's Invoiced count is out of step — ` +
-          `report this to the administrator before cancelling.`,
-      );
-    }
-    await tx
-      .update(jobWorkOrderLines)
-      .set({
-        invoicedQty: invoicedNow - inv.qty,
-        updatedAt: new Date(),
-        updatedBy: userId,
-      })
-      .where(eq(jobWorkOrderLines.id, inv.jobWorkOrderLineId));
-
-    const updated = await tx
-      .update(jwInvoices)
-      .set({
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        cancelledBy: userId,
-        cancelReason: reason,
-        updatedAt: new Date(),
-        updatedBy: userId,
-      })
-      .where(and(eq(jwInvoices.id, inv.id), ne(jwInvoices.status, 'cancelled')))
-      .returning();
-    const row = updated[0];
-    if (!row) throw changedByOtherError(`JW Invoice ${inv.code}`);
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: 'JwInvoice',
-        entityId: inv.id,
-        refId: inv.code,
-        qty: inv.qty,
-        reason,
-        detail: `${inv.code} cancelled — reversed ${inv.qty} billed on ${inv.jwCodeText ?? ''}`,
-      },
-      companyId,
-      user,
+  // S4 — cancel once. Lock the invoice row FIRST (the status used to be read
+  // before any lock, so two cancels both passed and the billed qty came off
+  // the JW line twice). A second cancel now waits here, reads 'cancelled'
+  // and is refused.
+  const inv = await lockJwInvoiceForCancel(tx, companyId, id, true);
+  if (!inv) throw new NotFoundError('JW Invoice not found. Refresh the page.');
+  if (inv.status === 'cancelled') {
+    throw new ConflictError(
+      `JW Invoice ${inv.code} is already Cancelled — someone else may have cancelled it just now. Reload the page.`,
     );
+  }
 
-    const out = rowToInvoice(row);
-    return showMoney ? out : hideJwInvoiceMoney(out);
-  });
+  // Lock the JW line, check the refusal rule under that lock, then give the
+  // billed qty back.
+  const lockedRows = (await tx.execute(
+    sql`SELECT invoiced_qty AS "invoicedQty" FROM public.job_work_order_lines
+        WHERE id = ${inv.jobWorkOrderLineId}::uuid FOR UPDATE`,
+  )) as unknown as Array<{ invoicedQty: number }>;
+  const invoicedNow = Number(lockedRows[0]?.invoicedQty ?? 0);
+  const blockers = await jwInvoiceCancelBlockers(tx, companyId, inv.id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(inv.code, blockers), { blockers });
+  }
+  await tx
+    .update(jobWorkOrderLines)
+    .set({
+      invoicedQty: invoicedNow - inv.qty,
+      updatedAt: new Date(),
+      updatedBy: userId,
+    })
+    .where(eq(jobWorkOrderLines.id, inv.jobWorkOrderLineId));
+
+  const updated = await tx
+    .update(jwInvoices)
+    .set({
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancelledBy: userId,
+      cancelReason: reason,
+      updatedAt: new Date(),
+      updatedBy: userId,
+    })
+    .where(and(eq(jwInvoices.id, inv.id), ne(jwInvoices.status, 'cancelled')))
+    .returning({ id: jwInvoices.id });
+  if (!updated[0]) throw changedByOtherError(`JW Invoice ${inv.code}`);
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: 'JwInvoice',
+      entityId: inv.id,
+      refId: inv.code,
+      qty: inv.qty,
+      reason,
+      detail: `${inv.code} cancelled — reversed ${inv.qty} billed on ${inv.jwCodeText ?? ''}`,
+    },
+    companyId,
+    user,
+  );
 }
 
 /**

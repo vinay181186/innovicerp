@@ -19,11 +19,13 @@
 // Every cap is checked under the JWSO line's row lock (lockJwLine). Returns
 // are allowed on closed / short-closed lines — returning the customer's
 // material is not new work.
-// Cancel (edit + approve) is a conditional status flip, then every line is
+// Cancel (ADR-235: an approved Cancel Request) is a conditional status flip, then every line is
 // reversed. Counters never clamp — a counter that would go negative throws.
 
 import { type SQL, sql } from 'drizzle-orm';
 import type {
+  CancelBlocker,
+  CancelEffect,
   CreateCustomerMaterialReturnInput,
   CustomerMaterialReturn,
   CustomerMaterialReturnDetail,
@@ -49,6 +51,7 @@ import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { blockerRefusal } from '../cancel-requests/messages';
 import { jwLineRegister } from '../party-material-issues/register';
 import { CUSTOMER_MATERIAL_RETURN_SF_COLUMNS } from './sf-columns';
 
@@ -754,137 +757,245 @@ export async function createCustomerMaterialReturn(
   });
 }
 
-export async function cancelCustomerMaterialReturn(
+// ─── Cancel (ADR-235: only via an approved Cancel Request) ───────────────────
+
+/** Read the return header; `forUpdate` locks it (request / approve), the
+ *  preview reads without a lock. null = not in this company. */
+export async function lockCustomerMaterialReturnForCancel(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  forUpdate: boolean,
+): Promise<{ id: string; code: string; status: string } | null> {
+  const rows = (await tx.execute(sql`
+    SELECT id, code, status
+      FROM public.customer_material_returns
+     WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+     ${forUpdate ? sql`FOR UPDATE` : sql``}
+  `)) as unknown as Array<{ id: string; code: string; status: string }>;
+  return rows[0] ?? null;
+}
+
+/**
+ * THE Customer Material Return cancel refusal rule. Nothing downstream rests on
+ * a return: cancelling it only puts pieces back — good ones into the register
+ * (a 'reversal'/in row, never capped) and deviated ones back to "held" on their
+ * Party GRN line — so no document has to be cancelled first. Kept as a function
+ * so the preview and the worker still read one rule; the worker's counter
+ * checks (a total that would go negative) stay as plain refusals.
+ */
+export async function customerMaterialReturnCancelBlockers(
+  _tx: DbTransaction,
+  _companyId: string,
+  _id: string,
+): Promise<CancelBlocker[]> {
+  return [];
+}
+
+/** What the cancel will do — the Cancel preview's lines. */
+export async function customerMaterialReturnCancelEffects(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+): Promise<CancelEffect[]> {
+  const rows = (await tx.execute(sql`
+    SELECT l.line_no AS "lineNo", l.kind, l.qty::int AS qty,
+           COALESCE(pm.code, 'customer material') AS "pmCode",
+           jw.code AS "jwCode", jwl.line_no AS "jwLineNo",
+           pg.code AS "grnCode", pgl.line_no AS "grnLineNo",
+           (SELECT string_agg(nc.code, ', ' ORDER BY nc.code)
+              FROM public.nc_register nc
+             WHERE nc.party_grn_line_id = l.party_grn_line_id
+               AND nc.deleted_at IS NULL
+               AND nc.disposition = 'return_to_customer'
+               AND nc.status IN ('disposed', 'closed')) AS "ncCodes"
+      FROM public.customer_material_return_lines l
+      JOIN public.customer_material_returns r ON r.id = l.return_id
+      LEFT JOIN public.party_materials pm ON pm.id = l.party_material_id
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = l.jw_line_id
+      LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
+      LEFT JOIN public.party_grn_lines pgl ON pgl.id = l.party_grn_line_id
+      LEFT JOIN public.party_grn pg ON pg.id = pgl.party_grn_id
+     WHERE l.return_id = ${id}::uuid AND r.company_id = ${companyId}::uuid
+       AND l.deleted_at IS NULL
+     ORDER BY l.line_no
+  `)) as unknown as Array<{
+    lineNo: number;
+    kind: string;
+    qty: number;
+    pmCode: string;
+    jwCode: string | null;
+    jwLineNo: number | null;
+    grnCode: string | null;
+    grnLineNo: number | null;
+    ncCodes: string | null;
+  }>;
+  const out: CancelEffect[] = [];
+  const ncs = new Set<string>();
+  for (const r of rows) {
+    const qty = Number(r.qty);
+    const jwAt = r.jwCode ? ` (${r.jwCode} Ln ${r.jwLineNo ?? '?'})` : '';
+    if (r.kind === 'good') {
+      out.push({
+        kind: 'stock',
+        text: `${r.pmCode} ${qty} comes back into the customer material register${jwAt}`,
+        qty,
+      });
+    } else {
+      const grnAt = r.grnCode ? `${r.grnCode} Ln ${r.grnLineNo ?? '?'}` : 'its Party GRN line';
+      out.push({
+        kind: 'reopen',
+        text: `${grnAt} — ${qty} deviated pcs of ${r.pmCode} are held again, not returned`,
+        qty,
+      });
+      for (const c of (r.ncCodes ?? '').split(', ').filter(Boolean)) ncs.add(c);
+    }
+  }
+  if (ncs.size > 0) {
+    out.push({
+      kind: 'note',
+      text: `Return to Customer NC ${Array.from(ncs).join(', ')} is re-balanced — a closed one reopens if its pieces are no longer all sent back`,
+      qty: null,
+    });
+  }
+  return out;
+}
+
+/**
+ * The ONE Customer Material Return cancel writer, run only by an approved
+ * Cancel Request (ADR-235). In-tx body, no rights check — the Cancel Request
+ * checks the ticks.
+ */
+export async function cancelCustomerMaterialReturnTx(
+  tx: DbTransaction,
+  companyId: string,
   id: string,
   reason: string,
   user: AuthContext,
-): Promise<CustomerMaterialReturnDetail> {
-  // Cancel puts material back on our books — the pair only L5/L6 hold.
-  await requireFormAccess(user, 'party_create', 'edit');
-  await requireFormAccess(user, 'party_create', 'approve');
-  const companyId = requireCompany(user);
+): Promise<void> {
   const trimmed = (reason ?? '').trim();
   if (!trimmed)
     throw new ValidationError('Reason is required to cancel a Customer Material Return.');
 
-  return withUserContext(user, async (tx) => {
-    // §20.2: the status flip IS the guard — 0 rows means it is not 'issued'.
-    const flipped = (await tx.execute(sql`
-      UPDATE public.customer_material_returns
-         SET status = 'cancelled', cancel_reason = ${trimmed}, cancelled_at = now(),
-             cancelled_by = ${user.id}::uuid, updated_at = now(), updated_by = ${user.id}::uuid
-       WHERE id = ${id}::uuid
-         AND company_id = ${companyId}::uuid
-         AND deleted_at IS NULL
-         AND status = 'issued'
-      RETURNING code
-    `)) as unknown as Array<{ code: string }>;
-    const head = flipped[0];
-    if (!head) {
-      const now = (await tx.execute(sql`
-        SELECT r.code, r.status, r.cancelled_at AS "cancelledAt", u.full_name AS "byName"
-          FROM public.customer_material_returns r
-          LEFT JOIN public.users u ON u.id = r.cancelled_by
-         WHERE r.id = ${id}::uuid AND r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
-      `)) as unknown as Array<{
-        code: string;
-        status: string;
-        cancelledAt: unknown;
-        byName: string | null;
-      }>;
-      const n = now[0];
-      if (!n) throw new NotFoundError('Customer Material Return not found. Refresh the page.');
-      throw new ConflictError(
-        `${n.code} is already cancelled` +
-          (n.byName ? ` by ${n.byName}` : '') +
-          (n.cancelledAt != null ? ` at ${tsLike(n.cancelledAt)}` : '') +
-          `. Refresh the page.`,
-      );
-    }
-
-    const lineRows = (await tx.execute(sql`
-      SELECT l.id, l.kind, l.jw_line_id AS "jwLineId", l.party_material_id AS "partyMaterialId",
-             l.party_grn_line_id AS "partyGrnLineId", l.qty::int AS qty, pm.code AS "pmCode"
-        FROM public.customer_material_return_lines l
-        LEFT JOIN public.party_materials pm ON pm.id = l.party_material_id
-       WHERE l.return_id = ${id}::uuid AND l.deleted_at IS NULL
-       ORDER BY l.line_no
+  // §20.2: the status flip IS the guard — 0 rows means it is not 'issued'.
+  const flipped = (await tx.execute(sql`
+    UPDATE public.customer_material_returns
+       SET status = 'cancelled', cancel_reason = ${trimmed}, cancelled_at = now(),
+           cancelled_by = ${user.id}::uuid, updated_at = now(), updated_by = ${user.id}::uuid
+     WHERE id = ${id}::uuid
+       AND company_id = ${companyId}::uuid
+       AND deleted_at IS NULL
+       AND status = 'issued'
+    RETURNING code
+  `)) as unknown as Array<{ code: string }>;
+  const head = flipped[0];
+  if (!head) {
+    const now = (await tx.execute(sql`
+      SELECT r.code, r.status, r.cancelled_at AS "cancelledAt", u.full_name AS "byName"
+        FROM public.customer_material_returns r
+        LEFT JOIN public.users u ON u.id = r.cancelled_by
+       WHERE r.id = ${id}::uuid AND r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
     `)) as unknown as Array<{
-      id: string;
-      kind: string;
-      jwLineId: string;
-      partyMaterialId: string;
-      partyGrnLineId: string | null;
-      qty: number;
-      pmCode: string | null;
+      code: string;
+      status: string;
+      cancelledAt: unknown;
+      byName: string | null;
     }>;
-
-    await lockLines(
-      tx,
-      companyId,
-      lineRows.map((l) => l.jwLineId),
+    const n = now[0];
+    if (!n) throw new NotFoundError('Customer Material Return not found. Refresh the page.');
+    throw new ConflictError(
+      `${n.code} is already cancelled` +
+        (n.byName ? ` by ${n.byName}` : '') +
+        (n.cancelledAt != null ? ` at ${tsLike(n.cancelledAt)}` : '') +
+        `. Refresh the page.`,
     );
+  }
 
-    let reversedQty = 0;
-    for (const l of lineRows) {
-      const qty = Number(l.qty);
-      if (l.kind === 'good') {
-        await postPartyStockMove(tx, {
-          companyId,
-          partyMaterialId: l.partyMaterialId,
-          jwLineId: l.jwLineId,
-          movement: 'reversal',
-          direction: 'in',
-          qty,
-          sourceDocType: 'customer_material_return',
-          sourceDocId: id,
-          remarks: `${head.code} cancelled: ${trimmed}`,
-          userId: user.id,
-          qtyLabel: 'Reversal Qty',
-        });
-        await lowerReturnedQty(tx, l.partyMaterialId, qty, user.id, l.pmCode ?? head.code);
-      } else {
-        if (!l.partyGrnLineId) {
-          throw new ConflictError(
-            `${head.code}: a deviated row has no Party GRN line — cannot reverse it.`,
-          );
-        }
-        const lowered = (await tx.execute(sql`
-          UPDATE public.party_grn_lines
-             SET rejected_returned_qty = rejected_returned_qty - ${qty},
-                 updated_at = now(), updated_by = ${user.id}::uuid
-           WHERE id = ${l.partyGrnLineId}::uuid AND rejected_returned_qty >= ${qty}
-          RETURNING id
-        `)) as unknown as Array<{ id: string }>;
-        if (lowered.length === 0) {
-          throw new ConflictError(
-            `${head.code}: the Party GRN line's returned-deviated total is less than ${qty}, so it cannot be lowered. ` +
-              `Ask an administrator to check this GRN.`,
-          );
-        }
-        await rebalanceReturnToCustomerNcs(tx, l.partyGrnLineId, head.code, companyId, user);
+  const lineRows = (await tx.execute(sql`
+    SELECT l.id, l.kind, l.jw_line_id AS "jwLineId", l.party_material_id AS "partyMaterialId",
+           l.party_grn_line_id AS "partyGrnLineId", l.qty::int AS qty, pm.code AS "pmCode"
+      FROM public.customer_material_return_lines l
+      LEFT JOIN public.party_materials pm ON pm.id = l.party_material_id
+     WHERE l.return_id = ${id}::uuid AND l.deleted_at IS NULL
+     ORDER BY l.line_no
+  `)) as unknown as Array<{
+    id: string;
+    kind: string;
+    jwLineId: string;
+    partyMaterialId: string;
+    partyGrnLineId: string | null;
+    qty: number;
+    pmCode: string | null;
+  }>;
+
+  await lockLines(
+    tx,
+    companyId,
+    lineRows.map((l) => l.jwLineId),
+  );
+
+  // The refusal rule (none today — see customerMaterialReturnCancelBlockers),
+  // under the JWSO-line locks.
+  const blockers = await customerMaterialReturnCancelBlockers(tx, companyId, id);
+  if (blockers.length > 0) {
+    throw new ConflictError(blockerRefusal(head.code, blockers), { blockers });
+  }
+
+  let reversedQty = 0;
+  for (const l of lineRows) {
+    const qty = Number(l.qty);
+    if (l.kind === 'good') {
+      await postPartyStockMove(tx, {
+        companyId,
+        partyMaterialId: l.partyMaterialId,
+        jwLineId: l.jwLineId,
+        movement: 'reversal',
+        direction: 'in',
+        qty,
+        sourceDocType: 'customer_material_return',
+        sourceDocId: id,
+        remarks: `${head.code} cancelled: ${trimmed}`,
+        userId: user.id,
+        qtyLabel: 'Reversal Qty',
+      });
+      await lowerReturnedQty(tx, l.partyMaterialId, qty, user.id, l.pmCode ?? head.code);
+    } else {
+      if (!l.partyGrnLineId) {
+        throw new ConflictError(
+          `${head.code}: a deviated row has no Party GRN line — cannot reverse it.`,
+        );
       }
-      reversedQty += qty;
+      const lowered = (await tx.execute(sql`
+        UPDATE public.party_grn_lines
+           SET rejected_returned_qty = rejected_returned_qty - ${qty},
+               updated_at = now(), updated_by = ${user.id}::uuid
+         WHERE id = ${l.partyGrnLineId}::uuid AND rejected_returned_qty >= ${qty}
+        RETURNING id
+      `)) as unknown as Array<{ id: string }>;
+      if (lowered.length === 0) {
+        throw new ConflictError(
+          `${head.code}: the Party GRN line's returned-deviated total is less than ${qty}, so it cannot be lowered. ` +
+            `Ask an administrator to check this GRN.`,
+        );
+      }
+      await rebalanceReturnToCustomerNcs(tx, l.partyGrnLineId, head.code, companyId, user);
     }
+    reversedQty += qty;
+  }
 
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Cancel,
-        entity: ENTITY,
-        entityId: id,
-        refId: head.code,
-        qty: reversedQty,
-        reason: trimmed,
-        changes: [
-          { field: 'status', label: 'Return Status', before: 'issued', after: 'cancelled' },
-        ],
-        detail: `${head.code} cancelled — ${reversedQty} pcs back on our books`,
-      },
-      companyId,
-      user,
-    );
-
-    return loadDetail(tx, companyId, id);
-  });
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Cancel,
+      entity: ENTITY,
+      entityId: id,
+      refId: head.code,
+      qty: reversedQty,
+      reason: trimmed,
+      changes: [{ field: 'status', label: 'Return Status', before: 'issued', after: 'cancelled' }],
+      detail: `${head.code} cancelled — ${reversedQty} pcs back on our books`,
+    },
+    companyId,
+    user,
+  );
 }

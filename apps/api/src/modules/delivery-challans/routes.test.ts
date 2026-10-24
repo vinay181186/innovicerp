@@ -197,7 +197,8 @@ describe('delivery-challans routes', () => {
     expect(body.lines).toHaveLength(1);
   });
 
-  it('POST /delivery-challans/:id/cancel flips status to cancelled and returns detail', async () => {
+  // ADR-235 — the route now sends a Cancel Request; the DC stays live until approved.
+  it('POST /delivery-challans/:id/cancel sends a pending Cancel Request', async () => {
     const po = await freshJwPo('PR2');
     app = await buildApp(admin);
     const createRes = await app.inject({
@@ -227,9 +228,11 @@ describe('delivery-challans routes', () => {
     const cancelRes = await app.inject({
       method: 'POST',
       url: `/delivery-challans/${dcId}/cancel`,
+      payload: { reason: 'Test cancel' },
     });
     expect(cancelRes.statusCode).toBe(200);
-    expect(cancelRes.json().status).toBe('cancelled');
+    expect(cancelRes.json().cancelled).toBe(false);
+    expect(cancelRes.json().request.status).toBe('pending');
   });
 
   it('POST /delivery-challans returns 403 when viewer attempts to create', async () => {

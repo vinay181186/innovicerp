@@ -21,6 +21,8 @@
 // badge is the sum of its masters' pending counts.
 
 import {
+  type AccessFormKey,
+  CANCEL_DOC_FORM_KEY,
   DOCUMENT_EDIT_ENTITIES,
   DOCUMENT_EDIT_LABEL,
   DOCUMENT_EDIT_MASTER_ENTITIES,
@@ -32,7 +34,9 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDocumentEditCounts } from '@/modules/document-edits/api';
 import { EditApprovalTab } from '@/modules/document-edits/components/doc-type-approvals';
+import { useCancelRequests } from '@/modules/cancel-requests/api';
 import { useApprovalInbox } from '../api';
+import { CancelRequestApprovals } from '../components/cancel-request-approvals';
 import { InboxApprovalTab } from '../components/inbox-approval-tab';
 import { LogEntryApprovals } from '../components/log-entry-approvals';
 
@@ -51,6 +55,7 @@ type TabDef =
   | { key: 'pr' | 'po'; kind: 'inbox'; section: 'pr' | 'po'; label: string }
   | { key: 'logEntry'; kind: 'opEntry'; label: string }
   | { key: 'masters'; kind: 'masters'; label: string }
+  | { key: 'cancel'; kind: 'cancel'; label: string }
   | { key: `doc:${DocumentEditEntity}`; kind: 'edit'; entity: DocumentEditEntity; label: string };
 
 type MasterEntity = (typeof DOCUMENT_EDIT_MASTER_ENTITIES)[number];
@@ -74,7 +79,12 @@ const FIXED_TABS: TabDef[] = [
   ),
   { key: 'masters', kind: 'masters', label: 'Masters' },
   { key: 'logEntry', kind: 'opEntry', label: 'Op Entry' },
+  // ADR-235 — Cancel Requests for every enrolled document, one tab.
+  { key: 'cancel', kind: 'cancel', label: 'Cancel Requests' },
 ];
+
+/** The cancel-enrolled pages (ADR-235): Approve on any of them = may decide. */
+const CANCEL_FORM_KEYS = [...new Set(Object.values(CANCEL_DOC_FORM_KEY))] as AccessFormKey[];
 
 /** A tab-style button with its amber pending badge (omitted at 0) — the tab row
  *  and the Masters picker share it so both read the same. */
@@ -120,6 +130,14 @@ function ApprovalsPage(): React.JSX.Element {
   // Entry or on QC Submit in Access Control — the tick alone, no role.
   const canDecideLogEntry =
     effectiveFormPerms(eff, 'op_entry').approve || effectiveFormPerms(eff, 'qc_submit').approve;
+  // ADR-235 — Cancel Requests are decided by the Approve tick on the
+  // document's own page; the tab shows only to someone holding one.
+  const canDecideCancel = CANCEL_FORM_KEYS.some((k) => effectiveFormPerms(eff, k).approve);
+  // A one-row read for the tab badge: the server's total of waiting requests.
+  const cancelCount = useCancelRequests(
+    { status: 'pending', toDecide: 'true', limit: 1, offset: 0 },
+    canDecideCancel,
+  );
   const inbox = useApprovalInbox({ refetchOnMount: 'always' });
   const counts = inbox.data?.counts;
   const editCounts = useDocumentEditCounts();
@@ -132,8 +150,12 @@ function ApprovalsPage(): React.JSX.Element {
   // The Op Entry tab is shown only to the users who may decide it; every other
   // tab is always present regardless of its count.
   const tabDefs = useMemo(
-    () => FIXED_TABS.filter((t) => t.kind !== 'opEntry' || canDecideLogEntry),
-    [canDecideLogEntry],
+    () =>
+      FIXED_TABS.filter(
+        (t) =>
+          (t.kind !== 'opEntry' || canDecideLogEntry) && (t.kind !== 'cancel' || canDecideCancel),
+      ),
+    [canDecideLogEntry, canDecideCancel],
   );
 
   const mastersPending = DOCUMENT_EDIT_MASTER_ENTITIES.reduce(
@@ -145,6 +167,7 @@ function ApprovalsPage(): React.JSX.Element {
     if (t.kind === 'edit') return editPendingByEntity.get(t.entity);
     if (t.kind === 'masters') return mastersPending;
     if (t.kind === 'opEntry') return counts?.logEntry;
+    if (t.kind === 'cancel') return cancelCount.data?.total;
     return counts?.[t.section];
   };
 
@@ -216,6 +239,9 @@ function ApprovalsPage(): React.JSX.Element {
     return <EditApprovalTab key={`doc:${activeMaster}`} entity={activeMaster} tabs={tabs} />;
   }
 
+  if (active.kind === 'cancel') {
+    return <CancelRequestApprovals key="cancel" tabs={tabRow} />;
+  }
   if (active.kind === 'opEntry') {
     return <LogEntryApprovals key="logEntry" pendingCount={counts?.logEntry} tabs={tabRow} />;
   }

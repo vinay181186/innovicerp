@@ -47,6 +47,8 @@ function toQueryString(q: ListPartyMaterialIssuesQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.sf) params.set('sf', q.sf);
+  // ADR-235 — the register shows Cancelled issues too.
+  if (q.includeCancelled) params.set('includeCancelled', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
@@ -81,29 +83,9 @@ export function useCreatePartyMaterialIssue() {
   });
 }
 
-/** ADR-103 — reverse a wrong issue. Refused once the material has been
- *  machined; the server explains which job card and how many pieces. */
-export function useCancelPartyMaterialIssue() {
-  const qc = useQueryClient();
-  return useMutation<
-    { ok: true; code: string; reversedQty: number },
-    Error,
-    { id: string; reason: string }
-  >({
-    mutationFn: ({ id, reason }) =>
-      apiFetch<{ ok: true; code: string; reversedQty: number }>(
-        `/party-material-issues/${id}/cancel`,
-        { method: 'POST', json: { reason } },
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: partyMaterialIssuesKeys.all });
-      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      void qc.invalidateQueries({ queryKey: ['party-materials'] });
-      void qc.invalidateQueries({ queryKey: ['job-cards'] });
-      void qc.invalidateQueries({ queryKey: ['jc-ops'] });
-    },
-  });
-}
+// ADR-235 — Cancel moved to the ONE standard Cancel (cancel-requests module:
+// CancelDocDialog, docType 'party_material_issue'). The old POST
+// /party-material-issues/:id/cancel hook is gone.
 
 /** ADR-203 — put unused customer material back from a Job Card into the
  *  customer-material register (partial). The server caps it at what is still

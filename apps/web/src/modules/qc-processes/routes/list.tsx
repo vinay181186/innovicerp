@@ -31,7 +31,7 @@
 // and a refusal from the server keeps the question open instead of closing
 // over a delete that never happened.
 
-import { DEFAULT_FINAL_QC_OP, type ListQcProcessesQuery, type QcProcess } from '@innovic/shared';
+import { DEFAULT_FINAL_QC_OP, type ListQcProcessesQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -39,8 +39,8 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ReportTypesPanel } from '@/modules/report-types/components/report-types-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Icon, StatusBadge } from '@/ui/core';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { Icon } from '@/ui/core';
+import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
@@ -48,14 +48,9 @@ import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
+import { buildQcProcessColumns } from '../components/qc-process-columns';
 
 const PAGE_SIZE = 25;
-
-// Sort & Filter tick list (ADR-200): the stored boolean as text.
-const ACTIVE_OPTIONS = [
-  { value: 'true', label: 'Active' },
-  { value: 'false', label: 'Inactive' },
-];
 
 const TABS = [
   { key: 'processes', label: 'QC Processes' },
@@ -140,86 +135,7 @@ function QcProcessesListPage(): React.JSX.Element {
   const currentPage = search.page;
   const tab = search.tab ?? 'processes';
 
-  // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
-  // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below):
-  // 5+24+40+11+10 = 90, + 10 = 100, so the table never scrolls sideways.
-  // Centred by the standard; only the process name is left-aligned (a name
-  // reads from its left edge).
-  const columns = useMemo<DataTableColumn<QcProcess>[]>(
-    () => [
-      {
-        id: 'sr_no',
-        header: 'Sr No',
-        width: '5%',
-        className: 'text3',
-        // Server-paged list: the serial number continues across pages.
-        render: (_p, i) => (currentPage - 1) * PAGE_SIZE + i + 1,
-      },
-      {
-        // The QC Process Name IS the stored code.
-        id: 'name',
-        sortFilterField: 'code',
-        header: 'QC Process Name',
-        width: '24%',
-        align: 'left',
-        ellipsis: true,
-        title: (p) => p.code,
-        // The master code — strong (mono fw-700 in --text), never the faint
-        // --text3, and a real link so it can be ctrl/middle-clicked into a new
-        // tab. stopPropagation sits on the link (not the cell) so clicking the
-        // rest of the cell still opens the row, exactly as before.
-        render: (p) => (
-          <Link
-            to="/qc-processes/$id"
-            params={{ id: p.id }}
-            className="mono fw-700"
-            style={{ color: 'var(--text)', textDecoration: 'none' }}
-            title="Open this QC process"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {p.code}
-          </Link>
-        ),
-      },
-      {
-        id: 'description',
-        sortFilterField: 'description',
-        header: 'Description',
-        width: '40%',
-        className: 'text2',
-        ellipsis: true,
-        render: (p) => p.description ?? '—',
-        title: (p) => p.description ?? '',
-      },
-      {
-        id: 'default_cycle_time',
-        sortFilterField: 'defaultCycleTimeMin',
-        filterType: 'num',
-        header: 'Default Cycle Time (min)',
-        width: '11%',
-        className: 'mono',
-        nowrap: true,
-        render: (p) =>
-          Number(p.defaultCycleTimeMin) > 0 ? Number(p.defaultCycleTimeMin).toFixed(2) : '—',
-      },
-      {
-        id: 'is_active',
-        sortFilterField: 'isActive',
-        filterOptions: ACTIVE_OPTIONS,
-        kind: 'badge',
-        header: 'Active',
-        width: '10%',
-        nowrap: true,
-        // kind="masteractive": a Quality master paints Inactive AMBER, not the
-        // generic `active` kind's red — the row is retired from the QC pickers,
-        // which is a thing to notice, not a fault. Carried verbatim, and it is
-        // the same chip the QC process DETAIL page draws, so the two cannot
-        // disagree.
-        render: (p) => <StatusBadge kind="masteractive" status={String(p.isActive)} />,
-      },
-    ],
-    [currentPage],
-  );
+  const columns = useMemo(() => buildQcProcessColumns(currentPage, PAGE_SIZE), [currentPage]);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`

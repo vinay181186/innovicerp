@@ -1,8 +1,9 @@
 // Item Issue Register (PL-II-1) — ADR-193 phase 3b: a slip has lines and is
 // issued against a Job Card, an Assembly SO or for General use. Click a row to
-// see its lines and Return leftovers or Reverse it. On the shared FIT DataTable
-// (ADR-199, table standard 2026-10-01): one line per row, always fits the
-// screen, the ▸ reveals Remarks and (when reversed) who reversed it and why.
+// see its lines and Return leftovers or Cancel it (the ONE standard Cancel,
+// ADR-235). On the shared FIT DataTable (ADR-199, table standard 2026-10-01):
+// one line per row, always fits the screen, the ▸ reveals Remarks and (when
+// cancelled) when and why.
 
 import { ISSUE_AGAINST } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
@@ -13,6 +14,7 @@ import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-iss
 import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -84,6 +86,8 @@ function StoreIssuesListPage(): React.JSX.Element {
       : null,
   );
   const [viewId, setViewId] = useState<string | null>(null);
+  // ADR-235 — the slip whose standard Cancel dialog is open (row ⋯ or the view).
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Tier-driven, per department (Store). Was `role === admin || manager`, which
   // let any manager in any department post a stock issue and locked out the
@@ -94,6 +98,9 @@ function StoreIssuesListPage(): React.JSX.Element {
   // (tier on `toolissue_create`); the server enforces it too.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'issue_create');
+  // ADR-235 — Cancel Issue: the Edit tick raises the request, the Approve tick
+  // decides it (and may Cancel now). The server re-checks both.
+  const canCancel = perms.edit || perms.approve;
   // ADR-234 — the page opens on Item Issues View OR Tool Issues View; each tab
   // shows only to its own tick. A tool-only storekeeper lands on Tool Issues.
   const toolView = effectiveFormPerms(eff, 'toolissue_create').view;
@@ -226,10 +233,10 @@ function StoreIssuesListPage(): React.JSX.Element {
                 loading={isLoading}
                 empty={term || sf.filtering ? 'No issues match.' : 'No issues yet.'}
                 onRowClick={(iss) => setViewId(iss.id)}
-                // A reversed slip washes the whole row and strikes its items.
+                // A cancelled (reversed) slip washes the whole row and strikes its items.
                 rowClassName={(iss) => (iss.reversedAt ? ROW_TINT.cancelled : undefined)}
                 // The fit table's ▸ is the row's one expand control: Remarks and,
-                // when reversed, who reversed it and why.
+                // when cancelled, when and why.
                 renderExpanded={(iss) =>
                   expanded.has(iss.id) ? (
                     <div
@@ -239,7 +246,7 @@ function StoreIssuesListPage(): React.JSX.Element {
                       <b>Remarks:</b> {iss.remarks ?? '—'}
                       {iss.reversedAt ? (
                         <div style={{ color: 'var(--red2)', marginTop: 'var(--sp-1)' }}>
-                          <b>Reversed:</b> {fmtDate(iss.reversedAt.slice(0, 10))}
+                          <b>Cancelled:</b> {fmtDate(iss.reversedAt.slice(0, 10))}
                           {iss.reversalReason ? ` — ${iss.reversalReason}` : ''}
                         </div>
                       ) : null}
@@ -263,6 +270,14 @@ function StoreIssuesListPage(): React.JSX.Element {
                         label: 'Download PDF',
                         icon: 'download',
                         onSelect: () => issuePrint('download', iss),
+                      },
+                      {
+                        key: 'cancel',
+                        label: 'Cancel Issue',
+                        icon: 'x',
+                        group: 'danger',
+                        hidden: !canCancel || Boolean(iss.reversedAt),
+                        onSelect: () => setCancelTarget({ id: iss.id, code: iss.code }),
                       },
                     ]}
                   />
@@ -288,8 +303,20 @@ function StoreIssuesListPage(): React.JSX.Element {
             <IssueViewModal
               issueId={viewId}
               canReturn={perms.entry}
-              canReverse={perms.edit}
+              canCancel={canCancel}
+              onCancel={(iss) => {
+                setViewId(null);
+                setCancelTarget({ id: iss.id, code: iss.code });
+              }}
               onClose={() => setViewId(null)}
+            />
+          ) : null}
+          {cancelTarget ? (
+            <CancelDocDialog
+              docType="store_issue"
+              docId={cancelTarget.id}
+              docCode={cancelTarget.code}
+              onClose={() => setCancelTarget(null)}
             />
           ) : null}
         </>

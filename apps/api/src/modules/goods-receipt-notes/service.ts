@@ -31,6 +31,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { assertPoLinesStillOrderable } from '../../lib/po-line-sent';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
@@ -402,6 +403,9 @@ async function assertPoReceiptFits(
       ),
     )
     .for('update');
+  // ADR-235 — a PO cancelled (or with a cancel pending) while we waited on the
+  // line lock above is refused here, not received against.
+  await assertPoLinesStillOrderable(tx, Array.from(byPoLine.keys()), companyId);
   const poLineById = new Map(poLineRows.map((r) => [r.id, r]));
 
   for (const [poLineId, positions] of byPoLine) {

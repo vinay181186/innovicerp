@@ -25,6 +25,7 @@ import { todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -237,6 +238,10 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   // only to a user holding this page's Advance right.
   const canAssign = perms.advance;
   const [assignPr, setAssignPr] = useState<PurchaseRequestListItem | null>(null);
+  // ADR-235 — Cancel PR: the Edit tick raises the request, the Approve tick
+  // decides it. The row whose standard Cancel dialog is open.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelPr, setCancelPr] = useState<PurchaseRequestListItem | null>(null);
 
   // Preview / Download PDF in the row ⋯ — the same sheet as the detail ⋯.
   const prPrint = usePrPrint();
@@ -249,12 +254,14 @@ function PurchaseRequestsListPage(): React.JSX.Element {
         canApprove={perms.approve}
         canCreatePo={canCreatePo}
         canAssign={canAssign}
+        canCancel={canCancel}
         prApprovalOn={prApprovalOn}
         approving={approveMut.isPending}
         rejecting={rejectMut.isPending}
         onApprove={handleApprove}
         onReject={handleReject}
         onAssign={setAssignPr}
+        onCancel={setCancelPr}
         onPrint={prPrint}
       />
     ),
@@ -263,6 +270,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       perms.approve,
       canCreatePo,
       canAssign,
+      canCancel,
       prApprovalOn,
       approveMut.isPending,
       rejectMut.isPending,
@@ -432,6 +440,14 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               : `Convert ${assignPr.code} to PO`
           }
           onClose={() => setAssignPr(null)}
+        />
+      ) : null}
+      {cancelPr ? (
+        <CancelDocDialog
+          docType="purchase_request"
+          docId={cancelPr.id}
+          docCode={cancelPr.code}
+          onClose={() => setCancelPr(null)}
         />
       ) : null}
     </div>

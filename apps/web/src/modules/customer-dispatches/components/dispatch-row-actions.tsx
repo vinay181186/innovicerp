@@ -3,7 +3,7 @@
 // (usePrintDc — reads the dispatch + client on the click; the ⋯ stays busy
 // until the box shows / the PDF is saved),
 // Invoice (open the pre-filled Create Invoice form) and Cancel (reverse the
-// dispatch, via the caller's CancelDispatchModal). All in the one ⋯ row menu
+// dispatch, via the caller's CancelDocDialog — ADR-235). All in the one ⋯ row menu
 // (RowActions / RowMenu, owner spec 2026-10-01). A cancelled dispatch was
 // reversed — it keeps only View.
 

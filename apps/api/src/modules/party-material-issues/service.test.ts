@@ -27,7 +27,9 @@ import {
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { NotFoundError, ValidationError } from '../../lib/errors';
+import { cancelPartyMaterialIssueInputSchema } from '@innovic/shared';
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -73,7 +75,9 @@ beforeAll(async () => {
   const its = await db
     .select({ id: items.id })
     .from(items)
-    .where(and(eq(items.companyId, companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')))
+    .where(
+      and(eq(items.companyId, companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
+    )
     .orderBy(asc(items.createdAt))
     .limit(2);
   if (its.length < 2) throw new Error('Need 2 items in the seed company');
@@ -240,7 +244,7 @@ describe('party-material-issues — ADR-103 guards', () => {
     ).rejects.toBeInstanceOf(Error);
   });
 
-  it("rejects a material belonging to a different client", async () => {
+  it('rejects a material belonging to a different client', async () => {
     await expect(
       service.createPartyMaterialIssue(
         {
@@ -325,17 +329,22 @@ describe('party-material-issues — ADR-103 guards', () => {
   });
 });
 
-describe('party-material-issues — cancel (ADR-103)', () => {
-  it('requires a reason', async () => {
-    await expect(
-      service.cancelPartyMaterialIssue(issueIds[0]!, '   ', admin),
-    ).rejects.toBeInstanceOf(ValidationError);
+// ADR-235: a cancel is a Cancel Request; the admin holds Approve, so
+// approveNow = request + approve in one call.
+function cancelIssue(id: string, reason: string) {
+  return requestCancel('party_material_issue', id, { reason, approveNow: true }, admin);
+}
+
+describe('party-material-issues — cancel (ADR-103, ADR-235)', () => {
+  it('requires a reason', () => {
+    // The route's schema refuses a blank reason before any request is made.
+    expect(cancelPartyMaterialIssueInputSchema.safeParse({ reason: '   ' }).success).toBe(false);
   });
 
   it('throws NotFoundError for an unknown id', async () => {
-    await expect(
-      service.cancelPartyMaterialIssue('00000000-0000-0000-0000-000000000000', 'x', admin),
-    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(cancelIssue('00000000-0000-0000-0000-000000000000', 'x')).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   it('refuses to cancel material that has already been machined', async () => {
@@ -349,16 +358,15 @@ describe('party-material-issues — cancel (ADR-103)', () => {
       qty: RECEIVED,
       createdBy: admin.id,
     });
-    await expect(
-      service.cancelPartyMaterialIssue(issueIds[0]!, 'wrong qty', admin),
-    ).rejects.toBeInstanceOf(ValidationError);
+    // ADR-235: a blocker (the Job Card) refuses the request with a 409.
+    await expect(cancelIssue(issueIds[0]!, 'wrong qty')).rejects.toBeInstanceOf(ConflictError);
     await db.delete(opLog).where(eq(opLog.jcOpId, firstOpId));
   });
 
   it('cancels an unconsumed issue and puts the qty back on party stock', async () => {
     const before = (await db.select().from(partyMaterials).where(eq(partyMaterials.id, pmId)))[0]!;
-    const res = await service.cancelPartyMaterialIssue(issueIds[0]!, 'entered twice', admin);
-    expect(res.reversedQty).toBe(RECEIVED);
+    const res = await cancelIssue(issueIds[0]!, 'entered twice');
+    expect(res.cancelled).toBe(true);
 
     const after = (await db.select().from(partyMaterials).where(eq(partyMaterials.id, pmId)))[0]!;
     expect(after.stockQty).toBe(before.stockQty + RECEIVED);
@@ -366,11 +374,18 @@ describe('party-material-issues — cancel (ADR-103)', () => {
 
     const row = (
       await db
-        .select({ deletedAt: partyMaterialIssues.deletedAt, remarks: partyMaterialIssues.remarks })
+        .select({
+          deletedAt: partyMaterialIssues.deletedAt,
+          cancelledAt: partyMaterialIssues.cancelledAt,
+          cancelReason: partyMaterialIssues.cancelReason,
+          remarks: partyMaterialIssues.remarks,
+        })
         .from(partyMaterialIssues)
         .where(eq(partyMaterialIssues.id, issueIds[0]!))
     )[0]!;
     expect(row.deletedAt).not.toBeNull();
-    expect(row.remarks).toContain('[Cancelled] entered twice');
+    expect(row.cancelledAt?.getTime()).toBe(row.deletedAt?.getTime());
+    expect(row.cancelReason).toBe('entered twice');
+    expect(row.remarks ?? '').not.toContain('[Cancelled]');
   });
 });

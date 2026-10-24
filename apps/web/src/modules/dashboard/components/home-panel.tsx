@@ -85,6 +85,7 @@ const EMPTY_TEXT: Record<DashList['key'], string> = {
   po_overdue: 'Nothing overdue.',
   bom_pending: 'No BOM waiting.',
   capa_mine: 'No CAPA on you.',
+  qc_report_missing: 'No QC report missing.',
 };
 
 /** One server list, in the server's order (late first, then oldest). Rows and
