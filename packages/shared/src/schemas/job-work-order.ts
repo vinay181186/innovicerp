@@ -132,6 +132,9 @@ export const jobWorkOrderSchema = z.object({
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
   deletedAt: z.string().nullable(),
+  /** ADR-235 — the cancel's reason and time (null while live). */
+  cancelReason: z.string().nullable().default(null),
+  cancelledAt: z.string().nullable().default(null),
 });
 export type JobWorkOrder = z.infer<typeof jobWorkOrderSchema>;
 
@@ -182,6 +185,8 @@ export const jobWorkOrderListItemSchema = z.object({
   /** MIN(line.due_date) across non-deleted lines; null when none set. */
   earliestDueDate: z.string().nullable(),
   status: jwStatusSchema,
+  /** ADR-235 — the cancel's reason (null while live). */
+  cancelReason: z.string().nullable().default(null),
   remarks: z.string().nullable(),
   /** Header-level client material (expected/order intent — drives the MATERIAL
    *  column's "expected" number). */

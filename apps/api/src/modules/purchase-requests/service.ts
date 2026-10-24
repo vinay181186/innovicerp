@@ -44,6 +44,7 @@ import { polOf, polSql } from '../../lib/pol';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { assertMlNodeCapOnEdit, assertMlNodeItemUnchanged } from '../ml-plan/edit-cap';
@@ -1070,7 +1071,33 @@ export async function insertPurchaseRequestTx(
     );
   }
   if (input.sourceJcOpId) await assertJcOpExists(tx, input.sourceJcOpId, companyId);
-  if (input.sourceSoLineId) await assertSoLineExists(tx, input.sourceSoLineId, companyId);
+  if (input.sourceSoLineId) {
+    await assertSoLineExists(tx, input.sourceSoLineId, companyId);
+    // ADR-235 — a hand-raised PR on an SO line: lock the line (its own
+    // statement; the SO cancel locks header → lines, so a create racing it
+    // queues here), then read the header fresh and refuse a draft / cancelled
+    // order. System-raised PRs keep their callers' own locking order.
+    if (!opts.systemRaised) {
+      await tx.execute(sql`
+        SELECT 1 FROM public.sales_order_lines
+        WHERE id = ${input.sourceSoLineId}::uuid AND company_id = ${companyId}::uuid
+        FOR UPDATE
+      `);
+      const soRows = (await tx.execute(sql`
+        SELECT so.status::text AS status, so.code
+        FROM public.sales_order_lines sol
+        JOIN public.sales_orders so ON so.id = sol.sales_order_id
+        WHERE sol.id = ${input.sourceSoLineId}::uuid
+      `)) as unknown as Array<{ status: string; code: string }>;
+      if (soRows[0]) {
+        assertSoAcceptsWork(
+          soRows[0].status,
+          soRows[0].code,
+          'no Purchase Request can be raised on it',
+        );
+      }
+    }
+  }
 
   // Back-stop for a caller that sends only the typed code: if it names a real
   // master item, stamp the link. An off-master code still saves as free text.

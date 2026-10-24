@@ -30,6 +30,9 @@ function toQueryString(q: ListGoodsReceiptNotesQuery): string {
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
   if (q.sf) params.set('sf', q.sf);
+  // ADR-235 — the list screen shows Cancelled GRNs too (other readers do not).
+  // The whole query object is the cache key, so this flag is in it already.
+  if (q.includeCancelled) params.set('includeCancelled', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

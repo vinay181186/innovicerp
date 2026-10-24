@@ -61,6 +61,7 @@ import { softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { assertActiveParty } from '../../lib/active-party';
 import { decideOrderTax, orderTotals } from '../../lib/order-totals';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import {
   assertNoLiveMlPlanOnSo,
   assertSoLineEditsKeepMlPlans,
@@ -551,6 +552,7 @@ export async function listSalesOrders(
         so.created_at AS "createdAt", so.created_by AS "createdBy",
         so.updated_at AS "updatedAt", so.updated_by AS "updatedBy",
         so.deleted_at AS "deletedAt",
+        so.cancel_reason AS "cancelReason", so.cancelled_at AS "cancelledAt",
         cu.full_name                          AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int AS "totalQty",
@@ -700,6 +702,8 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
+    cancelReason: (r['cancelReason'] as string | null) ?? null,
+    cancelledAt: r['cancelledAt'] != null ? tsLike(r['cancelledAt']) : null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     dispatchedQty: Number(r['dispatchedQty'] ?? 0),
@@ -1349,6 +1353,13 @@ function toSalesOrder(row: typeof salesOrders.$inferSelect): SalesOrder {
         ? row.deletedAt.toISOString()
         : String(row.deletedAt)
       : null,
+    // ADR-235 — the cancel's reason and time (null while live).
+    cancelReason: row.cancelReason ?? null,
+    cancelledAt: row.cancelledAt
+      ? row.cancelledAt instanceof Date
+        ? row.cancelledAt.toISOString()
+        : String(row.cancelledAt)
+      : null,
   };
 }
 
@@ -1814,6 +1825,12 @@ export async function updateSalesOrderTx(
       .limit(1);
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('SO not found. It may have been moved to Trash.');
+    // ADR-235 — a Cancelled SO is read-only, and nothing changes under a
+    // pending Cancel Request (the header lock above serialises with it).
+    if (existingHdr.status === 'cancelled') {
+      throw new ConflictError(`${existingHdr.code} is Cancelled — it can't be edited.`);
+    }
+    await assertNoPendingCancel(tx, 'sales_order', id);
     // R5: refuse the save if someone else edited the SO after this form opened it.
     assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
@@ -1871,21 +1888,23 @@ export async function updateSalesOrderTx(
     }
     // ADR-184 — 'closed' and 'dispatched' are set by the system (dispatch
     // roll-up), never by hand. S8: a manual change must be one the shared
-    // SO_STATUS_MOVES map allows (Draft ↔ Open, either → Cancelled; Cancelled
-    // is final — D13 "cancel once"); anything else is a 409. Re-sending the
+    // SO_STATUS_MOVES map allows (Draft ↔ Open; → Cancelled only through the
+    // standard Cancel, ADR-235); anything else is a 409. Re-sending the
     // stored value is a no-op and always allowed, so an unchanged form saves.
     if (h.status !== undefined && h.status !== existingHdr.status) {
+      // ADR-235 — the standard Cancel (reason + approval, bookings released,
+      // lines cancelled) is the ONLY way to cancel an SO.
+      if (h.status === 'cancelled') {
+        throw new ConflictError('Use Cancel (⋯ → Cancel SO) — it needs a reason and approval.');
+      }
       assertSoStatusMove(existingHdr.code, existingHdr.status, h.status);
       // Review fix — back to 'draft' ("not yet committed") is refused on the
       // same grounds as 'cancelled': production / dispatch already runs on it.
-      if (h.status === 'cancelled' && !reason?.trim()) {
-        throw new ValidationError(`Give a reason to cancel ${existingHdr.code}.`);
-      }
-      if (h.status === 'cancelled' || h.status === 'draft') {
+      if (h.status === 'draft') {
         const blocking = await describeSoBlockingDocuments(tx, companyId, id);
         if (blocking) {
           throw new ValidationError(
-            `${existingHdr.code} cannot be set to ${h.status === 'draft' ? 'draft' : 'cancelled'} — it is used by ${blocking}. Remove or cancel those first.`,
+            `${existingHdr.code} cannot be set to draft — it is used by ${blocking}. Remove or cancel those first.`,
           );
         }
         // ADR-225 phase 3 — a live Multi-Level Plan holds its SO (lines locked above).
@@ -2130,6 +2149,8 @@ export async function updateSalesOrderOrStage(
     user,
     async (tx, target) => {
       const status = target.doc['status'] as string;
+      // ADR-235 — nothing is staged while a Cancel Request waits on the SO.
+      await assertNoPendingCancel(tx, 'sales_order', id);
 
       // ADR-207 — refuse a taken Internal SO No. now, not after approval.
       if (input.header.internalSoNo !== undefined) {

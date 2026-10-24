@@ -73,6 +73,9 @@ interface EntityMeta {
   table: string;
   labelSql: string;
   hasUpdatedBy: boolean;
+  /** ADR-235 — its Cancel stamps deleted_at too (plus cancelled_at); a
+   *  cancelled row is not in Trash and can never be restored. */
+  cancelStampsDeleted?: true;
 }
 
 // Every entity uses a `code` column for its human identifier (SO-001,
@@ -93,6 +96,7 @@ const ENTITIES: readonly EntityMeta[] = [
     table: 'goods_receipt_notes',
     labelSql: 'code',
     hasUpdatedBy: true,
+    cancelStampsDeleted: true,
   },
   { type: 'Delivery Challan', table: 'delivery_challans', labelSql: 'code', hasUpdatedBy: true },
   { type: 'NC Register', table: 'nc_register', labelSql: 'code', hasUpdatedBy: true },
@@ -224,7 +228,7 @@ function unionSql(companyId: string, typeFilter?: TrashEntityType): string {
               u.full_name AS deleted_by_name
        FROM "${e.table}" t
        LEFT JOIN "users" u ON u.id = COALESCE(t.deleted_by, t.updated_by)
-       WHERE t.deleted_at IS NOT NULL
+       WHERE t.deleted_at IS NOT NULL${e.cancelStampsDeleted ? ' AND t.cancelled_at IS NULL' : ''}
          AND t.company_id = '${companyId}'::uuid`,
   );
   return parts.join(' UNION ALL ');
@@ -444,7 +448,7 @@ export async function restoreFromTrash(
          SET deleted_at = NULL, deleted_by = NULL${entity.hasUpdatedBy ? `, updated_by = '${user.id}'::uuid, updated_at = now()` : ''}
          WHERE id = '${input.id}'::uuid
            AND company_id = '${companyId}'::uuid
-           AND deleted_at IS NOT NULL
+           AND deleted_at IS NOT NULL${entity.cancelStampsDeleted ? ' AND cancelled_at IS NULL' : ''}
          RETURNING id, ${entity.labelSql}::text AS label`,
       ),
     );

@@ -30,6 +30,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
+import { PlanCancelDialog, planCancelMenuItems } from '../components/plan-cancel';
 import {
   PlanExpanded,
   STATUS_BADGE,
@@ -119,6 +120,8 @@ function PlansListPage(): React.JSX.Element {
   // Closing an order moves it to its next step — Advance, not Entry (ADR-231).
   const canCloseProductionOrder = proPerms.advance;
   const canOpenJobCard = effectiveFormPerms(eff, 'jc_create').view;
+  // ADR-235 — the plan whose standard Cancel dialog is open (row ⋯ Cancel Plan).
+  const [cancelPlan, setCancelPlan] = useState<{ id: string; code: string } | null>(null);
 
   // The row's ▸ opens its detail reveal; a Set — many can be open.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -330,14 +333,15 @@ function PlansListPage(): React.JSX.Element {
                 expandedIds.has(row.id) ? <PlanExpanded row={row} /> : null
               }
               onToggleExpanded={(row) => toggleExpand(row.id)}
-              rowMenu={(row) =>
-                planRowMenu(row, {
+              rowMenu={(row) => [
+                ...planRowMenu(row, {
                   canCreateRouteCard,
                   canProductionOrder,
                   canCloseProductionOrder,
                   canOpenJobCard,
-                })
-              }
+                }),
+                ...planCancelMenuItems(row, perms, setCancelPlan),
+              ]}
               renderLink={renderPlanLink}
             />
           </Panel>
@@ -350,6 +354,7 @@ function PlansListPage(): React.JSX.Element {
           />
         </>
       )}
+      <PlanCancelDialog target={cancelPlan} onClose={() => setCancelPlan(null)} />
     </div>
   );
 }

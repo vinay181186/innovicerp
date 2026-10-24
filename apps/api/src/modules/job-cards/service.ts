@@ -111,6 +111,7 @@ import type {
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { JC_SF_COLUMNS } from './sf-columns';
 import { JC_LIST_JOINS, jcListWhere, jcStatusCounts } from './list-filters';
 
@@ -1629,6 +1630,25 @@ async function assertLineBalance(
               .limit(1)
           )[0];
     if (!line) throw new ValidationError('The SO / JWSO line was not found. Pick the line again.');
+    // ADR-235 — a NEW card on an SO line: lock the line (its own statement;
+    // the SO cancel locks header → lines, so a create racing it queues here),
+    // then read the header status fresh and refuse a draft / cancelled order.
+    // Edits keep the plain read above (Planning owns that locking order).
+    if (lineTable === salesOrderLines && excludeJcId === null) {
+      await tx.execute(sql`
+        SELECT 1 FROM public.sales_order_lines
+        WHERE id = ${lineId}::uuid AND company_id = ${companyId}::uuid
+        FOR UPDATE
+      `);
+      const soRows = (await tx.execute(sql`
+        SELECT so.status::text AS status, so.code
+        FROM public.sales_order_lines sol
+        JOIN public.sales_orders so ON so.id = sol.sales_order_id
+        WHERE sol.id = ${lineId}::uuid
+      `)) as unknown as Array<{ status: string; code: string }>;
+      if (soRows[0])
+        assertSoAcceptsWork(soRows[0].status, soRows[0].code, 'it cannot take a Job Card');
+    }
 
     // A BOM line's child job cards ALL hang off the parent SO line but are for
     // DIFFERENT items, each needing its own qtyPerSet × parent qty. Summing

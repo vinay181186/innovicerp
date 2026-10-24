@@ -34,6 +34,7 @@ import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { useExecutePlan, useFinalizePlan, usePlan } from '../api';
 import { PlanDeleteModal } from '../components/plan-delete-modal';
+import { usePlanCancel } from '../components/plan-cancel';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
 
 export const planDetailRoute = createRoute({
@@ -83,6 +84,8 @@ function PlanDetailPage(): React.JSX.Element {
   const execute = useExecutePlan();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
+  // ADR-235 — Cancel Plan: header button, pending / cancelled banners, dialog.
+  const planCancel = usePlanCancel(plan, perms);
   const canOpen = useCanOpen();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -164,6 +167,7 @@ function PlanDetailPage(): React.JSX.Element {
       <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
+      {planCancel.banners}
 
       <div className="panel">
         <div className="panel-hdr">
@@ -284,6 +288,7 @@ function PlanDetailPage(): React.JSX.Element {
                 Create Production Order →
               </Link>
             ) : null}
+            {planCancel.button}
           </div>
         </div>
         <div className="panel-body">
@@ -653,6 +658,7 @@ function PlanDetailPage(): React.JSX.Element {
           onDeleted={() => void navigate({ to: '/plans', replace: true })}
         />
       ) : null}
+      {planCancel.dialog}
     </div>
   );
 }

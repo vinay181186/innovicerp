@@ -18,7 +18,7 @@ import type { DbTransaction } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
 
 /** Screen words (same as apps/web sales-orders/lib/so-status-label.ts). */
-const SO_STATUS_WORDS: Record<SoStatus, string> = {
+export const SO_STATUS_WORDS: Record<SoStatus, string> = {
   draft: 'Draft',
   open: 'Open',
   closed: 'Closed',

@@ -23,6 +23,7 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
@@ -35,7 +36,11 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useGoodsReceiptNotesList } from '../api';
 import { GrnExpandedLines } from '../components/grn-expanded-lines';
-import { goodsReceiptNoteListColumns, grnTypeLabel } from '../components/grn-list-columns';
+import {
+  goodsReceiptNoteListColumns,
+  grnTypeLabel,
+  isGrnCancelled,
+} from '../components/grn-list-columns';
 import { useGrnPrint } from '../components/use-grn-print';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
@@ -106,6 +111,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       search: search.search,
       qcStatus: search.qcStatus,
       sf: sf.param,
+      // ADR-235 — Cancelled GRNs stay on the list, washed and marked Cancelled.
+      includeCancelled: true,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
@@ -125,6 +132,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     qcStatus: 'in_progress',
     // Same column filters, so this count agrees with the others in the dropdown.
     sf: sf.param,
+    // A Cancelled GRN is never "in progress" — live rows only here.
+    includeCancelled: false,
     limit: 200,
     offset: 0,
   });
@@ -174,6 +183,12 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   // Advance right.
   const canAssign = perms.advance;
   const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteListItem | null>(null);
+  // Cancel GRN -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit
+  // sends a Cancel Request, Approve decides it. The dialog reads the server's
+  // preview, which says which of the two this user may press. A Cancelled
+  // GRN's ⋯ offers only Preview / Download PDF.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelGrn, setCancelGrn] = useState<GoodsReceiptNoteListItem | null>(null);
   // Preview / Download PDF print the same sheet the detail page does
   // (use-grn-print.ts) — on every row, since printing follows View.
   const grnPrint = useGrnPrint();
@@ -198,8 +213,16 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           label: 'Assign Task',
           icon: 'user-round',
           group: 'assign',
-          hidden: !(grn.qcPendingCount > 0 && canAssign),
+          hidden: !(grn.qcPendingCount > 0 && canAssign) || isGrnCancelled(grn),
           onSelect: () => setAssignGrn(grn),
+        },
+        {
+          key: 'cancel',
+          label: 'Cancel GRN',
+          icon: 'x',
+          group: 'danger',
+          hidden: !canCancel || isGrnCancelled(grn),
+          onSelect: () => setCancelGrn(grn),
         },
       ]}
     />
@@ -305,7 +328,9 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             onRowClick={(grn) =>
               void navigate({ to: '/goods-receipt-notes/$id', params: { id: grn.id } })
             }
-            rowClassName={(grn) => ROW_TINT_BY_QC[qcStatusFor(grn)]}
+            rowClassName={(grn) =>
+              isGrnCancelled(grn) ? ROW_TINT.cancelled : ROW_TINT_BY_QC[qcStatusFor(grn)]
+            }
             rowActions={(grn) => rowActions(grn)}
             // The lines are fetched only for a row actually open — returning null
             // for a collapsed row means GrnExpandedLines (and its detail query)
@@ -353,6 +378,14 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           }}
           suggestedTitle={`Inspect ${assignGrn.code}`}
           onClose={() => setAssignGrn(null)}
+        />
+      ) : null}
+      {cancelGrn ? (
+        <CancelDocDialog
+          docType="grn"
+          docId={cancelGrn.id}
+          docCode={cancelGrn.code}
+          onClose={() => setCancelGrn(null)}
         />
       ) : null}
     </div>

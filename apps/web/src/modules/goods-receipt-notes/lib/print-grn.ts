@@ -111,6 +111,8 @@ export function printGrnDoc(args: {
   testBanner?: boolean;
   /** ADR-202 — the GRN has a pending edit; the sheet prints "Draft — awaiting approval". */
   draft?: boolean | undefined;
+  /** ADR-235 — the GRN is Cancelled; the sheet carries the CANCELLED stamp. */
+  cancelled?: boolean | undefined;
 }): boolean {
   const { model, data, company, templates } = args;
 
@@ -146,8 +148,7 @@ export function printGrnDoc(args: {
     },
     { label: 'GSTIN', value: data.vendorGSTIN ?? '', variant: 'mono' },
   ];
-  if (data.vendorContact)
-    supplierFields.push({ label: 'Contact', value: data.vendorContact });
+  if (data.vendorContact) supplierFields.push({ label: 'Contact', value: data.vendorContact });
 
   const totalReceived = model.lines.reduce((t, l) => t + l.receivedQty, 0);
   const totalAccepted = model.lines.reduce((t, l) => t + l.qcAcceptedQty, 0);
@@ -169,6 +170,7 @@ export function printGrnDoc(args: {
     columns: 'grn',
     // ADR-202 — overlay "Draft — awaiting approval" when an edit is pending.
     draft: args.draft,
+    cancelled: args.cancelled,
     blocks,
     data,
     company: buildDocCompany(company),
@@ -187,7 +189,9 @@ export function printGrnDoc(args: {
       // The per-line DC reference has no column of its own -- it would be a
       // column of dashes on most GRNs -- so it rides under the item, labelled,
       // and only on the lines whose reference differs from the header's.
-      ...(l.dcRefNo && l.dcRefNo !== model.dcNo ? { description: l.dcRefNo, descLabel: 'Vendor Challan No.' } : {}),
+      ...(l.dcRefNo && l.dcRefNo !== model.dcNo
+        ? { description: l.dcRefNo, descLabel: 'Vendor Challan No.' }
+        : {}),
     })),
     totalQty: String(totalReceived),
     totalAccepted: String(totalAccepted),
@@ -266,5 +270,14 @@ export function printGrn(args: {
     totalRejected: String(model.lines.reduce((s, l) => s + l.qcRejectedQty, 0)),
   };
 
-  return printGrnDoc({ model, data, company, templates, draft: args.draft });
+  // ADR-235 — a Cancelled GRN prints stamped CANCELLED, with every line the
+  // server returned for it (its lines were stamped with the header).
+  return printGrnDoc({
+    model,
+    data,
+    company,
+    templates,
+    draft: args.draft,
+    cancelled: Boolean(grn.cancelledAt),
+  });
 }

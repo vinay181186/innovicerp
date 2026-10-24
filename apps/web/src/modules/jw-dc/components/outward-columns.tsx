@@ -19,6 +19,12 @@ const STATUS_OPTIONS = (['out', 'partial', 'fully_returned'] as const).map((s) =
   label: statusLabel(s),
 }));
 
+/** ADR-235 — a Cancelled outward DC (listed with includeCancelled):
+ *  cancelledAt is the standard Cancel's stamp. */
+export function isJwDcCancelled(dc: Pick<JwDcOutwardListItem, 'cancelledAt'>): boolean {
+  return Boolean(dc.cancelledAt);
+}
+
 export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
   return [
     {
@@ -121,11 +127,15 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
       filterOptions: STATUS_OPTIONS,
       kind: 'badge',
       header: 'DC Status',
-      render: (dc) => (
-        <span className={`badge ${dc.returnStatus === 'fully_returned' ? 'b-green' : 'b-amber'}`}>
-          {statusLabel(dc.returnStatus)}
-        </span>
-      ),
+      // ADR-235: a Cancelled DC reads "Cancelled" here instead.
+      render: (dc) =>
+        isJwDcCancelled(dc) ? (
+          <span className="badge b-red">Cancelled</span>
+        ) : (
+          <span className={`badge ${dc.returnStatus === 'fully_returned' ? 'b-green' : 'b-amber'}`}>
+            {statusLabel(dc.returnStatus)}
+          </span>
+        ),
     },
   ];
 }

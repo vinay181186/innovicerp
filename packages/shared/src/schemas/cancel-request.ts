@@ -30,6 +30,12 @@ export const CANCEL_DOC_TYPES = [
   'tool_issue',
   'purchase_request',
   'purchase_order',
+  // Phase C (part 1)
+  'jw_dc_outward',
+  'plan',
+  'job_work_order',
+  'sales_order',
+  'grn',
 ] as const;
 export type CancelDocType = (typeof CANCEL_DOC_TYPES)[number];
 export const cancelDocTypeSchema = z.enum(CANCEL_DOC_TYPES);
@@ -49,6 +55,11 @@ export const CANCEL_DOC_LABELS: Record<CancelDocType, string> = {
   tool_issue: 'Tool Issue',
   purchase_request: 'Purchase Request',
   purchase_order: 'Purchase Order',
+  jw_dc_outward: 'JW DC',
+  plan: 'Plan',
+  job_work_order: 'JWSO',
+  sales_order: 'Sales Order',
+  grn: 'GRN',
 };
 
 /** The page whose ticks decide the cancel: Edit = may request, Approve = may
@@ -67,6 +78,11 @@ export const CANCEL_DOC_FORM_KEY: Record<CancelDocType, string> = {
   tool_issue: 'toolissue_create',
   purchase_request: 'pr_create',
   purchase_order: 'po_create',
+  jw_dc_outward: 'ospdc_create',
+  plan: 'plan_create',
+  job_work_order: 'jw_create',
+  sales_order: 'so_create',
+  grn: 'grn_create',
 };
 
 export const CANCEL_REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;

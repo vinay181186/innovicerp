@@ -62,6 +62,9 @@ export const jwDcOutwardSchema = z.object({
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
   deletedAt: z.string().nullable(),
+  /** ADR-235 — the cancel's reason and time (null while live). */
+  cancelReason: z.string().nullable().default(null),
+  cancelledAt: z.string().nullable().default(null),
 });
 export type JwDcOutward = z.infer<typeof jwDcOutwardSchema>;
 
@@ -217,6 +220,12 @@ export const listJwDcOutwardQuerySchema = z.object({
   returnStatus: z.enum(['out', 'partial', 'fully_returned']).optional(),
   /** Sort & Filter (ADR-200): the screen's column sort + filters, on the server. */
   sf: sfRawParamSchema,
+  /** ADR-235 — 'true' adds Cancelled ones (the list screen only; a cancel
+   *  stamps deleted_at too, so every other reader keeps live rows alone). */
+  includeCancelled: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

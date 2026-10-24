@@ -109,6 +109,7 @@ import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertMlNodeCapOnEdit } from '../ml-plan/edit-cap';
 import { assertLineFreeForPlan } from '../ml-plan/guards';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
@@ -126,6 +127,7 @@ import {
   routeCardHasRmItem,
 } from './rm-backfill';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 
 // Today's calendar date in IST (same as assembly / production-schedule). The
 // UTC date is still yesterday between 00:00 and 05:30 IST.
@@ -865,13 +867,24 @@ async function assertPlanQtyWithinRemaining(
   }
 
   // JW lines: Plan Qty against the order qty less the other plans.
-  const jwRows = (await tx.execute(sql`
-    SELECT order_qty AS "orderQty" FROM public.job_work_order_lines
-    WHERE id = ${jwLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-    LIMIT 1
-  `)) as unknown as Array<{ orderQty: number }>;
-  if (!jwRows[0]) return;
-  const orderQty = Number(jwRows[0].orderQty);
+  // ADR-235 — lock the JWSO line first (the JWSO cancel locks header → lines,
+  // so a plan create queues behind a running cancel and then sees it), and
+  // refuse a cancelled / short-closed / closed line. A cut of an existing plan
+  // is still let through, as on the SO branch above.
+  if (!jwLineId) return;
+  const jwLine = await lockJwLine(tx, companyId, jwLineId);
+  if (excludePlanId) {
+    const ownRows = (await tx.execute(sql`
+      SELECT COALESCE(SUM(plan_qty), 0)::int AS "own" FROM public.plans
+      WHERE id = ${excludePlanId}::uuid AND jw_line_id = ${jwLineId}::uuid
+        AND deleted_at IS NULL AND plan_status <> 'cancelled'
+    `)) as unknown as Array<{ own: number }>;
+    const own = Number(ownRows[0]?.own ?? 0);
+    if (!(own > 0 && planQty <= own)) assertJwLineOpenForWork(jwLine, 'plan it');
+  } else {
+    assertJwLineOpenForWork(jwLine, 'plan it');
+  }
+  const orderQty = jwLine.orderQty;
   const lineCond = sql`p.jw_line_id = ${jwLineId}::uuid`;
   const excl = excludePlanId ? sql`AND p.id <> ${excludePlanId}::uuid` : sql``;
   const rows = (await tx.execute(sql`
@@ -1315,6 +1328,7 @@ export async function updatePlanTx(
     .for('update');
   const row = existing[0];
   if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+  await assertNoPendingCancel(tx, 'plan', row.id);
   // E5: an Entry-only caller, checked under the lock so a concurrent finalise wins.
   if (opts?.ownDraftOnly) {
     const refusal = ownDraftPlanRefusal(row, user.id);
@@ -1713,6 +1727,7 @@ export async function updatePlanOrStage(
     input.expectedUpdatedAt,
     user,
     async (tx) => {
+      await assertNoPendingCancel(tx, 'plan', id);
       if (input.ops !== undefined) {
         const currentOps = await tx
           .select({
@@ -1757,6 +1772,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
       .limit(1);
     const row = existing[0];
     if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+    await assertNoPendingCancel(tx, 'plan', row.id);
 
     if (row.planStatus === 'planned') {
       // Idempotent: caller sent finalize again on an already-planned row.
@@ -1832,6 +1848,7 @@ export async function softDeletePlan(
       .limit(1);
     const row = existing[0];
     if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+    await assertNoPendingCancel(tx, 'plan', row.id);
 
     if (!EDITABLE_STATUSES.includes(row.planStatus)) {
       throw new ConflictError(
@@ -2029,6 +2046,7 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
       .for('update');
     const plan = existing[0];
     if (!plan) throw new NotFoundError('Plan not found. It may have been deleted.');
+    await assertNoPendingCancel(tx, 'plan', plan.id);
     // ADR-170 — a route-card-driven plan is never executed here: its Job Card
     // is built by a Production Order, which is where the Route Card and the
     // target date are chosen.
@@ -2041,6 +2059,11 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
       throw new ValidationError(
         `Only a Planned plan can create a JC / PR. This one is ${labelOf(PLAN_STATUS_LABEL, plan.planStatus)}.`,
       );
+    }
+    // ADR-235 — a JWSO plan: lock its JW line (plan → line; the JWSO cancel
+    // never locks plans) and refuse a cancelled / closed line.
+    if (plan.jwLineId) {
+      assertJwLineOpenForWork(await lockJwLine(tx, companyId, plan.jwLineId), 'create a JC / PR');
     }
 
     let result: ExecutePlanResult;
@@ -2952,6 +2975,13 @@ function toPlan(
       ? row.deletedAt instanceof Date
         ? row.deletedAt.toISOString()
         : String(row.deletedAt)
+      : null,
+    // ADR-235 (0220) — the cancel's reason and time (null while live).
+    cancelReason: row.cancelReason ?? null,
+    cancelledAt: row.cancelledAt
+      ? row.cancelledAt instanceof Date
+        ? row.cancelledAt.toISOString()
+        : String(row.cancelledAt)
       : null,
   };
 }

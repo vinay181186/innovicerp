@@ -8,6 +8,7 @@
 
 import {
   ActivityAction,
+  fmtOpSrNo,
   ISSUE_AGAINST_LABELS,
   type CancelBlocker,
   type IssueAgainst,
@@ -52,7 +53,8 @@ export async function lockStoreIssueForCancel(
  * preview both call it):
  *   · a line with a Return already recorded — use Return for what is still out;
  *   · a slip with no lines — there is no stock to put back;
- *   · an assembly-SO slip whose parts are already fitted (P34) — Undo the unit.
+ *   · an assembly-SO slip whose parts are already fitted (P34) — Undo the unit;
+ *   · a Job Card slip once work has started on the card's first operation.
  */
 export async function storeIssueCancelBlockers(
   tx: DbTransaction,
@@ -81,6 +83,39 @@ export async function storeIssueCancelBlockers(
       href: null,
       reason: 'it has no items on it, so there is no stock to put back',
     });
+  }
+  // Owner rule (ADR-235 Phase C): an issue to a Job Card cannot be cancelled
+  // once work has started on the card's FIRST operation (lowest live op) — any
+  // production / QC entry on it (net op_log qty incl. rejects > 0; reversed
+  // entries net to 0) or a running session. The material is in use; what is
+  // unused goes back by Return.
+  if (iss.jobCardId) {
+    const started = (await tx.execute(sql`
+      SELECT jc.code, o.op_seq AS "opSeq"
+      FROM public.job_cards jc
+      JOIN LATERAL (
+        SELECT o1.id, o1.op_seq FROM public.jc_ops o1
+        WHERE o1.job_card_id = jc.id AND o1.deleted_at IS NULL
+        ORDER BY o1.op_seq
+        LIMIT 1
+      ) o ON true
+      WHERE jc.id = ${iss.jobCardId}::uuid AND jc.company_id = ${companyId}::uuid
+        AND (
+          COALESCE((SELECT SUM(l.qty + l.reject_qty) FROM public.op_log l
+                    WHERE l.jc_op_id = o.id), 0) > 0
+          OR EXISTS (SELECT 1 FROM public.running_ops r
+                     WHERE r.jc_op_id = o.id AND r.status = 'running')
+        )
+    `)) as unknown as Array<{ code: string; opSeq: number }>;
+    const hit = started[0];
+    if (hit) {
+      out.push({
+        docLabel: 'Job Card',
+        docNo: hit.code,
+        href: `/job-cards/${iss.jobCardId}`,
+        reason: `work has started on Op ${fmtOpSrNo(Number(hit.opSeq))} — the material is in use; use Return for what is unused`,
+      });
+    }
   }
   if (iss.issueAgainst === 'assembly_so' && iss.salesOrderId && lines.length > 0) {
     const fitted = await reverseFittedLines(tx, companyId, iss.salesOrderId, lines);

@@ -14,9 +14,12 @@
 
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Download, Eye, Loader2 } from 'lucide-react';
+import { ArrowLeft, Ban, Download, Eye, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, fmtDateTime } from '@/lib/date';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -29,6 +32,7 @@ import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
 import { useJwDcOutwardDetail } from '../api';
+import { isJwDcCancelled } from '../components/outward-columns';
 import { printJwDc } from '../lib/print-jwdc';
 
 export const jwDcOutwardDetailRoute = createRoute({
@@ -45,6 +49,11 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
   const [printBlocked, setPrintBlocked] = useState(false);
+  // ADR-235 — the ONE standard Cancel (docType 'jw_dc_outward', page ospdc_create):
+  // Edit sends a Cancel Request, Approve decides it.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'ospdc_create');
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -89,10 +98,19 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       async () => () => printJwDc(printArgs),
     );
 
+  const cancelled = isJwDcCancelled(dc);
+  const canCancel = !cancelled && (perms.edit || perms.approve);
+
   // Returned = done (green); Partly Returned / At Vendor = under way (amber).
-  const statusClass = dc.returnStatus === 'fully_returned' ? 'b-green' : 'b-amber';
-  const statusLabel =
-    dc.returnStatus === 'fully_returned'
+  // A Cancelled DC reads Cancelled (red) instead.
+  const statusClass = cancelled
+    ? 'b-red'
+    : dc.returnStatus === 'fully_returned'
+      ? 'b-green'
+      : 'b-amber';
+  const statusLabel = cancelled
+    ? 'Cancelled'
+    : dc.returnStatus === 'fully_returned'
       ? 'Returned'
       : dc.returnStatus === 'partial'
         ? 'Partly Returned'
@@ -132,6 +150,15 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             >
               <Download size={13} /> Download PDF
             </button>
+            {canCancel ? (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setCancelOpen(true)}
+              >
+                <Ban size={13} /> Cancel JW DC
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="panel-body">
@@ -143,6 +170,24 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
           <DetailGrid dc={dc} />
         </div>
       </div>
+
+      {/* ADR-235 — an open Cancel Request (orange), or the Cancelled mark (red). */}
+      <CancelPendingBanner
+        docType="jw_dc_outward"
+        docId={dc.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
+      {cancelled ? (
+        <div className="mb-2">
+          <Banner tone="error" accent title="Cancelled — this JW DC is void">
+            <div>
+              Reason: <b>{dc.cancelReason ?? '—'}</b>
+              {dc.cancelledAt ? ` · ${fmtDateTime(dc.cancelledAt)}` : ''}
+            </div>
+          </Banner>
+        </div>
+      ) : null}
 
       <div className="panel">
         <div className="panel-hdr">
@@ -225,6 +270,15 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       <Panel title="History" bodyPadding="none">
         <DocumentHistory entity="JwDcOutward" entityId={dc.id} refId={dc.code} />
       </Panel>
+
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="jw_dc_outward"
+          docId={dc.id}
+          docCode={dc.code}
+          onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

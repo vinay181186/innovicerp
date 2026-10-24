@@ -14511,3 +14511,30 @@ cancel is pending.
   against a PO cancelled — or with a cancel pending — a moment earlier.
 - Open: an Item Issue against a Job Card has no "material already used" blocker
   (store qty is in kg, JC ops log pieces — owner to decide the rule).
+
+### Phase C, part 1 (2026-10-24, migration 0220)
+
+Five documents that had no real cancel join the registry:
+- **Sales Order** — the standard Cancel is the ONLY header-cancel writer
+  (`PATCH` status → cancelled is refused). Only a Draft / Open SO; blocked by any
+  live plan, Multi-Level Plan, Production Order, hand-raised Job Card, PR / PO
+  line, DC, dispatch, invoice, Item Issue, assembly reservation or Service PO.
+  The worker releases every stock booking through the delete path's writer
+  (`reconcileLineReservations`, order qty 0) and sets the header AND every line
+  Cancelled. A Cancelled SO / JWSO is read-only.
+- **JWSO** — blocked by any document using a line (`jwLineUsageRows`, now
+  ignoring cancelled plans / deleted returns), header-level Party GRN / Issue,
+  returned / invoiced pieces, or customer material still in the party store.
+- **Plan** — `plan_status = 'cancelled'`; blocked by a Production Order, a live
+  Job Card or a live PR made from it. SO stock bookings stay on the SO line.
+- **JW DC (outward)** — stock comes back (opposite `jw_out`), PO line Sent
+  reopens; blocked by a JW DC receipt. Stamps `deleted_at` + `cancelled_*`.
+- **GRN** — only while Incoming QC is untouched and only a GRN not made by a
+  DC receipt / JW DC receipt / NC replacement (those wait for the receipt-level
+  cancel). Stamps `deleted_at` + `cancelled_*`, recalculates PO received qty and
+  status. GRN Delete now refuses the receipt-made GRNs too. Trash never lists or
+  restores a cancelled GRN.
+- **Item Issue** (owner rule): refused once the Job Card's first operation has an
+  entry or is running.
+Part 2 (next): Job Card, Production Order (cancels its own unused Job Card),
+DC receipt, and Incoming QC reversal.

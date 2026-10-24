@@ -122,6 +122,67 @@ export async function recomputeJwHeaderStatus(
   return next;
 }
 
+/** What kind of document uses a JWSO line (jwLineUsageRows). */
+export type JwLineUsageKind =
+  | 'job_card'
+  | 'plan'
+  | 'party_grn'
+  | 'party_material_issue'
+  | 'jw_return'
+  | 'jw_invoice'
+  | 'customer_material_return';
+
+export interface JwLineUsageRow {
+  lineId: string;
+  kind: JwLineUsageKind;
+  docId: string;
+  label: string;
+}
+
+/** THE "which live documents use these lines" read — one row per document per
+ *  line. A cancelled document no longer uses the line: a cancelled plan
+ *  (plan_status), JW Return / JW Invoice / Customer Material Return (status);
+ *  a cancelled Party GRN / Party Material Issue is stamped deleted_at by its
+ *  cancel (ADR-235), so deleted_at covers it. jwLineUsage and the JWSO cancel
+ *  (ADR-235) both read this, so the two can never disagree. */
+export async function jwLineUsageRows(
+  tx: DbTransaction,
+  lineIds: readonly string[],
+): Promise<JwLineUsageRow[]> {
+  if (lineIds.length === 0) return [];
+  const ids = sql.join(
+    lineIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = (await tx.execute(sql`
+    SELECT source_jw_line_id AS "lineId", 'job_card' AS kind, id AS "docId", code AS label
+      FROM public.job_cards
+     WHERE source_jw_line_id IN (${ids}) AND deleted_at IS NULL
+    UNION ALL
+    SELECT jw_line_id, 'plan', id, code FROM public.plans
+     WHERE jw_line_id IN (${ids}) AND deleted_at IS NULL AND plan_status <> 'cancelled'
+    UNION ALL
+    SELECT pgl.jw_line_id, 'party_grn', pg.id, pg.code FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+     WHERE pgl.jw_line_id IN (${ids}) AND pgl.deleted_at IS NULL
+    UNION ALL
+    SELECT jw_line_id, 'party_material_issue', id, code FROM public.party_material_issues
+     WHERE jw_line_id IN (${ids}) AND deleted_at IS NULL
+    UNION ALL
+    SELECT job_work_order_line_id, 'jw_return', id, code FROM public.jw_return_challans
+     WHERE job_work_order_line_id IN (${ids}) AND deleted_at IS NULL AND status <> 'cancelled'
+    UNION ALL
+    SELECT job_work_order_line_id, 'jw_invoice', id, code FROM public.jw_invoices
+     WHERE job_work_order_line_id IN (${ids}) AND deleted_at IS NULL AND status <> 'cancelled'
+    UNION ALL
+    SELECT cl.jw_line_id, 'customer_material_return', c.id, c.code
+      FROM public.customer_material_return_lines cl
+      JOIN public.customer_material_returns c ON c.id = cl.return_id AND c.deleted_at IS NULL
+     WHERE cl.jw_line_id IN (${ids}) AND cl.deleted_at IS NULL AND c.status <> 'cancelled'
+  `)) as unknown as JwLineUsageRow[];
+  return rows;
+}
+
 /** Which live documents use each line. A line in this map cannot be removed,
  *  and its item / UOM / BOM (and the JWSO's customer) are locked. The values
  *  are short labels for the refusal message ("JC-0045", "PGRN-00031"). */
@@ -130,39 +191,10 @@ export async function jwLineUsage(
   lineIds: readonly string[],
 ): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
-  if (lineIds.length === 0) return out;
-  const ids = sql.join(
-    lineIds.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
-  const rows = (await tx.execute(sql`
-    SELECT source_jw_line_id AS line_id, code AS label FROM public.job_cards
-     WHERE source_jw_line_id IN (${ids}) AND deleted_at IS NULL
-    UNION ALL
-    SELECT jw_line_id, code FROM public.plans
-     WHERE jw_line_id IN (${ids}) AND deleted_at IS NULL
-    UNION ALL
-    SELECT pgl.jw_line_id, pg.code FROM public.party_grn_lines pgl
-      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
-     WHERE pgl.jw_line_id IN (${ids}) AND pgl.deleted_at IS NULL
-    UNION ALL
-    SELECT jw_line_id, code FROM public.party_material_issues
-     WHERE jw_line_id IN (${ids}) AND deleted_at IS NULL
-    UNION ALL
-    SELECT job_work_order_line_id, code FROM public.jw_return_challans
-     WHERE job_work_order_line_id IN (${ids}) AND deleted_at IS NULL AND status <> 'cancelled'
-    UNION ALL
-    SELECT job_work_order_line_id, code FROM public.jw_invoices
-     WHERE job_work_order_line_id IN (${ids}) AND deleted_at IS NULL AND status <> 'cancelled'
-    UNION ALL
-    SELECT cl.jw_line_id, c.code FROM public.customer_material_return_lines cl
-      JOIN public.customer_material_returns c ON c.id = cl.return_id
-     WHERE cl.jw_line_id IN (${ids}) AND cl.deleted_at IS NULL AND c.status <> 'cancelled'
-  `)) as unknown as Array<{ line_id: string; label: string }>;
-  for (const r of rows) {
-    const list = out.get(r.line_id) ?? [];
+  for (const r of await jwLineUsageRows(tx, lineIds)) {
+    const list = out.get(r.lineId) ?? [];
     if (!list.includes(r.label)) list.push(r.label);
-    out.set(r.line_id, list);
+    out.set(r.lineId, list);
   }
   return out;
 }

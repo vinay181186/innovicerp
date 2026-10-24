@@ -56,6 +56,9 @@ import { SoCloseModal, closableQty } from '../components/so-close-modal';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
 import { SoBomPartsPanel } from '../components/so-equipment-expand';
 import { SoFulfilmentBadge } from '../components/so-fulfilment-badge';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
+import { OrderCancelledBanner } from '../components/order-cancelled-banner';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { fmtIstDateTime } from '../lib/format';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
@@ -124,6 +127,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // ADR-197 — why the SO goes to Trash (required; lands on its History).
   const [deleteReason, setDeleteReason] = useState('');
   const [assignOpen, setAssignOpen] = useState(false);
+  // ADR-235 — the standard Cancel dialog.
+  const [cancelOpen, setCancelOpen] = useState(false);
   // ADR-196 — the Close dialog: `line` null = the whole SO (Actions ▾ → Close).
   const [closeTarget, setCloseTarget] = useState<{ line: SalesOrderLine | null } | null>(null);
   // One preview slot for the whole page — the client PO bar, the email
@@ -161,7 +166,15 @@ function SalesOrderDetailPage(): React.JSX.Element {
   }
 
   // Access matrix (so_create) replaces the old admin/manager role flags.
-  const canEdit = perms.edit;
+  // ADR-235 — a cancelled SO is read-only: no Edit / Close / Plan / Dispatch.
+  const cancelled = detail.status === 'cancelled';
+  const canEdit = perms.edit && !cancelled;
+  // Cancel SO: the Edit tick raises the request, the Approve tick decides it.
+  // Not on a cancelled or closed SO; an SO with plans / dispatches is refused
+  // by the server's preview (it lists what to cancel first).
+  // Only a Draft / Open SO can be cancelled (the server's rule).
+  const canCancel =
+    (perms.edit || perms.approve) && (detail.status === 'draft' || detail.status === 'open');
   const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
   // ADR-196 — Close (short) takes the advance + approve pair on so_create, the
   // same pair the JWSO line short close takes (ADR-231: L4 Approver and L5
@@ -225,14 +238,16 @@ function SalesOrderDetailPage(): React.JSX.Element {
              Delete last, in red. Same permission gates as before. */
           <>
             {/* ADR-234 — each next step checks the page it OPENS. */}
-            <ActionLink
-              to="/planning"
-              search={{ soId: detail.id }}
-              className="btn btn-ghost"
-              title="Open this SO in Planning"
-            >
-              Plan
-            </ActionLink>
+            {!cancelled ? (
+              <ActionLink
+                to="/planning"
+                search={{ soId: detail.id }}
+                className="btn btn-ghost"
+                title="Open this SO in Planning"
+              >
+                Plan
+              </ActionLink>
+            ) : null}
             <ActionMenu
               items={[
                 { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
@@ -240,7 +255,11 @@ function SalesOrderDetailPage(): React.JSX.Element {
                   label: '⬇ Download PDF',
                   onClick: () => void orderPrint.download(printTarget, isDraft),
                 },
-                { label: 'Assign Task', hidden: !canAssign, onClick: () => setAssignOpen(true) },
+                {
+                  label: 'Assign Task',
+                  hidden: !canAssign || cancelled,
+                  onClick: () => setAssignOpen(true),
+                },
                 {
                   label: 'Status',
                   title: 'Open SO Status Review',
@@ -262,6 +281,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
                   onClick: () => setCloseTarget({ line: null }),
                 },
                 {
+                  label: 'Cancel SO',
+                  danger: true,
+                  hidden: !canCancel,
+                  onClick: () => setCancelOpen(true),
+                },
+                {
                   label: 'Delete',
                   danger: true,
                   hidden: !canDelete,
@@ -272,7 +297,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 },
               ]}
             />
-            {pendingDispatchQty > 0 ? (
+            {pendingDispatchQty > 0 && !cancelled ? (
               <ActionLink
                 to="/customer-dispatches/new"
                 search={{ so: detail.id }}
@@ -291,6 +316,19 @@ function SalesOrderDetailPage(): React.JSX.Element {
             prices, and then the strip is not shown. */}
         <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />
       </DetailHeader>
+
+      <CancelPendingBanner
+        docType="sales_order"
+        docId={detail.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
+      <OrderCancelledBanner
+        cancelled={cancelled}
+        docLabel="SO"
+        reason={detail.cancelReason}
+        cancelledAt={detail.cancelledAt}
+      />
 
       {uploadFailed ? (
         <Banner
@@ -403,6 +441,15 @@ function SalesOrderDetailPage(): React.JSX.Element {
       ) : null}
 
       {orderPrint.modal}
+
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="sales_order"
+          docId={detail.id}
+          docCode={detail.code}
+          onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
 
       {assignOpen ? (
         <AssignTaskModal

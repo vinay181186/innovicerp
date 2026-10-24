@@ -17,6 +17,7 @@ import {
 import type { AuthContext } from '../../db/with-user-context';
 import { AppError, AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
+import { requestCancel } from '../cancel-requests/service';
 import * as mlBomService from '../ml-bom/service';
 import * as soService from '../sales-orders/service';
 import { shortCloseSalesOrderLine } from '../sales-orders/short-close';
@@ -257,9 +258,11 @@ describe('SO guards', () => {
   it('cancelling the SO is refused while a live Multi-Level Plan exists', async () => {
     const { soId, lineId } = await makeSoLine('PS100', 5);
     const p = await service.createMlPlan({ soLineId: lineId, planQty: 5 }, admin);
+    // ADR-235: an SO is cancelled only through a Cancel Request; the live
+    // Multi-Level Plan is a blocker that names it.
     await expect(
-      soService.updateSalesOrder(soId, { header: { status: 'cancelled' } }, admin, 'test'),
-    ).rejects.toThrow(new RegExp(`${p.code} is planned on this line`));
+      requestCancel('sales_order', soId, { reason: 'test', approveNow: true }, admin),
+    ).rejects.toThrow(new RegExp(p.code));
   });
 
   it('changing the SO Type is refused while a live Multi-Level Plan exists', async () => {

@@ -112,6 +112,7 @@ import { assertProductionOrderNotShortClosed } from '../../lib/production-order-
 import { PRODUCTION_ORDER_LINK_MAX_DEPTH } from '../../lib/production-order-link';
 import { labelOf, PLAN_STATUS_LABEL } from '../../lib/status-labels';
 import { planIsMlAssembly } from '../../lib/ml-assembly';
+import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 import { emitActivityLog } from '../activity-log/service';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
 import type {
@@ -1174,6 +1175,14 @@ export async function createProductionOrder(
             `${sc[0].soCode} line ${sc[0].lineNo} was closed short — plan ${plan.code} makes no new Production Order.`,
           );
         }
+      }
+      // ADR-235 — a JWSO plan: lock its JW line (plan → line, as Execute does;
+      // the JWSO cancel never locks plans) and refuse a cancelled / closed line.
+      if (plan.jwLineId) {
+        assertJwLineOpenForWork(
+          await lockJwLine(tx, companyId, plan.jwLineId),
+          'make a Production Order',
+        );
       }
       // ADR-182 — the qty cap, read INSIDE the plan's row lock above so two
       // concurrent creates can never both fit. ADR-184 — Covered is the ONE

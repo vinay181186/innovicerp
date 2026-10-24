@@ -15,13 +15,18 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { customerDispatchCancelHandler } from '../customer-dispatches/cancel-handler';
 import { customerMaterialReturnCancelHandler } from '../customer-material-returns/cancel-handler';
 import { deliveryChallanCancelHandler } from '../delivery-challans/cancel-handler';
+import { grnCancelHandler } from '../goods-receipt-notes/cancel-handler';
 import { invoiceCancelHandler } from '../invoices/cancel-handler';
+import { jobWorkOrderCancelHandler } from '../job-work-orders/cancel-handler';
+import { jwDcOutwardCancelHandler } from '../jw-dc/cancel-handler';
 import { jwInvoiceCancelHandler } from '../jw-invoices/cancel-handler';
 import { jwReturnCancelHandler } from '../jw-returns/cancel-handler';
 import { partyGrnCancelHandler } from '../party-grn/cancel-handler';
 import { partyMaterialIssueCancelHandler } from '../party-material-issues/cancel-handler';
+import { planCancelHandler } from '../plans/cancel-handler';
 import { purchaseOrderCancelHandler } from '../purchase-orders/cancel-handler';
 import { purchaseRequestCancelHandler } from '../purchase-requests/cancel-handler';
+import { salesOrderCancelHandler } from '../sales-orders/cancel-handler';
 import { stockCountCancelHandler } from '../stock-counts/cancel-handler';
 import { storeIssueCancelHandler } from '../store-issues/cancel-handler';
 import { toolIssueCancelHandler } from '../tool-issues/cancel-handler';
@@ -68,4 +73,9 @@ export const CANCEL_HANDLERS: Record<CancelDocType, CancelHandler> = {
   tool_issue: toolIssueCancelHandler,
   purchase_request: purchaseRequestCancelHandler,
   purchase_order: purchaseOrderCancelHandler,
+  jw_dc_outward: jwDcOutwardCancelHandler,
+  plan: planCancelHandler,
+  job_work_order: jobWorkOrderCancelHandler,
+  sales_order: salesOrderCancelHandler,
+  grn: grnCancelHandler,
 };

@@ -17,8 +17,10 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
+import { fmtDateTime } from '@/lib/date';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { useJwDcOutwardDetail, useJwDcOutwardList } from '../api';
-import { outwardColumns } from './outward-columns';
+import { isJwDcCancelled, outwardColumns } from './outward-columns';
 import { useJwDcPrint } from './use-jwdc-print';
 import { NewOutwardModal } from './new-outward-modal';
 
@@ -36,7 +38,13 @@ export function OutwardView({
   const jwDcPrint = useJwDcPrint();
   // Same right the server checks (ADR-193): OSP Outward DC entry.
   const { data: eff } = useMyAccess();
-  const canWrite = effectiveFormPerms(eff, 'ospdc_create').entry;
+  const perms = effectiveFormPerms(eff, 'ospdc_create');
+  const canWrite = perms.entry;
+  // Cancel JW DC -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit
+  // sends a Cancel Request, Approve decides it; the dialog's server preview
+  // says which buttons this user gets.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelRow, setCancelRow] = useState<JwDcOutwardListItem | null>(null);
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => initialSearch ?? '');
   const [page, setPage] = useState(1);
@@ -63,6 +71,8 @@ export function OutwardView({
   const { data, isLoading, isError, error } = useJwDcOutwardList({
     search: term || undefined,
     sf: sf.param,
+    // ADR-235 — Cancelled DCs stay on the register, washed and marked Cancelled.
+    includeCancelled: true,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(page),
   });
@@ -127,11 +137,13 @@ export function OutwardView({
             // Green when every unit is back, amber while a return is still
             // partial. A freshly-sent DC (nothing back yet) stays untinted.
             rowClassName={(dc) =>
-              dc.returnStatus === 'fully_returned'
-                ? ROW_TINT.done
-                : dc.returnStatus === 'partial'
-                  ? ROW_TINT.pending
-                  : undefined
+              isJwDcCancelled(dc)
+                ? ROW_TINT.cancelled
+                : dc.returnStatus === 'fully_returned'
+                  ? ROW_TINT.done
+                  : dc.returnStatus === 'partial'
+                    ? ROW_TINT.pending
+                    : undefined
             }
             // The fit table's ▸ is the row's one expand control: it reveals the
             // DC's item lines, fetched only for an opened row.
@@ -157,6 +169,15 @@ export function OutwardView({
                     onSelect: () =>
                       jwDcPrint('download', { id: dc.id, code: dc.code, vendorId: dc.vendorId }),
                   },
+                  {
+                    // A Cancelled DC's ⋯ offers only View / Preview / Download.
+                    key: 'cancel',
+                    label: 'Cancel JW DC',
+                    icon: 'x',
+                    group: 'danger',
+                    hidden: !canCancel || isJwDcCancelled(dc),
+                    onSelect: () => setCancelRow(dc),
+                  },
                 ]}
               />
             )}
@@ -176,6 +197,14 @@ export function OutwardView({
 
       {showModal && canWrite ? (
         <NewOutwardModal forJwId={forJwId} onClose={() => setShowModal(false)} />
+      ) : null}
+      {cancelRow ? (
+        <CancelDocDialog
+          docType="jw_dc_outward"
+          docId={cancelRow.id}
+          docCode={cancelRow.code}
+          onClose={() => setCancelRow(null)}
+        />
       ) : null}
     </div>
   );
@@ -232,6 +261,13 @@ function ExpandedOutward({ dcId }: { dcId: string }): React.JSX.Element {
         <b>Vehicle No.:</b> {data.vehicleNo ?? '—'} &nbsp;·&nbsp; <b>Remarks:</b>{' '}
         {data.remarks ?? '—'}
       </div>
+      {/* ADR-235 — why and when a Cancelled DC was cancelled. */}
+      {isJwDcCancelled(data) ? (
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
+          <b>Reason:</b> {data.cancelReason ?? '—'}
+          {data.cancelledAt ? ` · Cancelled ${fmtDateTime(data.cancelledAt)}` : ''}
+        </div>
+      ) : null}
     </div>
   );
 }

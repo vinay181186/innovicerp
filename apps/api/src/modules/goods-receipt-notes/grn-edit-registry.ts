@@ -28,8 +28,9 @@ const GRN_FORM_KEY: AccessFormKey = 'grn_create';
  *  waiting for Incoming QC was live, so a fully QC-inspected GRN's header edit
  *  saved straight through, unapproved, with the gate on; the owner ruled that a
  *  finished document's edit must go for approval too. A GRN has no cancelled
- *  state — removal is the soft delete, and a deleted GRN is never loaded
- *  (loadForDiff filters it), so its writer refuses as before. */
+ *  status value — removal is the soft delete, and a Cancelled GRN (ADR-235)
+ *  carries deleted_at too, so neither is ever loaded (loadForDiff filters it)
+ *  and its writer refuses as before. */
 export function grnIsLive(grn: { deletedAt: unknown }): boolean {
   return grn.deletedAt == null;
 }
