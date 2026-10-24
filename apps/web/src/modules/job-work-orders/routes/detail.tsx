@@ -39,6 +39,9 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { RowMenu } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
+import { OrderCancelledBanner } from '@/modules/sales-orders/components/order-cancelled-banner';
 import { useJobWorkOrder } from '../api';
 import { DeleteJwsoModal } from '../components/delete-jwso-modal';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
@@ -82,6 +85,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // inside the app, so a look never becomes a silent download (the same slot the
   // Documents panel below uses for its own files).
   const [linePreview, setLinePreview] = useState<string | null>(null);
+  // ADR-235 — the standard Cancel dialog.
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -116,13 +121,23 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const onDeleted = (): void => void navigate({ to: '/job-work-orders', replace: true });
 
   // Access matrix (jw_create) replaces the old admin/manager role flags.
-  const canEdit = perms.edit;
+  // ADR-235 — a cancelled JWSO is read-only: no Edit, next steps or Short Close.
+  const cancelled = detail.status === 'cancelled';
+  const canEdit = perms.edit && !cancelled;
+  // Cancel JWSO: the Edit tick raises the request, the Approve tick decides it.
+  // Not on a cancelled or closed JWSO; one with receipts / JCs / DCs is refused
+  // by the server's preview (it lists what to cancel first).
+  const canCancel =
+    (perms.edit || perms.approve) &&
+    !cancelled &&
+    detail.status !== 'closed' &&
+    detail.status !== 'dispatched';
   const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
   // R6 (ADR-194) #4: short-close hits requireFormAccess(...,'approve') on the
   // server, so the UI must require approve as well — otherwise a user without
   // it sees the button and gets a 403. ADR-231: the other half of the pair is
   // now `advance` (short close moves the line to its end), not `edit`.
-  const canShortCloseAction = perms.advance && perms.approve;
+  const canShortCloseAction = perms.advance && perms.approve && !cancelled;
   // The line ⋯ column exists when any line has something in it: Short Close
   // (advance + approve) or a drawing file to preview.
   const showLineMenu =
@@ -139,9 +154,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // already picked (`?jw=<jwsoId>`). Gates mirror the target screens (ADR-232,
   // the Entry tick alone): Party GRN is party_create, JW DC is ospdc_create,
   // JW Invoice is invoice_create.
-  const canReceive = effectiveFormPerms(eff, 'party_create').entry;
-  const canJwDc = effectiveFormPerms(eff, 'ospdc_create').entry;
-  const canJwInvoice = effectiveFormPerms(eff, 'invoice_create').entry;
+  const canReceive = effectiveFormPerms(eff, 'party_create').entry && !cancelled;
+  const canJwDc = effectiveFormPerms(eff, 'ospdc_create').entry && !cancelled;
+  const canJwInvoice = effectiveFormPerms(eff, 'invoice_create').entry && !cancelled;
   const goReceive = (): void =>
     void navigate({ to: '/party-grn', search: { tab: 'receive', jw: detail.id } });
   // `jw` is read by the JW DC screen (owned by another module). The assertion
@@ -240,6 +255,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                   .filter((n) => n.key !== primaryStep?.key)
                   .map((n) => ({ label: n.label, hidden: !n.allowed, onClick: n.go })),
                 {
+                  label: 'Cancel JWSO',
+                  danger: true,
+                  hidden: !canCancel,
+                  onClick: () => setCancelOpen(true),
+                },
+                {
                   label: 'Delete',
                   danger: true,
                   hidden: !canDelete,
@@ -255,6 +276,19 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             Round-off), the same roll-up as the SO. Null when prices are hidden. */}
         <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />
       </DetailHeader>
+
+      <CancelPendingBanner
+        docType="job_work_order"
+        docId={detail.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
+      <OrderCancelledBanner
+        cancelled={cancelled}
+        docLabel="JWSO"
+        reason={detail.cancelReason}
+        cancelledAt={detail.cancelledAt}
+      />
 
       {uploadFailed ? (
         <Banner
@@ -276,6 +310,15 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
       ) : null}
 
       {orderPrint.modal}
+
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="job_work_order"
+          docId={detail.id}
+          docCode={detail.code}
+          onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
 
       {confirmDelete ? (
         <DeleteJwsoModal

@@ -93,6 +93,9 @@ export function printJwDc(args: {
   const model: SheetPrintModel = {
     title: 'Delivery Challan',
     windowTitle: 'Job Work Delivery Challan',
+    // ADR-235 — a Cancelled DC prints stamped CANCELLED, with every line the
+    // server returned for it.
+    cancelled: Boolean(dc.cancelledAt),
     blocks: templatesToBlocks('JW DC', templates),
     data,
     company: buildDocCompany(company),

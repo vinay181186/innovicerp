@@ -127,12 +127,25 @@ function ProductionOrderNewPage(): React.JSX.Element {
     { ...(planItemId ? { itemId: planItemId } : {}), limit: 50, offset: 0 },
     { enabled: Boolean(planItemId) },
   );
-  const rcItems: RouteCardListItem[] = useMemo(
+  const allRcItems: RouteCardListItem[] = useMemo(
     () => (planItemId ? (routeCards.data?.items ?? []) : []),
     [planItemId, routeCards.data],
   );
+  // ADR-253 — only an APPROVED card may raise a Production Order, so the
+  // picker lists (and auto-picks) approved cards only.
+  const rcItems = useMemo(
+    () => allRcItems.filter((rc) => rc.approvalStatus === 'approved'),
+    [allRcItems],
+  );
   const rcLoaded = Boolean(planItemId) && routeCards.isSuccess;
-  const noRouteCard = rcLoaded && rcItems.length === 0;
+  const noRouteCard = rcLoaded && allRcItems.length === 0;
+  // The item has a card, but none approved yet: name it instead of picking it.
+  const unapprovedRc = rcLoaded && rcItems.length === 0 ? (allRcItems[0] ?? null) : null;
+  const unapprovedRcText = unapprovedRc
+    ? `Route Card ${unapprovedRc.code} ${
+        unapprovedRc.approvalStatus === 'rejected' ? 'was rejected' : 'is waiting for approval'
+      }`
+    : null;
 
   // One route card per item is the rule, so the usual answer is exactly one
   // row — preselect it rather than make the user pick the only option.
@@ -208,7 +221,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
   // rows (a sub-assembly or the top assembly) needs no raw material — the
   // server decides and says so in `mlIsAssembly`. A leaf part raised from a
   // Multi-Level Plan still needs RM, so it keeps the block like every plan.
-  const planHasNoRawMaterial = planHasNoRawMaterialRaw && !plan?.mlIsAssembly;
+  // Owner 2026-10-24: a JWSO-line plan needs no RM either (customer's material);
+  // the Raw Material Available tick stays compulsory. Same rule as the server.
+  const planHasNoRawMaterial = planHasNoRawMaterialRaw && !plan?.mlIsAssembly && !plan?.jwLineId;
   const NO_PLAN_RAW_MATERIAL =
     // ADR-218 — must match the server's wording in production-orders/service.ts.
     "This plan has no raw material — fill RM Grade and RM Size on the item's Route Card (or on its BOM line), then open the plan and save it again.";
@@ -221,6 +236,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
     rawMaterialAvailable &&
     !planHasNoRawMaterial &&
     !noRouteCard &&
+    !unapprovedRc &&
     !directPurchase;
 
   const save = async (): Promise<void> => {
@@ -258,19 +274,21 @@ function ProductionOrderNewPage(): React.JSX.Element {
     ? 'Plan is required.'
     : noRouteCard
       ? 'No Route Card for this item.'
-      : !routeCardId
-        ? 'Route Card is required.'
-        : directPurchase
-          ? 'Buy item — no Production Order.'
-          : !targetDate
-            ? 'PRO Target Date is required.'
-            : orderQtyError
-              ? orderQtyError
-              : planHasNoRawMaterial
-                ? NO_PLAN_RAW_MATERIAL
-                : !rawMaterialAvailable
-                  ? NO_RAW_MATERIAL
-                  : undefined;
+      : unapprovedRcText
+        ? `${unapprovedRcText}.`
+        : !routeCardId
+          ? 'Route Card is required.'
+          : directPurchase
+            ? 'Buy item — no Production Order.'
+            : !targetDate
+              ? 'PRO Target Date is required.'
+              : orderQtyError
+                ? orderQtyError
+                : planHasNoRawMaterial
+                  ? NO_PLAN_RAW_MATERIAL
+                  : !rawMaterialAvailable
+                    ? NO_RAW_MATERIAL
+                    : undefined;
 
   // FLOW FIX: "create it" opens the Route Card form already on this plan's
   // item (route-cards/new reads ?itemId=&itemCode=&itemName=), so the planner
@@ -385,6 +403,14 @@ function ProductionOrderNewPage(): React.JSX.Element {
             )}
           </Banner>
         ) : null}
+        {unapprovedRc ? (
+          <Banner tone="warn" role="alert">
+            ⚠ {unapprovedRcText} — a Production Order can be raised once it is approved.{' '}
+            <Link to="/route-cards/$id" params={{ id: unapprovedRc.id }} className="fw-700">
+              Open it
+            </Link>
+          </Banner>
+        ) : null}
         {directPurchase ? (
           <Banner tone="warn" role="alert">
             ⚠ Item {planItemCode ?? ''} is a Buy item — no Production Order.
@@ -463,7 +489,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
                 id="po-route-card"
                 className="innovic-select"
                 value={routeCardId ?? ''}
-                disabled={!plan || noRouteCard || routeCards.isLoading}
+                disabled={!plan || noRouteCard || Boolean(unapprovedRc) || routeCards.isLoading}
                 title={
                   routeCard
                     ? `${routeCard.code} · Route Card Rev ${routeCard.currentRevision}`
@@ -478,7 +504,9 @@ function ProductionOrderNewPage(): React.JSX.Element {
                       ? 'Loading Route Cards…'
                       : noRouteCard
                         ? 'No Route Card for this item'
-                        : 'Select Route Card…'}
+                        : unapprovedRc
+                          ? 'Route Card not approved yet'
+                          : 'Select Route Card…'}
                 </option>
                 {/* The box holds the code only. "IN-RC-00012 · Route Card Rev 2"
                     needs ~175px and the quarter cell gives the box 167px at

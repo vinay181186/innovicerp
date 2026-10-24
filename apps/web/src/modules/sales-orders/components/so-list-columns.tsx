@@ -326,12 +326,16 @@ export function soRowMenu(
     canAssign: boolean;
     onAssign: (so: SalesOrderListItem) => void;
     onDelete: (so: SalesOrderListItem) => void;
+    /** ADR-235 — Cancel SO: the Edit or Approve tick (the server decides). */
+    canCancel: boolean;
+    onCancel: (so: SalesOrderListItem) => void;
     /** The SO print (use-order-print.tsx): in-app preview, and ⬇ PDF. */
     onPreview: (so: SalesOrderListItem) => void;
     onDownload: (so: SalesOrderListItem) => Promise<void>;
   },
 ): RowMenuItem[] {
   const { canEdit, canDelete, canPlan, canAssign, onAssign, onDelete } = opts;
+  const cancelled = so.status === 'cancelled';
   return [
     { key: 'preview', label: 'Preview', icon: 'eye', onSelect: () => opts.onPreview(so) },
     {
@@ -344,7 +348,7 @@ export function soRowMenu(
       key: 'edit',
       label: 'Edit',
       icon: 'pencil',
-      hidden: !canEdit,
+      hidden: !canEdit || cancelled,
       to: `/sales-orders/${so.id}/edit`,
     },
     {
@@ -360,8 +364,16 @@ export function soRowMenu(
       label: 'Assign Task',
       icon: 'user-round',
       group: 'assign',
-      hidden: !canAssign || so.status === 'closed',
+      hidden: !canAssign || so.status === 'closed' || cancelled,
       onSelect: () => onAssign(so),
+    },
+    {
+      key: 'cancel',
+      label: 'Cancel SO',
+      icon: 'x',
+      group: 'danger',
+      hidden: !opts.canCancel || (so.status !== 'draft' && so.status !== 'open'),
+      onSelect: () => opts.onCancel(so),
     },
     {
       key: 'delete',

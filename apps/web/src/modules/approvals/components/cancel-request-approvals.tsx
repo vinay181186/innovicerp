@@ -62,6 +62,16 @@ function docHref(docType: CancelDocType, docId: string, docCode: string): string
       return `/purchase-requests/${docId}`;
     case 'purchase_order':
       return `/purchase-orders/${docId}`;
+    case 'jw_dc_outward':
+      return `/jw-dc/${docId}`;
+    case 'plan':
+      return `/plans/${docId}`;
+    case 'job_work_order':
+      return `/job-work-orders/${docId}`;
+    case 'sales_order':
+      return `/sales-orders/${docId}`;
+    case 'grn':
+      return `/goods-receipt-notes/${docId}`;
   }
 }
 

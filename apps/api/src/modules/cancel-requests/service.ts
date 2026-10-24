@@ -60,6 +60,11 @@ const ACTIVITY_ENTITY: Record<CancelDocType, string> = {
   tool_issue: 'ToolIssue',
   purchase_request: 'PurchaseRequest',
   purchase_order: 'PurchaseOrder',
+  jw_dc_outward: 'JwDcOutward',
+  plan: 'Plan',
+  job_work_order: 'JobWorkOrder',
+  sales_order: 'SalesOrder',
+  grn: 'GoodsReceiptNote',
 };
 
 type RequestDbRow = typeof cancelRequests.$inferSelect;

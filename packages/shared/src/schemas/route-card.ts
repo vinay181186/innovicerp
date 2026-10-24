@@ -17,6 +17,8 @@
 // superseded — the value is minutes per piece everywhere.)
 
 import { z } from 'zod';
+import { ROUTE_CARD_APPROVAL_STATUSES } from '../enums/route-card-approval';
+import { activityReasonSchema } from '../enums/activity';
 import { sfRawParamSchema } from './list-query';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { OP_TYPES } from '../enums/op-type';
@@ -66,6 +68,16 @@ export const routeCardSchema = z.object({
    *  Purchase, the same choice SO Planning asks per plan. Defaults to
    *  manufacture; `assembly` is a planning-only value never stored here. */
   planType: planTypeSchema.default('manufacture'),
+  /** ADR-253 — Pending Approval / Approved / Rejected. Only `approved` may be
+   *  used to raise a Production Order or an ML-plan order. */
+  approvalStatus: z.enum(ROUTE_CARD_APPROVAL_STATUSES).default('pending'),
+  approvedBy: z.string().uuid().nullable().default(null),
+  approvedByName: z.string().nullable().default(null),
+  approvedAt: z.string().nullable().default(null),
+  rejectedBy: z.string().uuid().nullable().default(null),
+  rejectedByName: z.string().nullable().default(null),
+  rejectedAt: z.string().nullable().default(null),
+  rejectionReason: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -274,3 +286,21 @@ export const updateRouteCardInputSchema = z.object({
   expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdateRouteCardInput = z.infer<typeof updateRouteCardInputSchema>;
+
+// ─── ADR-253: approve / reject a NEW route card ───────────────────────────
+// POST /route-cards/:id/approve and /reject — pending → approved / rejected.
+// Approve tick on Route Card Master (routecard_create · approve); the creator
+// may approve their own card (same as PO / PR).
+export const approveRouteCardInputSchema = z.object({
+  remarks: z.string().trim().max(500).optional(),
+  /** The card's updatedAt as the approver saw it (§20.4) — a card edited
+   *  since is refused, so nobody approves a routing they never saw. */
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+});
+export type ApproveRouteCardInput = z.infer<typeof approveRouteCardInputSchema>;
+
+export const rejectRouteCardInputSchema = z.object({
+  reason: activityReasonSchema,
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+});
+export type RejectRouteCardInput = z.infer<typeof rejectRouteCardInputSchema>;

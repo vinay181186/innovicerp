@@ -108,13 +108,19 @@ export function ApprovalInbox({
     () => [
       ...approvals.pr.map((row) => ({ kind: 'pr' as const, row })),
       ...approvals.po.map((row) => ({ kind: 'po' as const, row })),
+      // ADR-253 — NEW Route Cards (older API answers carry no `rc`).
+      ...(approvals.rc ?? []).map((row) => ({ kind: 'rc' as const, row })),
       ...approvals.logEntry.map((row) => ({ kind: 'logEntry' as const, row })),
     ],
     [approvals],
   );
   const keys = items.map(inboxKey);
   const actions = useApprovalActions(keys.join('|'));
-  const total = approvals.counts.pr + approvals.counts.po + approvals.counts.logEntry;
+  const total =
+    approvals.counts.pr +
+    approvals.counts.po +
+    (approvals.counts.rc ?? 0) +
+    approvals.counts.logEntry;
   // A selection only ever holds rows still on screen.
   const selected = items.filter((i) => sel.has(inboxKey(i)));
 

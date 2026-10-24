@@ -105,10 +105,13 @@ export const approvalInboxResponseSchema = z.object({
     pr: z.number().int().nonnegative(),
     po: z.number().int().nonnegative(),
     logEntry: z.number().int().nonnegative(),
+    /** ADR-253 — NEW Route Cards waiting for approval. */
+    rc: z.number().int().nonnegative().default(0),
   }),
   pr: z.array(approvalInboxRowSchema),
   po: z.array(approvalInboxRowSchema),
   logEntry: z.array(approvalInboxRowSchema),
+  rc: z.array(approvalInboxRowSchema).default([]),
 });
 export type ApprovalInboxResponse = z.infer<typeof approvalInboxResponseSchema>;
 
@@ -116,7 +119,7 @@ export type ApprovalInboxResponse = z.infer<typeof approvalInboxResponseSchema>;
 // Sort & Filter run on the server over every waiting document; `total` is the
 // whole matching set. The screen asks for 25; the max stays 200.
 export const approvalInboxListQuerySchema = z.object({
-  section: z.enum(['pr', 'po']),
+  section: z.enum(['pr', 'po', 'rc']),
   search: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().positive().max(200).default(200),
   offset: z.coerce.number().int().nonnegative().default(0),

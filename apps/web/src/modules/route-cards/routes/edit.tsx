@@ -7,6 +7,7 @@ import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useToast } from '@/ui/feedback';
 import { useRouteCard, useUpdateRouteCard } from '../api';
 import {
   RouteCardForm,
@@ -35,6 +36,7 @@ function RouteCardEditPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'routecard_create');
+  const toast = useToast();
   const goBack = useCallback(
     () => void navigate({ to: '/route-cards/$id', params: { id } }),
     [navigate, id],
@@ -71,6 +73,8 @@ function RouteCardEditPage(): React.JSX.Element {
         return;
       }
       opened.saved(updated.updatedAt);
+      // ADR-253 — saving a REJECTED card sends it back to Pending Approval.
+      if (detail?.approvalStatus === 'rejected') toast.ok('Saved — sent for approval again.');
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');

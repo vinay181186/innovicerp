@@ -933,6 +933,15 @@ export const routeCards = pgTable(
     // asks per plan (migration 0123). The card is the natural home for the
     // default; the planner starts from it instead of re-deciding per order.
     planType: planTypeEnum('plan_type').notNull().default('manufacture'),
+    // ADR-253 (migration 0219): pending / approved / rejected. Only an APPROVED
+    // card may drive work. DB default stays 'approved' (old code during the
+    // release window); every new-code insert sets 'pending' EXPLICITLY.
+    approvalStatus: text('approval_status').notNull().default('approved'),
+    approvedBy: uuid('approved_by').references((): AnyPgColumn => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    rejectedBy: uuid('rejected_by').references((): AnyPgColumn => users.id),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -946,6 +955,10 @@ export const routeCards = pgTable(
   },
   (t) => [
     check(
+      'route_cards_approval_status_check',
+      sql`${t.approvalStatus} IN ('pending', 'approved', 'rejected')`,
+    ),
+    check(
       'route_cards_rm_qty_per_piece_check',
       sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
     ),
@@ -958,6 +971,9 @@ export const routeCards = pgTable(
     index('route_cards_item_idx')
       .on(t.itemId)
       .where(sql`${t.deletedAt} is null`),
+    index('route_cards_pending_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null and ${t.approvalStatus} = 'pending'`),
     pgPolicy('route_cards_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -1776,6 +1792,10 @@ export const salesOrders = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0220) — the cancel's reason / stamp.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('sales_orders_company_code_uniq')
@@ -2062,6 +2082,10 @@ export const jobWorkOrders = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0220) — the cancel's reason / stamp.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('job_work_orders_company_code_uniq')
@@ -2601,6 +2625,10 @@ export const goodsReceiptNotes = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0220) — the cancel's reason / stamp.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('goods_receipt_notes_company_code_uniq')
@@ -4147,6 +4175,10 @@ export const plans = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0220) — the cancel's reason / stamp.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -5828,6 +5860,10 @@ export const jwDcOutward = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0220) — the cancel's reason / stamp.
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('jw_dc_outward_company_code_uniq')

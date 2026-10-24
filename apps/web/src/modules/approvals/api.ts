@@ -34,11 +34,12 @@ export function useApprovalInbox(opts: { enabled?: boolean; refetchOnMount?: 'al
   });
 }
 
-/** Everything waiting for the caller (PR + PO + Log Entry) — the nav badge. */
+/** Everything waiting for the caller (PR + PO + Log Entry + new Route Cards,
+ *  ADR-253) — the nav badge. */
 export function useApprovalInboxTotal(enabled: boolean): number {
   const q = useApprovalInbox({ enabled });
   const c = q.data?.counts;
-  return c ? c.pr + c.po + c.logEntry : 0;
+  return c ? c.pr + c.po + c.logEntry + (c.rc ?? 0) : 0;
 }
 
 /** Op Entry approvals, one 25-row page (ADR-201). Keyed under op-entry's

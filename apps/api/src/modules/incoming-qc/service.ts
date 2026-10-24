@@ -28,6 +28,7 @@ import {
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertQtyFitsUom, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { isOspOpFullyBack } from '../delivery-challans/receipt-cascades';
 import {
   creditGrnQcStock,
@@ -360,6 +361,9 @@ export async function submitIncomingQc(
       .for('update');
     const line = rows[0];
     if (!line) throw new NotFoundError('GRN line not found. Refresh the page.');
+    // ADR-235 — no inspection while a Cancel Request waits on this GRN (the
+    // cancel worker locks this same line, so the two serialise).
+    await assertNoPendingCancel(tx, 'grn', line.grnId);
 
     // ADR-182 — an OSP return belonging to a short-closed Production Order's
     // Job Card cannot be inspected. A plain purchase GRN resolves to no jc_op

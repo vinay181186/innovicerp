@@ -65,6 +65,7 @@ import { ensurePartyMaterial, ensureRmItemForOrderItem } from '../../lib/jw-rm';
 import { jwLineUsage, lockJwLine, recomputeJwHeaderStatus } from '../../lib/jw-line-state';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertBomUsableForJobWork, cascadeBomToJwLine } from '../bom-master/cascade';
 import type {
   CreateJobWorkOrderInput,
@@ -512,7 +513,7 @@ export async function listJobWorkOrders(
         COALESCE(agg.dispatched_qty, 0)::int AS "dispatchedQty",
         COALESCE(jca.jc_qty, 0)::int AS "jcQty",
         agg.earliest_due::text AS "earliestDueDate",
-        jw.status, jw.remarks,
+        jw.status, jw.cancel_reason AS "cancelReason", jw.remarks,
         jw.client_material_qty::text AS "clientMaterialQty",
         COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty",
         COALESCE(agg.rm_required_qty, 0)::int AS "rmRequiredQty"
@@ -543,6 +544,7 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     jcQty: Number(r['jcQty'] ?? 0),
     earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
     status: r['status'] as JobWorkOrder['status'],
+    cancelReason: (r['cancelReason'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     clientMaterialQty: (r['clientMaterialQty'] as string | null) ?? null,
     partyReceivedQty: Number(r['partyReceivedQty'] ?? 0),
@@ -902,6 +904,16 @@ export async function shortCloseJobWorkOrderLine(
   if (!reason) throw new ValidationError('Reason is required to short-close a JWSO line.');
 
   const jobWorkOrderId = await withUserContext(user, async (tx) => {
+    // ADR-235 — header first, then the line (the JWSO cancel's lock order), and
+    // nothing closes under a pending Cancel Request.
+    const hdr = (await tx.execute(sql`
+      SELECT jw.id FROM public.job_work_orders jw
+      JOIN public.job_work_order_lines l ON l.job_work_order_id = jw.id
+      WHERE l.id = ${lineId}::uuid AND l.company_id = ${companyId}::uuid
+        AND l.deleted_at IS NULL AND jw.deleted_at IS NULL
+      FOR UPDATE OF jw
+    `)) as unknown as Array<{ id: string }>;
+    if (hdr[0]) await assertNoPendingCancel(tx, 'job_work_order', hdr[0].id);
     const line = await lockJwLine(tx, companyId, lineId);
     const where = `${line.jwCode} Ln ${line.lineNo}`;
     if (line.shortClosedAt) throw new ConflictError(`${where} is already short-closed.`);
@@ -995,6 +1007,13 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
       ? row.deletedAt instanceof Date
         ? row.deletedAt.toISOString()
         : String(row.deletedAt)
+      : null,
+    // ADR-235 — the cancel's reason and time (null while live).
+    cancelReason: row.cancelReason ?? null,
+    cancelledAt: row.cancelledAt
+      ? row.cancelledAt instanceof Date
+        ? row.cancelledAt.toISOString()
+        : String(row.cancelledAt)
       : null,
   };
 }
@@ -1312,6 +1331,12 @@ export async function updateJobWorkOrderTx(
       .limit(1);
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
+    // ADR-235 — a Cancelled JWSO is read-only, and nothing changes under a
+    // pending Cancel Request (the header lock above serialises with it).
+    if (existingHdr.status === 'cancelled') {
+      throw new ConflictError(`${existingHdr.code} is Cancelled — it can't be edited.`);
+    }
+    await assertNoPendingCancel(tx, 'job_work_order', id);
     // R5: refuse the save if someone else edited the JWSO after this form opened it.
     assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
 
@@ -1555,6 +1580,8 @@ export async function updateJobWorkOrderOrStage(
     input.expectedUpdatedAt,
     user,
     async (tx) => {
+      // ADR-235 — nothing is staged while a Cancel Request waits on the JWSO.
+      await assertNoPendingCancel(tx, 'job_work_order', id);
       if (input.lines !== undefined) {
         const currentLines = await tx
           .select({

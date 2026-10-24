@@ -97,6 +97,8 @@ import {
 import {
   PLAN_ACTIVE_ORDER_COUNT_SQL,
   PLAN_COVERED_QTY_SQL,
+  PLAN_HAS_ROUTE_CARD_SQL,
+  PLAN_HAS_USABLE_ROUTE_CARD_SQL,
   PLAN_LATEST_ORDER_CODE_SQL,
   PLAN_LATEST_ORDER_ID_SQL,
   PLAN_LATEST_ORDER_STATUS_SQL,
@@ -105,10 +107,12 @@ import {
   planDerivedStatusSql,
   readPlanOrderCoverage,
 } from '../../lib/plan-order-coverage';
+import { isRouteCardUsable } from '../../lib/route-card-usable';
 import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertMlNodeCapOnEdit } from '../ml-plan/edit-cap';
 import { assertLineFreeForPlan } from '../ml-plan/guards';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
@@ -126,6 +130,7 @@ import {
   routeCardHasRmItem,
 } from './rm-backfill';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 
 // Today's calendar date in IST (same as assembly / production-schedule). The
 // UTC date is still yesterday between 00:00 and 05:30 IST.
@@ -366,14 +371,15 @@ const SO_LINE_CLIENT_PO_LINE_NO = polOf(
 // several live orders, and a LEFT JOIN on plan_id would return one copy of the
 // plan row per order. Every order fact is read as a correlated scalar instead
 // (lib/plan-order-coverage.ts), so the list is one row per plan again.
-const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
-  SELECT 1 FROM public.route_cards rc
-  WHERE rc.company_id = ${plans.companyId}
-    AND rc.item_id = ${plans.itemId}
-    AND rc.deleted_at IS NULL
-)`;
+//
+// ADR-253 — the route-card facts come from ONE shared fragment
+// (lib/plan-order-coverage.ts PLAN_ROUTE_CARD_USABLE_SQL): "has a live card"
+// and "that card is approved" are both read off it, so a Pending Approval card
+// shows 'route_card_approval_pending', never 'gen_production_order'.
+const HAS_ROUTE_CARD_SQL = PLAN_HAS_ROUTE_CARD_SQL;
+const ROUTE_CARD_USABLE_SQL = PLAN_HAS_USABLE_ROUTE_CARD_SQL;
 
-const DERIVED_STATUS_SQL = planDerivedStatusSql(HAS_ROUTE_CARD_SQL);
+const DERIVED_STATUS_SQL = planDerivedStatusSql();
 
 /** ADR-193 phase 3a — the plan's raw-material item code, for display. A scalar
  *  so it cannot multiply the plan row; no deleted_at filter, so a plan keeps
@@ -487,6 +493,7 @@ export async function listPlans(
         // Close only when the card is actually finished.
         jcStatus: sql<string | null>`jcs.computed_status`,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        routeCardUsable: ROUTE_CARD_USABLE_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
         mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
         soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
@@ -566,6 +573,7 @@ export async function listPlans(
             opsSource: r.plan.opsSource,
             planStatus: r.plan.planStatus,
             hasRouteCard,
+            routeCardUsable: Boolean(r.routeCardUsable),
             activeOrderCount: Number(r.activeOrderCount ?? 0),
             openOrderCount: Number(r.openOrderCount ?? 0),
             pendingQty: Number(r.pendingQty ?? 0),
@@ -622,6 +630,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
         openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
+        routeCardUsable: ROUTE_CARD_USABLE_SQL,
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
         mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
         soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
@@ -664,6 +673,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         opsSource: row.plan.opsSource,
         planStatus: row.plan.planStatus,
         hasRouteCard: Boolean(row.hasRouteCard),
+        routeCardUsable: Boolean(row.routeCardUsable),
         activeOrderCount: Number(row.activeOrderCount ?? 0),
         openOrderCount: Number(row.openOrderCount ?? 0),
         pendingQty: Number(row.pendingQty ?? 0),
@@ -865,13 +875,24 @@ async function assertPlanQtyWithinRemaining(
   }
 
   // JW lines: Plan Qty against the order qty less the other plans.
-  const jwRows = (await tx.execute(sql`
-    SELECT order_qty AS "orderQty" FROM public.job_work_order_lines
-    WHERE id = ${jwLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-    LIMIT 1
-  `)) as unknown as Array<{ orderQty: number }>;
-  if (!jwRows[0]) return;
-  const orderQty = Number(jwRows[0].orderQty);
+  // ADR-235 — lock the JWSO line first (the JWSO cancel locks header → lines,
+  // so a plan create queues behind a running cancel and then sees it), and
+  // refuse a cancelled / short-closed / closed line. A cut of an existing plan
+  // is still let through, as on the SO branch above.
+  if (!jwLineId) return;
+  const jwLine = await lockJwLine(tx, companyId, jwLineId);
+  if (excludePlanId) {
+    const ownRows = (await tx.execute(sql`
+      SELECT COALESCE(SUM(plan_qty), 0)::int AS "own" FROM public.plans
+      WHERE id = ${excludePlanId}::uuid AND jw_line_id = ${jwLineId}::uuid
+        AND deleted_at IS NULL AND plan_status <> 'cancelled'
+    `)) as unknown as Array<{ own: number }>;
+    const own = Number(ownRows[0]?.own ?? 0);
+    if (!(own > 0 && planQty <= own)) assertJwLineOpenForWork(jwLine, 'plan it');
+  } else {
+    assertJwLineOpenForWork(jwLine, 'plan it');
+  }
+  const orderQty = jwLine.orderQty;
   const lineCond = sql`p.jw_line_id = ${jwLineId}::uuid`;
   const excl = excludePlanId ? sql`AND p.id <> ${excludePlanId}::uuid` : sql``;
   const rows = (await tx.execute(sql`
@@ -1315,6 +1336,7 @@ export async function updatePlanTx(
     .for('update');
   const row = existing[0];
   if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+  await assertNoPendingCancel(tx, 'plan', row.id);
   // E5: an Entry-only caller, checked under the lock so a concurrent finalise wins.
   if (opts?.ownDraftOnly) {
     const refusal = ownDraftPlanRefusal(row, user.id);
@@ -1713,6 +1735,7 @@ export async function updatePlanOrStage(
     input.expectedUpdatedAt,
     user,
     async (tx) => {
+      await assertNoPendingCancel(tx, 'plan', id);
       if (input.ops !== undefined) {
         const currentOps = await tx
           .select({
@@ -1757,6 +1780,7 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
       .limit(1);
     const row = existing[0];
     if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+    await assertNoPendingCancel(tx, 'plan', row.id);
 
     if (row.planStatus === 'planned') {
       // Idempotent: caller sent finalize again on an already-planned row.
@@ -1832,6 +1856,7 @@ export async function softDeletePlan(
       .limit(1);
     const row = existing[0];
     if (!row) throw new NotFoundError('Plan not found. It may have been deleted.');
+    await assertNoPendingCancel(tx, 'plan', row.id);
 
     if (!EDITABLE_STATUSES.includes(row.planStatus)) {
       throw new ConflictError(
@@ -1912,6 +1937,7 @@ export async function getDefaultRouteOpsForItem(
         id: routeCards.id,
         code: routeCards.code,
         currentRevision: routeCards.currentRevision,
+        approvalStatus: routeCards.approvalStatus,
         rawMaterialGradeId: routeCards.rawMaterialGradeId,
         rawMaterialGradeText: routeCards.rawMaterialGradeText,
         rawMaterialSizeId: routeCards.rawMaterialSizeId,
@@ -1969,17 +1995,21 @@ export async function getDefaultRouteOpsForItem(
       outsourceCost: 0,
     }));
 
+    // ADR-253: ops may prefill from any live card, but raw material reaches a
+    // plan / Job Card only from an APPROVED card (the readRouteCardRawMaterial
+    // rule) — a pending or rejected card's RM stays on the card.
+    const rmOk = isRouteCardUsable(rc.approvalStatus);
     return {
       ops: mapped,
       routeCardCode: rc.code,
       routeCardRevision: rc.currentRevision,
-      rawMaterialGradeId: rc.rawMaterialGradeId,
-      rawMaterialGradeText: rc.rawMaterialGradeText,
-      rawMaterialSizeId: rc.rawMaterialSizeId,
-      rawMaterialSizeText: rc.rawMaterialSizeText,
-      rawMaterialItemId: rc.rawMaterialItemId,
-      rawMaterialItemCode: rc.rawMaterialItemCode ?? null,
-      rmQtyPerPiece: rc.rmQtyPerPiece,
+      rawMaterialGradeId: rmOk ? rc.rawMaterialGradeId : null,
+      rawMaterialGradeText: rmOk ? rc.rawMaterialGradeText : null,
+      rawMaterialSizeId: rmOk ? rc.rawMaterialSizeId : null,
+      rawMaterialSizeText: rmOk ? rc.rawMaterialSizeText : null,
+      rawMaterialItemId: rmOk ? rc.rawMaterialItemId : null,
+      rawMaterialItemCode: rmOk ? (rc.rawMaterialItemCode ?? null) : null,
+      rmQtyPerPiece: rmOk ? rc.rmQtyPerPiece : null,
     };
   });
 }
@@ -2029,6 +2059,7 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
       .for('update');
     const plan = existing[0];
     if (!plan) throw new NotFoundError('Plan not found. It may have been deleted.');
+    await assertNoPendingCancel(tx, 'plan', plan.id);
     // ADR-170 — a route-card-driven plan is never executed here: its Job Card
     // is built by a Production Order, which is where the Route Card and the
     // target date are chosen.
@@ -2041,6 +2072,11 @@ export async function executePlan(id: string, user: AuthContext): Promise<Execut
       throw new ValidationError(
         `Only a Planned plan can create a JC / PR. This one is ${labelOf(PLAN_STATUS_LABEL, plan.planStatus)}.`,
       );
+    }
+    // ADR-235 — a JWSO plan: lock its JW line (plan → line; the JWSO cancel
+    // never locks plans) and refuse a cancelled / closed line.
+    if (plan.jwLineId) {
+      assertJwLineOpenForWork(await lockJwLine(tx, companyId, plan.jwLineId), 'create a JC / PR');
     }
 
     let result: ExecutePlanResult;
@@ -2750,6 +2786,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         prCreated: byStatus.get('pr_created') ?? 0,
         inProduction: byStatus.get('in_production') ?? 0,
         rcPending: byStatus.get('route_card_pending') ?? 0,
+        rcApprovalPending: byStatus.get('route_card_approval_pending') ?? 0,
         rcCreated: byStatus.get('gen_production_order') ?? 0,
         complete: byStatus.get('complete') ?? 0,
       },
@@ -2833,6 +2870,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       activeOrderCount: PLAN_ACTIVE_ORDER_COUNT_SQL,
       openOrderCount: PLAN_OPEN_ORDER_COUNT_SQL,
       hasRouteCard: HAS_ROUTE_CARD_SQL,
+      routeCardUsable: ROUTE_CARD_USABLE_SQL,
       rmItemCode: PLAN_RM_ITEM_CODE_SQL,
       mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
       soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
@@ -2876,6 +2914,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       opsSource: row.plan.opsSource,
       planStatus: row.plan.planStatus,
       hasRouteCard: Boolean(row.hasRouteCard),
+      routeCardUsable: Boolean(row.routeCardUsable),
       activeOrderCount: Number(row.activeOrderCount ?? 0),
       openOrderCount: Number(row.openOrderCount ?? 0),
       pendingQty: Number(row.pendingQty ?? 0),
@@ -2952,6 +2991,13 @@ function toPlan(
       ? row.deletedAt instanceof Date
         ? row.deletedAt.toISOString()
         : String(row.deletedAt)
+      : null,
+    // ADR-235 (0220) — the cancel's reason and time (null while live).
+    cancelReason: row.cancelReason ?? null,
+    cancelledAt: row.cancelledAt
+      ? row.cancelledAt instanceof Date
+        ? row.cancelledAt.toISOString()
+        : String(row.cancelledAt)
       : null,
   };
 }

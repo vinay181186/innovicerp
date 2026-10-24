@@ -143,6 +143,9 @@ export const planSchema = z.object({
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
   deletedAt: z.string().nullable(),
+  /** ADR-235 — the cancel's reason and time (null while live). */
+  cancelReason: z.string().nullable().default(null),
+  cancelledAt: z.string().nullable().default(null),
 });
 export type Plan = z.infer<typeof planSchema>;
 
@@ -488,6 +491,8 @@ export const planningDashboardKpiSchema = z.object({
   /** ADR-185 — route-card plans waiting for a route card / for a Production
    *  Order. Every tile counts plans by the status their row shows. */
   rcPending: z.number().int().nonnegative().default(0),
+  /** ADR-253 — route-card plans whose item card is waiting for approval. */
+  rcApprovalPending: z.number().int().nonnegative().default(0),
   rcCreated: z.number().int().nonnegative().default(0),
 });
 export type PlanningDashboardKpi = z.infer<typeof planningDashboardKpiSchema>;

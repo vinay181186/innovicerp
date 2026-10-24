@@ -27,6 +27,7 @@
 
 import { sql, type SQL } from 'drizzle-orm';
 import { plans } from '../db/schema';
+import { routeCardUsableSql } from './route-card-usable';
 import type { DbTransaction } from '../db/with-user-context';
 
 /** ADR-184 — the qty ONE Production Order (aliased `po`) contributes to its
@@ -98,18 +99,45 @@ export const PLAN_LATEST_ORDER_ID_SQL = latestOrderField<string | null>('id');
 export const PLAN_LATEST_ORDER_CODE_SQL = latestOrderField<string | null>('code');
 export const PLAN_LATEST_ORDER_STATUS_SQL = latestOrderField<string | null>('status');
 
+/** ADR-253 — the ONE route-card fact a plan's derived status hangs on, as a
+ *  tri-state over the item's live (not deleted) Route Card:
+ *    NULL  → no live card            ('route_card_pending')
+ *    false → a live card, not yet approved — Pending Approval or Rejected
+ *                                     ('route_card_approval_pending')
+ *    true  → an APPROVED card         ('gen_production_order')
+ *  Approval is read through routeCardUsableSql — never a hand-written check.
+ *  Every module (plans, SO Planning, flow views, dashboard) uses this one
+ *  fragment instead of keeping its own EXISTS copy. */
+export const PLAN_ROUTE_CARD_USABLE_SQL = sql<boolean | null>`(
+  SELECT bool_or(${routeCardUsableSql('rc')}) FROM public.route_cards rc
+  WHERE rc.company_id = ${plans.companyId}
+    AND rc.item_id = ${plans.itemId}
+    AND rc.deleted_at IS NULL
+)`;
+
+/** True when the plan's item has a live Route Card, approved or not (ADR-170).
+ *  Derived from PLAN_ROUTE_CARD_USABLE_SQL so the two can never disagree. */
+export const PLAN_HAS_ROUTE_CARD_SQL = sql<boolean>`(${PLAN_ROUTE_CARD_USABLE_SQL} IS NOT NULL)`;
+
+/** ADR-253 — true only when that live card is APPROVED (may drive work). */
+export const PLAN_HAS_USABLE_ROUTE_CARD_SQL = sql<boolean>`COALESCE(${PLAN_ROUTE_CARD_USABLE_SQL}, false)`;
+
 /**
  * The SQL twin of `derivePlanStatus` (lib/plan-derived-status.ts). Same
- * branches, same order (ADR-184); `hasRouteCardSql` is passed in because each
- * module already has its own copy of that EXISTS.
+ * branches, same order (ADR-184). ADR-253: the route-card branch is
+ * three-way — no live card / live but not approved / approved — read off the
+ * single PLAN_ROUTE_CARD_USABLE_SQL fragment above.
  */
-export function planDerivedStatusSql(hasRouteCardSql: SQL<boolean>): SQL<string | null> {
+export function planDerivedStatusSql(): SQL<string | null> {
   return sql<string | null>`CASE
   WHEN ${plans.opsSource} <> 'route_card' THEN NULL
   WHEN ${plans.planStatus} = 'cancelled' THEN NULL
   WHEN ${PLAN_OPEN_ORDER_COUNT_SQL} > 0 THEN 'in_production'
   WHEN ${PLAN_PENDING_QTY_SQL} > 0
-    THEN CASE WHEN ${hasRouteCardSql} THEN 'gen_production_order' ELSE 'route_card_pending' END
+    THEN CASE ${PLAN_ROUTE_CARD_USABLE_SQL}
+      WHEN true THEN 'gen_production_order'
+      WHEN false THEN 'route_card_approval_pending'
+      ELSE 'route_card_pending' END
   ELSE 'production_complete'
 END`;
 }

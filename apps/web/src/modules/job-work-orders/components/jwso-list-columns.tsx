@@ -211,7 +211,18 @@ export function jwsoListColumns(
       kind: 'badge',
       header: 'JWSO Status',
       nowrap: true,
-      render: (jw) => <SoStatusBadge status={jw.status} draft={draftIds?.has(jw.jwId)} />,
+      // ADR-235 — a cancelled JWSO names its reason on hover.
+      render: (jw) => (
+        <span
+          title={
+            jw.status === 'cancelled' && jw.cancelReason
+              ? `Cancelled: ${jw.cancelReason}`
+              : undefined
+          }
+        >
+          <SoStatusBadge status={jw.status} draft={draftIds?.has(jw.jwId)} />
+        </span>
+      ),
     },
   ];
 }

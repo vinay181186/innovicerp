@@ -50,6 +50,8 @@ import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
+import { grnSourceReceiptBlockers } from './cancel';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, resolveGrnLineJobCardId } from './cascades';
 import {
   ActivityAction,
@@ -510,7 +512,9 @@ function escapeLikeTerm(raw: string): string {
 }
 
 export async function listGoodsReceiptNotes(
-  input: ListGoodsReceiptNotesQuery,
+  // includeCancelled optional for in-process callers (the route always parses
+  // it to a boolean); absent = live GRNs only, as before ADR-235.
+  input: Omit<ListGoodsReceiptNotesQuery, 'includeCancelled'> & { includeCancelled?: boolean },
   user: AuthContext,
 ): Promise<ListGoodsReceiptNotesResponse> {
   const companyId = requireCompany(user);
@@ -611,7 +615,33 @@ export async function listGoodsReceiptNotes(
     // Per-GRN line totals. One row per GRN, so the summary (= pager count)
     // query joins it too without changing its counts — it must, since Sort &
     // Filter can filter on Received / Accepted / Rejected.
-    const lineAggJoin = sql`LEFT JOIN (
+    // ADR-235 — `includeCancelled` adds the Cancelled GRNs (cancelled_at set;
+    // a cancel stamps deleted_at too) with the lines cancelled WITH them (the
+    // same deleted_at as the header — a line removed earlier keeps its own,
+    // older stamp). A Cancelled GRN waits for nothing, so its lines never count
+    // as QC pending. Off (the default), every fragment is exactly as before.
+    const withCancelled = input.includeCancelled === true;
+    const scopeFrag = withCancelled
+      ? sql`(grn.deleted_at IS NULL OR grn.cancelled_at IS NOT NULL)`
+      : sql`grn.deleted_at IS NULL`;
+    const lineAggJoin = withCancelled
+      ? sql`LEFT JOIN (
+        SELECT gl.goods_receipt_note_id,
+               COUNT(*) AS line_count,
+               SUM(gl.received_qty) AS total_received_qty,
+               SUM(gl.qc_accepted_qty) AS qc_accepted_qty,
+               SUM(gl.qc_rejected_qty) AS qc_rejected_qty,
+               SUM(CASE WHEN gh.deleted_at IS NULL
+                         AND gl.received_qty - gl.qc_accepted_qty - gl.qc_rejected_qty > 0
+                        THEN 1 ELSE 0 END) AS qc_pending_count
+        FROM public.goods_receipt_note_lines gl
+        JOIN public.goods_receipt_notes gh ON gh.id = gl.goods_receipt_note_id
+        WHERE gh.company_id = ${companyId}::uuid
+          AND (gl.deleted_at IS NULL
+               OR (gh.deleted_at IS NOT NULL AND gl.deleted_at = gh.deleted_at))
+        GROUP BY gl.goods_receipt_note_id
+      ) line_agg ON line_agg.goods_receipt_note_id = grn.id`
+      : sql`LEFT JOIN (
         SELECT goods_receipt_note_id,
                COUNT(*) AS line_count,
                SUM(received_qty) AS total_received_qty,
@@ -623,6 +653,10 @@ export async function listGoodsReceiptNotes(
         WHERE deleted_at IS NULL
         GROUP BY goods_receipt_note_id
       ) line_agg ON line_agg.goods_receipt_note_id = grn.id`;
+    const firstLineScope = withCancelled
+      ? sql`(fl.deleted_at IS NULL
+             OR (grn.deleted_at IS NOT NULL AND fl.deleted_at = grn.deleted_at))`
+      : sql`fl.deleted_at IS NULL`;
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to the list AND the
     // summary, so the pager total and the QC counts follow the filters too.
@@ -647,6 +681,7 @@ export async function listGoodsReceiptNotes(
         grn.created_at AS "createdAt", grn.created_by AS "createdBy",
         grn.updated_at AS "updatedAt", grn.updated_by AS "updatedBy",
         grn.deleted_at AS "deletedAt",
+        grn.cancel_reason AS "cancelReason", grn.cancelled_at AS "cancelledAt",
         v.name AS "vendorName",
         po.code AS "poCode",
         -- ADR-217: resolved, never read off po_code_text. A return raised
@@ -686,12 +721,12 @@ export async function listGoodsReceiptNotes(
         FROM public.goods_receipt_note_lines fl
         LEFT JOIN public.items fi ON fi.id = fl.item_id AND fi.deleted_at IS NULL
         WHERE fl.goods_receipt_note_id = grn.id
-          AND fl.deleted_at IS NULL
+          AND ${firstLineScope}
         ORDER BY fl.line_no ASC
         LIMIT 1
       ) first_line ON TRUE
       WHERE grn.company_id = ${companyId}::uuid
-        AND grn.deleted_at IS NULL
+        AND ${scopeFrag}
         ${searchFrag}
         ${vendorFrag}
         ${poFrag}
@@ -710,11 +745,20 @@ export async function listGoodsReceiptNotes(
     // QC-cleared if none has. "Today" is the IST calendar date (a bare
     // CURRENT_DATE is UTC, which is still yesterday before 05:30 IST).
     const summaryRows = await tx.execute(sql`
+      -- ADR-235: total_rows (the pager) counts every listed row; the tiles
+      -- count live GRNs only — a Cancelled GRN received nothing. Without
+      -- includeCancelled every row is live, so the two totals are equal.
       SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE per_grn.has_pending)::int AS qc_pending,
-        COUNT(*) FILTER (WHERE NOT per_grn.has_pending AND per_grn.line_count > 0)::int AS qc_cleared,
-        COUNT(*) FILTER (WHERE grn.grn_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date)::int AS today
+        COUNT(*)::int AS total_rows,
+        COUNT(*) FILTER (WHERE grn.deleted_at IS NULL)::int AS total,
+        COUNT(*) FILTER (WHERE grn.deleted_at IS NULL AND per_grn.has_pending)::int AS qc_pending,
+        COUNT(*) FILTER (
+          WHERE grn.deleted_at IS NULL AND NOT per_grn.has_pending AND per_grn.line_count > 0
+        )::int AS qc_cleared,
+        COUNT(*) FILTER (
+          WHERE grn.deleted_at IS NULL
+            AND grn.grn_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+        )::int AS today
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN LATERAL (
@@ -731,7 +775,7 @@ export async function listGoodsReceiptNotes(
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
       ${summaryLineAgg}
       WHERE grn.company_id = ${companyId}::uuid
-        AND grn.deleted_at IS NULL
+        AND ${scopeFrag}
         ${searchFrag}
         ${vendorFrag}
         ${poFrag}
@@ -754,7 +798,8 @@ export async function listGoodsReceiptNotes(
     // used to stand here skipped the search and the dates, so the header
     // counted every GRN in the company while the list showed the one that
     // matched. Reusing the summary keeps one predicate and removes a query.
-    const total = summary.total;
+    // (ADR-235: its total_rows, which also counts listed Cancelled GRNs.)
+    const total = Number(sumRow['total_rows'] ?? 0);
 
     const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items: rowsList, total, limit: input.limit, offset: input.offset, summary };
@@ -781,6 +826,8 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
+    cancelReason: (r['cancelReason'] as string | null) ?? null,
+    cancelledAt: maybeTsLike(r['cancelledAt']),
     vendorName: (r['vendorName'] as string | null) ?? null,
     poCode: (r['poCode'] as string | null) ?? null,
     ncCode: (r['ncCode'] as string | null) ?? null,
@@ -803,7 +850,14 @@ async function getGoodsReceiptNoteInternal(
   tx: DbTransaction,
   id: string,
   companyId: string,
+  /** ADR-235 — the detail page only: also return a Cancelled GRN (read-only)
+   *  with the lines cancelled with it. A trashed GRN stays not-found. */
+  opts: { includeCancelled?: boolean } = {},
 ): Promise<GoodsReceiptNoteDetail> {
+  const headerScope =
+    opts.includeCancelled === true
+      ? sql`(grn.deleted_at IS NULL OR grn.cancelled_at IS NOT NULL)`
+      : sql`grn.deleted_at IS NULL`;
   // Per docs/PARITY/linked-display-audit (memory project_linked_display_audit):
   // when an FK is set (vendor_id / purchase_order_id / line.item_id) we
   // resolve the joined display value here so the UI can render the actual
@@ -820,6 +874,7 @@ async function getGoodsReceiptNoteInternal(
         grn.created_at AS "createdAt", grn.created_by AS "createdBy",
         grn.updated_at AS "updatedAt", grn.updated_by AS "updatedBy",
         grn.deleted_at AS "deletedAt",
+        grn.cancel_reason AS "cancelReason", grn.cancelled_at AS "cancelledAt",
         grn.delivery_challan_id AS "deliveryChallanId",
         grn.nc_id AS "ncId",
         po.code AS "poCode",
@@ -839,11 +894,16 @@ async function getGoodsReceiptNoteInternal(
         ON nc.id = grn.nc_id AND nc.deleted_at IS NULL
       WHERE grn.id = ${id}::uuid
         AND grn.company_id = ${companyId}::uuid
-        AND grn.deleted_at IS NULL
+        AND ${headerScope}
       LIMIT 1
     `);
   const headerRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
   if (!headerRow) throw new NotFoundError('GRN not found. It may have been moved to Trash.');
+  // A Cancelled GRN: its lines are those stamped with the header's deleted_at.
+  const lineScope =
+    headerRow['deletedAt'] != null
+      ? sql`gnl.deleted_at = grn.deleted_at`
+      : sql`gnl.deleted_at IS NULL`;
 
   const lineResult = await tx.execute(sql`
       SELECT
@@ -1022,7 +1082,7 @@ async function getGoodsReceiptNoteInternal(
                    END AS received_qty
       ) other_rcpt ON rev_pol.id IS NOT NULL
       WHERE gnl.goods_receipt_note_id = ${id}::uuid
-        AND gnl.deleted_at IS NULL
+        AND ${lineScope}
       ORDER BY gnl.line_no ASC
     `);
   const lineRows = lineResult as unknown as Array<Record<string, unknown>>;
@@ -1046,6 +1106,8 @@ async function getGoodsReceiptNoteInternal(
     updatedAt: tsLike(headerRow['updatedAt']),
     updatedBy: headerRow['updatedBy'] as string,
     deletedAt: maybeTsLike(headerRow['deletedAt']),
+    cancelReason: (headerRow['cancelReason'] as string | null) ?? null,
+    cancelledAt: maybeTsLike(headerRow['cancelledAt']),
     poCode: (headerRow['poCode'] as string | null) ?? null,
     vendorName: (headerRow['vendorName'] as string | null) ?? null,
     vendorCode: (headerRow['vendorCode'] as string | null) ?? null,
@@ -1096,7 +1158,9 @@ export async function getGoodsReceiptNote(
   user: AuthContext,
 ): Promise<GoodsReceiptNoteDetail> {
   const companyId = requireCompany(user);
-  return withUserContext(user, (tx) => getGoodsReceiptNoteInternal(tx, id, companyId));
+  return withUserContext(user, (tx) =>
+    getGoodsReceiptNoteInternal(tx, id, companyId, { includeCancelled: true }),
+  );
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────
@@ -1450,6 +1514,9 @@ export async function updateGoodsReceiptNoteTx(
     if (existingHdrRows.length === 0) {
       throw new NotFoundError('GRN not found. It may have been moved to Trash.');
     }
+    // ADR-235 — no edit (direct, or an approved staged edit replaying here)
+    // while a Cancel Request waits on this GRN.
+    await assertNoPendingCancel(tx, 'grn', id);
 
     // §20.4 / ADR-226 — refuse the save if someone else changed this GRN after
     // the form loaded it, and say who. The name lookup runs only on the refusal
@@ -1603,6 +1670,8 @@ export async function updateGoodsReceiptNoteOrStage(
     input.expectedUpdatedAt ?? null,
     user,
     async (tx, target) => {
+      // ADR-235 — nothing stages while a Cancel Request waits on this GRN.
+      await assertNoPendingCancel(tx, 'grn', id);
       // ADR-249 Step B1 — the writer's header refusals, through the SAME helper
       // updateGoodsReceiptNoteTx calls. applyEdit replays the header only, so
       // these — plus the version check the engine already ran — are every
@@ -1975,6 +2044,8 @@ export async function softDeleteGoodsReceiptNote(
         id: goodsReceiptNotes.id,
         code: goodsReceiptNotes.code,
         vendorCodeText: goodsReceiptNotes.vendorCodeText,
+        deliveryChallanId: goodsReceiptNotes.deliveryChallanId,
+        ncId: goodsReceiptNotes.ncId,
       })
       .from(goodsReceiptNotes)
       .where(
@@ -1984,10 +2055,21 @@ export async function softDeleteGoodsReceiptNote(
           isNull(goodsReceiptNotes.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      // ADR-235 — header first (the Cancel worker's order: header → lines →
+      // PO lines), so a delete and a cancel on the same GRN queue here.
+      .for('update');
     const hdr = existingHdr[0];
     if (!hdr) {
       throw new NotFoundError('GRN not found. It may have been moved to Trash.');
+    }
+    await assertNoPendingCancel(tx, 'grn', hdr.id);
+    // ADR-235 — a GRN another receipt MADE (DC receipt, JW DC receipt, NC
+    // replacement) belongs to that receipt: deleting it left the receipt
+    // pointing at a vanished GRN. Same rule the Cancel uses.
+    const madeBy = await grnSourceReceiptBlockers(tx, companyId, hdr);
+    if (madeBy[0]) {
+      throw new ConflictError(`Cannot delete GRN ${hdr.code}: it was ${madeBy[0].reason}.`);
     }
 
     // Locked (ADR-189 review): an inspection cannot land between the guard

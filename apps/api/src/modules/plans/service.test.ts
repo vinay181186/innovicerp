@@ -399,6 +399,9 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
         code: `${TEST_PREFIX}RC-A`,
         itemId,
         currentRevision: 1,
+        // ADR-253 — the DB default is 'pending'; this fixture stands for a
+        // card already in use, so it is approved.
+        approvalStatus: 'approved',
         createdBy: admin.id,
         updatedBy: admin.id,
       })

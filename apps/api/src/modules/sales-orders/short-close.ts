@@ -38,6 +38,7 @@ import {
 } from '../../lib/errors';
 import { reconcileLineReservations } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertNoLiveMlPlan } from '../ml-plan/guards';
 import { lineLabel, readSoLineCommitments } from './line-commitments';
 import type {
@@ -151,9 +152,14 @@ async function shortCloseLinesTx(
         isNull(salesOrders.deletedAt),
       ),
     )
+    // ADR-235 — header first, then the lines (the SO cancel's lock order), so
+    // a close and a cancel serialise instead of deadlocking.
+    .for('update')
     .limit(1);
   const hdr = hdrRows[0];
   if (!hdr) throw new NotFoundError('SO not found. It may have been moved to Trash.');
+  // ADR-235 — nothing closes under a pending Cancel Request.
+  await assertNoPendingCancel(tx, 'sales_order', salesOrderId);
   // What the user-facing messages call the SO (ADR-207); logs keep the SO No.
   const soLabel = hdr.internalSoNo ? `${hdr.code} · ${hdr.internalSoNo}` : hdr.code;
   if (hdr.status === 'draft' || hdr.status === 'cancelled') {

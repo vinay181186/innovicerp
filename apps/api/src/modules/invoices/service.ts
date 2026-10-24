@@ -758,6 +758,16 @@ export async function createInvoice(
       FOR UPDATE
     `)) as unknown as Array<{ id: string; item_id: string | null; rate: string | number | null }>;
     const lockedById = new Map(lockedLines.map((r) => [r.id, r]));
+    // ADR-235 — the status above was read before the line locks. The SO
+    // cancel flips the header while it still holds these lines, so a fresh
+    // read now (no header lock: that would invert line → header) sees a
+    // cancel that won the race.
+    const fresh = await tx
+      .select({ status: salesOrders.status })
+      .from(salesOrders)
+      .where(and(eq(salesOrders.id, so.id), eq(salesOrders.companyId, companyId)))
+      .limit(1);
+    if (fresh[0]) assertSoAcceptsWork(fresh[0].status, so.code, 'it cannot be invoiced');
 
     // Validate qty <= available (dispatched − invoiced) per line, in-tx.
     const availLines = await loadInvoiceableLines(tx, companyId, input.salesOrderId);

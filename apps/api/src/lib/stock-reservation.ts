@@ -31,6 +31,7 @@ import {
 } from '../db/schema';
 import type { AuthContext, DbTransaction } from '../db/with-user-context';
 import { ConflictError, ValidationError } from './errors';
+import { assertSoAcceptsWork } from './so-accepts-work';
 
 /** The three numbers, for one item. */
 export interface StockPosition {
@@ -247,6 +248,64 @@ export async function createReservation(
   user: AuthContext,
 ): Promise<{ id: string; qty: number; position: StockPosition } | null> {
   if (args.qty <= 0) return null;
+
+  // ADR-235 — never book stock to a cancelled order. A hand booking locks the
+  // SO line FIRST (its own statement), then reads line + header fresh, then
+  // the item below: line → item, the order the SO cancel and the dispatch
+  // take, so a booking racing a cancel queues on the line and then sees it.
+  // The automatic booking after a Production Order close already holds the
+  // item (its stock credit), so it must not wait on the line (item → line
+  // would invert the cancel's order); it reads without a lock and quietly
+  // books nothing. Safe: the cancel takes the item lock before it releases
+  // bookings, so it still sees and releases anything that close committed.
+  const auto = args.source === 'auto_production';
+  if (!auto) {
+    await tx.execute(sql`
+      SELECT 1 FROM public.sales_order_lines
+      WHERE id = ${args.soLineId}::uuid AND company_id = ${args.companyId}::uuid
+      FOR UPDATE
+    `);
+  }
+  const soRows = (await tx.execute(sql`
+    SELECT sol.status::text AS "lineStatus", sol.short_closed_at IS NOT NULL AS "shortClosed",
+           so.status::text AS "soStatus", so.code AS "soCode"
+    FROM public.sales_order_lines sol
+    JOIN public.sales_orders so ON so.id = sol.sales_order_id
+    WHERE sol.id = ${args.soLineId}::uuid AND sol.company_id = ${args.companyId}::uuid
+      AND sol.deleted_at IS NULL
+  `)) as unknown as Array<{
+    lineStatus: string;
+    shortClosed: boolean;
+    soStatus: string;
+    soCode: string;
+  }>;
+  const soLine = soRows[0];
+  // No row = not a sales-order line (a job-work line shares the column) —
+  // left alone, as the item check below does.
+  if (soLine) {
+    if (auto) {
+      if (
+        soLine.soStatus === 'draft' ||
+        soLine.soStatus === 'cancelled' ||
+        soLine.lineStatus === 'cancelled' ||
+        soLine.shortClosed
+      ) {
+        return null;
+      }
+    } else {
+      assertSoAcceptsWork(soLine.soStatus, soLine.soCode, 'stock cannot be reserved against it');
+      if (soLine.lineStatus === 'cancelled') {
+        throw new ValidationError(
+          `${soLine.soCode} Ln ${args.lineNo} is cancelled — stock cannot be reserved against it.`,
+        );
+      }
+      if (soLine.shortClosed) {
+        throw new ValidationError(
+          `${soLine.soCode} Ln ${args.lineNo} was closed short — stock cannot be reserved against it.`,
+        );
+      }
+    }
+  }
 
   // The lock: read availability only AFTER the item row is held, so a
   // simultaneous booking on the same item cannot slip between the two.

@@ -26,6 +26,7 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, renderRowMenuLink } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -150,6 +151,10 @@ function SalesOrdersListPage(): React.JSX.Element {
   };
   // The order whose Assign Task dialog is open (from its ⋯), or null.
   const [assignSo, setAssignSo] = useState<SalesOrderListItem | null>(null);
+  // ADR-235 — Cancel SO: the Edit tick raises the request, the Approve tick
+  // decides it. The row whose standard Cancel dialog is open.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelSo, setCancelSo] = useState<SalesOrderListItem | null>(null);
 
   // Export status banner — an export that finds nothing, or fails, says so here.
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -358,6 +363,8 @@ function SalesOrdersListPage(): React.JSX.Element {
                 canAssign,
                 onAssign: setAssignSo,
                 onDelete: onDeleteSo,
+                canCancel,
+                onCancel: setCancelSo,
                 onPreview: (s) =>
                   orderPrint.preview(
                     { kind: 'so', id: s.id, code: s.code, clientId: s.clientId },
@@ -404,6 +411,15 @@ function SalesOrdersListPage(): React.JSX.Element {
               : `Follow up ${assignSo.code}`
           }
           onClose={() => setAssignSo(null)}
+        />
+      ) : null}
+
+      {cancelSo ? (
+        <CancelDocDialog
+          docType="sales_order"
+          docId={cancelSo.id}
+          docCode={cancelSo.code}
+          onClose={() => setCancelSo(null)}
         />
       ) : null}
 

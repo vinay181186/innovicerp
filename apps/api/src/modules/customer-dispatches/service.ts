@@ -962,6 +962,18 @@ export async function createDispatch(
       for (const itemId of itemIds) {
         await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
       }
+      // ADR-235 — the status above was read before the line locks. The SO
+      // cancel flips the header while it still holds these lines, so a fresh
+      // read now (no header lock: that would invert line → header) sees a
+      // cancel that won the race.
+      const fresh = await tx
+        .select({ status: salesOrders.status })
+        .from(salesOrders)
+        .where(and(eq(salesOrders.id, so.id), eq(salesOrders.companyId, companyId)))
+        .limit(1);
+      if (fresh[0]) {
+        assertSoAcceptsWork(fresh[0].status, so.code, 'nothing can be dispatched against it');
+      }
     }
     // ADR-182 — a short-closed Production Order's Job Card is excluded from the
     // readiness sum inside loadDispatchable, so its abandoned pieces are never

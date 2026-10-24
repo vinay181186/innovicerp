@@ -15,9 +15,10 @@
 //   Job Card work (PO line tied to a jc_op) is refused — it goes on the OSP DC.
 
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import { requireFormAccess } from '../../lib/access';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type {
   CreateJwDcInwardInput,
   CreateJwDcOutwardInput,
@@ -140,6 +141,20 @@ export async function getNextInwardCode(user: AuthContext): Promise<{ code: stri
 
 // ─── Outward — list ───────────────────────────────────────────────────────
 
+/** ADR-235: live challans, plus — when the list asks — the Cancelled ones (a
+ *  cancel stamps deleted_at too, so every other reader keeps live rows only). */
+function headerScopeSql(includeCancelled: boolean): SQL {
+  return includeCancelled
+    ? sql`(jdo.deleted_at IS NULL OR jdo.cancelled_at IS NOT NULL)`
+    : sql`jdo.deleted_at IS NULL`;
+}
+
+/** A challan's own lines (alias jdol, header jdoh): live ones, or — on a
+ *  Cancelled challan — those cancelled with it (the header's deleted_at). For
+ *  a live header this is exactly `jdol.deleted_at IS NULL`. */
+const JDOL_OF_HEADER_SQL =
+  '(jdol.deleted_at IS NULL OR (jdoh.deleted_at IS NOT NULL AND jdol.deleted_at = jdoh.deleted_at))';
+
 export async function listJwDcOutward(
   input: ListJwDcOutwardQuery,
   user: AuthContext,
@@ -183,13 +198,14 @@ export async function listJwDcOutward(
           COUNT(*)::int AS lines_count,
           COALESCE(SUM(rl.returned_qty)::float8, 0) AS total_returned
         FROM public.jw_dc_outward_lines jdol
+        JOIN public.jw_dc_outward jdoh ON jdoh.id = jdol.jw_dc_outward_id
         LEFT JOIN LATERAL (
           SELECT SUM(jdil.received_qty)::float8 AS returned_qty
           FROM public.jw_dc_inward_lines jdil
           WHERE jdil.jw_dc_outward_line_id = jdol.id
             AND jdil.deleted_at IS NULL
         ) rl ON true
-        WHERE jdol.deleted_at IS NULL
+        WHERE ${sql.raw(JDOL_OF_HEADER_SQL)}
         GROUP BY jdol.jw_dc_outward_id
       )
       SELECT
@@ -206,11 +222,18 @@ export async function listJwDcOutward(
         jdo.created_at AS "createdAt", jdo.created_by AS "createdBy",
         jdo.updated_at AS "updatedAt", jdo.updated_by AS "updatedBy",
         jdo.deleted_at AS "deletedAt",
+        jdo.cancel_reason AS "cancelReason", jdo.cancelled_at AS "cancelledAt",
         COALESCE(rs.lines_count, 0)::int AS "linesCount",
         COALESCE(rs.total_sent, 0)::float8 AS "totalSentQty",
         COALESCE(rs.total_returned, 0)::float8 AS "totalReturnedQty",
-        GREATEST(0, COALESCE(rs.total_sent, 0) - COALESCE(rs.total_returned, 0))::float8 AS "pendingQty",
+        -- ADR-235 — a cancelled challan has nothing at the vendor: Pending 0 and
+        -- never 'out' (the shared returnStatus has no 'cancelled'; the screen
+        -- reads cancelledAt and shows Cancelled).
+        CASE WHEN jdo.cancelled_at IS NOT NULL THEN 0
+             ELSE GREATEST(0, COALESCE(rs.total_sent, 0) - COALESCE(rs.total_returned, 0))
+        END::float8 AS "pendingQty",
         CASE
+          WHEN jdo.cancelled_at IS NOT NULL THEN 'fully_returned'
           WHEN COALESCE(rs.total_sent, 0) > 0
             AND COALESCE(rs.total_returned, 0) >= COALESCE(rs.total_sent, 0) THEN 'fully_returned'
           WHEN COALESCE(rs.total_returned, 0) > 0 THEN 'partial'
@@ -234,7 +257,7 @@ export async function listJwDcOutward(
           AND pol.deleted_at IS NULL
       ) so_resolved ON true
       WHERE jdo.company_id = ${companyId}::uuid
-        AND jdo.deleted_at IS NULL
+        AND ${headerScopeSql(input.includeCancelled === true)}
         ${searchFrag}
         ${vendorFrag}
         ${poFrag}
@@ -275,6 +298,8 @@ function toOutwardListItem(r: Record<string, unknown>): JwDcOutwardListItem {
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
+    cancelReason: (r['cancelReason'] as string | null) ?? null,
+    cancelledAt: r['cancelledAt'] != null ? tsLike(r['cancelledAt']) : null,
     linesCount: Number(r['linesCount'] ?? 0),
     totalSentQty: Number(r['totalSentQty'] ?? 0),
     totalReturnedQty: Number(r['totalReturnedQty'] ?? 0),
@@ -299,12 +324,19 @@ export async function getJwDcOutwardDetail(
         and(
           eq(jwDcOutward.id, id),
           eq(jwDcOutward.companyId, companyId),
-          isNull(jwDcOutward.deletedAt),
+          // ADR-235 — the detail page opens a Cancelled challan too, read-only.
+          or(isNull(jwDcOutward.deletedAt), isNotNull(jwDcOutward.cancelledAt)),
         ),
       )
       .limit(1);
     const header = headerRows[0];
     if (!header) throw new NotFoundError('JW DC not found. Refresh the page.');
+    // ADR-235 — a Cancelled challan shows its lines cancelled with it (the same
+    // deleted_at stamp as the header).
+    const lineScope =
+      header.deletedAt != null
+        ? sql`jdol.deleted_at = (SELECT h.deleted_at FROM public.jw_dc_outward h WHERE h.id = ${id}::uuid)`
+        : sql`jdol.deleted_at IS NULL`;
 
     // Live vendor name for the screen (plan v3 Step 4); the saved
     // vendorNameText stays as the fallback and as the print's copy.
@@ -370,7 +402,7 @@ export async function getJwDcOutwardDetail(
           AND jdil.deleted_at IS NULL
       ) ret ON true
       WHERE jdol.jw_dc_outward_id = ${id}::uuid
-        AND jdol.deleted_at IS NULL
+        AND ${lineScope}
       ORDER BY jdol.line_no
     `)) as unknown as Array<Record<string, unknown>>;
 
@@ -408,9 +440,13 @@ export async function getJwDcOutwardDetail(
 
     const totalSent = lines.reduce((s, l) => s + l.sentQty, 0);
     const totalReturned = lines.reduce((s, l) => s + l.alreadyReturned, 0);
-    const pendingQty = Math.max(0, totalSent - totalReturned);
+    // ADR-235 — a cancelled challan has nothing at the vendor (same rule as
+    // the list): Pending 0, and 'fully_returned' (the shared type has no
+    // 'cancelled'; the screen reads cancelledAt and shows Cancelled).
+    const isCancelled = header.cancelledAt != null;
+    const pendingQty = isCancelled ? 0 : Math.max(0, totalSent - totalReturned);
     const returnStatus: 'out' | 'partial' | 'fully_returned' =
-      totalSent > 0 && totalReturned >= totalSent
+      isCancelled || (totalSent > 0 && totalReturned >= totalSent)
         ? 'fully_returned'
         : totalReturned > 0
           ? 'partial'
@@ -452,6 +488,8 @@ export async function getJwDcOutwardDetail(
       updatedAt: tsLike(header.updatedAt),
       updatedBy: header.updatedBy,
       deletedAt: header.deletedAt != null ? tsLike(header.deletedAt) : null,
+      cancelReason: header.cancelReason ?? null,
+      cancelledAt: header.cancelledAt != null ? tsLike(header.cancelledAt) : null,
       linesCount: lines.length,
       totalSentQty: totalSent,
       totalReturnedQty: totalReturned,
@@ -490,13 +528,15 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
         dcDate: jwDcOutward.dcDate,
         purchaseOrderId: jwDcOutward.purchaseOrderId,
         vendorId: jwDcOutward.vendorId,
+        deletedAt: jwDcOutward.deletedAt,
       })
       .from(jwDcOutward)
       .where(
         and(
           eq(jwDcOutward.id, id),
           eq(jwDcOutward.companyId, companyId),
-          isNull(jwDcOutward.deletedAt),
+          // ADR-235 — a Cancelled challan's page shows its links too.
+          or(isNull(jwDcOutward.deletedAt), isNotNull(jwDcOutward.cancelledAt)),
         ),
       )
       .limit(1);
@@ -507,7 +547,14 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
     const lineRows = await tx
       .select({ itemId: jwDcOutwardLines.itemId })
       .from(jwDcOutwardLines)
-      .where(and(eq(jwDcOutwardLines.jwDcOutwardId, id), isNull(jwDcOutwardLines.deletedAt)));
+      .where(
+        and(
+          eq(jwDcOutwardLines.jwDcOutwardId, id),
+          header.deletedAt != null
+            ? eq(jwDcOutwardLines.deletedAt, header.deletedAt)
+            : isNull(jwDcOutwardLines.deletedAt),
+        ),
+      );
     const itemIds = Array.from(
       new Set(lineRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
     );
@@ -1032,6 +1079,8 @@ function rowToOutward(row: typeof jwDcOutward.$inferSelect): JwDcOutward {
     updatedAt: tsLike(row.updatedAt),
     updatedBy: row.updatedBy,
     deletedAt: row.deletedAt != null ? tsLike(row.deletedAt) : null,
+    cancelReason: row.cancelReason ?? null,
+    cancelledAt: row.cancelledAt != null ? tsLike(row.cancelledAt) : null,
   };
 }
 
@@ -1180,9 +1229,14 @@ export async function createJwDcInward(
           isNull(jwDcOutward.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      // ADR-235 — the cancel locks this header first, so a receipt and a
+      // cancel queue: the second sees the first (a cancelled DC is no longer
+      // found; a receipt blocks the cancel).
+      .for('update');
     const out = outRows[0];
     if (!out) throw new NotFoundError('JW DC not found. Refresh the page.');
+    await assertNoPendingCancel(tx, 'jw_dc_outward', out.id);
 
     // 2) Load outward lines being received against
     const outLineIds = Array.from(new Set(input.lines.map((l) => l.jwDcOutwardLineId)));

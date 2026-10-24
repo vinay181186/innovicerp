@@ -20,7 +20,11 @@
 
 import type { PlanningDetailResponse, PlanningLine, PlanningPlanSummary } from '@innovic/shared';
 import type { RowMenuItem } from '@/ui/data';
-import { newProductionOrderTo, newRouteCardTo } from '@/modules/plans/lib/plan-next-step';
+import {
+  newProductionOrderTo,
+  newRouteCardTo,
+  routeCardForItemTo,
+} from '@/modules/plans/lib/plan-next-step';
 import { allocateCap, lineFacts } from './reservation-modals';
 import type { ModalState } from './planning-shared';
 
@@ -32,6 +36,8 @@ export interface PlanningLineMenuArgs {
   canProductionOrder: boolean;
   /** routecard_create entry — may this user create a Route Card? */
   canCreateRouteCard: boolean;
+  /** routecard_create view — may open Route Card Master (ADR-253). */
+  canViewRouteCard: boolean;
   /** mlplan_create entry — may this user create a Multi-Level Plan? */
   canMlPlan: boolean;
   setModal: (m: ModalState) => void;
@@ -49,7 +55,14 @@ export interface PlanningLineMenuArgs {
  *  own child row (line with BOM parts). */
 function planItems(
   plan: PlanningPlanSummary,
-  { perms, canProductionOrder, canCreateRouteCard, setModal, onExecutePlan }: PlanningLineMenuArgs,
+  {
+    perms,
+    canProductionOrder,
+    canCreateRouteCard,
+    canViewRouteCard,
+    setModal,
+    onExecutePlan,
+  }: PlanningLineMenuArgs,
 ): RowMenuItem[] {
   const p = `${plan.code} · `;
   const isRouteCard = plan.opsSource === 'route_card';
@@ -99,6 +112,22 @@ function planItems(
         canCreateRouteCard
       ),
       to: newRouteCardTo(plan),
+    },
+    {
+      // ADR-253 'route_card_approval_pending': the item's card exists but is
+      // not approved — a Production Order is refused until it is, so the next
+      // step is the card (the plan carries no card id; the list narrowed to
+      // the item is the way in).
+      key: `open-rc-${plan.id}`,
+      label: `${p}Open Route Card`,
+      icon: 'eye',
+      group: 'workflow',
+      hidden: !(
+        isRouteCard &&
+        plan.derivedStatus === 'route_card_approval_pending' &&
+        canViewRouteCard
+      ),
+      to: routeCardForItemTo(plan),
     },
     {
       // ADR-185 derived status 'gen_production_order' = "RC Created": the next

@@ -44,6 +44,7 @@ import {
 } from '@/modules/sales-orders/components/use-order-print';
 import { useJobWorkOrdersList } from '../api';
 import { DeleteJwsoModal } from '../components/delete-jwso-modal';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { JwsoExpandedLines } from '../components/jwso-expanded-lines';
 import { jwsoListColumns } from '../components/jwso-list-columns';
 
@@ -143,6 +144,10 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   // The JWSO the Move-to-Trash dialog is asking about, or null when closed.
   const [trashTarget, setTrashTarget] = useState<{ id: string; code: string } | null>(null);
+  // ADR-235 — Cancel JWSO: the Edit tick raises the request, the Approve tick
+  // decides it. The row whose standard Cancel dialog is open.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
 
   // ADR-202 — JWSO ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('JobWorkOrder');
@@ -164,7 +169,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   // reason-required DeleteJwsoModal (ADR-197), so onDelete just opens it.
   const rowActions = (jw: JobWorkOrderListItem): React.JSX.Element => (
     <RowActions
-      editTo={canEdit ? `/job-work-orders/${jw.jwId}/edit` : undefined}
+      editTo={canEdit && jw.status !== 'cancelled' ? `/job-work-orders/${jw.jwId}/edit` : undefined}
       renderLink={(p) => <Link {...p} />}
       onDelete={canDelete ? () => setTrashTarget({ id: jw.jwId, code: jw.code }) : undefined}
       items={[
@@ -179,6 +184,18 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           label: 'Download PDF',
           icon: 'download',
           onSelect: () => orderPrint.download(jwPrintTarget(jw), draftIds.has(jw.jwId)),
+        },
+        {
+          key: 'cancel',
+          label: 'Cancel JWSO',
+          icon: 'x',
+          group: 'danger',
+          hidden:
+            !canCancel ||
+            jw.status === 'closed' ||
+            jw.status === 'dispatched' ||
+            jw.status === 'cancelled',
+          onSelect: () => setCancelTarget({ id: jw.jwId, code: jw.code }),
         },
       ]}
     />
@@ -295,6 +312,15 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       />
 
       {orderPrint.modal}
+
+      {cancelTarget ? (
+        <CancelDocDialog
+          docType="job_work_order"
+          docId={cancelTarget.id}
+          docCode={cancelTarget.code}
+          onClose={() => setCancelTarget(null)}
+        />
+      ) : null}
 
       {trashTarget ? (
         <DeleteJwsoModal

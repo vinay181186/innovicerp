@@ -19,6 +19,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { ActionLink } from '@/components/shared/action-link';
 import { DocumentHistory } from '@/components/shared/document-history';
@@ -27,7 +29,8 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
-import { ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { fmtDateTime } from '@/lib/date';
 import { ActionMenu } from '@/ui/layout';
 import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
@@ -79,6 +82,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Why it is being moved to Trash — required (ADR-197), shown on History.
   const [deleteReason, setDeleteReason] = useState('');
+  // ADR-235 — the ONE standard Cancel dialog (docType 'grn').
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -148,7 +153,12 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       async () => () => printGrn(printArgs),
     );
 
-  const canEdit = perms.edit;
+  // ADR-235 — a Cancelled GRN is read-only: no Edit, no Incoming QC, no Delete.
+  const cancelled = Boolean(detail.cancelledAt);
+  // Cancel GRN -> Edit OR Approve: Edit sends a Cancel Request, Approve decides
+  // it. The dialog reads the server's preview for which buttons this user gets.
+  const canCancel = !cancelled && (perms.edit || perms.approve);
+  const canEdit = perms.edit && !cancelled;
   // ADR-234 — Assign Task: the same Advance gate as the GRN list ⋯.
   const canAssign = perms.advance;
   // ADR-234 — "Open in Incoming QC" deep-links to the Inspect popup, whose save
@@ -303,11 +313,17 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                     setDeleteReason('');
                     setConfirmDelete(true);
                   },
-                  hidden: !canDelete,
+                  hidden: !canDelete || cancelled,
                   disabled: anyInspected,
                   title: anyInspected
                     ? 'Incoming QC has already inspected a line, so this GRN cannot be moved to Trash.'
                     : undefined,
+                },
+                {
+                  label: 'Cancel GRN',
+                  danger: true,
+                  onClick: () => setCancelOpen(true),
+                  hidden: !canCancel,
                 },
               ]}
             />
@@ -315,7 +331,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             {/* ADR-251: Incoming QC lists only GRNs Against PO; an OSP return
                 (Against JW PO / DC) or NC return is inspected on the QC Call
                 Register. Same `grnTypeLabel` rule as the identity line. */}
-            {firstQcPending && canInspect ? (
+            {firstQcPending && canInspect && !cancelled ? (
               grnType === 'Against NC' || grnType === 'Against JW PO / DC' ? (
                 <Link
                   to="/qc-call-register"
@@ -348,6 +364,24 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
         </div>
       </div>
 
+      {/* ADR-235 — an open Cancel Request (orange), or the Cancelled mark (red). */}
+      <CancelPendingBanner
+        docType="grn"
+        docId={detail.id}
+        cancelled={cancelled}
+        {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+      />
+      {cancelled ? (
+        <div className="mb-2">
+          <Banner tone="error" accent title="Cancelled — this GRN is void">
+            <div>
+              Reason: <b>{detail.cancelReason ?? '—'}</b>
+              {detail.cancelledAt ? ` · ${fmtDateTime(detail.cancelledAt)}` : ''}
+            </div>
+          </Banner>
+        </div>
+      ) : null}
+
       <GrnDetailLines
         lines={detail.lines}
         againstPo={againstPo}
@@ -361,6 +395,15 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       <Panel title="History" bodyPadding="none">
         <DocumentHistory entity="GoodsReceiptNote" entityId={detail.id} refId={detail.code} />
       </Panel>
+
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="grn"
+          docId={detail.id}
+          docCode={detail.code}
+          onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
 
       {canDelete && confirmDelete ? (
         <ConfirmDialog

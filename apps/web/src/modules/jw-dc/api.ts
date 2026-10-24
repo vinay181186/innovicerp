@@ -26,6 +26,7 @@ export const jwDcKeys = {
       q.purchaseOrderId ?? null,
       q.returnStatus ?? null,
       q.sf ?? null,
+      q.includeCancelled ?? false,
       q.limit,
       q.offset,
     ] as const,
@@ -53,6 +54,9 @@ function buildOutwardSearch(q: ListJwDcOutwardQuery): string {
   if (q.purchaseOrderId) params.set('purchaseOrderId', q.purchaseOrderId);
   if (q.returnStatus) params.set('returnStatus', q.returnStatus);
   if (q.sf) params.set('sf', q.sf);
+  // ADR-235 — the Outward Register shows Cancelled DCs too (other readers,
+  // e.g. the New Inward picker, do not).
+  if (q.includeCancelled) params.set('includeCancelled', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

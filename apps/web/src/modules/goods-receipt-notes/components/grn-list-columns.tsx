@@ -40,6 +40,13 @@ export function grnTypeLabel(grn: {
   return null;
 }
 
+/** ADR-235 — a Cancelled GRN (listed with includeCancelled): cancelledAt is
+ *  the standard Cancel's stamp. A plain Delete (Trash) leaves it null, and a
+ *  trashed GRN is never listed, so this test cannot mistake one for the other. */
+export function isGrnCancelled(grn: Pick<GoodsReceiptNoteListItem, 'cancelledAt'>): boolean {
+  return Boolean(grn.cancelledAt);
+}
+
 /** `qcStatusFor` is owned by the page (it reads the in-progress set + the active
  *  filter), so the QC Status column and the row tint stay in agreement with the
  *  card rule that preceded them. */
@@ -178,7 +185,13 @@ export function goodsReceiptNoteListColumns(
       kind: 'badge',
       header: 'QC Status',
       nowrap: true,
-      render: (grn) => <QcStatusBadge status={qcStatusFor(grn)} draft={draftIds?.has(grn.id)} />,
+      // ADR-235: a Cancelled GRN reads "Cancelled" here instead.
+      render: (grn) =>
+        isGrnCancelled(grn) ? (
+          <span className="badge b-red">Cancelled</span>
+        ) : (
+          <QcStatusBadge status={qcStatusFor(grn)} draft={draftIds?.has(grn.id)} />
+        ),
     },
     {
       id: 'accepted',

@@ -45,6 +45,7 @@ export function salesOrderSheet(args: OrderArgs & { so: SalesOrderDetail }): She
     priceHidden: so.priceVisible === false,
     totals: so.totals ?? null,
     placeOfSupply: so.totals?.placeOfSupply ?? so.placeOfSupply,
+    cancelled: so.status === 'cancelled',
     // The saved totals leave cancelled lines out (computeSoTotals), so the
     // printed rows do too — rows, Total Qty and Subtotal must agree.
     lines: so.lines.filter((l) => l.status !== 'cancelled'),
@@ -74,6 +75,7 @@ export function jwSalesOrderSheet(args: OrderArgs & { jw: JobWorkOrderDetail }):
     priceHidden: jw.priceVisible === false,
     totals: jw.totals ?? null,
     placeOfSupply: jw.totals?.placeOfSupply ?? jw.placeOfSupply,
+    cancelled: jw.status === 'cancelled',
     // The server's totals leave cancelled lines out, so the printed rows do too.
     lines: jw.lines.filter((l) => l.status !== 'cancelled'),
     fields: [
@@ -109,6 +111,8 @@ function orderSheet(
     priceHidden: boolean;
     totals: SoTotals | null;
     placeOfSupply: string | null;
+    /** ADR-235 — a cancelled order prints with the CANCELLED stamp. */
+    cancelled: boolean;
     lines: OrderLine[];
     fields: SheetField[];
   },
@@ -144,6 +148,7 @@ function orderSheet(
     columns: 'po',
     hidePreparedBy: true,
     draft: args.draft,
+    cancelled: o.cancelled,
     blocks: templatesToBlocks(o.doc, templates),
     data: {
       companyName: company?.name ?? '',
