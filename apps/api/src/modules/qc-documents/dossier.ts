@@ -39,7 +39,8 @@ export async function buildOrderDossier(
   return buildDossier(await loadDossierRaw(tx, cid, kind, orderId));
 }
 
-/** Order picker: SOs and JWSOs, not cancelled, newest first. */
+/** Order picker: SOs and JWSOs, not cancelled, newest first. The term matches
+ *  SO / JWSO No., Internal SO No., Client PO No. or customer. */
 export async function listQcDossierOrders(
   input: QcDossierOrdersQuery,
   user: AuthContext,
@@ -50,10 +51,11 @@ export async function listQcDossierOrders(
     const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const soMatch = term
       ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.internal_so_no ILIKE ${term} ESCAPE '\\'
-                 OR o.customer_name ILIKE ${term} ESCAPE '\\')`
+                 OR o.client_po_no ILIKE ${term} ESCAPE '\\' OR o.customer_name ILIKE ${term} ESCAPE '\\')`
       : sql``;
     const jwMatch = term
-      ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.customer_name ILIKE ${term} ESCAPE '\\')`
+      ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.client_po_no ILIKE ${term} ESCAPE '\\'
+                 OR o.customer_name ILIKE ${term} ESCAPE '\\')`
       : sql``;
     const rs = (await tx.execute(sql`
       SELECT x.kind, x.id, x.code, x.internal_so_no, x.customer_name FROM (

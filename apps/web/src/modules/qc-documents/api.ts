@@ -2,14 +2,12 @@ import type {
   CreateQcDocumentInput,
   ListQcDocumentsQuery,
   ListQcDocumentsResponse,
-  ListQcMatrixSosResponse,
   QcDocument,
   QcDossierOrderKind,
   QcDossierOrdersResponse,
   QcDossierResponse,
   QcDossierUrlsInput,
   QcDossierUrlsResponse,
-  QcMatrixResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -20,8 +18,6 @@ import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 export const qcDocumentsKeys = {
   all: ['qc-documents'] as const,
   list: (q: ListQcDocumentsQuery) => [...qcDocumentsKeys.all, 'list', q] as const,
-  soList: () => [...qcDocumentsKeys.all, 'so-list'] as const,
-  matrix: (soId: string) => [...qcDocumentsKeys.all, 'matrix', soId] as const,
   dossierOrders: (search: string) => [...qcDocumentsKeys.all, 'dossier-orders', search] as const,
   dossier: (kind: QcDossierOrderKind, orderId: string) =>
     [...qcDocumentsKeys.all, 'dossier', kind, orderId] as const,
@@ -88,28 +84,6 @@ export function saveQcDoc(
     source: 'qc_document',
     ...(fileName ? { fileName } : {}),
     ...(refCode ? { refCode } : {}),
-  });
-}
-
-/** SO selector for the QC-completion matrix (legacy renderQCDocuments). */
-export function useQcMatrixSos() {
-  return useQuery<ListQcMatrixSosResponse>({
-    queryKey: qcDocumentsKeys.soList(),
-    queryFn: () => apiFetch<ListQcMatrixSosResponse>('/qc-documents/so-list'),
-    placeholderData: (prev) => prev,
-  });
-}
-
-/** SO-pivoted QC-completion matrix for one SO. */
-export function useQcMatrix(salesOrderId: string | undefined) {
-  return useQuery<QcMatrixResponse>({
-    queryKey: qcDocumentsKeys.matrix(salesOrderId ?? ''),
-    queryFn: () =>
-      apiFetch<QcMatrixResponse>(
-        `/qc-documents/matrix?salesOrderId=${encodeURIComponent(salesOrderId ?? '')}`,
-      ),
-    enabled: !!salesOrderId,
-    placeholderData: (prev) => prev,
   });
 }
 
