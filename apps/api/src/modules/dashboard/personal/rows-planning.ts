@@ -11,7 +11,6 @@
 //   bom_pending — equipment SO still waiting for a BOM (the old work-list rule).
 
 import { type SQL, sql } from 'drizzle-orm';
-import { plans } from '../../../db/schema';
 import { PLAN_PENDING_QTY_SQL, planDerivedStatusSql } from '../../../lib/plan-order-coverage';
 import { soLineDirectJcRaw, soLinePlannedRaw } from '../../../lib/so-line-coverage';
 import { filterFrag, type ListFilter } from './list-query';
@@ -87,13 +86,9 @@ export function soToPlanSql(cid: string, today: string, f: ListFilter): SQL {
     HAVING COALESCE(SUM(ln.to_plan), 0) > 0`;
 }
 
-// Same EXISTS the plans module uses (plans/service.ts HAS_ROUTE_CARD_SQL).
-const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
-  SELECT 1 FROM public.route_cards rc
-  WHERE rc.company_id = ${plans.companyId}
-    AND rc.item_id = ${plans.itemId}
-    AND rc.deleted_at IS NULL
-)`;
+// ADR-253 — planDerivedStatusSql reads the item's Route Card through the ONE
+// shared fragment (lib/plan-order-coverage.ts): only a plan whose card is
+// APPROVED reads 'gen_production_order' and lands on this list.
 
 export function planToProSql(cid: string, today: string, f: ListFilter): SQL {
   return sql`
@@ -116,7 +111,7 @@ export function planToProSql(cid: string, today: string, f: ListFilter): SQL {
     LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
     WHERE plans.company_id = ${cid}::uuid AND plans.deleted_at IS NULL
       AND plans.ops_source = 'route_card' AND plans.plan_status = 'planned' AND plans.jc_id IS NULL
-      AND ${planDerivedStatusSql(HAS_ROUTE_CARD_SQL)} = 'gen_production_order'
+      AND ${planDerivedStatusSql()} = 'gen_production_order'
       ${filterFrag(f, 'plans.id', 'plans.created_by')}`;
 }
 

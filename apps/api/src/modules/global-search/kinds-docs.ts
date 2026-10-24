@@ -2,8 +2,23 @@
 // detail page (sales order … JW DC outward). See kinds.ts for the shape.
 // Column names verified against apps/api/src/db/schema.ts.
 
-import { sql } from 'drizzle-orm';
+import { ROUTE_CARD_APPROVAL_LABEL } from '@innovic/shared';
+import { type SQL, sql } from 'drizzle-orm';
 import { type KindMeta, opLines, pair, ref, soRef } from './kinds';
+
+/** ADR-253 — a Route Card's approval state in words (Pending Approval /
+ *  Approved / Rejected), built from the shared label map so search shows and
+ *  matches the same words as the Route Card screens. */
+const ROUTE_CARD_APPROVAL_TEXT_SQL: SQL = sql`(${sql.join(
+  [
+    sql`CASE t.approval_status`,
+    ...Object.entries(ROUTE_CARD_APPROVAL_LABEL).map(
+      ([code, label]) => sql`WHEN ${code}::text THEN ${label}::text`,
+    ),
+    sql`ELSE t.approval_status END`,
+  ],
+  sql` `,
+)})::text`;
 
 export const DOC_KINDS: readonly KindMeta[] = [
   {
@@ -312,7 +327,7 @@ export const DOC_KINDS: readonly KindMeta[] = [
       sql`l.osp_vendor_code_text`,
     ]),
     qty: null,
-    status: null,
+    status: ROUTE_CARD_APPROVAL_TEXT_SQL,
   },
   {
     kind: 'design-project',

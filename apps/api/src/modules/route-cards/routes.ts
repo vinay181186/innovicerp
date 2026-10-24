@@ -1,4 +1,8 @@
-import { activityReasonSchema } from '@innovic/shared';
+import {
+  activityReasonSchema,
+  approveRouteCardInputSchema,
+  rejectRouteCardInputSchema,
+} from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -7,6 +11,7 @@ import {
   listRouteCardsQuerySchema,
   updateRouteCardInputSchema,
 } from './schema';
+import { approveRouteCard, rejectRouteCard } from './approval';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -50,6 +55,21 @@ export async function routeCardRoutes(app: FastifyInstance): Promise<void> {
     const input = updateRouteCardInputSchema.parse(req.body);
     // ADR-249 Step B2 — staged for approval when the gate is on, else saved.
     return service.updateRouteCardOrStage(id, input, req.user);
+  });
+
+  // ADR-253 — a NEW card waits for approval. Approve tick on Route Card Master.
+  app.post('/route-cards/:id/approve', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const input = approveRouteCardInputSchema.parse(req.body ?? {});
+    return approveRouteCard(id, input, req.user);
+  });
+
+  app.post('/route-cards/:id/reject', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const input = rejectRouteCardInputSchema.parse(req.body ?? {});
+    return rejectRouteCard(id, input, req.user);
   });
 
   app.delete('/route-cards/:id', async (req) => {

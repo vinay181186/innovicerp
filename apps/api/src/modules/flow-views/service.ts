@@ -730,14 +730,9 @@ export async function getNcTimeline(ncId: string, user: AuthContext): Promise<Nc
 
 // ─── 4. Level matrix ─────────────────────────────────────────────────────────
 
-// Same EXISTS as plans/service.ts HAS_ROUTE_CARD_SQL (each module keeps its
-// own copy — see lib/plan-order-coverage.ts planDerivedStatusSql).
-const HAS_ROUTE_CARD_SQL = sql<boolean>`EXISTS (
-  SELECT 1 FROM public.route_cards rc
-  WHERE rc.company_id = ${plans.companyId}
-    AND rc.item_id = ${plans.itemId}
-    AND rc.deleted_at IS NULL
-)`;
+// ADR-253 — the plan's derived status (planDerivedStatusSql) reads the item's
+// Route Card through the ONE shared fragment in lib/plan-order-coverage.ts,
+// so a card awaiting approval shows 'route_card_approval_pending' here too.
 
 export async function getLevelMatrix(
   salesOrderId: string,
@@ -780,7 +775,7 @@ export async function getLevelMatrix(
         planStatus: plans.planStatus,
         covered: PLAN_COVERED_QTY_SQL,
         pending: PLAN_PENDING_QTY_SQL,
-        derived: planDerivedStatusSql(HAS_ROUTE_CARD_SQL),
+        derived: planDerivedStatusSql(),
       })
       .from(plans)
       .where(

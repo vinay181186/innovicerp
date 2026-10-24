@@ -25,6 +25,7 @@ import type { AccessFormKey, CreateRouteCardOpInput, UpdateRouteCardInput } from
 import { routeCardOps, routeCards } from '../../db/schema';
 import type { DiffField } from '../../lib/audit-trail';
 import { NotFoundError } from '../../lib/errors';
+import { isRouteCardUsable } from '../../lib/route-card-usable';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
 import { lockBackfillCandidates } from '../plans/rm-backfill';
 import {
@@ -151,8 +152,11 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       doc: { ...rc, routing },
       updatedAt: rc.updatedAt,
       docCode: rc.code,
-      // Any existing (not-Trash) card is LIVE; a gone one returned null above.
-      isLive: true,
+      // ADR-253 — only an APPROVED card is live. A Pending Approval / Rejected
+      // card is not in use yet, so its edits are never staged: they fall
+      // through to the direct write in updateRouteCardOrStage (the edit tick
+      // still applies there). A gone card returned null above.
+      isLive: isRouteCardUsable(rc.approvalStatus),
     };
   },
 

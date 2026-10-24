@@ -28,6 +28,7 @@ const NOTE_MAX = 50;
 type Open =
   | 'approval_pr'
   | 'approval_po'
+  | 'approval_rc'
   | 'raiser_pr'
   | 'raiser_po'
   | 'pr_to_po'
@@ -79,6 +80,16 @@ export const NOTE_RULES: readonly NoteRule[] = [
     right: ['po_create', 'approve'],
     open: 'approval_po',
     verb: 'raised',
+    tail: ' — waiting for your approval',
+    tone: 'due',
+  },
+  {
+    // ADR-253 — a new Route Card (RC screen, or one a Job Card / plan made).
+    entity: 'RouteCard',
+    action: 'CREATE',
+    right: ['routecard_create', 'approve'],
+    open: 'approval_rc',
+    verb: 'created',
     tail: ' — waiting for your approval',
     tone: 'due',
   },
@@ -243,6 +254,7 @@ async function openIds(
 ): Promise<Set<string>> {
   if (open === 'approval_pr') return new Set((approvals?.pr ?? []).map((r) => r.id));
   if (open === 'approval_po') return new Set((approvals?.po ?? []).map((r) => r.id));
+  if (open === 'approval_rc') return new Set((approvals?.rc ?? []).map((r) => r.id));
   if (open === 'raiser_pr' || open === 'raiser_po') {
     const table =
       open === 'raiser_pr'

@@ -52,6 +52,7 @@ import { ActivityAction, type ActivityChange } from '@innovic/shared';
 import { and, asc, desc, eq, isNull, or, type SQL, sql } from 'drizzle-orm';
 
 import { bomMasterLines, bomMasters, items, plans, routeCards } from '../../db/schema';
+import { routeCardUsableSql } from '../../lib/route-card-usable';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -76,6 +77,7 @@ export interface RouteCardRawMaterial {
 /**
  * The raw material on this item's Route Card, or null when the item has no
  * card yet (the `route_card_pending` case) — the ONE lookup both triggers use.
+ * ADR-253: a card that is not APPROVED counts as no card here.
  */
 export async function readRouteCardRawMaterial(
   tx: DbTransaction,
@@ -107,6 +109,10 @@ export async function readRouteCardRawMaterial(
         eq(routeCards.companyId, companyId),
         eq(routeCards.itemId, itemId),
         isNull(routeCards.deletedAt),
+        // ADR-253 — only an APPROVED card may feed raw material to a plan. A
+        // card awaiting approval reads as "no card yet"; the plan picks the RM
+        // up on the next save / backfill after the card is approved.
+        routeCardUsableSql('route_cards'),
       ),
     )
     // DETERMINISTIC ON PURPOSE — newest card first. "One active card per item"

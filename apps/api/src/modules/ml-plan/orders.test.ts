@@ -106,13 +106,20 @@ async function makeSoLine(item: string, orderQty: number): Promise<string> {
   return line[0]!.id;
 }
 
-async function makeRouteCard(item: string, withOp = true): Promise<void> {
+// ADR-253 — route_cards.approval_status defaults to 'pending' (not usable), so
+// a fixture card that should drive work is inserted 'approved' explicitly.
+async function makeRouteCard(
+  item: string,
+  withOp = true,
+  approvalStatus: 'pending' | 'approved' | 'rejected' = 'approved',
+): Promise<void> {
   const rc = await db
     .insert(routeCards)
     .values({
       companyId,
       code: `${P}RC-${item}`,
       itemId: itemId[item]!,
+      approvalStatus,
       createdBy: admin.id,
       updatedBy: admin.id,
     })
@@ -150,6 +157,7 @@ beforeAll(async () => {
     ['BLT', 'component'],
     ['OSP', 'component'],
     ['NORC', 'assembly'],
+    ['PEND', 'assembly'],
   ];
   const inserted = await db
     .insert(items)
@@ -321,6 +329,35 @@ describe('ml-plan raise orders', () => {
         admin,
       ),
     ).rejects.toThrow(/NORC has no Route Card — make one first/);
+    const after = await service.getMlPlan(d.id, admin);
+    expect(after.orders).toHaveLength(0);
+    expect(after.status).toBe('draft');
+  });
+
+  it('ADR-253: a route card waiting for approval refuses the plan row — nothing written', async () => {
+    // PEND has a live Route Card, but it is still Pending Approval.
+    await makeRouteCard('PEND', true, 'pending');
+    await mlBomService.createMlBom(
+      {
+        itemId: itemId['PEND']!,
+        lines: [{ childItemId: itemId['BLT']!, qtyPerSet: 1, bomType: 'purchase' }],
+      },
+      admin,
+    );
+    const lineId = await makeSoLine('PEND', 2);
+    const d = await service.createMlPlan({ soLineId: lineId, planQty: 2 }, admin);
+    const attempt = service.raiseMlPlanOrders(
+      d.id,
+      {
+        lines: [
+          { nodeId: nodeOf(d, 'BLT').id, qty: 2 },
+          { nodeId: nodeOf(d, 'PEND').id, qty: 2 },
+        ],
+      },
+      admin,
+    );
+    await expect(attempt).rejects.toBeInstanceOf(ConflictError);
+    await expect(attempt).rejects.toThrow(/is waiting for approval/);
     const after = await service.getMlPlan(d.id, admin);
     expect(after.orders).toHaveLength(0);
     expect(after.status).toBe('draft');

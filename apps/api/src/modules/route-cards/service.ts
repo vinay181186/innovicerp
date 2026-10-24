@@ -54,6 +54,8 @@ import {
   ActivityAction,
   type JcRouteCardWriteBack,
   opSrNo,
+  ROUTE_CARD_APPROVAL_LABEL,
+  type RouteCardApprovalStatus,
 } from '@innovic/shared';
 import { type AnyColumn, and, asc, desc, eq, inArray, isNull, type SQL, sql } from 'drizzle-orm';
 import {
@@ -85,6 +87,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { isRouteCardUsable } from '../../lib/route-card-usable';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { logger } from '../../lib/logger';
 import { emitActivityLog } from '../activity-log/service';
@@ -127,6 +130,70 @@ function tsLike(v: unknown): string {
 function maybeTsLike(v: unknown): string | null {
   if (v == null) return null;
   return tsLike(v);
+}
+
+// ─── ADR-253 approval fields ──────────────────────────────────────────────
+
+/** A person as the Route Card screens name them: full_name, else the email's
+ *  local part — the same fallback the revision history uses. */
+function personName(fullName: string | null | undefined, email: string | null | undefined) {
+  return fullName?.trim() || email?.split('@')[0] || null;
+}
+
+/** Display names for the given user ids (approver / rejecter). No deleted
+ *  filter: a person who has since left must still be named on the card. */
+export async function loadUserNames(
+  tx: DbTransaction,
+  ids: Array<string | null | undefined>,
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(ids.filter((x): x is string => Boolean(x))));
+  if (unique.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: users.id, fullName: users.fullName, email: users.email })
+    .from(users)
+    .where(inArray(users.id, unique));
+  const out = new Map<string, string>();
+  for (const r of rows) {
+    const n = personName(r.fullName, r.email);
+    if (n) out.set(r.id, n);
+  }
+  return out;
+}
+
+type RcApprovalFields = Pick<
+  RouteCard,
+  | 'approvalStatus'
+  | 'approvedBy'
+  | 'approvedByName'
+  | 'approvedAt'
+  | 'rejectedBy'
+  | 'rejectedByName'
+  | 'rejectedAt'
+  | 'rejectionReason'
+>;
+
+/** The card's approval state for the read models (detail / list / delete). */
+function approvalFields(
+  h: {
+    approvalStatus: string;
+    approvedBy: string | null;
+    approvedAt: unknown;
+    rejectedBy: string | null;
+    rejectedAt: unknown;
+    rejectionReason: string | null;
+  },
+  names: Map<string, string>,
+): RcApprovalFields {
+  return {
+    approvalStatus: h.approvalStatus as RouteCard['approvalStatus'],
+    approvedBy: h.approvedBy,
+    approvedByName: h.approvedBy ? (names.get(h.approvedBy) ?? null) : null,
+    approvedAt: maybeTsLike(h.approvedAt),
+    rejectedBy: h.rejectedBy,
+    rejectedByName: h.rejectedBy ? (names.get(h.rejectedBy) ?? null) : null,
+    rejectedAt: maybeTsLike(h.rejectedAt),
+    rejectionReason: h.rejectionReason,
+  };
 }
 
 // ─── Lookups ──────────────────────────────────────────────────────────────
@@ -379,6 +446,8 @@ export async function listRouteCards(
       FROM public.route_cards rc
       LEFT JOIN public.items i ON i.id = rc.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.items rmi ON rmi.id = rc.raw_material_item_id AND rmi.company_id = rc.company_id
+      LEFT JOIN public.users au ON au.id = rc.approved_by
+      LEFT JOIN public.users ru ON ru.id = rc.rejected_by
       LEFT JOIN LATERAL (
         SELECT COUNT(*) AS op_count
         FROM public.route_card_ops o
@@ -403,6 +472,12 @@ export async function listRouteCards(
         rc.rm_qty_per_piece AS "rmQtyPerPiece",
         rc.notes,
         rc.plan_type AS "planType",
+        rc.approval_status AS "approvalStatus",
+        rc.approved_by AS "approvedBy", rc.approved_at AS "approvedAt",
+        COALESCE(NULLIF(btrim(au.full_name), ''), split_part(au.email, '@', 1)) AS "approvedByName",
+        rc.rejected_by AS "rejectedBy", rc.rejected_at AS "rejectedAt",
+        COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1)) AS "rejectedByName",
+        rc.rejection_reason AS "rejectionReason",
         rc.created_at AS "createdAt", rc.created_by AS "createdBy",
         rc.updated_at AS "updatedAt", rc.updated_by AS "updatedBy",
         rc.deleted_at AS "deletedAt",
@@ -439,6 +514,15 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
     rmQtyPerPiece: r['rmQtyPerPiece'] == null ? null : Number(r['rmQtyPerPiece']),
     notes: (r['notes'] as string | null) ?? null,
     planType: (r['planType'] as RouteCard['planType'] | null) ?? 'manufacture',
+    approvalStatus: ((r['approvalStatus'] as string | null) ??
+      'pending') as RouteCard['approvalStatus'],
+    approvedBy: (r['approvedBy'] as string | null) ?? null,
+    approvedByName: r['approvedBy'] ? ((r['approvedByName'] as string | null) ?? null) : null,
+    approvedAt: maybeTsLike(r['approvedAt']),
+    rejectedBy: (r['rejectedBy'] as string | null) ?? null,
+    rejectedByName: r['rejectedBy'] ? ((r['rejectedByName'] as string | null) ?? null) : null,
+    rejectedAt: maybeTsLike(r['rejectedAt']),
+    rejectionReason: (r['rejectionReason'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),
@@ -450,7 +534,7 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
   };
 }
 
-async function loadRouteCardDetail(
+export async function loadRouteCardDetail(
   tx: DbTransaction,
   id: string,
   companyId: string,
@@ -484,6 +568,9 @@ async function loadRouteCardDetail(
           .limit(1)
       )[0]?.code ?? null)
     : null;
+
+  // ADR-253 — who approved / rejected the card, for display.
+  const approvalNames = await loadUserNames(tx, [header.approvedBy, header.rejectedBy]);
 
   // Ops with joined machine + machine group + vendor display.
   const opRows = await tx
@@ -536,6 +623,7 @@ async function loadRouteCardDetail(
     rmQtyPerPiece: header.rmQtyPerPiece,
     notes: header.notes,
     planType: header.planType,
+    ...approvalFields(header, approvalNames),
     createdAt: tsLike(header.createdAt),
     createdBy: header.createdBy,
     updatedAt: tsLike(header.updatedAt),
@@ -776,6 +864,20 @@ function revChange(before: number, after: number): ActivityChange {
   return { field: 'currentRevision', label: 'Route Card Rev', before, after };
 }
 
+/** ADR-253 — the approval-state move as the History tab shows it
+ *  ("RC Status Pending Approval → Approved"). */
+export function rcStatusChange(
+  before: RouteCardApprovalStatus,
+  after: RouteCardApprovalStatus,
+): ActivityChange {
+  return {
+    field: 'approvalStatus',
+    label: 'RC Status',
+    before: ROUTE_CARD_APPROVAL_LABEL[before],
+    after: ROUTE_CARD_APPROVAL_LABEL[after],
+  };
+}
+
 interface RcOpLogRow {
   action: ActivityAction;
   opRef: string;
@@ -955,6 +1057,9 @@ export async function createRouteCard(
         ...rawMaterial,
         notes: input.notes ?? null,
         planType: input.planType ?? 'manufacture',
+        // ADR-253 — every new card waits for approval (no switch). Written
+        // explicitly rather than left to the column default.
+        approvalStatus: 'pending',
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -981,26 +1086,17 @@ export async function createRouteCard(
         entity: 'RouteCard',
         entityId: header.id,
         refId: header.code,
-        detail: rcDetailString(header.code, item.code),
+        detail: `${rcDetailString(header.code, item.code)} — sent for approval`,
       },
       companyId,
       user,
     );
 
-    // T2 (plan-rm-backfill) — the trigger that closes the designed
-    // `route_card_pending` path: a plan may be made FIRST and this card AFTER,
-    // and until now nothing carried the card's raw material back to the
-    // waiting plan. The plan kept its blanks for ever, so Create Production
-    // Order (which reads the PLAN's stored snapshot) showed nothing even
-    // though the card had EN24 / DIA 32.
-    //
-    // Fills BLANKS only, never a plan whose Job Card exists, inside THIS
-    // transaction — a failed backfill rolls the new card back with it. The
-    // raw material is read back through the one shared lookup (newest card
-    // first, which is the card just inserted above), so plan and card can
-    // never be filled from two different queries.
-    const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId);
-    if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
+    // ADR-253 — NO raw-material backfill here any more. A new card is
+    // Pending Approval and not usable, so its raw material must not reach the
+    // waiting plans yet; the T2 backfill (plan-rm-backfill) runs when the card
+    // is APPROVED (approveRouteCard, ./approval.ts). The plans pre-lock above
+    // stays: it is about the partial unique index, not the backfill.
 
     return loadRouteCardDetail(tx, header.id, companyId);
   });
@@ -1335,6 +1431,12 @@ export async function updateRouteCardTx(
   // Header fields the ops-replace helper does not own. rawMaterial is always
   // written, never merged — sending null (or leaving the field out) clears
   // the grade or size instead of keeping the old one.
+  //
+  // ADR-253 — a REJECTED card that is saved again goes back for approval:
+  // status → pending and the rejection stamp is cleared. A pending card stays
+  // pending; an approved card (direct save with the gate off, or an approved
+  // edit replayed by the edit-approval engine) stays approved.
+  const resubmit = header.approvalStatus === 'rejected';
   await tx
     .update(routeCards)
     .set({
@@ -1343,6 +1445,9 @@ export async function updateRouteCardTx(
       ...rawMaterial,
       notes: input.notes ?? null,
       planType: input.planType ?? header.planType,
+      ...(resubmit
+        ? { approvalStatus: 'pending', rejectedBy: null, rejectedAt: null, rejectionReason: null }
+        : {}),
       updatedBy: user.id,
       updatedAt: new Date(),
     })
@@ -1378,9 +1483,12 @@ export async function updateRouteCardTx(
     [
       ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
       revChange(header.currentRevision, replaced.newRevision),
+      ...(resubmit ? [rcStatusChange('rejected', 'pending')] : []),
     ],
     routeCardOpLogRows(replaced.oldOps, replaced.newOps),
-    `Edited ${rcDetailString(input.code, item.code)}${revisionNote ? ` — ${revisionNote}` : ''}`,
+    `Edited ${rcDetailString(input.code, item.code)}${revisionNote ? ` — ${revisionNote}` : ''}${
+      resubmit ? ' — sent for approval again' : ''
+    }`,
   );
 
   // T2 (plan-rm-backfill) on the EDIT side — the create-only version of this
@@ -1408,7 +1516,11 @@ export async function updateRouteCardTx(
   // this card already gave them — one card's material landing on two parts.
   // A re-pointed card fills B's plans the next time someone saves it with
   // the material B actually needs.
-  if (input.itemId === header.itemId) {
+  //
+  // ADR-253 — and only from an APPROVED card. A pending / rejected card is not
+  // usable, so its raw material waits; approveRouteCard runs this same
+  // backfill at approval time.
+  if (input.itemId === header.itemId && isRouteCardUsable(header.approvalStatus)) {
     const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId);
     if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
   }
@@ -1497,6 +1609,7 @@ export async function softDeleteRouteCard(
       rmQtyPerPiece: header.rmQtyPerPiece,
       notes: header.notes,
       planType: header.planType,
+      ...approvalFields(header, await loadUserNames(tx, [header.approvedBy, header.rejectedBy])),
       createdAt: tsLike(header.createdAt),
       createdBy: header.createdBy,
       updatedAt: tsLike(header.updatedAt),
@@ -2224,7 +2337,10 @@ export async function overwriteRouteCardFromSource(
  *    - no active card for the item → create at revision 0 + a revision snapshot
  *      noted "Created from <source code>", WITH the material it was given. A
  *      hand-raised job-work Job Card for an item that has no card is how that
- *      card is born, so this branch still writes material in full.
+ *      card is born, so this branch still writes material in full. The new
+ *      card is Pending Approval (ADR-253) and feeds no plan until approved.
+ *    - active card exists but is Pending Approval / Rejected (ADR-253) → left
+ *      untouched; the write-back carries `notSentReason` saying so.
  *    - active card exists, routing DIFFERS, edit-approval gate ON (ADR-249
  *      Step B2) → the card is NOT rewritten: the change is staged as a Route
  *      Card edit request (stageRoutingFromSourceDoc) and a write-back with
@@ -2305,6 +2421,7 @@ export async function saveRouteCardForItem(
       rmQtyPerPiece: routeCards.rmQtyPerPiece,
       notes: routeCards.notes,
       planType: routeCards.planType,
+      approvalStatus: routeCards.approvalStatus,
     })
     .from(routeCards)
     .where(
@@ -2317,6 +2434,24 @@ export async function saveRouteCardForItem(
     .limit(1);
 
   const card = existing[0];
+  if (card && !isRouteCardUsable(card.approvalStatus)) {
+    // ADR-253 — the item's card is still Pending Approval (or Rejected). It
+    // is not in use, and the approver is looking at exactly what it holds now:
+    // a Job Card / plan must not rewrite it under them, and there is nothing
+    // to stage (the edit-approval engine only handles approved cards). The
+    // card is left exactly as it is; the caller's own save goes on and the
+    // screen says why the routing did not reach the card.
+    return {
+      routeCardId: card.id,
+      routeCardCode: card.code,
+      routeCardRevision: card.currentRevision,
+      created: false,
+      notSentReason:
+        card.approvalStatus === 'rejected'
+          ? `Route Card ${card.code} was rejected — correct it on the Route Card screen and send it for approval again. This routing was not copied to it.`
+          : `Route Card ${card.code} is waiting for approval — this routing was not copied to it.`,
+    };
+  }
   if (card) {
     // ADR-249 Step B2 — the auto-save no longer rewrites a live card's
     // routing behind the planner's back. When the routing this document
@@ -2422,6 +2557,10 @@ export async function saveRouteCardForItem(
       currentRevision: 0,
       ...rawMaterial,
       notes: null,
+      // ADR-253 — a card born from a Job Card / plan waits for approval like
+      // any new card. No raw-material backfill here (there never was one on
+      // this branch); it runs when the card is approved.
+      approvalStatus: 'pending',
       createdBy: user.id,
       updatedBy: user.id,
     })
@@ -2445,10 +2584,13 @@ export async function saveRouteCardForItem(
       entity: 'RouteCard',
       entityId: header.id,
       refId: code,
-      detail: `${code} created from ${sourceCode}`,
+      detail: `${code} created from ${sourceCode} — sent for approval`,
     },
     companyId,
     user,
   );
+  // `created: true` always means a NEW card, and every new card is Pending
+  // Approval (ADR-253), so the saving screen words it "Route Card IN-RC-x
+  // created — waiting for approval" from this flag alone.
   return { routeCardId: header.id, routeCardCode: code, routeCardRevision: 0, created: true };
 }

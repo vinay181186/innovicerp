@@ -10,6 +10,8 @@
 //   PO — Approve on Purchase Orders + write role, on po_approvers (admins
 //        always), PO Status Draft, PO value within the ceiling unless it is
 //        the caller's own PO (self-approval skips the limit).
+//   RC — Approve on Route Card Master, card Pending Approval (own cards
+//        included — self-approval allowed, ADR-253). No qty / value / vendor.
 // The access answers come from those modules' own loaders, read before the
 // transaction opens (each opens its own).
 
@@ -26,6 +28,7 @@ import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../
 import { loadPoInboxAccess } from '../purchase-orders/approval-inbox';
 import { loadApprovalContext } from '../purchase-orders/service';
 import { loadPrInboxAccess } from '../purchase-requests/approval-inbox';
+import { loadRcInboxAccess, rcInboxRowsSql, rcNavPage } from '../route-cards/approval-inbox';
 
 /** Sort & Filter fields — columns of the `t` row set both sections build. */
 export const APPROVALS_SF_COLUMNS: SfColumnMap = {
@@ -94,7 +97,12 @@ export async function listApprovalInboxSection(
   const q = approvalInboxListQuerySchema.parse(rawQuery);
   const sf = readSf(q.sf);
 
-  const access = q.section === 'pr' ? await loadPrInboxAccess(user) : await loadPoInboxAccess(user);
+  const access =
+    q.section === 'pr'
+      ? await loadPrInboxAccess(user)
+      : q.section === 'rc'
+        ? await loadRcInboxAccess(user)
+        : await loadPoInboxAccess(user);
   if (!access.canApprove) return { items: [], total: 0 };
   const opts = { canSeePrice: access.showMoney };
 
@@ -102,6 +110,9 @@ export async function listApprovalInboxSection(
     let rowsSql: SQL;
     if (q.section === 'pr') {
       rowsSql = prRows(companyId);
+    } else if (q.section === 'rc') {
+      // Search runs over RC No. (doc_code), item code / name and raiser below.
+      rowsSql = rcInboxRowsSql(companyId);
     } else {
       const ctx = await loadApprovalContext(tx, companyId, user.id, user.role);
       if (!ctx.isApprover) return { items: [], total: 0 };
@@ -151,13 +162,17 @@ export async function listApprovalInboxSection(
         itemCode: (r['item_code'] as string | null) ?? null,
         itemName: (r['item_name'] as string | null) ?? null,
         docQty: r['doc_qty'] != null ? Number(r['doc_qty']) : null,
-        docAmount: access.showMoney ? Number(r['doc_amount'] ?? 0) : null,
+        docAmount:
+          access.showMoney && r['doc_amount'] != null ? Number(r['doc_amount']) : null,
         createdByName: (r['created_by_name'] as string | null) ?? null,
         createdAt:
           createdAt instanceof Date
             ? createdAt.toISOString()
             : new Date(String(createdAt)).toISOString(),
-        navPage: `/${section === 'pr' ? 'purchase-requests' : 'purchase-orders'}/${String(r['id'])}`,
+        navPage:
+          section === 'rc'
+            ? rcNavPage(String(r['id']))
+            : `/${section === 'pr' ? 'purchase-requests' : 'purchase-orders'}/${String(r['id'])}`,
       };
     });
     return { items, total };

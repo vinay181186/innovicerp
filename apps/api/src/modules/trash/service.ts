@@ -14,7 +14,7 @@
 // before 0178 added the column.
 
 import { ActivityAction, type ActivityEntity } from '@innovic/shared';
-import { type SQL, sql } from 'drizzle-orm';
+import { and, eq, type SQL, sql } from 'drizzle-orm';
 import {
   bomMasters,
   mlBoms,
@@ -474,6 +474,25 @@ export async function restoreFromTrash(
       await assertTreeSound(tx, companyId, input.id);
     }
 
+    // ADR-253 — a restored Route Card comes back as Pending Approval, never
+    // straight into use: it was out of the system, so it is approved again
+    // before it may raise a Production Order or feed raw material. The old
+    // approve / reject stamps are cleared with it.
+    const routeCardReset = entity.type === 'Route Card';
+    if (routeCardReset) {
+      await tx
+        .update(routeCards)
+        .set({
+          approvalStatus: 'pending',
+          approvedBy: null,
+          approvedAt: null,
+          rejectedBy: null,
+          rejectedAt: null,
+          rejectionReason: null,
+        })
+        .where(and(eq(routeCards.id, input.id), eq(routeCards.companyId, companyId)));
+    }
+
     const code = rows[0]?.label ?? null;
     await emitActivityLog(
       tx,
@@ -482,7 +501,9 @@ export async function restoreFromTrash(
         entity: ACTIVITY_ENTITY_BY_TYPE[input.type],
         entityId: input.id,
         refId: code ?? input.id,
-        detail: `Restored ${typeLabel(input.type)}${code ? ` ${code}` : ''} from Trash`,
+        detail:
+          `Restored ${typeLabel(input.type)}${code ? ` ${code}` : ''} from Trash` +
+          (routeCardReset ? ' — sent back for approval (Pending Approval)' : ''),
       },
       companyId,
       user,
