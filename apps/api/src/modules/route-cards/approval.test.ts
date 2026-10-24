@@ -45,8 +45,7 @@ let cfgExisted = false;
 let origDocEditApproval = false;
 let itemSeq = 0;
 
-const approver = (): AuthContext =>
-  asAccess(admin, { departments: { planning: 'L5' } }, 'manager');
+const approver = (): AuthContext => asAccess(admin, { departments: { planning: 'L5' } }, 'manager');
 /** Planning L1: view only on Route Card Master (no Edit right). */
 const viewerOnly = (): AuthContext =>
   asAccess(admin, { departments: { planning: 'L1' } }, 'viewer');
@@ -319,9 +318,9 @@ describe('Route Card approval (ADR-253)', () => {
     await expect(approveRouteCard(card.id, {}, editorOnly())).rejects.toBeInstanceOf(
       AuthorizationError,
     );
-    await expect(
-      rejectRouteCard(card.id, { reason: 'x' }, editorOnly()),
-    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(rejectRouteCard(card.id, { reason: 'x' }, editorOnly())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
     const still = await service.getRouteCard(card.id, admin);
     expect(still.approvalStatus).toBe('pending');
   });
@@ -495,7 +494,11 @@ describe('Route Card approval (ADR-253)', () => {
     const { card } = await newCard(approver());
     await rejectRouteCard(card.id, { reason: 'Wrong fixture' }, approver());
     const rows = await db
-      .select({ action: activityLog.action, reason: activityLog.reason, entity: activityLog.entity })
+      .select({
+        action: activityLog.action,
+        reason: activityLog.reason,
+        entity: activityLog.entity,
+      })
       .from(activityLog)
       .where(and(eq(activityLog.entityId, card.id), eq(activityLog.action, 'REJECT')));
     expect(rows).toEqual([{ action: 'REJECT', reason: 'Wrong fixture', entity: 'RouteCard' }]);

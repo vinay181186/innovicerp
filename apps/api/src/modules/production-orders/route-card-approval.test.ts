@@ -47,10 +47,7 @@ async function cleanup(): Promise<void> {
       .where(inArray(productionOrders.id, createdPoIds));
     const jcIds = pos.map((p) => p.jcId).filter((x): x is string => Boolean(x));
     if (jcIds.length > 0) {
-      await db
-        .update(jobCards)
-        .set({ productionOrderId: null })
-        .where(inArray(jobCards.id, jcIds));
+      await db.update(jobCards).set({ productionOrderId: null }).where(inArray(jobCards.id, jcIds));
     }
     await db.delete(productionOrders).where(inArray(productionOrders.id, createdPoIds));
     await db.delete(plans).where(like(plans.code, `${P}%`));

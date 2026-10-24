@@ -2475,8 +2475,7 @@ export async function saveRouteCardForItem(
       // nothing either, so there is nothing to report). An identical routing
       // says nothing, exactly as on an approved card.
       const fill = rmHalvesToFill(card, rawMaterial);
-      const rmWouldFill =
-        (fill.grade || fill.size || fill.rmItem) && (await canWriteCard());
+      const rmWouldFill = (fill.grade || fill.size || fill.rmItem) && (await canWriteCard());
       if (routingIdentical && !rmWouldFill) return null;
       return {
         routeCardId: card.id,

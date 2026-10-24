@@ -19,7 +19,7 @@ export function RcApprovalBadge({
   title?: string | undefined;
 }): React.JSX.Element {
   return (
-    <Badge tone={TONE[status]} title={title}>
+    <Badge tone={TONE[status]} {...(title ? { title } : {})}>
       {ROUTE_CARD_APPROVAL_LABEL[status]}
     </Badge>
   );

@@ -11,7 +11,8 @@ import { ConflictError } from './errors';
 /** SQL predicate on a route_cards alias already in the query, e.g.
  *  `WHERE rc.deleted_at IS NULL AND ${routeCardUsableSql('rc')}`. */
 export function routeCardUsableSql(alias: string): SQL {
-  if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`routeCardUsableSql: bad alias "${alias}"`);
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias))
+    throw new Error(`routeCardUsableSql: bad alias "${alias}"`);
   return sql.raw(`${alias}.approval_status = 'approved'`);
 }
 

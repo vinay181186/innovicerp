@@ -162,8 +162,7 @@ export async function listApprovalInboxSection(
         itemCode: (r['item_code'] as string | null) ?? null,
         itemName: (r['item_name'] as string | null) ?? null,
         docQty: r['doc_qty'] != null ? Number(r['doc_qty']) : null,
-        docAmount:
-          access.showMoney && r['doc_amount'] != null ? Number(r['doc_amount']) : null,
+        docAmount: access.showMoney && r['doc_amount'] != null ? Number(r['doc_amount']) : null,
         createdByName: (r['created_by_name'] as string | null) ?? null,
         createdAt:
           createdAt instanceof Date
