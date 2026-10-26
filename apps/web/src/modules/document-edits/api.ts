@@ -12,8 +12,10 @@
 
 import type {
   DecideDocumentEditInput,
+  DocumentEditChange,
   DocumentEditCountsResponse,
   DocumentEditEntity,
+  DocumentEditRow,
   DocumentEditStagedResult,
   ListDocumentEditsQuery,
   ListDocumentEditsResponse,
@@ -23,7 +25,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { apiFetch } from '@/lib/api';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
+import { salesOrdersKeys } from '@/modules/sales-orders/api';
 
 export const documentEditsKeys = {
   all: ['document-edits'] as const,
@@ -122,6 +126,23 @@ export function usePendingEditForDoc(
   });
 }
 
+/** The boxes of ONE edit request that are still waiting for a decision — a box
+ *  the approver already approved / rejected (or the engine marked superseded)
+ *  has an entry in `decisions` and is no longer "waiting for approval". */
+export function undecidedChanges(request: DocumentEditRow): DocumentEditChange[] {
+  const decided = new Set(request.decisions.map((d) => d.changeId));
+  return request.changes.filter((c) => !decided.has(c.id));
+}
+
+/** Every still-undecided box across a document's pending requests — what the
+ *  detail pages' orange chips and pending-line strips show. Pass
+ *  `usePendingEditForDoc(...).data?.rows`. */
+export function undecidedChangesOf(
+  requests: readonly DocumentEditRow[] | undefined,
+): DocumentEditChange[] {
+  return (requests ?? []).flatMap(undecidedChanges);
+}
+
 /** Everything that changed once a request is decided or withdrawn: the inbox
  *  lists, the per-document pending lookups, the document History and the PO
  *  caches (a decision may have applied approved changes to the PO). */
@@ -131,6 +152,13 @@ function useRefreshAfterChange(): () => void {
     void qc.invalidateQueries({ queryKey: documentEditsKeys.all });
     void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.all });
+    // The hook does not know which document was decided, so refresh both
+    // order types whose lines can be staged (SO + JWSO line edit approval):
+    // detail + list caches, via each module's key factory.
+    void qc.invalidateQueries({ queryKey: salesOrdersKeys.details() });
+    void qc.invalidateQueries({ queryKey: salesOrdersKeys.lists() });
+    void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.details() });
+    void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
   };
 }
 

@@ -222,8 +222,10 @@ function resolveLineItemRefs(
 
 /** itemId → master item code, for surfacing the readable `itemCode` on the
  *  create/update responses (the detail GET already joins items; these two
- *  response builders re-read plain line rows, so back-resolve here too). */
-async function resolveItemCodesById(
+ *  response builders re-read plain line rows, so back-resolve here too).
+ *  THE SO item-code resolver — the edit-approval registry uses it too. A
+ *  deleted item resolves to nothing (the caller falls back to its snapshot). */
+export async function resolveItemCodesById(
   tx: DbTransaction,
   itemIds: Array<string | null>,
   companyId: string,
@@ -1766,6 +1768,8 @@ export async function updateSalesOrder(
   /** ADR-197 — why: required when the save cancels the SO; also written on
    *  the History row of a line the save removes or cancels. */
   reason?: string | null,
+  /** updateSalesOrderOrStage's direct path sets requireNotLive (SoEditTxOpts). */
+  opts?: { requireNotLive?: boolean },
 ): Promise<SalesOrderDetail> {
   // ADR-232: the so_create Edit tick alone decides who edits a saved SO.
   // Checked HERE, not in the tx body, so the edit-approval engine's applyEdit
@@ -1773,7 +1777,9 @@ export async function updateSalesOrder(
   // `edit`.
   await requireFormAccess(user, 'so_create', 'edit');
   try {
-    return await withUserContext(user, (tx) => updateSalesOrderTx(tx, id, input, user, reason));
+    return await withUserContext(user, (tx) =>
+      updateSalesOrderTx(tx, id, input, user, reason, opts),
+    );
   } catch (e) {
     // ADR-207 — two saves taking the same Internal SO No. at the same moment.
     if (isInternalSoNoViolation(e) && input.header.internalSoNo) {
@@ -1782,6 +1788,50 @@ export async function updateSalesOrder(
       );
     }
     throw e;
+  }
+}
+
+/** How a caller runs the SO edit body (updateSalesOrderTx). */
+export interface SoEditTxOpts {
+  /** The direct-edit path of updateSalesOrderOrStage: the engine said "not
+   *  live" in ITS transaction; re-ask under THIS one's header + line locks and
+   *  refuse (409) if the SO is now in use or an edit is now waiting, so the
+   *  decision and the write are never in different transactions (§20). The
+   *  approval path (applyEdit) never sets it. */
+  requireNotLive?: boolean;
+  /** false = skip building the response (the request-time rehearsal, which is
+   *  rolled back anyway). */
+  returnDetail?: boolean;
+}
+
+/** §20 — the in-transaction half of the "not in use → direct write" decision:
+ *  same rule as the engine (so-edit-registry soEditGoesForApproval), read with
+ *  the header locked and the SO's lines locked here, so no plan / dispatch /
+ *  invoice raised against a line slips in between the check and the write. */
+async function refuseIfNowForApproval(
+  tx: DbTransaction,
+  companyId: string,
+  hdr: { id: string; status: string },
+): Promise<void> {
+  // Imported dynamically — the engine and the registry both import this file.
+  const { isDocEditApprovalOn } = await import('../document-edits/service');
+  if (!(await isDocEditApprovalOn(tx, companyId))) return;
+  await tx
+    .select({ id: salesOrderLines.id })
+    .from(salesOrderLines)
+    .where(
+      and(
+        eq(salesOrderLines.salesOrderId, hdr.id),
+        eq(salesOrderLines.companyId, companyId),
+        isNull(salesOrderLines.deletedAt),
+      ),
+    )
+    .for('update');
+  const { soEditGoesForApproval } = await import('./so-edit-registry');
+  if (await soEditGoesForApproval(tx, companyId, hdr.id, hdr.status)) {
+    throw new ConflictError(
+      'This Sales Order is now in use — save again and the change will go for approval.',
+    );
   }
 }
 
@@ -1801,7 +1851,24 @@ export async function updateSalesOrderTx(
   input: UpdateSalesOrderInput,
   user: AuthContext,
   reason?: string | null,
-): Promise<SalesOrderDetail> {
+  opts?: SoEditTxOpts & { returnDetail?: true },
+): Promise<SalesOrderDetail>;
+export async function updateSalesOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateSalesOrderInput,
+  user: AuthContext,
+  reason: string | null | undefined,
+  opts: SoEditTxOpts & { returnDetail: false },
+): Promise<null>;
+export async function updateSalesOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateSalesOrderInput,
+  user: AuthContext,
+  reason?: string | null,
+  opts?: SoEditTxOpts,
+): Promise<SalesOrderDetail | null> {
   const companyId = requireCompany(user);
   // Money in, same rule as money out. `priceOff` makes "can do the job but must
   // not see the number" a supported setup, so an editor with prices hidden is a
@@ -1834,6 +1901,7 @@ export async function updateSalesOrderTx(
     await assertNoPendingCancel(tx, 'sales_order', id);
     // R5: refuse the save if someone else edited the SO after this form opened it.
     assertUnchangedSinceOpened(existingHdr.updatedAt, input.expectedUpdatedAt);
+    if (opts?.requireNotLive) await refuseIfNowForApproval(tx, companyId, existingHdr);
 
     // When the client changes, snapshot the customer name from the master.
     // The SAME clientId (e.g. a line delete that sends it only to satisfy the
@@ -1996,6 +2064,7 @@ export async function updateSalesOrderTx(
       reason: reason?.trim() || null,
     });
 
+    if (opts?.returnDetail === false) return null;
     const updatedImageMap = await resolveItemImagesById(
       tx,
       lineRows.map((l) => l.itemId),
@@ -2061,11 +2130,13 @@ export async function updateSalesOrderOrStage(
     note ? { ...input, reason: note } : input,
     input.expectedUpdatedAt,
     user,
-    async (tx) => {
+    async (tx, target) => {
       // ADR-235 — nothing is staged while a Cancel Request waits on the SO.
       await assertNoPendingCancel(tx, 'sales_order', id);
       try {
-        await rehearseInSavepoint(tx, (sp) => updateSalesOrderTx(sp, id, input, user, note));
+        await rehearseInSavepoint(tx, (sp) =>
+          updateSalesOrderTx(sp, id, input, user, note, { returnDetail: false }),
+        );
       } catch (e) {
         // ADR-207 — a taken Internal SO No. is a 409 with its sentence.
         if (isInternalSoNoViolation(e) && input.header.internalSoNo) {
@@ -2076,22 +2147,31 @@ export async function updateSalesOrderOrStage(
         throw e;
       }
       // Freeze each line item's CODE with the payload, so the `line:add:<n>`
-      // box can name its item ("Add line · ABC-12 × 20 · POL 10").
+      // box can name its item ("Add line · ABC-12 × 20 · POL 10") and the
+      // snapshots never resolve them again; and the line / lot ids the request
+      // was raised against, so an add box can tell a row added / removed by
+      // someone else (line-boxes.ts rowSetRef).
       const codes = await resolveItemCodesById(
         tx,
         (input.lines ?? []).map((l) => l.itemId ?? null),
         companyId,
       );
+      const ids = (k: string): string[] =>
+        ((target.doc[k] as Array<{ id: string }> | undefined) ?? []).map((r) => r.id);
       return {
         ...input,
         ...(note ? { reason: note } : {}),
         boxItemCodes: Object.fromEntries(codes),
+        boxRowIds: { line: ids('lines'), ms: ids('milestones') },
       };
     },
   );
   if (request) return { staged: true, request };
 
-  return updateSalesOrder(id, input, user, reason);
+  // Not staged: the gate is off, or the SO was not in use when the engine
+  // looked. The writer re-asks under its own locks (requireNotLive) so an SO
+  // that came into use in between is refused, not written directly.
+  return updateSalesOrder(id, input, user, reason, { requireNotLive: true });
 }
 
 /**

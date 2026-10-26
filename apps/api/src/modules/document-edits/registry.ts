@@ -49,6 +49,12 @@ export interface DocEditTarget {
   isLive: boolean;
 }
 
+/** Why the engine is loading the target. `decide` never reads isLive, so an
+ *  entry may skip whatever its live test costs (an in-use query). */
+export interface DocEditLoadContext {
+  purpose: 'request' | 'decide';
+}
+
 /** What one document type must provide for the engine to stage and apply edits
  *  to it. The diff is computed over flat {key → value} snapshots whose keys are
  *  `diffFields` keys, so the same `diffFields()` the audit trail uses produces
@@ -61,9 +67,22 @@ export interface DocEditRegistryEntry {
    *  the document's CURRENT lines, so the set changes per document (Phase 1b). */
   diffFields(target: DocEditTarget, proposedInput?: unknown): readonly DiffField[];
   /** Lock the target row FOR UPDATE and project it. Null = gone / not visible. */
-  loadForDiff(tx: DbTransaction, companyId: string, id: string): Promise<DocEditTarget | null>;
-  /** The flat current-value snapshot for diffing (keys = diffFields keys). */
-  beforeSnapshot(target: DocEditTarget): Record<string, unknown>;
+  loadForDiff(
+    tx: DbTransaction,
+    companyId: string,
+    id: string,
+    ctx?: DocEditLoadContext,
+  ): Promise<DocEditTarget | null>;
+  /** The flat current-value snapshot for diffing (keys = diffFields keys).
+   *  `proposedPayload` is the payload being staged / decided; `priorApproved`
+   *  the box keys EARLIER decide calls on this request already applied (empty
+   *  at request time) — so a row-set box (`line:add:<n>`) can tell this
+   *  request's own adds / removes from someone else's. Most entries ignore both. */
+  beforeSnapshot(
+    target: DocEditTarget,
+    proposedPayload?: unknown,
+    priorApproved?: ReadonlySet<string>,
+  ): Record<string, unknown>;
   /** The flat proposed-value snapshot from the edit input (keys = diffFields
    *  keys). Omits a key the input did not touch, so it is not seen as a change.
    *  `user` is the actor (requester, or approver on the drift recompute) — used
@@ -90,7 +109,9 @@ export interface DocEditRegistryEntry {
     ctx?: { firstApply: boolean },
   ): unknown | null;
   /** Apply the filtered input inside the engine's transaction (which already
-   *  holds the target row lock). `expectedUpdatedAt` is the freshly-locked token. */
+   *  holds the target row lock). `expectedUpdatedAt` is the freshly-locked token.
+   *  `target` is what loadForDiff locked in this same transaction — reuse its
+   *  rows rather than re-selecting them. */
   applyEdit(
     tx: DbTransaction,
     companyId: string,
@@ -98,6 +119,7 @@ export interface DocEditRegistryEntry {
     filteredInput: unknown,
     expectedUpdatedAt: string | null,
     user: AuthContext,
+    target?: DocEditTarget,
   ): Promise<void>;
   /** A box whose key is not a price (./price-field.ts) but whose PROPOSED value
    *  carries one — a Job Card operation added with an outsource cost. Approving

@@ -18,7 +18,7 @@ import { ArrowLeft, Ban, Download, Eye, Inbox, Loader2, Pencil } from 'lucide-re
 import { useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -69,7 +69,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   // ADR-202 — the edit(s) staged against this DC, still awaiting a decision.
   // Their per-field changes drive the "Changes awaiting approval" panel below.
   const pendingEdit = usePendingEditForDoc('DeliveryChallan', id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   // ADR-235 — the ONE standard Cancel dialog (reason, request / approve).

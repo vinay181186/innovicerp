@@ -35,7 +35,9 @@ function words(v: unknown): ActivityChangeValue {
     .join(' ');
 }
 
-function day(v: unknown): ActivityChangeValue {
+/** A date as a person reads it (fmtDate). Exported so the edit-approval
+ *  registry shows a Delivery Schedule lot's Due Date the same way. */
+export function day(v: unknown): ActivityChangeValue {
   if (v === null || v === undefined || v === '') return null;
   return fmtDate(v as string | Date);
 }

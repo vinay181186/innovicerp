@@ -332,6 +332,32 @@ export async function salesOrderCancelBlockers(
   return out;
 }
 
+/**
+ * Is this Sales Order IN USE — does ANY live downstream work hang off it? The
+ * edit-approval rule (so-edit-registry soEditGoesForApproval): an SO nothing
+ * uses yet edits directly even with Document Edit Approval on; once in use,
+ * edits go for approval. Built on THE SO cancel refusal rule
+ * (salesOrderCancelBlockers — one rule, no hand copy) plus the stock bookings on
+ * its lines, which the cancel hands back rather than refuses. A Closed /
+ * Dispatched header is a cancel blocker too, so it reads as in use.
+ */
+export async function soInUse(
+  tx: DbTransaction,
+  companyId: string,
+  salesOrderId: string,
+): Promise<boolean> {
+  if ((await salesOrderCancelBlockers(tx, companyId, salesOrderId)).length > 0) return true;
+  const held = (await tx.execute(sql`
+    SELECT 1 FROM public.so_stock_reservations r
+      JOIN public.sales_order_lines sol ON sol.id = r.so_line_id
+     WHERE sol.sales_order_id = ${salesOrderId}::uuid AND sol.company_id = ${companyId}::uuid
+       AND sol.deleted_at IS NULL AND r.deleted_at IS NULL
+       AND r.status IN ('active', 'partially_consumed')
+     LIMIT 1
+  `)) as unknown as unknown[];
+  return held.length > 0;
+}
+
 /** The SO's live lines with the bookings they still hold — for the preview. */
 export async function salesOrderHeldBookings(
   tx: DbTransaction,

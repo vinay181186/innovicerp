@@ -12,6 +12,8 @@ import {
   clipLabel,
   parseChildKey,
   rebuildChildRows,
+  rowSetContext,
+  rowSetRef,
 } from './line-boxes';
 
 const ID1 = '11111111-1111-1111-1111-111111111111';
@@ -97,6 +99,44 @@ describe('line-boxes', () => {
       { id: ID1, orderQty: 2, clientPoLineNo: '21' },
       { orderQty: 7, clientPoLineNo: '40' },
     ]);
+  });
+
+  it('add box before = the row set; drift by others changes it, own approved adds / removes do not', () => {
+    const ID3 = '33333333-3333-3333-3333-333333333333';
+    const ID9 = '99999999-9999-9999-9999-999999999999';
+    const asked = [ID1, ID2];
+    const atRequest = rowSetRef(SPEC, [ID2, ID1], { addCount: 1, requestRowIds: asked });
+    expect(atRequest).toMatch(/^2 lines on the order \(ref [0-9a-f]{6}\)$/);
+    // Same set, any order, with or without the frozen ids → same ref.
+    expect(rowSetRef(SPEC, [ID1, ID2])).toBe(atRequest);
+    // Someone else added a line / removed one → different.
+    expect(rowSetRef(SPEC, [ID1, ID2, ID9], { addCount: 1, requestRowIds: asked })).not.toBe(atRequest);
+    expect(rowSetRef(SPEC, [ID1], { addCount: 1, requestRowIds: asked })).not.toBe(atRequest);
+    // This request's own approved add (ID3) and remove (ID2) → unchanged.
+    expect(
+      rowSetRef(SPEC, [ID1, ID3], {
+        addCount: 2,
+        requestRowIds: asked,
+        priorApproved: ['line:add:1', `line:remove:${ID2}`],
+      }),
+    ).toBe(atRequest);
+    // Own add approved, plus one by someone else → different.
+    expect(
+      rowSetRef(SPEC, [ID1, ID2, ID3, ID9], {
+        addCount: 2,
+        requestRowIds: asked,
+        priorApproved: ['line:add:1'],
+      }),
+    ).not.toBe(atRequest);
+    // childBefore puts it on every add key of the payload.
+    const before = childBefore(
+      SPEC,
+      current,
+      rowSetContext([{ id: ID1 }, {}, {}], asked, []),
+    );
+    expect(before['line:add:1']).toBe(atRequest);
+    expect(before['line:add:2']).toBe(atRequest);
+    expect(before['line:add:3']).toBeUndefined();
   });
 
   it('no child box approved → any is false (header-only replay)', () => {

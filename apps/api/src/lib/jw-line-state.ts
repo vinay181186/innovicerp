@@ -201,46 +201,34 @@ export async function jwLineUsage(
 
 /**
  * Is this JWSO IN USE — does ANY live downstream document hang off it? The
- * edit-approval rule (jw-edit-registry isLive): a JWSO nothing uses yet edits
- * directly even with Document Edit Approval on; once in use, edits go for
- * approval. ONE SQL; the line arms are jwLineUsageRows' arms (same tables, same
- * "live" tests), plus a Party GRN raised against the JWSO header.
+ * edit-approval rule (jw-edit-registry jwsoEditGoesForApproval): a JWSO nothing
+ * uses yet edits directly even with Document Edit Approval on; once in use,
+ * edits go for approval. Built on THE line-usage read (jwLineUsageRows — the
+ * same read the line locks and the JWSO cancel use, so the three can never
+ * disagree) plus a Party GRN raised against the JWSO header. `lineIds` = the
+ * JWSO's live lines when the caller already holds them (locked); else read here.
  */
 export async function jwsoInUse(
   tx: DbTransaction,
   companyId: string,
   jobWorkOrderId: string,
+  lineIds?: readonly string[],
 ): Promise<boolean> {
-  const lines = sql`SELECT id FROM public.job_work_order_lines
-    WHERE job_work_order_id = ${jobWorkOrderId}::uuid AND company_id = ${companyId}::uuid
-      AND deleted_at IS NULL`;
-  const rows = (await tx.execute(sql`
-    SELECT (
-      EXISTS (SELECT 1 FROM public.job_cards
-               WHERE source_jw_line_id IN (${lines}) AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.plans
-                  WHERE jw_line_id IN (${lines}) AND deleted_at IS NULL
-                    AND plan_status <> 'cancelled')
-      OR EXISTS (SELECT 1 FROM public.party_grn_lines pgl
-                   JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
-                  WHERE pgl.jw_line_id IN (${lines}) AND pgl.deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.party_grn
-                  WHERE job_work_order_id = ${jobWorkOrderId}::uuid
-                    AND company_id = ${companyId}::uuid AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.party_material_issues
-                  WHERE jw_line_id IN (${lines}) AND deleted_at IS NULL)
-      OR EXISTS (SELECT 1 FROM public.jw_return_challans
-                  WHERE job_work_order_line_id IN (${lines}) AND deleted_at IS NULL
-                    AND status <> 'cancelled')
-      OR EXISTS (SELECT 1 FROM public.jw_invoices
-                  WHERE job_work_order_line_id IN (${lines}) AND deleted_at IS NULL
-                    AND status <> 'cancelled')
-      OR EXISTS (SELECT 1 FROM public.customer_material_return_lines cl
-                   JOIN public.customer_material_returns c
-                     ON c.id = cl.return_id AND c.deleted_at IS NULL
-                  WHERE cl.jw_line_id IN (${lines}) AND cl.deleted_at IS NULL
-                    AND c.status <> 'cancelled')
-    ) AS "inUse"
-  `)) as unknown as Array<{ inUse: boolean }>;
-  return Boolean(rows[0]?.inUse);
+  const ids =
+    lineIds ??
+    (
+      (await tx.execute(sql`
+        SELECT id FROM public.job_work_order_lines
+         WHERE job_work_order_id = ${jobWorkOrderId}::uuid AND company_id = ${companyId}::uuid
+           AND deleted_at IS NULL
+      `)) as unknown as Array<{ id: string }>
+    ).map((r) => r.id);
+  if ((await jwLineUsageRows(tx, ids)).length > 0) return true;
+  const hdr = (await tx.execute(sql`
+    SELECT 1 FROM public.party_grn
+     WHERE job_work_order_id = ${jobWorkOrderId}::uuid AND company_id = ${companyId}::uuid
+       AND deleted_at IS NULL
+     LIMIT 1
+  `)) as unknown as unknown[];
+  return hdr.length > 0;
 }

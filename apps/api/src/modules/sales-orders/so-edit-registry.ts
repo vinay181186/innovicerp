@@ -1,9 +1,11 @@
 // SalesOrder entry for the edit-approval engine (ADR-202, Phase 2b; line
 // approval 2026-10).
 //
-// LIVE = open (not draft / cancelled) AND IN USE — live downstream work hangs
-// off it (line-commitments.ts soInUse). An SO nothing uses yet edits directly
-// even with the gate on.
+// LIVE = open (not draft / cancelled) AND (IN USE — live downstream work hangs
+// off it, cancel.ts soInUse — OR an edit is already waiting on it). An SO
+// nothing uses yet edits directly even with the gate on; one with a pending
+// request keeps going through the engine, which refuses a second ("already has
+// an edit waiting") instead of writing beside the stale request.
 //
 // Boxes: the SO's own header fields (SO_HEADER_FIELDS + money — SO Status
 // included: a status move is one header box) and, through
@@ -33,7 +35,7 @@ import {
   internalSoNoTakenMessage,
   normaliseInternalSoNo,
 } from '@innovic/shared';
-import { clients, items, salesOrderLines, salesOrders, soMilestones } from '../../db/schema';
+import { clients, salesOrderLines, salesOrders, soMilestones } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import type { DiffField } from '../../lib/audit-trail';
@@ -47,30 +49,58 @@ import {
   childAfter,
   childBefore,
   childDiffFields,
+  codeRevText,
   isChildKey,
   parseChildKey,
   rebuildChildRows,
+  rowSetContext,
 } from '../document-edits/line-boxes';
+import { hasPendingDocumentEdit } from '../document-edits/pending';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
+import { soInUse } from './cancel';
 import {
   SO_HEADER_FIELDS,
   SO_LINE_FIELDS,
   SO_MONEY_HEADER_FIELDS,
   SO_MONEY_LINE_FIELDS,
+  day,
 } from './edit-log';
-import { soInUse } from './line-commitments';
-import { isInternalSoNoViolation, updateSalesOrderTx } from './service';
+import { isInternalSoNoViolation, resolveItemCodesById, updateSalesOrderTx } from './service';
 
 const SO_FORM_KEY: AccessFormKey = 'so_create';
 const LINE_PREFIX = 'line';
 const MS_PREFIX = 'ms';
 
-/** The frozen payload: the edit input, the requester's edit reason, and the
- *  item codes the request-time precheck resolved (for the add box's label). */
+/** The frozen payload: the edit input, the requester's edit reason, and what
+ *  the request-time precheck resolved — the item codes (so no snapshot resolves
+ *  them again) and the line / lot ids the request was raised against (the add
+ *  boxes' row-set ref). */
 type SoStagedPayload = UpdateSalesOrderInput & {
   reason?: string;
   boxItemCodes?: Record<string, string>;
+  boxRowIds?: { line?: string[]; ms?: string[] };
 };
+
+const ENTITY = 'SalesOrder';
+
+/**
+ * THE SO edit-approval "live" rule: open (not draft / cancelled) AND (an edit
+ * already waiting OR in use). Read by loadForDiff (the engine) and, under the
+ * writer's own locks, by updateSalesOrderTx's requireNotLive re-check — one
+ * rule, so the two can never drift.
+ */
+export async function soEditGoesForApproval(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  status: string,
+): Promise<boolean> {
+  if (status === 'draft' || status === 'cancelled') return false;
+  return (
+    (await hasPendingDocumentEdit(tx, companyId, ENTITY, id)) ||
+    (await soInUse(tx, companyId, id))
+  );
+}
 
 const fileName = (v: unknown): string | null =>
   v == null || v === '' ? null : (String(v).split('/').pop() ?? String(v));
@@ -105,7 +135,7 @@ function specs(): { line: ChildBoxSpec; ms: ChildBoxSpec } {
       attrs: [
         { attr: 'lotNo', label: 'Lot No.' },
         { attr: 'qty', label: 'Qty' },
-        { attr: 'dueDate', label: 'Due Date' },
+        { attr: 'dueDate', label: 'Due Date', format: day },
         { attr: 'remarks', label: 'Remarks' },
       ],
     },
@@ -114,40 +144,24 @@ function specs(): { line: ChildBoxSpec; ms: ChildBoxSpec } {
 }
 
 const trimmed = (v: string | null | undefined): string | null => v?.trim() || null;
-const codeRevOf = (code: string | null, revision: string | null | undefined): string | null => {
-  const c = code ?? '—';
-  return revision ? `${c}/${revision}` : c;
-};
 
 type SoLineRow = typeof salesOrderLines.$inferSelect & { itemCode: string | null };
 type SoMsRow = typeof soMilestones.$inferSelect;
 
-async function itemCodesOf(
-  tx: DbTransaction,
-  companyId: string,
-  ids: Array<string | null | undefined>,
-): Promise<Map<string, string>> {
-  const unique = [...new Set(ids.filter((x): x is string => Boolean(x)))];
-  const map = new Map<string, string>();
-  if (unique.length === 0) return map;
-  const rows = await tx
-    .select({ id: items.id, code: items.code })
-    .from(items)
-    .where(and(eq(items.companyId, companyId), inArray(items.id, unique)));
-  for (const r of rows) map.set(r.id, r.code);
-  return map;
-}
+const linesOf = (target: DocEditTarget): SoLineRow[] =>
+  (target.doc['lines'] as SoLineRow[] | undefined) ?? [];
+const milestonesOf = (target: DocEditTarget): SoMsRow[] =>
+  (target.doc['milestones'] as SoMsRow[] | undefined) ?? [];
 
 function currentLines(target: DocEditTarget): CurrentChild[] {
-  const lines = (target.doc['lines'] as SoLineRow[] | undefined) ?? [];
-  return lines.map((l) => {
+  return linesOf(target).map((l) => {
     const code = l.itemCode ?? l.partName;
     return {
       id: l.id,
       no: l.lineNo,
       values: {
         lineNo: l.lineNo,
-        codeRev: codeRevOf(l.itemCode, l.revision),
+        codeRev: codeRevText(l.itemCode, l.revision),
         partName: trimmed(l.partName),
         material: trimmed(l.material),
         drawingNo: trimmed(l.drawingNo),
@@ -178,7 +192,7 @@ function proposedLines(
   return lines.map((l) => {
     const code = codeOf(l);
     const v: Record<string, unknown> = {
-      codeRev: codeRevOf(code, l.revision),
+      codeRev: codeRevText(code, l.revision),
       partName: trimmed(l.partName),
       clientPoLineNo: trimmed(l.clientPoLineNo),
       orderQty: l.orderQty,
@@ -203,8 +217,7 @@ function proposedLines(
 }
 
 function currentMilestones(target: DocEditTarget): CurrentChild[] {
-  const ms = (target.doc['milestones'] as SoMsRow[] | undefined) ?? [];
-  return ms.map((m) => ({
+  return milestonesOf(target).map((m) => ({
     id: m.id,
     no: m.lotNo,
     values: {
@@ -322,7 +335,7 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     ];
   },
 
-  async loadForDiff(tx, companyId, id): Promise<DocEditTarget | null> {
+  async loadForDiff(tx, companyId, id, ctx): Promise<DocEditTarget | null> {
     // Header first, then its lines — the writer's lock order.
     const rows = await tx
       .select()
@@ -352,28 +365,31 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
       .from(soMilestones)
       .where(and(eq(soMilestones.salesOrderId, id), isNull(soMilestones.deletedAt)))
       .orderBy(asc(soMilestones.lotNo));
-    const codeById = await itemCodesOf(
+    const codeById = await resolveItemCodesById(
       tx,
-      companyId,
       lineRows.map((l) => l.itemId),
+      companyId,
     );
     const lines: SoLineRow[] = lineRows.map((l) => ({
       ...l,
       itemCode: (l.itemId ? codeById.get(l.itemId) : undefined) ?? l.itemCodeText,
     }));
-    const open = so.status !== 'draft' && so.status !== 'cancelled';
     return {
       doc: { ...so, lines, milestones },
       updatedAt: so.updatedAt,
       docCode: so.code,
-      // Draft edits apply directly; a cancelled SO is not editable; an open SO
-      // nothing uses yet edits directly too. Only an IN-USE one is staged.
-      isLive: open && (await soInUse(tx, companyId, id)),
+      // THE live rule (soEditGoesForApproval). The decide path never reads
+      // isLive, so it skips the in-use read.
+      isLive:
+        ctx?.purpose === 'decide'
+          ? false
+          : await soEditGoesForApproval(tx, companyId, id, so.status),
     };
   },
 
-  beforeSnapshot(target) {
+  beforeSnapshot(target, proposedPayload, priorApproved) {
     const d = target.doc;
+    const p = proposedPayload as SoStagedPayload | undefined;
     return {
       internalSoNo: d['internalSoNo'] ?? null,
       soDate: d['soDate'],
@@ -386,8 +402,16 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
       costCenter: d['costCenter'],
       remarks: d['remarks'],
       gstPercent: d['gstPercent'],
-      ...childBefore(specs().line, currentLines(target)),
-      ...childBefore(specs().ms, currentMilestones(target)),
+      ...childBefore(
+        specs().line,
+        currentLines(target),
+        rowSetContext(p?.lines, p?.boxRowIds?.line, priorApproved),
+      ),
+      ...childBefore(
+        specs().ms,
+        currentMilestones(target),
+        rowSetContext(p?.milestones, p?.boxRowIds?.ms, priorApproved),
+      ),
     };
   },
 
@@ -420,11 +444,18 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     if (h.gstPercent !== undefined && showMoney) out['gstPercent'] = h.gstPercent;
 
     if (target && i.lines !== undefined) {
-      const codeById = await itemCodesOf(
-        tx,
-        companyId,
-        i.lines.map((l) => l.itemId),
-      );
+      // Codes: the ones the precheck froze, then the current lines' (already
+      // resolved by loadForDiff); only an id neither knows is read here.
+      const codeById = new Map<string, string>(Object.entries(i.boxItemCodes ?? {}));
+      for (const l of linesOf(target)) {
+        if (l.itemId && l.itemCode && !codeById.has(l.itemId)) codeById.set(l.itemId, l.itemCode);
+      }
+      const missing = i.lines.flatMap((l) => (l.itemId && !codeById.has(l.itemId) ? [l.itemId] : []));
+      if (missing.length > 0) {
+        for (const [itemId, code] of await resolveItemCodesById(tx, missing, companyId)) {
+          codeById.set(itemId, code);
+        }
+      }
       const proposed = proposedLines(
         i.lines,
         (l) => (l.itemId ? (codeById.get(l.itemId) ?? null) : (l.itemCodeText?.trim() ?? null)),
@@ -472,7 +503,7 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     };
   },
 
-  async applyEdit(tx, companyId, id, filteredInput, expectedUpdatedAt, user) {
+  async applyEdit(tx, companyId, id, filteredInput, expectedUpdatedAt, user, target) {
     const filtered = filteredInput as {
       header: Record<string, unknown>;
       approvedChildFields?: string[];
@@ -492,17 +523,21 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
 
     const lineBoxes = approvedChildBoxes(LINE_PREFIX, approvedFields);
     if (lineBoxes.any) {
-      const current = await tx
-        .select()
-        .from(salesOrderLines)
-        .where(
-          and(
-            eq(salesOrderLines.salesOrderId, id),
-            eq(salesOrderLines.companyId, companyId),
-            isNull(salesOrderLines.deletedAt),
-          ),
-        )
-        .orderBy(asc(salesOrderLines.lineNo));
+      // The rows loadForDiff locked in this same tx (read again only when
+      // called without them).
+      const current: Array<typeof salesOrderLines.$inferSelect> = target
+        ? linesOf(target)
+        : await tx
+            .select()
+            .from(salesOrderLines)
+            .where(
+              and(
+                eq(salesOrderLines.salesOrderId, id),
+                eq(salesOrderLines.companyId, companyId),
+                isNull(salesOrderLines.deletedAt),
+              ),
+            )
+            .orderBy(asc(salesOrderLines.lineNo));
       payload.lines = rebuildChildRows(
         lineBoxes,
         current.map((c) => ({ id: c.id, input: lineInputFromRow(c) })),
@@ -513,11 +548,13 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
 
     const msBoxes = approvedChildBoxes(MS_PREFIX, approvedFields);
     if (msBoxes.any) {
-      const current = await tx
-        .select()
-        .from(soMilestones)
-        .where(and(eq(soMilestones.salesOrderId, id), isNull(soMilestones.deletedAt)))
-        .orderBy(asc(soMilestones.lotNo));
+      const current: SoMsRow[] = target
+        ? milestonesOf(target)
+        : await tx
+            .select()
+            .from(soMilestones)
+            .where(and(eq(soMilestones.salesOrderId, id), isNull(soMilestones.deletedAt)))
+            .orderBy(asc(soMilestones.lotNo));
       payload.milestones = rebuildChildRows(
         msBoxes,
         current.map((m) => ({

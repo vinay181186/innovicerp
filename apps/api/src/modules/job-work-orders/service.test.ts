@@ -13,7 +13,7 @@ import {
   jobWorkOrders,
   users,
 } from '../../db/schema';
-import type { AuthContext } from '../../db/with-user-context';
+import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import {
   AuthorizationError,
   ConflictError,
@@ -715,7 +715,8 @@ describe('JWSO line POL + Remarks (ADR-236)', () => {
 });
 
 // ADR-202 line approval (2026-10): with Document Edit Approval ON, a JWSO is
-// staged only once it is IN USE (lib/jw-line-state.ts jwsoInUse). Then every
+// staged only once it is IN USE (lib/jw-line-state.ts jwsoInUse) or an edit
+// already waits on it (jw-edit-registry jwsoEditGoesForApproval). Then every
 // line change is a box — `line:<id>:<attr>`, `line:add:<n>`, `line:remove:<id>`
 // — approved through the real writer; a doomed change is refused at request by
 // rehearsing that writer. Integration tests: the house harness (TEST stack).
@@ -1044,5 +1045,160 @@ describe('JWSO edit-approval — in-use rule + line boxes', () => {
     )) as DocumentEditStagedResult;
     expect(res.staged).toBe(true);
     expect(res.request.changes.map((c) => c.id)).toEqual(['remarks']);
+  }, 180_000);
+
+  // ── Code-review fixes (2026-10-26) ─────────────────────────────────────────
+
+  it('stale request: in use turns off while an edit waits — a new edit is refused, not written beside it', async () => {
+    const jw = await newJw('LA9');
+    const lineId = jw.lines[0]!.id;
+    await putJc(lineId, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(lineId, '20', 5)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    // The Job Card goes away — nothing uses the JWSO any more.
+    await db.update(jobCards).set({ deletedAt: new Date() }).where(eq(jobCards.sourceJwLineId, lineId));
+    const err = await service
+      .updateJobWorkOrderOrStage(
+        jw.id,
+        {
+          header: { clientId: firstClientId },
+          lines: [lineInput(lineId, '22', 2)],
+          expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+        },
+        admin,
+      )
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toContain('already has an edit waiting');
+    const l = await readJwLine(lineId);
+    expect(l.clientPoLineNo).toBe('20');
+    expect(l.orderQty).toBe(2);
+  }, 180_000);
+
+  it('add box: a line removed by someone else before approval marks the add superseded', async () => {
+    const jw = await newJw('LA10', [
+      { pol: '20', qty: 2 },
+      { pol: '30', qty: 3 },
+    ]);
+    const [l1, l2] = jw.lines;
+    await putJc(l1!.id, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(l1!.id, '20', 2), lineInput(l2!.id, '30', 3), lineInput(undefined, '40', 7)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const add = staged.request.changes.find((c) => c.id === 'line:add:1');
+    expect(String(add?.before)).toMatch(/^2 lines on the order \(ref [0-9a-f]{6}\)$/);
+    // Someone else removes line 2 meanwhile.
+    await db
+      .update(jobWorkOrderLines)
+      .set({ deletedAt: new Date() })
+      .where(eq(jobWorkOrderLines.id, l2!.id));
+    const decided = await decideDocumentEdit(
+      { id: staged.request.id, decisions: [{ changeId: add!.id, decision: 'approve' }] },
+      admin,
+    );
+    expect(decided.decisions.find((d) => d.changeId === add!.id)?.outcome).toBe('superseded');
+    const live = await db
+      .select()
+      .from(jobWorkOrderLines)
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)));
+    expect(live.map((l) => l.clientPoLineNo)).toEqual(['20']);
+  }, 180_000);
+
+  it('add box: approving add 1 and then add 2 in two clicks applies both (own adds are not drift)', async () => {
+    const jw = await newJw('LA11');
+    const lineId = jw.lines[0]!.id;
+    await putJc(lineId, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(lineId, '20', 2), lineInput(undefined, '40', 4), lineInput(undefined, '50', 5)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    await decideDocumentEdit(
+      { id: staged.request.id, decisions: [{ changeId: 'line:add:1', decision: 'approve' }] },
+      admin,
+    );
+    const decided = await decideDocumentEdit(
+      { id: staged.request.id, decisions: [{ changeId: 'line:add:2', decision: 'approve' }] },
+      admin,
+    );
+    expect(decided.status).toBe('approved');
+    expect(decided.decisions.map((d) => d.outcome)).toEqual(['approved', 'approved']);
+    const live = await db
+      .select()
+      .from(jobWorkOrderLines)
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)));
+    expect(live.map((l) => l.clientPoLineNo).sort()).toEqual(['20', '40', '50']);
+  }, 180_000);
+
+  it('§20: the direct write re-checks in use under its own locks — a JWSO that came into use is refused 409', async () => {
+    const jw = await newJw('LA12');
+    const lineId = jw.lines[0]!.id;
+    // The engine looked first and found nothing using it; a Job Card lands
+    // before the direct write takes its locks.
+    await putJc(lineId, 1);
+    const err = await withUserContext(admin, (tx) =>
+      service.updateJobWorkOrderTx(
+        tx,
+        jw.id,
+        {
+          header: { clientId: firstClientId },
+          lines: [lineInput(lineId, '23', 2)],
+          expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+        },
+        admin,
+        { requireNotLive: true },
+      ),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toBe(
+      'This Job Work Order is now in use — save again and the change will go for approval.',
+    );
+    expect((await readJwLine(lineId)).clientPoLineNo).toBe('20');
+  }, 180_000);
+
+  it('CODE/REV: item and Rev are ONE box on a JWSO line; approve writes the Rev', async () => {
+    const jw = await newJw('LA13');
+    const lineId = jw.lines[0]!.id;
+    await putJc(lineId, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [{ ...lineInput(lineId, '20', 2), revision: 'B' }],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const ids = staged.request.changes.map((c) => c.id);
+    expect(ids).toEqual([`line:${lineId}:codeRev`]);
+    const box = staged.request.changes[0]!;
+    expect(box.label).toBe('Line 1 · CODE/REV');
+    expect(box.before).toBe(firstItemCode);
+    expect(box.after).toBe(`${firstItemCode}/B`);
+    await decideDocumentEdit(
+      { id: staged.request.id, decisions: [{ changeId: box.id, decision: 'approve' }] },
+      admin,
+    );
+    const l = await readJwLine(lineId);
+    expect(l.revision).toBe('B');
+    expect(l.itemId).toBe(firstItemId);
   }, 180_000);
 });

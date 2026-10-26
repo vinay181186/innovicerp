@@ -30,7 +30,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { useDocumentHistory } from '@/modules/activity-log/api';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -105,7 +105,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // ADR-202 Phase 3 — staged header edits waiting for approval. Their per-field
   // changes drive the inline amber chips next to each editable fact below.
   const pendingEdit = usePendingEditForDoc('ProductionOrder', id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 

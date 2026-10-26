@@ -13,7 +13,8 @@ import {
   soMilestones,
   users,
 } from '../../db/schema';
-import type { AuthContext } from '../../db/with-user-context';
+import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { fmtDate } from '../../lib/format-date';
 import {
   AuthorizationError,
   ConflictError,
@@ -850,7 +851,8 @@ describe('SO line POL + Remarks (ADR-236)', () => {
 });
 
 // ADR-202 line approval (2026-10): with Document Edit Approval ON, an SO is
-// staged only once it is IN USE (line-commitments.ts soInUse). Then every line
+// staged only once it is IN USE (cancel.ts soInUse) or an edit already waits on
+// it (so-edit-registry soEditGoesForApproval). Then every line
 // and Delivery Schedule change is a box — `line:<id>:<attr>`, `line:add:<n>`,
 // `line:remove:<id>`, `ms:<id>:<attr>`, `ms:add:<n>`, `ms:remove:<id>` — and an
 // SO Status move is a header box; all applied through the real writer, and a
@@ -1190,5 +1192,105 @@ describe('SO edit-approval — in-use rule + line / lot boxes', () => {
     )) as DocumentEditStagedResult;
     expect(res.staged).toBe(true);
     expect(res.request.changes.map((c) => c.id)).toEqual(['remarks']);
+  }, 180_000);
+
+  // ── Code-review fixes (2026-10-26) ─────────────────────────────────────────
+
+  it('stale request: in use turns off while an edit waits — a new edit is refused, not written beside it', async () => {
+    const so = await newSo('LA9');
+    const lineId = so.lines[0]!.id;
+    await putJc(lineId);
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      { header: {}, lines: [line(lineId, '20', 5)], expectedUpdatedAt: so.updatedAt },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    await db.update(jobCards).set({ deletedAt: new Date() }).where(eq(jobCards.sourceSoLineId, lineId));
+    const err = await service
+      .updateSalesOrderOrStage(
+        so.id,
+        { header: {}, lines: [line(lineId, '22', 2)], expectedUpdatedAt: so.updatedAt },
+        admin,
+      )
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toContain('already has an edit waiting');
+    const l = await readSoLine(lineId);
+    expect(l.clientPoLineNo).toBe('20');
+    expect(l.orderQty).toBe(2);
+  }, 180_000);
+
+  it('add box: a lot added by someone else before approval marks the lot add superseded', async () => {
+    const so = await newSo('LA10', [{ pol: '20', qty: 4 }], [{ lotNo: 1, qty: 4 }]);
+    await putJc(so.lines[0]!.id);
+    const msId = so.milestones[0]!.id;
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      {
+        header: {},
+        milestones: [
+          { id: msId, lotNo: 1, qty: 4 },
+          { lotNo: 2, qty: 2 },
+        ],
+        expectedUpdatedAt: so.updatedAt,
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const add = staged.request.changes.find((c) => c.id === 'ms:add:1');
+    expect(String(add?.before)).toMatch(/^1 lot on the order \(ref [0-9a-f]{6}\)$/);
+    // Someone else adds a lot meanwhile.
+    await db.insert(soMilestones).values({
+      companyId: admin.companyId!,
+      salesOrderId: so.id,
+      lotNo: 3,
+      qty: 1,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+    const decided = await decideDocumentEdit(
+      { id: staged.request.id, decisions: [{ changeId: add!.id, decision: 'approve' }] },
+      admin,
+    );
+    expect(decided.decisions.find((d) => d.changeId === add!.id)?.outcome).toBe('superseded');
+  }, 180_000);
+
+  it('§20: the direct write re-checks in use under its own locks — an SO that came into use is refused 409', async () => {
+    const so = await newSo('LA11');
+    const lineId = so.lines[0]!.id;
+    await putJc(lineId);
+    const err = await withUserContext(admin, (tx) =>
+      service.updateSalesOrderTx(
+        tx,
+        so.id,
+        { header: {}, lines: [line(lineId, '23', 2)], expectedUpdatedAt: so.updatedAt },
+        admin,
+        null,
+        { requireNotLive: true },
+      ),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toBe(
+      'This Sales Order is now in use — save again and the change will go for approval.',
+    );
+    expect((await readSoLine(lineId)).clientPoLineNo).toBe('20');
+  }, 180_000);
+
+  it('a lot Due Date box reads as a date, like the line Due Date', async () => {
+    const so = await newSo('LA12', [{ pol: '20', qty: 4 }], [{ lotNo: 1, qty: 4 }]);
+    await putJc(so.lines[0]!.id);
+    const msId = so.milestones[0]!.id;
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      {
+        header: {},
+        milestones: [{ id: msId, lotNo: 1, qty: 4, dueDate: '2026-12-31' }],
+        expectedUpdatedAt: so.updatedAt,
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const box = staged.request.changes.find((c) => c.id === `ms:${msId}:dueDate`);
+    expect(box?.label).toBe('Lot 1 · Due Date');
+    expect(box?.after).toBe(fmtDate('2026-12-31'));
   }, 180_000);
 });

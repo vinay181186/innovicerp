@@ -31,7 +31,12 @@ import { fmtDateTime } from '@/lib/date';
 import { Icon } from '@/ui/core';
 import { type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { useDecideDocumentEdit, useDocumentEditCounts, useDocumentEdits } from '../api';
+import {
+  undecidedChanges,
+  useDecideDocumentEdit,
+  useDocumentEditCounts,
+  useDocumentEdits,
+} from '../api';
 
 import { groupChanges } from './change-groups';
 import { DocEditLink } from './doc-edit-link';
@@ -46,8 +51,7 @@ function fmtVal(v: ActivityChangeValue): string {
 
 /** Changes on a request that have not yet been decided individually. */
 function stillPending(r: DocumentEditRow): DocumentEditChange[] {
-  const decided = new Set(r.decisions.map((d) => d.changeId));
-  return r.changes.filter((c) => !decided.has(c.id));
+  return undecidedChanges(r);
 }
 
 function columns(): DataTableColumn<DocumentEditRow>[] {

@@ -35,7 +35,11 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useDocumentHistory } from '@/modules/activity-log/api';
-import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  isStagedResult,
+  undecidedChangesOf,
+  usePendingEditForDoc,
+} from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { EmptyState, Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -93,7 +97,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
   // second). Same query as the detail page's, so it comes from cache.
   const pendingEdit = usePendingEditForDoc('ProductionOrder', id);
   const pendingRows = pendingEdit.data?.rows ?? [];
-  const pendingChanges = pendingRows.flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingRows);
   const hasPendingEdit = pendingRows.length > 0;
   // Until the check answers Save stays off too, so a second edit can't slip
   // through in that moment (the note and chips wait for real rows).

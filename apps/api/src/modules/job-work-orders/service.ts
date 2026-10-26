@@ -129,8 +129,10 @@ interface ItemMasterRef {
 
 /** itemId → master item code (+ image path). Used on READ so the detail/edit
  *  form shows the readable code, and for the line's customer RM code. The
- *  image rides along in the same query so the thumbnail costs no extra trip. */
-async function resolveItemCodesById(
+ *  image rides along in the same query so the thumbnail costs no extra trip.
+ *  THE JWSO item-code resolver — the edit-approval registry uses it too. A
+ *  deleted item resolves to nothing (the caller falls back to its snapshot). */
+export async function resolveItemCodesById(
   tx: DbTransaction,
   itemIds: Array<string | null>,
   companyId: string,
@@ -1294,6 +1296,39 @@ export async function updateJobWorkOrder(
   return withUserContext(user, (tx) => updateJobWorkOrderTx(tx, id, input, user));
 }
 
+/** How a caller runs the JWSO edit body (updateJobWorkOrderTx). */
+export interface JwEditTxOpts {
+  /** The direct-edit path of updateJobWorkOrderOrStage: the engine said "not
+   *  live" in ITS transaction; re-ask under THIS one's header + line locks and
+   *  refuse (409) if the JWSO is now in use or an edit is now waiting, so the
+   *  decision and the write are never in different transactions (§20). The
+   *  approval path (applyEdit) never sets it. */
+  requireNotLive?: boolean;
+  /** false = skip the final detail read (the request-time rehearsal, which is
+   *  rolled back anyway). */
+  returnDetail?: boolean;
+}
+
+/** §20 — the in-transaction half of the "not in use → direct write" decision:
+ *  same rule as the engine (jw-edit-registry jwsoEditGoesForApproval), read
+ *  under the locks the writer already holds. */
+async function refuseIfNowForApproval(
+  tx: DbTransaction,
+  companyId: string,
+  hdr: { id: string; status: string },
+  lineIds: string[],
+): Promise<void> {
+  // Imported dynamically — the engine and the registry both import this file.
+  const { isDocEditApprovalOn } = await import('../document-edits/service');
+  if (!(await isDocEditApprovalOn(tx, companyId))) return;
+  const { jwsoEditGoesForApproval } = await import('./jw-edit-registry');
+  if (await jwsoEditGoesForApproval(tx, companyId, hdr.id, hdr.status, lineIds)) {
+    throw new ConflictError(
+      'This Job Work Order is now in use — save again and the change will go for approval.',
+    );
+  }
+}
+
 /**
  * The body of a JWSO edit, inside a caller-supplied transaction. Called by
  * updateJobWorkOrder (which opens the tx) and by the edit-approval engine's
@@ -1309,7 +1344,22 @@ export async function updateJobWorkOrderTx(
   id: string,
   input: UpdateJobWorkOrderInput,
   user: AuthContext,
-): Promise<JobWorkOrderDetail> {
+  opts?: JwEditTxOpts & { returnDetail?: true },
+): Promise<JobWorkOrderDetail>;
+export async function updateJobWorkOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateJobWorkOrderInput,
+  user: AuthContext,
+  opts: JwEditTxOpts & { returnDetail: false },
+): Promise<null>;
+export async function updateJobWorkOrderTx(
+  tx: DbTransaction,
+  id: string,
+  input: UpdateJobWorkOrderInput,
+  user: AuthContext,
+  opts?: JwEditTxOpts,
+): Promise<JobWorkOrderDetail | null> {
   const companyId = requireCompany(user);
   // Money in, same rule as money out. `priceOff` makes "can do the job but must
   // not see the number" a supported setup, so an editor with prices hidden is a
@@ -1348,6 +1398,14 @@ export async function updateJobWorkOrderTx(
       .from(jobWorkOrderLines)
       .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
       .for('update');
+    if (opts?.requireNotLive) {
+      await refuseIfNowForApproval(
+        tx,
+        companyId,
+        existingHdr,
+        existingLines.map((l) => l.id),
+      );
+    }
     const usage = await jwLineUsage(
       tx,
       existingLines.map((l) => l.id),
@@ -1487,6 +1545,7 @@ export async function updateJobWorkOrderTx(
       );
     }
 
+    if (opts?.returnDetail === false) return null;
     return loadJobWorkOrderDetail(tx, id, companyId, showMoney);
   }
 }
@@ -1525,12 +1584,17 @@ export async function updateJobWorkOrderOrStage(
     input,
     input.expectedUpdatedAt,
     user,
-    async (tx) => {
+    async (tx, target) => {
       // ADR-235 — nothing is staged while a Cancel Request waits on the JWSO.
       await assertNoPendingCancel(tx, 'job_work_order', id);
-      await rehearseInSavepoint(tx, (sp) => updateJobWorkOrderTx(sp, id, input, user));
+      await rehearseInSavepoint(tx, (sp) =>
+        updateJobWorkOrderTx(sp, id, input, user, { returnDetail: false }),
+      );
       // Freeze each line item's CODE with the payload, so the `line:add:<n>`
-      // box can name its item ("Add line · ABC-12 × 20 · POL 10").
+      // box can name its item ("Add line · ABC-12 × 20 · POL 10") and the
+      // snapshots never resolve them again; and the line ids the request was
+      // raised against, so an add box can tell a line added / removed by
+      // someone else (line-boxes.ts rowSetRef).
       const codes = await resolveItemCodesById(
         tx,
         (input.lines ?? []).map((l) => l.itemId),
@@ -1538,12 +1602,19 @@ export async function updateJobWorkOrderOrStage(
       );
       const boxItemCodes: Record<string, string> = {};
       for (const [itemId, v] of codes) boxItemCodes[itemId] = v.code;
-      return { ...input, boxItemCodes };
+      const lines = (target.doc['lines'] as Array<{ id: string }> | undefined) ?? [];
+      return { ...input, boxItemCodes, boxRowIds: { line: lines.map((l) => l.id) } };
     },
   );
   if (request) return { staged: true, request };
 
-  return updateJobWorkOrder(id, input, user);
+  // Not staged: the gate is off, or the JWSO was not in use when the engine
+  // looked. The writer re-asks under its own locks (requireNotLive) so a JWSO
+  // that came into use in between is refused, not written directly. (The
+  // edit tick was checked at the top.)
+  return withUserContext(user, (tx) =>
+    updateJobWorkOrderTx(tx, id, input, user, { requireNotLive: true }),
+  );
 }
 
 /** ADR-197 — one line's add / edit / remove, logged by updateJobWorkOrder. */

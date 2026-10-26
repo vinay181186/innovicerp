@@ -6,7 +6,10 @@
 // so an attr name must stay ≤ 22 chars):
 //   <prefix>:<rowId>:<attr>   one attribute of an existing row    e.g. line:<id>:orderQty
 //   <prefix>:add:<n>          a whole NEW row, n = 1-based ordinal among the
-//                             id-less rows of the frozen proposed payload
+//                             id-less rows of the frozen proposed payload. Its
+//                             "before" is the row SET it was asked against
+//                             (rowSetRef), so a row added / removed by anyone
+//                             else before approval marks it superseded.
 //   <prefix>:remove:<rowId>   an existing row removed
 // Labels (≤ 80 chars, clipped with "…"): "<Row> <no> · <Field>" — the web groups
 // boxes on the " · " — "Add line · …", "Remove line <no> · …".
@@ -17,6 +20,7 @@
 // snapshots and the rebuilt row array. The module's own writer then applies the
 // rebuilt array, so every guard of a direct edit runs on approval too.
 
+import { createHash } from 'node:crypto';
 import type { DiffField } from '../../lib/audit-trail';
 import type { DbTransaction } from '../../db/with-user-context';
 
@@ -127,17 +131,89 @@ export function childDiffFields(
   return out;
 }
 
-/** Current values: every attr, and the row's summary on its remove key. */
+/** "ABC-12/B" — the item and the customer's Rev as ONE fact (NAMING: Rev is
+ *  never shown alone); "—" when there is no code. */
+export function codeRevText(code: string | null, revision: string | null | undefined): string {
+  const c = code ?? '—';
+  return revision ? `${c}/${revision}` : c;
+}
+
+/** What the add boxes of one request are compared against. */
+export interface RowSetContext {
+  /** How many add boxes the proposed payload carries (id-less rows). */
+  addCount: number;
+  /** The row ids the request was raised against (frozen with the payload at
+   *  request time). Absent → the current rows are the request's rows. */
+  requestRowIds?: readonly string[] | undefined;
+  /** Box keys EARLIER decide calls on this request already applied. */
+  priorApproved?: Iterable<string> | undefined;
+}
+
+/**
+ * The "before" of every `<prefix>:add:<n>` box: the row SET the request was
+ * raised against, as "3 lines on the order (ref 4f2a9c)" — a count a person
+ * reads plus a short hash of the row ids. Equal at approval only when nobody
+ * else added or removed a row since: this request's OWN approved removes are
+ * counted back in and its own approved adds counted out, so approving add 1
+ * and then add 2 in two clicks does not supersede add 2.
+ */
+export function rowSetRef(
+  spec: ChildBoxSpec,
+  currentIds: readonly string[],
+  ctx?: RowSetContext,
+): string {
+  let ids: string[];
+  let extra = 0;
+  if (ctx?.requestRowIds) {
+    const prior = approvedChildBoxes(spec.prefix, ctx.priorApproved ?? []);
+    const asked = new Set(ctx.requestRowIds);
+    const live = new Set(currentIds);
+    ids = ctx.requestRowIds.filter((id) => live.has(id) || prior.removes.has(id));
+    extra = currentIds.filter((id) => !asked.has(id)).length - prior.adds.size;
+  } else {
+    ids = [...currentIds];
+  }
+  ids.sort();
+  const n = ids.length + extra;
+  const ref = createHash('sha1').update(`${ids.join(',')}|${extra}`).digest('hex').slice(0, 6);
+  const word = spec.rowWord.toLowerCase();
+  return `${n} ${word}${n === 1 ? '' : 's'} on the order (ref ${ref})`;
+}
+
+/** Current values: every attr, the row's summary on its remove key, and the
+ *  row-set ref (rowSetRef) on each of the request's add keys. */
 export function childBefore(
   spec: ChildBoxSpec,
   current: readonly CurrentChild[],
+  rowSet?: RowSetContext,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const c of current) {
     for (const a of spec.attrs) out[childKey(spec.prefix, c.id, a.attr)] = c.values[a.attr] ?? null;
     out[childRemoveKey(spec.prefix, c.id)] = c.summary;
   }
+  if (rowSet && rowSet.addCount > 0) {
+    const ref = rowSetRef(
+      spec,
+      current.map((c) => c.id),
+      rowSet,
+    );
+    for (let n = 1; n <= rowSet.addCount; n++) out[childAddKey(spec.prefix, n)] = ref;
+  }
   return out;
+}
+
+/** The RowSetContext of one prefix's rows from a staged payload. */
+export function rowSetContext(
+  proposedRows: ReadonlyArray<{ id?: string | undefined }> | undefined,
+  requestRowIds: readonly string[] | undefined,
+  priorApproved: Iterable<string> | undefined,
+): RowSetContext {
+  return {
+    addCount: addOrdinals(proposedRows ?? []).length,
+    requestRowIds,
+    priorApproved,
+  };
 }
 
 /** Proposed values: touched attrs of kept rows, the summary of each new row on
