@@ -273,12 +273,17 @@ export interface LevelSoLine {
   productionOrders: LevelProductionOrder[];
   /** Cards built for this line (by a Production Order or raised on the line); rework children excluded. */
   jobCards: LevelJobCard[];
-  /** The line ITEM's live Route Card (null = none yet → "Pending"). For an
-   *  equipment line the BOM parts' cards are on their PRO rows. */
-  routeCard: LevelRouteCard | null;
-  /** Live (not cancelled / deleted) customer dispatches and invoices of this line. */
+  /** Live Route Cards that drive this line: the line ITEM's card first, then
+   *  the card of every other item planned on the line (BOM children, equipment
+   *  parts), de-duplicated. Empty = none yet → "Pending". Same rule as the
+   *  Planning "RC No." column (the plan item's card). */
+  routeCards: LevelRouteCard[];
+  /** Live (not cancelled / deleted) customer dispatches and invoices of this
+   *  line. EMPTY when the caller lacks View on Customer Dispatch / Invoices —
+   *  `docsHidden` then says which, so the screen can say so instead of "Pending". */
   dispatches: LevelLineDoc[];
   invoices: LevelLineDoc[];
+  docsHidden: { dispatches: boolean; invoices: boolean };
 }
 
 export interface LevelMatrixResponse {
