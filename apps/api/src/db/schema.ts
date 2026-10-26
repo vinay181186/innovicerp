@@ -1182,6 +1182,10 @@ export const jobCards = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0221) — the cancel's reason / stamp (deleted_at is stamped too).
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     check(
@@ -3242,6 +3246,15 @@ export const deliveryChallanReceipts = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0221) — the cancel's reason / stamp (deleted_at is stamped too).
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0221) — the auto-GRN this receipt raised (null on an old
+    // receipt that could not be matched — its cancel is refused).
+    goodsReceiptNoteId: uuid('goods_receipt_note_id').references(
+      (): AnyPgColumn => goodsReceiptNotes.id,
+    ),
   },
   (t) => [
     uniqueIndex('delivery_challan_receipts_company_code_uniq')
@@ -5981,6 +5994,10 @@ export const jwDcInward = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0221) — the cancel's reason / stamp (deleted_at is stamped too).
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('jw_dc_inward_company_code_uniq')
@@ -8234,6 +8251,10 @@ export const productionOrders = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // ADR-235 (0221) — the cancel's reason / stamp (deleted_at is stamped too).
+    cancelReason: text('cancel_reason'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
     uniqueIndex('production_orders_company_code_uniq')

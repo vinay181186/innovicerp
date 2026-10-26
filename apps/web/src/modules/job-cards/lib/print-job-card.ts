@@ -159,6 +159,8 @@ export function printJobCard(args: {
   productionOrderCode?: string | null;
   /** ADR-202 — the JC has a pending edit; print "Draft — awaiting approval". */
   draft?: boolean | undefined;
+  /** ADR-235 — the JC is Cancelled; the sheet carries the CANCELLED stamp. */
+  cancelled?: boolean | undefined;
 }): boolean {
   const { jc } = args;
   const company = buildDocCompany(args.company);
@@ -257,7 +259,7 @@ export function printJobCard(args: {
     <button onclick="window.print()" style="padding:8px 24px;background:#1E4DB3;color:#fff;border:0;border-radius:5px;cursor:pointer">🖨 Print</button>
     <button onclick="window.close()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">✕ Close</button>
   </div>
-  <article class="sheet">
+  <article class="sheet${args.cancelled ? ' is-cancelled' : ''}">
     <table class="doc">
       <thead><tr><th class="lh" colspan="${COLS}">${letterhead}</th></tr></thead>
       <tfoot><tr><td class="pgfoot" colspan="${COLS}"><div></div></td></tr></tfoot>

@@ -83,7 +83,13 @@ interface EntityMeta {
 const ENTITIES: readonly EntityMeta[] = [
   { type: 'Sales Order', table: 'sales_orders', labelSql: 'code', hasUpdatedBy: true },
   { type: 'Job Work Order', table: 'job_work_orders', labelSql: 'code', hasUpdatedBy: true },
-  { type: 'Job Card', table: 'job_cards', labelSql: 'code', hasUpdatedBy: true },
+  {
+    type: 'Job Card',
+    table: 'job_cards',
+    labelSql: 'code',
+    hasUpdatedBy: true,
+    cancelStampsDeleted: true,
+  },
   { type: 'Item', table: 'items', labelSql: 'code', hasUpdatedBy: true },
   { type: 'Client', table: 'clients', labelSql: 'code', hasUpdatedBy: true },
   { type: 'Vendor', table: 'vendors', labelSql: 'code', hasUpdatedBy: true },
@@ -104,7 +110,13 @@ const ENTITIES: readonly EntityMeta[] = [
   { type: 'Route Card', table: 'route_cards', labelSql: 'code', hasUpdatedBy: true },
   { type: 'Cost Center', table: 'cost_centers', labelSql: 'code', hasUpdatedBy: true },
   { type: 'QC Process', table: 'qc_processes', labelSql: 'code', hasUpdatedBy: true },
-  { type: 'Production Order', table: 'production_orders', labelSql: 'code', hasUpdatedBy: true },
+  {
+    type: 'Production Order',
+    table: 'production_orders',
+    labelSql: 'code',
+    hasUpdatedBy: true,
+    cancelStampsDeleted: true,
+  },
   { type: 'Multi-Level BOM', table: 'ml_boms', labelSql: 'code', hasUpdatedBy: true },
 ];
 

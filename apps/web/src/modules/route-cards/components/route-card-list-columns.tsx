@@ -80,14 +80,19 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
       sortFilterField: 'rawMaterial',
       kind: 'text',
       header: 'RM Grade / RM Size',
+      // Free text of mixed length — left-aligned like Item Name.
+      align: 'left',
       className: 'mono',
       title: (rc) => `${rc.rawMaterialGradeText ?? '—'} / ${rc.rawMaterialSizeText ?? '—'}`,
-      render: (rc) => (
-        <>
-          <span className="fw-700">{rc.rawMaterialGradeText ?? '—'}</span>
-          <span className="text3"> / {rc.rawMaterialSizeText ?? '—'}</span>
-        </>
-      ),
+      render: (rc) =>
+        rc.rawMaterialGradeText || rc.rawMaterialSizeText ? (
+          <>
+            <span className="fw-700">{rc.rawMaterialGradeText ?? '—'}</span>
+            <span className="text3"> / {rc.rawMaterialSizeText ?? '—'}</span>
+          </>
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'op_count',

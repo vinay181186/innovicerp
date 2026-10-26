@@ -72,6 +72,15 @@ function docHref(docType: CancelDocType, docId: string, docCode: string): string
       return `/sales-orders/${docId}`;
     case 'grn':
       return `/goods-receipt-notes/${docId}`;
+    case 'job_card':
+      return `/job-cards/${docId}`;
+    case 'production_order':
+      return `/production-orders/${docId}`;
+    case 'dc_receipt':
+      // RCPT-<DC code>-NN — the receipt lives on its DC's page.
+      return `/delivery-challans?search=${encodeURIComponent(docCode.replace(/^RCPT-/, '').replace(/-\d+$/, ''))}`;
+    case 'jw_dc_inward':
+      return `/jw-dc?tab=inward&search=${q}`;
   }
 }
 

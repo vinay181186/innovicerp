@@ -31,6 +31,12 @@ const STATUS_OPTIONS = PRODUCTION_ORDER_STATUSES.map((value) => ({
   label: PRODUCTION_ORDER_STATUS_LABEL[value],
 }));
 
+/** ADR-235 — a Cancelled Production Order (listed with includeCancelled):
+ *  cancelledAt is the standard Cancel's stamp. */
+export function isProCancelled(po: Pick<ProductionOrderListItem, 'cancelledAt'>): boolean {
+  return Boolean(po.cancelledAt);
+}
+
 /**
  * Whole-row wash by the REAL Production Order status enum only (ADR-199
  * ROW_TINT), so the wash agrees with the PoStatusBadge colour one for one:
@@ -40,6 +46,8 @@ const STATUS_OPTIONS = PRODUCTION_ORDER_STATUSES.map((value) => ({
  *   short_closed     → cancelled (grey — stopped, a dead end)
  */
 export function poRowTint(po: ProductionOrderListItem): string | undefined {
+  // ADR-235 — a Cancelled order (listed with includeCancelled) is washed grey.
+  if (isProCancelled(po)) return ROW_TINT.cancelled;
   switch (po.status) {
     case 'partially_closed':
       return ROW_TINT.pending;
@@ -178,13 +186,19 @@ export function poListColumns(
       sortFilterField: 'status',
       filterOptions: STATUS_OPTIONS,
       nowrap: true,
-      render: (po) => (
-        <PoStatusBadge
-          status={po.status}
-          draft={draftIds?.has(po.id)}
-          shortClosedQty={po.shortClosedQty}
-        />
-      ),
+      // ADR-235: a Cancelled order reads "Cancelled" here instead.
+      render: (po) =>
+        isProCancelled(po) ? (
+          <span className="badge b-red" title={po.cancelReason ?? undefined}>
+            Cancelled
+          </span>
+        ) : (
+          <PoStatusBadge
+            status={po.status}
+            draft={draftIds?.has(po.id)}
+            shortClosedQty={po.shortClosedQty}
+          />
+        ),
     },
     {
       id: 'pro_target_date',

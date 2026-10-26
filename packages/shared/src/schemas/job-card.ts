@@ -62,6 +62,9 @@ export const jobCardListItemSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   code: z.string(),
+  /** ADR-235 — the cancel's reason and time (null while live). */
+  cancelReason: z.string().nullable().default(null),
+  cancelledAt: z.string().nullable().default(null),
   jcDate: z.string(), // ISO date
   itemId: z.string().uuid(),
   itemCode: z.string(),
@@ -246,6 +249,12 @@ export const listJobCardsQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  /** ADR-235 — 'true' adds Cancelled ones (the list screen only; a cancel
+   *  stamps deleted_at too, so every other reader keeps live rows alone). */
+  includeCancelled: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
   /** Sort & Filter (ADR-200): JSON sort + column filters, see list-query.ts. */
   sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(50),

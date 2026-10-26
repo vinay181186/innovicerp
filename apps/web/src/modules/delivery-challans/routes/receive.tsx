@@ -91,6 +91,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     const receivedByLine = computeReceivedByLine(detail);
     const rejectedByLine = new Map<string, number>();
     for (const r of detail.receipts) {
+      // ADR-235 — a Cancelled receipt booked nothing back any more.
+      if (r.cancelledAt) continue;
       for (const rl of r.lines) {
         rejectedByLine.set(
           rl.deliveryChallanLineId,

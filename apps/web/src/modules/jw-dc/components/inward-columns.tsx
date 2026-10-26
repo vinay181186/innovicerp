@@ -8,6 +8,12 @@ import { type JwDcInwardListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 
+/** ADR-235 — a Cancelled JW DC Receipt (listed with includeCancelled):
+ *  cancelledAt is the standard Cancel's stamp. */
+export function isJwDcInwardCancelled(inv: Pick<JwDcInwardListItem, 'cancelledAt'>): boolean {
+  return Boolean(inv.cancelledAt);
+}
+
 export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
   return [
     {
@@ -18,7 +24,18 @@ export function inwardColumns(): DataTableColumn<JwDcInwardListItem>[] {
       header: 'Inward No.',
       className: 'mono fw-700',
       nowrap: true,
-      render: (inv) => <span style={{ color: 'var(--green2)' }}>{inv.code}</span>,
+      // ADR-235: a Cancelled receipt carries a "Cancelled" mark beside its number.
+      render: (inv) =>
+        isJwDcInwardCancelled(inv) ? (
+          <>
+            <span style={{ color: 'var(--green2)' }}>{inv.code}</span>{' '}
+            <span className="badge b-red" title={inv.cancelReason ?? undefined}>
+              Cancelled
+            </span>
+          </>
+        ) : (
+          <span style={{ color: 'var(--green2)' }}>{inv.code}</span>
+        ),
     },
     {
       id: 'inward_date',

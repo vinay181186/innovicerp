@@ -21,6 +21,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors'
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { lockInstruments, setInstrumentStatus } from '../instruments/common';
+import { lockLiveJobCardForShare } from '../job-cards/cancel';
 import { requireCompany, todayIst } from './common';
 import { readToolIssueDetail } from './read';
 
@@ -112,6 +113,9 @@ export async function createToolIssue(
 
     await lockItemForStock(tx, companyId, itm.id);
     const picked = await lockInstruments(tx, companyId, input.instrumentIds ?? []);
+    // ADR-235 — share-lock the live card AFTER the item / instrument locks: a
+    // Job Card cancel committing meanwhile leaves nothing to issue against.
+    if (input.jobCardId) await lockLiveJobCardForShare(tx, companyId, input.jobCardId, jcCode);
     const bad = (why: (p: (typeof picked)[number]) => boolean) =>
       picked.filter(why).map((p) => p.serialNo);
     const notThis = bad((p) => p.itemId !== itm.id);

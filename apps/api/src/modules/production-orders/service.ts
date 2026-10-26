@@ -115,6 +115,7 @@ import { labelOf, PLAN_STATUS_LABEL } from '../../lib/status-labels';
 import { planIsMlAssembly } from '../../lib/ml-assembly';
 import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 import { emitActivityLog } from '../activity-log/service';
+import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
 import type {
   CloseProductionOrderInput,
@@ -492,6 +493,9 @@ const poColumns = {
   updatedAt: productionOrders.updatedAt,
   updatedBy: productionOrders.updatedBy,
   deletedAt: productionOrders.deletedAt,
+  // ADR-235 — the cancel's reason / time (null while live).
+  cancelReason: productionOrders.cancelReason,
+  cancelledAt: productionOrders.cancelledAt,
   // live joins
   jcComputedStatus: JC_COMPUTED_STATUS_SQL,
   jcFinishedQty: JC_FINISHED_QTY_SQL,
@@ -553,6 +557,8 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     updatedAt: toIso(r.updatedAt) ?? '',
     updatedBy: r.updatedBy,
     deletedAt: toIso(r.deletedAt),
+    cancelReason: r.cancelReason ?? null,
+    cancelledAt: toIso(r.cancelledAt),
     // The JC row itself is gone only on a hard delete; the contract says null
     // in that one case, 'no_ops' when the row exists but has no ops.
     jcComputedStatus: r.jcExists
@@ -615,7 +621,10 @@ function toDetail(
   planFacts: PlanFacts,
 ): ProductionOrderDetail {
   const credited = item.creditedQty ?? 0;
-  const reason = closeBlockedReason({ ...item, jcSettledWithLosses, creditedQty: credited });
+  // ADR-235 — a Cancelled order is read-only: nothing may be closed on it.
+  const reason = item.cancelledAt
+    ? `${item.code} is Cancelled.`
+    : closeBlockedReason({ ...item, jcSettledWithLosses, creditedQty: credited });
   const availableToClose = Math.max(0, item.jcFinishedQty - credited);
   // A stopped order (closed, incl. Finish Short, or short_closed) has nothing
   // left to close: its unmade pieces are lost and go back to the plan Pending
@@ -776,13 +785,18 @@ async function readDetailInTx(
   tx: DbTransaction,
   id: string,
   companyId: string,
+  /** ADR-235 — the detail page only: also return a Cancelled order (read-only).
+   *  A trashed order stays not-found. */
+  opts: { includeCancelled?: boolean } = {},
 ): Promise<ProductionOrderDetail> {
   const rows = await baseQuery(tx)
     .where(
       and(
         eq(productionOrders.id, id),
         eq(productionOrders.companyId, companyId),
-        isNull(productionOrders.deletedAt),
+        opts.includeCancelled === true
+          ? sql`(${productionOrders.deletedAt} IS NULL OR ${productionOrders.cancelledAt} IS NOT NULL)`
+          : isNull(productionOrders.deletedAt),
       ),
     )
     .limit(1);
@@ -852,9 +866,19 @@ export async function listProductionOrders(
   const companyId = requireCompany(user);
   const sf = readSf(query.sf);
   return withUserContext(user, async (tx) => {
+    // ADR-235 — a cancelled order keeps status 'open' (there is no
+    // 'cancelled' status), so a status filter — the query's or a Sort &
+    // Filter one — counts live orders only, or a cancelled order would list
+    // (and count) under Open.
+    const statusFiltered =
+      query.status != null || (sf?.filters.some((f) => f.field === 'status') ?? false);
     const conditions: SQL[] = [
       eq(productionOrders.companyId, companyId),
-      isNull(productionOrders.deletedAt),
+      // ADR-235 — `includeCancelled` adds the Cancelled orders (cancelled_at
+      // set; a cancel stamps deleted_at too). Trashed ones never show.
+      query.includeCancelled === true && !statusFiltered
+        ? sql`(${productionOrders.deletedAt} IS NULL OR ${productionOrders.cancelledAt} IS NOT NULL)`
+        : isNull(productionOrders.deletedAt),
     ];
     if (query.status) conditions.push(eq(productionOrders.status, query.status));
     if (query.planId) conditions.push(eq(productionOrders.planId, query.planId));
@@ -918,7 +942,9 @@ export async function getProductionOrder(
 ): Promise<ProductionOrderDetail> {
   await requireFormAccess(user, 'prodorder_create', 'view');
   const companyId = requireCompany(user);
-  return withUserContext(user, (tx) => readDetailInTx(tx, id, companyId));
+  return withUserContext(user, (tx) =>
+    readDetailInTx(tx, id, companyId, { includeCancelled: true }),
+  );
 }
 
 export async function getNextProductionOrderCode(
@@ -993,6 +1019,8 @@ export async function updateProductionOrderTx(
     .for('update');
   const row = existing[0];
   if (!row) throw new NotFoundError('Production Order not found. Refresh the page.');
+  // ADR-235 — no edit while a Cancel Request waits on the order.
+  await assertNoPendingCancel(tx, 'production_order', id);
   // §20.4 — refuse the save if someone changed the order after the form opened it.
   assertUnchangedSinceOpened(row.updatedAt, input.expectedUpdatedAt);
 
@@ -1618,6 +1646,8 @@ export async function closeProductionOrder(
       .limit(1)
       .for('update');
     if (!locked[0]) throw new NotFoundError('Production Order not found. Refresh the page.');
+    // ADR-235 — no close while a Cancel Request waits on the order.
+    await assertNoPendingCancel(tx, 'production_order', id);
     // ADR-182 — a short-closed order is dead. Refused before anything is read
     // or written, in the same words every other stopped-order refusal uses.
     await assertProductionOrderNotShortClosed(tx, locked[0].jobCardId);
@@ -1884,6 +1914,8 @@ export async function reverseProductionOrderClose(
       .for('update');
     const po = locked[0];
     if (!po) throw new NotFoundError('Production Order not found. Refresh the page.');
+    // ADR-235 — no reversal while a Cancel Request waits on the order.
+    await assertNoPendingCancel(tx, 'production_order', id);
     // ADR-182 — nothing may be undone on a stopped order either: its credited
     // pieces stay credited exactly as they were when it was short closed.
     await assertProductionOrderNotShortClosed(tx, po.jobCardId);
@@ -2114,7 +2146,7 @@ interface PlanPendingShift {
  *
  * Returns null (after still running `write`) when the plan row is gone.
  */
-async function shiftPlanPending(
+export async function shiftPlanPending(
   tx: DbTransaction,
   args: {
     planId: string;
@@ -2343,6 +2375,8 @@ export async function shortCloseProductionOrder(
       .for('update');
     const po = locked[0];
     if (!po) throw new NotFoundError('Production Order not found. Refresh the page.');
+    // ADR-235 — no short close while a Cancel Request waits on the order.
+    await assertNoPendingCancel(tx, 'production_order', id);
     if (po.status === 'short_closed') {
       throw new ConflictError(`Production Order ${po.code} is already short closed`);
     }

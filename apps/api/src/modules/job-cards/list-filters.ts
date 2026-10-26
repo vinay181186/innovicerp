@@ -60,7 +60,10 @@ export function jcOverdueSql(today: string = sfTodayIst()): SQL {
     AND COALESCE(s.computed_status, 'no_ops') NOT IN ('closed', 'complete'))`;
 }
 
-type JcListFilterInput = Omit<ListJobCardsQuery, 'limit' | 'offset'>;
+// includeCancelled optional for in-process callers (the routes always parse it).
+type JcListFilterInput = Omit<ListJobCardsQuery, 'limit' | 'offset' | 'includeCancelled'> & {
+  includeCancelled?: boolean;
+};
 
 /** The WHERE body (company + not deleted + search + every filter + sf). */
 export function jcListWhere(companyId: string, input: JcListFilterInput): SQL {
@@ -101,10 +104,12 @@ export function jcListWhere(companyId: string, input: JcListFilterInput): SQL {
           OR jc.remarks ILIKE ${term} ESCAPE '\\'
         )`
     : sql``;
+  // A Cancelled card (includeCancelled) has no JC status — v_jc_status skips
+  // it — so a status / Overdue filter keeps live cards only.
   const statusFrag = input.status
-    ? sql`AND COALESCE(s.computed_status, 'no_ops') = ${input.status}`
+    ? sql`AND jc.deleted_at IS NULL AND COALESCE(s.computed_status, 'no_ops') = ${input.status}`
     : sql``;
-  const overdueFrag = input.overdue ? sql`AND ${jcOverdueSql()}` : sql``;
+  const overdueFrag = input.overdue ? sql`AND jc.deleted_at IS NULL AND ${jcOverdueSql()}` : sql``;
   const fromFrag = input.fromDate ? sql`AND jc.jc_date >= ${input.fromDate}::date` : sql``;
   const toFrag = input.toDate ? sql`AND jc.jc_date <= ${input.toDate}::date` : sql``;
   // Machine filter: JC has at least one op assigned to this machine.
@@ -130,8 +135,16 @@ export function jcListWhere(companyId: string, input: JcListFilterInput): SQL {
   // own field whitelist (sf-columns.ts).
   const sfFrag = sfWhere(JC_SF_COLUMNS, readSf(input.sf));
 
+  // ADR-235 — includeCancelled adds the Cancelled cards (cancelled_at set; a
+  // cancel stamps deleted_at too). A trashed card never shows. Off (the
+  // default), the scope is exactly as before.
+  const scopeFrag =
+    input.includeCancelled === true
+      ? sql`(jc.deleted_at IS NULL OR jc.cancelled_at IS NOT NULL)`
+      : sql`jc.deleted_at IS NULL`;
+
   return sql`jc.company_id = ${companyId}::uuid
-        AND jc.deleted_at IS NULL
+        AND ${scopeFrag}
         ${searchFrag}
         ${statusFrag}
         ${overdueFrag}
@@ -162,7 +175,8 @@ export async function jcStatusCounts(
         COUNT(*) FILTER (WHERE ${jcOverdueSql()})::int    AS "overdue"
       FROM public.job_cards jc
       ${JC_LIST_JOINS}
-      WHERE ${jcListWhere(companyId, input)}
+      -- The dropdown counts live cards only: a Cancelled card has no status.
+      WHERE ${jcListWhere(companyId, { ...input, includeCancelled: false })}
     `)) as unknown as Array<Record<string, number>>;
     const r = rows[0] ?? {};
     const n = (k: string): number => Number(r[k] ?? 0);

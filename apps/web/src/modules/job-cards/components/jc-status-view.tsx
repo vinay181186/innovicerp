@@ -28,6 +28,9 @@ import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDateTime } from '@/lib/date';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { useOpFlow } from '@/modules/flow-views/api';
 import { ReworkTreePanel } from '@/modules/flow-views/components/jc-flow-panels';
@@ -37,6 +40,7 @@ import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { Panel } from '@/ui/data';
+import { Banner } from '@/ui/feedback';
 import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useJobCard, useJobCardEditModel, useJobCardStatusExtras } from '../api';
@@ -99,8 +103,11 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // Edit button uses the SAME key as the page it opens (/job-cards/$id/edit →
   // jc_create edit). Hidden until the access matrix has loaded.
   const { data: eff } = useMyAccess();
-  const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
+  const jcPerms = effectiveFormPerms(eff, 'jc_create');
+  const canWrite = jcPerms.edit;
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
+  // ADR-235 — the ONE standard Cancel dialog (docType 'job_card').
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   // ADR-202 — the edit(s) staged against this Job Card and still waiting for a
   // decision. Their per-field changes drive the amber chips on the facts.
@@ -155,6 +162,14 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
     );
   }
 
+  // ADR-235 — a Cancelled card is read-only: no Edit, no Production Entry, no
+  // op / material work buttons (the same switch the short-closed stop uses).
+  const cancelled = Boolean(jc.cancelledAt);
+  // Cancel JC -> Edit OR Approve: Edit sends a Cancel Request, Approve decides it.
+  // A Production Order's card is cancelled with its order, never on its own.
+  const canCancel = !cancelled && !jc.productionOrderId && (jcPerms.edit || jcPerms.approve);
+  const frozen = stopped || cancelled;
+
   const openOpEntry = (): void => void navigate({ to: '/op-entry', search: { jc: jc.code } });
   const openDrawing = (): void => setDrawingPreviewOpen(true);
   // Preview opens the in-app box; Download PDF runs the same build through runPrint.
@@ -166,6 +181,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       actualSize: productionOrder?.actualSize ?? null,
       productionOrderCode: productionOrder?.code ?? null,
       draft: isDraft,
+      cancelled,
     });
 
   return (
@@ -209,7 +225,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
             </button>
             {/* ADR-182 — a stopped order's card takes no more edits. The
                 server refuses them anyway. */}
-            {canWrite && !stopped ? (
+            {canWrite && !frozen ? (
               <Link
                 to="/job-cards/$id/edit"
                 params={{ id }}
@@ -227,11 +243,17 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                   title: 'Download Excel (with production log)',
                   onClick: () => exportJobCardExcel({ jc, ops, logs }),
                 },
+                {
+                  label: 'Cancel JC',
+                  danger: true,
+                  onClick: () => setCancelOpen(true),
+                  hidden: !canCancel,
+                },
               ]}
             />
             {/* ADR-182 — no more work on a stopped order's card. */}
             {/* ADR-234 — opens Op Entry to log work: Op Entry Entry. */}
-            {!stopped && canOpEntry ? (
+            {!frozen && canOpEntry ? (
               <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
                 ▶ Production Entry
               </button>
@@ -242,6 +264,23 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         {/* Banners — the short-closed Production Order stop (ADR-182) and the
             rework / repair child note. Both null on an ordinary card. */}
         <JcStoppedBanner order={productionOrder} />
+        {/* ADR-235 — an open Cancel Request (orange), or the Cancelled mark (red). */}
+        <CancelPendingBanner
+          docType="job_card"
+          docId={jc.id}
+          cancelled={cancelled}
+          {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+        />
+        {cancelled ? (
+          <div className="mb-2">
+            <Banner tone="error" accent title="Cancelled — this Job Card is void">
+              <div>
+                Reason: <b>{jc.cancelReason ?? '—'}</b>
+                {jc.cancelledAt ? ` · ${fmtDateTime(jc.cancelledAt)}` : ''}
+              </div>
+            </Banner>
+          </div>
+        ) : null}
         <RecoveryBanner jc={jc} />
         <JcFactBlock
           jc={jc}
@@ -294,7 +333,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
             jc={jc}
             ops={sortedOps}
             logsByOp={logsByOp}
-            stopped={stopped}
+            stopped={frozen}
             productionOrder={productionOrder}
           />
         ) : tab === 'docs' ? (
@@ -308,7 +347,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           </div>
         ) : tab === 'material' ? (
           <div className="jc-tab-pad">
-            <JcMaterialPanel jobCardId={jc.id} stopped={stopped} />
+            <JcMaterialPanel jobCardId={jc.id} stopped={frozen} />
           </div>
         ) : tab === 'related' ? (
           <div className="jc-tab-pad">
@@ -318,6 +357,14 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           <JcHistoryTable jobCardId={id} />
         )}
       </Panel>
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="job_card"
+          docId={jc.id}
+          docCode={jc.code}
+          onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

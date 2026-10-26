@@ -387,7 +387,7 @@ function DeliveryChallanEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (dc.receipts.length > 0) {
+  if (dc.receipts.some((r) => r.cancelledAt == null)) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
         This DC has receipts recorded against it and can no longer be edited.

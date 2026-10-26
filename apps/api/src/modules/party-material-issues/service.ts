@@ -59,6 +59,7 @@ import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
+import { lockLiveJobCardForShare } from '../job-cards/cancel';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { PARTY_ISSUE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction } from '@innovic/shared';
@@ -305,6 +306,9 @@ export async function createPartyMaterialIssue(
     // 6) Per-JC cap: 1 piece of customer material = 1 finished piece, so the
     // net issued to a Job Card never exceeds what it makes.
     const jcm = await jcMaterial(tx, companyId, jc.id);
+    // ADR-235 — share-lock the live card AFTER the JWSO line lock: a Job Card
+    // cancel committing meanwhile leaves nothing to issue against.
+    await lockLiveJobCardForShare(tx, companyId, jc.id, jc.code);
     const jcOrderQty = Number(jc.orderQty);
     const jcRemaining = jcOrderQty - jcm.netIssued;
     if (input.qty > jcRemaining) {

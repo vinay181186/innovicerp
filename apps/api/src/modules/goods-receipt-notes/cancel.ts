@@ -8,11 +8,18 @@
 // header status (recalcPoHeaderStatus), exactly as the soft delete does.
 // QC reversal is a later step — a QC-touched GRN is refused.
 //
+// Phase C part 2: the receipt that MADE a GRN (DC receipt / JW DC receipt) now
+// has its own cancel, and that cancel takes its GRN with it in the same
+// transaction by calling grnCancelBlockers / cancelGrnTx with
+// `{ viaReceipt: true }`. That option skips ONLY grnSourceReceiptBlockers (the
+// "made by … receipt — cancel that receipt instead" rule) — every other rule
+// (Incoming QC touched, live NC on a line) still refuses.
+//
 // Only a GRN booked by hand / against a purchase PO cancels in this phase. A
 // GRN MADE by another document's receipt — a DC receipt (delivery_challan_id),
 // a JW DC receipt (jw_dc_inward.goods_receipt_note_id) or an NC replacement
-// (nc_id) — belongs to that receipt and is refused (the receipt's own cancel is
-// not available yet). The soft delete refuses the same GRNs through the same
+// (nc_id) — belongs to that receipt and is refused on its own (cancel the
+// receipt instead; an NC replacement receipt has no cancel yet). The soft delete refuses the same GRNs through the same
 // rule (grnSourceReceiptBlockers), closing the gap where a delete left those
 // documents pointing at a vanished GRN.
 //
@@ -135,7 +142,7 @@ export async function grnSourceReceiptBlockers(
       docLabel: 'DC',
       docNo: code,
       href: `/delivery-challans/${head.deliveryChallanId}`,
-      reason: `made by DC receipt ${code} — cancel that receipt instead (not available yet)`,
+      reason: `made by a DC receipt on ${code} — cancel that receipt instead`,
     });
   }
   const inwards = (await tx.execute(sql`
@@ -151,7 +158,7 @@ export async function grnSourceReceiptBlockers(
       docLabel: 'JW DC Receipt',
       docNo: w.code,
       href: `/jw-dc/${w.outwardId}`,
-      reason: `made by JW DC receipt ${w.code} — cancel that receipt instead (not available yet)`,
+      reason: `made by JW DC receipt ${w.code} — cancel that receipt instead`,
     });
   }
   return out;
@@ -165,10 +172,17 @@ export async function grnSourceReceiptBlockers(
  *  · any live NC raised on its lines.
  * A cancelled / trashed / missing GRN has nothing to refuse (the lock step says so).
  */
+export interface GrnCancelOptions {
+  /** The receipt that made this GRN is being cancelled and takes the GRN with
+   *  it — skip ONLY the "made by a receipt" rule (grnSourceReceiptBlockers). */
+  viaReceipt?: boolean;
+}
+
 export async function grnCancelBlockers(
   tx: DbTransaction,
   companyId: string,
   id: string,
+  opts: GrnCancelOptions = {},
 ): Promise<CancelBlocker[]> {
   const head = await lockGrnForCancel(tx, companyId, id, false);
   if (!head || head.deletedAt != null) return [];
@@ -185,7 +199,7 @@ export async function grnCancelBlockers(
     });
   }
 
-  out.push(...(await grnSourceReceiptBlockers(tx, companyId, head)));
+  if (!opts.viaReceipt) out.push(...(await grnSourceReceiptBlockers(tx, companyId, head)));
 
   if (lines.length > 0) {
     const ncs = (await tx.execute(sql`
@@ -275,7 +289,8 @@ export async function cancelGrnTx(
   id: string,
   reason: string,
   user: AuthContext,
-): Promise<{ code: string }> {
+  opts: GrnCancelOptions = {},
+): Promise<{ code: string; qty: number }> {
   const trimmed = (reason ?? '').trim();
   if (!trimmed) throw new ValidationError('Reason is required to cancel a GRN.');
 
@@ -323,7 +338,7 @@ export async function cancelGrnTx(
   }
 
   // The refusal rule, under the locks — before anything moves.
-  const blockers = await grnCancelBlockers(tx, companyId, id);
+  const blockers = await grnCancelBlockers(tx, companyId, id, opts);
   if (blockers.length > 0) {
     throw new ConflictError(blockerRefusal(head.code, blockers), { blockers });
   }
@@ -393,12 +408,13 @@ export async function cancelGrnTx(
       qty,
       reason: trimmed,
       detail:
-        `${head.code} cancelled — ${qty} taken off Pending receipt on its PO lines; ` +
+        `${head.code} cancelled${opts.viaReceipt ? ' with the receipt that made it' : ''} — ` +
+        `${qty} taken off Pending receipt on its PO lines; ` +
         `no stock moved (nothing was inspected). Reason: ${trimmed}`,
     },
     companyId,
     user,
   );
 
-  return { code: head.code };
+  return { code: head.code, qty };
 }

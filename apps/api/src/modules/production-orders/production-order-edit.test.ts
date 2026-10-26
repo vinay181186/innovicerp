@@ -33,9 +33,12 @@ function selectOnlyTx(rows: unknown[]): DbTransaction {
   builder['limit'] = self;
   builder['for'] = (): Promise<unknown[]> => Promise.resolve(rows);
   // Awaiting the builder directly (a select ending in .limit(1)) also resolves.
-  builder['then'] = (resolve: (v: unknown[]) => unknown, reject: (e: unknown) => unknown): unknown =>
-    Promise.resolve(rows).then(resolve, reject);
-  return { select: () => builder } as unknown as DbTransaction;
+  builder['then'] = (
+    resolve: (v: unknown[]) => unknown,
+    reject: (e: unknown) => unknown,
+  ): unknown => Promise.resolve(rows).then(resolve, reject);
+  // execute: the pending-cancel check (ADR-235) — no Cancel Request open.
+  return { select: () => builder, execute: () => Promise.resolve([]) } as unknown as DbTransaction;
 }
 
 const openRow = {
@@ -57,9 +60,9 @@ describe('updateProductionOrderTx — qty is not editable', () => {
     await expect(
       updateProductionOrderTx(tx, 'po-1', { orderQty: 25 }, user),
     ).rejects.toBeInstanceOf(ConflictError);
-    await expect(
-      updateProductionOrderTx(tx, 'po-1', { orderQty: 25 }, user),
-    ).rejects.toThrow('Change the Production Order quantity with Short Close, not edit.');
+    await expect(updateProductionOrderTx(tx, 'po-1', { orderQty: 25 }, user)).rejects.toThrow(
+      'Change the Production Order quantity with Short Close, not edit.',
+    );
   });
 
   it('does not refuse when order_qty equals the stored value (no change)', async () => {
@@ -119,7 +122,12 @@ describe('productionOrderEditRegistryEntry.isLive', () => {
 });
 
 describe('productionOrderEditRegistryEntry — a header edit applies', () => {
-  const target = { doc: openRow, updatedAt: openRow.updatedAt, docCode: openRow.code, isLive: true };
+  const target = {
+    doc: openRow,
+    updatedAt: openRow.updatedAt,
+    docCode: openRow.code,
+    isLive: true,
+  };
 
   it('snapshots only the four editable header fields', () => {
     expect(entry.beforeSnapshot(target)).toEqual({
@@ -158,10 +166,10 @@ describe('productionOrderEditRegistryEntry — a header edit applies', () => {
       orderQty: 99,
       reason: 'customer slipped the date',
     };
-    const filtered = entry.buildFilteredInput(payload, new Set(['remarks', 'targetDate'])) as Record<
-      string,
-      unknown
-    >;
+    const filtered = entry.buildFilteredInput(
+      payload,
+      new Set(['remarks', 'targetDate']),
+    ) as Record<string, unknown>;
     expect(filtered).toEqual({ remarks: 'reworked', targetDate: '2026-02-20' });
     // order_qty is never an approvable field, so it can never ride through.
     expect(filtered['orderQty']).toBeUndefined();

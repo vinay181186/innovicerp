@@ -32,6 +32,7 @@ import { dashboardKeys } from '@/modules/dashboard/api';
 import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { goodsReceiptNotesKeys } from '@/modules/goods-receipt-notes/api';
 import { invoiceKeys } from '@/modules/invoices/api';
+import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { jwDcKeys } from '@/modules/jw-dc/api';
 import { jwInvoicesKeys } from '@/modules/jw-invoices/api';
@@ -40,6 +41,7 @@ import { ncRegisterKeys } from '@/modules/nc-register/api';
 import { partyGrnKeys } from '@/modules/party-grn/api';
 import { partyMaterialIssuesKeys } from '@/modules/party-material-issues/api';
 import { plansKeys, stockReservationKeys } from '@/modules/plans/api';
+import { productionOrdersKeys } from '@/modules/production-orders/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
@@ -93,6 +95,9 @@ function invalidateAfterCancel(qc: QueryClient): void {
     jwDcKeys.all,
     plansKeys.all,
     stockReservationKeys.all,
+    // Phase C part 2.
+    jobCardsKeys.all,
+    productionOrdersKeys.all,
     approvalsKeys.all,
     dashboardKeys.all,
     activityLogKeys.all,

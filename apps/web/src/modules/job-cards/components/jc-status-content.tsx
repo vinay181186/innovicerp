@@ -159,6 +159,20 @@ function JcStatusEditContent({ id }: { id: string }): React.JSX.Element {
       </div>
     );
   }
+  // ADR-235 — a Cancelled card is read-only: the edit screen never opens on it
+  // (the server refuses the save anyway).
+  if (jc?.cancelledAt) {
+    return (
+      <div>
+        <Link to="/job-cards/$id" params={{ id }} className="btn btn-ghost btn-sm">
+          ← Back
+        </Link>
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          Job Card {jc.code} is Cancelled — it cannot be edited.
+        </div>
+      </div>
+    );
+  }
   // ADR-230 — a failed BACKGROUND re-read keeps the data it had (TanStack v5
   // sets isError while data stays). Only a load with nothing to show is an
   // error; otherwise a network blip during a live refresh would unmount the

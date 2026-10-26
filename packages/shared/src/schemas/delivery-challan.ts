@@ -360,6 +360,9 @@ export const deliveryChallanReceiptSchema = z.object({
   companyId: z.string().uuid(),
   deliveryChallanId: z.string().uuid(),
   receiptCode: z.string(),
+  /** ADR-235 — the cancel's reason and time (null while live). */
+  cancelReason: z.string().nullable().default(null),
+  cancelledAt: z.string().nullable().default(null),
   receiptDate: z.string(),
   vendorInvoiceText: z.string().nullable(),
   remarks: z.string().nullable(),

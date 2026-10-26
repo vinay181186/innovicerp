@@ -12,6 +12,8 @@ import { type DeliveryChallanWithLines, roundQty } from '@innovic/shared';
 export function computeReceivedByLine(detail: DeliveryChallanWithLines): Map<string, number> {
   const out = new Map<string, number>();
   for (const r of detail.receipts) {
+    // ADR-235 — a Cancelled receipt booked nothing back any more.
+    if (r.cancelledAt) continue;
     for (const rl of r.lines) {
       const prev = out.get(rl.deliveryChallanLineId) ?? 0;
       out.set(

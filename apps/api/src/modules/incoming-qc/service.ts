@@ -364,6 +364,27 @@ export async function submitIncomingQc(
     // ADR-235 — no inspection while a Cancel Request waits on this GRN (the
     // cancel worker locks this same line, so the two serialise).
     await assertNoPendingCancel(tx, 'grn', line.grnId);
+    // …nor while a cancel of the DC / JW DC receipt that raised this GRN waits
+    // (that cancel takes the GRN with it).
+    const receiptCancel = (await tx.execute(sql`
+      SELECT cr.doc_code AS "docCode"
+        FROM public.cancel_requests cr
+       WHERE cr.status = 'pending' AND cr.deleted_at IS NULL
+         AND (
+           (cr.doc_type = 'dc_receipt' AND cr.doc_id IN (
+              SELECT id FROM public.delivery_challan_receipts
+               WHERE goods_receipt_note_id = ${line.grnId}::uuid))
+           OR (cr.doc_type = 'jw_dc_inward' AND cr.doc_id IN (
+              SELECT id FROM public.jw_dc_inward
+               WHERE goods_receipt_note_id = ${line.grnId}::uuid))
+         )
+       LIMIT 1
+    `)) as unknown as Array<{ docCode: string }>;
+    if (receiptCancel[0]) {
+      throw new ConflictError(
+        `${receiptCancel[0].docCode} has a cancel request pending — it must be decided first (Settings → Approvals → Cancel Requests).`,
+      );
+    }
 
     // ADR-182 — an OSP return belonging to a short-closed Production Order's
     // Job Card cannot be inspected. A plain purchase GRN resolves to no jc_op
