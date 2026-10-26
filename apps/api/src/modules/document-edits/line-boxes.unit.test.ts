@@ -29,8 +29,20 @@ const SPEC: ChildBoxSpec = {
 };
 
 const current: CurrentChild[] = [
-  { id: ID1, no: 1, values: { orderQty: 2, clientPoLineNo: '20' }, summary: 'A-1 × 2', removeName: 'A-1' },
-  { id: ID2, no: 2, values: { orderQty: 3, clientPoLineNo: '30' }, summary: 'A-2 × 3', removeName: 'A-2' },
+  {
+    id: ID1,
+    no: 1,
+    values: { orderQty: 2, clientPoLineNo: '20' },
+    summary: 'A-1 × 2',
+    removeName: 'A-1',
+  },
+  {
+    id: ID2,
+    no: 2,
+    values: { orderQty: 3, clientPoLineNo: '30' },
+    summary: 'A-2 × 3',
+    removeName: 'A-2',
+  },
 ];
 
 describe('line-boxes', () => {
@@ -110,7 +122,9 @@ describe('line-boxes', () => {
     // Same set, any order, with or without the frozen ids → same ref.
     expect(rowSetRef(SPEC, [ID1, ID2])).toBe(atRequest);
     // Someone else added a line / removed one → different.
-    expect(rowSetRef(SPEC, [ID1, ID2, ID9], { addCount: 1, requestRowIds: asked })).not.toBe(atRequest);
+    expect(rowSetRef(SPEC, [ID1, ID2, ID9], { addCount: 1, requestRowIds: asked })).not.toBe(
+      atRequest,
+    );
     expect(rowSetRef(SPEC, [ID1], { addCount: 1, requestRowIds: asked })).not.toBe(atRequest);
     // This request's own approved add (ID3) and remove (ID2) → unchanged.
     expect(
@@ -129,11 +143,7 @@ describe('line-boxes', () => {
       }),
     ).not.toBe(atRequest);
     // childBefore puts it on every add key of the payload.
-    const before = childBefore(
-      SPEC,
-      current,
-      rowSetContext([{ id: ID1 }, {}, {}], asked, []),
-    );
+    const before = childBefore(SPEC, current, rowSetContext([{ id: ID1 }, {}, {}], asked, []));
     expect(before['line:add:1']).toBe(atRequest);
     expect(before['line:add:2']).toBe(atRequest);
     expect(before['line:add:3']).toBeUndefined();

@@ -1206,7 +1206,10 @@ describe('SO edit-approval — in-use rule + line / lot boxes', () => {
       admin,
     )) as DocumentEditStagedResult;
     expect(staged.staged).toBe(true);
-    await db.update(jobCards).set({ deletedAt: new Date() }).where(eq(jobCards.sourceSoLineId, lineId));
+    await db
+      .update(jobCards)
+      .set({ deletedAt: new Date() })
+      .where(eq(jobCards.sourceSoLineId, lineId));
     const err = await service
       .updateSalesOrderOrStage(
         so.id,

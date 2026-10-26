@@ -1064,7 +1064,10 @@ describe('JWSO edit-approval — in-use rule + line boxes', () => {
     )) as DocumentEditStagedResult;
     expect(staged.staged).toBe(true);
     // The Job Card goes away — nothing uses the JWSO any more.
-    await db.update(jobCards).set({ deletedAt: new Date() }).where(eq(jobCards.sourceJwLineId, lineId));
+    await db
+      .update(jobCards)
+      .set({ deletedAt: new Date() })
+      .where(eq(jobCards.sourceJwLineId, lineId));
     const err = await service
       .updateJobWorkOrderOrStage(
         jw.id,
@@ -1094,7 +1097,11 @@ describe('JWSO edit-approval — in-use rule + line boxes', () => {
       jw.id,
       {
         header: { clientId: firstClientId },
-        lines: [lineInput(l1!.id, '20', 2), lineInput(l2!.id, '30', 3), lineInput(undefined, '40', 7)],
+        lines: [
+          lineInput(l1!.id, '20', 2),
+          lineInput(l2!.id, '30', 3),
+          lineInput(undefined, '40', 7),
+        ],
         expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
       },
       admin,
@@ -1126,7 +1133,11 @@ describe('JWSO edit-approval — in-use rule + line boxes', () => {
       jw.id,
       {
         header: { clientId: firstClientId },
-        lines: [lineInput(lineId, '20', 2), lineInput(undefined, '40', 4), lineInput(undefined, '50', 5)],
+        lines: [
+          lineInput(lineId, '20', 2),
+          lineInput(undefined, '40', 4),
+          lineInput(undefined, '50', 5),
+        ],
         expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
       },
       admin,

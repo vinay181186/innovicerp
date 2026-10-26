@@ -2092,7 +2092,7 @@ export async function updateSalesOrderTx(
 /**
  * The SO edit entry point the PATCH route calls (ADR-202). When the Document
  * Edit Approval gate is ON and the SO is IN USE (so-edit-registry isLive: open
- * and live downstream work hangs off it — line-commitments.ts soInUse), the edit
+ * and live downstream work hangs off it — cancel.ts soInUse), the edit
  * is staged for approval — header fields (SO Status included), line changes and
  * Delivery Schedule changes, one box each (`line:<id>:<attr>`, `line:add:<n>`,
  * `line:remove:<id>`, `ms:<id>:<attr>`, `ms:add:<n>`, `ms:remove:<id>`) — and

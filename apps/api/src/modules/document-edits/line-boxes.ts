@@ -126,7 +126,10 @@ export function childDiffFields(
     });
   }
   for (const { n, row } of addOrdinals(proposed ?? [])) {
-    out.push({ key: childAddKey(spec.prefix, n), label: clipLabel(`Add ${word} · ${row.summary}`) });
+    out.push({
+      key: childAddKey(spec.prefix, n),
+      label: clipLabel(`Add ${word} · ${row.summary}`),
+    });
   }
   return out;
 }
@@ -175,7 +178,10 @@ export function rowSetRef(
   }
   ids.sort();
   const n = ids.length + extra;
-  const ref = createHash('sha1').update(`${ids.join(',')}|${extra}`).digest('hex').slice(0, 6);
+  const ref = createHash('sha1')
+    .update(`${ids.join(',')}|${extra}`)
+    .digest('hex')
+    .slice(0, 6);
   const word = spec.rowWord.toLowerCase();
   return `${n} ${word}${n === 1 ? '' : 's'} on the order (ref ${ref})`;
 }
@@ -252,7 +258,12 @@ export function approvedChildBoxes(
   prefix: string,
   approvedFields: Iterable<string>,
 ): ApprovedChildBoxes {
-  const out: ApprovedChildBoxes = { attrs: new Map(), adds: new Set(), removes: new Set(), any: false };
+  const out: ApprovedChildBoxes = {
+    attrs: new Map(),
+    adds: new Set(),
+    removes: new Set(),
+    any: false,
+  };
   for (const f of approvedFields) {
     const k = parseChildKey(prefix, f);
     if (!k) continue;
