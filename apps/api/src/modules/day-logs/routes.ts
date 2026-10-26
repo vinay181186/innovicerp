@@ -3,19 +3,18 @@
 
 import type { FastifyInstance } from 'fastify';
 import {
+  addDayLogEntryInputSchema,
   dayLogDateInputSchema,
+  dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
-  dayLogReasonInputSchema,
-  dayLogUserDayInputSchema,
   holidayInputSchema,
-  saveMyBreaksInputSchema,
-  setDayLogEntryStatusInputSchema,
-  startDayLogTimerInputSchema,
-  stopDayLogTimerInputSchema,
+  personDayLogQuerySchema,
   teamDayLogQuerySchema,
+  updateDayLogEntryInputSchema,
 } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { dayLogReasonInputSchema } from './manage';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -36,26 +35,37 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     return service.getTeam(teamDayLogQuerySchema.parse(req.query), req.user);
   });
 
-  app.patch('/day-logs/entries/:id/status', async (req) => {
+  app.get('/day-logs/person', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getPerson(personDayLogQuerySchema.parse(req.query), req.user);
+  });
+
+  app.get('/day-logs/order-options', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.orderOptions(dayLogOrderOptionsQuerySchema.parse(req.query), req.user);
+  });
+
+  app.post('/day-logs/entries', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.addEntry(addDayLogEntryInputSchema.parse(req.body), req.user);
+  });
+
+  app.patch('/day-logs/entries/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.setEntryStatus(id, setDayLogEntryStatusInputSchema.parse(req.body), req.user);
+    return service.updateEntry(id, updateDayLogEntryInputSchema.parse(req.body), req.user);
+  });
+
+  app.post('/day-logs/entries/:id/stop', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.stopEntry(id, req.user);
   });
 
   app.delete('/day-logs/entries/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.deleteEntry(id, req.user);
-  });
-
-  app.post('/day-logs/timer/start', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.startTimer(startDayLogTimerInputSchema.parse(req.body), req.user);
-  });
-
-  app.post('/day-logs/timer/stop', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.stopTimer(stopDayLogTimerInputSchema.parse(req.body), req.user);
   });
 
   app.post('/day-logs/submit', async (req) => {
@@ -71,21 +81,6 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
   app.post('/day-logs/leave', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.markLeave(dayLogReasonInputSchema.parse(req.body), req.user);
-  });
-
-  app.post('/day-logs/remind', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.remindUser(dayLogUserDayInputSchema.parse(req.body), req.user);
-  });
-
-  app.get('/day-logs/my-breaks', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.getMyBreaks(req.user);
-  });
-
-  app.put('/day-logs/my-breaks', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.saveMyBreaks(saveMyBreaksInputSchema.parse(req.body), req.user);
   });
 
   app.get('/day-logs/holidays', async (req) => {

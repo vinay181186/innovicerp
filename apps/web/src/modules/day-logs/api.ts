@@ -1,23 +1,21 @@
-// Day Log data hooks (owner 2026-10-26). One hook per endpoint of
-// /day-logs; every write answers the whole day (DayLogDetail), so a write
-// puts that answer straight into the day's cache and invalidates the rest of
-// `dayLogKeys.all` (team table, other days). The screen shows the server's
-// `summary` — it never works out the rules itself (CLAUDE.md §6 rule 1).
+// Day Log data hooks (owner 2026-10-26, design approved 2026-10-26). One
+// hook per endpoint of /day-logs; every write answers the whole day
+// (DayLogDetail), so a write puts that answer straight into the day's cache
+// and invalidates the rest of `dayLogKeys.all` (team table, person page).
+// The screen shows the server's `summary` — it never works out the rules
+// itself (CLAUDE.md §6 rule 1).
 
 import type {
+  AddDayLogEntryInput,
   DayLogAccess,
   DayLogDateInput,
   DayLogDetail,
-  DayLogReasonInput,
-  DayLogUserDayInput,
+  DayLogOrderOption,
   Holiday,
   HolidayInput,
-  MyBreaksResponse,
-  SaveMyBreaksInput,
-  SetDayLogEntryStatusInput,
-  StartDayLogTimerInput,
-  StopDayLogTimerInput,
+  PersonDayLogResponse,
   TeamDayLogResponse,
+  UpdateDayLogEntryInput,
 } from '@innovic/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -33,9 +31,14 @@ export const dayLogKeys = {
   access: () => [...dayLogKeys.all, 'access'] as const,
   day: (q: DayQuery) => [...dayLogKeys.all, 'day', q.date ?? '', q.userId ?? ''] as const,
   team: (date: string) => [...dayLogKeys.all, 'team', date] as const,
-  myBreaks: () => [...dayLogKeys.all, 'my-breaks'] as const,
+  person: (userId: string, from: string, to: string) =>
+    [...dayLogKeys.all, 'person', userId, from, to] as const,
+  orders: (search: string) => [...dayLogKeys.all, 'order-options', search] as const,
   holidays: () => [...dayLogKeys.all, 'holidays'] as const,
 };
+
+/** Live screens read again every minute (an Open entry's time moves on). */
+const LIVE_MS = 60_000;
 
 function qs(params: Record<string, string | undefined>): string {
   const p = new URLSearchParams();
@@ -54,13 +57,18 @@ export function useDayLogAccess() {
   });
 }
 
-export function useDayLog(q: DayQuery) {
+export function useDayLog(q: DayQuery, enabled = true) {
   return useQuery<DayLogDetail>({
     queryKey: dayLogKeys.day(q),
     queryFn: () => apiFetch<DayLogDetail>(`/day-logs/day${qs({ date: q.date, userId: q.userId })}`),
-    // The timer may have been stopped on another PC — read again on focus.
     refetchOnWindowFocus: true,
+    // Today with an Open entry: its time is counted to now by the server.
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      return d && d.date === d.today && d.summary.open ? LIVE_MS : false;
+    },
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
 
@@ -69,15 +77,34 @@ export function useTeamDayLogs(date: string | undefined, enabled = true) {
     queryKey: dayLogKeys.team(date ?? ''),
     queryFn: () => apiFetch<TeamDayLogResponse>(`/day-logs/team${qs({ date })}`),
     refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      return d && d.date === d.today ? LIVE_MS : false;
+    },
     placeholderData: keepPreviousData,
     enabled,
   });
 }
 
-export function useMyBreaks(enabled = true) {
-  return useQuery<MyBreaksResponse>({
-    queryKey: dayLogKeys.myBreaks(),
-    queryFn: () => apiFetch<MyBreaksResponse>('/day-logs/my-breaks'),
+export function usePersonDayLogs(userId: string, from: string, to: string) {
+  return useQuery<PersonDayLogResponse>({
+    queryKey: dayLogKeys.person(userId, from, to),
+    queryFn: () => apiFetch<PersonDayLogResponse>(`/day-logs/person${qs({ userId, from, to })}`),
+    refetchOnWindowFocus: true,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** SO / JWSO picker options (server-side search). */
+export function useDayLogOrderOptions(search: string, enabled = true) {
+  return useQuery<DayLogOrderOption[]>({
+    queryKey: dayLogKeys.orders(search),
+    queryFn: () =>
+      apiFetch<DayLogOrderOption[]>(
+        `/day-logs/order-options${qs({ search: search || undefined })}`,
+      ),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
     enabled,
   });
 }
@@ -100,22 +127,25 @@ function useDayWrite<TInput>(run: (input: TInput) => Promise<DayLogDetail>, q: D
   return useMutation<DayLogDetail, Error, TInput>({
     mutationFn: run,
     onSuccess: (day) => {
-      // Stopping a timer left on an earlier day answers THAT day — only
-      // replace the cache when the answer is the day this screen shows.
-      if (day.date === (q.date ?? day.today)) qc.setQueryData(dayLogKeys.day(q), day);
-      void qc.invalidateQueries({ queryKey: dayLogKeys.all });
+      const shown = day.date === (q.date ?? day.today);
+      if (shown) qc.setQueryData(dayLogKeys.day(q), day);
+      const own = JSON.stringify(dayLogKeys.day(q));
+      void qc.invalidateQueries({
+        queryKey: dayLogKeys.all,
+        predicate: (x) => !shown || JSON.stringify(x.queryKey) !== own,
+      });
     },
   });
 }
 
-/** Start — the ONE way to log time. `saveKey`: one Idempotency-Key reused for
- *  every retry of the same start, so a double click or a resend after a
- *  timeout makes ONE entry (ADR-172 R2). */
-export function useStartDayLogTimer(q: DayQuery, saveKey?: SaveKey) {
-  return useDayWrite<StartDayLogTimerInput>(
+/** Add an entry. `saveKey`: one Idempotency-Key reused for every retry of
+ *  the same save, so a double click or a resend after a timeout makes ONE
+ *  entry (ADR-172 R2). */
+export function useAddDayLogEntry(q: DayQuery, saveKey?: SaveKey) {
+  return useDayWrite<AddDayLogEntryInput>(
     (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<DayLogDetail>('/day-logs/timer/start', {
+        apiFetch<DayLogDetail>('/day-logs/entries', {
           method: 'POST',
           json: input,
           ...(headers ? { headers } : {}),
@@ -125,17 +155,19 @@ export function useStartDayLogTimer(q: DayQuery, saveKey?: SaveKey) {
   );
 }
 
-export function useStopDayLogTimer(q: DayQuery) {
-  return useDayWrite<StopDayLogTimerInput>(
-    (input) => apiFetch<DayLogDetail>('/day-logs/timer/stop', { method: 'POST', json: input }),
+/** Edit an entry; carries the updatedAt it was loaded with (§20.4). */
+export function useUpdateDayLogEntry(q: DayQuery) {
+  return useDayWrite<{ id: string } & UpdateDayLogEntryInput>(
+    ({ id, ...input }) =>
+      apiFetch<DayLogDetail>(`/day-logs/entries/${id}`, { method: 'PATCH', json: input }),
     q,
   );
 }
 
-export function useSetDayLogEntryStatus(q: DayQuery) {
-  return useDayWrite<{ id: string } & SetDayLogEntryStatusInput>(
-    ({ id, ...input }) =>
-      apiFetch<DayLogDetail>(`/day-logs/entries/${id}/status`, { method: 'PATCH', json: input }),
+/** ■ Stop an Open entry at the server's now. */
+export function useStopDayLogEntry(q: DayQuery) {
+  return useDayWrite<string>(
+    (id) => apiFetch<DayLogDetail>(`/day-logs/entries/${id}/stop`, { method: 'POST' }),
     q,
   );
 }
@@ -152,34 +184,6 @@ export function useSubmitDayLog(q: DayQuery) {
     (input) => apiFetch<DayLogDetail>('/day-logs/submit', { method: 'POST', json: input }),
     q,
   );
-}
-
-/** Department Admin: Reopen a submitted / leave day, or mark a day Leave. */
-export function useDayLogAdminAction(kind: 'reopen' | 'leave', q: DayQuery) {
-  return useDayWrite<DayLogReasonInput>(
-    (input) => apiFetch<DayLogDetail>(`/day-logs/${kind}`, { method: 'POST', json: input }),
-    q,
-  );
-}
-
-export function useRemindDayLog() {
-  return useMutation<{ ok: true }, Error, DayLogUserDayInput>({
-    mutationFn: (input) =>
-      apiFetch<{ ok: true }>('/day-logs/remind', { method: 'POST', json: input }),
-  });
-}
-
-export function useSaveMyBreaks() {
-  const qc = useQueryClient();
-  return useMutation<MyBreaksResponse, Error, SaveMyBreaksInput>({
-    mutationFn: (input) =>
-      apiFetch<MyBreaksResponse>('/day-logs/my-breaks', { method: 'PUT', json: input }),
-    onSuccess: (res) => {
-      qc.setQueryData(dayLogKeys.myBreaks(), res);
-      // Breaks change Work needed / Missing on every open day.
-      void qc.invalidateQueries({ queryKey: dayLogKeys.all });
-    },
-  });
 }
 
 export function useAddHoliday() {

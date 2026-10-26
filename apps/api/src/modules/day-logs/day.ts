@@ -2,7 +2,12 @@
 // through openDay / readHeader(lock) / lockHeaderById, so the header row lock
 // (§20.3) is taken in one place.
 
-import { type DayLogSpan, type DayLogStatus } from '@innovic/shared';
+import {
+  DAY_LOG_RULES,
+  type DayLogOrder,
+  type DayLogSpan,
+  type DayLogStatus,
+} from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError } from '../../lib/errors';
@@ -13,8 +18,6 @@ export interface DayHeader {
   userId: string;
   date: string;
   status: DayLogStatus;
-  workFrom: string;
-  workTo: string;
   submittedAt: string | null;
   submittedByName: string | null;
   reopenedAt: string | null;
@@ -27,16 +30,19 @@ export interface DayHeader {
 
 export interface DayLine {
   id: string;
+  reportId: string;
   kind: 'work' | 'break';
   fromTime: string | null;
   toTime: string | null;
   description: string;
-  status: string;
-  stopNote: string | null;
+  remarks: string | null;
+  order: DayLogOrder | null;
+  /** Saved more than lateAfterMin after its Stop (never for an Open entry). */
+  late: boolean;
   updatedAt: string;
 }
 
-const iso = (v: unknown): string | null =>
+export const iso = (v: unknown): string | null =>
   v === null || v === undefined
     ? null
     : v instanceof Date
@@ -45,8 +51,7 @@ const iso = (v: unknown): string | null =>
 
 const HEADER_COLS = sql`
   dr.id::text AS id, dr.user_id::text AS user_id, to_char(dr.report_date, 'YYYY-MM-DD') AS date,
-  dr.day_status AS status, to_char(dr.work_from, 'HH24:MI') AS work_from,
-  to_char(dr.work_to, 'HH24:MI') AS work_to, dr.submitted_at, dr.reopened_at, dr.reopen_reason, dr.leave_reason,
+  dr.day_status AS status, dr.submitted_at, dr.reopened_at, dr.reopen_reason, dr.leave_reason,
   dr.updated_at,
   (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = dr.submitted_by) AS submitted_by_name,
   (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = dr.reopened_by) AS reopened_by_name,
@@ -58,8 +63,6 @@ function toHeader(r: Record<string, unknown>): DayHeader {
     userId: String(r['user_id']),
     date: String(r['date']),
     status: r['status'] as DayLogStatus,
-    workFrom: String(r['work_from']),
-    workTo: String(r['work_to']),
     submittedAt: iso(r['submitted_at']),
     submittedByName: (r['submitted_by_name'] as string | null) ?? null,
     reopenedAt: iso(r['reopened_at']),
@@ -107,8 +110,7 @@ export async function lockHeaderById(
 /**
  * Open (user, date) for writing: insert the header if it is missing (ON
  * CONFLICT on daily_reports_user_day_uq — two first entries at once open ONE
- * day), copy the user's break template into it when THIS call created it,
- * then lock it FOR UPDATE.
+ * day), then lock it FOR UPDATE. Nothing is copied into a new day.
  */
 export async function openDay(
   tx: DbTransaction,
@@ -117,26 +119,11 @@ export async function openDay(
   date: string,
   actor: AuthContext,
 ): Promise<DayHeader> {
-  const created = (await tx.execute(sql`
+  await tx.execute(sql`
     INSERT INTO public.daily_reports (company_id, user_id, report_date, created_by, updated_by)
     VALUES (${companyId}::uuid, ${userId}::uuid, ${date}::date, ${actor.id}::uuid, ${actor.id}::uuid)
     ON CONFLICT (company_id, user_id, report_date) WHERE deleted_at IS NULL DO NOTHING
-    RETURNING id::text AS id
-  `)) as unknown as Array<{ id: string }>;
-  const newId = created[0]?.id;
-  if (newId) {
-    await tx.execute(sql`
-      INSERT INTO public.daily_report_lines
-        (company_id, daily_report_id, line_no, description, kind, from_time, to_time,
-         status, hours, created_by, updated_by)
-      SELECT ${companyId}::uuid, ${newId}::uuid,
-             row_number() OVER (ORDER BY b.sort_no, b.from_time), b.name, 'break',
-             b.from_time, b.to_time, 'completed', 0, ${actor.id}::uuid, ${actor.id}::uuid
-      FROM public.user_break_times b
-      WHERE b.company_id = ${companyId}::uuid AND b.user_id = ${userId}::uuid
-        AND b.deleted_at IS NULL
-    `);
-  }
+  `);
   const h = await readHeader(tx, companyId, userId, date, true);
   if (!h) throw new ConflictError('This day could not be opened — reload and try again');
   return h;
@@ -159,31 +146,58 @@ export async function nextLineNo(tx: DbTransaction, reportId: string): Promise<n
   return Number(r?.n ?? 1);
 }
 
-/** The day's live lines, in time order. */
-export async function loadLines(
+/** The live lines of many days in ONE read, in time order per day. LATE:
+ *  created more than lateAfterMin after (report date + Stop) in India time. */
+export async function loadLinesFor(
+  tx: DbTransaction,
+  companyId: string,
+  reportIds: readonly string[],
+): Promise<DayLine[]> {
+  if (reportIds.length === 0) return [];
+  const rows = (await tx.execute(sql`
+    SELECT l.id::text AS id, l.daily_report_id::text AS report_id, l.kind,
+           to_char(l.from_time, 'HH24:MI') AS from_time, to_char(l.to_time, 'HH24:MI') AS to_time,
+           l.description, l.remarks, l.updated_at,
+           so.id::text AS so_id, so.code AS so_code, jw.id::text AS jw_id, jw.code AS jw_code,
+           (l.to_time IS NOT NULL AND l.updated_at >
+              ((dr.report_date + l.to_time) AT TIME ZONE 'Asia/Kolkata')
+              + make_interval(mins => ${DAY_LOG_RULES.lateAfterMin}::int)) AS late
+    FROM public.daily_report_lines l
+    JOIN public.daily_reports dr ON dr.id = l.daily_report_id
+    LEFT JOIN public.sales_orders so ON so.id = l.sales_order_id
+    LEFT JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
+    WHERE l.daily_report_id = ANY(${sql.param([...reportIds])}::uuid[])
+      AND l.company_id = ${companyId}::uuid AND l.deleted_at IS NULL
+    ORDER BY l.daily_report_id, l.from_time NULLS LAST, l.line_no
+  `)) as unknown as Array<Record<string, unknown>>;
+  return rows.map((r) => {
+    const order: DayLogOrder | null = r['so_id']
+      ? { type: 'so', id: String(r['so_id']), code: String(r['so_code']) }
+      : r['jw_id']
+        ? { type: 'jwso', id: String(r['jw_id']), code: String(r['jw_code']) }
+        : null;
+    return {
+      id: String(r['id']),
+      reportId: String(r['report_id']),
+      kind: r['kind'] as 'work' | 'break',
+      fromTime: hm(r['from_time'] as string | null),
+      toTime: hm(r['to_time'] as string | null),
+      description: String(r['description'] ?? ''),
+      remarks: (r['remarks'] as string | null) ?? null,
+      order,
+      late: r['late'] === true,
+      updatedAt: iso(r['updated_at'])!,
+    };
+  });
+}
+
+/** One day's live lines, in time order. */
+export function loadLines(
   tx: DbTransaction,
   companyId: string,
   reportId: string,
 ): Promise<DayLine[]> {
-  const rows = (await tx.execute(sql`
-    SELECT l.id::text AS id, l.kind, to_char(l.from_time, 'HH24:MI') AS from_time,
-           to_char(l.to_time, 'HH24:MI') AS to_time, l.description,
-           l.status, l.stop_note, l.updated_at
-    FROM public.daily_report_lines l
-    WHERE l.daily_report_id = ${reportId}::uuid AND l.company_id = ${companyId}::uuid
-      AND l.deleted_at IS NULL
-    ORDER BY l.from_time NULLS LAST, l.line_no
-  `)) as unknown as Array<Record<string, unknown>>;
-  return rows.map((r) => ({
-    id: String(r['id']),
-    kind: r['kind'] as 'work' | 'break',
-    fromTime: hm(r['from_time'] as string | null),
-    toTime: hm(r['to_time'] as string | null),
-    description: String(r['description'] ?? ''),
-    status: String(r['status']),
-    stopNote: (r['stop_note'] as string | null) ?? null,
-    updatedAt: iso(r['updated_at'])!,
-  }));
+  return loadLinesFor(tx, companyId, [reportId]);
 }
 
 /** Lines → the shared span shape (lines without a From — old Daily Task
@@ -192,31 +206,6 @@ export function spansOf(lines: readonly DayLine[]): DayLogSpan[] {
   return lines
     .filter((l) => l.fromTime)
     .map((l) => ({ kind: l.kind, fromTime: l.fromTime!, toTime: l.toTime }));
-}
-
-/** The user's break template as break spans (a day with no header yet). */
-export async function templateBreaks(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
-): Promise<DayLine[]> {
-  const rows = (await tx.execute(sql`
-    SELECT b.id::text AS id, b.name, to_char(b.from_time, 'HH24:MI') AS from_time,
-           to_char(b.to_time, 'HH24:MI') AS to_time, b.updated_at
-    FROM public.user_break_times b
-    WHERE b.company_id = ${companyId}::uuid AND b.user_id = ${userId}::uuid AND b.deleted_at IS NULL
-    ORDER BY b.sort_no, b.from_time
-  `)) as unknown as Array<Record<string, unknown>>;
-  return rows.map((r) => ({
-    id: String(r['id']),
-    kind: 'break' as const,
-    fromTime: String(r['from_time']),
-    toTime: String(r['to_time']),
-    description: String(r['name']),
-    status: 'completed',
-    stopNote: null,
-    updatedAt: iso(r['updated_at'])!,
-  }));
 }
 
 /** Holiday dates (and names) in [from, to]. */

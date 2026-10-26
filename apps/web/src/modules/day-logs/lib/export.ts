@@ -5,9 +5,13 @@
 // SheetJS (xlsx, the existing dependency) only when asked, as op-log does.
 
 import type { DayLogDetail, TeamDayLogResponse } from '@innovic/shared';
-import { DAY_LOG_CURRENT_STATUS_LABELS, fmtDuration } from '@innovic/shared';
+import {
+  DAY_LOG_CURRENT_STATUS_LABELS,
+  DAY_LOG_ENTRY_KIND_LABELS,
+  fmtDuration,
+} from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
-import { dayStatusLabel, entryDuration, workStatusLabel } from './format';
+import { PAST_STATUS_LABEL } from './format';
 
 export interface ExportTable {
   /** Column keys deliberately avoid a `status` / `type` suffix: rowsToCsv
@@ -17,57 +21,66 @@ export interface ExportTable {
 }
 
 export const DAY_COLUMNS = [
-  { key: 'no', label: '#' },
-  { key: 'from_time', label: 'From' },
-  { key: 'to_time', label: 'To' },
+  { key: 'start_time', label: 'Start' },
+  { key: 'stop_time', label: 'Stop' },
   { key: 'time', label: 'Time' },
-  { key: 'work', label: 'Work done' },
-  { key: 'work_state', label: 'Work Status' },
+  { key: 'kind', label: 'Type' },
+  { key: 'work', label: 'Working on' },
+  { key: 'order_code', label: 'SO / JWSO' },
+  { key: 'entry_state', label: 'Status' },
+  { key: 'late', label: 'Late' },
+  { key: 'remark', label: 'Remark' },
 ];
 
 export function dayTable(day: DayLogDetail): ExportTable {
-  let n = 0;
-  const rows = day.entries.map((e) => {
-    if (e.kind === 'work') n += 1;
-    return {
-      no: e.kind === 'work' ? String(n) : '',
-      from_time: e.fromTime,
-      to_time: e.toTime ?? '',
-      time: entryDuration(e),
+  const rows = [...day.entries]
+    .sort((a, b) => a.fromTime.localeCompare(b.fromTime))
+    .map((e) => ({
+      start_time: e.fromTime,
+      stop_time: e.toTime ?? '',
+      time: fmtDuration(e.minutes),
+      kind: DAY_LOG_ENTRY_KIND_LABELS[e.kind],
       work: e.description,
-      work_state: workStatusLabel(e),
-    };
-  });
+      order_code: e.order?.code ?? '',
+      entry_state: e.toTime ? 'Closed' : 'Open',
+      late: e.late ? 'LATE' : '',
+      remark: e.remarks ?? '',
+    }));
   return { columns: DAY_COLUMNS, rows };
 }
 
 export const TEAM_COLUMNS = [
   { key: 'user', label: 'User' },
-  { key: 'dept', label: 'Department' },
-  { key: 'tier', label: 'Right' },
-  { key: 'logged', label: 'Logged' },
-  { key: 'required', label: 'Work needed' },
-  { key: 'missing', label: 'Missing' },
-  { key: 'missing_from', label: 'Missing From' },
-  { key: 'current_now', label: 'Current Status' },
-  { key: 'day_state', label: 'Day Status' },
+  { key: 'current_now', label: 'Now' },
+  { key: 'latest_work', label: 'Working on (latest)' },
+  { key: 'latest_order', label: 'SO / JWSO' },
+  { key: 'first_start', label: 'First start' },
+  { key: 'last_stop', label: 'Last stop' },
+  { key: 'work_hours', label: 'Working hours' },
+  { key: 'break_min', label: 'Break' },
+  { key: 'entries', label: 'Entries' },
+  { key: 'late', label: 'Late' },
 ];
 
 export function teamTable(team: TeamDayLogResponse): ExportTable {
+  const isToday = team.date === team.today;
   return {
     columns: TEAM_COLUMNS,
     rows: team.rows.map((r) => ({
       user: r.userName,
-      dept: r.deptLabel ?? '',
-      tier: r.tierLabel ?? '',
-      logged: fmtDuration(r.loggedMin),
-      required: fmtDuration(r.requiredMin),
-      missing: r.missingMin > 0 ? fmtDuration(r.missingMin) : '',
-      missing_from: r.missingFrom ?? '',
-      current_now: [DAY_LOG_CURRENT_STATUS_LABELS[r.currentStatus], r.currentText]
-        .filter(Boolean)
-        .join(' · '),
-      day_state: dayStatusLabel(r.status),
+      current_now: isToday
+        ? [DAY_LOG_CURRENT_STATUS_LABELS[r.currentStatus], r.currentText]
+            .filter(Boolean)
+            .join(' · ')
+        : PAST_STATUS_LABEL[r.currentStatus],
+      latest_work: r.latestWork?.description ?? '',
+      latest_order: r.latestWork?.orderCode ?? '',
+      first_start: r.firstStart ?? '',
+      last_stop: r.lastStop ?? '',
+      work_hours: fmtDuration(r.workMin),
+      break_min: `${r.breakMin} min`,
+      entries: String(r.entryCount),
+      late: r.lateCount > 0 ? String(r.lateCount) : '',
     })),
   };
 }

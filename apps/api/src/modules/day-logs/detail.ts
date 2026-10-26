@@ -1,12 +1,11 @@
-// Day Log — the D3 / D10 checks (an unfinished earlier working day; a timer
-// left running on another day), the entry shape and the whole DayLogDetail.
+// Day Log — the D3 check (an unfinished earlier working day), the stray
+// Open entry on an earlier day, the entry shape and the whole DayLogDetail.
 
 import {
   type DayLogDetail,
   type DayLogEntry,
   type DayLogStatus,
-  type DayLogWorkStatus,
-  DAY_LOG_WORK_STATUSES,
+  type DayLogSummaryOut,
   isWorkingDay,
   minToHhmm,
   summarizeDay,
@@ -23,9 +22,8 @@ import {
   loadLines,
   readHeader,
   spansOf,
-  templateBreaks,
 } from './day';
-import { dmy, spanMinutes } from './rules';
+import { dmy, entryMinutes, istHm } from './rules';
 
 /** How far back the D3 look-up walks for the previous working day. */
 const LOOKBACK_DAYS = 40;
@@ -40,25 +38,23 @@ export async function findBlockedBy(
   userId: string,
   date: string,
 ): Promise<{ date: string; reason: string } | null> {
-  const [any] = (await tx.execute(sql`
+  // The "any earlier day" check and the holidays go in one pipelined trip.
+  const [anyRows, hol] = await Promise.all([
+    tx.execute(sql`
     SELECT EXISTS (
       SELECT 1 FROM public.daily_reports dr
       WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
         AND dr.report_date < ${date}::date AND dr.deleted_at IS NULL
-        -- an empty day (e.g. opened only by a reminder) does not start the rule
+        -- an empty day (every entry removed) does not start the rule
         AND (dr.day_status <> 'open' OR EXISTS (
           SELECT 1 FROM public.daily_report_lines l
           WHERE l.daily_report_id = dr.id AND l.kind = 'work' AND l.deleted_at IS NULL))
     ) AS has
-  `)) as unknown as Array<{ has: boolean }>;
-  if (!any?.has) return null;
+  `) as unknown as Promise<Array<{ has: boolean }>>,
+    holidaysBetween(tx, companyId, addDays(date, -LOOKBACK_DAYS), addDays(date, -1)),
+  ]);
+  if (!anyRows[0]?.has) return null;
 
-  const hol = await holidaysBetween(
-    tx,
-    companyId,
-    addDays(date, -LOOKBACK_DAYS),
-    addDays(date, -1),
-  );
   const holDates = [...hol.keys()];
   let prev = addDays(date, -1);
   for (let i = 0; i < LOOKBACK_DAYS && !isWorkingDay(prev, holDates); i += 1)
@@ -73,8 +69,8 @@ export async function findBlockedBy(
   };
 }
 
-/** D10 — a work timer still running on a day before `today`. */
-export async function findStrayTimer(
+/** An entry (work or break) left Open on a day before `today`. */
+export async function findStrayOpen(
   tx: DbTransaction,
   companyId: string,
   userId: string,
@@ -87,29 +83,45 @@ export async function findStrayTimer(
     JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
     WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
       AND dr.report_date < ${today}::date
-      AND l.kind = 'work' AND l.to_time IS NULL AND l.from_time IS NOT NULL
-      AND l.deleted_at IS NULL
+      AND l.to_time IS NULL AND l.from_time IS NOT NULL AND l.deleted_at IS NULL
     ORDER BY dr.report_date DESC LIMIT 1
   `)) as unknown as Array<{ d: string; id: string; f: string }>;
   const r = rows[0];
   return r ? { date: r.d, entryId: r.id, fromTime: r.f } : null;
 }
 
-const isWorkStatus = (s: string): s is DayLogWorkStatus =>
-  (DAY_LOG_WORK_STATUSES as readonly string[]).includes(s);
-
-export function toEntry(l: DayLine): DayLogEntry {
+/** `nowMin` only when the line's day is today (an Open entry counts to now). */
+export function toEntry(l: DayLine, nowMin?: number): DayLogEntry {
   return {
     id: l.id,
     kind: l.kind,
     fromTime: l.fromTime ?? '',
     toTime: l.toTime,
-    minutes: spanMinutes(l.fromTime, l.toTime),
+    minutes: l.fromTime ? entryMinutes(l.fromTime, l.toTime, nowMin) : 0,
     description: l.description,
-    // Breaks carry no Work Status (stored 'completed', shown as none).
-    status: l.kind === 'work' && isWorkStatus(l.status) ? l.status : null,
-    stopNote: l.stopNote,
+    order: l.order,
+    remarks: l.remarks,
+    late: l.late,
     updatedAt: l.updatedAt,
+  };
+}
+
+/** summarizeDay + the LATE count — one reading for detail, team and person. */
+export function summaryOf(
+  lines: readonly DayLine[],
+  nowMin: number | undefined,
+  workingDay: boolean,
+  status: DayLogStatus,
+): DayLogSummaryOut {
+  const s = summarizeDay(spansOf(lines), nowMin, workingDay);
+  // Judged over the whole 09:00–18:00 window — the same test Submit uses —
+  // so the screen never offers a Submit the server refuses (§20.5).
+  const whole = summarizeDay(spansOf(lines), undefined, workingDay).unloggedMin;
+  return {
+    ...s,
+    // A Leave day owes no time.
+    unloggedMin: status === 'leave' ? 0 : whole,
+    lateCount: lines.filter((l) => l.late).length,
   };
 }
 
@@ -122,21 +134,20 @@ export async function buildDetail(
   date: string,
   clock: { today: string; nowMin: number },
 ): Promise<DayLogDetail> {
-  const header = await readHeader(tx, companyId, target.id, date);
-  const lines = header
-    ? await loadLines(tx, companyId, header.id)
-    : await templateBreaks(tx, companyId, target.id);
-  const hol = await holidaysBetween(tx, companyId, date, date);
+  // Independent reads, pipelined on the one connection (one round trip).
+  const [header, hol, blockedBy, strayOpen] = await Promise.all([
+    readHeader(tx, companyId, target.id, date),
+    holidaysBetween(tx, companyId, date, date),
+    findBlockedBy(tx, companyId, target.id, date),
+    findStrayOpen(tx, companyId, target.id, clock.today),
+  ]);
+  const lines = header ? await loadLines(tx, companyId, header.id) : [];
   const holidayName = hol.get(date) ?? null;
   const workingDay = isWorkingDay(date, holidayName ? [date] : []);
-  const spans = spansOf(lines);
-  const summary = summarizeDay(spans, date === clock.today ? clock.nowMin : undefined, workingDay);
+  const nowMin = date === clock.today ? clock.nowMin : undefined;
   const status: DayLogStatus = header?.status ?? 'open';
-  // A Leave day owes no time.
-  if (status === 'leave') summary.missingMin = 0;
+  const summary = summaryOf(lines, nowMin, workingDay, status);
 
-  const blockedBy = await findBlockedBy(tx, companyId, target.id, date);
-  const strayTimer = await findStrayTimer(tx, companyId, target.id, clock.today);
   const isOwner = target.id === v.userId;
 
   return {
@@ -150,9 +161,7 @@ export async function buildDetail(
     status,
     workingDay,
     holidayName,
-    workFrom: header?.workFrom ?? '09:00',
-    workTo: header?.workTo ?? '18:00',
-    entries: lines.filter((l) => l.fromTime).map(toEntry),
+    entries: lines.filter((l) => l.fromTime).map((l) => toEntry(l, nowMin)),
     summary,
     submittedAt: header?.submittedAt ?? null,
     submittedByName: header?.submittedByName ?? null,
@@ -161,17 +170,22 @@ export async function buildDetail(
     reopenReason: header?.reopenReason ?? null,
     leaveReason: header?.leaveReason ?? null,
     blockedBy,
-    strayTimer,
+    strayOpen,
     isOwner,
-    canWrite: isOwner && v.writer && status === 'open' && !blockedBy && date <= clock.today,
+    canWrite:
+      isOwner &&
+      v.writer &&
+      status === 'open' &&
+      !blockedBy &&
+      date <= clock.today &&
+      (!strayOpen || strayOpen.date === date),
     canManage: canManageUser(v, target.mainDept) && (!isOwner || v.isSuper),
   };
 }
 
 /** 409 for a write on a day that is not open, naming who closed it and when. */
 export function notOpenError(h: DayHeader): ConflictError {
-  const at = (s: string | null): string =>
-    s ? new Date(new Date(s).getTime() + 5.5 * 3600 * 1000).toISOString().slice(11, 16) : '';
+  const at = (s: string | null): string => (s ? istHm(s) : '');
   if (h.status === 'submitted') {
     return new ConflictError(
       `${dmy(h.date)} was submitted by ${h.submittedByName ?? 'someone'} at ${at(h.submittedAt)} — ask your Department Admin to reopen it`,

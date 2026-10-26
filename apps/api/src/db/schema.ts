@@ -7094,13 +7094,20 @@ export const dailyReportLines = pgTable(
     hours: numeric('hours', { precision: 6, scale: 2 }).notNull().default('0'),
     status: dailyReportLineStatusEnum('status').notNull().default('completed'),
     remarks: text('remarks'),
-    // Day Log (0222). to_time NULL = the timer is running; `hours` is written
+    // Day Log (0222). to_time NULL = the entry is Open; `hours` is written
     // only by the day-logs service from From/To.
     kind: dayLogEntryKindEnum('kind').notNull().default('work'),
     fromTime: time('from_time'),
     toTime: time('to_time'),
     taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     stopNote: text('stop_note'),
+    // Day Log (0223): the SO or JWSO a work entry was for — at most one.
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -7116,9 +7123,16 @@ export const dailyReportLines = pgTable(
     uniqueIndex('daily_report_lines_line_uq')
       .on(t.dailyReportId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
-    uniqueIndex('daily_report_lines_running_uq')
+    // 0223 — one Open entry per day, work or break.
+    uniqueIndex('daily_report_lines_open_uq')
       .on(t.dailyReportId)
-      .where(sql`${t.toTime} is null and ${t.kind} = 'work' and ${t.deletedAt} is null`),
+      .where(sql`${t.toTime} is null and ${t.fromTime} is not null and ${t.deletedAt} is null`),
+    index('daily_report_lines_so_idx')
+      .on(t.salesOrderId)
+      .where(sql`${t.salesOrderId} is not null`),
+    index('daily_report_lines_jwo_idx')
+      .on(t.jobWorkOrderId)
+      .where(sql`${t.jobWorkOrderId} is not null`),
     index('daily_report_lines_report_idx')
       .on(t.dailyReportId)
       .where(sql`${t.deletedAt} is null`),
@@ -7126,6 +7140,10 @@ export const dailyReportLines = pgTable(
     check(
       'daily_report_lines_from_to_chk',
       sql`${t.toTime} is null or ${t.fromTime} is null or ${t.toTime} > ${t.fromTime}`,
+    ),
+    check(
+      'daily_report_lines_one_order_chk',
+      sql`${t.salesOrderId} is null or ${t.jobWorkOrderId} is null`,
     ),
     pgPolicy('daily_report_lines_company_read', {
       for: 'select',

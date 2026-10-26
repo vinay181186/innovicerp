@@ -81,11 +81,6 @@ export function runningStatus(
 export function entityHref(entity: string, id: string | null, code: string | null): string | null {
   if (!id) return null;
   switch (entity) {
-    case 'Day Log': {
-      // ref "26-10-2026" (day-logs remindUser) → the owner's own day.
-      const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(code ?? '');
-      return `/task-board?view=daylog${m ? `&date=${m[3]}-${m[2]}-${m[1]}` : ''}`;
-    }
     case 'PurchaseRequest':
       return docNavPage('purchase-request', id);
     case 'PurchaseOrder':

@@ -1,21 +1,16 @@
-// Day Log service (owner 2026-10-26; migration 0222). The user's From–To log
-// of the working day, on the Daily Task Report tables. The logic is split by
-// concern so each file stays reviewable:
-//   writes.ts — Work Status, remove last entry     manage.ts — read, Submit, Reopen / Leave / Remind
-//   team.ts   — Team Day Logs                      breaks.ts — break template, holidays
-//   timer.ts  — Start / Stop                       detail.ts — D3 / D10 checks, the DayLogDetail
-//   day.ts    — read / open / lock one day         access.ts — who sees and manages whose day
+// Day Log service (owner 2026-10-26; migrations 0222 / 0223). The user's own
+// log of the working day, on the Daily Task Report tables. Split by concern
+// so each file stays reviewable:
+//   entries.ts — add / edit / Stop / remove      manage.ts — read, Submit, Reopen / Leave
+//   writes.ts  — guards + the ONE entry check     team.ts   — Team Day Logs
+//   person.ts  — one person over a date range     orders.ts — SO / JWSO picker + check
+//   day.ts     — read / open / lock one day       detail.ts — D3, stray Open, the DayLogDetail
+//   holidays.ts — holidays, tab access            access.ts — who sees and manages whose day
 // Rules of the day itself live in packages/shared day-log.ts (summarizeDay…).
 
-export { deleteEntry, setEntryStatus } from './writes';
-export { startTimer, stopTimer } from './timer';
-export { getDay, markLeave, remindUser, reopenDay, submitDay } from './manage';
+export { addEntry, deleteEntry, stopEntry, updateEntry } from './entries';
+export { getDay, markLeave, reopenDay, submitDay } from './manage';
 export { getTeam } from './team';
-export {
-  addHoliday,
-  deleteHoliday,
-  getAccess,
-  getMyBreaks,
-  listHolidays,
-  saveMyBreaks,
-} from './breaks';
+export { getPerson } from './person';
+export { orderOptions } from './orders';
+export { addHoliday, deleteHoliday, getAccess, listHolidays } from './holidays';

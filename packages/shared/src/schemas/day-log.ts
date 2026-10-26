@@ -1,11 +1,16 @@
-// Day Log (owner 2026-10-26) — the user's From–To log of the working day.
-// Built on the Daily Task Report tables (daily_reports = the day,
-// daily_report_lines = its entries; migration 0222). Rules:
-//   - 09:00–18:00 must be covered with no gap; entries go strictly in order —
-//     the server, never the browser, decides an entry's From (`nextFrom`).
-//   - each user sets their own break times; a break is never logged as work.
-//   - Submit locks the day; a Department Admin may Reopen (with a reason),
-//     mark a day Leave, or send a reminder. Only the owner writes the log.
+// Day Log (owner 2026-10-26, design approved 2026-10-26) — the user's own
+// log of the working day on the Task Board. Built on the Daily Task Report
+// tables (daily_reports = the day, daily_report_lines = its entries;
+// migrations 0222 / 0223). Rules:
+//   - ONE entry form. Type Work or Break, Start time, Stop time, a remark;
+//     work may be against one SO or JWSO. Both times = the entry is Closed;
+//     Start only = it is Open (running) until Stop. One Open entry at a time.
+//   - Entries may be added in any order and edited or removed freely until
+//     the day is submitted (no approval). They never overlap and never run
+//     past now. Breaks total at most DAY_LOG_RULES.breakLimitMin a day.
+//   - An entry saved more than lateAfterMin after its Stop time is LATE.
+//   - Submit Day needs 09:00–18:00 fully covered (work + break) and nothing
+//     Open; it locks the day. Only the owner writes the log.
 // The pure helpers below are shared so the screen shows exactly what the
 // server will accept.
 
@@ -15,13 +20,17 @@ const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 /** "HH:MM", 24-hour. */
 export const hhmmSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM');
 
-// ── Company rules (one place; D2 / D9 owner decisions) ──────────────────────
+// ── Company rules (one place) ───────────────────────────────────────────────
 
 export const DAY_LOG_RULES = {
   workFrom: '09:00',
   workTo: '18:00',
-  /** Total of a user's breaks inside the work window, minutes. */
+  /** Total break minutes a day. */
   breakLimitMin: 60,
+  /** An entry saved more than this many minutes after its Stop time is LATE. */
+  lateAfterMin: 60,
+  /** Longest From–To range on the person page, days. */
+  maxRangeDays: 62,
   /** JS getUTCDay() of working days: Mon–Sat. */
   workingWeekdays: [1, 2, 3, 4, 5, 6] as readonly number[],
 } as const;
@@ -38,10 +47,17 @@ export const DAY_LOG_STATUS_LABELS: Record<DayLogStatus, string> = {
 
 export const DAY_LOG_ENTRY_KINDS = ['work', 'break'] as const;
 export type DayLogEntryKind = (typeof DAY_LOG_ENTRY_KINDS)[number];
+export const DAY_LOG_ENTRY_KIND_LABELS: Record<DayLogEntryKind, string> = {
+  work: 'Work',
+  break: 'Break',
+};
 
-/** Team Day Logs "Current Status": working = timer running; break = now is
- *  inside their break; idle = open day, nothing running; not_started =
- *  nothing logged today. */
+export const DAY_LOG_ORDER_TYPES = ['so', 'jwso'] as const;
+export type DayLogOrderType = (typeof DAY_LOG_ORDER_TYPES)[number];
+
+/** Team Day Logs "Now": working = a work entry is Open; break = a break
+ *  entry is Open; idle = entries today, nothing Open; not_started = no
+ *  entries today. A past day shows its day status instead. */
 export const DAY_LOG_CURRENT_STATUSES = [
   'working',
   'break',
@@ -58,15 +74,6 @@ export const DAY_LOG_CURRENT_STATUS_LABELS: Record<DayLogCurrentStatus, string> 
   not_started: 'Not started',
   submitted: 'Submitted',
   leave: 'Leave',
-};
-
-/** Work Status a user may pick (a subset of daily_report_line_status). */
-export const DAY_LOG_WORK_STATUSES = ['completed', 'in_progress', 'blocked'] as const;
-export type DayLogWorkStatus = (typeof DAY_LOG_WORK_STATUSES)[number];
-export const DAY_LOG_WORK_STATUS_LABELS: Record<DayLogWorkStatus, string> = {
-  completed: 'Completed',
-  in_progress: 'In progress',
-  blocked: 'On hold',
 };
 
 // ── Time helpers ────────────────────────────────────────────────────────────
@@ -102,30 +109,30 @@ export function isWorkingDay(date: string, holidays: readonly string[]): boolean
 export interface DayLogSpan {
   kind: DayLogEntryKind;
   fromTime: string;
-  /** null = the timer is running. */
+  /** null = the entry is Open. */
   toTime: string | null;
 }
 
 export interface DayLogSummary {
-  /** Work minutes needed: window minus breaks inside it. */
-  requiredMin: number;
+  workMin: number;
   breakMin: number;
-  /** Work minutes logged inside the window. */
-  loggedMin: number;
-  /** Work minutes logged after workTo. */
-  afterMin: number;
-  /** requiredMin − loggedMin, never below 0. */
-  missingMin: number;
-  /** Where the next work entry must start ("HH:MM"). */
-  nextFrom: string;
-  running: boolean;
+  /** Earliest Start ("HH:MM"), null when no entries. */
+  firstStart: string | null;
+  /** Latest Stop, or now for an Open entry; null when no entries. */
+  lastStop: string | null;
+  /** Minutes of 09:00–18:00 (up to `nowMin` when given) that no entry covers.
+   *  0 on a non-working day. Submit Day needs it 0 for the whole window. */
+  unloggedMin: number;
+  /** An entry is Open. */
+  open: boolean;
+  /** Work entries. */
+  entryCount: number;
 }
 
 /**
- * One reading of a day for screen AND server. `nowMin` closes a running
- * entry for the totals only. nextFrom = end of the last entry (or workFrom),
- * pushed past any break it falls into. A Sunday / holiday (`workingDay`
- * false) owes no time: work logged on it still counts, nothing is missing.
+ * One reading of a day for screen AND server. `nowMin` closes an Open entry
+ * at now for the totals and limits the unlogged check to now (today); leave
+ * it out to judge the whole window (Submit).
  */
 export function summarizeDay(
   spans: readonly DayLogSpan[],
@@ -134,113 +141,85 @@ export function summarizeDay(
 ): DayLogSummary {
   const w1 = hhmmToMin(DAY_LOG_RULES.workFrom);
   const w2 = hhmmToMin(DAY_LOG_RULES.workTo);
-  const breaks = spans
-    .filter((s) => s.kind === 'break' && s.toTime)
-    .map((s) => [hhmmToMin(s.fromTime), hhmmToMin(s.toTime as string)] as const)
-    .sort((a, b) => a[0] - b[0]);
-  const breakMin = breaks.reduce((n, [a, b]) => n + overlapMin(a, b, w1, w2), 0);
-  const requiredMin = workingDay ? w2 - w1 - breakMin : 0;
-
-  let loggedMin = 0;
-  let afterMin = 0;
-  let lastEnd = w1;
-  let running = false;
-  for (const s of spans) {
-    if (s.kind !== 'work') continue;
-    const a = hhmmToMin(s.fromTime);
-    const b = s.toTime ? hhmmToMin(s.toTime) : Math.max(a, nowMin ?? a);
-    if (!s.toTime) running = true;
-    loggedMin += overlapMin(a, b, w1, w2);
-    afterMin += Math.max(0, b - Math.max(a, w2));
-    if (s.toTime) lastEnd = Math.max(lastEnd, b);
+  const ivals = spans
+    .map((s) => {
+      const a = hhmmToMin(s.fromTime);
+      const b = s.toTime ? hhmmToMin(s.toTime) : Math.max(a, nowMin ?? a);
+      return { kind: s.kind, a, b, open: !s.toTime };
+    })
+    .sort((x, y) => x.a - y.a);
+  let workMin = 0;
+  let breakMin = 0;
+  for (const i of ivals) {
+    if (i.kind === 'work') workMin += i.b - i.a;
+    else breakMin += i.b - i.a;
   }
-  let next = lastEnd;
-  for (const [a, b] of breaks) if (next >= a && next < b) next = b;
-
+  const end = Math.min(w2, nowMin ?? w2);
+  let covered = w1;
+  let unloggedMin = 0;
+  for (const i of ivals) {
+    if (i.a > covered && covered < end) unloggedMin += Math.min(i.a, end) - covered;
+    covered = Math.max(covered, i.b);
+  }
+  if (covered < end) unloggedMin += end - covered;
   return {
-    requiredMin,
+    workMin,
     breakMin,
-    loggedMin,
-    afterMin,
-    missingMin: Math.max(0, requiredMin - loggedMin),
-    nextFrom: minToHhmm(next),
-    running,
+    firstStart: ivals.length ? minToHhmm(Math.min(...ivals.map((i) => i.a))) : null,
+    lastStop: ivals.length ? minToHhmm(Math.max(...ivals.map((i) => i.b))) : null,
+    unloggedMin: workingDay ? Math.max(0, unloggedMin) : 0,
+    open: ivals.some((i) => i.open),
+    entryCount: ivals.filter((i) => i.kind === 'work').length,
   };
-}
-
-/** First break starting inside (from, to) — an entry may not run over it. */
-export function firstBreakInside(
-  spans: readonly DayLogSpan[],
-  fromMin: number,
-  toMin: number,
-): DayLogSpan | null {
-  let hit: DayLogSpan | null = null;
-  for (const s of spans) {
-    if (s.kind !== 'break' || !s.toTime) continue;
-    const a = hhmmToMin(s.fromTime);
-    const b = hhmmToMin(s.toTime);
-    if (overlapMin(fromMin, toMin, a, b) > 0 && (!hit || a < hhmmToMin(hit.fromTime))) hit = s;
-  }
-  return hit;
 }
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
 
-const workText = z.string().trim().min(1, 'Write what you did').max(500);
+const entryFields = {
+  kind: z.enum(DAY_LOG_ENTRY_KINDS),
+  /** Working on (work, required) / break name (optional, default "Break"). */
+  description: z.string().trim().max(500).default(''),
+  startTime: hhmmSchema,
+  /** Empty = the entry is Open from startTime. */
+  stopTime: hhmmSchema.nullish(),
+  /** Work only: the SO or JWSO it was for. */
+  orderType: z.enum(DAY_LOG_ORDER_TYPES).nullish(),
+  orderId: z.string().uuid().nullish(),
+  remarks: z.string().trim().max(2000).nullish(),
+};
 
-/**
- * The ONE way to log time (owner 2026-10-26): Start. It always begins at the
- * server's nextFrom, so the day never has a gap; a running entry is closed
- * at now (Completed) first, and a break inside the gap closes the work at
- * the break's start and carries on after it.
- */
-export const startDayLogTimerInputSchema = z.object({
-  description: workText,
-});
-export type StartDayLogTimerInput = z.infer<typeof startDayLogTimerInputSchema>;
+function entryRules<T extends z.ZodTypeAny>(schema: T): T {
+  return schema
+    .refine(
+      (v: { kind: DayLogEntryKind; description: string }) =>
+        v.kind === 'break' || v.description.length > 0,
+      { message: 'Write what you worked on', path: ['description'] },
+    )
+    .refine(
+      (v: { startTime: string; stopTime?: string | null }) =>
+        !v.stopTime || hhmmToMin(v.stopTime) > hhmmToMin(v.startTime),
+      { message: 'Stop time must be after Start time', path: ['stopTime'] },
+    )
+    .refine(
+      (v: { orderType?: string | null; orderId?: string | null }) => !v.orderType === !v.orderId,
+      { message: 'Pick the SO / JWSO again', path: ['orderId'] },
+    ) as unknown as T;
+}
 
-export const stopDayLogTimerInputSchema = z.object({
-  status: z.enum(DAY_LOG_WORK_STATUSES),
-  /** "Finished at" — default now (cut at a break). Required when the timer
-   *  was left running on an earlier day. */
-  endTime: hhmmSchema.optional(),
-});
-export type StopDayLogTimerInput = z.infer<typeof stopDayLogTimerInputSchema>;
+export const addDayLogEntryInputSchema = entryRules(z.object({ date: dateStr, ...entryFields }));
+export type AddDayLogEntryInput = z.infer<typeof addDayLogEntryInputSchema>;
 
-export const setDayLogEntryStatusInputSchema = z.object({
-  status: z.enum(DAY_LOG_WORK_STATUSES),
-  /** §20.4 — the entry's updatedAt as loaded. */
-  updatedAt: z.string(),
-});
-export type SetDayLogEntryStatusInput = z.infer<typeof setDayLogEntryStatusInputSchema>;
+export const updateDayLogEntryInputSchema = entryRules(
+  z.object({
+    ...entryFields,
+    /** §20.4 — the entry's updatedAt as loaded. */
+    updatedAt: z.string(),
+  }),
+);
+export type UpdateDayLogEntryInput = z.infer<typeof updateDayLogEntryInputSchema>;
 
 export const dayLogDateInputSchema = z.object({ date: dateStr });
 export type DayLogDateInput = z.infer<typeof dayLogDateInputSchema>;
-
-/** Department Admin actions on someone else's day. */
-export const dayLogUserDayInputSchema = z.object({ userId: z.string().uuid(), date: dateStr });
-export type DayLogUserDayInput = z.infer<typeof dayLogUserDayInputSchema>;
-
-export const dayLogReasonInputSchema = dayLogUserDayInputSchema.extend({
-  reason: z.string().trim().min(3, 'Give a reason').max(500),
-});
-export type DayLogReasonInput = z.infer<typeof dayLogReasonInputSchema>;
-
-export const userBreakTimeInputSchema = z
-  .object({
-    name: z.string().trim().min(1).max(60),
-    fromTime: hhmmSchema,
-    toTime: hhmmSchema,
-  })
-  .refine((b) => hhmmToMin(b.toTime) > hhmmToMin(b.fromTime), {
-    message: 'To must be after From',
-    path: ['toTime'],
-  });
-
-export const saveMyBreaksInputSchema = z.object({
-  breaks: z.array(userBreakTimeInputSchema).max(6),
-});
-export type SaveMyBreaksInput = z.infer<typeof saveMyBreaksInputSchema>;
 
 export const holidayInputSchema = z.object({
   date: dateStr,
@@ -258,38 +237,62 @@ export type DayLogQuery = z.infer<typeof dayLogQuerySchema>;
 export const teamDayLogQuerySchema = z.object({ date: dateStr.optional() });
 export type TeamDayLogQuery = z.infer<typeof teamDayLogQuerySchema>;
 
+export const personDayLogQuerySchema = z.object({
+  userId: z.string().uuid(),
+  from: dateStr,
+  to: dateStr,
+});
+export type PersonDayLogQuery = z.infer<typeof personDayLogQuerySchema>;
+
+export const dayLogOrderOptionsQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+});
+export type DayLogOrderOptionsQuery = z.infer<typeof dayLogOrderOptionsQuerySchema>;
+
 // ── Responses ───────────────────────────────────────────────────────────────
+
+export const dayLogOrderSchema = z.object({
+  type: z.enum(DAY_LOG_ORDER_TYPES),
+  id: z.string().uuid(),
+  /** IN-SO-00012 / IN-JW-00005 */
+  code: z.string(),
+});
+export type DayLogOrder = z.infer<typeof dayLogOrderSchema>;
+
+export const dayLogOrderOptionSchema = dayLogOrderSchema.extend({
+  /** The typed SO-xxxx / JW-xxx number, if any. */
+  ref: z.string().nullable(),
+  party: z.string().nullable(),
+});
+export type DayLogOrderOption = z.infer<typeof dayLogOrderOptionSchema>;
 
 export const dayLogEntrySchema = z.object({
   id: z.string().uuid(),
   kind: z.enum(DAY_LOG_ENTRY_KINDS),
   fromTime: z.string(),
+  /** null = Open. */
   toTime: z.string().nullable(),
-  /** Work minutes (server-computed; 0 while running). */
+  /** Server-computed; an Open entry counts to now (today). */
   minutes: z.number().int(),
   description: z.string(),
-  status: z.enum(DAY_LOG_WORK_STATUSES).nullable(),
-  stopNote: z.string().nullable(),
+  order: dayLogOrderSchema.nullable(),
+  remarks: z.string().nullable(),
+  late: z.boolean(),
   updatedAt: z.string(),
 });
 export type DayLogEntry = z.infer<typeof dayLogEntrySchema>;
 
-export const userBreakTimeSchema = z.object({
-  name: z.string(),
-  fromTime: z.string(),
-  toTime: z.string(),
-});
-export type UserBreakTime = z.infer<typeof userBreakTimeSchema>;
-
 export const dayLogSummarySchema = z.object({
-  requiredMin: z.number().int(),
+  workMin: z.number().int(),
   breakMin: z.number().int(),
-  loggedMin: z.number().int(),
-  afterMin: z.number().int(),
-  missingMin: z.number().int(),
-  nextFrom: z.string(),
-  running: z.boolean(),
+  firstStart: z.string().nullable(),
+  lastStop: z.string().nullable(),
+  unloggedMin: z.number().int(),
+  open: z.boolean(),
+  entryCount: z.number().int(),
+  lateCount: z.number().int(),
 });
+export type DayLogSummaryOut = z.infer<typeof dayLogSummarySchema>;
 
 export const dayLogDetailSchema = z.object({
   /** null until the first entry is saved. */
@@ -304,8 +307,6 @@ export const dayLogDetailSchema = z.object({
   status: z.enum(DAY_LOG_STATUSES),
   workingDay: z.boolean(),
   holidayName: z.string().nullable(),
-  workFrom: z.string(),
-  workTo: z.string(),
   entries: z.array(dayLogEntrySchema),
   summary: dayLogSummarySchema,
   submittedAt: z.string().nullable(),
@@ -314,16 +315,16 @@ export const dayLogDetailSchema = z.object({
   reopenedAt: z.string().nullable(),
   reopenedByName: z.string().nullable(),
   reopenReason: z.string().nullable(),
-  /** An earlier working day still open (D3): today is locked until it is done. */
+  /** An earlier working day still open: this day is locked until it is done. */
   blockedBy: z.object({ date: z.string(), reason: z.string() }).nullable(),
-  /** Timer left running on another day: must be stopped with an end time first. */
-  strayTimer: z
+  /** An entry left Open on an earlier day: give it a Stop time first. */
+  strayOpen: z
     .object({ date: z.string(), entryId: z.string().uuid(), fromTime: z.string() })
     .nullable(),
   isOwner: z.boolean(),
-  /** Owner may add / stop / remove / submit right now. */
+  /** Owner may add / edit / remove / submit on this day now. */
   canWrite: z.boolean(),
-  /** Viewer may Reopen / mark Leave / remind (Department Admin, Super Admin). */
+  /** Viewer may Reopen / mark Leave (Department Admin, Super Admin). */
   canManage: z.boolean(),
 });
 export type DayLogDetail = z.infer<typeof dayLogDetailSchema>;
@@ -332,22 +333,23 @@ export const teamDayLogRowSchema = z.object({
   userId: z.string().uuid(),
   userName: z.string(),
   deptLabel: z.string().nullable(),
-  /** "L1 Viewer" etc. in the viewer's department; null for Super Admin view. */
-  tierLabel: z.string().nullable(),
   dayLogId: z.string().uuid().nullable(),
   status: z.enum(DAY_LOG_STATUSES),
-  loggedMin: z.number().int(),
-  requiredMin: z.number().int(),
-  missingMin: z.number().int(),
-  /** First unlogged slot, "14:00 – 18:00", or null. */
-  missingFrom: z.string().nullable(),
-  /** What the person is doing now (live on Team Day Logs). */
+  /** Today: what the person is doing now. A past day: submitted / leave,
+   *  else idle (has entries, not submitted) / not_started (no entries). */
   currentStatus: z.enum(DAY_LOG_CURRENT_STATUSES),
-  /** "GRN entry · since 14:10" / "Lunch until 13:30" / "since 11:00" / "18:05". */
+  /** "GRN entry · since 14:10" / "Lunch since 13:05" / "since 11:00". */
   currentText: z.string().nullable(),
-  /** Start of the running entry ("HH:MM") — the screen ticks its elapsed time. */
+  /** Start of the Open entry ("HH:MM") — the screen ticks its elapsed time. */
   runningSince: z.string().nullable(),
-  submittedAt: z.string().nullable(),
+  /** The Open work entry, else the latest-starting work entry. */
+  latestWork: z.object({ description: z.string(), orderCode: z.string().nullable() }).nullable(),
+  firstStart: z.string().nullable(),
+  lastStop: z.string().nullable(),
+  workMin: z.number().int(),
+  breakMin: z.number().int(),
+  entryCount: z.number().int(),
+  lateCount: z.number().int(),
 });
 export type TeamDayLogRow = z.infer<typeof teamDayLogRowSchema>;
 
@@ -358,15 +360,42 @@ export const teamDayLogResponseSchema = z.object({
   nowTime: z.string(),
   workingDay: z.boolean(),
   rows: z.array(teamDayLogRowSchema),
-  canManage: z.boolean(),
 });
 export type TeamDayLogResponse = z.infer<typeof teamDayLogResponseSchema>;
 
-export const myBreaksResponseSchema = z.object({
-  breaks: z.array(userBreakTimeSchema),
-  breakLimitMin: z.number().int(),
+export const personDayRowSchema = z.object({
+  date: z.string(),
+  workingDay: z.boolean(),
+  /** null = no day row yet (nothing logged). */
+  status: z.enum(DAY_LOG_STATUSES).nullable(),
+  firstStart: z.string().nullable(),
+  lastStop: z.string().nullable(),
+  workMin: z.number().int(),
+  breakMin: z.number().int(),
+  entryCount: z.number().int(),
+  lateCount: z.number().int(),
+  orderCodes: z.array(z.string()),
 });
-export type MyBreaksResponse = z.infer<typeof myBreaksResponseSchema>;
+export type PersonDayRow = z.infer<typeof personDayRowSchema>;
+
+export const personDayLogResponseSchema = z.object({
+  userId: z.string().uuid(),
+  userName: z.string(),
+  deptLabel: z.string().nullable(),
+  from: z.string(),
+  to: z.string(),
+  today: z.string(),
+  /** Newest first; every date in the range (working days and days with entries). */
+  days: z.array(personDayRowSchema),
+  totals: z.object({
+    daysLogged: z.number().int(),
+    workMin: z.number().int(),
+    avgWorkMin: z.number().int(),
+    breakMin: z.number().int(),
+    lateCount: z.number().int(),
+  }),
+});
+export type PersonDayLogResponse = z.infer<typeof personDayLogResponseSchema>;
 
 export const holidaySchema = z.object({
   id: z.string().uuid(),

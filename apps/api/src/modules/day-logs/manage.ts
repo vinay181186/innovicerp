@@ -1,19 +1,19 @@
 // Day Log — reading a day, the owner's Submit, and the Department Admin's
-// Reopen / Leave / Remind. Status changes are conditional UPDATEs on
+// Reopen / Leave (server only for now — the screen does not offer them). Status changes are conditional UPDATEs on
 // day_status, made under the header lock (§20.2 / §20.3); 0 rows = someone got
 // there first → 409 naming who.
 
 import {
+  DAY_LOG_RULES,
   type DayLogDateInput,
   type DayLogDetail,
   type DayLogQuery,
-  type DayLogReasonInput,
-  type DayLogUserDayInput,
   fmtDuration,
   isWorkingDay,
   summarizeDay,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireCanWrite } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -21,15 +21,27 @@ import { emitActivityLog } from '../activity-log/service';
 import { loadViewer, requireManagedUser, requireVisibleUser } from './access';
 import { holidaysBetween, loadLines, openDay, readHeader, spansOf } from './day';
 import { buildDetail, findBlockedBy, notOpenError } from './detail';
-import { dmy, firstGap, istClock } from './rules';
+import { type DayLogClock, dmy, firstGap, istClock } from './rules';
 import { requireCompany } from './writes';
 
-/** GET a day. Creates nothing: a day with no header reads as Open with the
- *  user's break template. Someone else's day → not found unless allowed. */
-export async function getDay(query: DayLogQuery, user: AuthContext): Promise<DayLogDetail> {
+/** Reopen / Leave body. Kept here: the shared contract (day-log.ts) no longer
+ *  carries it because the screen does not call these two now. */
+export const dayLogReasonInputSchema = z.object({
+  userId: z.string().uuid(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reason: z.string().trim().min(3, 'Give a reason').max(500),
+});
+export type DayLogReasonInput = z.infer<typeof dayLogReasonInputSchema>;
+
+/** GET a day. Creates nothing: a day with no header reads as Open with no
+ *  entries. Someone else's day → not found unless allowed. */
+export async function getDay(
+  query: DayLogQuery,
+  user: AuthContext,
+  clock: DayLogClock = istClock(), // tests only — routes never pass it
+): Promise<DayLogDetail> {
   const companyId = requireCompany(user);
   const v = await loadViewer(user); // before the tx (ADR-229)
-  const clock = istClock();
   const date = query.date ?? clock.today;
   return withUserContext(user, async (tx) => {
     const target = await requireVisibleUser(tx, companyId, v, query.userId ?? user.id);
@@ -37,11 +49,16 @@ export async function getDay(query: DayLogQuery, user: AuthContext): Promise<Day
   });
 }
 
-export async function submitDay(input: DayLogDateInput, user: AuthContext): Promise<DayLogDetail> {
+/** Submit Day: nothing Open and 09:00–18:00 fully covered (work + break).
+ *  The status change is conditional on day_status = 'open' (§20.2). */
+export async function submitDay(
+  input: DayLogDateInput,
+  user: AuthContext,
+  clock: DayLogClock = istClock(), // tests only — routes never pass it
+): Promise<DayLogDetail> {
   await requireCanWrite(user);
   const v = await loadViewer(user);
   const companyId = requireCompany(user);
-  const clock = istClock();
   if (input.date > clock.today)
     throw new ValidationError('You cannot submit a day that has not come yet');
   return withUserContext(user, async (tx) => {
@@ -53,11 +70,11 @@ export async function submitDay(input: DayLogDateInput, user: AuthContext): Prom
     const spans = spansOf(await loadLines(tx, companyId, h.id));
     const hol = await holidaysBetween(tx, companyId, input.date, input.date);
     const s = summarizeDay(spans, undefined, isWorkingDay(input.date, [...hol.keys()]));
-    if (s.running) throw new ConflictError('Stop the running timer first');
-    if (s.missingMin > 0) {
+    if (s.open) throw new ConflictError('Stop the Open entry first');
+    if (s.unloggedMin > 0) {
       const gap = firstGap(spans);
       throw new ValidationError(
-        `${fmtDuration(s.missingMin)} is not logged yet${gap ? ` — ${gap} is empty` : ''}`,
+        `${fmtDuration(s.unloggedMin)} of ${DAY_LOG_RULES.workFrom}–${DAY_LOG_RULES.workTo} is not logged yet${gap ? ` — ${gap} is empty` : ''}`,
       );
     }
     const done = (await tx.execute(sql`
@@ -136,9 +153,8 @@ export async function markLeave(
     // Upsert on daily_reports_user_day_uq, then lock (§20.3).
     const h = await openDay(tx, companyId, target.id, input.date, user);
     if (h.status !== 'open') throw notOpenError(h);
-    const work = (await loadLines(tx, companyId, h.id)).filter((l) => l.kind === 'work');
-    if (work.length > 0) {
-      throw new ValidationError(`${dmy(input.date)} has work logged — it cannot be marked Leave`);
+    if ((await loadLines(tx, companyId, h.id)).some((l) => l.fromTime)) {
+      throw new ValidationError(`${dmy(input.date)} has entries — it cannot be marked Leave`);
     }
     const done = (await tx.execute(sql`
       UPDATE public.daily_reports
@@ -162,39 +178,5 @@ export async function markLeave(
       user,
     );
     return buildDetail(tx, companyId, v, target, input.date, clock);
-  });
-}
-
-/** Remind: an activity-log event the TARGET sees on their Home notifications
- *  (dashboard/personal/notifications.ts, rule Day Log / REMIND). The day is
- *  opened if it has no header yet, so entity_id = that day's header (the note
- *  is kept only while the day is the reader's own and still open); ref_id =
- *  the date as printed, "26-10-2026". */
-export async function remindUser(
-  input: DayLogUserDayInput,
-  user: AuthContext,
-): Promise<{ ok: true }> {
-  const v = await loadViewer(user);
-  const companyId = requireCompany(user);
-  const clock = istClock();
-  if (input.date > clock.today) throw new ValidationError('That day has not come yet');
-  return withUserContext(user, async (tx) => {
-    const target = await requireManagedUser(tx, companyId, v, input.userId);
-    if (target.id === user.id) throw new ValidationError('You cannot remind yourself');
-    const h = await openDay(tx, companyId, target.id, input.date, user);
-    if (h.status !== 'open') throw notOpenError(h);
-    await emitActivityLog(
-      tx,
-      {
-        action: 'REMIND',
-        entity: 'Day Log',
-        entityId: h.id,
-        refId: dmy(input.date),
-        detail: `Reminded ${target.name} to complete the Day Log for ${dmy(input.date)}`,
-      },
-      companyId,
-      user,
-    );
-    return { ok: true as const };
   });
 }

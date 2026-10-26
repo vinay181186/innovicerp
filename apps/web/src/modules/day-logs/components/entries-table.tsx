@@ -1,164 +1,148 @@
-// The day's entries, in order: #, From, To, Time, Work done, Work Status, ⋯.
-// Breaks are greyed and unnumbered; the running entry is highlighted. Row ⋯
-// (owner, day open — from the server's canWrite): Change status · ▶ Continue
-// (unfinished work: fills the work box, the user presses Start) · Remove
-// (last work entry).
+// A day's entries, in time order: Start · Stop (LATE) · Time · Type ·
+// Working on · SO / JWSO · Status (Open / Closed) · actions. The remark sits
+// on its own line under its entry. Break rows are greyed, the Open row and
+// the row being edited are tinted. Actions (■ Stop on Open, Edit, Remove)
+// only when the caller says so — from the server's canWrite.
 
-import type { DayLogDetail, DayLogEntry, DayLogWorkStatus } from '@innovic/shared';
-import { useState } from 'react';
-import { RowMenu, type RowMenuItem } from '@/ui/data';
-import { useRemoveDayLogEntry, useSetDayLogEntryStatus, type DayQuery } from '../api';
-import { entryDuration, errText, workStatusLabel, WORK_STATUS_BADGE } from '../lib/format';
-import { StatusPickDialog } from './day-dialogs';
+import type { DayLogEntry } from '@innovic/shared';
+import { fmtDuration } from '@innovic/shared';
+import { fmtDmy } from '../lib/format';
+
+export interface EntryActions {
+  busy: boolean;
+  editingId: string | null;
+  /** null = no ■ Stop (not today — fix an earlier Open entry through Edit). */
+  onStop: ((e: DayLogEntry) => void) | null;
+  onEdit: (e: DayLogEntry) => void;
+  onRemove: (e: DayLogEntry) => void;
+}
+
+function rowTint(e: DayLogEntry, editing: boolean): React.CSSProperties {
+  if (editing) return { background: 'var(--amber3)' };
+  if (!e.toTime) return { background: 'var(--blue3)' };
+  if (e.kind === 'break') return { background: 'var(--bg3)', color: 'var(--text3)' };
+  return {};
+}
 
 export function EntriesTable({
-  day,
-  q,
-  canContinue,
-  onContinue,
+  date,
+  entries,
+  actions,
+  compact = false,
 }: {
-  day: DayLogDetail;
-  q: DayQuery;
-  /** ▶ Continue is offered only where the work box is (today, own day). */
-  canContinue: boolean;
-  onContinue: (e: DayLogEntry) => void;
+  date: string;
+  entries: readonly DayLogEntry[];
+  /** null = read-only (past / submitted day, someone else's day). */
+  actions: EntryActions | null;
+  /** Nested inside the person page's day row. */
+  compact?: boolean;
 }): React.JSX.Element {
-  const setStatus = useSetDayLogEntryStatus(q);
-  const remove = useRemoveDayLogEntry(q);
-  const [editing, setEditing] = useState<DayLogEntry | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const work = day.entries.filter((e) => e.kind === 'work');
-  const lastWorkId = work[work.length - 1]?.id;
-  const showMenu = day.canWrite;
-
-  async function pick(s: DayLogWorkStatus): Promise<void> {
-    if (!editing) return;
-    try {
-      await setStatus.mutateAsync({ id: editing.id, status: s, updatedAt: editing.updatedAt });
-      setEditing(null);
-    } catch (x) {
-      setErr(errText(x));
-    }
-  }
-
-  function menu(e: DayLogEntry): RowMenuItem[] {
-    const closed = Boolean(e.toTime);
-    return [
-      {
-        key: 'status',
-        label: 'Change status',
-        icon: 'pencil',
-        hidden: !closed,
-        onSelect: () => {
-          setErr(null);
-          setEditing(e);
-        },
-      },
-      {
-        key: 'continue',
-        label: '▶ Continue',
-        group: 'workflow',
-        hidden: !canContinue || !closed || e.status === 'completed',
-        onSelect: () => onContinue(e),
-      },
-      {
-        key: 'remove',
-        label: 'Remove',
-        icon: 'trash-2',
-        group: 'danger',
-        hidden: e.id !== lastWorkId,
-        onSelect: async () => {
-          setErr(null);
-          try {
-            await remove.mutateAsync(e.id);
-          } catch (x) {
-            setErr(errText(x));
-          }
-        },
-      },
-    ];
-  }
-
-  let n = 0;
+  const cols = actions ? 8 : 7;
+  const list = [...entries].sort((a, b) => a.fromTime.localeCompare(b.fromTime));
   return (
-    <div className="panel" style={{ padding: 0, marginBottom: 10 }}>
-      <div className="tbl-wrap">
-        <table className="innovic-table">
-          <thead>
+    <div className={compact ? 'tbl-wrap tbl-nofreeze' : 'tbl-wrap'}>
+      <table className={compact ? 'innovic-table tbl-compact' : 'innovic-table'}>
+        <thead>
+          <tr>
+            <th>Start</th>
+            <th>Stop</th>
+            <th className="th-num">Time</th>
+            <th>Type</th>
+            <th>Working on</th>
+            <th>SO / JWSO</th>
+            <th>Status</th>
+            {actions ? <th aria-label="Actions" /> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {list.length === 0 ? (
             <tr>
-              <th className="th-num">#</th>
-              <th>From</th>
-              <th>To</th>
-              <th className="th-num">Time</th>
-              <th>Work done</th>
-              <th>Work Status</th>
-              {showMenu ? <th aria-label="Actions" /> : null}
+              <td colSpan={cols} className="empty-state">
+                Nothing logged on {fmtDmy(date)}.
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {day.entries.length === 0 ? (
-              <tr>
-                <td colSpan={showMenu ? 7 : 6} className="empty-state">
-                  Nothing logged for this day yet.
+          ) : null}
+          {list.map((e) => {
+            const open = !e.toTime;
+            const tint = rowTint(e, actions?.editingId === e.id);
+            return [
+              <tr key={e.id} style={tint}>
+                <td className="mono">{e.fromTime}</td>
+                <td className="mono">
+                  {open ? '● now' : e.toTime}
+                  {e.late ? (
+                    <span
+                      className="badge b-orange"
+                      style={{ marginLeft: 4 }}
+                      title="Saved more than an hour after its stop time"
+                    >
+                      Late
+                    </span>
+                  ) : null}
                 </td>
-              </tr>
-            ) : null}
-            {day.entries.map((e) => {
-              const isBreak = e.kind === 'break';
-              if (!isBreak) n += 1;
-              const isRunning = !isBreak && !e.toTime;
-              const rowStyle: React.CSSProperties = isBreak
-                ? { color: 'var(--text3)', background: 'var(--bg3)' }
-                : isRunning
-                  ? { background: 'var(--blue3)' }
-                  : {};
-              const badge = isBreak
-                ? 'b-grey'
-                : isRunning
-                  ? 'b-blue'
-                  : e.status
-                    ? WORK_STATUS_BADGE[e.status]
-                    : 'b-grey';
-              return (
-                <tr key={e.id} style={rowStyle}>
-                  <td className="td-num">{isBreak ? '' : n}</td>
-                  <td className="mono">{e.fromTime}</td>
-                  <td className="mono">{e.toTime ?? '…'}</td>
-                  <td className="td-num mono">{entryDuration(e)}</td>
-                  <td
-                    title={e.description}
-                    style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                  >
-                    {e.description}
-                  </td>
+                <td className="td-num mono">{fmtDuration(e.minutes)}</td>
+                <td>{e.kind === 'break' ? <i>Break</i> : 'Work'}</td>
+                <td
+                  title={e.description}
+                  style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {e.description}
+                </td>
+                <td className="td-code">{e.order?.code ?? '—'}</td>
+                <td>
+                  <span className={`badge ${open ? 'b-blue' : 'b-green'}`}>
+                    {open ? 'Open' : 'Closed'}
+                  </span>
+                </td>
+                {actions ? (
                   <td>
-                    <span className={`badge ${badge}`}>{workStatusLabel(e)}</span>
+                    <div style={{ display: 'inline-flex', gap: 4 }}>
+                      {open && actions.onStop ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={actions.busy}
+                          onClick={() => actions.onStop?.(e)}
+                        >
+                          ■ Stop
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={actions.busy}
+                        onClick={() => actions.onEdit(e)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={actions.busy}
+                        onClick={() => actions.onRemove(e)}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </td>
-                  {showMenu ? <td>{isBreak ? null : <RowMenu items={menu(e)} />}</td> : null}
+                ) : null}
+              </tr>,
+              e.remarks ? (
+                <tr key={`${e.id}-remark`} style={tint}>
+                  <td />
+                  <td
+                    colSpan={cols - 1}
+                    className="td-left"
+                    style={{ color: 'var(--text2)', whiteSpace: 'pre-wrap' }}
+                  >
+                    <b>Remark:</b> {e.remarks}
+                  </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {err ? (
-        <p
-          role="alert"
-          style={{ color: 'var(--red2)', margin: 0, padding: '8px 14px', fontSize: 13 }}
-        >
-          {err}
-        </p>
-      ) : null}
-      {editing ? (
-        <StatusPickDialog
-          title={`Work Status — ${editing.fromTime} – ${editing.toTime ?? ''}`}
-          current={editing.status}
-          busy={setStatus.isPending}
-          error={err}
-          onPick={(s) => void pick(s)}
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
+              ) : null,
+            ];
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

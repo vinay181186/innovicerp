@@ -1,136 +1,67 @@
-// Day Log header: ← date →, whose day it is, the Day Status chip, ONE strip
-// of counts from the server's summary (Work needed · Logged · After 18:00 ·
-// Missing), and the green "09:00 – 18:00 fully logged" chip.
+// Shared bits of the Day Log screens: the "Day" select (today + earlier
+// days, newest first) and the ONE summary strip of a day (server figures).
 
-import type { DayLogDetail } from '@innovic/shared';
+import type { DayLogSummaryOut } from '@innovic/shared';
 import { fmtDuration } from '@innovic/shared';
-import { fmtDateTime } from '@/lib/date';
 import { StatStrip } from '@/ui/data';
-import { DAY_STATUS_BADGE, dayStatusLabel, fmtDayTitle, shiftDate } from '../lib/format';
+import { fmtDmy, recentDays, weekday } from '../lib/format';
 
-export function DateStepper({
-  date,
+/** How many days the Day select offers. */
+export const DAY_SELECT_DAYS = 31;
+
+export function DaySelect({
+  value,
   today,
-  onDate,
+  onChange,
+  days = DAY_SELECT_DAYS,
+  ariaLabel = 'Day',
+  id,
 }: {
-  date: string;
+  value: string;
   today: string;
-  onDate: (d: string | undefined) => void;
+  onChange: (d: string) => void;
+  days?: number;
+  ariaLabel?: string;
+  id?: string;
 }): React.JSX.Element {
-  const go = (d: string): void => onDate(d === today ? undefined : d);
+  const list = recentDays(today, days);
+  // A day outside the list (an old link) still shows as picked.
+  if (!list.includes(value)) list.push(value);
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        aria-label="Previous day"
-        onClick={() => go(shiftDate(date, -1))}
-      >
-        ←
-      </button>
-      <input
-        type="date"
-        className="innovic-input mono"
-        aria-label="Day"
-        value={date}
-        max={today}
-        onChange={(e) => {
-          if (e.target.value) go(e.target.value);
-        }}
-        style={{ width: '16ch', minWidth: 140 }}
-      />
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        aria-label="Next day"
-        disabled={date >= today}
-        onClick={() => go(shiftDate(date, 1))}
-      >
-        →
-      </button>
-      {date !== today ? (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDate(undefined)}>
-          Today
-        </button>
-      ) : null}
-    </div>
+    <select
+      id={id}
+      className="innovic-select mono"
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ width: 'auto' }}
+    >
+      {list.map((d) => (
+        <option key={d} value={d}>
+          {fmtDmy(d)} ({weekday(d)}){d === today ? ' · today' : ''}
+        </option>
+      ))}
+    </select>
   );
 }
 
-export function DayHeader({
-  day,
-  onDate,
-  tools,
-}: {
-  day: DayLogDetail;
-  onDate: (d: string | undefined) => void;
-  tools?: React.ReactNode;
-}): React.JSX.Element {
-  const s = day.summary;
+/** Working hours · Break · First start · Last stop · Late entries. */
+export function DaySummaryStrip({ s }: { s: DayLogSummaryOut }): React.JSX.Element {
   return (
-    <>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 8,
-        }}
-      >
-        <DateStepper date={day.date} today={day.today} onDate={onDate} />
-        <strong style={{ fontSize: 15 }}>
-          {day.userName} · {fmtDayTitle(day.date)}
-        </strong>
-        {day.deptLabel ? <span className="text3">{day.deptLabel}</span> : null}
-        <span className={`badge ${DAY_STATUS_BADGE[day.status]}`}>
-          {dayStatusLabel(day.status)}
-        </span>
-        {!day.isOwner ? <span className="badge b-grey">Read only</span> : null}
-        {!day.workingDay ? (
-          <span className="badge b-grey">{day.holidayName ?? 'Not a working day'}</span>
-        ) : null}
-        {day.workingDay && s.missingMin === 0 ? (
-          <span className="badge b-green">
-            {day.workFrom} – {day.workTo} fully logged
-          </span>
-        ) : null}
-        <span style={{ flex: 1 }} />
-        {tools}
-      </div>
-      <StatStrip
-        style={{ marginBottom: 10 }}
-        items={[
-          { key: 'need', label: 'Work needed', count: fmtDuration(s.requiredMin) },
-          { key: 'breaks', label: 'Breaks', count: fmtDuration(s.breakMin) },
-          { key: 'logged', label: 'Logged', count: fmtDuration(s.loggedMin) },
-          { key: 'after', label: `After ${day.workTo}`, count: fmtDuration(s.afterMin) },
-          {
-            key: 'missing',
-            label: 'Missing',
-            count: fmtDuration(s.missingMin),
-            color: s.missingMin > 0 ? 'var(--amber2)' : 'var(--green2)',
-            sub: s.missingMin > 0 ? `from ${s.nextFrom}` : undefined,
-          },
-        ]}
-      />
-      {day.submittedAt || day.reopenedAt ? (
-        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 8 }}>
-          {day.submittedAt ? (
-            <span>
-              Submitted {fmtDateTime(day.submittedAt)}
-              {day.submittedByName ? ` by ${day.submittedByName}` : ''}.{' '}
-            </span>
-          ) : null}
-          {day.reopenedAt ? (
-            <span>
-              Reopened {fmtDateTime(day.reopenedAt)}
-              {day.reopenedByName ? ` by ${day.reopenedByName}` : ''}
-              {day.reopenReason ? ` — “${day.reopenReason}”` : ''}.
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-    </>
+    <StatStrip
+      style={{ marginBottom: 10 }}
+      items={[
+        { key: 'work', label: 'Working hours', count: fmtDuration(s.workMin) },
+        { key: 'break', label: 'Break', count: `${s.breakMin} min` },
+        { key: 'first', label: 'First start', count: s.firstStart ?? '—' },
+        { key: 'last', label: 'Last stop', count: s.lastStop ?? '—' },
+        {
+          key: 'late',
+          label: 'Late entries',
+          count: s.lateCount,
+          color: s.lateCount > 0 ? 'var(--amber2)' : undefined,
+        },
+      ]}
+    />
   );
 }

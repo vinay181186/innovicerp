@@ -1,9 +1,8 @@
 // Day Log print — on the Innovic Sheet (sheet-print.ts: letterhead, Times,
-// one table, no box-in-box), laid out as the approved PrintDayLog board:
-// header rows User / Department / Date / Day Status / Required / Breaks, the
-// entry table (#, From, To, Time, Work done, Work Status), a
-// totals row from the server's summary, and the "Logged by" / "Seen by
-// (Department Admin)" line. The Team Day Logs table prints the same way.
+// one table, no box-in-box): header rows User / Department / Date / Day
+// Status, the entry table (the screen's columns + Remark), a totals row from
+// the server's summary, and the "Logged by" / "Seen by (Department Admin)"
+// line. The Team Day Logs table prints the same way.
 
 import type { Company, DayLogDetail, TeamDayLogResponse } from '@innovic/shared';
 import { fmtDuration } from '@innovic/shared';
@@ -60,27 +59,24 @@ function dayStatusText(day: DayLogDetail): string {
 
 export function printDayLog(day: DayLogDetail, company: Company | null | undefined): boolean {
   const s = day.summary;
-  const breaks =
-    day.entries
-      .filter((e) => e.kind === 'break')
-      .map((e) => `${e.description} ${e.fromTime} – ${e.toTime ?? ''}`)
-      .join(', ') || '—';
+  const t = dayTable(day);
+  const span = t.columns.length;
+  const half = Math.floor(span / 2);
   const header = [
     ['User', day.userName, 'Date', fmtDate(day.date)],
     ['Department', day.deptLabel ?? '—', 'Day Status', dayStatusText(day)],
-    ['Required', `${day.workFrom} – ${day.workTo}`, 'Breaks', breaks],
   ]
     .map(
       ([a, b, c, d]) =>
-        `<tr><td class="k">${esc(a ?? '')}</td><td colspan="2">${esc(b ?? '')}</td><td class="k">${esc(c ?? '')}</td><td colspan="2">${esc(d ?? '')}</td></tr>`,
+        `<tr><td class="k">${esc(a ?? '')}</td><td colspan="${half - 1}">${esc(b ?? '')}</td><td class="k">${esc(c ?? '')}</td><td colspan="${span - half - 1}">${esc(d ?? '')}</td></tr>`,
     )
     .join('');
-  const table = grid(dayTable(day), ['time'], []);
-  const totals = `<tr><td colspan="3" class="b">Work (${esc(day.workFrom)} – ${esc(day.workTo)})</td>
-    <td class="r b">${esc(fmtDuration(s.loggedMin))}</td>
-    <td colspan="2">Break ${esc(fmtDuration(s.breakMin))} · After ${esc(day.workTo)} ${esc(fmtDuration(s.afterMin))} · Missing ${esc(fmtDuration(s.missingMin))}</td></tr>`;
-  const sign = `<tr><td colspan="3" class="sign">Logged by: ${esc(day.userName)}</td>
-    <td colspan="3" class="sign">Seen by (Department Admin):</td></tr>`;
+  const table = grid(t, ['time'], []);
+  const totals = `<tr><td colspan="2" class="b">Working hours</td>
+    <td class="r b">${esc(fmtDuration(s.workMin))}</td>
+    <td colspan="${span - 3}">Break ${esc(String(s.breakMin))} min · First start ${esc(s.firstStart ?? '—')} · Last stop ${esc(s.lastStop ?? '—')} · Late entries ${esc(String(s.lateCount))}</td></tr>`;
+  const sign = `<tr><td colspan="${half}" class="sign">Logged by: ${esc(day.userName)}</td>
+    <td colspan="${span - half}" class="sign">Seen by (Department Admin):</td></tr>`;
   const html = wrap(company, 'Day Log', header + table + totals + sign);
   const name = `Day Log ${day.userName} ${day.date}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
@@ -95,7 +91,7 @@ export function printTeamDayLogs(
   const html = wrap(
     company,
     'Team Day Logs',
-    head + grid(t, ['logged', 'required', 'missing'], ['user']),
+    head + grid(t, ['work_hours', 'break_min', 'entries'], ['user']),
   );
   const name = `Team Day Logs ${team.date}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);

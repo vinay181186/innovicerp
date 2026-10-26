@@ -5,7 +5,7 @@
 //   - Read someone else's day / the team: Super Admin and Auditor → everyone;
 //     an L5 Department Admin → people whose main department is one they hold
 //     L5 in. Anyone else sees only their own; another's day is "not found".
-//   - Manage (Reopen / Leave / Remind): Super Admin, or L5 over the person's
+//   - Manage (Reopen / Leave): Super Admin, or L5 over the person's
 //     main department. An Auditor never.
 
 import { ACCESS_DEPTS, canWriteAnything, normalizeDeptsMap } from '@innovic/shared';
@@ -104,7 +104,7 @@ export async function requireVisibleUser(
   return u;
 }
 
-/** Reopen / Leave / Remind: visible AND manageable, else refused. */
+/** Reopen / Leave: visible AND manageable, else refused. */
 export async function requireManagedUser(
   tx: DbTransaction,
   companyId: string,
@@ -124,9 +124,4 @@ export async function requireManagedUser(
     );
   }
   return u;
-}
-
-/** The tier key a user holds in a department ("L1"…"L5"), or null. */
-export function tierIn(departments: Record<string, unknown>, dept: string): string | null {
-  return normalizeDeptsMap(departments as Parameters<typeof normalizeDeptsMap>[0])[dept] ?? null;
 }

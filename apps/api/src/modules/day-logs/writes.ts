@@ -1,15 +1,13 @@
-// Day Log — the owner's writes on their own day: set an entry's Work Status,
-// remove the last entry (time is logged only by the timer — timer.ts, owner
-// 2026-10-26), and the guards every owner write shares.
+// Day Log — what every owner write shares: the guards, the entry lock and
+// the ONE validation of an entry (entries.ts uses it for add and edit).
 // Every write: requireCanWrite (no page tick — ADR-232) → lock the day header
-// FOR UPDATE (openDay / lockHeaderById) → recompute summarizeDay from the live
-// lines INSIDE that lock → write → bump the header (§20.3). From is always the
-// server's nextFrom; `hours` is written only here, from From/To (§20.1).
+// FOR UPDATE (openDay / lockHeaderById) → re-read the lines INSIDE that lock
+// → validate → write → bump the header (§20.3). `hours` is written only by
+// entries.ts, from From/To (§20.1).
 
-import { type DayLogDetail, type SetDayLogEntryStatusInput, hhmmToMin } from '@innovic/shared';
+import { type DayLogDetail, type DayLogEntryKind, hhmmToMin, minToHhmm } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
-import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireCanWrite } from '../../lib/access';
+import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { isUniqueViolation } from '../../lib/db-retry';
 import {
   AuthorizationError,
@@ -17,25 +15,32 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { emitActivityLog } from '../activity-log/service';
-import { type Viewer, loadDayUser, loadViewer } from './access';
-import { type DayHeader, loadLines, lockHeaderById, touchDay } from './day';
-import { buildDetail, findBlockedBy, findStrayTimer, notOpenError } from './detail';
-import { dmy, istClock } from './rules';
+import { type Viewer, loadDayUser } from './access';
+import { type DayHeader, type DayLine, lockHeaderById, spansOf } from './day';
+import { buildDetail, findBlockedBy, findStrayOpen, notOpenError } from './detail';
+import {
+  type DayLogClock,
+  breakLimitProblem,
+  breakTotalWith,
+  dmy,
+  findOverlap,
+  istHm,
+} from './rules';
 
 export const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
 
-export const hoursOf = (fromTime: string, toTime: string): string =>
-  ((hhmmToMin(toTime) - hhmmToMin(fromTime)) / 60).toFixed(2);
+/** `hours` of a line: From–To in hours; 0 while Open. */
+export const hoursOf = (fromTime: string, toTime: string | null): string =>
+  toTime ? ((hhmmToMin(toTime) - hhmmToMin(fromTime)) / 60).toFixed(2) : '0';
 
-/** A 23505 from the one-running-timer index (drizzle may wrap the pg error). */
+/** A 23505 from the one-Open-entry index (drizzle may wrap the pg error). */
 export const uniqueHit = (e: unknown): boolean =>
   isUniqueViolation(e) || isUniqueViolation((e as { cause?: unknown } | null)?.cause);
 
-/** D3 + D10 + open — every owner write except Stop. */
+/** Open day, not in the future, no Open entry left on another day, D3. */
 export async function guardOwnerWrite(
   tx: DbTransaction,
   companyId: string,
@@ -43,14 +48,17 @@ export async function guardOwnerWrite(
   today: string,
 ): Promise<void> {
   if (h.status !== 'open') throw notOpenError(h);
-  const blocked = await findBlockedBy(tx, companyId, h.userId, h.date);
-  if (blocked) throw new ConflictError(blocked.reason);
-  const stray = await findStrayTimer(tx, companyId, h.userId, today);
+  if (h.date > today) throw new ValidationError(`${dmy(h.date)} has not come yet`);
+  const [stray, blocked] = await Promise.all([
+    findStrayOpen(tx, companyId, h.userId, today),
+    findBlockedBy(tx, companyId, h.userId, h.date),
+  ]);
   if (stray && stray.date !== h.date) {
     throw new ConflictError(
-      `Your timer on ${dmy(stray.date)} is still running since ${stray.fromTime} — stop it with an end time first`,
+      `Your entry on ${dmy(stray.date)} is still Open since ${stray.fromTime} — give it a Stop time first`,
     );
   }
+  if (blocked) throw new ConflictError(blocked.reason);
 }
 
 export async function ownerDetail(
@@ -59,35 +67,20 @@ export async function ownerDetail(
   v: Viewer,
   user: AuthContext,
   date: string,
-  clock: { today: string; nowMin: number },
+  clock: DayLogClock,
 ): Promise<DayLogDetail> {
   const me = await loadDayUser(tx, companyId, user.id);
   if (!me) throw new NotFoundError('User not found');
   return buildDetail(tx, companyId, v, me, date, clock);
 }
 
-/** A break line's name (the span shape carries no description). */
-export async function breakName(
-  tx: DbTransaction,
-  reportId: string,
-  fromTime: string,
-): Promise<string> {
-  const rows = (await tx.execute(sql`
-    SELECT description FROM public.daily_report_lines
-    WHERE daily_report_id = ${reportId}::uuid AND kind = 'break' AND deleted_at IS NULL
-      AND from_time = ${fromTime}::time
-    LIMIT 1
-  `)) as unknown as Array<{ description: string }>;
-  return rows[0]?.description ?? 'Break';
-}
-
-/** The entry's line + its day, locked; owner only (someone else's → not found). */
-async function lockOwnEntry(
+/** The entry's day, locked; owner only (someone else's → not found). */
+export async function lockOwnEntry(
   tx: DbTransaction,
   companyId: string,
   user: AuthContext,
   entryId: string,
-): Promise<{ h: DayHeader; reportId: string }> {
+): Promise<DayHeader> {
   const rows = (await tx.execute(sql`
     SELECT l.daily_report_id::text AS report_id FROM public.daily_report_lines l
     JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
@@ -96,89 +89,102 @@ async function lockOwnEntry(
   `)) as unknown as Array<{ report_id: string }>;
   const reportId = rows[0]?.report_id;
   if (!reportId) throw new NotFoundError('Entry not found');
+  // The day lock (§20.3).
   const h = await lockHeaderById(tx, companyId, reportId);
   if (!h) throw new NotFoundError('Entry not found');
-  return { h, reportId };
+  return h;
 }
 
-export async function setEntryStatus(
-  entryId: string,
-  input: SetDayLogEntryStatusInput,
-  user: AuthContext,
-): Promise<DayLogDetail> {
-  await requireCanWrite(user);
-  const v = await loadViewer(user); // before the tx (ADR-229)
-  const companyId = requireCompany(user);
-  const clock = istClock();
-  return withUserContext(user, async (tx) => {
-    const { h } = await lockOwnEntry(tx, companyId, user, entryId);
-    await guardOwnerWrite(tx, companyId, h, clock.today);
-    const line = (await loadLines(tx, companyId, h.id)).find((l) => l.id === entryId);
-    if (!line) throw new NotFoundError('Entry not found');
-    if (line.kind !== 'work') throw new ValidationError('A break has no Work Status');
-    if (!line.toTime)
-      throw new ValidationError('Stop the timer first — its status is set when it stops');
-    // §20.4 — write only what was loaded.
-    const updated = (await tx.execute(sql`
-      UPDATE public.daily_report_lines
-      SET status = ${input.status}, updated_at = now(), updated_by = ${user.id}::uuid
-      WHERE id = ${entryId}::uuid AND deleted_at IS NULL
-        AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${input.updatedAt}::timestamptz)
-      RETURNING id
-    `)) as unknown as unknown[];
-    if (updated.length === 0) {
-      // Only the owner writes their entries, so the other change is theirs too.
-      const at = new Date(new Date(line.updatedAt).getTime() + 5.5 * 3600 * 1000)
-        .toISOString()
-        .slice(11, 16);
+/** 409 for an edit whose loaded updatedAt is no longer the entry's (§20.4). */
+export function staleEntryError(currentUpdatedAt: string): ConflictError {
+  // Only the owner writes their entries, so the other change is theirs too.
+  return new ConflictError(
+    `You changed this entry in another window at ${istHm(currentUpdatedAt)} — reload and redo your change`,
+  );
+}
+
+export interface EntryCandidate {
+  kind: DayLogEntryKind;
+  fromTime: string;
+  toTime: string | null;
+  hasOrder: boolean;
+}
+
+/** The caller's Open entry on ANY day other than `exceptId` (one at a time). */
+async function openElsewhere(
+  tx: DbTransaction,
+  companyId: string,
+  userId: string,
+  exceptId: string | null,
+): Promise<{ date: string; fromTime: string } | null> {
+  const rows = (await tx.execute(sql`
+    SELECT to_char(dr.report_date, 'YYYY-MM-DD') AS d, to_char(l.from_time, 'HH24:MI') AS f
+    FROM public.daily_report_lines l
+    JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
+    WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
+      AND l.to_time IS NULL AND l.from_time IS NOT NULL AND l.deleted_at IS NULL
+      ${exceptId ? sql`AND l.id <> ${exceptId}::uuid` : sql``}
+    LIMIT 1
+  `)) as unknown as Array<{ d: string; f: string }>;
+  const r = rows[0];
+  return r ? { date: r.d, fromTime: r.f } : null;
+}
+
+/**
+ * Every rule of one entry, checked under the day lock against the day's
+ * OTHER live lines (`others` excludes the entry being edited).
+ */
+export async function validateEntry(
+  tx: DbTransaction,
+  companyId: string,
+  h: DayHeader,
+  others: readonly DayLine[],
+  cand: EntryCandidate,
+  exceptId: string | null,
+  clock: DayLogClock,
+): Promise<void> {
+  const isToday = h.date === clock.today;
+  const nowMin = isToday ? clock.nowMin : undefined;
+  const nowHm = minToHhmm(clock.nowMin);
+  if (h.date > clock.today) throw new ValidationError(`${dmy(h.date)} has not come yet`);
+  if (isToday && hhmmToMin(cand.fromTime) > clock.nowMin) {
+    throw new ValidationError(`Start ${cand.fromTime} is later than now (${nowHm})`);
+  }
+  if (isToday && cand.toTime && hhmmToMin(cand.toTime) > clock.nowMin) {
+    throw new ValidationError(`Stop ${cand.toTime} is later than now (${nowHm})`);
+  }
+  if (!isToday && !cand.toTime) {
+    throw new ValidationError(`Give a Stop time — ${dmy(h.date)} is over`);
+  }
+  if (cand.kind === 'break' && cand.hasOrder) {
+    throw new ValidationError('A break cannot be for an SO / JWSO');
+  }
+  if (!cand.toTime) {
+    const open = await openElsewhere(tx, companyId, h.userId, exceptId);
+    if (open) {
+      const where = open.date === h.date ? '' : ` on ${dmy(open.date)}`;
       throw new ConflictError(
-        `You changed this entry in another window at ${at} — reload and redo your change`,
+        `Your entry${where} since ${open.fromTime} is still Open — stop it first`,
       );
     }
-    await touchDay(tx, h.id, user);
-    return ownerDetail(tx, companyId, v, user, h.date, clock);
-  });
-}
-
-/** Remove the LAST work entry of an open day (a running one = cancel the timer). */
-export async function deleteEntry(entryId: string, user: AuthContext): Promise<DayLogDetail> {
-  await requireCanWrite(user);
-  const v = await loadViewer(user); // before the tx (ADR-229)
-  const companyId = requireCompany(user);
-  const clock = istClock();
-  return withUserContext(user, async (tx) => {
-    const { h } = await lockOwnEntry(tx, companyId, user, entryId);
-    await guardOwnerWrite(tx, companyId, h, clock.today);
-    const work = (await loadLines(tx, companyId, h.id)).filter(
-      (l) => l.kind === 'work' && l.fromTime,
+  }
+  const spans = others
+    .filter((l) => l.fromTime)
+    .map((l) => ({
+      id: l.id,
+      kind: l.kind,
+      fromTime: l.fromTime!,
+      toTime: l.toTime,
+      description: l.description,
+    }));
+  const hit = findOverlap(spans, cand, nowMin);
+  if (hit) {
+    throw new ValidationError(
+      `Overlaps ${hit.fromTime} – ${hit.toTime ?? 'now'} ${hit.description} — entries cannot share time`,
     );
-    const target = work.find((l) => l.id === entryId);
-    if (!target)
-      throw new ValidationError('A break cannot be removed here — change it in My Breaks');
-    const last = work[work.length - 1]!;
-    if (last.id !== entryId) {
-      throw new ValidationError(
-        `Only the last entry can be removed — remove ${last.fromTime} – ${last.toTime ?? 'now'} first`,
-      );
-    }
-    await tx.execute(sql`
-      UPDATE public.daily_report_lines
-      SET deleted_at = now(), deleted_by = ${user.id}::uuid, updated_at = now(), updated_by = ${user.id}::uuid
-      WHERE id = ${entryId}::uuid AND deleted_at IS NULL
-    `);
-    await touchDay(tx, h.id, user);
-    await emitActivityLog(
-      tx,
-      {
-        action: 'DELETE',
-        entity: 'Day Log',
-        entityId: h.id,
-        refId: h.date,
-        detail: `Day Log ${dmy(h.date)}: removed ${target.fromTime}–${target.toTime ?? 'running'} ${target.description}`,
-      },
-      companyId,
-      user,
-    );
-    return ownerDetail(tx, companyId, v, user, h.date, clock);
-  });
+  }
+  if (cand.kind === 'break') {
+    const problem = breakLimitProblem(breakTotalWith(spansOf(others), cand, nowMin));
+    if (problem) throw new ValidationError(problem);
+  }
 }

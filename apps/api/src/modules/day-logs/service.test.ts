@@ -1,319 +1,346 @@
-// Day Log service — against the TEST database. Owner = a real non-admin user
-// with a main department; manager = the seed admin's id given an L5 (or
-// other-department L5) matrix via asAccess. Time is logged only by the timer
-// (owner 2026-10-26), so every write runs on a fixed clock (`at`) on days in
-// 2001 (never real data); those days and today are hard-deleted for the owner
-// before each test and after the file. The owner's break template is saved
-// first and put back at the end.
-import { type DayLogDetail, type MyBreaksResponse } from '@innovic/shared';
-import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
+// Day Log service — against the TEST database (fixture: test-fixture.ts).
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { userAccess, users } from '../../db/schema';
-import type { AuthContext } from '../../db/with-user-context';
-import {
-  AuthorizationError,
-  ConflictError,
-  NotFoundError,
-  ValidationError,
-} from '../../lib/errors';
-import { asAccess } from '../../lib/test-access';
-import { type DayLogClock, istClock } from './rules';
+import { ConflictError, ValidationError } from '../../lib/errors';
 import * as service from './service';
+import {
+  MON,
+  TUE,
+  WED,
+  add,
+  at,
+  fullDay,
+  fx,
+  owner,
+  sameDeptAdmin,
+  setupFixture,
+  teamRow,
+  times,
+  wipeOwnerDays,
+} from './test-fixture';
 
-const ADMIN_EMAIL = 'innovic.technology@gmail.com';
-const MON = '2001-01-01';
-const TUE = '2001-01-02';
-const WED = '2001-01-03';
-
-let admin: AuthContext;
-let ownerBase: AuthContext;
-let ownerDept: string;
-let otherDept: string;
-let savedBreaks: MyBreaksResponse | null = null;
-
-const owner = (): AuthContext =>
-  asAccess(ownerBase, { departments: { [ownerDept]: 'L1' } }, 'viewer');
-const sameDeptAdmin = (): AuthContext =>
-  asAccess(admin, { departments: { [ownerDept]: 'L5' } }, 'manager');
-const otherDeptAdmin = (): AuthContext =>
-  asAccess(admin, { departments: { [otherDept]: 'L5' } }, 'manager');
-
-/** A fixed clock: `date` is "today", `hhmm` is now. */
-const at = (date: string, hhmm: string): DayLogClock => {
-  const [h, m] = hhmm.split(':');
-  return { today: date, nowMin: Number(h) * 60 + Number(m) };
-};
-
-async function wipeOwnerDays(): Promise<void> {
-  const { today } = istClock();
-  await db.execute(sql`
-    DELETE FROM public.daily_reports
-    WHERE user_id = ${ownerBase.id}::uuid
-      AND (report_date < '2002-01-01'::date OR report_date = ${today}::date)
-  `);
-}
-
-const start = (clock: DayLogClock, description = 'test work') =>
-  service.startTimer({ description }, owner(), clock);
-const stop = (clock: DayLogClock, endTime?: string) =>
-  service.stopTimer(
-    endTime ? { status: 'completed', endTime } : { status: 'completed' },
-    owner(),
-    clock,
-  );
-const work = (d: DayLogDetail) =>
-  d.entries.filter((e) => e.kind === 'work').map((e) => [e.fromTime, e.toTime]);
-
-/** A whole working day: 09:00–13:00, Lunch, 13:30–18:00. */
-async function fullDay(date: string): Promise<void> {
-  await start(at(date, '18:00')); // fills 09:00–13:00, runs from 13:30
-  await stop(at(date, '18:00'));
-}
-
-beforeAll(async () => {
-  const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
-  const u = rows[0];
-  if (!u || !u.companyId) throw new Error('Seed admin missing');
-  admin = { id: u.id, email: u.email, companyId: u.companyId, role: u.role, isActive: u.isActive };
-
-  const { today } = istClock();
-  const others = await db
-    .select({ user: users, mainDept: userAccess.mainDept })
-    .from(users)
-    .innerJoin(userAccess, eq(userAccess.userId, users.id))
-    .where(
-      and(
-        eq(users.companyId, u.companyId),
-        ne(users.id, u.id),
-        eq(users.isActive, true),
-        isNotNull(userAccess.mainDept),
-        sql`${userAccess.deletedAt} IS NULL`,
-        sql`${users.deletedAt} IS NULL`,
-        // Stop looks for the running timer on ANY day — skip a user who has
-        // a real one on a day these tests do not wipe.
-        sql`NOT EXISTS (
-          SELECT 1 FROM public.daily_report_lines l
-          JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
-          WHERE dr.user_id = ${users.id} AND l.kind = 'work' AND l.to_time IS NULL
-            AND l.deleted_at IS NULL AND dr.report_date >= '2002-01-01'::date
-            AND dr.report_date <> ${today}::date)`,
-      ),
-    )
-    .limit(1);
-  const o = others[0];
-  if (!o || !o.mainDept) throw new Error('TEST needs one non-admin user with a main department');
-  ownerBase = {
-    id: o.user.id,
-    email: o.user.email,
-    companyId: o.user.companyId,
-    role: o.user.role,
-    isActive: o.user.isActive,
-  };
-  ownerDept = o.mainDept;
-  otherDept = ownerDept === 'purchase' ? 'store' : 'purchase';
-
-  savedBreaks = await service.getMyBreaks(owner());
-  await wipeOwnerDays();
-  await service.saveMyBreaks(
-    { breaks: [{ name: 'Lunch', fromTime: '13:00', toTime: '13:30' }] },
-    owner(),
-  );
-});
+beforeAll(setupFixture);
 
 beforeEach(async () => {
   await wipeOwnerDays();
 });
 
 afterAll(async () => {
-  if (!ownerBase) return;
-  await wipeOwnerDays();
-  if (savedBreaks) await service.saveMyBreaks({ breaks: savedBreaks.breaks }, owner());
+  if (fx.ownerBase) await wipeOwnerDays();
 });
 
-describe('Day Log — Start', () => {
-  it('Start at 09:00, then new work at 10:00 closes the first at 10:00 (Completed)', async () => {
-    const d1 = await start(at(MON, '09:00'), 'first');
-    expect(work(d1)).toEqual([['09:00', null]]);
-    const d2 = await start(at(MON, '10:00'), 'second');
-    expect(work(d2)).toEqual([
-      ['09:00', '10:00'],
-      ['10:00', null],
-    ]);
-    const first = d2.entries.find((e) => e.description === 'first')!;
-    expect(first.status).toBe('completed');
-    expect(first.minutes).toBe(60);
+describe('Day Log — add / Open / Stop', () => {
+  it('adds a closed entry with an SO and a remark', async () => {
+    const d = await add(MON, at(MON, '12:00'), {
+      startTime: '09:00',
+      stopTime: '10:15',
+      orderType: 'so',
+      orderId: fx.openSo.id,
+      remarks: 'first pass',
+    });
+    expect(d.id).not.toBeNull();
+    expect(d.entries).toHaveLength(1);
+    const e = d.entries[0]!;
+    expect([e.fromTime, e.toTime, e.minutes]).toEqual(['09:00', '10:15', 75]);
+    expect(e.order).toEqual({ type: 'so', id: fx.openSo.id, code: fx.openSo.code });
+    expect(e.remarks).toBe('first pass');
+    expect(d.summary.workMin).toBe(75);
   });
 
-  it('a first Start late in the morning begins at 09:00 (no gap)', async () => {
-    const d = await start(at(MON, '10:15'));
-    expect(work(d)).toEqual([['09:00', null]]);
-  });
-
-  it('a gap that contains Lunch: work fills nextFrom → 13:00 and runs from 13:30', async () => {
-    await start(at(MON, '09:00'), 'morning');
-    await stop(at(MON, '11:00'));
-    const d = await start(at(MON, '14:00'), 'afternoon');
-    expect(work(d)).toEqual([
-      ['09:00', '11:00'],
-      ['11:00', '13:00'],
-      ['13:30', null],
-    ]);
-    const filled = d.entries.find((e) => e.fromTime === '11:00')!;
-    expect(filled.description).toBe('afternoon');
-    expect(filled.status).toBe('completed');
-    expect(filled.stopNote).toBe('stopped at 13:00 for your Lunch break');
-  });
-
-  it('a running timer that crossed Lunch is closed at 13:00, the new work runs from 13:30', async () => {
-    await start(at(MON, '12:00'));
-    const d = await start(at(MON, '14:00'), 'next');
-    expect(work(d)).toEqual([
-      ['09:00', '13:00'],
-      ['13:30', null],
-    ]);
-    expect(d.entries.find((e) => e.fromTime === '09:00')!.stopNote).toMatch(/Lunch break/);
-  });
-
-  it('Start inside a break is refused', async () => {
-    await expect(start(at(MON, '13:10'))).rejects.toThrow(/You are on Lunch until 13:30/);
-    const day = await service.getDay({ date: MON }, owner());
-    expect(work(day)).toEqual([]);
-  });
-
-  it('two Starts at once — exactly one running, no overlapping entries', async () => {
-    await Promise.allSettled([start(at(MON, '10:00'), 'a'), start(at(MON, '10:00'), 'b')]);
-    const day = await service.getDay({ date: MON }, owner());
-    const w = day.entries.filter((e) => e.kind === 'work');
-    expect(w.filter((e) => e.toTime === null)).toHaveLength(1);
-    const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-    for (let i = 1; i < w.length; i += 1) {
-      expect(toMin(w[i]!.fromTime)).toBeGreaterThanOrEqual(toMin(w[i - 1]!.toTime!));
-    }
-  });
-});
-
-describe('Day Log — Stop', () => {
-  it('Finished at earlier than now closes there', async () => {
-    await start(at(MON, '09:00'));
-    const d = await stop(at(MON, '11:00'), '10:30');
-    expect(work(d)).toEqual([['09:00', '10:30']]);
-    expect(d.summary.nextFrom).toBe('10:30');
-  });
-
-  it('Finished at later than now is refused', async () => {
-    await start(at(MON, '09:00'));
-    await expect(stop(at(MON, '11:00'), '11:30')).rejects.toBeInstanceOf(ValidationError);
-  });
-
-  it('Finished at over a break is refused, naming the break', async () => {
-    await start(at(MON, '09:00'));
-    await expect(stop(at(MON, '14:00'), '13:20')).rejects.toThrow(
-      /Lunch 13:00–13:30 is inside — finish at 13:00 or earlier/,
+  it('an Open entry (no Stop) counts to now, then Stop closes it at now', async () => {
+    const d1 = await add(MON, at(MON, '10:00'), { startTime: '09:00' });
+    const e = d1.entries[0]!;
+    expect(e.toTime).toBeNull();
+    expect(e.minutes).toBe(60);
+    expect(d1.summary.open).toBe(true);
+    const d2 = await service.stopEntry(e.id, owner(), at(MON, '10:30'));
+    expect(times(d2)).toEqual([['work', '09:00', '10:30']]);
+    await expect(service.stopEntry(e.id, owner(), at(MON, '10:40'))).rejects.toBeInstanceOf(
+      ConflictError,
     );
-    await expect(stop(at(MON, '14:00'), '14:00')).rejects.toThrow(/finish at 13:00 or earlier/);
   });
 
-  it('no Finished at: now, cut at the next break', async () => {
-    await start(at(MON, '09:00'));
-    const d = await stop(at(MON, '14:00'));
-    expect(work(d)).toEqual([['09:00', '13:00']]);
-    expect(d.summary.nextFrom).toBe('13:30');
+  it('Stop in the minute it started removes the entry', async () => {
+    const d = await add(MON, at(MON, '10:00'), { startTime: '10:00' });
+    const out = await service.stopEntry(d.entries[0]!.id, owner(), at(MON, '10:00'));
+    expect(out.entries).toHaveLength(0);
+  });
+
+  it('overlap is refused — against work and against a break', async () => {
+    const c = at(MON, '15:00');
+    await add(MON, c, { startTime: '09:00', stopTime: '10:00' });
+    await add(MON, c, {
+      kind: 'break',
+      description: 'Lunch',
+      startTime: '13:00',
+      stopTime: '13:30',
+    });
+    await expect(add(MON, c, { startTime: '09:30', stopTime: '11:00' })).rejects.toThrow(
+      /Overlaps/,
+    );
+    await expect(add(MON, c, { startTime: '12:00', stopTime: '13:10' })).rejects.toThrow(
+      /Overlaps/,
+    );
+    await expect(
+      add(MON, c, { kind: 'break', startTime: '09:50', stopTime: '10:05' }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    // Touching is fine.
+    const ok = await add(MON, c, { startTime: '10:00', stopTime: '13:00' });
+    expect(ok.entries).toHaveLength(3);
+  });
+
+  it('a future day, or a time later than now today, is refused', async () => {
+    await expect(
+      add(TUE, at(MON, '10:00'), { startTime: '09:00', stopTime: '09:30' }),
+    ).rejects.toThrow(/has not come yet/);
+    await expect(
+      add(MON, at(MON, '10:00'), { startTime: '09:00', stopTime: '10:30' }),
+    ).rejects.toThrow(/later than now/);
+    await expect(add(MON, at(MON, '10:00'), { startTime: '10:05' })).rejects.toThrow(
+      /later than now/,
+    );
+  });
+
+  it('a second Open entry is refused', async () => {
+    await add(MON, at(MON, '10:00'), { startTime: '09:00' });
+    await expect(
+      add(MON, at(MON, '10:00'), { kind: 'break', startTime: '08:00', stopTime: null }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('breaks over 60 minutes a day are refused; a break may not have an order', async () => {
+    const c = at(MON, '17:00');
+    await add(MON, c, { kind: 'break', startTime: '13:00', stopTime: '13:45' });
+    await expect(
+      add(MON, c, { kind: 'break', startTime: '16:00', stopTime: '16:16' }),
+    ).rejects.toThrow(/limit is 60/);
+    await expect(
+      add(MON, c, {
+        kind: 'break',
+        startTime: '16:00',
+        stopTime: '16:10',
+        orderType: 'so',
+        orderId: fx.openSo.id,
+      }),
+    ).rejects.toThrow(/break cannot be for an SO/);
+    const d = await add(MON, c, {
+      kind: 'break',
+      description: '',
+      startTime: '16:00',
+      stopTime: '16:15',
+    });
+    expect(d.summary.breakMin).toBe(60);
+    expect(d.entries.find((e) => e.fromTime === '16:00')!.description).toBe('Break');
   });
 });
 
-describe('Day Log — submit', () => {
-  it('submit with time missing is refused', async () => {
-    await start(at(WED, '09:00'));
-    await stop(at(WED, '11:00'));
-    await expect(service.submitDay({ date: WED }, owner())).rejects.toBeInstanceOf(ValidationError);
+describe('Day Log — edit / remove', () => {
+  it('edit with a stale updatedAt is a 409; edit excluding itself is fine', async () => {
+    const d = await add(MON, at(MON, '12:00'), { startTime: '09:00', stopTime: '10:00' });
+    const e = d.entries[0]!;
+    const d2 = await service.updateEntry(
+      e.id,
+      {
+        kind: 'work',
+        description: 'longer',
+        startTime: '09:00',
+        stopTime: '11:00',
+        updatedAt: e.updatedAt,
+      },
+      owner(),
+      at(MON, '12:00'),
+    );
+    expect(times(d2)).toEqual([['work', '09:00', '11:00']]);
+    await expect(
+      service.updateEntry(
+        e.id,
+        {
+          kind: 'work',
+          description: 'stale',
+          startTime: '09:00',
+          stopTime: '09:30',
+          updatedAt: e.updatedAt,
+        },
+        owner(),
+        at(MON, '12:00'),
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('removes any entry, not only the last', async () => {
+    const c = at(MON, '12:00');
+    await add(MON, c, { startTime: '09:00', stopTime: '10:00' });
+    await add(MON, c, { startTime: '10:00', stopTime: '11:00' });
+    const d = await add(MON, c, { startTime: '11:00', stopTime: '12:00' });
+    const first = d.entries.find((e) => e.fromTime === '09:00')!;
+    const out = await service.deleteEntry(first.id, owner(), c);
+    expect(times(out)).toEqual([
+      ['work', '10:00', '11:00'],
+      ['work', '11:00', '12:00'],
+    ]);
+  });
+});
+
+describe('Day Log — submit and races', () => {
+  it('submit with a gap is refused; a full day submits', async () => {
+    await add(WED, at(WED, '18:00'), { startTime: '09:00', stopTime: '11:00' });
+    await expect(service.submitDay({ date: WED }, owner(), at(WED, '18:00'))).rejects.toThrow(
+      /11:00 – 18:00 is empty/,
+    );
+    await wipeOwnerDays();
+    await fullDay(WED);
+    const d = await service.submitDay({ date: WED }, owner(), at(WED, '18:00'));
+    expect(d.status).toBe('submitted');
+    expect(d.canWrite).toBe(false);
+  });
+
+  it('two adds of the same slot at once — exactly one wins', async () => {
+    const c = at(MON, '12:00');
+    const res = await Promise.allSettled([
+      add(MON, c, { startTime: '09:00', stopTime: '10:00', description: 'a' }),
+      add(MON, c, { startTime: '09:00', stopTime: '10:00', description: 'b' }),
+    ]);
+    expect(res.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const day = await service.getDay({ date: MON }, owner(), c);
+    expect(day.entries).toHaveLength(1);
   });
 
   it('two submits at once — one wins, the other is a 409', async () => {
     await fullDay(WED);
     const res = await Promise.allSettled([
-      service.submitDay({ date: WED }, owner()),
-      service.submitDay({ date: WED }, owner()),
+      service.submitDay({ date: WED }, owner(), at(WED, '18:00')),
+      service.submitDay({ date: WED }, owner(), at(WED, '18:00')),
     ]);
     expect(res.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const lost = res.find((r) => r.status === 'rejected') as PromiseRejectedResult;
     expect(lost.reason).toBeInstanceOf(ConflictError);
   });
 
-  it('reopen: L5 of the same department may; L5 of another department gets not found', async () => {
-    await fullDay(WED);
-    await service.submitDay({ date: WED }, owner());
+  it('an Open entry left on an earlier day blocks today', async () => {
+    const d = await add(MON, at(MON, '17:00'), { startTime: '17:00' });
+    const e = d.entries[0]!;
+    const tue = await service.getDay({ date: TUE }, owner(), at(TUE, '09:30'));
+    expect(tue.strayOpen).toEqual({ date: MON, entryId: e.id, fromTime: '17:00' });
+    expect(tue.canWrite).toBe(false);
     await expect(
-      service.reopenDay(
-        { userId: ownerBase.id, date: WED, reason: 'other dept' },
-        otherDeptAdmin(),
-      ),
-    ).rejects.toBeInstanceOf(NotFoundError);
-    const d = await service.reopenDay(
-      { userId: ownerBase.id, date: WED, reason: 'fix a line' },
-      sameDeptAdmin(),
+      add(TUE, at(TUE, '09:30'), { startTime: '09:00', stopTime: '09:20' }),
+    ).rejects.toThrow(/still Open since 17:00/);
+  });
+
+  it('the earlier Open entry cannot be Stopped at now — it gets a Stop time by edit', async () => {
+    const d = await add(MON, at(MON, '17:00'), { startTime: '17:00' });
+    const e = d.entries[0]!;
+    await expect(service.stopEntry(e.id, owner(), at(TUE, '09:30'))).rejects.toBeInstanceOf(
+      ValidationError,
     );
-    expect(d.status).toBe('open');
-    expect(d.reopenReason).toBe('fix a line');
-    await expect(
-      service.reopenDay({ userId: ownerBase.id, date: WED, reason: 'again' }, sameDeptAdmin()),
-    ).rejects.toBeInstanceOf(ConflictError);
-  });
-
-  it('an L5 cannot reopen their own day', async () => {
-    await expect(
-      service.reopenDay({ userId: admin.id, date: WED, reason: 'mine' }, sameDeptAdmin()),
-    ).rejects.toBeInstanceOf(AuthorizationError);
-  });
-
-  it('an unfinished earlier working day blocks the next one (D3)', async () => {
-    await start(at(MON, '09:00'));
-    await stop(at(MON, '10:00'));
-    await expect(start(at(TUE, '09:00'))).rejects.toThrow(/01-01-2001 is not finished/);
+    const fixed = await service.updateEntry(
+      e.id,
+      {
+        kind: 'work',
+        description: 'late work',
+        startTime: '17:00',
+        stopTime: '19:30',
+        updatedAt: e.updatedAt,
+      },
+      owner(),
+      at(TUE, '09:30'),
+    );
+    expect(times(fixed)).toEqual([['work', '17:00', '19:30']]);
+    expect(fixed.strayOpen).toBeNull();
   });
 });
 
-describe('Day Log — Team current status', () => {
-  const row = async (date: string, clock: DayLogClock) => {
-    const t = await service.getTeam({ date }, sameDeptAdmin(), clock);
-    expect(t.nowTime).toBe(
-      `${String(Math.floor(clock.nowMin / 60)).padStart(2, '0')}:${String(clock.nowMin % 60).padStart(2, '0')}`,
+describe('Day Log — LATE, orders, person, team', () => {
+  it('LATE: last saved more than 60 minutes after its Stop (India time)', async () => {
+    const d = await add(MON, at(MON, '12:00'), { startTime: '09:00', stopTime: '10:00' });
+    // Created in 2026 for a 2001 day — late.
+    expect(d.entries[0]!.late).toBe(true);
+    expect(d.summary.lateCount).toBe(1);
+    const id = d.entries[0]!.id;
+    const setSaved = (iso: string) =>
+      db.execute(
+        sql`UPDATE public.daily_report_lines SET updated_at = ${iso}::timestamptz WHERE id = ${id}::uuid`,
+      );
+    await setSaved('2001-01-01T11:00:00+05:30'); // Stop 10:00 + 60 = not late
+    expect((await service.getDay({ date: MON }, owner(), at(MON, '12:00'))).entries[0]!.late).toBe(
+      false,
     );
-    const r = t.rows.find((x) => x.userId === ownerBase.id);
-    if (!r) throw new Error('owner missing from Team Day Logs');
-    return r;
-  };
-
-  it('not_started, then break from the template, before anything is logged', async () => {
-    expect((await row(MON, at(MON, '10:00'))).currentStatus).toBe('not_started');
-    const b = await row(MON, at(MON, '13:10'));
-    expect(b.currentStatus).toBe('break');
-    expect(b.currentText).toBe('Lunch until 13:30');
+    await setSaved('2001-01-01T11:01:00+05:30');
+    expect((await service.getDay({ date: MON }, owner(), at(MON, '12:00'))).entries[0]!.late).toBe(
+      true,
+    );
   });
 
-  it('working → idle → break', async () => {
-    await start(at(MON, '09:00'), 'GRN entry');
-    const w = await row(MON, at(MON, '10:00'));
-    expect(w.currentStatus).toBe('working');
-    expect(w.currentText).toBe('GRN entry · since 09:00');
-    expect(w.runningSince).toBe('09:00');
-
-    await stop(at(MON, '10:30'));
-    const i = await row(MON, at(MON, '11:00'));
-    expect(i.currentStatus).toBe('idle');
-    expect(i.currentText).toBe('since 10:30');
-    expect(i.runningSince).toBeNull();
-    // Seen on a later day, the same day is just not submitted.
-    expect((await row(MON, at(TUE, '11:00'))).currentText).toBe('Not submitted');
-
-    expect((await row(MON, at(MON, '13:10'))).currentStatus).toBe('break');
+  it('order options include an open Sales Order', async () => {
+    const opts = await service.orderOptions({ search: fx.openSo.code }, owner());
+    expect(opts.find((o) => o.id === fx.openSo.id)).toMatchObject({
+      type: 'so',
+      code: fx.openSo.code,
+    });
   });
 
-  it('submitted shows the submitted time', async () => {
+  it('person range: one row per working day, totals', async () => {
+    await fullDay(MON);
+    await service.submitDay({ date: MON }, owner(), at(MON, '18:00'));
+    await add(TUE, at(TUE, '12:00'), {
+      startTime: '09:00',
+      stopTime: '11:00',
+      orderType: 'so',
+      orderId: fx.openSo.id,
+    });
+    const p = await service.getPerson(
+      { userId: fx.ownerBase.id, from: MON, to: WED },
+      sameDeptAdmin(),
+      at(TUE, '12:00'),
+    );
+    expect(p.to).toBe(TUE); // clipped to today
+    expect(p.days.map((d) => d.date)).toEqual([TUE, MON]);
+    expect(p.days[0]!.orderCodes).toEqual([fx.openSo.code]);
+    expect(p.days[1]!.status).toBe('submitted');
+    expect(p.totals).toMatchObject({
+      daysLogged: 2,
+      workMin: 510 + 120,
+      avgWorkMin: 315,
+      breakMin: 30,
+    });
+  });
+
+  it('team current status: not_started, then working', async () => {
+    expect((await teamRow(WED, at(WED, '09:30'))).currentStatus).toBe('not_started');
+    await add(WED, at(WED, '10:00'), { startTime: '09:00', description: 'GRN entry' });
+    const working = await teamRow(WED, at(WED, '10:00'));
+    expect(working.currentStatus).toBe('working');
+    expect(working.currentText).toBe('GRN entry · since 09:00');
+    expect(working.runningSince).toBe('09:00');
+    expect(working.latestWork).toEqual({ description: 'GRN entry', orderCode: null });
+  });
+
+  it('team current status: break (an Open break entry)', async () => {
+    await add(WED, at(WED, '13:05'), { startTime: '09:00', stopTime: '13:00' });
+    await add(WED, at(WED, '13:05'), { kind: 'break', description: 'Lunch', startTime: '13:00' });
+    const onBreak = await teamRow(WED, at(WED, '13:10'));
+    expect(onBreak.currentStatus).toBe('break');
+    expect(onBreak.currentText).toBe('Lunch since 13:00');
+  });
+
+  it('team current status: idle since the last Stop, with totals', async () => {
+    await add(WED, at(WED, '14:00'), { startTime: '09:00', stopTime: '13:00' });
+    await add(WED, at(WED, '14:00'), {
+      kind: 'break',
+      description: 'Lunch',
+      startTime: '13:00',
+      stopTime: '13:30',
+    });
+    const idle = await teamRow(WED, at(WED, '14:00'));
+    expect(idle.currentStatus).toBe('idle');
+    expect(idle.currentText).toBe('since 13:30');
+    expect([idle.workMin, idle.breakMin, idle.entryCount]).toEqual([240, 30, 1]);
+  });
+
+  it('team current status: submitted', async () => {
     await fullDay(WED);
-    await service.submitDay({ date: WED }, owner());
-    const s = await row(WED, at(WED, '18:30'));
-    expect(s.currentStatus).toBe('submitted');
-    expect(s.currentText).toMatch(/^\d\d:\d\d$/);
+    await service.submitDay({ date: WED }, owner(), at(WED, '18:00'));
+    expect((await teamRow(WED, at(WED, '18:30'))).currentStatus).toBe('submitted');
   });
 });

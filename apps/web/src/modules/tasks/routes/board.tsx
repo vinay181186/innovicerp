@@ -12,7 +12,8 @@
 // The All Tasks tab renders ONLY when the server says the caller is admin
 // (`isAdmin` on the list response) — never merely disabled — and the server
 // refuses view=all for anyone else regardless.
-// Day Log tabs (`?view=daylog|team`, `?date=`, `?user=`): see
+// Day Log tabs (`?view=daylog|team|person`, `?date=`, `?user=`, `?from=`,
+// `?to=`): see
 // modules/day-logs/components/board-day-log.tsx.
 
 import type {
@@ -48,8 +49,9 @@ import { TaskFilters, TaskTabs } from '../components/board-filters';
 import { TaskTable, type RowAction } from '../components/task-table';
 import { TodoModal } from '../components/todo-modal';
 import {
-  DAY_LOG_TABS,
+  DAY_LOG_VIEWS,
   DayLogBoardBody,
+  dayLogTabOf,
   dayLogSearchShape,
   isDayLogTab,
   useDayLogBoardTabs,
@@ -58,7 +60,7 @@ import {
 
 const searchSchema = z.object({
   task: z.string().uuid().optional(),
-  view: z.enum([...TASK_VIEWS, ...DAY_LOG_TABS]).optional(),
+  view: z.enum([...TASK_VIEWS, ...DAY_LOG_VIEWS]).optional(),
   ...dayLogSearchShape,
   search: z.string().optional(),
   page: pageSearchParam,
@@ -148,6 +150,8 @@ function TaskBoardPage(): React.JSX.Element {
         task: undefined,
         date: undefined,
         user: undefined,
+        from: undefined,
+        to: undefined,
         page: 1,
       }),
       replace: true,
@@ -324,11 +328,18 @@ function TaskBoardPage(): React.JSX.Element {
       >
         <TaskTabs
           tabs={tabs}
-          view={tab}
+          view={dayTab ? dayLogTabOf(dayTab) : tab}
           countOf={tabCount}
           onChange={setView}
           extra={dayTabs}
-          onExtra={(t) => goDay({ view: isDayLogTab(t) ? t : 'daylog', user: undefined })}
+          onExtra={(t) =>
+            goDay({
+              view: isDayLogTab(t) ? t : 'daylog',
+              user: undefined,
+              from: undefined,
+              to: undefined,
+            })
+          }
         />
       </ListHeader>
 
@@ -337,6 +348,8 @@ function TaskBoardPage(): React.JSX.Element {
           tab={dayTab}
           date={routeSearch.date}
           user={routeSearch.user}
+          from={routeSearch.from}
+          to={routeSearch.to}
           onNav={goDay}
         />
       ) : (
