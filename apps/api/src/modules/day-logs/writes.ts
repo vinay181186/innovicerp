@@ -164,7 +164,10 @@ function checkOrder(
     throw new ConflictError(`Stop ${open.description} (since ${fmt12(open.fromTime)}) first`);
   }
   const next = summarizeDay(spansOf(others)).nextStart ?? DAY_LOG_RULES.workFrom;
-  if (cand.fromTime !== next) {
+  // The last entry keeping its own Start (a Stop / text / SO / remark edit)
+  // is not a new placement — only a moved Start must meet nextStart.
+  const keepsStart = self?.fromTime === cand.fromTime && self?.kind === cand.kind;
+  if (!keepsStart && cand.fromTime !== next) {
     throw new ValidationError(
       others.some((l) => l.fromTime)
         ? `Start must be ${fmt12(next)} — where your last entry ended`

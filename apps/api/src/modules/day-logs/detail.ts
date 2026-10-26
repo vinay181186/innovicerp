@@ -24,7 +24,7 @@ import {
   readHeader,
   spansOf,
 } from './day';
-import { dmy, entryMinutes, istHm } from './rules';
+import { dmy, entryMinutes, istHm, lastEntryOf } from './rules';
 
 /** How far back the D3 look-up walks for the previous working day. */
 const LOOKBACK_DAYS = 40;
@@ -121,7 +121,6 @@ export function summaryOf(
   return {
     ...s,
     // Strict order: where the next entry must start (null while one is Open).
-    nextStart: s.nextStart,
     // A Leave day owes no time.
     unloggedMin: status === 'leave' ? 0 : whole,
     lateCount: lines.filter((l) => l.late).length,
@@ -183,6 +182,7 @@ export async function buildDetail(
       date <= clock.today &&
       (!strayOpen || strayOpen.date === date),
     canManage: canManageUser(v, target.mainDept) && (!isOwner || v.isSuper),
+    lastEntryId: lastEntryOf(lines.filter((l) => l.fromTime))?.id ?? null,
   };
 }
 

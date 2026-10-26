@@ -106,7 +106,7 @@ export function fmt12(hhmm: string | null | undefined): string {
 /**
  * A typed time → 24-hour "HH:MM", or null. Accepts "930", "9:30", "09.30",
  * "9", "3pm", "3:15 pm", "03:15 PM", "1530". Without AM/PM a 24-hour reading
- * is used, except 1–6 which mean the afternoon (work does not start at 3 AM).
+ * is used, except an unpadded 1–6 which means the afternoon ("3" = 03:00 PM).
  */
 export function parseTime(raw: string): string | null {
   const t = raw.trim().toLowerCase().replace(/\s+/g, '');
@@ -122,7 +122,8 @@ export function parseTime(raw: string): string | null {
     if (ap === 'p' && h !== 12) h += 12;
   } else {
     if (h > 23) return null;
-    if (h >= 1 && h <= 6) h += 12;
+    // "3" / "330" = afternoon; a zero-padded "06:30" / "0630" is read as typed.
+    if (h >= 1 && h <= 6 && !m[1]!.startsWith('0')) h += 12;
   }
   return minToHhmm(h * 60 + min);
 }
@@ -373,6 +374,8 @@ export const dayLogDetailSchema = z.object({
   canWrite: z.boolean(),
   /** Viewer may Reopen / mark Leave (Department Admin, Super Admin). */
   canManage: z.boolean(),
+  /** Strict order: the only entry whose times may change / that may be removed. */
+  lastEntryId: z.string().uuid().nullable(),
 });
 export type DayLogDetail = z.infer<typeof dayLogDetailSchema>;
 
