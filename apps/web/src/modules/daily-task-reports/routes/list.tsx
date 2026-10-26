@@ -5,7 +5,7 @@
 // Sort & Filter run on the server over every report; any change → page 1.
 
 import { SHIFT_LABELS, SHIFTS, type DailyTaskReportRow } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, redirect } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
@@ -26,6 +26,11 @@ export const dailyTaskReportsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'daily-task-reports',
   validateSearch: z.object({ page: pageSearchParam }),
+  // Day Log (owner 2026-10-26) replaced this page: old links and bookmarks
+  // land on the Task Board's "My Day Log" tab. The route stays so they work.
+  beforeLoad: () => {
+    throw redirect({ to: '/task-board', search: { view: 'daylog', page: 1 } });
+  },
   component: DailyTaskReportsPage,
 });
 

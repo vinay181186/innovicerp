@@ -40,12 +40,15 @@ type Open =
   | 'so_to_plan'
   | 'plan_to_pro'
   | 'ops_ready'
-  | 'qc_report_missing';
+  | 'qc_report_missing'
+  | 'day_log_remind';
 
 export interface NoteRule {
   entity: string;
   action: string;
-  right: readonly [AccessFormKey, AccessAction];
+  /** null = no tick needed: the "still open?" read decides who it is for
+   *  (a Day Log reminder reaches only the person whose day it is). */
+  right: readonly [AccessFormKey, AccessAction] | null;
   open: Open;
   verb: string;
   tail: string;
@@ -76,6 +79,7 @@ const ONE_NOTE_PER_DOC: ReadonlySet<Open> = new Set<Open>([
   'approval_rc',
   'raiser_rc',
   'raiser_rc_approved',
+  'day_log_remind',
 ]);
 
 // Entity / action strings as each writer emits them (activity_log).
@@ -256,6 +260,17 @@ export const NOTE_RULES: readonly NoteRule[] = [
     tail: ' — your Route Card can be used now',
     tone: 'ok',
   },
+  {
+    // Day Log — a Department Admin's reminder (day-logs/manage.ts remindUser).
+    // entity_id = the reminded person's day; ref_id = "26-10-2026".
+    entity: 'Day Log',
+    action: 'REMIND',
+    right: null,
+    open: 'day_log_remind',
+    verb: 'reminded you to complete your Day Log for',
+    tail: '',
+    tone: 'due',
+  },
 ];
 
 /** "<actor> raised " / "<actor> accepted 20 on " — the words before the number. */
@@ -271,7 +286,7 @@ export function noteRuleFor(entity: string, action: string): NoteRule | undefine
 /** The rules this caller can receive. Admins / Full Access: none. */
 export function rulesFor(a: DashAccess): NoteRule[] {
   if (a.isAdmin || a.eff.fullAccess) return [];
-  return NOTE_RULES.filter((r) => hasTick(a, r.right[0], r.right[1]));
+  return NOTE_RULES.filter((r) => r.right === null || hasTick(a, r.right[0], r.right[1]));
 }
 
 export interface ActivityEvent {
@@ -337,6 +352,16 @@ async function openIds(
     const rows = (await tx.execute(sql`
       SELECT d.id::text AS id FROM ${table} d
       WHERE d.company_id = ${c.cid}::uuid AND d.deleted_at IS NULL AND d.created_by = ${me}::uuid
+        AND d.id = ANY(${sql.param(ids)}::uuid[])
+    `)) as unknown as Array<{ id: string }>;
+    return new Set(rows.map((r) => r.id));
+  }
+  if (open === 'day_log_remind') {
+    // Only the reader's own day, and only while it is still open.
+    const rows = (await tx.execute(sql`
+      SELECT d.id::text AS id FROM public.daily_reports d
+      WHERE d.company_id = ${c.cid}::uuid AND d.deleted_at IS NULL AND d.user_id = ${me}::uuid
+        AND d.day_status = 'open'
         AND d.id = ANY(${sql.param(ids)}::uuid[])
     `)) as unknown as Array<{ id: string }>;
     return new Set(rows.map((r) => r.id));
