@@ -115,28 +115,6 @@ export const PLAN_ROUTE_CARD_USABLE_SQL = sql<boolean | null>`(
     AND rc.deleted_at IS NULL
 )`;
 
-/** One field of the plan item's live Route Card (same company / item / not
- *  deleted filter as PLAN_ROUTE_CARD_USABLE_SQL). There is one live card per
- *  item; LIMIT 1 (newest first) keeps it a scalar even on legacy duplicates.
- *  `column` is a route_cards column name. NULL when the item has no live card. */
-function planRouteCardField<T>(column: string): SQL<T> {
-  return sql<T>`(
-  SELECT rc.${sql.raw(column)} FROM public.route_cards rc
-  WHERE rc.company_id = ${plans.companyId}
-    AND rc.item_id = ${plans.itemId}
-    AND rc.deleted_at IS NULL
-  ORDER BY rc.created_at DESC
-  LIMIT 1
-)`;
-}
-
-/** The plan item's live Route Card code — null = none yet ("Pending"). */
-export const PLAN_ROUTE_CARD_CODE_SQL = planRouteCardField<string | null>('code');
-/** Its ADR-253 approval state: 'pending' | 'approved' | 'rejected', or null. */
-export const PLAN_ROUTE_CARD_APPROVAL_STATUS_SQL = planRouteCardField<string | null>(
-  'approval_status',
-);
-
 /** True when the plan's item has a live Route Card, approved or not (ADR-170).
  *  Derived from PLAN_ROUTE_CARD_USABLE_SQL so the two can never disagree. */
 export const PLAN_HAS_ROUTE_CARD_SQL = sql<boolean>`(${PLAN_ROUTE_CARD_USABLE_SQL} IS NOT NULL)`;

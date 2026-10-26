@@ -1,6 +1,7 @@
 // SO Planning plan summary — the plan item's live Route Card (code + ADR-253
 // approval state) and EVERY live Production Order of the plan with its Job
-// Card. A Job Card in Trash must come back as jobCardId / jcCode null.
+// Card. A Job Card in Trash must come back as jobCardId / jcCode null; a
+// CANCELLED order (ADR-235) is left out altogether.
 //
 // NOTE: like every api integration test this writes to the database
 // DATABASE_URL points at — never run it against production (house rules).
@@ -34,6 +35,7 @@ let itemId: string;
 let soId: string;
 let planId: string;
 const poIds: string[] = [];
+let cancelledPoId: string;
 
 async function cleanup(): Promise<void> {
   const pos = await db
@@ -178,6 +180,24 @@ beforeAll(async () => {
     .update(jobCards)
     .set({ deletedAt: new Date(), deletedBy: admin.id })
     .where(eq(jobCards.id, second[0]!.jcId));
+
+  // A third order of 1, then CANCELLED the way the cancel worker stamps it
+  // (deleted_at + cancelled_at on the order and on its Job Card).
+  const third = await poService.createProductionOrder(
+    { planId, routeCardId, targetDate: '2026-11-30', orderQty: 1, rawMaterialAvailable: true },
+    admin,
+  );
+  cancelledPoId = third.id;
+  const now = new Date();
+  const thirdRow = await db
+    .update(productionOrders)
+    .set({ deletedAt: now, deletedBy: admin.id, cancelledAt: now, cancelledBy: admin.id })
+    .where(eq(productionOrders.id, cancelledPoId))
+    .returning({ jcId: productionOrders.jobCardId });
+  await db
+    .update(jobCards)
+    .set({ deletedAt: now, deletedBy: admin.id, cancelledAt: now })
+    .where(eq(jobCards.id, thirdRow[0]!.jcId));
 }, 120_000);
 
 afterAll(cleanup);
@@ -206,6 +226,13 @@ describe('so-planning — plan summary route card + every production order', () 
     expect(trashed).toBeDefined();
     expect(trashed!.jobCardId).toBeNull();
     expect(trashed!.jcCode).toBeNull();
+  });
+
+  it('a cancelled Production Order is not listed on the plan', async () => {
+    const detail = await service.getPlanningSoDetail(soId, admin);
+    const plan = detail.lines.flatMap((l) => l.plans).find((p) => p.id === planId)!;
+    expect(plan.productionOrders.map((o) => o.id)).not.toContain(cancelledPoId);
+    expect(plan.productionOrders).toHaveLength(2);
   });
 
   it('a plan whose item has no live Route Card reads null / null', async () => {

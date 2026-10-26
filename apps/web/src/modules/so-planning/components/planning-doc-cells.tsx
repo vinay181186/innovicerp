@@ -9,7 +9,11 @@
 // those render as plain text.
 
 import { Link } from '@tanstack/react-router';
-import type { PlanningLine, PlanningPlanSummary } from '@innovic/shared';
+import {
+  ROUTE_CARD_APPROVAL_LABEL,
+  type PlanningLine,
+  type PlanningPlanSummary,
+} from '@innovic/shared';
 
 type RcApproval = PlanningPlanSummary['routeCardApprovalStatus'];
 
@@ -59,17 +63,12 @@ export function planJcs(plan: PlanningPlanSummary): DocRef[] {
   ];
 }
 
-/** Unique Route Cards across the line's plans. A card not yet approved on any
- *  plan keeps that state, so the warning is never hidden by a sibling plan. */
+/** Unique Route Cards across the line's plans (a card's approval is one value,
+ *  so the first plan naming it speaks for all). */
 export function lineRouteCards(line: PlanningLine): RcRef[] {
   const byCode = new Map<string, RcRef>();
   for (const p of line.plans) {
-    for (const rc of planRouteCards(p)) {
-      const seen = byCode.get(rc.code);
-      if (!seen || (seen.approval === 'approved' && rc.approval !== 'approved')) {
-        byCode.set(rc.code, rc);
-      }
-    }
+    for (const rc of planRouteCards(p)) if (!byCode.has(rc.code)) byCode.set(rc.code, rc);
   }
   return [...byCode.values()];
 }
@@ -90,10 +89,9 @@ export function lineJcs(line: PlanningLine): DocRef[] {
   return out;
 }
 
+/** The ADR-253 warning beside a card not yet approved; none once approved. */
 function rcApprovalLabel(a: RcApproval): string | null {
-  if (a === 'pending') return 'Awaiting approval';
-  if (a === 'rejected') return 'Rejected';
-  return null;
+  return a === 'pending' || a === 'rejected' ? ROUTE_CARD_APPROVAL_LABEL[a] : null;
 }
 
 /** Plain text — the cell's tooltip and what Sort & Filter reads. */

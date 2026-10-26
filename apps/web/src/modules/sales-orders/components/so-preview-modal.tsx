@@ -18,6 +18,7 @@ import { Modal } from '@/ui/feedback';
 import { ReadField, ReadGrid } from '@/ui/layout';
 import { useSalesOrder } from '../api';
 import {
+  HIDDEN_TEXT,
   NOTHING_YET_LABELS,
   buildPreviewHeader,
   buildPreviewLines,
@@ -126,7 +127,9 @@ function RowLine({ r }: { r: PreviewRow }): React.JSX.Element {
         {r.label}
       </span>
       <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '4px 14px', minWidth: 0 }}>
-        {r.docs.length === 0 ? (
+        {r.hidden ? (
+          <span className="text3">{HIDDEN_TEXT}</span>
+        ) : r.docs.length === 0 ? (
           <Pending />
         ) : (
           r.docs.map((d) => <DocChip key={`${d.kind}-${d.id}`} d={d} />)

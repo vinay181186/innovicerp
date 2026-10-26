@@ -1,27 +1,43 @@
-// Level matrix — per SO line: the line item's live Route Card, and the live
-// customer dispatches / tax invoices carrying the line (cancelled ones left
-// out), each with THIS line's qty on that document.
+// Level matrix — per SO line: the live Route Cards that drive it (the line
+// item's card first, then each planned item's card — a BOM child plan here),
+// the live customer dispatches / tax invoices carrying the line (cancelled ones
+// left out, and Billed matching them), each with THIS line's qty; cancelled
+// Production Orders and their Job Cards left out; dispatches / invoices hidden
+// (docsHidden) from a caller without View on that page.
 //
 // NOTE: like every api integration test this writes to the database
 // DATABASE_URL points at — never run it against production (house rules).
 // Written, not run.
 
 import { eq, inArray, like } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../../db/client';
 import {
+  activityLog,
   customerDispatches,
   customerDispatchLines,
   invoiceLines,
   invoices,
   items,
+  jobCards,
+  plans,
+  productionOrders,
+  routeCardOps,
   routeCards,
   salesOrderLines,
   salesOrders,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
+import * as access from '../../lib/access';
+import * as poService from '../production-orders/service';
 import * as service from './service';
+
+// The real rights check, wrapped so one test can take Invoices View away.
+vi.mock('../../lib/access', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/access')>();
+  return { ...actual, hasFormAccess: vi.fn(actual.hasFormAccess) };
+});
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const P = 'TLVM-';
@@ -30,8 +46,27 @@ let admin: AuthContext;
 let companyId: string;
 let soId: string;
 let lineId: string;
+let livePoId: string;
+let cancelledPoId: string;
+let cancelledJcId: string;
 
 async function cleanup(): Promise<void> {
+  const pos = await db
+    .select({ id: productionOrders.id, jcId: productionOrders.jobCardId })
+    .from(productionOrders)
+    .where(like(productionOrders.planCodeText, `${P}%`));
+  const jcIds = pos.map((p) => p.jcId);
+  if (jcIds.length > 0) {
+    await db.update(jobCards).set({ productionOrderId: null }).where(inArray(jobCards.id, jcIds));
+    await db.delete(productionOrders).where(
+      inArray(
+        productionOrders.id,
+        pos.map((p) => p.id),
+      ),
+    );
+  }
+  await db.delete(plans).where(like(plans.code, `${P}%`));
+  if (jcIds.length > 0) await db.delete(jobCards).where(inArray(jobCards.id, jcIds));
   const ds = await db
     .select({ id: customerDispatches.id })
     .from(customerDispatches)
@@ -62,6 +97,7 @@ async function cleanup(): Promise<void> {
   await db.delete(salesOrders).where(like(salesOrders.code, `${P}%`));
   await db.delete(routeCards).where(like(routeCards.code, `${P}%`));
   await db.delete(items).where(like(items.code, `${P}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `${P}%`));
 }
 
 beforeAll(async () => {
@@ -215,19 +251,136 @@ beforeAll(async () => {
       ...by,
     },
   ]);
+
+  // A BOM child planned on the same line, with its own APPROVED Route Card.
+  const child = await db
+    .insert(items)
+    .values({
+      companyId,
+      code: `${P}CHILD`,
+      name: 'Level matrix child part',
+      revision: 'A',
+      uom: 'NOS',
+      itemType: 'component',
+      ...by,
+    })
+    .returning({ id: items.id });
+  const childItemId = child[0]!.id;
+  const childRc = await db
+    .insert(routeCards)
+    .values({
+      companyId,
+      code: `${P}RC-CHILD`,
+      itemId: childItemId,
+      approvalStatus: 'approved',
+      ...by,
+    })
+    .returning({ id: routeCards.id });
+  const childRcId = childRc[0]!.id;
+  await db.insert(routeCardOps).values({
+    companyId,
+    routeCardId: childRcId,
+    opSeq: 10,
+    operation: 'Turning',
+    opType: 'process',
+    ...by,
+  });
+  const pl = await db
+    .insert(plans)
+    .values({
+      companyId,
+      code: `${P}PLN-CHILD`,
+      planDate: '2026-10-26',
+      planStatus: 'planned',
+      planType: 'manufacture',
+      opsSource: 'route_card',
+      soLineId: lineId,
+      itemId: childItemId,
+      itemCodeText: `${P}CHILD`,
+      orderQty: 2,
+      planQty: 2,
+      ...by,
+    })
+    .returning({ id: plans.id });
+  const childPlanId = pl[0]!.id;
+
+  // Two orders of 1 on the child plan; the SECOND is then cancelled the way
+  // the cancel worker stamps it (deleted_at + cancelled_at, order and card).
+  const makePo = () =>
+    poService.createProductionOrder(
+      {
+        planId: childPlanId,
+        routeCardId: childRcId,
+        targetDate: '2026-11-30',
+        orderQty: 1,
+        rawMaterialAvailable: true,
+      },
+      admin,
+    );
+  livePoId = (await makePo()).id;
+  cancelledPoId = (await makePo()).id;
+  const now = new Date();
+  const cancelled = await db
+    .update(productionOrders)
+    .set({ deletedAt: now, deletedBy: admin.id, cancelledAt: now, cancelledBy: admin.id })
+    .where(eq(productionOrders.id, cancelledPoId))
+    .returning({ jcId: productionOrders.jobCardId });
+  cancelledJcId = cancelled[0]!.jcId;
+  await db
+    .update(jobCards)
+    .set({ deletedAt: now, deletedBy: admin.id, cancelledAt: now })
+    .where(eq(jobCards.id, cancelledJcId));
 }, 120_000);
 
 afterAll(cleanup);
 
 describe('flow views — level matrix line docs', () => {
-  it('returns the line item Route Card with its revision and approval state', async () => {
+  it('returns the line item Route Card first, then the BOM child plan card', async () => {
     const m = await service.getLevelMatrix(soId, admin);
-    const line = m.lines.find((l) => l.id === lineId);
-    expect(line?.routeCard).toMatchObject({
-      code: `${P}RC`,
-      currentRevision: 2,
-      approvalStatus: 'pending',
+    const line = m.lines.find((l) => l.id === lineId)!;
+    expect(line.routeCards.map((r) => r.code)).toEqual([`${P}RC`, `${P}RC-CHILD`]);
+    expect(line.routeCards[0]).toMatchObject({ currentRevision: 2, approvalStatus: 'pending' });
+    expect(line.routeCards[1]).toMatchObject({ approvalStatus: 'approved' });
+  });
+
+  it('Billed leaves out the cancelled invoice (equals the listed invoices)', async () => {
+    const m = await service.getLevelMatrix(soId, admin);
+    const line = m.lines.find((l) => l.id === lineId)!;
+    expect(line.billedQty).toBe(4);
+    expect(line.billedQty).toBe(line.invoices.reduce((s, i) => s + i.qty, 0));
+  });
+
+  it('a cancelled Production Order and its Job Card are left out', async () => {
+    const m = await service.getLevelMatrix(soId, admin);
+    const line = m.lines.find((l) => l.id === lineId)!;
+    expect(line.productionOrders.map((o) => o.id)).toEqual([livePoId]);
+    expect(line.jobCards.map((j) => j.id)).not.toContain(cancelledJcId);
+    expect(line.jobCards.some((j) => j.productionOrderId === livePoId)).toBe(true);
+  });
+
+  it('an admin sees both lists: docsHidden all false', async () => {
+    const m = await service.getLevelMatrix(soId, admin);
+    expect(m.lines.find((l) => l.id === lineId)!.docsHidden).toEqual({
+      dispatches: false,
+      invoices: false,
     });
+  });
+
+  it('a caller without Invoices View gets no invoices and docsHidden.invoices', async () => {
+    const real = await vi.importActual<typeof import('../../lib/access')>('../../lib/access');
+    const spy = vi.mocked(access.hasFormAccess);
+    spy.mockImplementation(async (_user, formKey) => formKey !== 'invoice_create');
+    try {
+      const m = await service.getLevelMatrix(soId, admin);
+      const line = m.lines.find((l) => l.id === lineId)!;
+      expect(line.invoices).toEqual([]);
+      expect(line.docsHidden).toEqual({ dispatches: false, invoices: true });
+      expect(line.dispatches).toHaveLength(1);
+      // Billed is a qty the SO detail shows without the Invoices right — it stays.
+      expect(line.billedQty).toBe(4);
+    } finally {
+      spy.mockImplementation(real.hasFormAccess);
+    }
   });
 
   it('lists only live dispatches and invoices, with this line qty, status and date', async () => {
@@ -249,14 +402,14 @@ describe('flow views — level matrix line docs', () => {
     });
   });
 
-  it('a line whose item has no live Route Card reads routeCard null', async () => {
+  it('with no live Route Cards the line reads routeCards []', async () => {
     await db
       .update(routeCards)
       .set({ deletedAt: new Date() })
       .where(like(routeCards.code, `${P}%`));
     try {
       const m = await service.getLevelMatrix(soId, admin);
-      expect(m.lines.find((l) => l.id === lineId)?.routeCard).toBeNull();
+      expect(m.lines.find((l) => l.id === lineId)?.routeCards).toEqual([]);
     } finally {
       await db
         .update(routeCards)

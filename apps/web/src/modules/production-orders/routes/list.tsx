@@ -22,7 +22,7 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -105,6 +105,9 @@ function ProductionOrdersListPage(): React.JSX.Element {
   const [cancelPro, setCancelPro] = useState<ProductionOrderListItem | null>(null);
   const { data: company } = useMyCompany();
   const [exporting, setExporting] = useState(false);
+  // Set synchronously, so a double-click cannot start two exports before the
+  // `exporting` state (the disabled look) has re-rendered.
+  const exportingRef = useRef(false);
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -186,7 +189,8 @@ function ProductionOrdersListPage(): React.JSX.Element {
   // status + Sort & Filter + Cancelled), not just this page (fetchAllPages,
   // 200 a call, capped at 10,000). Same query as the table minus the paging.
   async function runExport(kind: 'excel' | 'print' | 'pdf'): Promise<void> {
-    if (exporting) return;
+    if (exportingRef.current) return;
+    exportingRef.current = true;
     setExporting(true);
     try {
       const all = await fetchAllPages((limit, off) =>
@@ -210,6 +214,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
     } catch (e) {
       window.alert(e instanceof Error ? e.message : 'Could not load Production Orders. Try again.');
     } finally {
+      exportingRef.current = false;
       setExporting(false);
     }
   }

@@ -316,8 +316,28 @@ function titleCase(raw: string): string {
   return raw.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
+/** The enum value reduced to its map key ("QC Pending" -> "qc_pending"; a rating to its letter). */
+function statusKey(kind: StatusKind, raw: string): string {
+  const key = raw.toLowerCase().replace(/ /g, '_');
+  // A rating arrives as "A", "⭐A" or "a" — reduce it to the single letter.
+  return kind === 'rating' ? key.replace(/[^a-z]/g, '').charAt(0) : key;
+}
+
 /**
- * Read through a string key so an unknown `kind` — widened to `string` by
+ * The words the badge shows for `status` of `kind` — for places that need the
+ * text without the chip (a printout). Blank / null → ''.
+ */
+export function statusLabel(kind: StatusKind, status: string | null | undefined): string {
+  const raw = String(status ?? '');
+  if (raw.trim() === '') return '';
+  return (
+    LABELS[kind]?.[statusKey(kind, raw)] ??
+    (kind === 'rating' ? `⭐${raw.toUpperCase()}` : titleCase(raw))
+  );
+}
+
+/**
+ * Read through a string key so an unknown `kind`— widened to `string` by
  * data, cast with `as StatusKind`, or a new enum member added before this map
  * is updated — comes back undefined instead of typechecking into a crash.
  */
@@ -377,9 +397,7 @@ export function StatusBadge({
   }
 
   const raw = String(status ?? '');
-  let key = raw.toLowerCase().replace(/ /g, '_');
-  // A rating arrives as "A", "⭐A" or "a" — reduce it to the single letter.
-  if (kind === 'rating') key = key.replace(/[^a-z]/g, '').charAt(0);
+  const key = statusKey(kind, raw);
 
   // design-ref/components/core/StatusBadge.jsx:25 — `MAP[kind] || MAP.doc`.
   // An unmapped kind degrades to the generic document map; it never throws.
@@ -387,8 +405,7 @@ export function StatusBadge({
   // `??`, not `||`: '' is a DELIBERATE tone (the unfilled JC-op states above)
   // and must survive.
   const tone = m[key] ?? 'grey';
-  const text =
-    label ?? LABELS[kind]?.[key] ?? (kind === 'rating' ? `⭐${raw.toUpperCase()}` : titleCase(raw));
+  const text = label ?? statusLabel(kind, raw);
 
   const cls = ['badge', tone ? `b-${tone}` : '', className].filter(Boolean).join(' ');
   return (

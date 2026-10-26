@@ -6,10 +6,9 @@
 // level-matrix) — Route Card · Plan · PRO → JC · OSP PR/PO/DC/GRN · Dispatch ·
 // Invoice — with its status, and "Pending" where none exists yet. No money.
 //
-// Status words follow the app's StatusBadge labels (ui/core/StatusBadge.tsx
-// LABELS, which that file does not export) for the kinds used here; anything
-// else falls back to the code in Title Case. Route Card uses the shared
-// ROUTE_CARD_APPROVAL_LABEL (ADR-253).
+// Status words are the app's StatusBadge labels (ui/core/StatusBadge.tsx
+// statusLabel) — one list, so the print reads exactly as the screen. Route Card
+// uses the shared ROUTE_CARD_APPROVAL_LABEL (ADR-253).
 
 import { ROUTE_CARD_APPROVAL_LABEL, type Company, type SalesOrderDetail } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -17,6 +16,7 @@ import { esc, fmtDate } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 import { soNoWithInternal } from '@/lib/so-number';
 import type { StatusKind } from '@/ui/core';
+import { statusLabel } from '@/ui/core/StatusBadge';
 import type {
   LevelJobCard,
   LevelLineDoc,
@@ -28,33 +28,12 @@ import { SO_STATUS_LABEL, SO_TYPE_LABEL } from './so-status-label';
 
 // ─── Status words ───────────────────────────────────────────────────────────
 
-const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
-  jc: { qc_pending: 'QC Pending', complete: 'Completed', no_ops: 'No Operations' },
-  pr: { po_created: 'PO Created' },
-  po: { partial: 'Partly Received', qc_pending: 'QC Pending' },
-  prodorder: { partially_closed: 'Partly Closed', short_closed: 'Short Closed' },
-  grnqc: { pending: 'QC Pending', in_progress: 'QC In Progress', completed: 'QC Cleared' },
-  invoice: { partial: 'Partly Paid', cancelled: 'Cancelled' },
-  plan: { jc_created: 'JC Created', pr_created: 'PR Created', complete: 'Completed' },
-  planderived: {
-    route_card_pending: 'RC Pending',
-    route_card_approval_pending: 'RC Awaiting Approval',
-    gen_production_order: 'Ready for Production Order',
-    in_production: 'In Production',
-    production_complete: 'Completed',
-  },
-  doc: { short_closed: 'Short Closed' },
-};
-
-function titleCase(raw: string): string {
-  return raw.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase());
-}
-
 export function previewStatusLabel(kind: StatusKind, status: string | null | undefined): string {
   if (!status) return '';
   const key = status.toLowerCase().replace(/ /g, '_');
-  if (kind === 'so') return SO_STATUS_LABEL[key as keyof typeof SO_STATUS_LABEL] ?? titleCase(key);
-  return LABELS[kind]?.[key] ?? titleCase(status);
+  if (kind === 'so')
+    return SO_STATUS_LABEL[key as keyof typeof SO_STATUS_LABEL] ?? statusLabel(kind, status);
+  return statusLabel(kind, status);
 }
 
 // ─── The model ──────────────────────────────────────────────────────────────
@@ -92,9 +71,15 @@ export type PreviewRowLabel = 'Route Card' | 'Plan' | 'PRO' | 'JC' | 'OSP' | 'Di
 
 export interface PreviewRow {
   label: PreviewRowLabel;
-  /** Empty = "Pending" (not generated yet). */
+  /** Empty = "Pending" (not generated yet) — unless `hidden`. */
   docs: PreviewDoc[];
+  /** The user lacks View on this document type (Dispatch / Invoice): docs is
+   *  empty and the row reads HIDDEN_TEXT, never "Pending". */
+  hidden?: boolean;
 }
+
+/** What a row the user may not see reads instead of "Pending". */
+export const HIDDEN_TEXT = '— (no access)';
 
 export interface PreviewLine {
   id: string;
@@ -182,42 +167,21 @@ function lineDoc(kind: 'dispatch' | 'invoice', d: LevelLineDoc): PreviewDoc {
 }
 
 function buildLine(l: LevelSoLine, revision: string | null, equipment: boolean): PreviewLine {
-  // Fields added to the Level Matrix with this preview; read defensively so an
-  // API not yet carrying them shows "Pending" instead of failing.
-  const dispatches = l.dispatches ?? [];
-  const invoices = l.invoices ?? [];
-  const routeCard = l.routeCard ?? null;
   const rows: PreviewRow[] = [];
 
-  // Route Card — the line item's live card; on an equipment line (BOM on the
-  // header) the parts' cards, as named on their PROs.
-  const rcDocs: PreviewDoc[] = [];
-  if (routeCard) {
-    rcDocs.push({
+  // Route Card — every live card driving the line: the line item's first, then
+  // those of the other items planned on it (BOM children, equipment parts).
+  const rcDocs = l.routeCards.map(
+    (rc): PreviewDoc => ({
       kind: 'route-card',
-      id: routeCard.id,
-      code: routeCard.code,
+      id: rc.id,
+      code: rc.code,
       badgeKind: 'doc',
-      status: routeCard.approvalStatus,
-      statusLabel: ROUTE_CARD_APPROVAL_LABEL[routeCard.approvalStatus],
-    });
-  } else if (equipment) {
-    const seen = new Set<string>();
-    for (const p of l.productionOrders) {
-      if (!p.routeCardId || !p.routeCardCode || seen.has(p.routeCardId)) continue;
-      seen.add(p.routeCardId);
-      rcDocs.push({
-        kind: 'route-card',
-        id: p.routeCardId,
-        code: p.routeCardCode,
-        itemCode: p.itemCode,
-        badgeKind: 'doc',
-        status: null,
-        statusLabel: '',
-        ...(p.routeCardRevision != null ? { note: `Rev ${p.routeCardRevision}` } : {}),
-      });
-    }
-  }
+      status: rc.approvalStatus,
+      statusLabel: ROUTE_CARD_APPROVAL_LABEL[rc.approvalStatus],
+      note: `Rev ${rc.currentRevision}`,
+    }),
+  );
   rows.push({ label: 'Route Card', docs: rcDocs });
 
   rows.push({
@@ -285,17 +249,24 @@ function buildLine(l: LevelSoLine, revision: string | null, equipment: boolean):
     });
   }
 
-  rows.push({ label: 'Dispatch', docs: dispatches.map((d) => lineDoc('dispatch', d)) });
-  rows.push({ label: 'Invoice', docs: invoices.map((d) => lineDoc('invoice', d)) });
+  rows.push({
+    label: 'Dispatch',
+    docs: l.dispatches.map((d) => lineDoc('dispatch', d)),
+    hidden: l.docsHidden.dispatches,
+  });
+  rows.push({
+    label: 'Invoice',
+    docs: l.invoices.map((d) => lineDoc('invoice', d)),
+    hidden: l.docsHidden.invoices,
+  });
 
   const nothingYet =
-    !routeCard &&
     rcDocs.length === 0 &&
     l.plans.length === 0 &&
     l.productionOrders.length === 0 &&
     l.jobCards.length === 0 &&
-    dispatches.length === 0 &&
-    invoices.length === 0;
+    l.dispatches.length === 0 &&
+    l.invoices.length === 0;
 
   const shortClosed = Boolean(l.shortClosedAt);
   return {
@@ -341,6 +312,7 @@ function docHtml(d: PreviewDoc): string {
 }
 
 function rowCellHtml(r: PreviewRow): string {
+  if (r.hidden) return `<span style="color:#9ca3af">${esc(HIDDEN_TEXT)}</span>`;
   if (r.docs.length === 0) return '<span style="color:#9ca3af">Pending</span>';
   const html = r.docs.map(docHtml).join(r.label === 'OSP' ? ' &middot; ' : ' ');
   // A PRO with no card yet.

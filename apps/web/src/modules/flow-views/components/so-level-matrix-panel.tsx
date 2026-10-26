@@ -13,6 +13,7 @@ import { ROUTE_CARD_APPROVAL_LABEL, fmtOpSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { HIDDEN_TEXT } from '@/modules/sales-orders/lib/print-so-preview';
 import { StatusBadge, type StatusKind } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useLevelMatrix } from '../api';
@@ -159,7 +160,7 @@ function orderColumns(planCode: Map<string, string>): DataTableColumn<LevelProdu
     },
     // The Route Card this order was raised on (and its revision).
     {
-      header: 'Route Card No',
+      header: 'RC No.',
       nowrap: true,
       render: (o) =>
         o.routeCardId && o.routeCardCode ? (
@@ -352,34 +353,34 @@ function LineLevels({ line }: { line: LevelSoLine }): React.JSX.Element {
     () => new Map(line.productionOrders.map((o) => [o.id, o.code])),
     [line.productionOrders],
   );
-  // Added with the SO Preview; read defensively so an API not yet carrying
-  // them shows "none" instead of failing.
-  const routeCard = line.routeCard ?? null;
-  const dispatches = line.dispatches ?? [];
-  const invoices = line.invoices ?? [];
+  // Hidden = the user lacks View on Customer Dispatch / Invoices; the arrays
+  // are then empty and the table says so instead of "not yet".
+  const hidden = line.docsHidden;
   return (
     <div style={{ padding: 'var(--sp-1) var(--sp-3) var(--sp-3)' }}>
       <LevelHeading>Route Card</LevelHeading>
-      <div style={{ fontSize: 12 }}>
-        {routeCard ? (
-          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-            <Link
-              to="/route-cards/$id"
-              params={{ id: routeCard.id }}
-              className={LINK_CLASS}
-              style={LINK_STYLE}
-            >
-              {routeCard.code}
-            </Link>
-            <span className="text3">Rev {routeCard.currentRevision}</span>
-            <StatusBadge
-              kind="doc"
-              status={routeCard.approvalStatus}
-              label={ROUTE_CARD_APPROVAL_LABEL[routeCard.approvalStatus]}
-            />
-          </span>
+      <div style={{ fontSize: 12, display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+        {line.routeCards.length === 0 ? (
+          <span className="text3">Pending</span>
         ) : (
-          <span className="text3">No Route Card for this item yet.</span>
+          line.routeCards.map((rc) => (
+            <span key={rc.id} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <Link
+                to="/route-cards/$id"
+                params={{ id: rc.id }}
+                className={LINK_CLASS}
+                style={LINK_STYLE}
+              >
+                {rc.code}
+              </Link>
+              <span className="text3">Rev {rc.currentRevision}</span>
+              <StatusBadge
+                kind="doc"
+                status={rc.approvalStatus}
+                label={ROUTE_CARD_APPROVAL_LABEL[rc.approvalStatus]}
+              />
+            </span>
+          ))
         )}
       </div>
       <LevelHeading>Plans ({line.plans.length})</LevelHeading>
@@ -406,21 +407,23 @@ function LineLevels({ line }: { line: LevelSoLine }): React.JSX.Element {
         autoWidth
         emptyText="No Job Card yet."
       />
-      <LevelHeading>Dispatches ({dispatches.length})</LevelHeading>
+      <LevelHeading>
+        Dispatches{hidden.dispatches ? '' : ` (${line.dispatches.length})`}
+      </LevelHeading>
       <DataTable<LevelLineDoc>
         columns={lineDocColumns('dispatch')}
-        rows={dispatches}
+        rows={line.dispatches}
         density="compact"
         autoWidth
-        emptyText="Not dispatched yet."
+        emptyText={hidden.dispatches ? HIDDEN_TEXT : 'Not dispatched yet.'}
       />
-      <LevelHeading>Invoices ({invoices.length})</LevelHeading>
+      <LevelHeading>Invoices{hidden.invoices ? '' : ` (${line.invoices.length})`}</LevelHeading>
       <DataTable<LevelLineDoc>
         columns={lineDocColumns('invoice')}
-        rows={invoices}
+        rows={line.invoices}
         density="compact"
         autoWidth
-        emptyText="Not billed yet."
+        emptyText={hidden.invoices ? HIDDEN_TEXT : 'Not billed yet.'}
       />
     </div>
   );

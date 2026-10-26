@@ -83,6 +83,7 @@ export function poListColumns(
       // through PO_LIST_PINNED_IDS.
       id: 'sr_no',
       header: 'Sr No',
+      width: '4%',
       className: 'text3',
       render: (_po, i) => offset + i + 1,
     },

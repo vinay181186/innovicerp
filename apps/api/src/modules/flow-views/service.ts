@@ -29,6 +29,7 @@ import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { canonicalActivityAction, NC_DISPOSITION_LABELS } from '@innovic/shared';
 import { plans } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import {
   PLAN_COVERED_QTY_SQL,
@@ -741,6 +742,14 @@ export async function getLevelMatrix(
   user: AuthContext,
 ): Promise<LevelMatrixResponse> {
   const companyId = requireCompany(user);
+  // Rights: dispatches / invoices are only listed for a caller with View on
+  // Customer Dispatch / Invoices (admins pass). Otherwise the lists stay empty
+  // and docsHidden says so. Read before the transaction (non-throwing).
+  const [canSeeDispatches, canSeeInvoices] = await Promise.all([
+    hasFormAccess(user, 'dispatch_create', 'view'),
+    hasFormAccess(user, 'invoice_create', 'view'),
+  ]);
+  const docsHidden = { dispatches: !canSeeDispatches, invoices: !canSeeInvoices };
   return withUserContext(user, async (tx) => {
     const so = (
       await rows(
@@ -751,13 +760,17 @@ export async function getLevelMatrix(
     )[0];
     if (!so) throw new NotFoundError('Sales Order not found. Refresh the page.');
 
-    // SO lines — Billed = Σ live invoice-line qty (same as the SO detail).
+    // SO lines — Billed = Σ live invoice-line qty: same rule as the SO detail
+    // (sales-orders getSalesOrder billedRowsQ) and the invoices[] list below —
+    // invoice and line not deleted, invoice not cancelled (ADR-202). Billed is
+    // a qty the SO detail shows without an Invoices right, so it stays.
     const lineRows = await rows(
       tx,
       sql`SELECT sol.id, sol.line_no, sol.item_id, COALESCE(i.code, sol.item_code_text) AS item_code, sol.part_name,
             sol.client_po_line_no, sol.order_qty, sol.dispatched_qty, sol.status, sol.short_closed_at,
             (SELECT COALESCE(SUM(il.qty), 0) FROM public.invoice_lines il
               JOIN public.invoices inv ON inv.id = il.invoice_id AND inv.deleted_at IS NULL
+                AND inv.status <> 'cancelled'
               WHERE il.sales_order_line_id = sol.id AND il.deleted_at IS NULL) AS billed
           FROM public.sales_order_lines sol
           LEFT JOIN public.items i ON i.id = sol.item_id
@@ -773,6 +786,7 @@ export async function getLevelMatrix(
         id: plans.id,
         code: plans.code,
         soLineId: plans.soLineId,
+        itemId: plans.itemId,
         planQty: plans.planQty,
         planStatus: plans.planStatus,
         covered: PLAN_COVERED_QTY_SQL,
@@ -806,7 +820,10 @@ export async function getLevelMatrix(
                   COALESCE(NULLIF(btrim(po.item_name_text), ''), i.name) AS item_name
                 FROM public.production_orders po
                 LEFT JOIN public.items i ON i.id = po.item_id
+                -- ADR-235: a cancelled order is out (cancel stamps deleted_at
+                -- too; cancelled_at is tested so the rule never hangs on that).
                 WHERE po.plan_id = ANY(${sql.param(planIds)}::uuid[]) AND po.deleted_at IS NULL
+                  AND po.cancelled_at IS NULL AND po.company_id = ${companyId}::uuid
                 ORDER BY po.code`,
           )
         : [];
@@ -814,20 +831,27 @@ export async function getLevelMatrix(
     const poPlan = new Map(poRows.map((p) => [String(p['id']), String(p['plan_id'])]));
     const planLine = new Map(planRows.map((p) => [p.id, p.soLineId]));
 
-    // The line ITEM's live Route Card — one per item; DISTINCT ON keeps the
-    // newest should a legacy duplicate exist. One query for all lines.
-    const lineItemIds = [
-      ...new Set(lineRows.map((l) => str(l['item_id'])).filter((v): v is string => v !== null)),
+    // Live Route Cards that drive each line: the line ITEM's card plus the card
+    // of every item planned on the line (BOM children / equipment parts). One
+    // query for all lines; one live card per item (route_cards_company_item_uniq),
+    // DISTINCT ON is only a guard.
+    const rcItemIds = [
+      ...new Set(
+        [
+          ...lineRows.map((l) => str(l['item_id'])),
+          ...planRows.map((p) => p.itemId ?? null),
+        ].filter((v): v is string => v !== null),
+      ),
     ];
     const rcRows =
-      lineItemIds.length > 0
+      rcItemIds.length > 0
         ? await rows(
             tx,
             sql`SELECT DISTINCT ON (rc.item_id) rc.item_id, rc.id, rc.code, rc.current_revision,
                   rc.approval_status
                 FROM public.route_cards rc
                 WHERE rc.company_id = ${companyId}::uuid AND rc.deleted_at IS NULL
-                  AND rc.item_id = ANY(${sql.param(lineItemIds)}::uuid[])
+                  AND rc.item_id = ANY(${sql.param(rcItemIds)}::uuid[])
                 ORDER BY rc.item_id, rc.created_at DESC`,
           )
         : [];
@@ -845,10 +869,13 @@ export async function getLevelMatrix(
 
     // Customer dispatches and tax invoices that carry each line — live only
     // (not deleted, not cancelled; the same test the dispatch and invoice
-    // modules use). Qty = THIS line's qty on that document. One query each.
-    const dispatchRows = await rows(
-      tx,
-      sql`SELECT cdl.sales_order_line_id AS line_id, cd.id, cd.code, cd.status::text AS status,
+    // modules use). Qty = THIS line's qty on that document. One query each,
+    // skipped when the caller may not see that document (docsHidden).
+    const dispatchRows = !canSeeDispatches
+      ? []
+      : await rows(
+          tx,
+          sql`SELECT cdl.sales_order_line_id AS line_id, cd.id, cd.code, cd.status::text AS status,
             cd.dispatch_date::text AS doc_date, SUM(cdl.qty)::int AS qty
           FROM public.customer_dispatch_lines cdl
           JOIN public.customer_dispatches cd ON cd.id = cdl.customer_dispatch_id
@@ -857,10 +884,12 @@ export async function getLevelMatrix(
             AND cdl.deleted_at IS NULL AND cd.company_id = ${companyId}::uuid
           GROUP BY cdl.sales_order_line_id, cd.id, cd.code, cd.status, cd.dispatch_date
           ORDER BY cd.dispatch_date, cd.code`,
-    );
-    const invoiceRows = await rows(
-      tx,
-      sql`SELECT il.sales_order_line_id AS line_id, inv.id, inv.code, inv.status::text AS status,
+        );
+    const invoiceRows = !canSeeInvoices
+      ? []
+      : await rows(
+          tx,
+          sql`SELECT il.sales_order_line_id AS line_id, inv.id, inv.code, inv.status::text AS status,
             inv.invoice_date::text AS doc_date, SUM(il.qty)::int AS qty
           FROM public.invoice_lines il
           JOIN public.invoices inv ON inv.id = il.invoice_id
@@ -869,7 +898,7 @@ export async function getLevelMatrix(
             AND il.deleted_at IS NULL AND inv.company_id = ${companyId}::uuid
           GROUP BY il.sales_order_line_id, inv.id, inv.code, inv.status, inv.invoice_date
           ORDER BY inv.invoice_date, inv.code`,
-    );
+        );
     const docsByLine = (docRows: Row[]): Map<string, LevelLineDoc[]> => {
       const m = new Map<string, LevelLineDoc[]>();
       for (const d of docRows) {
@@ -900,7 +929,7 @@ export async function getLevelMatrix(
           LEFT JOIN public.items i ON i.id = j.item_id
           LEFT JOIN public.v_jc_status s ON s.job_card_id = j.id
           WHERE j.company_id = ${companyId}::uuid AND j.deleted_at IS NULL
-            AND j.recovery_kind IS NULL
+            AND j.recovery_kind IS NULL AND j.cancelled_at IS NULL
             AND (j.production_order_id = ANY(${sql.param(poIds.length ? poIds : [salesOrderId])}::uuid[])
               OR j.source_so_line_id = ANY(${sql.param(lineIds)}::uuid[]))
           ORDER BY j.code`,
@@ -1038,6 +1067,16 @@ export async function getLevelMatrix(
           derivedStatus: p.derived ?? null,
         }));
       const planSet = new Set(linePlans.map((p) => p.id));
+      // Line item's card first, then each planned item's card (plan-code
+      // order — planRows is ordered by code), de-duplicated by card id.
+      const routeCards: LevelRouteCard[] = [];
+      for (const itemId of [
+        str(l['item_id']),
+        ...planRows.filter((p) => p.soLineId === id).map((p) => p.itemId ?? null),
+      ]) {
+        const rc = itemId ? rcByItem.get(itemId) : undefined;
+        if (rc && !routeCards.some((r) => r.id === rc.id)) routeCards.push(rc);
+      }
       const lineOrders: LevelProductionOrder[] = poRows
         .filter((p) => planSet.has(String(p['plan_id'])))
         .map((p) => {
@@ -1080,9 +1119,10 @@ export async function getLevelMatrix(
         jobCards: jobCards
           .filter((j) => j.lineId === id)
           .map(({ lineId: _lineId, ...rest }) => rest),
-        routeCard: rcByItem.get(str(l['item_id']) ?? '') ?? null,
+        routeCards,
         dispatches: dispatchesByLine.get(id) ?? [],
         invoices: invoicesByLine.get(id) ?? [],
+        docsHidden,
       };
     });
 
