@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
+  PendingLineChanges,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
@@ -272,6 +273,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         }
       >
         <DetailGrid detail={detail} pendingChanges={pendingChanges} />
+        <PendingLineChanges changes={pendingChanges} />
         {/* ADR-243 — the JWSO's money from the server (SGST + CGST or IGST,
             Round-off), the same roll-up as the SO. Null when prices are hidden. */}
         <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />

@@ -33,6 +33,7 @@ import { type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { useDecideDocumentEdit, useDocumentEditCounts, useDocumentEdits } from '../api';
 
+import { groupChanges } from './change-groups';
 import { DocEditLink } from './doc-edit-link';
 import { EditRejectDialog } from './edit-reject-dialog';
 import { ApprovalTab, type ApprovalView } from '@/modules/approvals/components/approval-tab';
@@ -197,71 +198,113 @@ export function EditApprovalTab({
         <table className="innovic-table tbl-compact tbl-ctr" style={{ width: '100%' }}>
           <thead>
             <tr>
-              <th style={{ textAlign: 'left' }}>Field</th>
-              <th style={{ textAlign: 'left' }}>Change</th>
+              <th>Field</th>
+              <th>Change</th>
               <th>Decision</th>
             </tr>
           </thead>
-          <tbody>
-            {row.changes.map((c) => {
-              const outcome = outcomeByChange.get(c.id);
-              const busy = decidingChangeId === c.id && decide.isPending;
-              return (
-                <tr key={c.id}>
-                  <td style={{ textAlign: 'left', fontWeight: 700 }}>{c.label}</td>
-                  <td style={{ textAlign: 'left' }}>
-                    <span className="text3">{fmtVal(c.before)}</span>
-                    <span className="text3"> → </span>
-                    <span className="tag b-amber">{fmtVal(c.after)}</span>
-                  </td>
-                  <td>
-                    {outcome ? (
-                      <DecisionOutcome
-                        outcome={outcome.outcome}
-                        reason={outcome.reason}
-                        who={row.decidedByName}
-                        when={row.decidedAt}
-                      />
-                    ) : pendingHere ? (
-                      <div
-                        style={{ display: 'inline-flex', gap: 'var(--sp-1)' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-success"
-                          title="Approve this field"
-                          aria-label={`Approve ${c.label}`}
-                          disabled={busy}
-                          onClick={() => void decideChange(row.id, c.id, 'approve')}
-                        >
-                          <Icon name="check" size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          title="Reject this field"
-                          aria-label={`Reject ${c.label}`}
-                          disabled={busy}
-                          onClick={() =>
-                            setRejectingChange({
-                              requestId: row.id,
-                              change: c,
-                              docCode: row.docCode,
-                            })
-                          }
-                        >
-                          <Icon name="x" size={14} />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text3">—</span>
-                    )}
+          {/* Line edits arrive as one box per field ("Line 2 · Order Qty"),
+              grouped here under one heading per line / schedule row; added and
+              removed rows carry a + Add / − Remove tag (change-groups.ts). */}
+          {groupChanges(row.changes).map((g) => (
+            <tbody key={g.key}>
+              {g.heading ? (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="text2"
+                    style={{ fontWeight: 700, background: 'var(--bg3)' }}
+                  >
+                    {g.heading}
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
+              ) : null}
+              {g.rows.map(({ change: c, kind, fieldLabel }) => {
+                const outcome = outcomeByChange.get(c.id);
+                const busy = decidingChangeId === c.id && decide.isPending;
+                const hasValues = c.before !== null || c.after !== null;
+                return (
+                  <tr key={c.id}>
+                    <td style={{ fontWeight: 700, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                      {kind === 'add' ? (
+                        <span className="tag b-green">+ Add</span>
+                      ) : kind === 'remove' ? (
+                        <span className="tag b-red">− Remove</span>
+                      ) : (
+                        fieldLabel
+                      )}
+                    </td>
+                    <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                      {kind === 'add' || kind === 'remove' ? (
+                        <span style={{ fontWeight: 700 }}>{c.label}</span>
+                      ) : null}
+                      {kind === 'add' || kind === 'remove' ? (
+                        hasValues ? (
+                          <div>
+                            <span className="text3">{fmtVal(c.before)}</span>
+                            <span className="text3"> → </span>
+                            <span className="text3">{fmtVal(c.after)}</span>
+                          </div>
+                        ) : null
+                      ) : (
+                        <>
+                          <span className="text3">{fmtVal(c.before)}</span>
+                          <span className="text3"> → </span>
+                          <span className="tag b-amber" style={{ whiteSpace: 'normal' }}>
+                            {fmtVal(c.after)}
+                          </span>
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      {outcome ? (
+                        <DecisionOutcome
+                          outcome={outcome.outcome}
+                          reason={outcome.reason}
+                          who={row.decidedByName}
+                          when={row.decidedAt}
+                        />
+                      ) : pendingHere ? (
+                        <div
+                          style={{ display: 'inline-flex', gap: 'var(--sp-1)' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-success"
+                            title="Approve this change"
+                            aria-label={`Approve ${c.label}`}
+                            disabled={busy}
+                            onClick={() => void decideChange(row.id, c.id, 'approve')}
+                          >
+                            <Icon name="check" size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            title="Reject this change"
+                            aria-label={`Reject ${c.label}`}
+                            disabled={busy}
+                            onClick={() =>
+                              setRejectingChange({
+                                requestId: row.id,
+                                change: c,
+                                docCode: row.docCode,
+                              })
+                            }
+                          >
+                            <Icon name="x" size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text3">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          ))}
         </table>
       </div>
     );

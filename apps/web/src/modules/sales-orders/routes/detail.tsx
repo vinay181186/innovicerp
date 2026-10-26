@@ -29,6 +29,7 @@ import { z } from 'zod';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
+  PendingLineChanges,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
@@ -311,6 +312,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <SoReadGrid detail={detail} pendingChanges={pendingChanges} />
+        <PendingLineChanges changes={pendingChanges} />
         {/* ADR-190 / ADR-243 — the SO's money, summed on the server (SGST +
             CGST or IGST, Round-off). Null when this user's access hides
             prices, and then the strip is not shown. */}
