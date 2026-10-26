@@ -223,6 +223,29 @@ export interface LevelProductionOrder {
   /** Same rule as production-orders toDetail: 0 once stopped, else Order − Credited. */
   pendingQty: number;
   status: string;
+  /** The Route Card this order was raised on (production_orders.route_card_id /
+   *  route_card_code_text) and its revision. */
+  routeCardId: string | null;
+  routeCardCode: string | null;
+  routeCardRevision: number | null;
+}
+
+/** The item's live Route Card (one per item) and its ADR-253 approval state. */
+export interface LevelRouteCard {
+  id: string;
+  code: string;
+  currentRevision: number;
+  approvalStatus: 'pending' | 'approved' | 'rejected';
+}
+
+/** A customer dispatch / tax invoice that carries this SO line. */
+export interface LevelLineDoc {
+  id: string;
+  code: string;
+  /** Qty of THIS line on that document. */
+  qty: number;
+  status: string | null;
+  date: string | null;
 }
 
 export interface LevelPlan {
@@ -250,6 +273,12 @@ export interface LevelSoLine {
   productionOrders: LevelProductionOrder[];
   /** Cards built for this line (by a Production Order or raised on the line); rework children excluded. */
   jobCards: LevelJobCard[];
+  /** The line ITEM's live Route Card (null = none yet → "Pending"). For an
+   *  equipment line the BOM parts' cards are on their PRO rows. */
+  routeCard: LevelRouteCard | null;
+  /** Live (not cancelled / deleted) customer dispatches and invoices of this line. */
+  dispatches: LevelLineDoc[];
+  invoices: LevelLineDoc[];
 }
 
 export interface LevelMatrixResponse {
