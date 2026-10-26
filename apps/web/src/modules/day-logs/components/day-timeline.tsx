@@ -1,7 +1,6 @@
 // The 09:00 → 18:00 bar: work (blue), breaks (grey), the running timer
 // (light blue), and whatever is not covered shows the striped "missing"
-// background. The hour buttons under it fill the hand-entry To — the server
-// checks the entry when it is added.
+// background. Display only — time is logged through the work box.
 
 import type { DayLogEntry } from '@innovic/shared';
 import { hourMarks, timelineSegments, type TimelineSegment } from '../lib/format';
@@ -21,14 +20,11 @@ export function DayTimeline({
   workFrom,
   workTo,
   nowMin,
-  onPickHour,
 }: {
   entries: readonly DayLogEntry[];
   workFrom: string;
   workTo: string;
   nowMin: number;
-  /** Absent = read-only (someone else's day, or a closed day). */
-  onPickHour?: ((hhmm: string) => void) | undefined;
 }): React.JSX.Element {
   const segs = timelineSegments(entries, workFrom, workTo, nowMin);
   const hours = hourMarks(workFrom, workTo);
@@ -76,32 +72,19 @@ export function DayTimeline({
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 4, marginTop: 6 }} aria-label="Log up to an hour">
+      <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
         <span className="mono text3" style={{ fontSize: 'var(--fs-xs)', alignSelf: 'center' }}>
           {workFrom}
         </span>
-        {hours.map((h) =>
-          onPickHour ? (
-            <button
-              key={h}
-              type="button"
-              className="btn btn-ghost btn-sm mono"
-              style={{ flex: 1 }}
-              title={`Log up to ${h}`}
-              onClick={() => onPickHour(h)}
-            >
-              {h}
-            </button>
-          ) : (
-            <span
-              key={h}
-              className="mono text3"
-              style={{ flex: 1, textAlign: 'right', fontSize: 'var(--fs-xs)' }}
-            >
-              {h}
-            </span>
-          ),
-        )}
+        {hours.map((h) => (
+          <span
+            key={h}
+            className="mono text3"
+            style={{ flex: 1, textAlign: 'right', fontSize: 'var(--fs-xs)' }}
+          >
+            {h}
+          </span>
+        ))}
       </div>
     </div>
   );

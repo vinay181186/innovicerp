@@ -1,19 +1,14 @@
-// The day's entries, in order: #, From, To, Time, Work done, Linked Task,
-// Work Status, ⋯. Breaks are greyed and unnumbered; the running entry is
-// highlighted. Row ⋯ (owner, day open — from the server's canWrite):
-// Change status · ▶ Continue (unfinished work) · Remove (last work entry).
+// The day's entries, in order: #, From, To, Time, Work done, Work Status, ⋯.
+// Breaks are greyed and unnumbered; the running entry is highlighted. Row ⋯
+// (owner, day open — from the server's canWrite): Change status · ▶ Continue
+// (unfinished work: fills the work box, the user presses Start) · Remove
+// (last work entry).
 
 import type { DayLogDetail, DayLogEntry, DayLogWorkStatus } from '@innovic/shared';
 import { useState } from 'react';
 import { RowMenu, type RowMenuItem } from '@/ui/data';
 import { useRemoveDayLogEntry, useSetDayLogEntryStatus, type DayQuery } from '../api';
-import {
-  entryDuration,
-  errText,
-  taskCode,
-  workStatusLabel,
-  WORK_STATUS_BADGE,
-} from '../lib/format';
+import { entryDuration, errText, workStatusLabel, WORK_STATUS_BADGE } from '../lib/format';
 import { StatusPickDialog } from './day-dialogs';
 
 export function EntriesTable({
@@ -21,23 +16,17 @@ export function EntriesTable({
   q,
   canContinue,
   onContinue,
-  onStatusSet,
-  children,
 }: {
   day: DayLogDetail;
   q: DayQuery;
-  /** ▶ Continue is offered only where the timer bar is (today, own day). */
+  /** ▶ Continue is offered only where the work box is (today, own day). */
   canContinue: boolean;
   onContinue: (e: DayLogEntry) => void;
-  onStatusSet: (status: DayLogWorkStatus, e: DayLogEntry) => void;
-  /** The hand-entry form, drawn under the table inside the same panel. */
-  children?: React.ReactNode;
 }): React.JSX.Element {
   const setStatus = useSetDayLogEntryStatus(q);
   const remove = useRemoveDayLogEntry(q);
   const [editing, setEditing] = useState<DayLogEntry | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const running = day.entries.some((e) => e.kind === 'work' && !e.toTime);
   const work = day.entries.filter((e) => e.kind === 'work');
   const lastWorkId = work[work.length - 1]?.id;
   const showMenu = day.canWrite;
@@ -46,9 +35,7 @@ export function EntriesTable({
     if (!editing) return;
     try {
       await setStatus.mutateAsync({ id: editing.id, status: s, updatedAt: editing.updatedAt });
-      const e = editing;
       setEditing(null);
-      onStatusSet(s, e);
     } catch (x) {
       setErr(errText(x));
     }
@@ -72,7 +59,6 @@ export function EntriesTable({
         label: '▶ Continue',
         group: 'workflow',
         hidden: !canContinue || !closed || e.status === 'completed',
-        disabledReason: running ? 'Timer running' : undefined,
         onSelect: () => onContinue(e),
       },
       {
@@ -105,7 +91,6 @@ export function EntriesTable({
               <th>To</th>
               <th className="th-num">Time</th>
               <th>Work done</th>
-              <th>Linked Task</th>
               <th>Work Status</th>
               {showMenu ? <th aria-label="Actions" /> : null}
             </tr>
@@ -113,7 +98,7 @@ export function EntriesTable({
           <tbody>
             {day.entries.length === 0 ? (
               <tr>
-                <td colSpan={showMenu ? 8 : 7} className="empty-state">
+                <td colSpan={showMenu ? 7 : 6} className="empty-state">
                   Nothing logged for this day yet.
                 </td>
               </tr>
@@ -146,9 +131,6 @@ export function EntriesTable({
                   >
                     {e.description}
                   </td>
-                  <td className="mono fw-700" title={e.taskLabel ?? undefined}>
-                    {taskCode(e.taskLabel) || '—'}
-                  </td>
                   <td>
                     <span className={`badge ${badge}`}>{workStatusLabel(e)}</span>
                   </td>
@@ -167,7 +149,6 @@ export function EntriesTable({
           {err}
         </p>
       ) : null}
-      {children}
       {editing ? (
         <StatusPickDialog
           title={`Work Status — ${editing.fromTime} – ${editing.toTime ?? ''}`}

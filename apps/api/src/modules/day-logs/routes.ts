@@ -3,11 +3,9 @@
 
 import type { FastifyInstance } from 'fastify';
 import {
-  addDayLogEntryInputSchema,
   dayLogDateInputSchema,
   dayLogQuerySchema,
   dayLogReasonInputSchema,
-  dayLogTaskOptionsQuerySchema,
   dayLogUserDayInputSchema,
   holidayInputSchema,
   saveMyBreaksInputSchema,
@@ -36,13 +34,6 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/day-logs/team', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getTeam(teamDayLogQuerySchema.parse(req.query), req.user);
-  });
-
-  app.post('/day-logs/entries', async (req, reply) => {
-    if (!req.user) throw new AuthenticationError();
-    const result = await service.addEntry(addDayLogEntryInputSchema.parse(req.body), req.user);
-    reply.code(201);
-    return result;
   });
 
   app.patch('/day-logs/entries/:id/status', async (req) => {
@@ -113,11 +104,5 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.deleteHoliday(id, req.user);
-  });
-
-  app.get('/day-logs/task-options', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    const q = dayLogTaskOptionsQuerySchema.parse(req.query);
-    return service.taskOptions(q.search, req.user);
   });
 }

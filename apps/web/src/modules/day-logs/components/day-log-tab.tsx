@@ -1,32 +1,30 @@
 // "My Day Log" tab of the Task Board (owner 2026-10-26). One day of one
 // person: header + counts (server summary), the blocked / stray-timer
-// banners, the 09:00–18:00 bar, the S1 timer bar (own day, today), the
-// entries table with "Add time by hand" under it, and Submit Day.
+// banners, the 09:00–18:00 bar (display only), the ONE work box (own day,
+// today — the timer is the only way to log time), the entries table and
+// Submit Day.
 //
 // Every write button follows the SERVER's canWrite / canManage, never
 // useCanWrite(): a view-only L1 user still logs their own day. `?user=`
 // opens someone else's day read-only (+ Department Admin actions).
 
-import type { DayLogEntry, DayLogWorkStatus } from '@innovic/shared';
+import type { DayLogEntry } from '@innovic/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { useDayLog, useDayLogAccess, useSubmitDayLog, type DayQuery } from '../api';
 import { fileSlug, dayTable } from '../lib/export';
-import { errText, liveNowHhmm, liveNowMin, taskCode } from '../lib/format';
+import { errText, liveNowHhmm, liveNowMin } from '../lib/format';
 import { printDayLog } from '../lib/print-day-log';
-import { CompleteTaskDialog } from './day-dialogs';
 import { DayHeader } from './day-header';
 import { AdminDayActions, BlockedNotice, StrayTimerNotice } from './day-notices';
 import { DayTimeline } from './day-timeline';
 import { EntriesTable } from './entries-table';
-import { HandEntryForm } from './hand-entry-form';
 import { HolidaysModal } from './holidays-modal';
 import { MyBreaksModal } from './my-breaks-modal';
 import { PrintExportTools } from './print-export-tools';
-import { TimerBar, type TimerDraft } from './timer-bar';
+import { WorkBox } from './work-box';
 
 const TICK_MS = 30_000;
-const EMPTY_DRAFT: TimerDraft = { description: '', taskId: null, taskLabel: null };
 
 export function DayLogTab({
   date,
@@ -44,12 +42,9 @@ export function DayLogTab({
   const access = useDayLogAccess();
   const submit = useSubmitDayLog(q);
   const [tick, setTick] = useState(() => Date.now());
-  const [draft, setDraft] = useState<TimerDraft>(EMPTY_DRAFT);
-  const [handTo, setHandTo] = useState('');
-  const [askTask, setAskTask] = useState<{ taskId: string; code: string } | null>(null);
-  const [taskNote, setTaskNote] = useState<string | null>(null);
+  const [text, setText] = useState('');
   const [modal, setModal] = useState<'submit' | 'breaks' | 'holidays' | null>(null);
-  const handToRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setTick(Date.now()), TICK_MS);
@@ -73,19 +68,9 @@ export function DayLogTab({
   const running = day.summary.running;
   // While another day is loading the old one stays on screen — no writes then.
   const blocked = Boolean(day.blockedBy || day.strayTimer) || query.isPlaceholderData;
-  const showTimer = day.canWrite && isToday && !blocked;
-  const showHand = day.canWrite && !running && !blocked;
+  const showBox = day.canWrite && isToday && !blocked;
   const canSubmit =
     day.canWrite && day.summary.missingMin === 0 && !running && !query.isPlaceholderData;
-
-  /** D6: a Completed entry linked to a task asks to complete the task too. */
-  const afterStatus = (s: DayLogWorkStatus, taskId: string | null, label: string | null): void => {
-    if (s === 'completed' && taskId) setAskTask({ taskId, code: taskCode(label) || 'the task' });
-  };
-  const fillTo = (hhmm: string): void => {
-    setHandTo(hhmm);
-    handToRef.current?.focus();
-  };
 
   return (
     <div>
@@ -123,58 +108,35 @@ export function DayLogTab({
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
       <BlockedNotice day={day} onDate={(d) => onDate(d === day.today ? undefined : d)} />
       <StrayTimerNotice day={day} q={q} />
-      {taskNote ? (
-        <Banner tone="info" onDismiss={() => setTaskNote(null)}>
-          {taskNote}
-        </Banner>
-      ) : null}
 
       <DayTimeline
         entries={day.entries}
         workFrom={day.workFrom}
         workTo={day.workTo}
         nowMin={nowMin}
-        onPickHour={showHand ? fillTo : undefined}
       />
 
-      {showTimer ? (
-        <TimerBar
+      {showBox ? (
+        <WorkBox
           day={day}
           q={q}
           nowMin={nowMin}
-          draft={draft}
-          onDraft={setDraft}
-          onLogByHand={() => fillTo(liveNowHhmm(day.nowTime, query.dataUpdatedAt, tick))}
-          onStopped={(s, taskId, label) => {
-            setDraft(EMPTY_DRAFT);
-            afterStatus(s, taskId, label);
-          }}
+          nowHhmm={liveNowHhmm(day.nowTime, query.dataUpdatedAt, tick)}
+          text={text}
+          onText={setText}
+          inputRef={boxRef}
         />
       ) : null}
 
       <EntriesTable
         day={day}
         q={q}
-        canContinue={showTimer}
-        onContinue={(e: DayLogEntry) =>
-          setDraft({ description: e.description, taskId: e.taskId, taskLabel: e.taskLabel })
-        }
-        onStatusSet={(s, e) => afterStatus(s, e.taskId, e.taskLabel)}
-      >
-        {showHand ? (
-          <HandEntryForm
-            ref={handToRef}
-            day={day}
-            q={q}
-            toTime={handTo}
-            onToTime={setHandTo}
-            onSaved={(s, taskId, label) => {
-              setHandTo('');
-              afterStatus(s, taskId, label);
-            }}
-          />
-        ) : null}
-      </EntriesTable>
+        canContinue={showBox}
+        onContinue={(e: DayLogEntry) => {
+          setText(e.description);
+          boxRef.current?.focus();
+        }}
+      />
 
       {day.canWrite ? (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
@@ -212,16 +174,6 @@ export function DayLogTab({
       ) : null}
       {modal === 'breaks' ? <MyBreaksModal onClose={() => setModal(null)} /> : null}
       {modal === 'holidays' ? <HolidaysModal onClose={() => setModal(null)} /> : null}
-      {askTask ? (
-        <CompleteTaskDialog
-          taskId={askTask.taskId}
-          code={askTask.code}
-          onClose={(msg) => {
-            setAskTask(null);
-            setTaskNote(msg);
-          }}
-        />
-      ) : null}
     </div>
   );
 }

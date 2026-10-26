@@ -2,7 +2,12 @@
 // server's `summary` carries every number the user is judged by; these only
 // turn the loaded entries into chips, bar positions and a ticking clock.
 
-import type { DayLogEntry, DayLogStatus, DayLogWorkStatus } from '@innovic/shared';
+import type {
+  DayLogCurrentStatus,
+  DayLogEntry,
+  DayLogStatus,
+  DayLogWorkStatus,
+} from '@innovic/shared';
 import {
   DAY_LOG_STATUS_LABELS,
   DAY_LOG_WORK_STATUS_LABELS,
@@ -23,6 +28,16 @@ export const DAY_STATUS_BADGE: Record<DayLogStatus, string> = {
   leave: 'b-grey',
 };
 
+/** Team Day Logs "Current Status" chip. '' = the grey outline (Not started). */
+export const CURRENT_STATUS_BADGE: Record<DayLogCurrentStatus, string> = {
+  working: 'b-blue',
+  break: 'b-grey',
+  idle: 'b-orange',
+  not_started: '',
+  submitted: 'b-green',
+  leave: 'b-grey',
+};
+
 export function workStatusLabel(e: Pick<DayLogEntry, 'kind' | 'status' | 'toTime'>): string {
   if (e.kind === 'break') return 'Break';
   if (!e.toTime) return 'Running';
@@ -31,12 +46,6 @@ export function workStatusLabel(e: Pick<DayLogEntry, 'kind' | 'status' | 'toTime
 
 export function dayStatusLabel(s: DayLogStatus): string {
   return DAY_LOG_STATUS_LABELS[s];
-}
-
-/** "TSK-0042 · Vendor rate comparison" → "TSK-0042". */
-export function taskCode(label: string | null): string {
-  if (!label) return '';
-  return label.split(' · ')[0] ?? label;
 }
 
 /** Calendar day ± n, "YYYY-MM-DD" (UTC arithmetic, so no DST/zone drift). */
@@ -67,6 +76,31 @@ export function liveNowMin(serverNow: string, fetchedAt: number, nowMs: number):
 
 export function liveNowHhmm(serverNow: string, fetchedAt: number, nowMs: number): string {
   return minToHhmm(liveNowMin(serverNow, fetchedAt, nowMs));
+}
+
+/**
+ * A typed 24-hour time → "HH:MM", or null when it is not a time. Accepts
+ * "1130", "11.30", "11:30", "930", "9:30" and "9" (= 09:00). Every time field
+ * of the Day Log goes through this (never a browser type="time" box, which
+ * shows AM/PM on some PCs).
+ */
+export function parseHhmm(raw: string): string | null {
+  const s = raw.trim();
+  let h: number;
+  let m: number;
+  const sep = /^(\d{1,2})[:.](\d{2})$/.exec(s);
+  if (sep) {
+    h = Number(sep[1]);
+    m = Number(sep[2]);
+  } else if (/^\d{1,4}$/.test(s)) {
+    const cut = s.length <= 2 ? s.length : s.length - 2;
+    h = Number(s.slice(0, cut));
+    m = s.length <= 2 ? 0 : Number(s.slice(cut));
+  } else {
+    return null;
+  }
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h > 23 || m > 59) return null;
+  return minToHhmm(h * 60 + m);
 }
 
 /** Duration column: a running entry shows "running". */
@@ -104,20 +138,19 @@ export function timelineSegments(
     const to = Math.min(b, w2);
     if (to <= from) continue;
     const kind = e.kind === 'break' ? 'break' : e.toTime ? 'work' : 'running';
-    const label = e.kind === 'break' ? e.description : taskCode(e.taskLabel) || e.description;
     out.push({
       key: e.id,
       kind,
       leftPct: ((from - w1) / span) * 100,
       widthPct: ((to - from) / span) * 100,
-      label,
+      label: e.description,
       title: `${e.fromTime} – ${e.toTime ?? 'now'} · ${e.description}`,
     });
   }
   return out;
 }
 
-/** Whole hours after workFrom up to workTo — the "log up to" buttons. */
+/** Whole hours after workFrom up to workTo — the bar's hour labels. */
 export function hourMarks(workFrom: string, workTo: string): string[] {
   const out: string[] = [];
   const first = Math.floor(hhmmToMin(workFrom) / 60) + 1;

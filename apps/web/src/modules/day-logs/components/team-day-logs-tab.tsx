@@ -1,17 +1,31 @@
 // "Team Day Logs" tab (TeamView board): one day, everyone the viewer may
-// see. ONE strip of counts, then User · Department · Right · 09:00–18:00 bar ·
-// Logged · Missing · Running now · Day Status · ⋯ (Open day log, and — when
-// the server says canManage — Send reminder / Reopen / Mark Leave).
-// Read only: a Department Admin never writes someone else's log.
+// see. ONE strip of counts by Current Status (a click filters the table to
+// that status, a second click shows all), then User · Current Status ·
+// Department · Right · 09:00–18:00 bar · Logged · Missing · Day Status · ⋯
+// (Open day log, and — when the server says canManage — Send reminder /
+// Reopen / Mark Leave). A row click opens that person's day, read only.
+// A Department Admin never writes someone else's log.
 
-import type { TeamDayLogRow } from '@innovic/shared';
-import { DAY_LOG_RULES, fmtDuration } from '@innovic/shared';
-import { useState } from 'react';
+import type { DayLogCurrentStatus, TeamDayLogRow } from '@innovic/shared';
+import {
+  DAY_LOG_CURRENT_STATUS_LABELS,
+  DAY_LOG_CURRENT_STATUSES,
+  DAY_LOG_RULES,
+  fmtDuration,
+  hhmmToMin,
+} from '@innovic/shared';
+import { useEffect, useState } from 'react';
 import { RowMenu, StatStrip, type RowMenuItem } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { useDayLogAdminAction, useRemindDayLog, useTeamDayLogs } from '../api';
 import { teamTable } from '../lib/export';
-import { DAY_STATUS_BADGE, dayStatusLabel, errText } from '../lib/format';
+import {
+  CURRENT_STATUS_BADGE,
+  DAY_STATUS_BADGE,
+  dayStatusLabel,
+  errText,
+  liveNowMin,
+} from '../lib/format';
 import { printTeamDayLogs } from '../lib/print-day-log';
 import { ReasonDialog } from './day-dialogs';
 import { DateStepper } from './day-header';
@@ -37,6 +51,48 @@ function LoggedBar({ row }: { row: TeamDayLogRow }): React.JSX.Element {
   );
 }
 
+const TICK_MS = 30_000;
+
+const STRIP_COLOR: Partial<Record<DayLogCurrentStatus, string>> = {
+  working: 'var(--blue)',
+  idle: 'var(--amber2)',
+  submitted: 'var(--green2)',
+};
+
+const OUTLINE: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid var(--border)',
+  color: 'var(--text3)',
+};
+
+function CurrentStatusCell({
+  row,
+  nowMin,
+}: {
+  row: TeamDayLogRow;
+  /** null = not today: no live elapsed. */
+  nowMin: number | null;
+}): React.JSX.Element {
+  const s = row.currentStatus;
+  const cls = CURRENT_STATUS_BADGE[s];
+  const elapsed =
+    s === 'working' && row.runningSince && nowMin !== null
+      ? fmtDuration(Math.max(0, nowMin - hhmmToMin(row.runningSince)))
+      : null;
+  const text = [row.currentText, elapsed].filter(Boolean).join(' · ');
+  return (
+    <td
+      title={text || undefined}
+      style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}
+    >
+      <span className={`badge ${cls}`} style={cls ? undefined : OUTLINE}>
+        {DAY_LOG_CURRENT_STATUS_LABELS[s]}
+      </span>
+      {text ? <span style={{ marginLeft: 6 }}>{text}</span> : null}
+    </td>
+  );
+}
+
 export function TeamDayLogsTab({
   date,
   onDate,
@@ -53,6 +109,16 @@ export function TeamDayLogsTab({
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const reopen = useDayLogAdminAction('reopen', { date: team?.date, userId: ask?.row.userId });
   const leave = useDayLogAdminAction('leave', { date: team?.date, userId: ask?.row.userId });
+  const [only, setOnly] = useState<DayLogCurrentStatus | null>(null);
+  const [tick, setTick] = useState(() => Date.now());
+  const anyWorking = Boolean(team?.rows.some((r) => r.currentStatus === 'working'));
+
+  // The Working chips' elapsed time moves on every 30 s while someone works.
+  useEffect(() => {
+    if (!anyWorking) return undefined;
+    const id = window.setInterval(() => setTick(Date.now()), TICK_MS);
+    return () => window.clearInterval(id);
+  }, [anyWorking]);
 
   if (!team) {
     return (
@@ -65,9 +131,12 @@ export function TeamDayLogsTab({
     );
   }
 
-  const rows = team.rows;
-  const count = (s: TeamDayLogRow['status']): number => rows.filter((r) => r.status === s).length;
-  const missing = rows.filter((r) => r.status === 'open' && r.missingMin > 0).length;
+  const all = team.rows;
+  const rows = only ? all.filter((r) => r.currentStatus === only) : all;
+  const count = (s: DayLogCurrentStatus): number => all.filter((r) => r.currentStatus === s).length;
+  const missing = all.filter((r) => r.status === 'open' && r.missingMin > 0).length;
+  const nowMin =
+    team.date === team.today ? liveNowMin(team.nowTime, query.dataUpdatedAt, tick) : null;
 
   function menu(r: TeamDayLogRow): RowMenuItem[] {
     const d = team?.date ?? '';
@@ -99,7 +168,11 @@ export function TeamDayLogsTab({
         key: 'leave',
         label: 'Mark Leave',
         group: 'workflow',
-        hidden: !team?.canManage || r.status !== 'open' || r.loggedMin > 0 || Boolean(r.runningNow),
+        hidden:
+          !team?.canManage ||
+          r.status !== 'open' ||
+          r.loggedMin > 0 ||
+          r.currentStatus === 'working',
         onSelect: () => setAsk({ kind: 'leave', row: r }),
       },
     ];
@@ -130,15 +203,14 @@ export function TeamDayLogsTab({
       <StatStrip
         style={{ marginBottom: 10 }}
         items={[
-          { key: 'users', label: 'Users', count: rows.length },
-          {
-            key: 'submitted',
-            label: 'Submitted',
-            count: count('submitted'),
-            color: 'var(--green2)',
-          },
-          { key: 'open', label: 'Open', count: count('open') },
-          { key: 'leave', label: 'Leave', count: count('leave') },
+          ...DAY_LOG_CURRENT_STATUSES.map((s) => ({
+            key: s,
+            label: DAY_LOG_CURRENT_STATUS_LABELS[s],
+            count: count(s),
+            color: STRIP_COLOR[s],
+            active: only === s,
+            onClick: () => setOnly(only === s ? null : s),
+          })),
           {
             key: 'missing',
             label: 'Missing time',
@@ -159,6 +231,7 @@ export function TeamDayLogsTab({
             <thead>
               <tr>
                 <th>User</th>
+                <th>Current Status</th>
                 <th>Department</th>
                 <th>Right</th>
                 <th title="Logged of Work needed">
@@ -166,7 +239,6 @@ export function TeamDayLogsTab({
                 </th>
                 <th className="th-num">Logged</th>
                 <th>Missing</th>
-                <th>Running now</th>
                 <th>Day Status</th>
                 <th aria-label="Actions" />
               </tr>
@@ -175,7 +247,9 @@ export function TeamDayLogsTab({
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="empty-state">
-                    No one to show for this day.
+                    {only
+                      ? `No one is ${DAY_LOG_CURRENT_STATUS_LABELS[only]} — click the count again to show all.`
+                      : 'No one to show for this day.'}
                   </td>
                 </tr>
               ) : null}
@@ -188,6 +262,7 @@ export function TeamDayLogsTab({
                   <td className="fw-700" title={r.userName}>
                     {r.userName}
                   </td>
+                  <CurrentStatusCell row={r} nowMin={nowMin} />
                   <td>{r.deptLabel ?? '—'}</td>
                   <td>{r.tierLabel ?? '—'}</td>
                   <td>
@@ -199,12 +274,6 @@ export function TeamDayLogsTab({
                     style={r.missingFrom ? { color: 'var(--amber2)', fontWeight: 700 } : undefined}
                   >
                     {r.missingFrom ?? '—'}
-                  </td>
-                  <td
-                    title={r.runningNow ?? undefined}
-                    style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                  >
-                    {r.runningNow ?? '—'}
                   </td>
                   <td>
                     <span className={`badge ${DAY_STATUS_BADGE[r.status]}`}>

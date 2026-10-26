@@ -1,7 +1,7 @@
 // Day Log print — on the Innovic Sheet (sheet-print.ts: letterhead, Times,
 // one table, no box-in-box), laid out as the approved PrintDayLog board:
 // header rows User / Department / Date / Day Status / Required / Breaks, the
-// entry table (#, From, To, Time, Work done, Linked Task, Work Status), a
+// entry table (#, From, To, Time, Work done, Work Status), a
 // totals row from the server's summary, and the "Logged by" / "Seen by
 // (Department Admin)" line. The Team Day Logs table prints the same way.
 
@@ -72,14 +72,14 @@ export function printDayLog(day: DayLogDetail, company: Company | null | undefin
   ]
     .map(
       ([a, b, c, d]) =>
-        `<tr><td class="k">${esc(a ?? '')}</td><td colspan="2">${esc(b ?? '')}</td><td class="k">${esc(c ?? '')}</td><td colspan="3">${esc(d ?? '')}</td></tr>`,
+        `<tr><td class="k">${esc(a ?? '')}</td><td colspan="2">${esc(b ?? '')}</td><td class="k">${esc(c ?? '')}</td><td colspan="2">${esc(d ?? '')}</td></tr>`,
     )
     .join('');
-  const table = grid(dayTable(day), ['time'], ['task']);
+  const table = grid(dayTable(day), ['time'], []);
   const totals = `<tr><td colspan="3" class="b">Work (${esc(day.workFrom)} – ${esc(day.workTo)})</td>
     <td class="r b">${esc(fmtDuration(s.loggedMin))}</td>
-    <td colspan="3">Break ${esc(fmtDuration(s.breakMin))} · After ${esc(day.workTo)} ${esc(fmtDuration(s.afterMin))} · Missing ${esc(fmtDuration(s.missingMin))}</td></tr>`;
-  const sign = `<tr><td colspan="4" class="sign">Logged by: ${esc(day.userName)}</td>
+    <td colspan="2">Break ${esc(fmtDuration(s.breakMin))} · After ${esc(day.workTo)} ${esc(fmtDuration(s.afterMin))} · Missing ${esc(fmtDuration(s.missingMin))}</td></tr>`;
+  const sign = `<tr><td colspan="3" class="sign">Logged by: ${esc(day.userName)}</td>
     <td colspan="3" class="sign">Seen by (Department Admin):</td></tr>`;
   const html = wrap(company, 'Day Log', header + table + totals + sign);
   const name = `Day Log ${day.userName} ${day.date}`;

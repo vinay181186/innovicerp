@@ -106,8 +106,6 @@ export function toEntry(l: DayLine): DayLogEntry {
     toTime: l.toTime,
     minutes: spanMinutes(l.fromTime, l.toTime),
     description: l.description,
-    taskId: l.taskId,
-    taskLabel: l.taskLabel,
     // Breaks carry no Work Status (stored 'completed', shown as none).
     status: l.kind === 'work' && isWorkStatus(l.status) ? l.status : null,
     stopNote: l.stopNote,

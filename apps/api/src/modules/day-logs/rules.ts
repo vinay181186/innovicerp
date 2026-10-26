@@ -15,8 +15,12 @@ import { istDateOf } from '../dashboard/personal/util';
 
 const IST_OFFSET_MS = 5.5 * 3600 * 1000;
 
-/** The server's India-time clock: today (YYYY-MM-DD) and minutes since midnight. */
-export function istClock(now: number = Date.now()): { today: string; nowMin: number } {
+/** India-time "today" (YYYY-MM-DD) and minutes since midnight. Writes take an
+ *  optional clock only so the DB tests run at a fixed time; routes never pass one. */
+export type DayLogClock = { today: string; nowMin: number };
+
+/** The server's India-time clock. */
+export function istClock(now: number = Date.now()): DayLogClock {
   const d = new Date(now + IST_OFFSET_MS);
   return { today: istDateOf(now), nowMin: d.getUTCHours() * 60 + d.getUTCMinutes() };
 }

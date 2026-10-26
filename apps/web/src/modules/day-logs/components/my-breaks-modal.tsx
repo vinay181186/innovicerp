@@ -8,7 +8,8 @@ import { fmtDuration, hhmmToMin } from '@innovic/shared';
 import { useEffect, useState } from 'react';
 import { Modal } from '@/ui/feedback';
 import { useMyBreaks, useSaveMyBreaks } from '../api';
-import { errText } from '../lib/format';
+import { errText, parseHhmm } from '../lib/format';
+import { TimeField } from './time-field';
 
 const MAX_BREAKS = 6;
 
@@ -31,11 +32,9 @@ export function MyBreaksModal({ onClose }: { onClose: () => void }): React.JSX.E
     (n, b) => n + Math.max(0, hhmmToMin(b.toTime) - hhmmToMin(b.fromTime)),
     0,
   );
-  const canAdd =
-    name.trim() !== '' &&
-    /^\d{2}:\d{2}$/.test(from) &&
-    /^\d{2}:\d{2}$/.test(to) &&
-    list.length < MAX_BREAKS;
+  const fromT = parseHhmm(from);
+  const toT = parseHhmm(to);
+  const canAdd = name.trim() !== '' && fromT !== null && toT !== null && list.length < MAX_BREAKS;
 
   async function doSave(): Promise<void> {
     setErr(null);
@@ -155,35 +154,22 @@ export function MyBreaksModal({ onClose }: { onClose: () => void }): React.JSX.E
           <label className="form-label" htmlFor="br-from">
             From <span className="req">*</span>
           </label>
-          <input
-            id="br-from"
-            type="time"
-            className="innovic-input mono"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            style={{ width: '12ch', minWidth: 110 }}
-          />
+          <TimeField id="br-from" value={from} onChange={setFrom} />
         </div>
         <div>
           <label className="form-label" htmlFor="br-to">
             To <span className="req">*</span>
           </label>
-          <input
-            id="br-to"
-            type="time"
-            className="innovic-input mono"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            style={{ width: '12ch', minWidth: 110 }}
-          />
+          <TimeField id="br-to" value={to} onChange={setTo} />
         </div>
         <button
           type="button"
           className="btn btn-ghost"
           disabled={!canAdd}
           onClick={() => {
+            if (fromT === null || toT === null) return;
             setRows(
-              [...list, { name: name.trim(), fromTime: from, toTime: to }].sort(
+              [...list, { name: name.trim(), fromTime: fromT, toTime: toT }].sort(
                 (a, b) => hhmmToMin(a.fromTime) - hhmmToMin(b.fromTime),
               ),
             );

@@ -39,6 +39,27 @@ export const DAY_LOG_STATUS_LABELS: Record<DayLogStatus, string> = {
 export const DAY_LOG_ENTRY_KINDS = ['work', 'break'] as const;
 export type DayLogEntryKind = (typeof DAY_LOG_ENTRY_KINDS)[number];
 
+/** Team Day Logs "Current Status": working = timer running; break = now is
+ *  inside their break; idle = open day, nothing running; not_started =
+ *  nothing logged today. */
+export const DAY_LOG_CURRENT_STATUSES = [
+  'working',
+  'break',
+  'idle',
+  'not_started',
+  'submitted',
+  'leave',
+] as const;
+export type DayLogCurrentStatus = (typeof DAY_LOG_CURRENT_STATUSES)[number];
+export const DAY_LOG_CURRENT_STATUS_LABELS: Record<DayLogCurrentStatus, string> = {
+  working: 'Working',
+  break: 'On break',
+  idle: 'Idle',
+  not_started: 'Not started',
+  submitted: 'Submitted',
+  leave: 'Leave',
+};
+
 /** Work Status a user may pick (a subset of daily_report_line_status). */
 export const DAY_LOG_WORK_STATUSES = ['completed', 'in_progress', 'blocked'] as const;
 export type DayLogWorkStatus = (typeof DAY_LOG_WORK_STATUSES)[number];
@@ -167,27 +188,21 @@ export function firstBreakInside(
 
 const workText = z.string().trim().min(1, 'Write what you did').max(500);
 
-/** "Add time by hand": From is always the server's nextFrom. */
-export const addDayLogEntryInputSchema = z.object({
-  date: dateStr,
-  toTime: hhmmSchema,
-  description: workText,
-  taskId: z.string().uuid().nullish(),
-  status: z.enum(DAY_LOG_WORK_STATUSES).default('completed'),
-});
-export type AddDayLogEntryInput = z.infer<typeof addDayLogEntryInputSchema>;
-
+/**
+ * The ONE way to log time (owner 2026-10-26): Start. It always begins at the
+ * server's nextFrom, so the day never has a gap; a running entry is closed
+ * at now (Completed) first, and a break inside the gap closes the work at
+ * the break's start and carries on after it.
+ */
 export const startDayLogTimerInputSchema = z.object({
   description: workText,
-  taskId: z.string().uuid().nullish(),
-  /** true = start back at nextFrom, so the unlogged gap becomes this work. */
-  includeGap: z.boolean().default(false),
 });
 export type StartDayLogTimerInput = z.infer<typeof startDayLogTimerInputSchema>;
 
 export const stopDayLogTimerInputSchema = z.object({
   status: z.enum(DAY_LOG_WORK_STATUSES),
-  /** Required only when the timer was left running on an earlier day. */
+  /** "Finished at" — default now (cut at a break). Required when the timer
+   *  was left running on an earlier day. */
   endTime: hhmmSchema.optional(),
 });
 export type StopDayLogTimerInput = z.infer<typeof stopDayLogTimerInputSchema>;
@@ -253,9 +268,6 @@ export const dayLogEntrySchema = z.object({
   /** Work minutes (server-computed; 0 while running). */
   minutes: z.number().int(),
   description: z.string(),
-  taskId: z.string().uuid().nullable(),
-  /** "TSK-0042 · Vendor rate comparison" */
-  taskLabel: z.string().nullable(),
   status: z.enum(DAY_LOG_WORK_STATUSES).nullable(),
   stopNote: z.string().nullable(),
   updatedAt: z.string(),
@@ -329,8 +341,12 @@ export const teamDayLogRowSchema = z.object({
   missingMin: z.number().int(),
   /** First unlogged slot, "14:00 – 18:00", or null. */
   missingFrom: z.string().nullable(),
-  /** "GRN entry since 14:10" — the running timer, if any. */
-  runningNow: z.string().nullable(),
+  /** What the person is doing now (live on Team Day Logs). */
+  currentStatus: z.enum(DAY_LOG_CURRENT_STATUSES),
+  /** "GRN entry · since 14:10" / "Lunch until 13:30" / "since 11:00" / "18:05". */
+  currentText: z.string().nullable(),
+  /** Start of the running entry ("HH:MM") — the screen ticks its elapsed time. */
+  runningSince: z.string().nullable(),
   submittedAt: z.string().nullable(),
 });
 export type TeamDayLogRow = z.infer<typeof teamDayLogRowSchema>;
@@ -338,6 +354,8 @@ export type TeamDayLogRow = z.infer<typeof teamDayLogRowSchema>;
 export const teamDayLogResponseSchema = z.object({
   date: z.string(),
   today: z.string(),
+  /** Server IST "HH:MM" — the screen's clock for elapsed time. */
+  nowTime: z.string(),
   workingDay: z.boolean(),
   rows: z.array(teamDayLogRowSchema),
   canManage: z.boolean(),
@@ -363,14 +381,3 @@ export const dayLogAccessSchema = z.object({
   canManageHolidays: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
-
-/** Link picker: the viewer's own open tasks / to-dos (TSK- / TODO-). */
-export const dayLogTaskOptionsQuerySchema = z.object({
-  search: z.string().trim().max(100).optional(),
-});
-export const dayLogTaskOptionSchema = z.object({
-  id: z.string().uuid(),
-  /** "TSK-0042 · Vendor rate comparison" */
-  label: z.string(),
-});
-export type DayLogTaskOption = z.infer<typeof dayLogTaskOptionSchema>;

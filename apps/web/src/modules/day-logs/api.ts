@@ -5,12 +5,10 @@
 // `summary` — it never works out the rules itself (CLAUDE.md §6 rule 1).
 
 import type {
-  AddDayLogEntryInput,
   DayLogAccess,
   DayLogDateInput,
   DayLogDetail,
   DayLogReasonInput,
-  DayLogTaskOption,
   DayLogUserDayInput,
   Holiday,
   HolidayInput,
@@ -37,7 +35,6 @@ export const dayLogKeys = {
   team: (date: string) => [...dayLogKeys.all, 'team', date] as const,
   myBreaks: () => [...dayLogKeys.all, 'my-breaks'] as const,
   holidays: () => [...dayLogKeys.all, 'holidays'] as const,
-  taskOptions: (search: string) => [...dayLogKeys.all, 'task-options', search] as const,
 };
 
 function qs(params: Record<string, string | undefined>): string {
@@ -93,15 +90,6 @@ export function useHolidays(enabled = true) {
   });
 }
 
-export function useDayLogTaskOptions(search: string, enabled = true) {
-  return useQuery<DayLogTaskOption[]>({
-    queryKey: dayLogKeys.taskOptions(search),
-    queryFn: () => apiFetch<DayLogTaskOption[]>(`/day-logs/task-options${qs({ search })}`),
-    staleTime: 30_000,
-    enabled,
-  });
-}
-
 // ── Writes ──
 
 /** A write that answers the day: the answer replaces that day in the cache
@@ -120,22 +108,9 @@ function useDayWrite<TInput>(run: (input: TInput) => Promise<DayLogDetail>, q: D
   });
 }
 
-/** `saveKey`: one Idempotency-Key reused for every retry of the same add, so
- *  a double click or a resend after a timeout makes ONE entry (ADR-172 R2). */
-export function useAddDayLogEntry(q: DayQuery, saveKey?: SaveKey) {
-  return useDayWrite<AddDayLogEntryInput>(
-    (input) =>
-      withSaveKey(saveKey, (headers) =>
-        apiFetch<DayLogDetail>('/day-logs/entries', {
-          method: 'POST',
-          json: input,
-          ...(headers ? { headers } : {}),
-        }),
-      ),
-    q,
-  );
-}
-
+/** Start — the ONE way to log time. `saveKey`: one Idempotency-Key reused for
+ *  every retry of the same start, so a double click or a resend after a
+ *  timeout makes ONE entry (ADR-172 R2). */
 export function useStartDayLogTimer(q: DayQuery, saveKey?: SaveKey) {
   return useDayWrite<StartDayLogTimerInput>(
     (input) =>

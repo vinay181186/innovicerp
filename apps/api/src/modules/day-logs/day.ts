@@ -31,8 +31,6 @@ export interface DayLine {
   fromTime: string | null;
   toTime: string | null;
   description: string;
-  taskId: string | null;
-  taskLabel: string | null;
   status: string;
   stopNote: string | null;
   updatedAt: string;
@@ -169,11 +167,9 @@ export async function loadLines(
 ): Promise<DayLine[]> {
   const rows = (await tx.execute(sql`
     SELECT l.id::text AS id, l.kind, to_char(l.from_time, 'HH24:MI') AS from_time,
-           to_char(l.to_time, 'HH24:MI') AS to_time, l.description, l.task_id::text AS task_id,
-           CASE WHEN t.id IS NULL THEN NULL ELSE t.code || ' · ' || t.title END AS task_label,
+           to_char(l.to_time, 'HH24:MI') AS to_time, l.description,
            l.status, l.stop_note, l.updated_at
     FROM public.daily_report_lines l
-    LEFT JOIN public.tasks t ON t.id = l.task_id
     WHERE l.daily_report_id = ${reportId}::uuid AND l.company_id = ${companyId}::uuid
       AND l.deleted_at IS NULL
     ORDER BY l.from_time NULLS LAST, l.line_no
@@ -184,8 +180,6 @@ export async function loadLines(
     fromTime: hm(r['from_time'] as string | null),
     toTime: hm(r['to_time'] as string | null),
     description: String(r['description'] ?? ''),
-    taskId: (r['task_id'] as string | null) ?? null,
-    taskLabel: (r['task_label'] as string | null) ?? null,
     status: String(r['status']),
     stopNote: (r['stop_note'] as string | null) ?? null,
     updatedAt: iso(r['updated_at'])!,
@@ -219,8 +213,6 @@ export async function templateBreaks(
     fromTime: String(r['from_time']),
     toTime: String(r['to_time']),
     description: String(r['name']),
-    taskId: null,
-    taskLabel: null,
     status: 'completed',
     stopNote: null,
     updatedAt: iso(r['updated_at'])!,

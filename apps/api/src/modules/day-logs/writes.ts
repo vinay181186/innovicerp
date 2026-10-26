@@ -1,20 +1,12 @@
-// Day Log — the owner's writes on their own day: add by hand, set an entry's
-// Work Status, remove the last entry (the timer is in timer.ts), and the
-// guards every owner write shares.
+// Day Log — the owner's writes on their own day: set an entry's Work Status,
+// remove the last entry (time is logged only by the timer — timer.ts, owner
+// 2026-10-26), and the guards every owner write shares.
 // Every write: requireCanWrite (no page tick — ADR-232) → lock the day header
 // FOR UPDATE (openDay / lockHeaderById) → recompute summarizeDay from the live
 // lines INSIDE that lock → write → bump the header (§20.3). From is always the
 // server's nextFrom; `hours` is written only here, from From/To (§20.1).
 
-import {
-  type AddDayLogEntryInput,
-  type DayLogDetail,
-  type SetDayLogEntryStatusInput,
-  firstBreakInside,
-  hhmmToMin,
-  minToHhmm,
-  summarizeDay,
-} from '@innovic/shared';
+import { type DayLogDetail, type SetDayLogEntryStatusInput, hhmmToMin } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireCanWrite } from '../../lib/access';
@@ -27,15 +19,7 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { type Viewer, loadDayUser, loadViewer } from './access';
-import {
-  type DayHeader,
-  loadLines,
-  lockHeaderById,
-  nextLineNo,
-  openDay,
-  spansOf,
-  touchDay,
-} from './day';
+import { type DayHeader, loadLines, lockHeaderById, touchDay } from './day';
 import { buildDetail, findBlockedBy, findStrayTimer, notOpenError } from './detail';
 import { dmy, istClock } from './rules';
 
@@ -80,81 +64,6 @@ export async function ownerDetail(
   const me = await loadDayUser(tx, companyId, user.id);
   if (!me) throw new NotFoundError('User not found');
   return buildDetail(tx, companyId, v, me, date, clock);
-}
-
-/** The task must be one of the caller's own (assigned to them, or their to-do). */
-export async function assertOwnTask(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
-  taskId: string | null | undefined,
-): Promise<string | null> {
-  if (!taskId) return null;
-  const rows = (await tx.execute(sql`
-    SELECT 1 FROM public.tasks t
-    WHERE t.id = ${taskId}::uuid AND t.company_id = ${companyId}::uuid AND t.deleted_at IS NULL
-      AND (t.assigned_to = ${userId}::uuid OR (t.task_type = 'personal' AND t.created_by = ${userId}::uuid))
-  `)) as unknown as unknown[];
-  if (rows.length === 0) throw new ValidationError('That task is not one of yours');
-  return taskId;
-}
-
-export async function addEntry(
-  input: AddDayLogEntryInput,
-  user: AuthContext,
-): Promise<DayLogDetail> {
-  await requireCanWrite(user);
-  const v = await loadViewer(user); // before the tx (ADR-229)
-  const companyId = requireCompany(user);
-  const clock = istClock();
-  if (input.date > clock.today)
-    throw new ValidationError('You cannot log a day that has not come yet');
-  return withUserContext(user, async (tx) => {
-    const h = await openDay(tx, companyId, user.id, input.date, user);
-    await guardOwnerWrite(tx, companyId, h, clock.today);
-    const spans = spansOf(await loadLines(tx, companyId, h.id));
-    const s = summarizeDay(spans);
-    if (s.running) throw new ConflictError('Stop the running timer first');
-
-    const from = s.nextFrom;
-    const fromMin = hhmmToMin(from);
-    const toMin = hhmmToMin(input.toTime);
-    if (input.date === clock.today && toMin > clock.nowMin) {
-      throw new ValidationError(`${input.toTime} is later than now (${minToHhmm(clock.nowMin)})`);
-    }
-    if (toMin <= fromMin) throw new ValidationError(`To must be after ${from}`);
-    const br = firstBreakInside(spans, fromMin, toMin);
-    if (br) {
-      const name = await breakName(tx, h.id, br.fromTime);
-      throw new ValidationError(
-        `${name} ${br.fromTime}–${br.toTime} is inside this time — end at ${br.fromTime}`,
-      );
-    }
-    const taskId = await assertOwnTask(tx, companyId, user.id, input.taskId);
-
-    await tx.execute(sql`
-      INSERT INTO public.daily_report_lines
-        (company_id, daily_report_id, line_no, description, kind, from_time, to_time, task_id,
-         status, hours, created_by, updated_by)
-      VALUES (${companyId}::uuid, ${h.id}::uuid, ${await nextLineNo(tx, h.id)}, ${input.description},
-              'work', ${from}::time, ${input.toTime}::time, ${taskId}::uuid, ${input.status},
-              ${hoursOf(from, input.toTime)}, ${user.id}::uuid, ${user.id}::uuid)
-    `);
-    await touchDay(tx, h.id, user);
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'Day Log',
-        entityId: h.id,
-        refId: input.date,
-        detail: `Day Log ${dmy(input.date)}: ${from}–${input.toTime} ${input.description}`,
-      },
-      companyId,
-      user,
-    );
-    return ownerDetail(tx, companyId, v, user, input.date, clock);
-  });
 }
 
 /** A break line's name (the span shape carries no description). */

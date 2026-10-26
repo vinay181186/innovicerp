@@ -1,10 +1,9 @@
-// Day Log — the user's own break template, company holidays, the task picker
-// and the tab-access answer.
+// Day Log — the user's own break template, company holidays and the
+// tab-access answer.
 
 import {
   DAY_LOG_RULES,
   type DayLogAccess,
-  type DayLogTaskOption,
   type Holiday,
   type HolidayInput,
   type MyBreaksResponse,
@@ -24,7 +23,6 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { likeEscape } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
 import { canSeeTeam, loadViewer } from './access';
 import { loadLines, nextLineNo, readHeader, spansOf, touchDay } from './day';
@@ -225,30 +223,5 @@ export async function deleteHoliday(id: string, user: AuthContext): Promise<{ ok
       user,
     );
     return { ok: true as const };
-  });
-}
-
-// ── Task picker ─────────────────────────────────────────────────────────────
-
-/** The caller's own open tasks and to-dos, "CODE · title", 20 at most. */
-export async function taskOptions(
-  search: string | undefined,
-  user: AuthContext,
-): Promise<DayLogTaskOption[]> {
-  const companyId = requireCompany(user);
-  const term = (search ?? '').trim();
-  const pat = `%${likeEscape(term)}%`;
-  return withUserContext(user, async (tx) => {
-    const rows = (await tx.execute(sql`
-      SELECT t.id::text AS id, t.code || ' · ' || t.title AS label
-      FROM public.tasks t
-      WHERE t.company_id = ${companyId}::uuid AND t.deleted_at IS NULL
-        AND t.status IN ('todo', 'in_progress')
-        AND (t.assigned_to = ${user.id}::uuid OR (t.task_type = 'personal' AND t.created_by = ${user.id}::uuid))
-        ${term ? sql`AND (t.code ILIKE ${pat} ESCAPE '\\' OR t.title ILIKE ${pat} ESCAPE '\\')` : sql``}
-      ORDER BY t.updated_at DESC
-      LIMIT 20
-    `)) as unknown as DayLogTaskOption[];
-    return rows.map((r) => ({ id: r.id, label: r.label }));
   });
 }

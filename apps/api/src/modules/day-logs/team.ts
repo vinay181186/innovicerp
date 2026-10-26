@@ -3,11 +3,14 @@
 
 import {
   ACCESS_TIERS,
+  type DayLogCurrentStatus,
   type DayLogStatus,
   type TeamDayLogQuery,
   type TeamDayLogResponse,
   type TeamDayLogRow,
+  hhmmToMin,
   isWorkingDay,
+  minToHhmm,
   summarizeDay,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
@@ -15,7 +18,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { canManageUser, canSeeTeam, deptLabelOf, loadViewer, tierIn } from './access';
 import { type DayLine, holidaysBetween, spansOf } from './day';
-import { firstGap, hm, istClock } from './rules';
+import { type DayLogClock, firstGap, hm, istClock } from './rules';
 import { requireCompany } from './writes';
 
 const tierLabel = (key: string | null): string | null => {
@@ -23,16 +26,65 @@ const tierLabel = (key: string | null): string | null => {
   return t ? `${t.key} ${t.label}` : null;
 };
 
+/** "HH:MM" India time of an ISO timestamp. */
+const istHm = (iso: string): string =>
+  new Date(new Date(iso).getTime() + 5.5 * 3600 * 1000).toISOString().slice(11, 16);
+
+/**
+ * Team Day Logs "Current Status" of one person's day. `nowMin` is given only
+ * when the date is today. Lines = the day's lines, or the break template
+ * when the day has no header yet.
+ */
+function currentOf(
+  status: DayLogStatus,
+  lines: readonly DayLine[],
+  submittedAt: string | null,
+  nowMin: number | undefined,
+  nextFrom: string,
+): { status: DayLogCurrentStatus; text: string | null; since: string | null } {
+  if (status === 'submitted') {
+    return { status: 'submitted', text: submittedAt ? istHm(submittedAt) : null, since: null };
+  }
+  if (status === 'leave') return { status: 'leave', text: null, since: null };
+  const running = lines.find((l) => l.kind === 'work' && l.fromTime && !l.toTime);
+  if (running) {
+    return {
+      status: 'working',
+      text: `${running.description} · since ${running.fromTime}`,
+      since: running.fromTime,
+    };
+  }
+  if (nowMin !== undefined) {
+    const br = lines.find(
+      (l) =>
+        l.kind === 'break' &&
+        l.fromTime &&
+        l.toTime &&
+        nowMin >= hhmmToMin(l.fromTime) &&
+        nowMin < hhmmToMin(l.toTime),
+    );
+    if (br) return { status: 'break', text: `${br.description} until ${br.toTime}`, since: null };
+  }
+  if (lines.some((l) => l.kind === 'work' && l.fromTime)) {
+    return {
+      status: 'idle',
+      text: nowMin !== undefined ? `since ${nextFrom}` : 'Not submitted',
+      since: null,
+    };
+  }
+  return { status: 'not_started', text: null, since: null };
+}
+
 export async function getTeam(
   query: TeamDayLogQuery,
   user: AuthContext,
+  clock: DayLogClock = istClock(), // tests only — routes never pass it
 ): Promise<TeamDayLogResponse> {
   const companyId = requireCompany(user);
   const v = await loadViewer(user); // before the tx (ADR-229)
   if (!canSeeTeam(v)) {
     throw new AuthorizationError("Only a Department Admin can see the team's Day Logs");
   }
-  const clock = istClock();
   const date = query.date ?? clock.today;
   const nowMin = date === clock.today ? clock.nowMin : undefined;
   const wide = v.isSuper || v.auditor;
@@ -94,8 +146,6 @@ export async function getTeam(
         fromTime: hm(r['from_time'] as string),
         toTime: hm(r['to_time'] as string | null),
         description: String(r['description'] ?? ''),
-        taskId: null,
-        taskLabel: null,
         status: '',
         stopNote: null,
         updatedAt: '',
@@ -107,17 +157,31 @@ export async function getTeam(
     const noHeader = ids.filter((id) => !byUser.has(id));
     const tmplRows = noHeader.length
       ? ((await tx.execute(sql`
-          SELECT b.user_id::text AS user_id, to_char(b.from_time, 'HH24:MI') AS from_time,
+          SELECT b.user_id::text AS user_id, b.name, to_char(b.from_time, 'HH24:MI') AS from_time,
                  to_char(b.to_time, 'HH24:MI') AS to_time
           FROM public.user_break_times b
           WHERE b.company_id = ${companyId}::uuid AND b.deleted_at IS NULL
             AND b.user_id = ANY(${sql.param(noHeader)}::uuid[])
-        `)) as unknown as Array<{ user_id: string; from_time: string; to_time: string }>)
+        `)) as unknown as Array<{
+          user_id: string;
+          name: string;
+          from_time: string;
+          to_time: string;
+        }>)
       : [];
-    const tmplBy = new Map<string, Array<{ kind: 'break'; fromTime: string; toTime: string }>>();
+    const tmplBy = new Map<string, DayLine[]>();
     for (const b of tmplRows) {
       const arr = tmplBy.get(b.user_id) ?? [];
-      arr.push({ kind: 'break', fromTime: b.from_time, toTime: b.to_time });
+      arr.push({
+        id: '',
+        kind: 'break',
+        fromTime: b.from_time,
+        toTime: b.to_time,
+        description: b.name,
+        status: '',
+        stopNote: null,
+        updatedAt: '',
+      });
       tmplBy.set(b.user_id, arr);
     }
 
@@ -126,11 +190,16 @@ export async function getTeam(
     let anyManage = false;
     const rows: TeamDayLogRow[] = people.map((p) => {
       const h = byUser.get(p.id);
-      const lines = h ? (linesBy.get(h.id) ?? []) : [];
-      const spans = h ? spansOf(lines) : (tmplBy.get(p.id) ?? []);
+      const lines = h ? (linesBy.get(h.id) ?? []) : (tmplBy.get(p.id) ?? []);
+      const spans = spansOf(lines);
       const s = summarizeDay(spans, nowMin, workingDay);
       const status: DayLogStatus = h?.status ?? 'open';
-      const running = lines.find((l) => l.kind === 'work' && !l.toTime);
+      const submittedAt = h?.submitted_at
+        ? h.submitted_at instanceof Date
+          ? h.submitted_at.toISOString()
+          : new Date(h.submitted_at).toISOString()
+        : null;
+      const now = currentOf(status, lines, submittedAt, nowMin, s.nextFrom);
       if (canManageUser(v, p.main_dept)) anyManage = true;
       // The tier this person holds in the viewer's department (the L5 one
       // that matches their main department); none for the Super Admin view.
@@ -146,18 +215,17 @@ export async function getTeam(
         requiredMin: s.requiredMin,
         missingMin: status === 'leave' ? 0 : s.missingMin,
         missingFrom: status === 'open' && workingDay ? firstGap(spans, nowMin) : null,
-        runningNow: running ? `${running.description} since ${running.fromTime}` : null,
-        submittedAt: h?.submitted_at
-          ? h.submitted_at instanceof Date
-            ? h.submitted_at.toISOString()
-            : new Date(h.submitted_at).toISOString()
-          : null,
+        currentStatus: now.status,
+        currentText: now.text,
+        runningSince: now.since,
+        submittedAt,
       };
     });
 
     return {
       date,
       today: clock.today,
+      nowTime: minToHhmm(clock.nowMin),
       workingDay,
       rows,
       canManage: anyManage,

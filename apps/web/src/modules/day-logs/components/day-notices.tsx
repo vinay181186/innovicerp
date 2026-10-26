@@ -10,8 +10,9 @@ import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { Banner } from '@/ui/feedback';
 import { useDayLogAdminAction, useRemindDayLog, useStopDayLogTimer, type DayQuery } from '../api';
-import { errText } from '../lib/format';
+import { errText, parseHhmm } from '../lib/format';
 import { ReasonDialog } from './day-dialogs';
+import { TimeField } from './time-field';
 
 export function BlockedNotice({
   day,
@@ -49,6 +50,7 @@ export function StrayTimerNotice({
   const [err, setErr] = useState<string | null>(null);
   if (!day.strayTimer) return null;
   const t = day.strayTimer;
+  const end = parseHhmm(endTime);
   return (
     <Banner
       tone="warn"
@@ -58,14 +60,7 @@ export function StrayTimerNotice({
       <div
         style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 6 }}
       >
-        <input
-          type="time"
-          className="innovic-input mono"
-          aria-label="End time"
-          value={endTime}
-          onChange={(e) => setEndTime(e.target.value)}
-          style={{ width: '12ch', minWidth: 110 }}
-        />
+        <TimeField ariaLabel="End time" value={endTime} onChange={setEndTime} />
         <select
           className="innovic-select"
           aria-label="Work Status"
@@ -81,10 +76,11 @@ export function StrayTimerNotice({
         <button
           type="button"
           className="btn btn-danger btn-sm"
-          disabled={!/^\d{2}:\d{2}$/.test(endTime) || stop.isPending}
+          disabled={!end || stop.isPending}
           onClick={() => {
+            if (!end) return;
             setErr(null);
-            stop.mutateAsync({ status, endTime }).catch((e: unknown) => setErr(errText(e)));
+            stop.mutateAsync({ status, endTime: end }).catch((e: unknown) => setErr(errText(e)));
           }}
         >
           {stop.isPending ? 'Stopping…' : '■ Stop'}

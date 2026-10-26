@@ -5,9 +5,9 @@
 // SheetJS (xlsx, the existing dependency) only when asked, as op-log does.
 
 import type { DayLogDetail, TeamDayLogResponse } from '@innovic/shared';
-import { fmtDuration } from '@innovic/shared';
+import { DAY_LOG_CURRENT_STATUS_LABELS, fmtDuration } from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
-import { dayStatusLabel, entryDuration, taskCode, workStatusLabel } from './format';
+import { dayStatusLabel, entryDuration, workStatusLabel } from './format';
 
 export interface ExportTable {
   /** Column keys deliberately avoid a `status` / `type` suffix: rowsToCsv
@@ -22,7 +22,6 @@ export const DAY_COLUMNS = [
   { key: 'to_time', label: 'To' },
   { key: 'time', label: 'Time' },
   { key: 'work', label: 'Work done' },
-  { key: 'task', label: 'Linked Task' },
   { key: 'work_state', label: 'Work Status' },
 ];
 
@@ -36,7 +35,6 @@ export function dayTable(day: DayLogDetail): ExportTable {
       to_time: e.toTime ?? '',
       time: entryDuration(e),
       work: e.description,
-      task: taskCode(e.taskLabel),
       work_state: workStatusLabel(e),
     };
   });
@@ -51,7 +49,7 @@ export const TEAM_COLUMNS = [
   { key: 'required', label: 'Work needed' },
   { key: 'missing', label: 'Missing' },
   { key: 'missing_from', label: 'Missing From' },
-  { key: 'running', label: 'Running now' },
+  { key: 'current_now', label: 'Current Status' },
   { key: 'day_state', label: 'Day Status' },
 ];
 
@@ -66,7 +64,9 @@ export function teamTable(team: TeamDayLogResponse): ExportTable {
       required: fmtDuration(r.requiredMin),
       missing: r.missingMin > 0 ? fmtDuration(r.missingMin) : '',
       missing_from: r.missingFrom ?? '',
-      running: r.runningNow ?? '',
+      current_now: [DAY_LOG_CURRENT_STATUS_LABELS[r.currentStatus], r.currentText]
+        .filter(Boolean)
+        .join(' · '),
       day_state: dayStatusLabel(r.status),
     })),
   };
