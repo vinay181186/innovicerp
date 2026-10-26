@@ -118,7 +118,6 @@ export async function openDay(
   userId: string,
   date: string,
   actor: AuthContext,
-  copyBreaks = true,
 ): Promise<DayHeader> {
   const created = (await tx.execute(sql`
     INSERT INTO public.daily_reports (company_id, user_id, report_date, created_by, updated_by)
@@ -127,7 +126,7 @@ export async function openDay(
     RETURNING id::text AS id
   `)) as unknown as Array<{ id: string }>;
   const newId = created[0]?.id;
-  if (newId && copyBreaks) {
+  if (newId) {
     await tx.execute(sql`
       INSERT INTO public.daily_report_lines
         (company_id, daily_report_id, line_no, description, kind, from_time, to_time,

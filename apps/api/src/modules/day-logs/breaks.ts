@@ -10,7 +10,9 @@ import {
   type MyBreaksResponse,
   type SaveMyBreaksInput,
   hhmmToMin,
+  minToHhmm,
   overlapMin,
+  summarizeDay,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -25,7 +27,7 @@ import {
 import { likeEscape } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
 import { canSeeTeam, loadViewer } from './access';
-import { loadLines, nextLineNo, readHeader, touchDay } from './day';
+import { loadLines, nextLineNo, readHeader, spansOf, touchDay } from './day';
 import { breakTemplateProblem, dmy, istClock } from './rules';
 import { requireCompany } from './writes';
 
@@ -76,6 +78,25 @@ export async function saveMyBreaks(
     const today = await readHeader(tx, companyId, user.id, clock.today, true);
     if (today && today.status === 'open') {
       const lines = await loadLines(tx, companyId, today.id);
+      // A break the day has already reached (it starts before nextFrom) is
+      // fixed: removing, moving or adding one there would leave a hole that
+      // no entry can fill, since entries only ever start at nextFrom.
+      const reached = hhmmToMin(summarizeDay(spansOf(lines)).nextFrom);
+      const key = (b: { fromTime: string | null; toTime: string | null }): string =>
+        `${b.fromTime}-${b.toTime}`;
+      const passedOld = lines
+        .filter((l) => l.kind === 'break' && l.fromTime && hhmmToMin(l.fromTime) < reached)
+        .map(key)
+        .sort();
+      const passedNew = input.breaks
+        .filter((b) => hhmmToMin(b.fromTime) < reached)
+        .map(key)
+        .sort();
+      if (passedOld.join() !== passedNew.join()) {
+        throw new ValidationError(
+          `Your breaks before ${minToHhmm(reached)} are already past today, so today's log cannot change them — save this after you submit today's Day Log`,
+        );
+      }
       for (const b of input.breaks) {
         const a1 = hhmmToMin(b.fromTime);
         const a2 = hhmmToMin(b.toTime);
@@ -129,7 +150,7 @@ export async function saveMyBreaks(
 
 // ── Holidays ────────────────────────────────────────────────────────────────
 
-export async function listHolidays(user: AuthContext): Promise<Holiday[]> {
+export async function listHolidays(user: AuthContext): Promise<{ holidays: Holiday[] }> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = (await tx.execute(sql`
@@ -138,7 +159,7 @@ export async function listHolidays(user: AuthContext): Promise<Holiday[]> {
       WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
       ORDER BY holiday_date
     `)) as unknown as Holiday[];
-    return rows.map((r) => ({ id: r.id, date: r.date, name: r.name }));
+    return { holidays: rows.map((r) => ({ id: r.id, date: r.date, name: r.name })) };
   });
 }
 

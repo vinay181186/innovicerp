@@ -112,6 +112,12 @@ export async function requireManagedUser(
   userId: string,
 ): Promise<DayUser> {
   const u = await requireVisibleUser(tx, companyId, v, userId);
+  // A Department Admin never reopens or marks Leave on their OWN day.
+  if (u.id === v.userId && !v.isSuper) {
+    throw new AuthorizationError(
+      'Another Department Admin or a Super Admin must do this on your own Day Log.',
+    );
+  }
   if (!canManageUser(v, u.mainDept)) {
     throw new AuthorizationError(
       "Only the person's Department Admin or a Super Admin can do this on a Day Log.",

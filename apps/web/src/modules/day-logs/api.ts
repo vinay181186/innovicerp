@@ -112,7 +112,9 @@ function useDayWrite<TInput>(run: (input: TInput) => Promise<DayLogDetail>, q: D
   return useMutation<DayLogDetail, Error, TInput>({
     mutationFn: run,
     onSuccess: (day) => {
-      qc.setQueryData(dayLogKeys.day(q), day);
+      // Stopping a timer left on an earlier day answers THAT day — only
+      // replace the cache when the answer is the day this screen shows.
+      if (day.date === (q.date ?? day.today)) qc.setQueryData(dayLogKeys.day(q), day);
       void qc.invalidateQueries({ queryKey: dayLogKeys.all });
     },
   });

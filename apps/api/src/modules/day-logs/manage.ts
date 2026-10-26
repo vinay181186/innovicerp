@@ -134,7 +134,7 @@ export async function markLeave(
   return withUserContext(user, async (tx) => {
     const target = await requireManagedUser(tx, companyId, v, input.userId);
     // Upsert on daily_reports_user_day_uq, then lock (§20.3).
-    const h = await openDay(tx, companyId, target.id, input.date, user, false);
+    const h = await openDay(tx, companyId, target.id, input.date, user);
     if (h.status !== 'open') throw notOpenError(h);
     const work = (await loadLines(tx, companyId, h.id)).filter((l) => l.kind === 'work');
     if (work.length > 0) {

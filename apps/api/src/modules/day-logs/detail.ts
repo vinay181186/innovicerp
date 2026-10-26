@@ -166,7 +166,7 @@ export async function buildDetail(
     strayTimer,
     isOwner,
     canWrite: isOwner && v.writer && status === 'open' && !blockedBy && date <= clock.today,
-    canManage: canManageUser(v, target.mainDept),
+    canManage: canManageUser(v, target.mainDept) && (!isOwner || v.isSuper),
   };
 }
 

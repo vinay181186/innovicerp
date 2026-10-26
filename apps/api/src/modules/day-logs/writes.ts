@@ -218,10 +218,13 @@ export async function setEntryStatus(
       RETURNING id
     `)) as unknown as unknown[];
     if (updated.length === 0) {
+      // Only the owner writes their entries, so the other change is theirs too.
       const at = new Date(new Date(line.updatedAt).getTime() + 5.5 * 3600 * 1000)
         .toISOString()
         .slice(11, 16);
-      throw new ConflictError(`This entry was changed at ${at} — reload`);
+      throw new ConflictError(
+        `You changed this entry in another window at ${at} — reload and redo your change`,
+      );
     }
     await touchDay(tx, h.id, user);
     return ownerDetail(tx, companyId, v, user, h.date, clock);
