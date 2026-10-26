@@ -37,16 +37,42 @@ function withCount(label: string, n: number | undefined): string {
   return n == null ? label : `${label} (${n})`;
 }
 
+/** One tab's look — shared by the task views and the extra (Day Log) tabs. */
+function tabStyle(active: boolean, last: boolean): React.CSSProperties {
+  return {
+    background: active ? 'var(--blue3)' : 'transparent',
+    border: 'none',
+    borderRight: last ? 'none' : '1px solid var(--border)',
+    borderBottom: `3px solid ${active ? 'var(--blue)' : 'transparent'}`,
+    padding: '10px 20px',
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: active ? 700 : 600,
+    color: active ? 'var(--blue)' : 'var(--text2)',
+    font: 'inherit',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+  };
+}
+
 export function TaskTabs({
   tabs,
   view,
   countOf,
   onChange,
+  extra = [],
+  onExtra,
 }: {
   tabs: TaskView[];
-  view: TaskView;
+  /** The active tab: a task view, or one of `extra`'s keys. */
+  view: string;
   countOf: (v: TaskView) => number | null;
   onChange: (v: TaskView) => void;
+  /** Tabs after the task views that are not task views (My Day Log, Team
+   *  Day Logs) — no count badge. */
+  extra?: { key: string; label: string }[];
+  onExtra?: (key: string) => void;
 }): React.JSX.Element {
   return (
     <div
@@ -69,21 +95,7 @@ export function TaskTabs({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(v)}
-            style={{
-              background: active ? 'var(--blue3)' : 'transparent',
-              border: 'none',
-              borderRight: i < tabs.length - 1 ? '1px solid var(--border)' : 'none',
-              borderBottom: `3px solid ${active ? 'var(--blue)' : 'transparent'}`,
-              padding: '10px 20px',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: active ? 700 : 600,
-              color: active ? 'var(--blue)' : 'var(--text2)',
-              font: 'inherit',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
+            style={tabStyle(active, i === tabs.length - 1 && extra.length === 0)}
           >
             {TASK_VIEW_LABELS[v]}
             {n != null ? (
@@ -99,6 +111,18 @@ export function TaskTabs({
           </button>
         );
       })}
+      {extra.map((t, i) => (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={t.key === view}
+          onClick={() => onExtra?.(t.key)}
+          style={tabStyle(t.key === view, i === extra.length - 1)}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }

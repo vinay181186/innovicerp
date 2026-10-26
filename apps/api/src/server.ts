@@ -27,6 +27,7 @@ import { customerDispatchesRoutes } from './modules/customer-dispatches/routes';
 import { invoicesRoutes } from './modules/invoices/routes';
 import { tasksRoutes } from './modules/tasks/routes';
 import { dailyTaskReportsRoutes } from './modules/daily-task-reports/routes';
+import { dayLogsRoutes } from './modules/day-logs/routes';
 import { soCostingRoutes } from './modules/so-costing/routes';
 import { stockValuationRoutes } from './modules/stock-valuation/routes';
 import { trashRoutes } from './modules/trash/routes';
@@ -289,6 +290,7 @@ await app.register(soCostingRoutes);
 await app.register(stockValuationRoutes);
 await app.register(tasksRoutes);
 await app.register(dailyTaskReportsRoutes);
+await app.register(dayLogsRoutes);
 // Public: forgot-password (the API emails the reset link itself).
 await app.register(authRecoveryRoutes);
 

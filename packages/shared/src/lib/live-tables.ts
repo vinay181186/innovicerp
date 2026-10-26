@@ -26,6 +26,9 @@ export const LIVE_TABLES = [
   // ADR-233 — Production Order list/detail and its close history.
   'production_orders',
   'production_order_closes',
+  // Day Log (0222) — every entry write touches its day row, so the day row
+  // alone refreshes My Day Log and Team Day Logs.
+  'daily_reports',
 ] as const;
 
 export type LiveTable = (typeof LIVE_TABLES)[number];

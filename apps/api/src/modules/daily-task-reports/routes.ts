@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { listDailyTaskReportsQuerySchema, upsertDailyTaskReportInputSchema } from '@innovic/shared';
+import { listDailyTaskReportsQuerySchema } from '@innovic/shared';
 import { z } from 'zod';
-import { AuthenticationError } from '../../lib/errors';
+import { AuthenticationError, ValidationError } from '../../lib/errors';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -19,18 +19,12 @@ export async function dailyTaskReportsRoutes(app: FastifyInstance): Promise<void
     return service.getDailyReport(id, req.user);
   });
 
-  app.post('/daily-task-reports', async (req, reply) => {
-    if (!req.user) throw new AuthenticationError();
-    const body = upsertDailyTaskReportInputSchema.parse(req.body);
-    const result = await service.createDailyReport(body, req.user);
-    reply.code(201);
-    return result;
-  });
-
-  app.put('/daily-task-reports/:id', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    const { id } = idParamSchema.parse(req.params);
-    const body = upsertDailyTaskReportInputSchema.parse(req.body);
-    return service.updateDailyReport(id, body, req.user);
-  });
+  // Day Log (0222) replaced the typed-hours report: daily_reports now holds
+  // one From–To day per user, written only by modules/day-logs. Saving here
+  // would clash with that day, so the old writes are closed.
+  const moved = (): never => {
+    throw new ValidationError('Daily Task Reports moved to Task Board › My Day Log');
+  };
+  app.post('/daily-task-reports', moved);
+  app.put('/daily-task-reports/:id', moved);
 }

@@ -12,6 +12,9 @@
 // The All Tasks tab renders ONLY when the server says the caller is admin
 // (`isAdmin` on the list response) — never merely disabled — and the server
 // refuses view=all for anyone else regardless.
+// Day Log tabs (`?view=daylog|team|person`, `?date=`, `?user=`, `?from=`,
+// `?to=`): see
+// modules/day-logs/components/board-day-log.tsx.
 
 import type {
   ListTasksQuery,
@@ -45,10 +48,20 @@ import { TaskDetailModal } from '../components/task-detail-modal';
 import { TaskFilters, TaskTabs } from '../components/board-filters';
 import { TaskTable, type RowAction } from '../components/task-table';
 import { TodoModal } from '../components/todo-modal';
+import {
+  DAY_LOG_VIEWS,
+  DayLogBoardBody,
+  dayLogTabOf,
+  dayLogSearchShape,
+  isDayLogTab,
+  useDayLogBoardTabs,
+  type DayLogNav,
+} from '@/modules/day-logs/components/board-day-log';
 
 const searchSchema = z.object({
   task: z.string().uuid().optional(),
-  view: z.enum(TASK_VIEWS).optional(),
+  view: z.enum([...TASK_VIEWS, ...DAY_LOG_VIEWS]).optional(),
+  ...dayLogSearchShape,
   search: z.string().optional(),
   page: pageSearchParam,
 });
@@ -70,7 +83,12 @@ type ModalState =
 function TaskBoardPage(): React.JSX.Element {
   const routeSearch = taskBoardRoute.useSearch();
   const navigate = taskBoardRoute.useNavigate();
-  const view: TaskView = routeSearch.view ?? 'inbox';
+  const tab = routeSearch.view ?? 'inbox';
+  const dayTab = isDayLogTab(tab) ? tab : null;
+  // On a day-log tab the task list keeps loading Inbox: the tab strip and its
+  // counts come from it.
+  const view: TaskView = isDayLogTab(tab) ? 'inbox' : tab;
+  const dayTabs = useDayLogBoardTabs();
   // ADR-232/234: + Assign Task / + My To-Do are writes — hidden for an
   // Auditor or an account nobody has set up (the server refuses them too).
   const canWrite = useCanWrite();
@@ -126,7 +144,23 @@ function TaskBoardPage(): React.JSX.Element {
     setAssignedByRaw('');
     setDeptRaw('');
     void navigate({
-      search: (prev) => ({ ...prev, view: v, task: undefined, page: 1 }),
+      search: (prev) => ({
+        ...prev,
+        view: v,
+        task: undefined,
+        date: undefined,
+        user: undefined,
+        from: undefined,
+        to: undefined,
+        page: 1,
+      }),
+      replace: true,
+    });
+  };
+  // Day-log tabs: switch tab / day / person (the task filters stay as they are).
+  const goDay = (s: DayLogNav): void => {
+    void navigate({
+      search: (prev) => ({ ...prev, task: undefined, page: 1, ...s }),
       replace: true,
     });
   };
@@ -213,41 +247,47 @@ function TaskBoardPage(): React.JSX.Element {
       <ListHeader
         title="Task Board"
         icon="📋"
-        count={data.total}
+        count={dayTab ? undefined : data.total}
         noun="task"
         search={searchInput}
-        onSearch={setSearchInput}
+        onSearch={dayTab ? undefined : setSearchInput}
         searchPlaceholder="Search Task No., title, related document…"
-        updating={isFetching}
+        updating={!dayTab && isFetching}
         filters={
-          <TaskFilters
-            view={view}
-            users={users}
-            departments={departments}
-            values={{ searchInput, status, priority, person, assignedBy, dept, due }}
-            counts={counts}
-            onStatus={setStatus}
-            onPriority={setPriority}
-            onPerson={setPerson}
-            onAssignedBy={setAssignedBy}
-            onDept={setDept}
-            onDue={setDue}
-          />
+          dayTab ? undefined : (
+            <TaskFilters
+              view={view}
+              users={users}
+              departments={departments}
+              values={{ searchInput, status, priority, person, assignedBy, dept, due }}
+              counts={counts}
+              onStatus={setStatus}
+              onPriority={setPriority}
+              onPerson={setPerson}
+              onAssignedBy={setAssignedBy}
+              onDept={setDept}
+              onDue={setDue}
+            />
+          )
         }
-        onClearFilters={() => {
-          setStatusRaw('');
-          setPriorityRaw('');
-          setPersonRaw('');
-          setAssignedByRaw('');
-          setDeptRaw('');
-          setDueRaw('');
-          setSearchInput('');
-          sf.clearFilters();
-          void navigate({
-            search: (prev) => ({ ...prev, search: undefined, page: 1 }),
-            replace: true,
-          });
-        }}
+        onClearFilters={
+          dayTab
+            ? undefined
+            : () => {
+                setStatusRaw('');
+                setPriorityRaw('');
+                setPersonRaw('');
+                setAssignedByRaw('');
+                setDeptRaw('');
+                setDueRaw('');
+                setSearchInput('');
+                sf.clearFilters();
+                void navigate({
+                  search: (prev) => ({ ...prev, search: undefined, page: 1 }),
+                  replace: true,
+                });
+              }
+        }
         filtersActive={
           sf.filtering ||
           status !== '' ||
@@ -286,40 +326,70 @@ function TaskBoardPage(): React.JSX.Element {
           ) : undefined
         }
       >
-        <TaskTabs tabs={tabs} view={view} countOf={tabCount} onChange={setView} />
+        <TaskTabs
+          tabs={tabs}
+          view={dayTab ? dayLogTabOf(dayTab) : tab}
+          countOf={tabCount}
+          onChange={setView}
+          extra={dayTabs}
+          onExtra={(t) =>
+            goDay({
+              view: isDayLogTab(t) ? t : 'daylog',
+              user: undefined,
+              from: undefined,
+              to: undefined,
+            })
+          }
+        />
       </ListHeader>
 
-      {isError ? (
-        // A refetch failed (e.g. a non-admin landing on ?view=all): keep the
-        // board and its tabs on screen so the user can move off the bad view.
-        <div className="panel" style={{ padding: '8px 12px', fontSize: 12, color: 'var(--red2)' }}>
-          {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
-        </div>
-      ) : null}
+      {dayTab ? (
+        <DayLogBoardBody
+          tab={dayTab}
+          date={routeSearch.date}
+          user={routeSearch.user}
+          from={routeSearch.from}
+          to={routeSearch.to}
+          onNav={goDay}
+        />
+      ) : (
+        <>
+          {isError ? (
+            // A refetch failed (e.g. a non-admin landing on ?view=all): keep the
+            // board and its tabs on screen so the user can move off the bad view.
+            <div
+              className="panel"
+              style={{ padding: '8px 12px', fontSize: 12, color: 'var(--red2)' }}
+            >
+              {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
+            </div>
+          ) : null}
 
-      <TaskTable
-        rows={data.tasks}
-        view={view}
-        filtered={Boolean(
-          routeSearch.search ||
-          status ||
-          priority ||
-          person ||
-          assignedBy ||
-          dept ||
-          due ||
-          sf.filtering,
-        )}
-        sortFilterServer={sf}
-        onAction={onRowAction}
-      />
-      <ListFooter
-        total={data.total}
-        noun="task"
-        page={page}
-        pageSize={LIST_PAGE_SIZE}
-        onPage={gotoPage}
-      />
+          <TaskTable
+            rows={data.tasks}
+            view={view}
+            filtered={Boolean(
+              routeSearch.search ||
+              status ||
+              priority ||
+              person ||
+              assignedBy ||
+              dept ||
+              due ||
+              sf.filtering,
+            )}
+            sortFilterServer={sf}
+            onAction={onRowAction}
+          />
+          <ListFooter
+            total={data.total}
+            noun="task"
+            page={page}
+            pageSize={LIST_PAGE_SIZE}
+            onPage={gotoPage}
+          />
+        </>
+      )}
 
       {modal.kind === 'assign' ? <AssignTaskModal onClose={closeModal} /> : null}
       {modal.kind === 'todo' ? <TodoModal onClose={closeModal} /> : null}

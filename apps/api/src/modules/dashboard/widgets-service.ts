@@ -287,20 +287,22 @@ async function computeWidget(
           tx,
           `SELECT COUNT(dr.id)::int AS reports, COALESCE(SUM(drl_cnt.cnt),0)::int AS tasks, COALESCE(SUM(drl_cnt.hrs),0)::numeric AS hours
           FROM daily_reports dr
-          LEFT JOIN LATERAL (SELECT COUNT(*)::int AS cnt, COALESCE(SUM(hours),0)::numeric AS hrs FROM daily_report_lines WHERE daily_report_id=dr.id AND deleted_at IS NULL) drl_cnt ON TRUE
+          LEFT JOIN LATERAL (SELECT COUNT(*)::int AS cnt, COALESCE(SUM(hours),0)::numeric AS hrs FROM daily_report_lines WHERE daily_report_id=dr.id AND deleted_at IS NULL AND kind='work' AND to_time IS NOT NULL) drl_cnt ON TRUE
           WHERE dr.company_id='${cid}'::uuid AND dr.user_id='${userId}'::uuid AND dr.report_date='${today}' AND dr.deleted_at IS NULL`,
         )
       )[0];
-      const filed = num(r?.['reports']) > 0;
+      // Day Log (0222): a day row alone (opened by a timer or a reminder) and
+      // its break lines are not a filing — only finished work entries count.
+      const filed = num(r?.['tasks']) > 0;
       w.stats = filed
         ? [
             {
               label: 'Filed today',
-              value: `${num(r?.['tasks'])} tasks · ${num(r?.['hours']).toFixed(1)}h`,
+              value: `${num(r?.['tasks'])} entries · ${num(r?.['hours']).toFixed(1)}h`,
               tone: 'green',
             },
           ]
-        : [{ label: 'Today', value: 'No report filed', tone: 'amber' }];
+        : [{ label: 'Today', value: 'No time logged', tone: 'amber' }];
       break;
     }
     default:

@@ -190,7 +190,11 @@ export function TopNav(): React.JSX.Element {
                       const on = isOn(it);
                       return (
                         <Link
-                          key={it.to}
+                          key={
+                            it.search
+                              ? `${it.to}?${new URLSearchParams(it.search).toString()}`
+                              : it.to
+                          }
                           to={it.to}
                           {...(it.search ? { search: it.search } : {})}
                           role="menuitem"

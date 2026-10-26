@@ -3,6 +3,8 @@ import {
   BOM_STATUSES,
   CUSTOMER_DISPATCH_STATUSES,
   DAILY_REPORT_LINE_STATUSES,
+  DAY_LOG_ENTRY_KINDS,
+  DAY_LOG_STATUSES,
   DC_STATUSES,
   DOCUMENT_EDIT_STATUSES,
   GRN_QC_STATUSES,
@@ -145,6 +147,9 @@ export const dailyReportLineStatusEnum = pgEnum(
   'daily_report_line_status',
   DAILY_REPORT_LINE_STATUSES,
 );
+// Day Log (0222) — the day's state and an entry's kind.
+export const dayLogStatusEnum = pgEnum('day_log_status', DAY_LOG_STATUSES);
+export const dayLogEntryKindEnum = pgEnum('day_log_entry_kind', DAY_LOG_ENTRY_KINDS);
 
 export const companies = pgTable(
   'companies',
@@ -7028,6 +7033,16 @@ export const dailyReports = pgTable(
       .references(() => users.id),
     reportDate: date('report_date').notNull(),
     shift: shiftEnum('shift').notNull().default('day'),
+    // Day Log (0222).
+    dayStatus: dayLogStatusEnum('day_status').notNull().default('open'),
+    workFrom: time('work_from').notNull().default('09:00'),
+    workTo: time('work_to').notNull().default('18:00'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedBy: uuid('submitted_by').references((): AnyPgColumn => users.id),
+    reopenedAt: timestamp('reopened_at', { withTimezone: true }),
+    reopenedBy: uuid('reopened_by').references((): AnyPgColumn => users.id),
+    reopenReason: text('reopen_reason'),
+    leaveReason: text('leave_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -7045,6 +7060,9 @@ export const dailyReports = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('daily_reports_company_date_idx')
       .on(t.companyId, t.reportDate)
+      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('daily_reports_user_day_uq')
+      .on(t.companyId, t.userId, t.reportDate)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('daily_reports_company_read', {
       for: 'select',
@@ -7076,6 +7094,20 @@ export const dailyReportLines = pgTable(
     hours: numeric('hours', { precision: 6, scale: 2 }).notNull().default('0'),
     status: dailyReportLineStatusEnum('status').notNull().default('completed'),
     remarks: text('remarks'),
+    // Day Log (0222). to_time NULL = the entry is Open; `hours` is written
+    // only by the day-logs service from From/To.
+    kind: dayLogEntryKindEnum('kind').notNull().default('work'),
+    fromTime: time('from_time'),
+    toTime: time('to_time'),
+    taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    stopNote: text('stop_note'),
+    // Day Log (0223): the SO or JWSO a work entry was for — at most one.
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -7091,6 +7123,28 @@ export const dailyReportLines = pgTable(
     uniqueIndex('daily_report_lines_line_uq')
       .on(t.dailyReportId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
+    // 0223 — one Open entry per day, work or break.
+    uniqueIndex('daily_report_lines_open_uq')
+      .on(t.dailyReportId)
+      .where(sql`${t.toTime} is null and ${t.fromTime} is not null and ${t.deletedAt} is null`),
+    index('daily_report_lines_so_idx')
+      .on(t.salesOrderId)
+      .where(sql`${t.salesOrderId} is not null`),
+    index('daily_report_lines_jwo_idx')
+      .on(t.jobWorkOrderId)
+      .where(sql`${t.jobWorkOrderId} is not null`),
+    index('daily_report_lines_report_idx')
+      .on(t.dailyReportId)
+      .where(sql`${t.deletedAt} is null`),
+    index('daily_report_lines_task_idx').on(t.taskId),
+    check(
+      'daily_report_lines_from_to_chk',
+      sql`${t.toTime} is null or ${t.fromTime} is null or ${t.toTime} > ${t.fromTime}`,
+    ),
+    check(
+      'daily_report_lines_one_order_chk',
+      sql`${t.salesOrderId} is null or ${t.jobWorkOrderId} is null`,
+    ),
     pgPolicy('daily_report_lines_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -7101,6 +7155,91 @@ export const dailyReportLines = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
       withCheck: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Day Log: break template + company holidays (migration 0222) ──────────
+// Each user's own breaks; copied into a day's break lines when the day is
+// opened (earlier days keep their snapshot).
+export const userBreakTimes = pgTable(
+  'user_break_times',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    fromTime: time('from_time').notNull(),
+    toTime: time('to_time').notNull(),
+    sortNo: integer('sort_no').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    index('user_break_times_user_idx')
+      .on(t.companyId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    check('user_break_times_from_to_chk', sql`${t.toTime} > ${t.fromTime}`),
+    pgPolicy('user_break_times_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('user_break_times_self_or_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+      withCheck: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
+export const companyHolidays = pgTable(
+  'company_holidays',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    holidayDate: date('holiday_date').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('company_holidays_day_uq')
+      .on(t.companyId, t.holidayDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('company_holidays_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('company_holidays_admin_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND current_user_role() = 'admin'`,
+      withCheck: sql`company_id = current_company_id() AND current_user_role() = 'admin'`,
     }),
   ],
 ).enableRLS();

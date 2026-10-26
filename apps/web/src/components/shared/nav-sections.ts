@@ -291,7 +291,7 @@ export const SECTIONS: readonly NavSection[] = [
       {
         items: [
           { to: '/task-board', label: 'Task Board', icon: '📋' },
-          { to: '/daily-task-reports', label: 'Daily Task Reports', icon: '📝' },
+          { to: '/task-board', search: { view: 'daylog' }, label: 'Day Log', icon: '📝' },
           { to: '/alerts', label: 'Alerts', icon: '🔔' },
           { to: '/activity-log', label: 'Activity Log', icon: '📜' },
         ],

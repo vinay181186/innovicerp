@@ -13,6 +13,7 @@ import type { LiveTable } from '@innovic/shared';
 import type { QueryKey } from '@tanstack/react-query';
 import { approvalsKeys } from '@/modules/approvals/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
+import { dayLogKeys } from '@/modules/day-logs/api';
 import { cancelKeys } from '@/modules/cancel-requests/api';
 import { documentEditsKeys } from '@/modules/document-edits/api';
 import { goodsReceiptNotesKeys } from '@/modules/goods-receipt-notes/api';
@@ -124,4 +125,7 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   ],
   production_orders: [...PRODUCTION_ORDER_VIEWS, dashboardKeys.home()],
   production_order_closes: PRODUCTION_ORDER_VIEWS,
+  // Day Log (owner 2026-10-26): a day submitted / reopened / left on Leave, or
+  // a timer started on another PC — My Day Log and Team Day Logs.
+  daily_reports: [dayLogKeys.all],
 };
