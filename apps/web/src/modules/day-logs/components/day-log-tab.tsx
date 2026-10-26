@@ -77,6 +77,9 @@ export function DayLogTab({
   // While another day is loading the old one stays on screen — no writes then.
   const canWrite = day.canWrite && !query.isPlaceholderData;
   const editing = day.entries.find((e) => e.id === editingId) ?? null;
+  // Strict order: only the last entry (latest start) may change its times / be removed.
+  const lastId =
+    [...day.entries].sort((a, b) => a.fromTime.localeCompare(b.fromTime)).at(-1)?.id ?? null;
   const chip = dayChip(day.status, isToday);
   const canSubmit = day.summary.unloggedMin === 0 && !day.summary.open;
   const busy = stop.isPending || remove.isPending;
@@ -155,6 +158,7 @@ export function DayLogTab({
           q={q}
           nowMin={nowMin}
           editing={editing}
+          isLast={editing !== null && editing.id === lastId}
           onDone={() => setEditingId(null)}
         />
       ) : null}
@@ -174,6 +178,7 @@ export function DayLogTab({
               ? {
                   busy,
                   editingId,
+                  lastId,
                   onStop: isToday ? (e: DayLogEntry) => run(stop.mutateAsync(e.id)) : null,
                   onEdit: (e: DayLogEntry) => {
                     setErr(null);

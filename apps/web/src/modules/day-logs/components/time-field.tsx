@@ -1,20 +1,28 @@
-// The Day Log's ONE time box: a typed 24-hour "HH:MM" text field. The user
-// may type "1130", "11.30", "11:30" or "930"; on blur it is tidied to
-// "11:30" / "09:30" through parseHhmm. Never a browser type="time" (it shows
-// AM/PM on some PCs). The parent keeps the raw text and reads
-// parseHhmm(value) — null means "not a time yet".
+// The Day Log's time box (owner 2026-10-26: AM/PM). A typed text field: the
+// user may type "930", "3pm", "3:15 pm", "1530" or "03:15 PM"; on blur it is
+// tidied to "03:15 PM" (shared fmt12) through the shared parseTime. Never a
+// browser type="time". The parent keeps the raw text and reads
+// parseTime(value) — 24-hour "HH:MM" for the API, null = "not a time yet".
 //
-// The 🕒 button opens an Hour column + 5-minute column picker with Now and
-// Set. `nowMin` (today only) greys every time after now.
+// The 🕒 button opens an Hour (01–12) · Minute (5-min) · AM/PM picker with
+// Now and Set. `nowMin` (today only) greys every time after now. The picker
+// hangs from the field's RIGHT edge and opens leftwards (it was cut off at
+// the screen's right edge); when there is no room on the left either it
+// hangs from the left edge instead.
+//
+// LockedTime is the read-only look for a time the user may not change.
 
-import { hhmmToMin, minToHhmm } from '@innovic/shared';
-import { useEffect, useRef, useState } from 'react';
-import { parseHhmm } from '../lib/format';
+import { fmt12, hhmmToMin, minToHhmm, parseTime } from '@innovic/shared';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const HOURS12 = Array.from({ length: 12 }, (_, i) => i + 1);
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 const two = (n: number): string => String(n).padStart(2, '0');
+/** 12-hour clock hour + AM/PM → 0–23. */
+const to24 = (h12: number, pm: boolean): number => (h12 % 12) + (pm ? 12 : 0);
+const PICKER_W = 280;
 
+const BOX: React.CSSProperties = { width: '14ch', minWidth: 120 };
 const COL: React.CSSProperties = {
   display: 'grid',
   gap: 2,
@@ -32,24 +40,62 @@ const COL_HEAD: React.CSSProperties = {
   textAlign: 'center',
 };
 
+/** A time shown read-only: the locked look, no picker. */
+export function LockedTime({
+  id,
+  ariaLabel,
+  value,
+  title,
+}: {
+  id?: string | undefined;
+  ariaLabel: string;
+  /** 24-hour "HH:MM", or null = no time. */
+  value: string | null;
+  title: string;
+}): React.JSX.Element {
+  return (
+    <input
+      id={id}
+      type="text"
+      readOnly
+      className="innovic-input mono"
+      aria-label={ariaLabel}
+      title={title}
+      value={value ? fmt12(value) : ''}
+      placeholder="—"
+      style={BOX}
+    />
+  );
+}
+
 function TimePicker({
   value,
   nowMin,
+  side,
   onSet,
 }: {
   value: string;
   nowMin: number | null;
+  side: 'right' | 'left';
   onSet: (t: string) => void;
 }): React.JSX.Element {
-  const start = parseHhmm(value);
+  const start = parseTime(value);
   const startMin = start ? hhmmToMin(start) : (nowMin ?? 9 * 60);
   const [h, setH] = useState(Math.floor(startMin / 60));
   const [m, setM] = useState(Math.floor((startMin % 60) / 5) * 5);
+  const pm = h >= 12;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
   const after = (min: number): boolean => nowMin !== null && min > nowMin;
   const hourRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     hourRef.current?.scrollIntoView({ block: 'nearest' });
   }, []);
+
+  /** Move to hour `nh` (0–23); drop the minute to :00 when it would pass now. */
+  const goHour = (nh: number): void => {
+    setH(nh);
+    if (after(nh * 60 + m)) setM(0);
+  };
 
   const opt = (label: string, on: boolean, off: boolean, pick: () => void, ref?: boolean) => (
     <button
@@ -72,25 +118,25 @@ function TimePicker({
   );
 
   return (
-    <div className="ss-list" style={{ width: 236, right: 'auto', padding: 8, maxHeight: 'none' }}>
+    <div
+      className="ss-list"
+      style={{
+        width: PICKER_W,
+        maxWidth: 'calc(100vw - 16px)',
+        ...(side === 'right' ? { right: 0, left: 'auto' } : { left: 0, right: 'auto' }),
+        padding: 8,
+        maxHeight: 'none',
+      }}
+    >
       <div className="mono fw-700" style={{ fontSize: 'var(--fs-lg)', textAlign: 'center' }}>
-        {two(h)}:{two(m)}
+        {fmt12(minToHhmm(h * 60 + m))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 6 }}>
         <div>
           <div style={COL_HEAD}>Hour</div>
           <div style={COL}>
-            {HOURS.map((x) =>
-              opt(
-                two(x),
-                x === h,
-                after(x * 60),
-                () => {
-                  setH(x);
-                  if (after(x * 60 + m)) setM(0);
-                },
-                x === h,
-              ),
+            {HOURS12.map((x) =>
+              opt(two(x), x === h12, after(to24(x, pm) * 60), () => goHour(to24(x, pm)), x === h12),
             )}
           </div>
         </div>
@@ -98,6 +144,13 @@ function TimePicker({
           <div style={COL_HEAD}>Minute</div>
           <div style={COL}>
             {MINUTES.map((x) => opt(two(x), x === m, after(h * 60 + x), () => setM(x)))}
+          </div>
+        </div>
+        <div>
+          <div style={COL_HEAD}>AM/PM</div>
+          <div style={COL}>
+            {opt('AM', !pm, false, () => goHour(to24(h12, false)))}
+            {opt('PM', pm, after(to24(h12, true) * 60), () => goHour(to24(h12, true)))}
           </div>
         </div>
       </div>
@@ -108,7 +161,7 @@ function TimePicker({
             className="btn btn-ghost btn-sm"
             onClick={() => onSet(minToHhmm(nowMin))}
           >
-            Now {minToHhmm(nowMin)}
+            Now {fmt12(minToHhmm(nowMin))}
           </button>
         ) : null}
         <span style={{ flex: 1 }} />
@@ -131,7 +184,7 @@ export function TimeField({
   id,
   ariaLabel,
   disabled,
-  placeholder = 'HH:MM',
+  placeholder = '09:00 AM',
   nowMin = null,
   onEnter,
 }: {
@@ -147,8 +200,9 @@ export function TimeField({
   onEnter?: (() => void) | undefined;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
+  const [side, setSide] = useState<'right' | 'left'>('right');
   const boxRef = useRef<HTMLDivElement>(null);
-  const bad = value.trim() !== '' && parseHhmm(value) === null;
+  const bad = value.trim() !== '' && parseTime(value) === null;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -159,37 +213,44 @@ export function TimeField({
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
 
+  // Open leftwards from the right edge; only when that would run off the
+  // left of the screen, hang from the left edge instead.
+  useLayoutEffect(() => {
+    if (!open || !boxRef.current) return;
+    const r = boxRef.current.getBoundingClientRect();
+    const w = Math.min(PICKER_W, window.innerWidth - 16);
+    setSide(r.right - w >= 8 ? 'right' : 'left');
+  }, [open]);
+
+  const tidy = (): string | null => {
+    const t = parseTime(value);
+    if (t && fmt12(t) !== value) onChange(fmt12(t));
+    return t;
+  };
+
   return (
     <div ref={boxRef} style={{ position: 'relative', display: 'inline-block' }}>
       <input
         id={id}
         type="text"
-        inputMode="numeric"
         autoComplete="off"
         className="innovic-input mono"
         aria-label={ariaLabel}
         aria-invalid={bad || undefined}
-        title={bad ? 'Type a 24-hour time, e.g. 1130 or 11:30' : undefined}
+        title={bad ? 'Type a time, e.g. 930, 3pm, 3:15 pm or 1530' : undefined}
         placeholder={placeholder}
-        maxLength={5}
+        maxLength={9}
         disabled={disabled}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={() => {
-          const t = parseHhmm(value);
-          if (t && t !== value) onChange(t);
-        }}
+        onBlur={() => void tidy()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setOpen(false);
           if (e.key !== 'Enter' || !onEnter) return;
-          const t = parseHhmm(value);
-          if (!t) return;
-          if (t !== value) onChange(t);
-          onEnter();
+          if (tidy()) onEnter();
         }}
         style={{
-          width: '14ch',
-          minWidth: 120,
+          ...BOX,
           paddingRight: 30,
           ...(bad ? { borderColor: 'var(--red)' } : {}),
         }}
@@ -215,8 +276,9 @@ export function TimeField({
         <TimePicker
           value={value}
           nowMin={nowMin}
+          side={side}
           onSet={(t) => {
-            onChange(t);
+            onChange(fmt12(t));
             setOpen(false);
           }}
         />

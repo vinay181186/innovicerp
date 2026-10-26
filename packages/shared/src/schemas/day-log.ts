@@ -5,9 +5,13 @@
 //   - ONE entry form. Type Work or Break, Start time, Stop time, a remark;
 //     work may be against one SO or JWSO. Both times = the entry is Closed;
 //     Start only = it is Open (running) until Stop. One Open entry at a time.
-//   - Entries may be added in any order and edited or removed freely until
-//     the day is submitted (no approval). They never overlap and never run
+//   - STRICT ORDER (owner 2026-10-26): every day starts at 09:00 AM. An
+//     entry's Start is always where the previous entry ended (09:00 for the
+//     first) — `nextStart`, locked; the next entry can only be added once the
+//     last one is Closed. Only the LAST entry may change its times or be
+//     removed; earlier entries may change their text / SO / remark. Never
 //     past now. Breaks total at most DAY_LOG_RULES.breakLimitMin a day.
+//   - Times are stored 24-hour "HH:MM" and SHOWN as "09:00 AM" (fmt12).
 //   - An entry saved more than lateAfterMin after its Stop time is LATE.
 //   - Submit Day needs 09:00–18:00 fully covered (work + break) and nothing
 //     Open; it locks the day. Only the owner writes the log.
@@ -89,6 +93,40 @@ export function minToHhmm(min: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/** "09:00 AM" / "03:15 PM" — how every Day Log time is shown. */
+export function fmt12(hhmm: string | null | undefined): string {
+  if (!hhmm) return '—';
+  const [hs, ms] = hhmm.split(':');
+  const h = Number(hs);
+  const ap = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${ms} ${ap}`;
+}
+
+/**
+ * A typed time → 24-hour "HH:MM", or null. Accepts "930", "9:30", "09.30",
+ * "9", "3pm", "3:15 pm", "03:15 PM", "1530". Without AM/PM a 24-hour reading
+ * is used, except 1–6 which mean the afternoon (work does not start at 3 AM).
+ */
+export function parseTime(raw: string): string | null {
+  const t = raw.trim().toLowerCase().replace(/\s+/g, '');
+  const m = /^(\d{1,2})(?:[:.]?(\d{2}))?(am|pm|a|p)?$/.exec(t);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = m[2] ? Number(m[2]) : 0;
+  const ap = m[3]?.[0];
+  if (min > 59) return null;
+  if (ap) {
+    if (h < 1 || h > 12) return null;
+    if (ap === 'a' && h === 12) h = 0;
+    if (ap === 'p' && h !== 12) h += 12;
+  } else {
+    if (h > 23) return null;
+    if (h >= 1 && h <= 6) h += 12;
+  }
+  return minToHhmm(h * 60 + min);
+}
+
 /** "2h 05m". */
 export function fmtDuration(min: number): string {
   const v = Math.max(0, Math.round(min));
@@ -127,6 +165,9 @@ export interface DayLogSummary {
   open: boolean;
   /** Work entries. */
   entryCount: number;
+  /** Where the next entry must start (strict order): the last entry's Stop,
+   *  09:00 when the day is empty; null while an entry is Open. */
+  nextStart: string | null;
 }
 
 /**
@@ -170,6 +211,11 @@ export function summarizeDay(
     unloggedMin: workingDay ? Math.max(0, unloggedMin) : 0,
     open: ivals.some((i) => i.open),
     entryCount: ivals.filter((i) => i.kind === 'work').length,
+    nextStart: ivals.some((i) => i.open)
+      ? null
+      : ivals.length
+        ? minToHhmm(Math.max(...ivals.map((i) => i.b)))
+        : DAY_LOG_RULES.workFrom,
   };
 }
 
@@ -290,6 +336,7 @@ export const dayLogSummarySchema = z.object({
   unloggedMin: z.number().int(),
   open: z.boolean(),
   entryCount: z.number().int(),
+  nextStart: z.string().nullable(),
   lateCount: z.number().int(),
 });
 export type DayLogSummaryOut = z.infer<typeof dayLogSummarySchema>;

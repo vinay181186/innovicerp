@@ -8,6 +8,7 @@ import type { DayLogDetail, TeamDayLogResponse } from '@innovic/shared';
 import {
   DAY_LOG_CURRENT_STATUS_LABELS,
   DAY_LOG_ENTRY_KIND_LABELS,
+  fmt12,
   fmtDuration,
 } from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
@@ -36,8 +37,8 @@ export function dayTable(day: DayLogDetail): ExportTable {
   const rows = [...day.entries]
     .sort((a, b) => a.fromTime.localeCompare(b.fromTime))
     .map((e) => ({
-      start_time: e.fromTime,
-      stop_time: e.toTime ?? '',
+      start_time: fmt12(e.fromTime),
+      stop_time: e.toTime ? fmt12(e.toTime) : '',
       time: fmtDuration(e.minutes),
       kind: DAY_LOG_ENTRY_KIND_LABELS[e.kind],
       work: e.description,
@@ -75,8 +76,8 @@ export function teamTable(team: TeamDayLogResponse): ExportTable {
         : PAST_STATUS_LABEL[r.currentStatus],
       latest_work: r.latestWork?.description ?? '',
       latest_order: r.latestWork?.orderCode ?? '',
-      first_start: r.firstStart ?? '',
-      last_stop: r.lastStop ?? '',
+      first_start: r.firstStart ? fmt12(r.firstStart) : '',
+      last_stop: r.lastStop ? fmt12(r.lastStop) : '',
       work_hours: fmtDuration(r.workMin),
       break_min: `${r.breakMin} min`,
       entries: String(r.entryCount),

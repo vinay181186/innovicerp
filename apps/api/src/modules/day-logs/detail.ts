@@ -6,6 +6,7 @@ import {
   type DayLogEntry,
   type DayLogStatus,
   type DayLogSummaryOut,
+  fmt12,
   isWorkingDay,
   minToHhmm,
   summarizeDay,
@@ -119,6 +120,8 @@ export function summaryOf(
   const whole = summarizeDay(spansOf(lines), undefined, workingDay).unloggedMin;
   return {
     ...s,
+    // Strict order: where the next entry must start (null while one is Open).
+    nextStart: s.nextStart,
     // A Leave day owes no time.
     unloggedMin: status === 'leave' ? 0 : whole,
     lateCount: lines.filter((l) => l.late).length,
@@ -185,7 +188,7 @@ export async function buildDetail(
 
 /** 409 for a write on a day that is not open, naming who closed it and when. */
 export function notOpenError(h: DayHeader): ConflictError {
-  const at = (s: string | null): string => (s ? istHm(s) : '');
+  const at = (s: string | null): string => (s ? fmt12(istHm(s)) : '');
   if (h.status === 'submitted') {
     return new ConflictError(
       `${dmy(h.date)} was submitted by ${h.submittedByName ?? 'someone'} at ${at(h.submittedAt)} — ask your Department Admin to reopen it`,

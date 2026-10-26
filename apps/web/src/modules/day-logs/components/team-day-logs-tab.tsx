@@ -8,7 +8,7 @@
 // the table reads again every minute (api.ts).
 
 import type { DayLogCurrentStatus, TeamDayLogRow } from '@innovic/shared';
-import { DAY_LOG_CURRENT_STATUS_LABELS, fmtDuration, hhmmToMin } from '@innovic/shared';
+import { DAY_LOG_CURRENT_STATUS_LABELS, fmt12, fmtDuration, hhmmToMin } from '@innovic/shared';
 import { useEffect, useState } from 'react';
 import { StatStrip } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -223,8 +223,8 @@ export function TeamDayLogsTab({
                       '—'
                     )}
                   </td>
-                  <td className="mono">{r.firstStart ?? '—'}</td>
-                  <td className="mono">{r.lastStop ?? '—'}</td>
+                  <td className="mono">{fmt12(r.firstStart)}</td>
+                  <td className="mono">{fmt12(r.lastStop)}</td>
                   <td className="td-num mono fw-700">{fmtDuration(r.workMin)}</td>
                   <td className="td-num mono">{r.breakMin} min</td>
                   <td className="td-num mono">{r.entryCount}</td>

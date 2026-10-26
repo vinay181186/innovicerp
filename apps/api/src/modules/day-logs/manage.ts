@@ -8,6 +8,7 @@ import {
   type DayLogDateInput,
   type DayLogDetail,
   type DayLogQuery,
+  fmt12,
   fmtDuration,
   isWorkingDay,
   summarizeDay,
@@ -74,7 +75,7 @@ export async function submitDay(
     if (s.unloggedMin > 0) {
       const gap = firstGap(spans);
       throw new ValidationError(
-        `${fmtDuration(s.unloggedMin)} of ${DAY_LOG_RULES.workFrom}–${DAY_LOG_RULES.workTo} is not logged yet${gap ? ` — ${gap} is empty` : ''}`,
+        `${fmtDuration(s.unloggedMin)} of ${fmt12(DAY_LOG_RULES.workFrom)}–${fmt12(DAY_LOG_RULES.workTo)} is not logged yet${gap ? ` — ${gap} is empty` : ''}`,
       );
     }
     const done = (await tx.execute(sql`

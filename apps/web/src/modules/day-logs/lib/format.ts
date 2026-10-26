@@ -3,7 +3,7 @@
 // these only turn loaded data into chips, date labels and a ticking clock.
 
 import type { DayLogCurrentStatus, DayLogStatus } from '@innovic/shared';
-import { DAY_LOG_STATUS_LABELS, hhmmToMin, minToHhmm } from '@innovic/shared';
+import { DAY_LOG_STATUS_LABELS, hhmmToMin } from '@innovic/shared';
 
 export const DAY_STATUS_BADGE: Record<DayLogStatus, string> = {
   open: 'b-blue',
@@ -77,31 +77,6 @@ export function recentDays(today: string, count: number): string[] {
 export function liveNowMin(serverNow: string, fetchedAt: number, nowMs: number): number {
   const drift = Math.max(0, Math.floor((nowMs - fetchedAt) / 60_000));
   return Math.min(24 * 60 - 1, hhmmToMin(serverNow) + drift);
-}
-
-/**
- * A typed 24-hour time → "HH:MM", or null when it is not a time. Accepts
- * "1130", "11.30", "11:30", "930", "9:30" and "9" (= 09:00). Every time field
- * of the Day Log goes through this (never a browser type="time" box, which
- * shows AM/PM on some PCs).
- */
-export function parseHhmm(raw: string): string | null {
-  const s = raw.trim();
-  let h: number;
-  let m: number;
-  const sep = /^(\d{1,2})[:.](\d{2})$/.exec(s);
-  if (sep) {
-    h = Number(sep[1]);
-    m = Number(sep[2]);
-  } else if (/^\d{1,4}$/.test(s)) {
-    const cut = s.length <= 2 ? s.length : s.length - 2;
-    h = Number(s.slice(0, cut));
-    m = s.length <= 2 ? 0 : Number(s.slice(cut));
-  } else {
-    return null;
-  }
-  if (!Number.isInteger(h) || !Number.isInteger(m) || h > 23 || m > 59) return null;
-  return minToHhmm(h * 60 + m);
 }
 
 /** Error text for an inline notice. */

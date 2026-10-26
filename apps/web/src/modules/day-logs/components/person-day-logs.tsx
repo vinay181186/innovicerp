@@ -7,7 +7,7 @@
 
 import { todayIst } from '@/lib/date';
 import type { PersonDayRow } from '@innovic/shared';
-import { DAY_LOG_RULES, fmtDuration } from '@innovic/shared';
+import { DAY_LOG_RULES, fmt12, fmtDuration } from '@innovic/shared';
 import { Fragment, useState } from 'react';
 import { StatStrip } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -174,8 +174,8 @@ export function PersonDayLogs({
                         <span className="text3">{weekday(d.date)}</span>
                       </td>
                       <td>{status(d)}</td>
-                      <td className="mono">{d.firstStart ?? '—'}</td>
-                      <td className="mono">{d.lastStop ?? '—'}</td>
+                      <td className="mono">{fmt12(d.firstStart)}</td>
+                      <td className="mono">{fmt12(d.lastStop)}</td>
                       <td className="td-num mono fw-700">{fmtDuration(d.workMin)}</td>
                       <td className="td-num mono">{d.breakMin} min</td>
                       <td className="td-num mono">{d.entryCount}</td>

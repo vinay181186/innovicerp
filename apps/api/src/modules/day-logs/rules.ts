@@ -8,6 +8,7 @@ import {
   type DayLogEntryKind,
   type DayLogStatus,
   type DayLogSpan,
+  fmt12,
   hhmmToMin,
   minToHhmm,
   overlapMin,
@@ -103,7 +104,29 @@ export function breakLimitProblem(total: number): string | null {
 }
 
 /**
- * First unlogged slot inside the work window, "HH:MM – HH:MM", or null.
+ * Strict order (owner 2026-10-26): the latest-starting timed entry — the only
+ * one whose times may change or that may be removed. A tie (legacy data)
+ * goes to the later Stop, an Open entry counting as latest.
+ */
+export function lastEntryOf<T extends { fromTime: string | null; toTime: string | null }>(
+  lines: readonly T[],
+): T | null {
+  const end = (l: T): number => (l.toTime ? hhmmToMin(l.toTime) : DAY_END_MIN);
+  let best: T | null = null;
+  for (const l of lines) {
+    if (!l.fromTime) continue;
+    if (
+      !best ||
+      l.fromTime > best.fromTime! ||
+      (l.fromTime === best.fromTime && end(l) >= end(best))
+    )
+      best = l;
+  }
+  return best;
+}
+
+/**
+ * First unlogged slot inside the work window, "09:00 AM – 06:00 PM", or null.
  * Breaks and work entries both cover time; an Open entry covers up to
  * `nowMin` (or only its start minute when no clock is given).
  */
@@ -122,12 +145,12 @@ export function firstGap(spans: readonly DayLogSpan[], nowMin?: number): string 
   for (const [a, b] of covered) {
     if (a > at) {
       const end = Math.min(a, w2);
-      if (end > at) return `${minToHhmm(at)} – ${minToHhmm(end)}`;
+      if (end > at) return `${fmt12(minToHhmm(at))} – ${fmt12(minToHhmm(end))}`;
     }
     at = Math.max(at, b);
     if (at >= w2) return null;
   }
-  return at < w2 ? `${minToHhmm(at)} – ${minToHhmm(w2)}` : null;
+  return at < w2 ? `${fmt12(minToHhmm(at))} – ${fmt12(minToHhmm(w2))}` : null;
 }
 
 // ── Team Day Logs ───────────────────────────────────────────────────────────
@@ -144,7 +167,7 @@ export function currentOf(
   if (status === 'submitted') {
     return {
       status: 'submitted',
-      text: today && submittedAt ? istHm(submittedAt) : null,
+      text: today && submittedAt ? fmt12(istHm(submittedAt)) : null,
       since: null,
     };
   }
@@ -155,19 +178,19 @@ export function currentOf(
   if (open?.kind === 'work') {
     return {
       status: 'working',
-      text: `${open.description} · since ${open.fromTime}`,
+      text: `${open.description} · since ${fmt12(open.fromTime)}`,
       since: open.fromTime,
     };
   }
   if (open) {
     return {
       status: 'break',
-      text: `${open.description} since ${open.fromTime}`,
+      text: `${open.description} since ${fmt12(open.fromTime)}`,
       since: open.fromTime,
     };
   }
   if (timed.length)
-    return { status: 'idle', text: lastStop ? `since ${lastStop}` : null, since: null };
+    return { status: 'idle', text: lastStop ? `since ${fmt12(lastStop)}` : null, since: null };
   return { status: 'not_started', text: null, since: null };
 }
 
