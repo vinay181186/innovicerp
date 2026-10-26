@@ -358,6 +358,13 @@ with no live `xxx` to fall back from is a defect (C-13).
 | A report that must be attached before Submit QC saves (ADR-252) | `Mandatory` | `reportMandatory` / `defaultMandatory` | `report_types.default_mandatory` | `Compulsory`, `Required` |
 | When a QC file was uploaded, IST date + time (ADR-252 Dossier) | `Uploaded At` | `uploadedAt` | qc_documents.created_at / op_log.created_at / file_registry.created_at | `Date`, `Upload Date` |
 | A request to cancel a live document, waiting for the page's Approve tick (ADR-235) — the document is never deleted, only Cancelled | `Cancel Request` (status `Pending` / `Approved` / `Rejected` / `Withdrawn`; `Reason`, `Decision Note`) | `CancelRequestRow` (`reason`, `status`, `decisionNote`) | `cancel_requests` (0217); types in `packages/shared/src/schemas/cancel-request.ts` | `Cancel Approval`, `Delete Request`, `Void` |
+| A user's From–To log of one working day, 09:00–18:00, on the Task Board (owner 2026-10-26, 0222) | `Day Log` (tabs `My Day Log` / `Team Day Logs`; menu `Day Log`) | `DayLogDetail` | `daily_reports` (one per user per date) + `daily_report_lines`; `packages/shared/src/schemas/day-log.ts` | `Daily Task Report` (retired screen), `Timesheet`, `Daily Report` (that is the production op-log report) |
+| State of a Day Log day | `Day Status` (`Open` / `Submitted` / `Leave`) | `status` on DayLogDetail | `daily_reports.day_status` | `Status`, `Approved` |
+| What the user did in one Day Log entry | `Work done` | `description` | `daily_report_lines.description` | `Task`, `Activity` |
+| A Day Log entry's progress | `Work Status` (`Completed` / `In progress` / `On hold`) | `status` on DayLogEntry | `daily_report_lines.status` | `Task Status` (that is the task's own) |
+| The TSK- / TODO- task a Day Log entry is for | `Linked Task` | `taskId` / `taskLabel` | `daily_report_lines.task_id` → `tasks` | `Ref`, `SO/JC` |
+| A user's own break times copied into each new day | `My Break Time` | `user_break_times` | `user_break_times` | `Shift`, `Lunch Time` |
+| A company non-working date (Day Log owes no time) | `Holidays` | `holidayDate` | `company_holidays.holiday_date` | `Leave` (that is one person's day) |
 
 ---
 
