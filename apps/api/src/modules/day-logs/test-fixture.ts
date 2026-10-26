@@ -3,7 +3,12 @@
 // manager = the seed admin's id given an L5 matrix via asAccess. Every write
 // runs on a fixed clock (`at`) on days in 2001 (never real data); those days
 // and today are hard-deleted for the owner before each test and after the file.
-import { type AddDayLogEntryInput, type DayLogDetail } from '@innovic/shared';
+import {
+  type AddDayLogEntryInput,
+  type DayLogDetail,
+  type DayLogEntry,
+  type UpdateDayLogEntryInput,
+} from '@innovic/shared';
 import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { userAccess, users } from '../../db/schema';
@@ -55,6 +60,25 @@ export const add = (date: string, clock: DayLogClock, f: Fields) =>
       startTime: '09:00',
       ...f,
     } as AddDayLogEntryInput,
+    owner(),
+    clock,
+  );
+
+/** Edit an entry as loaded (§20.4 updatedAt), changing only `f`. */
+export const edit = (e: DayLogEntry, clock: DayLogClock, f: Partial<UpdateDayLogEntryInput>) =>
+  service.updateEntry(
+    e.id,
+    {
+      kind: e.kind,
+      description: e.description,
+      startTime: e.fromTime,
+      stopTime: e.toTime,
+      orderType: e.order?.type ?? null,
+      orderId: e.order?.id ?? null,
+      remarks: e.remarks,
+      updatedAt: e.updatedAt,
+      ...f,
+    } as UpdateDayLogEntryInput,
     owner(),
     clock,
   );

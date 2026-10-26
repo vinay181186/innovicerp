@@ -2,7 +2,7 @@
 // days, newest first) and the ONE summary strip of a day (server figures).
 
 import type { DayLogSummaryOut } from '@innovic/shared';
-import { fmtDuration } from '@innovic/shared';
+import { fmt12, fmtDuration } from '@innovic/shared';
 import { StatStrip } from '@/ui/data';
 import { fmtDmy, recentDays, weekday } from '../lib/format';
 
@@ -45,7 +45,7 @@ export function DaySelect({
   );
 }
 
-/** Working hours · Break · First start · Last stop · Late entries. */
+/** Working hours · Break · Leave · First start · Last stop · Late entries. */
 export function DaySummaryStrip({ s }: { s: DayLogSummaryOut }): React.JSX.Element {
   return (
     <StatStrip
@@ -53,8 +53,9 @@ export function DaySummaryStrip({ s }: { s: DayLogSummaryOut }): React.JSX.Eleme
       items={[
         { key: 'work', label: 'Working hours', count: fmtDuration(s.workMin) },
         { key: 'break', label: 'Break', count: `${s.breakMin} min` },
-        { key: 'first', label: 'First start', count: s.firstStart ?? '—' },
-        { key: 'last', label: 'Last stop', count: s.lastStop ?? '—' },
+        { key: 'leave', label: 'Leave', count: fmtDuration(s.leaveMin) },
+        { key: 'first', label: 'First start', count: fmt12(s.firstStart) },
+        { key: 'last', label: 'Last stop', count: fmt12(s.lastStop) },
         {
           key: 'late',
           label: 'Late entries',

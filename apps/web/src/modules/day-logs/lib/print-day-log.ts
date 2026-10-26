@@ -5,7 +5,7 @@
 // line. The Team Day Logs table prints the same way.
 
 import type { Company, DayLogDetail, TeamDayLogResponse } from '@innovic/shared';
-import { fmtDuration } from '@innovic/shared';
+import { fmt12, fmtDuration } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
@@ -74,7 +74,7 @@ export function printDayLog(day: DayLogDetail, company: Company | null | undefin
   const table = grid(t, ['time'], []);
   const totals = `<tr><td colspan="2" class="b">Working hours</td>
     <td class="r b">${esc(fmtDuration(s.workMin))}</td>
-    <td colspan="${span - 3}">Break ${esc(String(s.breakMin))} min · First start ${esc(s.firstStart ?? '—')} · Last stop ${esc(s.lastStop ?? '—')} · Late entries ${esc(String(s.lateCount))}</td></tr>`;
+    <td colspan="${span - 3}">Break ${esc(String(s.breakMin))} min · Leave ${esc(fmtDuration(s.leaveMin))} · First start ${esc(fmt12(s.firstStart))} · Last stop ${esc(fmt12(s.lastStop))} · Late entries ${esc(String(s.lateCount))}</td></tr>`;
   const sign = `<tr><td colspan="${half}" class="sign">Logged by: ${esc(day.userName)}</td>
     <td colspan="${span - half}" class="sign">Seen by (Department Admin):</td></tr>`;
   const html = wrap(company, 'Day Log', header + table + totals + sign);
@@ -91,7 +91,7 @@ export function printTeamDayLogs(
   const html = wrap(
     company,
     'Team Day Logs',
-    head + grid(t, ['work_hours', 'break_min', 'entries'], ['user']),
+    head + grid(t, ['work_hours', 'break_min', 'leave_min', 'entries'], ['user']),
   );
   const name = `Team Day Logs ${team.date}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);

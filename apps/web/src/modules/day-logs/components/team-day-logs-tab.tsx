@@ -3,12 +3,12 @@
 // a past day: Submitted · Not submitted · No entries — plus Team working
 // hours. A count click filters the table to it, a second click shows all.
 // Columns: User (link to the person page) · Now · Working on (latest) ·
-// First start · Last stop · Working hours · Break · Entries · Late. The
+// First start · Last stop · Working hours · Break · Leave · Entries · Late. The
 // Working chip ticks its elapsed time from runningSince on the server clock;
 // the table reads again every minute (api.ts).
 
 import type { DayLogCurrentStatus, TeamDayLogRow } from '@innovic/shared';
-import { DAY_LOG_CURRENT_STATUS_LABELS, fmtDuration, hhmmToMin } from '@innovic/shared';
+import { DAY_LOG_CURRENT_STATUS_LABELS, fmt12, fmtDuration, hhmmToMin } from '@innovic/shared';
 import { useEffect, useState } from 'react';
 import { StatStrip } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -28,11 +28,13 @@ const TODAY_CELLS: { key: string; label: string; of: DayLogCurrentStatus[]; colo
   { key: 'idle', label: 'Idle', of: ['idle'], color: 'var(--amber2)' },
   { key: 'not_started', label: 'Not started', of: ['not_started'] },
   { key: 'submitted', label: 'Submitted', of: ['submitted'], color: 'var(--green2)' },
+  { key: 'leave', label: 'Leave', of: ['leave'] },
 ];
 const PAST_CELLS: typeof TODAY_CELLS = [
   { key: 'submitted', label: 'Submitted', of: ['submitted'], color: 'var(--green2)' },
   { key: 'idle', label: 'Not submitted', of: ['idle', 'working', 'break'], color: 'var(--amber2)' },
   { key: 'not_started', label: 'No entries', of: ['not_started'] },
+  { key: 'leave', label: 'Leave', of: ['leave'] },
 ];
 
 export function NowCell({
@@ -168,6 +170,7 @@ export function TeamDayLogsTab({
                 <th>Last stop</th>
                 <th className="th-num">Working hours</th>
                 <th className="th-num">Break</th>
+                <th className="th-num">Leave</th>
                 <th className="th-num">Entries</th>
                 <th>Late</th>
               </tr>
@@ -175,7 +178,7 @@ export function TeamDayLogsTab({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     {filter
                       ? `No one is ${filter.label} — click the count again to show all.`
                       : 'No one to show for this day.'}
@@ -223,10 +226,11 @@ export function TeamDayLogsTab({
                       '—'
                     )}
                   </td>
-                  <td className="mono">{r.firstStart ?? '—'}</td>
-                  <td className="mono">{r.lastStop ?? '—'}</td>
+                  <td className="mono">{fmt12(r.firstStart)}</td>
+                  <td className="mono">{fmt12(r.lastStop)}</td>
                   <td className="td-num mono fw-700">{fmtDuration(r.workMin)}</td>
                   <td className="td-num mono">{r.breakMin} min</td>
+                  <td className="td-num mono">{r.leaveMin > 0 ? fmtDuration(r.leaveMin) : '—'}</td>
                   <td className="td-num mono">{r.entryCount}</td>
                   <td>
                     {r.lateCount > 0 ? (

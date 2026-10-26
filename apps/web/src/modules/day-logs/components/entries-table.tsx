@@ -1,16 +1,19 @@
 // A day's entries, in time order: Start · Stop (LATE) · Time · Type ·
 // Working on · SO / JWSO · Status (Open / Closed) · actions. The remark sits
-// on its own line under its entry. Break rows are greyed, the Open row and
-// the row being edited are tinted. Actions (■ Stop on Open, Edit, Remove)
-// only when the caller says so — from the server's canWrite.
+// on its own line under its entry. Break rows are greyed, Leave rows carry
+// their own soft tint, the Open row and the row being edited are tinted. Actions (■ Stop on Open, Edit, Remove)
+// only when the caller says so — from the server's canWrite. Remove only on
+// the LAST entry (strict order, owner 2026-10-26). Times show as 09:00 AM.
 
 import type { DayLogEntry } from '@innovic/shared';
-import { fmtDuration } from '@innovic/shared';
+import { DAY_LOG_ENTRY_KIND_LABELS, fmt12, fmtDuration } from '@innovic/shared';
 import { fmtDmy } from '../lib/format';
 
 export interface EntryActions {
   busy: boolean;
   editingId: string | null;
+  /** The day's last entry (latest start) — the only one that may be removed. */
+  lastId: string | null;
   /** null = no ■ Stop (not today — fix an earlier Open entry through Edit). */
   onStop: ((e: DayLogEntry) => void) | null;
   onEdit: (e: DayLogEntry) => void;
@@ -21,6 +24,7 @@ function rowTint(e: DayLogEntry, editing: boolean): React.CSSProperties {
   if (editing) return { background: 'var(--amber3)' };
   if (!e.toTime) return { background: 'var(--blue3)' };
   if (e.kind === 'break') return { background: 'var(--bg3)', color: 'var(--text3)' };
+  if (e.kind === 'leave') return { background: 'var(--purple3)' };
   return {};
 }
 
@@ -67,9 +71,9 @@ export function EntriesTable({
             const tint = rowTint(e, actions?.editingId === e.id);
             return [
               <tr key={e.id} style={tint}>
-                <td className="mono">{e.fromTime}</td>
+                <td className="mono">{fmt12(e.fromTime)}</td>
                 <td className="mono">
-                  {open ? '● now' : e.toTime}
+                  {open ? '● now' : fmt12(e.toTime)}
                   {e.late ? (
                     <span
                       className="badge b-orange"
@@ -81,7 +85,7 @@ export function EntriesTable({
                   ) : null}
                 </td>
                 <td className="td-num mono">{fmtDuration(e.minutes)}</td>
-                <td>{e.kind === 'break' ? <i>Break</i> : 'Work'}</td>
+                <td>{e.kind === 'break' ? <i>Break</i> : DAY_LOG_ENTRY_KIND_LABELS[e.kind]}</td>
                 <td
                   title={e.description}
                   style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -115,14 +119,16 @@ export function EntriesTable({
                       >
                         Edit
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        disabled={actions.busy}
-                        onClick={() => actions.onRemove(e)}
-                      >
-                        Remove
-                      </button>
+                      {e.id === actions.lastId ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={actions.busy}
+                          onClick={() => actions.onRemove(e)}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
                     </div>
                   </td>
                 ) : null}

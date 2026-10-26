@@ -11,6 +11,7 @@ import {
   hm,
   istClock,
   currentOf,
+  lastEntryOf,
   latestWorkOf,
   spanEnd,
 } from './rules';
@@ -111,21 +112,31 @@ describe('breaks', () => {
   });
 });
 
+describe('lastEntryOf (strict order)', () => {
+  it('the latest-starting timed entry; untimed lines ignored', () => {
+    const a = withId(work('09:00', '10:00'));
+    const b = withId(work('10:00', '11:30'));
+    expect(lastEntryOf([b, a])).toBe(b);
+    expect(lastEntryOf([a, { ...b, fromTime: null }])).toBe(a);
+    expect(lastEntryOf([])).toBeNull();
+  });
+});
+
 describe('firstGap', () => {
   it('whole window when nothing is logged', () => {
-    expect(firstGap([])).toBe('09:00 – 18:00');
+    expect(firstGap([])).toBe('09:00 AM – 06:00 PM');
   });
   it('the slot before a break', () => {
-    expect(firstGap([work('09:00', '11:00'), lunch])).toBe('11:00 – 13:00');
+    expect(firstGap([work('09:00', '11:00'), lunch])).toBe('11:00 AM – 01:00 PM');
   });
   it('null when the day is covered', () => {
     expect(firstGap([work('09:00', '13:00'), lunch, work('13:30', '18:00')])).toBeNull();
   });
   it('an Open entry covers up to now', () => {
-    expect(firstGap([work('09:00', null)], 10 * 60)).toBe('10:00 – 18:00');
+    expect(firstGap([work('09:00', null)], 10 * 60)).toBe('10:00 AM – 06:00 PM');
   });
   it('a hole in the middle', () => {
-    expect(firstGap([work('09:00', '10:00'), work('10:30', '18:00')])).toBe('10:00 – 10:30');
+    expect(firstGap([work('09:00', '10:00'), work('10:30', '18:00')])).toBe('10:00 AM – 10:30 AM');
   });
 });
 
@@ -133,14 +144,14 @@ describe('Team current status', () => {
   it('working / break / idle / not_started today', () => {
     expect(currentOf('open', [line('work', '09:00', null, 'GRN')], null, true, null)).toEqual({
       status: 'working',
-      text: 'GRN · since 09:00',
+      text: 'GRN · since 09:00 AM',
       since: '09:00',
     });
     expect(currentOf('open', [line('break', '13:05', null, 'Lunch')], null, true, null).text).toBe(
-      'Lunch since 13:05',
+      'Lunch since 01:05 PM',
     );
     expect(currentOf('open', [line('work', '09:00', '11:00')], null, true, '11:00').text).toBe(
-      'since 11:00',
+      'since 11:00 AM',
     );
     expect(currentOf('open', [], null, true, null).status).toBe('not_started');
   });

@@ -6,6 +6,7 @@ import {
   type DayLogEntry,
   type DayLogStatus,
   type DayLogSummaryOut,
+  fmt12,
   isWorkingDay,
   minToHhmm,
   summarizeDay,
@@ -23,7 +24,7 @@ import {
   readHeader,
   spansOf,
 } from './day';
-import { dmy, entryMinutes, istHm } from './rules';
+import { dmy, entryMinutes, istHm, lastEntryOf } from './rules';
 
 /** How far back the D3 look-up walks for the previous working day. */
 const LOOKBACK_DAYS = 40;
@@ -119,6 +120,7 @@ export function summaryOf(
   const whole = summarizeDay(spansOf(lines), undefined, workingDay).unloggedMin;
   return {
     ...s,
+    // Strict order: where the next entry must start (null while one is Open).
     // A Leave day owes no time.
     unloggedMin: status === 'leave' ? 0 : whole,
     lateCount: lines.filter((l) => l.late).length,
@@ -180,12 +182,13 @@ export async function buildDetail(
       date <= clock.today &&
       (!strayOpen || strayOpen.date === date),
     canManage: canManageUser(v, target.mainDept) && (!isOwner || v.isSuper),
+    lastEntryId: lastEntryOf(lines.filter((l) => l.fromTime))?.id ?? null,
   };
 }
 
 /** 409 for a write on a day that is not open, naming who closed it and when. */
 export function notOpenError(h: DayHeader): ConflictError {
-  const at = (s: string | null): string => (s ? istHm(s) : '');
+  const at = (s: string | null): string => (s ? fmt12(istHm(s)) : '');
   if (h.status === 'submitted') {
     return new ConflictError(
       `${dmy(h.date)} was submitted by ${h.submittedByName ?? 'someone'} at ${at(h.submittedAt)} — ask your Department Admin to reopen it`,

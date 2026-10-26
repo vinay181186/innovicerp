@@ -5,7 +5,15 @@
 // → validate → write → bump the header (§20.3). `hours` is written only by
 // entries.ts, from From/To (§20.1).
 
-import { type DayLogDetail, type DayLogEntryKind, hhmmToMin, minToHhmm } from '@innovic/shared';
+import {
+  DAY_LOG_RULES,
+  type DayLogDetail,
+  type DayLogEntryKind,
+  fmt12,
+  hhmmToMin,
+  minToHhmm,
+  summarizeDay,
+} from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { isUniqueViolation } from '../../lib/db-retry';
@@ -25,6 +33,7 @@ import {
   dmy,
   findOverlap,
   istHm,
+  lastEntryOf,
 } from './rules';
 
 export const requireCompany = (user: AuthContext): string => {
@@ -55,7 +64,7 @@ export async function guardOwnerWrite(
   ]);
   if (stray && stray.date !== h.date) {
     throw new ConflictError(
-      `Your entry on ${dmy(stray.date)} is still Open since ${stray.fromTime} — give it a Stop time first`,
+      `Your entry on ${dmy(stray.date)} is still Open since ${fmt12(stray.fromTime)} — give it a Stop time first`,
     );
   }
   if (blocked) throw new ConflictError(blocked.reason);
@@ -99,7 +108,7 @@ export async function lockOwnEntry(
 export function staleEntryError(currentUpdatedAt: string): ConflictError {
   // Only the owner writes their entries, so the other change is theirs too.
   return new ConflictError(
-    `You changed this entry in another window at ${istHm(currentUpdatedAt)} — reload and redo your change`,
+    `You changed this entry in another window at ${fmt12(istHm(currentUpdatedAt))} — reload and redo your change`,
   );
 }
 
@@ -131,8 +140,66 @@ async function openElsewhere(
 }
 
 /**
+ * STRICT ORDER (owner 2026-10-26), under the day lock. An earlier entry keeps
+ * its stored times and kind (returns 'fixed' — only its text / SO / remark
+ * may change). A new entry, or an edit of the LAST one, must start at the
+ * day's nextStart from the OTHER lines: 09:00 on an empty day, else the
+ * latest Stop — and nothing else may be Open.
+ */
+function checkOrder(
+  others: readonly DayLine[],
+  self: DayLine | null,
+  cand: EntryCandidate,
+): 'fixed' | 'last' {
+  if (self?.fromTime && lastEntryOf([...others, self])?.id !== self.id) {
+    if (cand.fromTime !== self.fromTime || cand.toTime !== self.toTime || cand.kind !== self.kind) {
+      throw new ValidationError(
+        "Only the last entry's time can change — remove later entries first",
+      );
+    }
+    return 'fixed';
+  }
+  // Leave (owner 2026-10-26) runs to the end of the day — nothing after it.
+  if (others.some((l) => l.kind === 'leave' && l.fromTime)) {
+    throw new ValidationError('The day ends with your Leave');
+  }
+  const open = others.find((l) => l.fromTime && !l.toTime);
+  if (open) {
+    throw new ConflictError(`Stop ${open.description} (since ${fmt12(open.fromTime)}) first`);
+  }
+  const next = summarizeDay(spansOf(others)).nextStart ?? DAY_LOG_RULES.workFrom;
+  // The last entry keeping its own Start (a Stop / text / SO / remark edit)
+  // is not a new placement — only a moved Start must meet nextStart.
+  const keepsStart = self?.fromTime === cand.fromTime && self?.kind === cand.kind;
+  if (!keepsStart && cand.fromTime !== next) {
+    throw new ValidationError(
+      others.some((l) => l.fromTime)
+        ? `Start must be ${fmt12(next)} — where your last entry ended`
+        : `A day starts at ${fmt12(DAY_LOG_RULES.workFrom)}`,
+    );
+  }
+  return 'last';
+}
+
+/**
+ * LEAVE (owner 2026-10-26, option A): leaving early / half day / permission.
+ * No SO / JWSO, always closed, Stop is the end of the work window and the
+ * Start lies before it. Its Start follows strict order like any entry
+ * (checkOrder) and it is the day's last entry (nothing may follow it).
+ */
+function checkLeave(cand: EntryCandidate): void {
+  if (cand.hasOrder) throw new ValidationError('A Leave cannot be for an SO / JWSO');
+  if (cand.toTime !== DAY_LOG_RULES.workTo) {
+    throw new ValidationError(`Leave runs to ${fmt12(DAY_LOG_RULES.workTo)}`);
+  }
+  if (hhmmToMin(cand.fromTime) >= hhmmToMin(DAY_LOG_RULES.workTo)) {
+    throw new ValidationError(`A Leave must start before ${fmt12(DAY_LOG_RULES.workTo)}`);
+  }
+}
+
+/**
  * Every rule of one entry, checked under the day lock against the day's
- * OTHER live lines (`others` excludes the entry being edited).
+ * OTHER live lines (`others` excludes `self`, the entry being edited).
  */
 export async function validateEntry(
   tx: DbTransaction,
@@ -140,31 +207,35 @@ export async function validateEntry(
   h: DayHeader,
   others: readonly DayLine[],
   cand: EntryCandidate,
-  exceptId: string | null,
+  self: DayLine | null,
   clock: DayLogClock,
 ): Promise<void> {
   const isToday = h.date === clock.today;
   const nowMin = isToday ? clock.nowMin : undefined;
-  const nowHm = minToHhmm(clock.nowMin);
+  const nowHm = fmt12(minToHhmm(clock.nowMin));
   if (h.date > clock.today) throw new ValidationError(`${dmy(h.date)} has not come yet`);
-  if (isToday && hhmmToMin(cand.fromTime) > clock.nowMin) {
-    throw new ValidationError(`Start ${cand.fromTime} is later than now (${nowHm})`);
+  if (cand.kind === 'break' && cand.hasOrder) {
+    throw new ValidationError('A break cannot be for an SO / JWSO');
   }
-  if (isToday && cand.toTime && hhmmToMin(cand.toTime) > clock.nowMin) {
-    throw new ValidationError(`Stop ${cand.toTime} is later than now (${nowHm})`);
+  if (cand.kind === 'leave') checkLeave(cand);
+  // The order check — inside the day lock, against lines re-read under it (§20.3).
+  if (checkOrder(others, self, cand) === 'fixed') return; // times unchanged: nothing more to judge
+  if (isToday && hhmmToMin(cand.fromTime) > clock.nowMin) {
+    throw new ValidationError(`Start ${fmt12(cand.fromTime)} is later than now (${nowHm})`);
+  }
+  // A Leave may be entered before its 06:00 PM Stop comes; its Start may not.
+  if (isToday && cand.kind !== 'leave' && cand.toTime && hhmmToMin(cand.toTime) > clock.nowMin) {
+    throw new ValidationError(`Stop ${fmt12(cand.toTime)} is later than now (${nowHm})`);
   }
   if (!isToday && !cand.toTime) {
     throw new ValidationError(`Give a Stop time — ${dmy(h.date)} is over`);
   }
-  if (cand.kind === 'break' && cand.hasOrder) {
-    throw new ValidationError('A break cannot be for an SO / JWSO');
-  }
   if (!cand.toTime) {
-    const open = await openElsewhere(tx, companyId, h.userId, exceptId);
+    const open = await openElsewhere(tx, companyId, h.userId, self?.id ?? null);
     if (open) {
       const where = open.date === h.date ? '' : ` on ${dmy(open.date)}`;
       throw new ConflictError(
-        `Your entry${where} since ${open.fromTime} is still Open — stop it first`,
+        `Your entry${where} since ${fmt12(open.fromTime)} is still Open — stop it first`,
       );
     }
   }
@@ -180,7 +251,7 @@ export async function validateEntry(
   const hit = findOverlap(spans, cand, nowMin);
   if (hit) {
     throw new ValidationError(
-      `Overlaps ${hit.fromTime} – ${hit.toTime ?? 'now'} ${hit.description} — entries cannot share time`,
+      `Overlaps ${fmt12(hit.fromTime)} – ${hit.toTime ? fmt12(hit.toTime) : 'now'} ${hit.description} — entries cannot share time`,
     );
   }
   if (cand.kind === 'break') {

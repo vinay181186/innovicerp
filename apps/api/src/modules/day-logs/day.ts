@@ -4,6 +4,7 @@
 
 import {
   DAY_LOG_RULES,
+  type DayLogEntryKind,
   type DayLogOrder,
   type DayLogSpan,
   type DayLogStatus,
@@ -31,7 +32,7 @@ export interface DayHeader {
 export interface DayLine {
   id: string;
   reportId: string;
-  kind: 'work' | 'break';
+  kind: DayLogEntryKind;
   fromTime: string | null;
   toTime: string | null;
   description: string;
@@ -179,7 +180,7 @@ export async function loadLinesFor(
     return {
       id: String(r['id']),
       reportId: String(r['report_id']),
-      kind: r['kind'] as 'work' | 'break',
+      kind: r['kind'] as DayLogEntryKind,
       fromTime: hm(r['from_time'] as string | null),
       toTime: hm(r['to_time'] as string | null),
       description: String(r['description'] ?? ''),

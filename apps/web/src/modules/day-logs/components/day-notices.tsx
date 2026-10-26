@@ -4,6 +4,7 @@
 //               day and starts editing that entry.
 
 import type { DayLogDetail } from '@innovic/shared';
+import { fmt12 } from '@innovic/shared';
 import { Banner } from '@/ui/feedback';
 import { fmtDmy } from '../lib/format';
 
@@ -44,7 +45,7 @@ export function StrayOpenNotice({
     <Banner
       tone="warn"
       role="alert"
-      title={`${fmtDmy(s.date)} ${s.fromTime} is still open — Edit it and give a Stop time`}
+      title={`${fmtDmy(s.date)} ${fmt12(s.fromTime)} is still open — Edit it and give a Stop time`}
     >
       <button
         type="button"

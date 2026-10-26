@@ -80,7 +80,7 @@ export async function getTeam(
       const lines = h ? (linesBy.get(h.id) ?? []) : [];
       const status: DayLogStatus = h?.status ?? 'open';
       const s = summaryOf(lines, nowMin, workingDay, status);
-      const now = currentOf(status, lines, iso(h?.submitted_at), isToday, s.lastStop);
+      const now = currentOf(status, lines, iso(h?.submitted_at), isToday, s.lastStop, nowMin);
       return {
         userId: p.id,
         userName: p.name,
@@ -95,6 +95,7 @@ export async function getTeam(
         lastStop: s.lastStop,
         workMin: s.workMin,
         breakMin: s.breakMin,
+        leaveMin: s.leaveMin,
         entryCount: s.entryCount,
         lateCount: s.lateCount,
       };

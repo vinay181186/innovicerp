@@ -1,16 +1,27 @@
 // My Day Log's ONE entry form (design approved 2026-10-26): Type Work /
-// Break · Working on (Break name for a break) · Against SO / JWSO (work
+// Break / Leave · Working on (Break name for a break) · Against SO / JWSO (work
 // only, type-to-search) · Start time · Stop time (empty = the entry stays
 // Open) · Remark · Save. While editing: "Update entry" + "Cancel edit".
 // The input is checked with the shared schema (the same rules the server
 // applies); overlap, break limit and "not after now" are the server's.
+//
+// STRICT ORDER (owner 2026-10-26): Start is never typed — a new entry starts
+// at the server's `summary.nextStart` (09:00 AM on a new day), shown locked;
+// while an entry is Open there is no next start, so the form says "Stop …
+// first" and Save is off. Only the LAST entry (latest start) may change its
+// Stop time or Type; an earlier entry shows its times locked and may change
+// Working on / SO / Remark only. Times show as "09:00 AM" (fmt12) and go to
+// the API as 24-hour "HH:MM" (parseTime).
+//
+// LEAVE (owner 2026-10-26): leaving early / half day / permission. "Reason"
+// (optional), no SO / JWSO, Stop locked at DAY_LOG_RULES.workTo (06:00 PM).
 
 import type { DayLogDetail, DayLogEntry, DayLogEntryKind, DayLogOrder } from '@innovic/shared';
 import {
   addDayLogEntryInputSchema,
   DAY_LOG_RULES,
-  hhmmToMin,
-  minToHhmm,
+  fmt12,
+  parseTime,
   updateDayLogEntryInputSchema,
 } from '@innovic/shared';
 import { useState } from 'react';
@@ -22,18 +33,13 @@ import {
   useUpdateDayLogEntry,
   type DayQuery,
 } from '../api';
-import { errText, parseHhmm } from '../lib/format';
-import { TimeField } from './time-field';
-
-/** Where the next entry starts: the day's last stop (or 09:00), never after now. */
-export function nextStart(day: DayLogDetail, nowMin: number | null): string {
-  const t = day.summary.lastStop ?? DAY_LOG_RULES.workFrom;
-  return nowMin !== null && hhmmToMin(t) > nowMin ? minToHhmm(nowMin) : t;
-}
+import { errText } from '../lib/format';
+import { LockedTime, TimeField } from './time-field';
 
 const KINDS: { kind: DayLogEntryKind; label: string }[] = [
   { kind: 'work', label: 'Work' },
   { kind: 'break', label: 'Break' },
+  { kind: 'leave', label: 'Leave' },
 ];
 
 export function EntryForm({
@@ -41,6 +47,7 @@ export function EntryForm({
   q,
   nowMin,
   editing,
+  isLast,
   onDone,
 }: {
   day: DayLogDetail;
@@ -49,6 +56,8 @@ export function EntryForm({
   nowMin: number | null;
   /** The entry being edited, or null for a new one. */
   editing: DayLogEntry | null;
+  /** The entry being edited is the day's last (latest start) — its times may change. */
+  isLast: boolean;
   /** Edit saved or cancelled. */
   onDone: () => void;
 }): React.JSX.Element {
@@ -58,8 +67,7 @@ export function EntryForm({
   const [kind, setKind] = useState<DayLogEntryKind>(editing?.kind ?? 'work');
   const [desc, setDesc] = useState(editing?.description ?? '');
   const [order, setOrder] = useState<DayLogOrder | null>(editing?.order ?? null);
-  const [start, setStart] = useState(editing?.fromTime ?? nextStart(day, nowMin));
-  const [stop, setStop] = useState(editing?.toTime ?? '');
+  const [stop, setStop] = useState(editing?.toTime ? fmt12(editing.toTime) : '');
   const [remarks, setRemarks] = useState(editing?.remarks ?? '');
   // §20.4: the edit carries the updatedAt the entry had when editing began.
   const [loadedAt] = useState(editing?.updatedAt ?? '');
@@ -68,6 +76,18 @@ export function EntryForm({
   const orders = useDayLogOrderOptions(orderSearch, kind === 'work');
   const busy = add.isPending || update.isPending;
   const isBreak = kind === 'break';
+  const isLeave = kind === 'leave';
+  /** No SO / JWSO on a break or a leave. */
+  const noOrder = isBreak || isLeave;
+  // Start: the edited entry's own, else where the server says the next one starts.
+  const start = editing ? editing.fromTime : day.summary.nextStart;
+  /** An earlier entry: times and Type locked. */
+  const timesLocked = editing !== null && !isLast;
+  const openEntry = editing ? null : day.entries.find((e) => !e.toTime);
+  const leaveEnds = !editing && day.entries.some((e) => e.kind === 'leave');
+  const blocked = start === null || leaveEnds;
+  /** A Leave must start before the day's end (06:00 PM). */
+  const leaveTooLate = start !== null && start >= DAY_LOG_RULES.workTo;
 
   const options = (orders.data ?? []).map((o) => ({
     id: o.id,
@@ -78,18 +98,28 @@ export function EntryForm({
   async function save(): Promise<void> {
     if (busy) return;
     setMsg(null);
-    const startT = parseHhmm(start);
-    const stopT = stop.trim() === '' ? null : parseHhmm(stop);
-    if (!startT) return setMsg({ ok: false, text: 'Start time: type it as 930 or 09:30.' });
-    if (stop.trim() !== '' && !stopT)
-      return setMsg({ ok: false, text: 'Stop time: type it as 1130 or 11:30, or leave it empty.' });
+    const startT = start;
+    if (!startT) return;
+    const stopT = timesLocked
+      ? (editing?.toTime ?? null)
+      : isLeave
+        ? DAY_LOG_RULES.workTo
+        : stop.trim() === ''
+          ? null
+          : parseTime(stop);
+    if (!timesLocked && !isLeave && stop.trim() !== '' && !stopT)
+      return setMsg({
+        ok: false,
+        text: 'Stop time: type it as 1130, 3pm or 3:15 pm, or leave it empty.',
+      });
     const body = {
       kind,
+      // Reason is optional on a Leave — the server names it "Leave".
       description: desc.trim(),
       startTime: startT,
       stopTime: stopT,
-      orderType: isBreak ? null : (order?.type ?? null),
-      orderId: isBreak ? null : (order?.id ?? null),
+      orderType: noOrder ? null : (order?.type ?? null),
+      orderId: noOrder ? null : (order?.id ?? null),
       remarks: remarks.trim() || null,
     };
     const check = editing
@@ -104,16 +134,17 @@ export function EntryForm({
         onDone();
         return;
       }
-      const fresh = await add.mutateAsync({ ...body, date: day.date });
+      await add.mutateAsync({ ...body, date: day.date });
       setKind('work');
       setDesc('');
       setOrder(null);
       setStop('');
       setRemarks('');
-      setStart(nextStart(fresh, nowMin));
       setMsg({
         ok: true,
-        text: stopT ? `Saved ${startT} – ${stopT}.` : `Saved — open since ${startT}.`,
+        text: stopT
+          ? `Saved ${fmt12(startT)} – ${fmt12(stopT)}.`
+          : `Saved — open since ${fmt12(startT)}.`,
       });
     } catch (e) {
       setMsg({ ok: false, text: errText(e) });
@@ -139,17 +170,27 @@ export function EntryForm({
                   type="button"
                   className={`btn${on ? ' btn-primary' : ' btn-ghost'}`}
                   aria-pressed={on}
-                  disabled={busy}
+                  disabled={busy || timesLocked || (k.kind === 'leave' && leaveTooLate)}
+                  title={
+                    timesLocked
+                      ? 'Only the last entry may change its Type'
+                      : k.kind === 'leave' && leaveTooLate
+                        ? 'A Leave must start before 06:00 PM'
+                        : undefined
+                  }
                   onClick={() => {
+                    if (kind === 'leave' && k.kind !== 'leave') setStop('');
                     setKind(k.kind);
-                    if (k.kind === 'break') setOrder(null);
+                    if (k.kind !== 'work') setOrder(null);
                   }}
                   style={{
                     minWidth: 64,
                     borderRadius:
                       i === 0
                         ? 'var(--radius) 0 0 var(--radius)'
-                        : '0 var(--radius) var(--radius) 0',
+                        : i === KINDS.length - 1
+                          ? '0 var(--radius) var(--radius) 0'
+                          : 0,
                   }}
                 >
                   {k.label}
@@ -160,20 +201,26 @@ export function EntryForm({
         </div>
         <div style={{ flex: '2 1 240px' }}>
           <label className="form-label" htmlFor="dl-desc">
-            {isBreak ? 'Break name' : 'Working on'}
-            {isBreak ? null : <span className="req"> *</span>}
+            {isBreak ? 'Break name' : isLeave ? 'Reason' : 'Working on'}
+            {noOrder ? null : <span className="req"> *</span>}
           </label>
           <input
             id="dl-desc"
             className="innovic-input"
             maxLength={500}
-            placeholder={isBreak ? 'Lunch, Tea, Prayer…' : 'What did you work on?'}
+            placeholder={
+              isBreak
+                ? 'Lunch, Tea, Prayer…'
+                : isLeave
+                  ? 'Half day, permission, doctor…'
+                  : 'What did you work on?'
+            }
             value={desc}
             disabled={busy}
             onChange={(e) => setDesc(e.target.value)}
           />
         </div>
-        {isBreak ? null : (
+        {noOrder ? null : (
           <div style={{ flex: '1.6 1 220px' }}>
             <label className="form-label" htmlFor="dl-order">
               Against SO / JWSO
@@ -201,29 +248,39 @@ export function EntryForm({
           <label className="form-label" htmlFor="dl-start">
             Start time <span className="req">*</span>
           </label>
-          <TimeField
+          <LockedTime
             id="dl-start"
             ariaLabel="Start time"
             value={start}
-            onChange={setStart}
-            nowMin={nowMin}
-            disabled={busy}
-            placeholder={DAY_LOG_RULES.workFrom}
+            title="Start is where the previous entry stopped (09:00 AM for the first)"
           />
         </div>
         <div style={{ display: 'grid', gap: 3 }}>
           <label className="form-label" htmlFor="dl-stop">
             Stop time
           </label>
-          <TimeField
-            id="dl-stop"
-            ariaLabel="Stop time"
-            value={stop}
-            onChange={setStop}
-            nowMin={nowMin}
-            disabled={busy}
-            placeholder="open"
-          />
+          {timesLocked || isLeave ? (
+            <LockedTime
+              id="dl-stop"
+              ariaLabel="Stop time"
+              value={timesLocked ? (editing?.toTime ?? null) : DAY_LOG_RULES.workTo}
+              title={
+                timesLocked
+                  ? 'Only the last entry may change its times'
+                  : 'A leave runs to the end of the working day'
+              }
+            />
+          ) : (
+            <TimeField
+              id="dl-stop"
+              ariaLabel="Stop time"
+              value={stop}
+              onChange={setStop}
+              nowMin={nowMin}
+              disabled={busy}
+              placeholder="open"
+            />
+          )}
         </div>
       </div>
       <div style={{ marginTop: 8 }}>
@@ -245,7 +302,7 @@ export function EntryForm({
         <button
           type="button"
           className="btn btn-primary"
-          disabled={busy}
+          disabled={busy || blocked}
           onClick={() => void save()}
           style={{ minWidth: 110 }}
         >
@@ -255,6 +312,13 @@ export function EntryForm({
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={onDone}>
             Cancel edit
           </button>
+        ) : null}
+        {blocked ? (
+          <span role="status" style={{ fontSize: 13, color: 'var(--text2)' }}>
+            {leaveEnds
+              ? 'The day ends with your Leave — remove it to add more'
+              : `Stop ${openEntry?.description || 'the open entry'} first`}
+          </span>
         ) : null}
         {msg ? (
           <span

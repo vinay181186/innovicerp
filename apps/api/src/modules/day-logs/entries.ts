@@ -1,5 +1,7 @@
 // Day Log — the owner's entries: add, edit, Stop and remove (design approved
-// 2026-10-26). Any entry, in any order, until the day is submitted; no
+// 2026-10-26). STRICT ORDER (owner 2026-10-26): a new entry starts where the
+// last one ended (09:00 first); only the LAST entry may change its times or
+// be removed (validateEntry / deleteEntry); until the day is submitted; no
 // approval. Each runs in ONE transaction under the day header lock (openDay /
 // lockHeaderById, FOR UPDATE) with the lines re-read inside it (§20.3). The
 // edit is `WHERE updated_at = <loaded>` (§20.4); Stop / remove are
@@ -11,6 +13,7 @@ import {
   type DayLogEntryKind,
   type DayLogOrderType,
   type UpdateDayLogEntryInput,
+  fmt12,
   hhmmToMin,
   minToHhmm,
 } from '@innovic/shared';
@@ -31,7 +34,14 @@ import {
 } from './day';
 import { notOpenError } from './detail';
 import { requireOpenOrder } from './orders';
-import { type DayLogClock, breakLimitProblem, breakTotalWith, dmy, istClock } from './rules';
+import {
+  type DayLogClock,
+  breakLimitProblem,
+  breakTotalWith,
+  dmy,
+  istClock,
+  lastEntryOf,
+} from './rules';
 import {
   guardOwnerWrite,
   hoursOf,
@@ -78,7 +88,7 @@ async function prepare(
     h,
     others,
     { kind: input.kind, fromTime: input.startTime, toTime, hasOrder: !!orderId },
-    self?.id ?? null,
+    self,
     clock,
   );
   let orderCode: string | null = null;
@@ -90,7 +100,9 @@ async function prepare(
   }
   return {
     kind: input.kind,
-    description: input.description || (input.kind === 'break' ? 'Break' : ''),
+    description:
+      input.description ||
+      (input.kind === 'break' ? 'Break' : input.kind === 'leave' ? 'Leave' : ''),
     fromTime: input.startTime,
     toTime,
     remarks: input.remarks || null,
@@ -101,7 +113,7 @@ async function prepare(
 }
 
 const label = (r: { fromTime: string; toTime: string | null; description: string }): string =>
-  `${r.fromTime}–${r.toTime ?? 'Open'} ${r.description}`;
+  `${fmt12(r.fromTime)}–${r.toTime ? fmt12(r.toTime) : 'Open'} ${r.description}`;
 
 async function log(
   tx: DbTransaction,
@@ -237,7 +249,7 @@ export async function stopEntry(
     const self = (await loadLines(tx, companyId, h.id)).find((l) => l.id === entryId);
     if (!self || !self.fromTime) throw new NotFoundError('Entry not found');
     if (self.toTime)
-      throw new ConflictError(`This entry was already stopped at ${self.toTime} — reload`);
+      throw new ConflictError(`This entry was already stopped at ${fmt12(self.toTime)} — reload`);
     if (h.date !== clock.today) {
       throw new ValidationError(`Edit the entry and give the time you stopped on ${dmy(h.date)}`);
     }
@@ -279,13 +291,13 @@ export async function stopEntry(
       'STOP',
       removed
         ? `removed ${label({ fromTime: self.fromTime, toTime: null, description: self.description })} (stopped the minute it started)`
-        : `stopped ${self.fromTime}–${nowHm} ${self.description}`,
+        : `stopped ${fmt12(self.fromTime)}–${fmt12(nowHm)} ${self.description}`,
     );
     return ownerDetail(tx, companyId, v, user, h.date, clock);
   });
 }
 
-/** Remove any entry of an open day (soft delete). */
+/** Remove the LAST entry of an open day (strict order; soft delete). */
 export async function deleteEntry(
   entryId: string,
   user: AuthContext,
@@ -297,8 +309,12 @@ export async function deleteEntry(
   return withUserContext(user, async (tx) => {
     const h = await lockOwnEntry(tx, companyId, user, entryId);
     await guardOwnerWrite(tx, companyId, h, clock.today);
-    const self = (await loadLines(tx, companyId, h.id)).find((l) => l.id === entryId);
+    const lines = await loadLines(tx, companyId, h.id); // re-read under the day lock (§20.3)
+    const self = lines.find((l) => l.id === entryId);
     if (!self) throw new NotFoundError('Entry not found');
+    if (self.fromTime && lastEntryOf(lines)?.id !== self.id) {
+      throw new ValidationError('Remove the later entries first');
+    }
     const gone = (await tx.execute(sql`
       UPDATE public.daily_report_lines
       SET deleted_at = now(), deleted_by = ${user.id}::uuid, updated_at = now(), updated_by = ${user.id}::uuid
