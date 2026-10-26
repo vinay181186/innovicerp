@@ -36,6 +36,11 @@ export const CANCEL_DOC_TYPES = [
   'job_work_order',
   'sales_order',
   'grn',
+  // Phase C (part 2)
+  'job_card',
+  'production_order',
+  'dc_receipt',
+  'jw_dc_inward',
 ] as const;
 export type CancelDocType = (typeof CANCEL_DOC_TYPES)[number];
 export const cancelDocTypeSchema = z.enum(CANCEL_DOC_TYPES);
@@ -60,6 +65,10 @@ export const CANCEL_DOC_LABELS: Record<CancelDocType, string> = {
   job_work_order: 'JWSO',
   sales_order: 'Sales Order',
   grn: 'GRN',
+  job_card: 'Job Card',
+  production_order: 'Production Order',
+  dc_receipt: 'DC Receipt',
+  jw_dc_inward: 'JW DC Receipt',
 };
 
 /** The page whose ticks decide the cancel: Edit = may request, Approve = may
@@ -83,6 +92,10 @@ export const CANCEL_DOC_FORM_KEY: Record<CancelDocType, string> = {
   job_work_order: 'jw_create',
   sales_order: 'so_create',
   grn: 'grn_create',
+  job_card: 'jc_create',
+  production_order: 'prodorder_create',
+  dc_receipt: 'ospdc_create',
+  jw_dc_inward: 'ospdc_create',
 };
 
 export const CANCEL_REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;

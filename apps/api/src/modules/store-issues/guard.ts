@@ -31,6 +31,7 @@ import {
 } from '../../lib/material-requirement';
 import { roundQty } from '../../lib/stock-ledger';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
+import { lockLiveJobCardForShare } from '../job-cards/cancel';
 
 export interface IssueTarget {
   jobCardId: string | null;
@@ -70,6 +71,9 @@ export async function resolveTargetAndCap(
       throw new ValidationError(`${jc.code} is closed — it takes no more material issues`);
     }
     await assertProductionOrderNotShortClosed(tx, jc.id);
+    // ADR-235 — share-lock the live card (after the item locks): a Job Card
+    // cancel committing meanwhile leaves nothing to issue against.
+    await lockLiveJobCardForShare(tx, companyId, jc.id, jc.code);
     // ADR-225 — every requirement line (RM, plus a Multi-Level Plan
     // sub-assembly's child parts), the same list the Material view shows.
     const reqs = await jcRequirements(tx, companyId, jc);

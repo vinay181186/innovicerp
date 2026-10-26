@@ -237,7 +237,8 @@ function ProductionOrderEditPage(): React.JSX.Element {
 
   // A closed / short-closed order is frozen — no header edit (mirrors the
   // detail page's Edit gate; the server refuses it too).
-  if (!EDITABLE_STATUSES.includes(detail.status)) {
+  // ADR-235 — a Cancelled order is read-only too.
+  if (detail.cancelledAt || !EDITABLE_STATUSES.includes(detail.status)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -247,7 +248,8 @@ function ProductionOrderEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            This Production Order can no longer be edited — it is {detail.status.replace('_', ' ')}.
+            This Production Order can no longer be edited — it is{' '}
+            {detail.cancelledAt ? 'Cancelled' : detail.status.replace('_', ' ')}.
           </div>
         </div>
       </div>

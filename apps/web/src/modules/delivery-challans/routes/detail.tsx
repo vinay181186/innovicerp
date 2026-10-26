@@ -74,11 +74,15 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   // ADR-235 — the ONE standard Cancel dialog (reason, request / approve).
   const [cancelOpen, setCancelOpen] = useState(false);
+  // ADR-235 — the receipt whose Cancel dialog is open (docType 'dc_receipt').
+  const [cancelReceipt, setCancelReceipt] = useState<{ id: string; code: string } | null>(null);
 
   const aggregatesByLine = useMemo(() => {
     const map = new Map<string, LineAgg>();
     if (!data) return map;
     for (const r of data.receipts) {
+      // ADR-235 — a Cancelled receipt booked nothing back any more.
+      if (r.cancelledAt) continue;
       for (const rl of r.lines) {
         const cur = map.get(rl.deliveryChallanLineId) ?? { receivedQty: 0, rejectedQty: 0 };
         cur.receivedQty += Number(rl.receivedQty);
@@ -167,10 +171,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
     dc.status === 'issued' && (perms.entry || effectiveFormPerms(eff, 'grn_create').entry);
   const cancelled = dc.status === 'cancelled';
   const canCancel = !cancelled && (perms.edit || perms.approve);
+  // Cancel Receipt -> the same Edit OR Approve on OSP DC (ADR-235); the server
+  // preview decides what blocks it (a GRN / QC made from the receipt).
+  const canCancelReceipt = perms.edit || perms.approve;
   // Edit (ADR-202) -> edit, only while the DC is still issued and nothing has
   // been received against it (receiving freezes the quantities). The server
   // re-checks the same guard; the edit screen does too.
-  const canEdit = dc.status === 'issued' && dc.receipts.length === 0 && perms.edit;
+  const canEdit =
+    dc.status === 'issued' && dc.receipts.every((r) => r.cancelledAt != null) && perms.edit;
 
   const printArgs = {
     dc,
@@ -477,7 +485,16 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <DcReceiptsPanel receipts={dc.receipts} lineLookup={lineLookup} />
+      <DcReceiptsPanel
+        receipts={dc.receipts}
+        lineLookup={lineLookup}
+        onCancel={
+          // A return-to-vendor replacement receipt cannot be cancelled yet.
+          canCancelReceipt && !dc.ncId
+            ? (r) => setCancelReceipt({ id: r.id, code: r.receiptCode })
+            : undefined
+        }
+      />
 
       <RelatedDocsPanel module="delivery-challans" id={dc.id} />
 
@@ -491,6 +508,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
           docId={dc.id}
           docCode={dc.code}
           onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
+      {cancelReceipt ? (
+        <CancelDocDialog
+          docType="dc_receipt"
+          docId={cancelReceipt.id}
+          docCode={cancelReceipt.code}
+          onClose={() => setCancelReceipt(null)}
         />
       ) : null}
     </div>

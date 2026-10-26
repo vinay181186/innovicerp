@@ -15,7 +15,6 @@
 // the SERVER over every order (ADR-200) — any change goes back to page 1.
 
 import {
-  type ListProductionOrdersQuery,
   PRODUCTION_ORDER_STATUSES,
   PRODUCTION_ORDER_STATUS_LABEL,
   type ProductionOrderListItem,
@@ -36,22 +35,29 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { useProductionOrdersList } from '../api';
-import { PO_LIST_DETAIL_IDS, poListColumns, poRowTint } from '../components/po-list-columns';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { RowActions } from '@/ui/layout';
+import { type ProductionOrdersListArgs, useProductionOrdersList } from '../api';
+import {
+  PO_LIST_DETAIL_IDS,
+  isProCancelled,
+  poListColumns,
+  poRowTint,
+} from '../components/po-list-columns';
 
 // Tile counts ignore the search box (they count the whole book, like SO Master
 // and the PR list). Module-level constants keep the query keys stable.
-const COUNT_ALL: ListProductionOrdersQuery = { limit: 1, offset: 0 };
-const COUNT_OPEN: ListProductionOrdersQuery = { status: 'open', limit: 1, offset: 0 };
-const COUNT_PARTLY_CLOSED: ListProductionOrdersQuery = {
+const COUNT_ALL: ProductionOrdersListArgs = { limit: 1, offset: 0 };
+const COUNT_OPEN: ProductionOrdersListArgs = { status: 'open', limit: 1, offset: 0 };
+const COUNT_PARTLY_CLOSED: ProductionOrdersListArgs = {
   status: 'partially_closed',
   limit: 1,
   offset: 0,
 };
-const COUNT_CLOSED: ListProductionOrdersQuery = { status: 'closed', limit: 1, offset: 0 };
+const COUNT_CLOSED: ProductionOrdersListArgs = { status: 'closed', limit: 1, offset: 0 };
 // ADR-182 — orders stopped at some stage. Its own tile so a stopped order is
 // never mistaken for a finished one.
-const COUNT_SHORT_CLOSED: ListProductionOrdersQuery = {
+const COUNT_SHORT_CLOSED: ProductionOrdersListArgs = {
   status: 'short_closed',
   limit: 1,
   offset: 0,
@@ -76,6 +82,11 @@ function ProductionOrdersListPage(): React.JSX.Element {
   // Tier-driven, per department (Production). Entry raises a PO.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
+  // Cancel PRO -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit sends
+  // a Cancel Request, Approve decides it; the dialog's server preview says
+  // which of the two this user may press.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelPro, setCancelPro] = useState<ProductionOrderListItem | null>(null);
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -107,10 +118,12 @@ function ProductionOrdersListPage(): React.JSX.Element {
   const sf = useServerSortFilter(TABLE_KEYS.productionOrders, () => gotoPage(1));
 
   const offset = pageOffset(search.page);
-  const query: ListProductionOrdersQuery = useMemo(
+  const query: ProductionOrdersListArgs = useMemo(
     () => ({
       ...(search.search ? { search: search.search } : {}),
       ...(search.status ? { status: search.status } : {}),
+      // ADR-235 — Cancelled orders stay on the list, washed and marked Cancelled.
+      includeCancelled: true,
       sf: sf.param,
       limit: LIST_PAGE_SIZE,
       offset,
@@ -247,6 +260,21 @@ function ProductionOrdersListPage(): React.JSX.Element {
               void navigate({ to: '/production-orders/$id', params: { id: po.id } })
             }
             renderLink={(p) => <Link {...p} />}
+            rowActionsWidth="1%"
+            rowActions={(po) => (
+              <RowActions
+                items={[
+                  {
+                    key: 'cancel',
+                    label: 'Cancel PRO',
+                    icon: 'x',
+                    group: 'danger',
+                    hidden: !canCancel || isProCancelled(po),
+                    onSelect: () => setCancelPro(po),
+                  },
+                ]}
+              />
+            )}
           />
         </Panel>
       )}
@@ -260,6 +288,15 @@ function ProductionOrdersListPage(): React.JSX.Element {
           onPage={gotoPage}
         />
       )}
+
+      {cancelPro ? (
+        <CancelDocDialog
+          docType="production_order"
+          docId={cancelPro.id}
+          docCode={cancelPro.code}
+          onClose={() => setCancelPro(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -35,10 +35,17 @@ import { jobCardsKeys } from '@/modules/job-cards/api';
 import { plansKeys } from '@/modules/plans/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
 
+/** ADR-235 — `includeCancelled` is optional for callers (the shared schema's
+ *  parsed type makes it required). Only the Production Orders list screen sets
+ *  it; every other reader keeps live orders alone. */
+export type ProductionOrdersListArgs = Omit<ListProductionOrdersQuery, 'includeCancelled'> & {
+  includeCancelled?: boolean | undefined;
+};
+
 export const productionOrdersKeys = {
   all: ['production-orders'] as const,
   lists: () => [...productionOrdersKeys.all, 'list'] as const,
-  list: (q: ListProductionOrdersQuery) => [...productionOrdersKeys.lists(), q] as const,
+  list: (q: ProductionOrdersListArgs) => [...productionOrdersKeys.lists(), q] as const,
   details: () => [...productionOrdersKeys.all, 'detail'] as const,
   detail: (id: string) => [...productionOrdersKeys.details(), id] as const,
   nextCode: () => [...productionOrdersKeys.all, 'next-code'] as const,
@@ -47,20 +54,22 @@ export const productionOrdersKeys = {
   forJobCard: (jobCardId: string) => [...productionOrdersKeys.forJobCards(), jobCardId] as const,
 };
 
-function toQueryString(q: ListProductionOrdersQuery): string {
+function toQueryString(q: ProductionOrdersListArgs): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.status) params.set('status', q.status);
   if (q.planId) params.set('planId', q.planId);
   if (q.jobCardId) params.set('jobCardId', q.jobCardId);
   if (q.sf) params.set('sf', q.sf);
+  // ADR-235 — the list screen shows Cancelled orders too (washed, read-only).
+  if (q.includeCancelled) params.set('includeCancelled', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
 }
 
 export function useProductionOrdersList(
-  query: ListProductionOrdersQuery,
+  query: ProductionOrdersListArgs,
   options?: Omit<UseQueryOptions<ListProductionOrdersResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListProductionOrdersResponse>({
@@ -120,7 +129,7 @@ export function useProductionOrderForJobCard(jobCardId: string | undefined, enab
       let next: string | null = jobCardId ?? null;
       for (let hop = 0; hop < PARENT_JOB_CARD_HOPS && next; hop += 1) {
         const cardId: string = next;
-        const query: ListProductionOrdersQuery = { limit: 1, offset: 0, jobCardId: cardId };
+        const query: ProductionOrdersListArgs = { limit: 1, offset: 0, jobCardId: cardId };
         const res = await apiFetch<ListProductionOrdersResponse>(
           `/production-orders?${toQueryString(query)}`,
         );

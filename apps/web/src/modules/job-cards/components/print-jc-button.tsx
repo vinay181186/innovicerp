@@ -82,6 +82,8 @@ export function usePrintJc(
         actualSize: order?.actualSize ?? null,
         productionOrderCode: order?.code ?? null,
         draft,
+        // ADR-235 — a Cancelled card prints stamped CANCELLED.
+        cancelled: Boolean(jc.cancelledAt),
       }),
     );
   }, [pending, opsQuery.data, opsQuery.isError, jc, company, order, orderLoading, draft]);

@@ -36,14 +36,16 @@ import {
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, fmtDateTime } from '@/lib/date';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { JC_STATUS_LABEL, JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { EmptyState, Panel, ProgressBar } from '@/ui/data';
-import { Modal } from '@/ui/feedback';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
+import { Banner, Modal } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
@@ -91,6 +93,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   });
   const [shortCloseOpen, setShortCloseOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  // ADR-235 — the ONE standard Cancel dialog (docType 'production_order').
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [tab, setTab] = useState<TabKey>('ledger');
   const closeWhyId = useId();
 
@@ -125,6 +129,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // fully closed, and only while the server allows it (`canClose`).
   const closeOffered =
     !!data &&
+    !data.cancelledAt &&
     !isProductionOrderStopped(data.status) &&
     data.status !== 'closed' &&
     perms.advance &&
@@ -174,6 +179,11 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // read from the shared enum helper so the screen and the server agree on
   // what "stopped" means.
   const stopped = isProductionOrderStopped(data.status);
+  // ADR-235 — a Cancelled order is read-only: no Close, no Short Close, no
+  // Reverse close, no Edit. Cancel PRO -> Edit OR Approve: Edit sends a Cancel
+  // Request, Approve decides it.
+  const cancelled = Boolean(data.cancelledAt);
+  const canCancel = !cancelled && (perms.edit || perms.approve);
   // ADR-179: close is progressive. It stays available while the order is not
   // fully closed and the server still allows it (`canClose`).
   const notClosed = data.status !== 'closed';
@@ -183,7 +193,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // The server's reason Close is off — shown to everyone, as before; the
   // disabled button only to those who could otherwise press it.
   const closeBlockedReason =
-    !stopped && notClosed && !data.canClose && data.closeBlockedReason
+    !cancelled && !stopped && notClosed && !data.canClose && data.closeBlockedReason
       ? data.closeBlockedReason
       : null;
   // Short Close is offered at ANY stage except an order already stopped — the
@@ -191,12 +201,13 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // ADR-233: not on an order already fully received — nothing is short there
   // (the server refuses it the same way).
   const fullyReceived = data.status === 'closed' && (data.creditedQty ?? 0) >= data.orderQty;
-  const showShortCloseButton = !stopped && !fullyReceived && perms.advance;
+  const showShortCloseButton = !cancelled && !stopped && !fullyReceived && perms.advance;
   // ADR-202 Phase 3 — header edit (with approval) is offered only while the
   // order is still open or partly closed; a closed / short-closed order is
   // frozen. Correcting the order is an `edit` (Close/Short Close are
   // `advance`, ADR-231). The server re-checks both.
-  const canEdit = perms.edit && (data.status === 'open' || data.status === 'partially_closed');
+  const canEdit =
+    !cancelled && perms.edit && (data.status === 'open' || data.status === 'partially_closed');
   const pct =
     data.orderQty > 0 ? Math.min(100, Math.round((data.jcFinishedQty / data.orderQty) * 100)) : 0;
   const credited = data.creditedQty ?? 0;
@@ -233,7 +244,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
 
   // Where Close Qty… sits: the button, or — once the order is stopped or fully
   // closed — the one-line banner that replaces it.
-  const closeSlot = stopped ? (
+  const closeSlot = cancelled ? null : stopped ? (
     <span className="po-banner" title={shortClosedText}>
       {shortClosedText}
     </span>
@@ -323,12 +334,35 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                     'Stop this Production Order — its Job Card is frozen and the un-produced qty goes back to the plan',
                   onClick: () => setShortCloseOpen(true),
                 },
+                {
+                  label: 'Cancel PRO',
+                  danger: true,
+                  hidden: !canCancel,
+                  onClick: () => setCancelOpen(true),
+                },
               ]}
             />
             {closeSlot}
           </>
         }
       >
+        {/* ADR-235 — an open Cancel Request (orange), or the Cancelled mark (red). */}
+        <CancelPendingBanner
+          docType="production_order"
+          docId={data.id}
+          cancelled={cancelled}
+          {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+        />
+        {cancelled ? (
+          <div className="mb-2">
+            <Banner tone="error" accent title="Cancelled — this Production Order is void">
+              <div>
+                Reason: <b>{data.cancelReason ?? '—'}</b>
+                {data.cancelledAt ? ` · ${fmtDateTime(data.cancelledAt)}` : ''}
+              </div>
+            </Banner>
+          </div>
+        ) : null}
         {/* WHICH order this is: the PRO, the item it makes, the SO / JWSO line
             it serves and the customer. Identity, not facts, so it heads the
             body instead of taking grid cells. */}
@@ -654,7 +688,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           ) : (
             // Close ledger — every partial close + reversal, newest first.
             // ADR-182 — nothing may be reversed on a stopped order either.
-            <PoCloseLedger po={data} canReverse={perms.edit && !stopped} fill />
+            <PoCloseLedger po={data} canReverse={perms.edit && !stopped && !cancelled} fill />
           )
         ) : (
           // ADR-197 — every action on this order: create, partial closes,
@@ -677,6 +711,15 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         >
           <PoCloseForm po={data} onClosed={() => setCloseOpen(false)} />
         </Modal>
+      ) : null}
+
+      {cancelOpen ? (
+        <CancelDocDialog
+          docType="production_order"
+          docId={data.id}
+          docCode={data.code}
+          onClose={() => setCancelOpen(false)}
+        />
       ) : null}
 
       {shortCloseOpen ? (

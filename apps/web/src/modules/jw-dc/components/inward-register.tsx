@@ -7,19 +7,25 @@
 // and Vehicle / Remarks — everything the list row already carries, so no extra
 // fetch. A receipt that had rejections at Incoming QC is washed red (ROW_TINT);
 // inward entries carry no return-status of their own.
+//
+// ADR-235 — Cancelled receipts stay on the register (includeCancelled), washed
+// grey and marked Cancelled, the reason in the ▸; a live row's ⋯ offers
+// "Cancel Receipt" (the ONE standard Cancel dialog, docType 'jw_dc_inward').
 
 import { type JwDcInwardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDateTime } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useJwDcInwardList } from '../api';
-import { inwardColumns } from './inward-columns';
+import { inwardColumns, isJwDcInwardCancelled } from './inward-columns';
 import { NewInwardModal } from './new-inward-modal';
 
 const TABLE_KEY = TABLE_KEYS.jwDcInward;
@@ -32,7 +38,13 @@ export function InwardView({
 }): React.JSX.Element {
   // Same right the server checks (ADR-193): OSP Outward DC entry.
   const { data: eff } = useMyAccess();
-  const canWrite = effectiveFormPerms(eff, 'ospdc_create').entry;
+  const perms = effectiveFormPerms(eff, 'ospdc_create');
+  const canWrite = perms.entry;
+  // Cancel Receipt -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit
+  // sends a Cancel Request, Approve decides it; the dialog's server preview
+  // says which of the two this user may press.
+  const canCancel = perms.edit || perms.approve;
+  const [cancelRow, setCancelRow] = useState<JwDcInwardListItem | null>(null);
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => initialSearch ?? '');
   const [page, setPage] = useState(1);
@@ -57,6 +69,8 @@ export function InwardView({
   const { data, isLoading, isError, error } = useJwDcInwardList({
     search: term || undefined,
     sf: sf.param,
+    // ADR-235 — Cancelled receipts stay on the register, washed and marked.
+    includeCancelled: true,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(page),
   });
@@ -119,9 +133,30 @@ export function InwardView({
             loading={isLoading}
             empty={term || sf.filtering ? 'No inward entries match.' : 'No inward entries yet.'}
             // A receipt that had rejections at Incoming QC stands out red.
-            rowClassName={(inv) => (inv.totalRejectedQty > 0 ? ROW_TINT.late : undefined)}
+            rowClassName={(inv) =>
+              isJwDcInwardCancelled(inv)
+                ? ROW_TINT.cancelled
+                : inv.totalRejectedQty > 0
+                  ? ROW_TINT.late
+                  : undefined
+            }
             renderExpanded={(inv) => (expanded.has(inv.id) ? <ExpandedInward inv={inv} /> : null)}
             onToggleExpanded={(inv) => toggleExpand(inv.id)}
+            rowActionsWidth="1%"
+            rowActions={(inv: JwDcInwardListItem) => (
+              <RowActions
+                items={[
+                  {
+                    key: 'cancel',
+                    label: 'Cancel Receipt',
+                    icon: 'x',
+                    group: 'danger',
+                    hidden: !canCancel || isJwDcInwardCancelled(inv),
+                    onSelect: () => setCancelRow(inv),
+                  },
+                ]}
+              />
+            )}
           />
         </Panel>
       )}
@@ -138,6 +173,15 @@ export function InwardView({
       ) : null}
 
       {showModal && canWrite ? <NewInwardModal onClose={() => setShowModal(false)} /> : null}
+
+      {cancelRow ? (
+        <CancelDocDialog
+          docType="jw_dc_inward"
+          docId={cancelRow.id}
+          docCode={cancelRow.code}
+          onClose={() => setCancelRow(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -179,6 +223,13 @@ function ExpandedInward({ inv }: { inv: JwDcInwardListItem }): React.JSX.Element
       <span>
         <b>Remarks:</b> {inv.remarks ?? '—'}
       </span>
+      {/* ADR-235 — why and when a Cancelled receipt was cancelled. */}
+      {isJwDcInwardCancelled(inv) ? (
+        <span style={{ color: 'var(--red2)' }}>
+          <b>Reason:</b> {inv.cancelReason ?? '—'}
+          {inv.cancelledAt ? ` · Cancelled ${fmtDateTime(inv.cancelledAt)}` : ''}
+        </span>
+      ) : null}
     </div>
   );
 }

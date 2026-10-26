@@ -17,15 +17,25 @@ import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 
+/** ADR-235 — `includeCancelled` is optional for callers (the shared schema's
+ *  parsed type makes it required). Only the Job Cards list screen sets it;
+ *  every picker and other reader keeps live cards alone. */
+export type JobCardsListArgs = Omit<ListJobCardsQuery, 'includeCancelled'> & {
+  includeCancelled?: boolean | undefined;
+};
+export type JcStatusCountsArgs = Omit<JcStatusCountsQuery, 'includeCancelled'> & {
+  includeCancelled?: boolean | undefined;
+};
+
 export const jobCardsKeys = {
   all: ['job-cards'] as const,
   lists: () => [...jobCardsKeys.all, 'list'] as const,
-  list: (q: ListJobCardsQuery) => [...jobCardsKeys.lists(), q] as const,
+  list: (q: JobCardsListArgs) => [...jobCardsKeys.lists(), q] as const,
   details: () => [...jobCardsKeys.all, 'detail'] as const,
   detail: (id: string) => [...jobCardsKeys.details(), id] as const,
 };
 
-function filterParams(q: JcStatusCountsQuery): URLSearchParams {
+function filterParams(q: JcStatusCountsArgs): URLSearchParams {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.machineId) params.set('machineId', q.machineId);
@@ -36,17 +46,19 @@ function filterParams(q: JcStatusCountsQuery): URLSearchParams {
   return params;
 }
 
-function toQueryString(q: ListJobCardsQuery): string {
+function toQueryString(q: JobCardsListArgs): string {
   const params = filterParams(q);
   if (q.status) params.set('status', q.status);
   if (q.overdue) params.set('overdue', 'true');
+  // ADR-235 — the list screen shows Cancelled cards too (washed, read-only).
+  if (q.includeCancelled) params.set('includeCancelled', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
 }
 
 export function useJobCardsList(
-  query: ListJobCardsQuery,
+  query: JobCardsListArgs,
   options?: Omit<UseQueryOptions<ListJobCardsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListJobCardsResponse>({
@@ -60,7 +72,7 @@ export function useJobCardsList(
 /** JC Status dropdown counts (ADR-201): every card the list's other filters
  *  match, counted on the server. Keyed under lists() so every list
  *  invalidation refreshes them too. */
-export function useJcStatusCounts(query: JcStatusCountsQuery) {
+export function useJcStatusCounts(query: JcStatusCountsArgs) {
   return useQuery<JcStatusCountsResponse>({
     queryKey: [...jobCardsKeys.lists(), 'status-counts', query] as const,
     queryFn: () =>

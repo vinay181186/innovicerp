@@ -21,10 +21,17 @@ const PRIORITY_OPTIONS = [
   { value: 'normal', label: 'Normal' },
 ];
 
+/** ADR-235 — a Cancelled Job Card (listed with includeCancelled): cancelledAt
+ *  is the standard Cancel's stamp. A plain Delete (Trash) leaves it null. */
+export function isJcCancelled(jc: Pick<JobCardListItem, 'cancelledAt'>): boolean {
+  return Boolean(jc.cancelledAt);
+}
+
 /** A job is "done" when it has reached complete or closed — the Days Left
  *  column's rule. */
 function isDone(jc: JobCardListItem): boolean {
-  return jc.computedStatus === 'complete' || jc.computedStatus === 'closed';
+  // A Cancelled card has nothing left to count down to either (ADR-235).
+  return jc.computedStatus === 'complete' || jc.computedStatus === 'closed' || isJcCancelled(jc);
 }
 
 /** Days from today until the due date (negative = late). null when there is no
@@ -264,7 +271,15 @@ export function jobCardListColumns(
       kind: 'badge',
       header: 'JC Status',
       nowrap: true,
-      render: (jc) => <StatusBadge kind="jc" status={jc.computedStatus} draft={draftIds?.has(jc.id)} />,
+      // ADR-235: a Cancelled Job Card reads "Cancelled" here instead.
+      render: (jc) =>
+        isJcCancelled(jc) ? (
+          <span className="badge b-red" title={jc.cancelReason ?? undefined}>
+            Cancelled
+          </span>
+        ) : (
+          <StatusBadge kind="jc" status={jc.computedStatus} draft={draftIds?.has(jc.id)} />
+        ),
     },
     {
       id: 'jc_date',

@@ -1,5 +1,6 @@
 // The Job Cards sheet's ⋯ row menu (owner-approved spec 2026-10-01):
-//   Edit · Preview · Download PDF · Download Excel · Assign Task · ─ · Move to Trash
+//   Edit · Preview · Download PDF · Download Excel · Assign Task · ─ · Cancel JC ·
+//   Move to Trash. A Cancelled card (ADR-235) keeps only Preview · Download PDF.
 // No View — the row click already opens the Job Card. The card view keeps its
 // own text buttons (RowActions `labelled` in routes/list.tsx).
 //
@@ -17,6 +18,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { RowActions } from '@/ui/layout';
 import { useExcelJc } from './excel-jc-button';
+import { isJcCancelled } from './jc-list-columns';
 import { usePrintJc } from './print-jc-button';
 
 export function JcRowMenu({
@@ -25,6 +27,7 @@ export function JcRowMenu({
   onDelete,
   deleteDisabled,
   draft,
+  onCancel,
 }: {
   jc: JobCardListItem;
   canEdit: boolean;
@@ -33,6 +36,8 @@ export function JcRowMenu({
   deleteDisabled: boolean;
   /** ADR-202 — the JC has a pending edit; its printout shows "Draft". */
   draft?: boolean | undefined;
+  /** ADR-235 — opens the ONE Cancel dialog; undefined hides "Cancel JC". */
+  onCancel?: (() => void) | undefined;
 }): React.JSX.Element {
   const print = usePrintJc(jc, draft);
   const excel = useExcelJc(jc);
@@ -40,13 +45,15 @@ export function JcRowMenu({
   // ADR-232: Assign = the page's Advance right.
   const canAssign = effectiveFormPerms(eff, 'jc_create').advance;
   const [assigning, setAssigning] = useState(false);
+  // ADR-235 — a Cancelled card is read-only: only Preview / Download PDF.
+  const cancelled = isJcCancelled(jc);
 
   return (
     // The modal sits in the row's cell, so its clicks must not reach the row.
     <span onClick={(e) => e.stopPropagation()}>
       <RowActions
         // Edit is a ROUTE, so it stays a real link — ctrl-click still works.
-        editTo={canEdit ? `/job-cards/${jc.id}/edit` : undefined}
+        editTo={canEdit && !cancelled ? `/job-cards/${jc.id}/edit` : undefined}
         renderLink={(p) => <Link {...p} />}
         items={[
           { key: 'preview', label: 'Preview', icon: 'eye', onSelect: print.preview },
@@ -56,17 +63,32 @@ export function JcRowMenu({
             icon: 'download',
             onSelect: print.download,
           },
-          { key: 'excel', label: 'Download Excel', icon: 'download', onSelect: excel.start },
+          {
+            key: 'excel',
+            label: 'Download Excel',
+            icon: 'download',
+            hidden: cancelled,
+            onSelect: excel.start,
+          },
           {
             key: 'assign',
             label: 'Assign Task',
             icon: 'user-round',
             group: 'assign',
-            hidden: !canAssign,
+            hidden: !canAssign || cancelled,
             onSelect: () => setAssigning(true),
           },
+          {
+            key: 'cancel',
+            label: 'Cancel JC',
+            icon: 'x',
+            group: 'danger',
+            // A Production Order's card is cancelled with its order (ADR-235).
+            hidden: !onCancel || cancelled || jc.productionOrderId != null,
+            onSelect: () => onCancel?.(),
+          },
         ]}
-        onDelete={onDelete}
+        onDelete={cancelled ? undefined : onDelete}
         deleteDisabled={deleteDisabled}
         deleteConfirm={{
           title: `Move Job Card ${jc.code} to Trash?`,

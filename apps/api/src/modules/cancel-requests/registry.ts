@@ -15,15 +15,19 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { customerDispatchCancelHandler } from '../customer-dispatches/cancel-handler';
 import { customerMaterialReturnCancelHandler } from '../customer-material-returns/cancel-handler';
 import { deliveryChallanCancelHandler } from '../delivery-challans/cancel-handler';
+import { dcReceiptCancelHandler } from '../delivery-challans/receipt-cancel-handler';
 import { grnCancelHandler } from '../goods-receipt-notes/cancel-handler';
 import { invoiceCancelHandler } from '../invoices/cancel-handler';
+import { jobCardCancelHandler } from '../job-cards/cancel-handler';
 import { jobWorkOrderCancelHandler } from '../job-work-orders/cancel-handler';
 import { jwDcOutwardCancelHandler } from '../jw-dc/cancel-handler';
+import { jwDcInwardCancelHandler } from '../jw-dc/inward-cancel-handler';
 import { jwInvoiceCancelHandler } from '../jw-invoices/cancel-handler';
 import { jwReturnCancelHandler } from '../jw-returns/cancel-handler';
 import { partyGrnCancelHandler } from '../party-grn/cancel-handler';
 import { partyMaterialIssueCancelHandler } from '../party-material-issues/cancel-handler';
 import { planCancelHandler } from '../plans/cancel-handler';
+import { productionOrderCancelHandler } from '../production-orders/cancel-handler';
 import { purchaseOrderCancelHandler } from '../purchase-orders/cancel-handler';
 import { purchaseRequestCancelHandler } from '../purchase-requests/cancel-handler';
 import { salesOrderCancelHandler } from '../sales-orders/cancel-handler';
@@ -78,4 +82,8 @@ export const CANCEL_HANDLERS: Record<CancelDocType, CancelHandler> = {
   job_work_order: jobWorkOrderCancelHandler,
   sales_order: salesOrderCancelHandler,
   grn: grnCancelHandler,
+  job_card: jobCardCancelHandler,
+  production_order: productionOrderCancelHandler,
+  dc_receipt: dcReceiptCancelHandler,
+  jw_dc_inward: jwDcInwardCancelHandler,
 };

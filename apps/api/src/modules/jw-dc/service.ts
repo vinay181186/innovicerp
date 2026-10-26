@@ -1127,6 +1127,7 @@ export async function listJwDcInward(
         jdi.created_at AS "createdAt", jdi.created_by AS "createdBy",
         jdi.updated_at AS "updatedAt", jdi.updated_by AS "updatedBy",
         jdi.deleted_at AS "deletedAt",
+        jdi.cancel_reason AS "cancelReason", jdi.cancelled_at AS "cancelledAt",
         jdo.vendor_name_text AS "vendorNameText",
         v.name AS "vendorName",
         jdi.goods_receipt_note_id AS "goodsReceiptNoteId",
@@ -1139,7 +1140,8 @@ export async function listJwDcInward(
         (CASE WHEN jdi.goods_receipt_note_id IS NULL THEN COALESCE(agg.total_rej, 0)
               ELSE COALESCE(gq.rejected, 0) END)::float8 AS "totalRejectedQty"
       FROM public.jw_dc_inward jdi
-      LEFT JOIN public.jw_dc_outward jdo ON jdo.id = jdi.jw_dc_outward_id AND jdo.deleted_at IS NULL
+      LEFT JOIN public.jw_dc_outward jdo ON jdo.id = jdi.jw_dc_outward_id
+        AND (jdo.deleted_at IS NULL OR jdo.cancelled_at IS NOT NULL)
       LEFT JOIN public.vendors v ON v.id = jdo.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.goods_receipt_notes g
         ON g.id = jdi.goods_receipt_note_id AND g.deleted_at IS NULL
@@ -1154,10 +1156,19 @@ export async function listJwDcInward(
           SUM(ok_qty)::float8 AS total_ok,
           SUM(rejected_qty)::float8 AS total_rej
         FROM public.jw_dc_inward_lines jdil
-        WHERE jdil.jw_dc_inward_id = jdi.id AND jdil.deleted_at IS NULL
+        -- ADR-235: a Cancelled receipt shows the lines cancelled with it (the
+        -- header's deleted_at); a live one its live lines.
+        WHERE jdil.jw_dc_inward_id = jdi.id
+          AND (jdil.deleted_at IS NULL
+               OR (jdi.cancelled_at IS NOT NULL AND jdil.deleted_at = jdi.deleted_at))
       ) agg ON true
       WHERE jdi.company_id = ${companyId}::uuid
-        AND jdi.deleted_at IS NULL
+        -- ADR-235: live receipts, plus the Cancelled ones when the list asks.
+        AND ${
+          input.includeCancelled === true
+            ? sql`(jdi.deleted_at IS NULL OR jdi.cancelled_at IS NOT NULL)`
+            : sql`jdi.deleted_at IS NULL`
+        }
         ${searchFrag}
         ${outFrag}
     `;
@@ -1189,6 +1200,8 @@ export async function listJwDcInward(
         updatedAt: tsLike(r['updatedAt']),
         updatedBy: r['updatedBy'] as string,
         deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
+        cancelReason: (r['cancelReason'] as string | null) ?? null,
+        cancelledAt: r['cancelledAt'] != null ? tsLike(r['cancelledAt']) : null,
         vendorNameText: (r['vendorNameText'] as string | null) ?? null,
         vendorName: (r['vendorName'] as string | null) ?? null,
         goodsReceiptNoteId: (r['goodsReceiptNoteId'] as string | null) ?? null,
@@ -1389,6 +1402,8 @@ export async function createJwDcInward(
       remarks: header.remarks,
       goodsReceiptNoteId: grn.id,
       grnCode: grn.code,
+      cancelReason: null,
+      cancelledAt: null,
       createdAt: tsLike(header.createdAt),
       createdBy: header.createdBy,
       updatedAt: tsLike(header.updatedAt),

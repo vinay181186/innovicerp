@@ -58,6 +58,7 @@ import {
 import { codeLabel, labelOf, OP_LOG_TYPE_LABEL } from '../../lib/status-labels';
 import { changedByOtherError } from '../../lib/row-lock';
 import { emitActivityLog } from '../activity-log/service';
+import { assertJobCardNotPendingCancel } from '../job-cards/cancel';
 import { jcOpRef, logWhen } from './audit';
 import { RUNNING_OPS_SELECT, toRunningOp } from './running-ops-read';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
@@ -643,6 +644,21 @@ interface AvailabilitySnapshot {
   computedStatus: string;
 }
 
+/** Row-lock one op, live only (ADR-235). Serialises two entries on the same
+ *  op (the over-production / over-inspection races) AND a Job Card cancel,
+ *  which locks every live op of the card first: an entry that waited behind a
+ *  committed cancel finds no live row and is refused. */
+async function lockLiveJcOp(tx: DbTransaction, jcOpId: string): Promise<void> {
+  const locked = (await tx.execute(
+    sql`SELECT 1 FROM public.jc_ops WHERE id = ${jcOpId}::uuid AND deleted_at IS NULL FOR UPDATE`,
+  )) as unknown as unknown[];
+  if (locked.length === 0) {
+    throw new ConflictError(
+      "This operation's Job Card was cancelled or moved to Trash. Refresh the page.",
+    );
+  }
+}
+
 async function loadJcOp(
   tx: Parameters<Parameters<typeof withUserContext<unknown>>[1]>[0],
   jcOpId: string,
@@ -988,7 +1004,8 @@ async function writeProductionLog(
   // Serialize concurrent production logs on the SAME op: lock the jc_ops row
   // so two operators can't both read the same `available` and both insert,
   // over-producing past the planned qty.
-  await tx.execute(sql`SELECT 1 FROM public.jc_ops WHERE id = ${input.jcOpId}::uuid FOR UPDATE`);
+  await lockLiveJcOp(tx, input.jcOpId);
+  await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
 
   const snapshot = await loadAvailability(tx, input.jcOpId);
   if (snapshot.computedStatus === 'qc_pending') {
@@ -1318,7 +1335,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     }
 
     // Serialize concurrent QC logs on the SAME op (over-inspection race).
-    await tx.execute(sql`SELECT 1 FROM public.jc_ops WHERE id = ${input.jcOpId}::uuid FOR UPDATE`);
+    await lockLiveJcOp(tx, input.jcOpId);
+    await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
 
     // qc_pending lives in v_jc_op_status — same view that drives the UI.
     const pendingRows = await tx.execute(sql`
@@ -2245,6 +2263,12 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         'Cannot start an OSP operation here. Raise the PR from the Job Card.',
       );
     }
+    // ADR-235 — lock the op (live only) before the availability read, as the
+    // log paths do: a Job Card cancel locks jc_ops first, so a start racing
+    // it either waits and finds the op gone, or commits first and the
+    // cancel's blocker re-check sees the running session.
+    await lockLiveJcOp(tx, input.jcOpId);
+    await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.available <= 0) {
       throw new ValidationError(

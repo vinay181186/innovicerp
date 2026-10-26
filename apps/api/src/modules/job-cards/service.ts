@@ -29,7 +29,6 @@ import {
   materialGrades,
   materialSizes,
   ncRegister,
-  partyMaterialIssues,
   plans,
   purchaseOrderLines,
   purchaseOrders,
@@ -60,6 +59,11 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  assertJobCardNotPendingCancel,
+  jobCardCancelBlockers,
+  lockJobCardForCancel,
+} from './cancel';
 import {
   isJcOpCommitted,
   JC_OP_EDIT_ATTRS,
@@ -202,7 +206,8 @@ type JcCustomerMaterial = NonNullable<JobCardListItem['customerMaterial']> & {
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 export async function listJobCards(
-  input: ListJobCardsQuery,
+  // includeCancelled optional for in-process callers (the route always parses it).
+  input: Omit<ListJobCardsQuery, 'includeCancelled'> & { includeCancelled?: boolean },
   user: AuthContext,
 ): Promise<ListJobCardsResponse> {
   const companyId = requireCompany(user);
@@ -222,6 +227,7 @@ export async function listJobCards(
         jc.order_qty AS "orderQty", jc.priority,
         COALESCE(jc.due_date, sol.due_date, jwl.due_date) AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
         jc.remarks AS "remarks", jc.closed_at AS "closedAt",
+        jc.cancel_reason AS "cancelReason", jc.cancelled_at AS "cancelledAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
@@ -241,7 +247,13 @@ export async function listJobCards(
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
-        COALESCE(s.total_ops, 0)::int        AS "totalOps",
+        -- ADR-235: a Cancelled card is not in v_jc_status; its op count is the
+        -- ops cancelled with it (deleted_at equal to the card's).
+        COALESCE(s.total_ops, (
+          SELECT COUNT(*) FROM public.jc_ops co
+          WHERE co.job_card_id = jc.id AND jc.cancelled_at IS NOT NULL
+            AND co.deleted_at = jc.deleted_at
+        ), 0)::int AS "totalOps",
         COALESCE(s.done_ops, 0)::int         AS "doneOps",
         COALESCE(s.qc_pending_ops, 0)::int   AS "qcPendingOps",
         sol.id   AS "soLineId",   so.id  AS "soId",
@@ -361,7 +373,12 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       .select({ id: jobCards.id })
       .from(jobCards)
       .where(
-        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+        and(
+          eq(jobCards.id, id),
+          eq(jobCards.companyId, companyId),
+          // ADR-235 — a Cancelled card still opens (read-only); a trashed one 404s.
+          sql`(${jobCards.deletedAt} IS NULL OR ${jobCards.cancelledAt} IS NOT NULL)`,
+        ),
       )
       .limit(1);
     if (exists.length === 0)
@@ -374,6 +391,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.order_qty AS "orderQty", jc.priority,
         COALESCE(jc.due_date, sol.due_date, jwl.due_date) AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
         jc.remarks AS "remarks", jc.closed_at AS "closedAt",
+        jc.cancel_reason AS "cancelReason", jc.cancelled_at AS "cancelledAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
@@ -393,7 +411,13 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
-        COALESCE(s.total_ops, 0)::int        AS "totalOps",
+        -- ADR-235: a Cancelled card is not in v_jc_status; its op count is the
+        -- ops cancelled with it (deleted_at equal to the card's).
+        COALESCE(s.total_ops, (
+          SELECT COUNT(*) FROM public.jc_ops co
+          WHERE co.job_card_id = jc.id AND jc.cancelled_at IS NOT NULL
+            AND co.deleted_at = jc.deleted_at
+        ), 0)::int AS "totalOps",
         COALESCE(s.done_ops, 0)::int         AS "doneOps",
         COALESCE(s.qc_pending_ops, 0)::int   AS "qcPendingOps",
         sol.id   AS "soLineId",   so.id  AS "soId",
@@ -611,6 +635,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     itemImagePath: (r['itemImagePath'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     closedAt: r['closedAt'] != null ? tsLike(r['closedAt']) : null,
+    cancelReason: (r['cancelReason'] as string | null) ?? null,
+    cancelledAt: r['cancelledAt'] != null ? tsLike(r['cancelledAt']) : null,
     recoveryKind: (r['recoveryKind'] as JobCardListItem['recoveryKind']) ?? null,
     parentJobCardId: (r['parentJobCardId'] as string | null) ?? null,
     parentJobCardCode: (r['parentJobCardCode'] as string | null) ?? null,
@@ -1008,13 +1034,19 @@ export async function getJobCardStatusExtras(
   // see PO money gets the link with `rate: null`, exactly as the PO list does.
   const showPoMoney = await canSeeFormPrice(user, 'po_create');
   return withUserContext(user, async (tx) => {
+    // ADR-235 — a Cancelled card still opens (read-only) with the ops cancelled
+    // with it (their deleted_at equals the card's); a trashed card 404s.
     const jcRows = (await tx.execute(sql`
-      SELECT jc.code FROM public.job_cards jc
-      WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
+      SELECT jc.code, jc.cancelled_at IS NOT NULL AS "isCancelled" FROM public.job_cards jc
+      WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid
+        AND (jc.deleted_at IS NULL OR jc.cancelled_at IS NOT NULL)
       LIMIT 1
-    `)) as unknown as Array<{ code: string }>;
+    `)) as unknown as Array<{ code: string; isCancelled: boolean }>;
     const jcRow = jcRows[0];
     if (!jcRow) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+    const opScope = jcRow.isCancelled
+      ? sql`o.deleted_at = (SELECT c.deleted_at FROM public.job_cards c WHERE c.id = ${id}::uuid)`
+      : sql`o.deleted_at IS NULL`;
     const jcCode = jcRow.code;
     const jcLike = `%${jcCode}%`;
 
@@ -1056,7 +1088,7 @@ export async function getJobCardStatusExtras(
         FROM public.v_op_machine_output v
         WHERE v.jc_op_id = o.id
       ) mo ON true
-      WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
+      WHERE o.job_card_id = ${id}::uuid AND ${opScope}
       ORDER BY o.op_seq
     `)) as unknown as Array<Record<string, unknown>>;
     const opExtras: JobCardStatusOpExtra[] = opRows.map((o) => ({
@@ -1085,7 +1117,7 @@ export async function getJobCardStatusExtras(
         -- its text snapshot when no FK resolved -- never the 'QC' type label.
         COALESCE(pm.code, NULLIF(o.machine_code_text, 'QC')) AS "plannedMachineCode"
       FROM public.op_log ol
-      JOIN public.jc_ops o ON o.id = ol.jc_op_id AND o.deleted_at IS NULL
+      JOIN public.jc_ops o ON o.id = ol.jc_op_id AND ${opScope}
       LEFT JOIN public.machines m
         ON m.id = COALESCE(ol.machine_id, o.machine_id) AND m.deleted_at IS NULL
       LEFT JOIN public.machines pm ON pm.id = o.machine_id
@@ -2966,6 +2998,9 @@ export async function updateJobCardTx(
   // too. Never flip this one.
   const head = headRows[0];
   if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+  // ADR-235 — no change while a Cancel Request waits on this card (the
+  // approval replay of a staged edit runs through here too).
+  await assertJobCardNotPendingCancel(tx, id);
   // ADR-226 / §20.4 — refuse the save if someone else changed this card after the
   // form loaded it, and say who. This read is NOT locked (see the note above), so
   // this check alone is not atomic: it is the EARLY refusal, which stops the
@@ -3675,6 +3710,8 @@ export async function updateJobCardOrStage(
         .limit(1);
       const head = headRows[0];
       if (!head) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
+      // ADR-235 — nothing stages while a Cancel Request waits on this card.
+      await assertJobCardNotPendingCancel(tx, id);
       // ADR-249 Step B1 — the writer's header guards, asked NOW through the very
       // helper updateJobCardTx calls (short-closed Production Order freeze, NC
       // open-qty cap, item code exists, item frozen once production is logged,
@@ -3775,54 +3812,48 @@ export async function deleteJobCard(
   await requireDeleteRight(user, 'Job Cards');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({ code: jobCards.code })
-      .from(jobCards)
-      .where(
-        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
-      )
-      .limit(1);
-    if (!rows[0]) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
-    // ADR-182 — nor may it be deleted; the stopped order still points at it.
-    await assertProductionOrderNotShortClosed(tx, id);
-    // ADR-203 — customer material issued to this card would be orphaned (the
-    // register says it is on a card that no longer exists). Refuse while any
-    // live issue still holds pieces on it (qty − returned to store > 0); the
-    // user returns the spare pieces to store or cancels the issue first. An
-    // issue fully returned to store holds nothing and does not block.
-    const liveIssues = await tx
-      .select({ code: partyMaterialIssues.code })
-      .from(partyMaterialIssues)
-      .where(
-        and(
-          eq(partyMaterialIssues.jobCardId, id),
-          eq(partyMaterialIssues.companyId, companyId),
-          isNull(partyMaterialIssues.deletedAt),
-          sql`${partyMaterialIssues.qty} - ${partyMaterialIssues.returnedToStoreQty} > 0`,
-        ),
-      )
-      .orderBy(asc(partyMaterialIssues.code));
-    if (liveIssues.length > 0) {
-      throw new ValidationError(
-        `${rows[0].code} cannot be deleted — customer material is issued to it ` +
-          `(${liveIssues.map((r) => r.code).join(', ')}). ` +
-          `Return the pieces to store or cancel the issue first.`,
-      );
+    // ADR-235 — the cancel's own lock (jc_ops in id order, then the card) and
+    // live re-check, so a delete and a cancel (or two deletes) queue here and
+    // the second is refused instead of writing over the first.
+    const head = await lockJobCardForCancel(tx, companyId, id, true);
+    if (!head || head.cancelled) {
+      throw new NotFoundError('Job Card not found. It may have been cancelled or moved to Trash.');
+    }
+    // ADR-235 — the SAME refusal rule as Cancel (jobCardCancelBlockers): no
+    // production / QC entry, running op, OSP PR / PO / DC, NC, rework child,
+    // Item / Tool / Party Material Issue, stock booking / credit, JW Return,
+    // QC report / assignment, owning or short-closed Production Order
+    // (ADR-182), live plan that made it. The old check here was only the
+    // short-closed order and live party material issues (ADR-203), both of
+    // which the rule still contains.
+    await assertJobCardNotPendingCancel(tx, id);
+    const blockers = await jobCardCancelBlockers(tx, companyId, id);
+    if (blockers.length > 0) {
+      const list = blockers.map((b) => `${b.docLabel} ${b.docNo} (${b.reason})`).join('; ');
+      throw new ValidationError(`${head.code} can't be deleted yet — clear these first: ${list}.`);
     }
 
     const now = new Date();
     // ADR-197 — deleted_by stamped with deleted_at (one stamp for card + ops).
     const stamp = { ...softDeleteStamp(user), deletedAt: now };
-    await tx
+    const done = await tx
       .update(jobCards)
       .set({ ...stamp, updatedBy: user.id })
-      .where(eq(jobCards.id, id));
+      .where(
+        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+      )
+      .returning({ id: jobCards.id });
+    if (done.length === 0) {
+      throw new ConflictError(
+        `${head.code} has just been cancelled or deleted by someone else. Refresh the page.`,
+      );
+    }
     // Soft-delete the ops too (op_log rows are preserved — FK is to jc_ops.id
     // which still exists; we never hard-delete to keep production history).
     await tx
       .update(jcOps)
       .set({ ...stamp, updatedBy: user.id })
-      .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
+      .where(and(eq(jcOps.jobCardId, id), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)));
 
     await emitActivityLog(
       tx,
@@ -3831,8 +3862,8 @@ export async function deleteJobCard(
         entity: 'JobCard',
         entityId: id,
         reason,
-        detail: `Deleted ${rows[0].code}`,
-        refId: rows[0].code,
+        detail: `Deleted ${head.code}`,
+        refId: head.code,
       },
       companyId,
       user,
@@ -3889,7 +3920,12 @@ export async function getJobCardRelated(
       })
       .from(jobCards)
       .where(
-        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+        and(
+          eq(jobCards.id, id),
+          eq(jobCards.companyId, companyId),
+          // ADR-235 — a Cancelled card's detail page still shows its links.
+          sql`(${jobCards.deletedAt} IS NULL OR ${jobCards.cancelledAt} IS NOT NULL)`,
+        ),
       )
       .limit(1);
     const header = headers[0];

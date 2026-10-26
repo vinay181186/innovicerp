@@ -14539,6 +14539,34 @@ Five documents that had no real cancel join the registry:
 Part 2 (next): Job Card, Production Order (cancels its own unused Job Card),
 DC receipt, and Incoming QC reversal.
 
+### Phase C, part 2 (2026-10-26, migration 0221)
+
+- **Job Card** — only a card with nothing done on it: no net Op Entry, no
+  running op, no live PR / PO / OSP DC for its ops (the auto-raised OSP PR too —
+  never cascaded), no NC or rework child, no Item / Tool / Customer Material
+  Issue, no stock booking, no JW Return, no stock credited, not built by a
+  Production Order (cancel the PRO instead) and not under a short-closed PRO.
+  Cancel stamps `deleted_at` on the card + its ops (one stamp) + `cancelled_*`,
+  so the ~76 readers of `job_cards.deleted_at` skip it unchanged. Job Card
+  Delete now uses the same blocker rule. A plan whose card is cancelled keeps
+  its status (as Delete always did) — cancel the plan too if the work is gone.
+- **Production Order** — only an Open order with nothing received and no stock
+  booked from it; its own Job Card(s) are cancelled with it (owner rule, the one
+  exception to "never cascade": the card is part of the order). No new status:
+  `deleted_at` + `cancelled_*`, so every status-reading twin (plan coverage,
+  JC effective qty, short-closed qty, reports) drops it. The plan's Pending comes
+  back through `shiftPlanPending`; a plan this order had covered goes back to
+  Planned.
+- **DC Receipt (OSP)** and **JW DC Receipt** — only while the auto-GRN's
+  Incoming QC is untouched; the receipt cancels its GRN with it. The JC op goes
+  back to Sent and the DC to Issued when no longer fully received.
+  `delivery_challan_receipts.goods_receipt_note_id` links a receipt to its GRN
+  (written on receive; 0221 backfills only certain matches — an unmatched old
+  receipt refuses). A return-to-vendor replacement receipt is refused (the NC
+  side has no inverse yet).
+- Trash never lists or restores a cancelled Job Card / Production Order.
+Part 3 (next): reversing a finished Incoming QC.
+
 ## ADR-253: A new Route Card must be approved before it is used
 
 **Date:** 2026-10-24

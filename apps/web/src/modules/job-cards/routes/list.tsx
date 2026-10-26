@@ -44,9 +44,8 @@
 
 import {
   JC_COMPUTED_STATUSES,
-  type JcStatusCountsQuery,
   type JcStatusCountsResponse,
-  type ListJobCardsQuery,
+  type JobCardListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -60,14 +59,25 @@ import { usePendingEditIds } from '@/modules/document-edits/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel } from '@/ui/data';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { useDeleteJobCard, useJcStatusCounts, useJobCardsList } from '../api';
+import {
+  type JcStatusCountsArgs,
+  type JobCardsListArgs,
+  useDeleteJobCard,
+  useJcStatusCounts,
+  useJobCardsList,
+} from '../api';
 import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { JcRowMenu } from '../components/jc-row-menu';
-import { JC_LIST_HIDDEN_COLUMNS, jobCardListColumns } from '../components/jc-list-columns';
+import {
+  JC_LIST_HIDDEN_COLUMNS,
+  isJcCancelled,
+  jobCardListColumns,
+} from '../components/jc-list-columns';
 import { JcListFilters } from '../components/jc-list-filters';
 
 const listSearchSchema = z.object({
@@ -144,7 +154,7 @@ function JobCardsListPage(): React.JSX.Element {
   });
 
   const offset = pageOffset(search.page);
-  const query: ListJobCardsQuery = useMemo(
+  const query: JobCardsListArgs = useMemo(
     () => ({
       search: search.search,
       status: search.status,
@@ -153,6 +163,8 @@ function JobCardsListPage(): React.JSX.Element {
       operatorId: search.operatorId,
       fromDate: search.fromDate,
       toDate: search.toDate,
+      // ADR-235 — Cancelled cards stay on the list, washed and marked Cancelled.
+      includeCancelled: true,
       sf: sf.param,
       limit: LIST_PAGE_SIZE,
       offset,
@@ -190,6 +202,11 @@ function JobCardsListPage(): React.JSX.Element {
   // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
   const canDeleteJc = canDeleteRecords(eff);
   const del = useDeleteJobCard();
+  // Cancel JC -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit sends
+  // a Cancel Request, Approve decides it; the dialog's server preview says
+  // which of the two this user may press.
+  const canCancelJc = perms.edit || perms.approve;
+  const [cancelJc, setCancelJc] = useState<JobCardListItem | null>(null);
 
   const today = todayIst();
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
@@ -221,7 +238,7 @@ function JobCardsListPage(): React.JSX.Element {
   // Overdue pick and without a JC Status ▾ filter, so picking "Closed" does
   // not turn every other option into "(0)" (ADR-201).
   const sfNoStatus = sf.paramWithout('status');
-  const countQuery: JcStatusCountsQuery = useMemo(
+  const countQuery: JcStatusCountsArgs = useMemo(
     () => ({
       search: search.search,
       machineId: search.machineId,
@@ -387,15 +404,26 @@ function JobCardsListPage(): React.JSX.Element {
             onRowClick={(jc) => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
             frozen
             rowActionsWidth="1%"
-            rowActions={(jc) => (
-              <JcRowMenu
-                jc={jc}
-                canEdit={canEditJc}
-                onDelete={canDeleteJc ? (): Promise<void> => del.mutateAsync(jc.id) : undefined}
-                deleteDisabled={del.isPending}
-                draft={draftIds.has(jc.id)}
-              />
-            )}
+            rowClassName={(jc) => (isJcCancelled(jc) ? ROW_TINT.cancelled : undefined)}
+            rowActions={(jc) => {
+              // ADR-235 — a Cancelled card is read-only: its ⋯ keeps only the
+              // print items (the menu itself drops the rest).
+              const cancelled = isJcCancelled(jc);
+              return (
+                <JcRowMenu
+                  jc={jc}
+                  canEdit={canEditJc && !cancelled}
+                  onDelete={
+                    canDeleteJc && !cancelled
+                      ? (): Promise<void> => del.mutateAsync(jc.id)
+                      : undefined
+                  }
+                  deleteDisabled={del.isPending}
+                  draft={draftIds.has(jc.id)}
+                  onCancel={canCancelJc && !cancelled ? () => setCancelJc(jc) : undefined}
+                />
+              );
+            }}
           />
         </Panel>
       )}
@@ -409,6 +437,15 @@ function JobCardsListPage(): React.JSX.Element {
           onPage={gotoPage}
         />
       )}
+
+      {cancelJc ? (
+        <CancelDocDialog
+          docType="job_card"
+          docId={cancelJc.id}
+          docCode={cancelJc.code}
+          onClose={() => setCancelJc(null)}
+        />
+      ) : null}
     </div>
   );
 }

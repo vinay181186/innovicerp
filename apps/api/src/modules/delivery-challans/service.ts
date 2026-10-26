@@ -5,7 +5,7 @@
 // T-059b. Writes go through service.ts so cascades into jc_ops.sentQty +
 // outsource_status + store_transactions stay atomic with the DC row insert.
 
-import { and, asc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, like, or, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
   deliveryChallanReceiptLines,
@@ -561,6 +561,10 @@ async function loadDeliveryChallanWithLines(
     .orderBy(deliveryChallanLines.lineNo);
 
   // T-059b — load receipts + their lines bundled with the DC detail.
+  // ADR-235 — Cancelled receipts come back too, tagged (cancelReason /
+  // cancelledAt), but WITHOUT lines: every screen sums receipt lines for the
+  // Received / Remaining figures, so a cancelled receipt carries no qty and
+  // those totals stay live-only.
   const receiptHeaders = await tx
     .select()
     .from(deliveryChallanReceipts)
@@ -568,24 +572,30 @@ async function loadDeliveryChallanWithLines(
       and(
         eq(deliveryChallanReceipts.deliveryChallanId, id),
         eq(deliveryChallanReceipts.companyId, companyId),
-        isNull(deliveryChallanReceipts.deletedAt),
+        or(
+          isNull(deliveryChallanReceipts.deletedAt),
+          isNotNull(deliveryChallanReceipts.cancelledAt),
+        ),
       ),
     )
     .orderBy(asc(deliveryChallanReceipts.receiptDate), asc(deliveryChallanReceipts.receiptCode));
 
   const receipts: DeliveryChallanReceipt[] = [];
   if (receiptHeaders.length > 0) {
-    const receiptIds = receiptHeaders.map((h) => h.id);
-    const recLineRows = await tx
-      .select()
-      .from(deliveryChallanReceiptLines)
-      .where(
-        and(
-          inArray(deliveryChallanReceiptLines.receiptId, receiptIds),
-          eq(deliveryChallanReceiptLines.companyId, companyId),
-          isNull(deliveryChallanReceiptLines.deletedAt),
-        ),
-      );
+    const receiptIds = receiptHeaders.filter((h) => h.deletedAt == null).map((h) => h.id);
+    const recLineRows =
+      receiptIds.length === 0
+        ? []
+        : await tx
+            .select()
+            .from(deliveryChallanReceiptLines)
+            .where(
+              and(
+                inArray(deliveryChallanReceiptLines.receiptId, receiptIds),
+                eq(deliveryChallanReceiptLines.companyId, companyId),
+                isNull(deliveryChallanReceiptLines.deletedAt),
+              ),
+            );
     const linesByReceipt = new Map<string, typeof recLineRows>();
     for (const rl of recLineRows) {
       const arr = linesByReceipt.get(rl.receiptId) ?? [];
@@ -598,6 +608,8 @@ async function loadDeliveryChallanWithLines(
         companyId: h.companyId,
         deliveryChallanId: h.deliveryChallanId,
         receiptCode: h.receiptCode,
+        cancelReason: h.cancelReason ?? null,
+        cancelledAt: maybeTsLike(h.cancelledAt),
         receiptDate: dateLike(h.receiptDate),
         vendorInvoiceText: h.vendorInvoiceText,
         remarks: h.remarks,
@@ -2020,7 +2032,8 @@ async function generateReceiptCode(
       INNER JOIN public.delivery_challans dc ON dc.id = dcr.delivery_challan_id
       WHERE dcr.company_id = ${companyId}::uuid
         AND dc.code = ${dcCode}
-        AND dcr.deleted_at IS NULL
+        -- ADR-235: a Cancelled receipt keeps its number — never reused.
+        AND (dcr.deleted_at IS NULL OR dcr.cancelled_at IS NOT NULL)
     `)) as unknown as Array<{ n: number }>;
     const seq = (countRows[0]?.n ?? 0) + 1 + attempt;
     const code = `RCPT-${dcCode}-${String(seq).padStart(2, '0')}`;
@@ -2031,7 +2044,10 @@ async function generateReceiptCode(
         and(
           eq(deliveryChallanReceipts.companyId, companyId),
           eq(deliveryChallanReceipts.receiptCode, code),
-          isNull(deliveryChallanReceipts.deletedAt),
+          or(
+            isNull(deliveryChallanReceipts.deletedAt),
+            isNotNull(deliveryChallanReceipts.cancelledAt),
+          ),
         ),
       )
       .limit(1);
@@ -2284,6 +2300,12 @@ export async function receiveAgainstDeliveryChallan(
         ncId: dcHeader.ncId ?? null,
       });
       autoGrn = { id: grn.id, code: grn.code };
+      // ADR-235 (0221) — the receipt names the GRN it raised, so its cancel can
+      // take that GRN with it.
+      await tx
+        .update(deliveryChallanReceipts)
+        .set({ goodsReceiptNoteId: grn.id })
+        .where(eq(deliveryChallanReceipts.id, receiptHeader.id));
     }
 
     // Return-to-vendor challan (design §5): book the pieces as back from the

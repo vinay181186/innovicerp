@@ -42,6 +42,7 @@ export const jwDcKeys = {
       q.search ?? null,
       q.jwDcOutwardId ?? null,
       q.sf ?? null,
+      q.includeCancelled ?? false,
       q.limit,
       q.offset,
     ] as const,
@@ -67,6 +68,8 @@ function buildInwardSearch(q: ListJwDcInwardQuery): string {
   if (q.search) params.set('search', q.search);
   if (q.jwDcOutwardId) params.set('jwDcOutwardId', q.jwDcOutwardId);
   if (q.sf) params.set('sf', q.sf);
+  // ADR-235 — the Inward Register shows Cancelled receipts too.
+  if (q.includeCancelled) params.set('includeCancelled', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();
