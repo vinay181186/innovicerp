@@ -122,8 +122,9 @@ export function fitColumns(input: FitInput): FitResult {
   let spare = budget - need(vis);
 
   // Share the spare width between text columns in proportion to what each
-  // still wants; anything left after that goes evenly to the text columns
-  // (or every column when there is no text column).
+  // still wants; anything left after that is spread over EVERY column in
+  // proportion to its width, so no text column ends up a wide empty gap
+  // beside cramped code / date columns.
   const texts = vis.filter((k) => input.kinds[k] === 'text');
   const wantOf = (k: string) => Math.max(0, (input.widths[k]?.ideal ?? 0) - minOf(input, k));
   const want = texts.reduce((a, k) => a + wantOf(k), 0);
@@ -133,9 +134,11 @@ export function fitColumns(input: FitInput): FitResult {
     spare = budget - Object.values(w).reduce((a, b) => a + b, 0);
   }
   if (spare > 0 && vis.length > 0) {
-    const targets = texts.length > 0 ? texts : vis;
-    const each = Math.floor(spare / targets.length);
-    for (const k of targets) w[k] = (w[k] ?? 0) + each;
+    const total = vis.reduce((a, k) => a + (w[k] ?? 0), 0);
+    const share = (k: string) =>
+      total > 0 ? Math.floor((spare * (w[k] ?? 0)) / total) : Math.floor(spare / vis.length);
+    const add = Object.fromEntries(vis.map((k) => [k, share(k)]));
+    for (const k of vis) w[k] = (w[k] ?? 0) + (add[k] ?? 0);
   }
   return { visible: vis, dropped, w, warn, budget };
 }
