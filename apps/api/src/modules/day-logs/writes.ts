@@ -159,6 +159,10 @@ function checkOrder(
     }
     return 'fixed';
   }
+  // Leave (owner 2026-10-26) runs to the end of the day — nothing after it.
+  if (others.some((l) => l.kind === 'leave' && l.fromTime)) {
+    throw new ValidationError('The day ends with your Leave');
+  }
   const open = others.find((l) => l.fromTime && !l.toTime);
   if (open) {
     throw new ConflictError(`Stop ${open.description} (since ${fmt12(open.fromTime)}) first`);
@@ -175,6 +179,22 @@ function checkOrder(
     );
   }
   return 'last';
+}
+
+/**
+ * LEAVE (owner 2026-10-26, option A): leaving early / half day / permission.
+ * No SO / JWSO, always closed, Stop is the end of the work window and the
+ * Start lies before it. Its Start follows strict order like any entry
+ * (checkOrder) and it is the day's last entry (nothing may follow it).
+ */
+function checkLeave(cand: EntryCandidate): void {
+  if (cand.hasOrder) throw new ValidationError('A Leave cannot be for an SO / JWSO');
+  if (cand.toTime !== DAY_LOG_RULES.workTo) {
+    throw new ValidationError(`Leave runs to ${fmt12(DAY_LOG_RULES.workTo)}`);
+  }
+  if (hhmmToMin(cand.fromTime) >= hhmmToMin(DAY_LOG_RULES.workTo)) {
+    throw new ValidationError(`A Leave must start before ${fmt12(DAY_LOG_RULES.workTo)}`);
+  }
 }
 
 /**
@@ -197,12 +217,14 @@ export async function validateEntry(
   if (cand.kind === 'break' && cand.hasOrder) {
     throw new ValidationError('A break cannot be for an SO / JWSO');
   }
+  if (cand.kind === 'leave') checkLeave(cand);
   // The order check — inside the day lock, against lines re-read under it (§20.3).
   if (checkOrder(others, self, cand) === 'fixed') return; // times unchanged: nothing more to judge
   if (isToday && hhmmToMin(cand.fromTime) > clock.nowMin) {
     throw new ValidationError(`Start ${fmt12(cand.fromTime)} is later than now (${nowHm})`);
   }
-  if (isToday && cand.toTime && hhmmToMin(cand.toTime) > clock.nowMin) {
+  // A Leave may be entered before its 06:00 PM Stop comes; its Start may not.
+  if (isToday && cand.kind !== 'leave' && cand.toTime && hhmmToMin(cand.toTime) > clock.nowMin) {
     throw new ValidationError(`Stop ${fmt12(cand.toTime)} is later than now (${nowHm})`);
   }
   if (!isToday && !cand.toTime) {

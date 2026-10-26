@@ -156,14 +156,21 @@ export function firstGap(spans: readonly DayLogSpan[], nowMin?: number): string 
 // ── Team Day Logs ───────────────────────────────────────────────────────────
 
 /** What the person is doing. `today` = the date is today (else a past day:
- *  its day status, else idle / not_started, no text). */
+ *  its day status, else idle / not_started, no text). A Leave entry whose
+ *  Start has come (`nowMin`, today only) reads Leave — even on a day already
+ *  submitted, since the person submits before leaving. */
 export function currentOf(
   status: DayLogStatus,
   lines: readonly DayLine[],
   submittedAt: string | null,
   today: boolean,
   lastStop: string | null,
+  nowMin?: number,
 ): { status: DayLogCurrentStatus; text: string | null; since: string | null } {
+  const leave = today ? lines.find((l) => l.kind === 'leave' && l.fromTime) : undefined;
+  if (leave && nowMin !== undefined && nowMin >= hhmmToMin(leave.fromTime!)) {
+    return { status: 'leave', text: `from ${fmt12(leave.fromTime!)}`, since: null };
+  }
   if (status === 'submitted') {
     return {
       status: 'submitted',

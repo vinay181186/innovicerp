@@ -55,7 +55,14 @@ export async function getPerson(
     const holDates = [...(await holidaysBetween(tx, companyId, from, to)).keys()];
 
     const days: PersonDayRow[] = [];
-    const totals = { daysLogged: 0, workMin: 0, avgWorkMin: 0, breakMin: 0, lateCount: 0 };
+    const totals = {
+      daysLogged: 0,
+      workMin: 0,
+      avgWorkMin: 0,
+      breakMin: 0,
+      leaveMin: 0,
+      lateCount: 0,
+    };
     for (let d = to; d >= from; d = addDays(d, -1)) {
       const workingDay = isWorkingDay(d, holDates);
       const h = byDate.get(d);
@@ -78,6 +85,7 @@ export async function getPerson(
         lastStop: s.lastStop,
         workMin: s.workMin,
         breakMin: s.breakMin,
+        leaveMin: s.leaveMin,
         entryCount: s.entryCount,
         lateCount: s.lateCount,
         orderCodes,
@@ -85,6 +93,7 @@ export async function getPerson(
       if (s.entryCount > 0) totals.daysLogged += 1;
       totals.workMin += s.workMin;
       totals.breakMin += s.breakMin;
+      totals.leaveMin += s.leaveMin;
       totals.lateCount += s.lateCount;
     }
     totals.avgWorkMin = totals.daysLogged ? Math.round(totals.workMin / totals.daysLogged) : 0;

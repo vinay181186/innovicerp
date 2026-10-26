@@ -59,6 +59,7 @@ export const TEAM_COLUMNS = [
   { key: 'last_stop', label: 'Last stop' },
   { key: 'work_hours', label: 'Working hours' },
   { key: 'break_min', label: 'Break' },
+  { key: 'leave_min', label: 'Leave' },
   { key: 'entries', label: 'Entries' },
   { key: 'late', label: 'Late' },
 ];
@@ -80,6 +81,7 @@ export function teamTable(team: TeamDayLogResponse): ExportTable {
       last_stop: r.lastStop ? fmt12(r.lastStop) : '',
       work_hours: fmtDuration(r.workMin),
       break_min: `${r.breakMin} min`,
+      leave_min: r.leaveMin > 0 ? fmtDuration(r.leaveMin) : '',
       entries: String(r.entryCount),
       late: r.lateCount > 0 ? String(r.lateCount) : '',
     })),

@@ -1,7 +1,7 @@
 // Person page (Team Day Logs → a name): one person's days over From – To
 // (default the 7 days ending on the team date). ONE strip from the server's
 // totals, then one row a day: Date · Day Status · First start · Last stop ·
-// Working hours · Break · Entries · Late · SO / JWSO worked on. A click on a
+// Working hours · Break · Leave · Entries · Late · SO / JWSO worked on. A click on a
 // date opens that day's entries (read-only, with remarks) under it; the
 // team date opens expanded.
 
@@ -19,7 +19,7 @@ import { NowCell } from './team-day-logs-tab';
 
 /** Default range length, days. */
 const DEFAULT_DAYS = 7;
-const COLS = 9;
+const COLS = 10;
 
 /** India's calendar day — only a default for a link that names no date. */
 function DayEntries({ userId, date }: { userId: string; date: string }): React.JSX.Element {
@@ -123,6 +123,7 @@ export function PersonDayLogs({
           { key: 'work', label: 'Working hours', count: fmtDuration(p.totals.workMin) },
           { key: 'avg', label: 'Avg per day', count: fmtDuration(p.totals.avgWorkMin) },
           { key: 'break', label: 'Break', count: `${p.totals.breakMin} min` },
+          { key: 'leave', label: 'Leave', count: fmtDuration(p.totals.leaveMin) },
           {
             key: 'late',
             label: 'Late entries',
@@ -143,6 +144,7 @@ export function PersonDayLogs({
                 <th>Last stop</th>
                 <th className="th-num">Working hours</th>
                 <th className="th-num">Break</th>
+                <th className="th-num">Leave</th>
                 <th className="th-num">Entries</th>
                 <th>Late</th>
                 <th>SO / JWSO worked on</th>
@@ -178,6 +180,9 @@ export function PersonDayLogs({
                       <td className="mono">{fmt12(d.lastStop)}</td>
                       <td className="td-num mono fw-700">{fmtDuration(d.workMin)}</td>
                       <td className="td-num mono">{d.breakMin} min</td>
+                      <td className="td-num mono">
+                        {d.leaveMin > 0 ? fmtDuration(d.leaveMin) : '—'}
+                      </td>
                       <td className="td-num mono">{d.entryCount}</td>
                       <td>
                         {d.lateCount > 0 ? (

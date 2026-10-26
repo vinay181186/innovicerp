@@ -3,7 +3,7 @@
 // a past day: Submitted · Not submitted · No entries — plus Team working
 // hours. A count click filters the table to it, a second click shows all.
 // Columns: User (link to the person page) · Now · Working on (latest) ·
-// First start · Last stop · Working hours · Break · Entries · Late. The
+// First start · Last stop · Working hours · Break · Leave · Entries · Late. The
 // Working chip ticks its elapsed time from runningSince on the server clock;
 // the table reads again every minute (api.ts).
 
@@ -168,6 +168,7 @@ export function TeamDayLogsTab({
                 <th>Last stop</th>
                 <th className="th-num">Working hours</th>
                 <th className="th-num">Break</th>
+                <th className="th-num">Leave</th>
                 <th className="th-num">Entries</th>
                 <th>Late</th>
               </tr>
@@ -175,7 +176,7 @@ export function TeamDayLogsTab({
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td colSpan={10} className="empty-state">
                     {filter
                       ? `No one is ${filter.label} — click the count again to show all.`
                       : 'No one to show for this day.'}
@@ -227,6 +228,7 @@ export function TeamDayLogsTab({
                   <td className="mono">{fmt12(r.lastStop)}</td>
                   <td className="td-num mono fw-700">{fmtDuration(r.workMin)}</td>
                   <td className="td-num mono">{r.breakMin} min</td>
+                  <td className="td-num mono">{r.leaveMin > 0 ? fmtDuration(r.leaveMin) : '—'}</td>
                   <td className="td-num mono">{r.entryCount}</td>
                   <td>
                     {r.lateCount > 0 ? (

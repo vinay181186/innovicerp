@@ -100,7 +100,9 @@ async function prepare(
   }
   return {
     kind: input.kind,
-    description: input.description || (input.kind === 'break' ? 'Break' : ''),
+    description:
+      input.description ||
+      (input.kind === 'break' ? 'Break' : input.kind === 'leave' ? 'Leave' : ''),
     fromTime: input.startTime,
     toTime,
     remarks: input.remarks || null,

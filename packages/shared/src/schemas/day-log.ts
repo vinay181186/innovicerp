@@ -12,6 +12,11 @@
 //     removed; earlier entries may change their text / SO / remark. Never
 //     past now. Breaks total at most DAY_LOG_RULES.breakLimitMin a day.
 //   - Times are stored 24-hour "HH:MM" and SHOWN as "09:00 AM" (fmt12).
+//   - LEAVE (owner 2026-10-26, option A): a third Type for leaving early /
+//     half day / permission. Starts at nextStart like any entry, always ends
+//     at workTo (06:00 PM) — it may be entered before that time comes — has
+//     no SO, is never Open, and is the day's LAST entry. It covers time for
+//     Submit but counts as neither work nor break (leaveMin).
 //   - An entry saved more than lateAfterMin after its Stop time is LATE.
 //   - Submit Day needs 09:00–18:00 fully covered (work + break) and nothing
 //     Open; it locks the day. Only the owner writes the log.
@@ -49,11 +54,12 @@ export const DAY_LOG_STATUS_LABELS: Record<DayLogStatus, string> = {
   leave: 'Leave',
 };
 
-export const DAY_LOG_ENTRY_KINDS = ['work', 'break'] as const;
+export const DAY_LOG_ENTRY_KINDS = ['work', 'break', 'leave'] as const;
 export type DayLogEntryKind = (typeof DAY_LOG_ENTRY_KINDS)[number];
 export const DAY_LOG_ENTRY_KIND_LABELS: Record<DayLogEntryKind, string> = {
   work: 'Work',
   break: 'Break',
+  leave: 'Leave',
 };
 
 export const DAY_LOG_ORDER_TYPES = ['so', 'jwso'] as const;
@@ -155,6 +161,8 @@ export interface DayLogSpan {
 export interface DayLogSummary {
   workMin: number;
   breakMin: number;
+  /** Leave / permission minutes (covers time, not work). */
+  leaveMin: number;
   /** Earliest Start ("HH:MM"), null when no entries. */
   firstStart: string | null;
   /** Latest Stop, or now for an Open entry; null when no entries. */
@@ -192,9 +200,11 @@ export function summarizeDay(
     .sort((x, y) => x.a - y.a);
   let workMin = 0;
   let breakMin = 0;
+  let leaveMin = 0;
   for (const i of ivals) {
     if (i.kind === 'work') workMin += i.b - i.a;
-    else breakMin += i.b - i.a;
+    else if (i.kind === 'break') breakMin += i.b - i.a;
+    else leaveMin += i.b - i.a;
   }
   const end = Math.min(w2, nowMin ?? w2);
   let covered = w1;
@@ -207,6 +217,7 @@ export function summarizeDay(
   return {
     workMin,
     breakMin,
+    leaveMin,
     firstStart: ivals.length ? minToHhmm(Math.min(...ivals.map((i) => i.a))) : null,
     lastStop: ivals.length ? minToHhmm(Math.max(...ivals.map((i) => i.b))) : null,
     unloggedMin: workingDay ? Math.max(0, unloggedMin) : 0,
@@ -239,7 +250,7 @@ function entryRules<T extends z.ZodTypeAny>(schema: T): T {
   return schema
     .refine(
       (v: { kind: DayLogEntryKind; description: string }) =>
-        v.kind === 'break' || v.description.length > 0,
+        v.kind !== 'work' || v.description.length > 0,
       { message: 'Write what you worked on', path: ['description'] },
     )
     .refine(
@@ -332,6 +343,7 @@ export type DayLogEntry = z.infer<typeof dayLogEntrySchema>;
 export const dayLogSummarySchema = z.object({
   workMin: z.number().int(),
   breakMin: z.number().int(),
+  leaveMin: z.number().int(),
   firstStart: z.string().nullable(),
   lastStop: z.string().nullable(),
   unloggedMin: z.number().int(),
@@ -398,6 +410,7 @@ export const teamDayLogRowSchema = z.object({
   lastStop: z.string().nullable(),
   workMin: z.number().int(),
   breakMin: z.number().int(),
+  leaveMin: z.number().int(),
   entryCount: z.number().int(),
   lateCount: z.number().int(),
 });
@@ -422,6 +435,7 @@ export const personDayRowSchema = z.object({
   lastStop: z.string().nullable(),
   workMin: z.number().int(),
   breakMin: z.number().int(),
+  leaveMin: z.number().int(),
   entryCount: z.number().int(),
   lateCount: z.number().int(),
   orderCodes: z.array(z.string()),
@@ -442,6 +456,7 @@ export const personDayLogResponseSchema = z.object({
     workMin: z.number().int(),
     avgWorkMin: z.number().int(),
     breakMin: z.number().int(),
+    leaveMin: z.number().int(),
     lateCount: z.number().int(),
   }),
 });

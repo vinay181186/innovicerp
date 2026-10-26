@@ -1,5 +1,5 @@
 // My Day Log's ONE entry form (design approved 2026-10-26): Type Work /
-// Break · Working on (Break name for a break) · Against SO / JWSO (work
+// Break / Leave · Working on (Break name for a break) · Against SO / JWSO (work
 // only, type-to-search) · Start time · Stop time (empty = the entry stays
 // Open) · Remark · Save. While editing: "Update entry" + "Cancel edit".
 // The input is checked with the shared schema (the same rules the server
@@ -12,10 +12,14 @@
 // Stop time or Type; an earlier entry shows its times locked and may change
 // Working on / SO / Remark only. Times show as "09:00 AM" (fmt12) and go to
 // the API as 24-hour "HH:MM" (parseTime).
+//
+// LEAVE (owner 2026-10-26): leaving early / half day / permission. "Reason"
+// (optional), no SO / JWSO, Stop locked at DAY_LOG_RULES.workTo (06:00 PM).
 
 import type { DayLogDetail, DayLogEntry, DayLogEntryKind, DayLogOrder } from '@innovic/shared';
 import {
   addDayLogEntryInputSchema,
+  DAY_LOG_RULES,
   fmt12,
   parseTime,
   updateDayLogEntryInputSchema,
@@ -35,6 +39,7 @@ import { LockedTime, TimeField } from './time-field';
 const KINDS: { kind: DayLogEntryKind; label: string }[] = [
   { kind: 'work', label: 'Work' },
   { kind: 'break', label: 'Break' },
+  { kind: 'leave', label: 'Leave' },
 ];
 
 export function EntryForm({
@@ -71,6 +76,9 @@ export function EntryForm({
   const orders = useDayLogOrderOptions(orderSearch, kind === 'work');
   const busy = add.isPending || update.isPending;
   const isBreak = kind === 'break';
+  const isLeave = kind === 'leave';
+  /** No SO / JWSO on a break or a leave. */
+  const noOrder = isBreak || isLeave;
   // Start: the edited entry's own, else where the server says the next one starts.
   const start = editing ? editing.fromTime : day.summary.nextStart;
   /** An earlier entry: times and Type locked. */
@@ -91,21 +99,24 @@ export function EntryForm({
     if (!startT) return;
     const stopT = timesLocked
       ? (editing?.toTime ?? null)
-      : stop.trim() === ''
-        ? null
-        : parseTime(stop);
-    if (!timesLocked && stop.trim() !== '' && !stopT)
+      : isLeave
+        ? DAY_LOG_RULES.workTo
+        : stop.trim() === ''
+          ? null
+          : parseTime(stop);
+    if (!timesLocked && !isLeave && stop.trim() !== '' && !stopT)
       return setMsg({
         ok: false,
         text: 'Stop time: type it as 1130, 3pm or 3:15 pm, or leave it empty.',
       });
     const body = {
       kind,
-      description: desc.trim(),
+      // Reason is optional; the shared schema still wants text on a non-break entry.
+      description: desc.trim() || (isLeave ? 'Leave' : ''),
       startTime: startT,
       stopTime: stopT,
-      orderType: isBreak ? null : (order?.type ?? null),
-      orderId: isBreak ? null : (order?.id ?? null),
+      orderType: noOrder ? null : (order?.type ?? null),
+      orderId: noOrder ? null : (order?.id ?? null),
       remarks: remarks.trim() || null,
     };
     const check = editing
@@ -160,14 +171,16 @@ export function EntryForm({
                   title={timesLocked ? 'Only the last entry may change its Type' : undefined}
                   onClick={() => {
                     setKind(k.kind);
-                    if (k.kind === 'break') setOrder(null);
+                    if (k.kind !== 'work') setOrder(null);
                   }}
                   style={{
                     minWidth: 64,
                     borderRadius:
                       i === 0
                         ? 'var(--radius) 0 0 var(--radius)'
-                        : '0 var(--radius) var(--radius) 0',
+                        : i === KINDS.length - 1
+                          ? '0 var(--radius) var(--radius) 0'
+                          : 0,
                   }}
                 >
                   {k.label}
@@ -178,20 +191,26 @@ export function EntryForm({
         </div>
         <div style={{ flex: '2 1 240px' }}>
           <label className="form-label" htmlFor="dl-desc">
-            {isBreak ? 'Break name' : 'Working on'}
-            {isBreak ? null : <span className="req"> *</span>}
+            {isBreak ? 'Break name' : isLeave ? 'Reason' : 'Working on'}
+            {noOrder ? null : <span className="req"> *</span>}
           </label>
           <input
             id="dl-desc"
             className="innovic-input"
             maxLength={500}
-            placeholder={isBreak ? 'Lunch, Tea, Prayer…' : 'What did you work on?'}
+            placeholder={
+              isBreak
+                ? 'Lunch, Tea, Prayer…'
+                : isLeave
+                  ? 'Half day, permission, doctor…'
+                  : 'What did you work on?'
+            }
             value={desc}
             disabled={busy}
             onChange={(e) => setDesc(e.target.value)}
           />
         </div>
-        {isBreak ? null : (
+        {noOrder ? null : (
           <div style={{ flex: '1.6 1 220px' }}>
             <label className="form-label" htmlFor="dl-order">
               Against SO / JWSO
@@ -230,12 +249,16 @@ export function EntryForm({
           <label className="form-label" htmlFor="dl-stop">
             Stop time
           </label>
-          {timesLocked ? (
+          {timesLocked || isLeave ? (
             <LockedTime
               id="dl-stop"
               ariaLabel="Stop time"
-              value={editing?.toTime ?? null}
-              title="Only the last entry may change its times"
+              value={timesLocked ? (editing?.toTime ?? null) : DAY_LOG_RULES.workTo}
+              title={
+                timesLocked
+                  ? 'Only the last entry may change its times'
+                  : 'A leave runs to the end of the working day'
+              }
             />
           ) : (
             <TimeField

@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { ConflictError, ValidationError } from '../../lib/errors';
+import { leaveCases } from './leave-cases';
 import * as service from './service';
 import {
   MON,
@@ -355,3 +356,5 @@ describe('Day Log — LATE, orders, person, team', () => {
     expect((await teamRow(WED, at(WED, '18:30'))).currentStatus).toBe('submitted');
   });
 });
+
+leaveCases();
