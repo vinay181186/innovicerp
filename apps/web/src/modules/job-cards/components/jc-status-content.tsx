@@ -40,7 +40,11 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/api';
+import {
+  isStagedResult,
+  undecidedChangesOf,
+  usePendingEditForDoc,
+} from '@/modules/document-edits/api';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -312,7 +316,7 @@ function JcStatusEditForm({
   // a second. Until the check answers Save stays off too.
   const pendingEdit = usePendingEditForDoc('JobCard', id);
   const pendingRows = pendingEdit.data?.rows ?? [];
-  const pendingChanges = pendingRows.flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingRows);
   const hasPendingEdit = pendingRows.length > 0;
   // Also off while the Production Order is still being looked up: until it
   // answers, a short-closed order's card would look editable (no banner is

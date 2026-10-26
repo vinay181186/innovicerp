@@ -161,7 +161,7 @@ export async function requestDocumentEditIdInTx(
   return outer.transaction(async (tx) => {
     if (!opts?.gateKnownOn && !(await isDocEditApprovalOn(tx, companyId))) return null;
     // Locks the document (and its lines / ops) in the writer's own order.
-    const target = await entry.loadForDiff(tx, companyId, entityId);
+    const target = await entry.loadForDiff(tx, companyId, entityId, { purpose: 'request' });
     if (!target?.isLive) return null;
     if (!opts?.proposedBySourceDoc) await requireFormAccess(user, entry.formKey, 'edit');
     // R5 / §20.4 — refuse if the document moved after this form opened it.
@@ -171,7 +171,7 @@ export async function requestDocumentEditIdInTx(
     const checked = precheck ? await precheck(tx, target) : undefined;
     const payload = checked === undefined ? input : checked;
 
-    const before = entry.beforeSnapshot(target);
+    const before = entry.beforeSnapshot(target, payload, new Set());
     const after = await entry.afterSnapshot(tx, companyId, payload, user, target);
     // Stable change id = the field key; one open edit per document means a field
     // key is unique within a request.
@@ -316,9 +316,17 @@ export async function decideDocumentEdit(
 
     // Reload + lock the target; recompute what WOULD change now, so a field the
     // document drifted on since the request is caught and marked superseded.
-    const target = await entry.loadForDiff(tx, companyId, req.entityId);
+    const target = await entry.loadForDiff(tx, companyId, req.entityId, { purpose: 'decide' });
     if (!target) throw new NotFoundError('The document no longer exists.');
-    const before = entry.beforeSnapshot(target);
+    // The boxes earlier decide calls on this request already applied — so a
+    // row-set box (`line:add:<n>`) does not read this request's own adds /
+    // removes as someone else's drift.
+    const priorApproved = new Set(
+      priorOutcomes
+        .filter((o) => o.outcome === 'approved')
+        .map((o) => storedChanges.find((c) => c.id === o.changeId)?.field ?? o.changeId),
+    );
+    const before = entry.beforeSnapshot(target, req.proposedPayload, priorApproved);
     // Prices included whatever THIS approver may see: the fresh before/after
     // must be the same facts the requester staged, or a price box would read
     // as "superseded" to a price-blind approver.
@@ -364,7 +372,7 @@ export async function decideDocumentEdit(
         firstApply: !priorOutcomes.some((o) => o.outcome === 'approved'),
       });
       if (filtered)
-        await entry.applyEdit(tx, companyId, req.entityId, filtered, currentToken, user);
+        await entry.applyEdit(tx, companyId, req.entityId, filtered, currentToken, user, target);
     }
 
     // Merge this call's outcomes with the earlier ones, then decide the request's

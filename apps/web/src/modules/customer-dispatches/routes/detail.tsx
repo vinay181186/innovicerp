@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react';
 import { ActionLink } from '@/components/shared/action-link';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -51,7 +51,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
   // ADR-202 — the edit(s) staged against this dispatch, still awaiting a
   // decision. Their per-field changes drive the inline amber chips below.
   const pendingEdit = usePendingEditForDoc('Dispatch', id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — a pending edit shows a grey "Draft" chip on the header. The
   // dispatch header carries no status badge of its own (status is plain text),
   // so the chip is added beside the title rather than replacing a badge.

@@ -32,7 +32,7 @@ import { ArrowLeft, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -82,7 +82,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('PurchaseRequest', detail?.id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   // Create PO is a PURCHASE ORDER action that merely starts from this PR, so it

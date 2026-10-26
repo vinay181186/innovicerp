@@ -26,7 +26,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
@@ -112,7 +112,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // ADR-202 — the edit(s) staged against this Job Card and still waiting for a
   // decision. Their per-field changes drive the amber chips on the facts.
   const pendingEdit = usePendingEditForDoc('JobCard', id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 

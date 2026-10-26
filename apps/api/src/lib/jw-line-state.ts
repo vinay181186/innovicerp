@@ -198,3 +198,37 @@ export async function jwLineUsage(
   }
   return out;
 }
+
+/**
+ * Is this JWSO IN USE — does ANY live downstream document hang off it? The
+ * edit-approval rule (jw-edit-registry jwsoEditGoesForApproval): a JWSO nothing
+ * uses yet edits directly even with Document Edit Approval on; once in use,
+ * edits go for approval. Built on THE line-usage read (jwLineUsageRows — the
+ * same read the line locks and the JWSO cancel use, so the three can never
+ * disagree) plus a Party GRN raised against the JWSO header. `lineIds` = the
+ * JWSO's live lines when the caller already holds them (locked); else read here.
+ */
+export async function jwsoInUse(
+  tx: DbTransaction,
+  companyId: string,
+  jobWorkOrderId: string,
+  lineIds?: readonly string[],
+): Promise<boolean> {
+  const ids =
+    lineIds ??
+    (
+      (await tx.execute(sql`
+        SELECT id FROM public.job_work_order_lines
+         WHERE job_work_order_id = ${jobWorkOrderId}::uuid AND company_id = ${companyId}::uuid
+           AND deleted_at IS NULL
+      `)) as unknown as Array<{ id: string }>
+    ).map((r) => r.id);
+  if ((await jwLineUsageRows(tx, ids)).length > 0) return true;
+  const hdr = (await tx.execute(sql`
+    SELECT 1 FROM public.party_grn
+     WHERE job_work_order_id = ${jobWorkOrderId}::uuid AND company_id = ${companyId}::uuid
+       AND deleted_at IS NULL
+     LIMIT 1
+  `)) as unknown as unknown[];
+  return hdr.length > 0;
+}

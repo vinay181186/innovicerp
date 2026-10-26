@@ -12,9 +12,10 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
+  PendingLineChanges,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
@@ -72,7 +73,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('JobWorkOrder', id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -272,6 +273,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         }
       >
         <DetailGrid detail={detail} pendingChanges={pendingChanges} />
+        <PendingLineChanges changes={pendingChanges} />
         {/* ADR-243 — the JWSO's money from the server (SGST + CGST or IGST,
             Round-off), the same roll-up as the SO. Null when prices are hidden. */}
         <OrderTotalsStrip totals={detail.totals} hasCustomer={detail.clientId != null} />

@@ -18,7 +18,7 @@ import type { GrnQcStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -64,7 +64,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields in the header grid. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('GoodsReceiptNote', id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   // Tier-driven, per department (Store). Was role admin/manager for Edit and

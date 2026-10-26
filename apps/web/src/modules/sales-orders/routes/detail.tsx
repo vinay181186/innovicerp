@@ -26,9 +26,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
+  PendingLineChanges,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
@@ -119,7 +120,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('SalesOrder', id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const softDelete = useSoftDeleteSalesOrder();
@@ -311,6 +312,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         }
       >
         <SoReadGrid detail={detail} pendingChanges={pendingChanges} />
+        <PendingLineChanges changes={pendingChanges} />
         {/* ADR-190 / ADR-243 — the SO's money, summed on the server (SGST +
             CGST or IGST, Round-off). Null when this user's access hides
             prices, and then the strip is not shown. */}
