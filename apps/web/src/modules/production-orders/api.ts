@@ -68,6 +68,14 @@ function toQueryString(q: ProductionOrdersListArgs): string {
   return params.toString();
 }
 
+/** Non-hook list read — the master's Export / Print / Download PDF page
+ *  through every matching order with it (fetchAllPages). */
+export function fetchProductionOrders(
+  q: ProductionOrdersListArgs,
+): Promise<ListProductionOrdersResponse> {
+  return apiFetch<ListProductionOrdersResponse>(`/production-orders?${toQueryString(q)}`);
+}
+
 export function useProductionOrdersList(
   query: ProductionOrdersListArgs,
   options?: Omit<UseQueryOptions<ListProductionOrdersResponse>, 'queryKey' | 'queryFn'>,

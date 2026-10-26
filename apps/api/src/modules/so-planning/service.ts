@@ -43,8 +43,10 @@ import {
   jobWorkOrders,
   planOps,
   plans,
+  productionOrders,
   purchaseOrders,
   purchaseRequests,
+  routeCards,
   salesOrderLines,
   salesOrders,
 } from '../../db/schema';
@@ -96,6 +98,8 @@ function routeCardPlanFields(r: {
   poStatus: string | null;
   hasRouteCard: boolean | null;
   routeCardUsable: boolean | null;
+  routeCardCode: string | null;
+  routeCardApprovalStatus: string | null;
   activeOrderCount: number | null;
   openOrderCount: number | null;
   pendingQty: number | null;
@@ -105,6 +109,8 @@ function routeCardPlanFields(r: {
   | 'derivedStatus'
   | 'productionOrderId'
   | 'productionOrderCode'
+  | 'routeCardCode'
+  | 'routeCardApprovalStatus'
   | 'plannedStartDate'
   | 'plannedEndDate'
   | 'rawMaterialGradeText'
@@ -124,12 +130,21 @@ function routeCardPlanFields(r: {
     }),
     productionOrderId: r.poId ?? null,
     productionOrderCode: r.poCode ?? null,
+    routeCardCode: r.routeCardCode ?? null,
+    routeCardApprovalStatus: toRouteCardApprovalStatus(r.routeCardApprovalStatus),
     plannedStartDate: r.plan.plannedStartDate ?? null,
     plannedEndDate: r.plan.plannedEndDate ?? null,
     rawMaterialGradeText: r.plan.rawMaterialGradeText ?? null,
     rawMaterialSizeText: r.plan.rawMaterialSizeText ?? null,
     remarks: r.plan.remarks ?? null,
   };
+}
+
+/** The contract's three approval states; anything else (no card) is null. */
+function toRouteCardApprovalStatus(
+  raw: string | null | undefined,
+): PlanningPlanSummary['routeCardApprovalStatus'] {
+  return raw === 'pending' || raw === 'approved' || raw === 'rejected' ? raw : null;
 }
 
 // ADR-216 — WHICH item a plan is for. A plan raised from the BOM modal sits on
@@ -163,6 +178,16 @@ function planItemFields(r: {
  *  appear on the line. `deleted_at is null` so a soft-deleted item cannot
  *  resurrect its name here. */
 const PLAN_ITEM_JOIN_ON = sql`plan_item.id = ${plans.itemId} and plan_item.deleted_at is null`;
+
+/** The `plan_rc` join: the plan item's live Route Card (code + ADR-253
+ *  approval state for the Planning "RC No." column). One LEFT JOIN instead of
+ *  a correlated sub-select per field per plan. It cannot multiply plan rows:
+ *  the partial unique index route_cards_company_item_uniq (company_id,
+ *  item_id) WHERE deleted_at IS NULL allows at most ONE live card per item, so
+ *  the join is 1:1. Same company / item / not-deleted test as
+ *  PLAN_ROUTE_CARD_USABLE_SQL. No card → plan_rc.* null → "Pending". */
+const PLAN_RC_JOIN_ON = sql`plan_rc.company_id = ${plans.companyId}
+  and plan_rc.item_id = ${plans.itemId} and plan_rc.deleted_at is null`;
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -214,6 +239,58 @@ async function loadOspPrsByPlan(
     const arr = map.get(planId) ?? [];
     arr.push({ id: r.prId, code: r.prCode });
     map.set(planId, arr);
+  }
+  return map;
+}
+
+type PlanOrderRef = PlanningPlanSummary['productionOrders'][number];
+
+/**
+ * EVERY live Production Order of each plan, oldest first, with the Job Card
+ * it built — keyed by plan id. One batched query, never a join on the plan
+ * query (ADR-182: that would return one copy of the plan per order). A Job
+ * Card in Trash comes back as jobCardId / jcCode null.
+ */
+async function loadProductionOrdersByPlan(
+  tx: DbTransaction,
+  planIds: readonly string[],
+): Promise<Map<string, PlanOrderRef[]>> {
+  const map = new Map<string, PlanOrderRef[]>();
+  if (planIds.length === 0) return map;
+  const rows = await tx
+    .select({
+      planId: productionOrders.planId,
+      id: productionOrders.id,
+      code: productionOrders.code,
+      status: productionOrders.status,
+      jobCardId: jobCards.id,
+      jcCode: jobCards.code,
+    })
+    .from(productionOrders)
+    .leftJoin(
+      jobCards,
+      and(eq(jobCards.id, productionOrders.jobCardId), isNull(jobCards.deletedAt)),
+    )
+    .where(
+      and(
+        inArray(productionOrders.planId, [...planIds]),
+        isNull(productionOrders.deletedAt),
+        // ADR-235 — a cancelled order is out (cancel stamps deleted_at too;
+        // cancelled_at is checked as well so the rule never hangs on that).
+        isNull(productionOrders.cancelledAt),
+      ),
+    )
+    .orderBy(asc(productionOrders.createdAt), asc(productionOrders.code));
+  for (const r of rows) {
+    const arr = map.get(r.planId) ?? [];
+    arr.push({
+      id: r.id,
+      code: r.code,
+      status: r.status,
+      jobCardId: r.jobCardId ?? null,
+      jcCode: r.jcCode ?? null,
+    });
+    map.set(r.planId, arr);
   }
   return map;
 }
@@ -631,6 +708,10 @@ export async function getPlanningSoDetail(
               pendingQty: PLAN_PENDING_QTY_SQL,
               hasRouteCard: HAS_ROUTE_CARD_SQL,
               routeCardUsable: ROUTE_CARD_USABLE_SQL,
+              routeCardCode: sql<string | null>`plan_rc.code`.as('plan_rc_code'),
+              routeCardApprovalStatus: sql<string | null>`plan_rc.approval_status`.as(
+                'plan_rc_approval_status',
+              ),
             })
             .from(plans)
             .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
@@ -647,6 +728,7 @@ export async function getPlanningSoDetail(
               sql`fo_mat_pr.id = ${plans.foMatPrId} and fo_mat_pr.deleted_at is null`,
             )
             .leftJoin(sql`${items} as plan_item`, PLAN_ITEM_JOIN_ON)
+            .leftJoin(sql`${routeCards} as plan_rc`, PLAN_RC_JOIN_ON)
             .where(
               and(
                 inArray(plans.soLineId, lineIds),
@@ -657,6 +739,7 @@ export async function getPlanningSoDetail(
             .orderBy(asc(plans.code));
 
     const planIds = planRows.map((r) => r.plan.id);
+    const posByPlan = await loadProductionOrdersByPlan(tx, planIds);
     const ospPrsMap = await loadOspPrsByPlan(
       tx,
       planRows.map((r) => ({ id: r.plan.id, jcId: r.plan.jcId ?? null })),
@@ -697,6 +780,7 @@ export async function getPlanningSoDetail(
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
         ...routeCardPlanFields(r),
+        productionOrders: posByPlan.get(r.plan.id) ?? [],
         ...planItemFields(r),
         planQty: r.plan.planQty,
         opsCount: ops.count,
@@ -1164,6 +1248,10 @@ async function getJwPlanningDetail(
             pendingQty: PLAN_PENDING_QTY_SQL,
             hasRouteCard: HAS_ROUTE_CARD_SQL,
             routeCardUsable: ROUTE_CARD_USABLE_SQL,
+            routeCardCode: sql<string | null>`plan_rc.code`.as('plan_rc_code'),
+            routeCardApprovalStatus: sql<string | null>`plan_rc.approval_status`.as(
+              'plan_rc_approval_status',
+            ),
           })
           .from(plans)
           .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
@@ -1180,6 +1268,7 @@ async function getJwPlanningDetail(
             sql`fo_mat_pr.id = ${plans.foMatPrId} and fo_mat_pr.deleted_at is null`,
           )
           .leftJoin(sql`${items} as plan_item`, PLAN_ITEM_JOIN_ON)
+          .leftJoin(sql`${routeCards} as plan_rc`, PLAN_RC_JOIN_ON)
           .where(
             and(
               inArray(plans.jwLineId, lineIds),
@@ -1190,6 +1279,7 @@ async function getJwPlanningDetail(
           .orderBy(asc(plans.code));
 
   const planIds = planRows.map((r) => r.plan.id);
+  const posByPlan = await loadProductionOrdersByPlan(tx, planIds);
   const ospPrsMap = await loadOspPrsByPlan(
     tx,
     planRows.map((r) => ({ id: r.plan.id, jcId: r.plan.jcId ?? null })),
@@ -1230,6 +1320,7 @@ async function getJwPlanningDetail(
       planType: r.plan.planType,
       planStatus: r.plan.planStatus,
       ...routeCardPlanFields(r),
+      productionOrders: posByPlan.get(r.plan.id) ?? [],
       ...planItemFields(r),
       planQty: r.plan.planQty,
       opsCount: ops.count,
@@ -1532,10 +1623,15 @@ export async function getPlanningBom(
         pendingQty: PLAN_PENDING_QTY_SQL,
         hasRouteCard: HAS_ROUTE_CARD_SQL,
         routeCardUsable: ROUTE_CARD_USABLE_SQL,
+        routeCardCode: sql<string | null>`plan_rc.code`.as('plan_rc_code'),
+        routeCardApprovalStatus: sql<string | null>`plan_rc.approval_status`.as(
+          'plan_rc_approval_status',
+        ),
       })
       .from(plans)
       .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
       .leftJoin(sql`${items} as plan_item`, PLAN_ITEM_JOIN_ON)
+      .leftJoin(sql`${routeCards} as plan_rc`, PLAN_RC_JOIN_ON)
       .where(
         and(
           eq(plans.soLineId, soLineId),
@@ -1543,6 +1639,10 @@ export async function getPlanningBom(
           sql`${plans.planStatus} <> 'cancelled'`,
         ),
       );
+    const posByPlan = await loadProductionOrdersByPlan(
+      tx,
+      existing.map((r) => r.plan.id),
+    );
     const planByChildCode = new Map<string, PlanningPlanSummary>();
     let hasAssemblyPlan = false;
     for (const r of existing) {
@@ -1558,6 +1658,7 @@ export async function getPlanningBom(
         planType: r.plan.planType,
         planStatus: r.plan.planStatus,
         ...routeCardPlanFields(r),
+        productionOrders: posByPlan.get(r.plan.id) ?? [],
         ...planItemFields(r),
         planQty: r.plan.planQty,
         opsCount: 0,

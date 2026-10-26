@@ -223,6 +223,29 @@ export interface LevelProductionOrder {
   /** Same rule as production-orders toDetail: 0 once stopped, else Order − Credited. */
   pendingQty: number;
   status: string;
+  /** The Route Card this order was raised on (production_orders.route_card_id /
+   *  route_card_code_text) and its revision. */
+  routeCardId: string | null;
+  routeCardCode: string | null;
+  routeCardRevision: number | null;
+}
+
+/** The item's live Route Card (one per item) and its ADR-253 approval state. */
+export interface LevelRouteCard {
+  id: string;
+  code: string;
+  currentRevision: number;
+  approvalStatus: 'pending' | 'approved' | 'rejected';
+}
+
+/** A customer dispatch / tax invoice that carries this SO line. */
+export interface LevelLineDoc {
+  id: string;
+  code: string;
+  /** Qty of THIS line on that document. */
+  qty: number;
+  status: string | null;
+  date: string | null;
 }
 
 export interface LevelPlan {
@@ -250,6 +273,17 @@ export interface LevelSoLine {
   productionOrders: LevelProductionOrder[];
   /** Cards built for this line (by a Production Order or raised on the line); rework children excluded. */
   jobCards: LevelJobCard[];
+  /** Live Route Cards that drive this line: the line ITEM's card first, then
+   *  the card of every other item planned on the line (BOM children, equipment
+   *  parts), de-duplicated. Empty = none yet → "Pending". Same rule as the
+   *  Planning "RC No." column (the plan item's card). */
+  routeCards: LevelRouteCard[];
+  /** Live (not cancelled / deleted) customer dispatches and invoices of this
+   *  line. EMPTY when the caller lacks View on Customer Dispatch / Invoices —
+   *  `docsHidden` then says which, so the screen can say so instead of "Pending". */
+  dispatches: LevelLineDoc[];
+  invoices: LevelLineDoc[];
+  docsHidden: { dispatches: boolean; invoices: boolean };
 }
 
 export interface LevelMatrixResponse {

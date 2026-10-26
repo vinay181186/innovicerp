@@ -4,6 +4,7 @@
 // then → the proposed value in an amber `.tag`.
 
 import type { ActivityChangeValue, DocumentEditChange } from '@innovic/shared';
+import { groupChanges } from './change-groups';
 
 function fmtVal(v: ActivityChangeValue): string {
   if (v === null || v === '') return '—';
@@ -68,4 +69,54 @@ export function linePendingChange(
 ): DocumentEditChange | undefined {
   const key = `line:${lineId}:${attr}`;
   return changes.find((c) => c.field === key);
+}
+
+/** Every pending change on ONE line (or Delivery Schedule row) — the
+ *  `line:<lineId>:<attr>` / `ms:<id>:<attr>` boxes plus its `line:remove:<lineId>`
+ *  box. For a JWSO / SO line whose attr names are not in the union above. */
+export function pendingLineChanges(
+  changes: readonly DocumentEditChange[],
+  rowId: string,
+  scope: 'line' | 'ms' = 'line',
+): DocumentEditChange[] {
+  return changes.filter(
+    (c) => c.field.startsWith(`${scope}:${rowId}:`) || c.field === `${scope}:remove:${rowId}`,
+  );
+}
+
+/** ADR-202 — the pending LINE / Delivery Schedule changes of a document, one
+ *  amber chip per box, grouped per line (change-groups.ts). Renders nothing
+ *  when only header fields (or nothing) are waiting — those keep their per-cell
+ *  chip. For detail pages whose line table has no per-cell chip. */
+export function PendingLineChanges({
+  changes,
+}: {
+  changes: readonly DocumentEditChange[];
+}): React.JSX.Element | null {
+  const groups = groupChanges(changes).filter((g) => g.key !== 'header');
+  if (groups.length === 0) return null;
+  return (
+    <div
+      role="status"
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-1)', alignItems: 'center' }}
+    >
+      <span className="text3" style={{ fontWeight: 700 }}>
+        Line changes waiting for approval:
+      </span>
+      {groups.flatMap((g) =>
+        g.rows.map(({ change: c, kind, fieldLabel }) => (
+          <span
+            key={c.id}
+            className={`tag ${kind === 'add' ? 'b-green' : kind === 'remove' ? 'b-red' : 'b-amber'}`}
+            style={{ whiteSpace: 'normal' }}
+            title="Waiting for approval"
+          >
+            {kind === 'edit'
+              ? `${g.heading ?? ''} · ${fieldLabel}: ${fmtVal(c.before)} → ${fmtVal(c.after)}`
+              : `${kind === 'add' ? '+' : '−'} ${c.label}`}
+          </span>
+        )),
+      )}
+    </div>
+  );
 }

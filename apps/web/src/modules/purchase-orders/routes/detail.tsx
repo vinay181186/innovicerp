@@ -50,7 +50,7 @@ import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   linePendingChange,
@@ -138,7 +138,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   // header band and the line rows. Flattened across requests (there is usually
   // one, but an older request can still be open alongside a new one).
   const pendingEdit = usePendingEditForDoc('PurchaseOrder', detail?.id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 

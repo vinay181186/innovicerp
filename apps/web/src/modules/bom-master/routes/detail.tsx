@@ -18,7 +18,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -132,7 +132,7 @@ function BomMasterDetailPage(): React.JSX.Element {
 
   // ADR-202 — the BOM edit diff emits these header field keys; line changes are
   // keyed by the line's CHILD ITEM id (`line:<childItemId>:qty|bomType|rmGrade|rmSize`).
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   const bomNoPending = headerPendingChange(pendingChanges, 'bomNo');
   const bomNamePending = headerPendingChange(pendingChanges, 'bomName');
   const parentItemPending = headerPendingChange(pendingChanges, 'parentItemId');

@@ -22,11 +22,20 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import {
+  LIST_PAGE_SIZE,
+  fetchAllPages,
+  pageOffset,
+  pageSearchParam,
+  useClampPage,
+} from '@/lib/list-paging';
+import { todayIst } from '@/lib/date';
+import { runPrint } from '@/lib/print/preview-host';
+import { useMyCompany } from '@/modules/settings/api';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -34,16 +43,23 @@ import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
-import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { RowActions } from '@/ui/layout';
-import { type ProductionOrdersListArgs, useProductionOrdersList } from '../api';
+import {
+  type ProductionOrdersListArgs,
+  fetchProductionOrders,
+  useProductionOrdersList,
+} from '../api';
 import {
   PO_LIST_DETAIL_IDS,
+  PO_LIST_PINNED_IDS,
   isProCancelled,
   poListColumns,
   poRowTint,
 } from '../components/po-list-columns';
+import { exportProductionOrders } from '../lib/export-excel';
+import { printProductionOrderRegister } from '../lib/print-register';
 
 // Tile counts ignore the search box (they count the whole book, like SO Master
 // and the PR list). Module-level constants keep the query keys stable.
@@ -87,6 +103,11 @@ function ProductionOrdersListPage(): React.JSX.Element {
   // which of the two this user may press.
   const canCancel = perms.edit || perms.approve;
   const [cancelPro, setCancelPro] = useState<ProductionOrderListItem | null>(null);
+  const { data: company } = useMyCompany();
+  const [exporting, setExporting] = useState(false);
+  // Set synchronously, so a double-click cannot start two exports before the
+  // `exporting` state (the disabled look) has re-rendered.
+  const exportingRef = useRef(false);
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -161,8 +182,42 @@ function ProductionOrdersListPage(): React.JSX.Element {
 
   // ADR-202 — Production Order ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('ProductionOrder');
-  const columns = useMemo(() => poListColumns(draftIds), [draftIds]);
+  const columns = useMemo(() => poListColumns(draftIds, offset), [draftIds, offset]);
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
+
+  // Export / Print / Download PDF — EVERY order the screen matches (search +
+  // status + Sort & Filter + Cancelled), not just this page (fetchAllPages,
+  // 200 a call, capped at 10,000). Same query as the table minus the paging.
+  async function runExport(kind: 'excel' | 'print' | 'pdf'): Promise<void> {
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    setExporting(true);
+    try {
+      const all = await fetchAllPages((limit, off) =>
+        fetchProductionOrders({ ...query, limit, offset: off }),
+      );
+      if (all.length === 0) {
+        window.alert('Nothing to export.');
+        return;
+      }
+      if (kind === 'excel') {
+        exportProductionOrders(all);
+      } else {
+        const fileName = `Production Orders ${todayIst()}`;
+        await runPrint(
+          kind === 'pdf' ? 'download' : 'preview',
+          { title: 'Production Orders', fileName },
+          () =>
+            Promise.resolve(() => printProductionOrderRegister({ rows: all, company, fileName })),
+        );
+      }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not load Production Orders. Try again.');
+    } finally {
+      exportingRef.current = false;
+      setExporting(false);
+    }
+  }
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. Sits
@@ -224,6 +279,31 @@ function ProductionOrdersListPage(): React.JSX.Element {
             }
           />
         }
+        tools={
+          <ActionMenu
+            label="Export"
+            items={[
+              {
+                label: '📊 Export Excel',
+                title: 'Export every Production Order on this list to Excel',
+                disabled: exporting,
+                onClick: () => void runExport('excel'),
+              },
+              {
+                label: '🖨 Print',
+                title: 'Print every Production Order on this list',
+                disabled: exporting,
+                onClick: () => void runExport('print'),
+              },
+              {
+                label: '⬇ Download PDF',
+                title: 'Download every Production Order on this list as a PDF',
+                disabled: exporting,
+                onClick: () => void runExport('pdf'),
+              },
+            ]}
+          />
+        }
         primary={
           perms.entry ? (
             <Link to="/production-orders/new" className="btn btn-primary">
@@ -247,6 +327,9 @@ function ProductionOrdersListPage(): React.JSX.Element {
             columns={columns}
             // Plan No. / SO / JWSO / POL / JC No. ride in the ▸ detail row.
             defaultHidden={PO_LIST_DETAIL_IDS}
+            // Sr No is column 0 (always pinned, carries the ▸); the
+            // Production Order No. stays pinned beside it.
+            defaultPinned={PO_LIST_PINNED_IDS}
             rows={rows}
             loading={isLoading}
             sortFilterServer={sf}

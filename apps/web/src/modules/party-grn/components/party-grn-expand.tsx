@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DocumentHistory } from '@/components/shared/document-history';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -172,7 +172,7 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
   // per-field changes drive the inline amber chips below (this expand already
   // hosts the receipt's History, so it is the right surface).
   const pendingEdit = usePendingEditForDoc('PartyGrn', g.id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
 
   return (
     <div style={{ padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)' }}>

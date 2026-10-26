@@ -35,7 +35,9 @@ function words(v: unknown): ActivityChangeValue {
     .join(' ');
 }
 
-function day(v: unknown): ActivityChangeValue {
+/** A date as a person reads it (fmtDate). Exported so the edit-approval
+ *  registry shows a Delivery Schedule lot's Due Date the same way. */
+export function day(v: unknown): ActivityChangeValue {
   if (v === null || v === undefined || v === '') return null;
   return fmtDate(v as string | Date);
 }
@@ -61,8 +63,9 @@ export const SO_HEADER_FIELDS: readonly DiffField[] = [
 export const SO_MONEY_HEADER_FIELDS: readonly DiffField[] = [{ key: 'gstPercent', label: 'GST %' }];
 
 // The customer's drawing revision is never shown alone (NAMING) — the item and
-// its Rev are compared together as CODE/REV.
-const SO_LINE_FIELDS: readonly DiffField[] = [
+// its Rev are compared together as CODE/REV. Exported so the edit-approval
+// registry labels its line boxes the same way.
+export const SO_LINE_FIELDS: readonly DiffField[] = [
   { key: 'codeRev', label: 'CODE/REV' },
   { key: 'partName', label: 'Item Name' },
   { key: 'material', label: 'Material' },
@@ -74,7 +77,7 @@ const SO_LINE_FIELDS: readonly DiffField[] = [
   { key: 'dueDate', label: 'Due Date', format: day },
   { key: 'status', label: 'Line Status', format: words },
 ];
-const SO_MONEY_LINE_FIELDS: readonly DiffField[] = [{ key: 'rate', label: 'Rate' }];
+export const SO_MONEY_LINE_FIELDS: readonly DiffField[] = [{ key: 'rate', label: 'Rate' }];
 
 type LineSnap = SoLineRow & { codeRev: string };
 

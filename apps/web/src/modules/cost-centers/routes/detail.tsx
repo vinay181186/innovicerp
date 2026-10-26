@@ -25,7 +25,7 @@ import type { CostCenter, DocumentEditChange } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -71,7 +71,7 @@ function CostCenterDetailPage(): React.JSX.Element {
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('CostCenter', data?.id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
 
   // Tier-driven (cc_create, Finance). Edit -> edit; Delete -> Super Admin (ADR-232).
   const perms = effectiveFormPerms(eff, 'cc_create');

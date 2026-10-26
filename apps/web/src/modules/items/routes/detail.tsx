@@ -42,7 +42,7 @@ import { fmtDate } from '@/lib/date';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { ItemBadge } from '@/components/shared/item-badge';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -77,7 +77,7 @@ function ItemDetailPage(): React.JSX.Element {
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('Item', item?.id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`

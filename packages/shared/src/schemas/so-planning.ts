@@ -79,6 +79,23 @@ export const planningPlanSummarySchema = z.object({
   derivedStatus: planDerivedStatusSchema.nullable().default(null),
   productionOrderId: z.string().uuid().nullable().default(null),
   productionOrderCode: z.string().nullable().default(null),
+  /** The plan item's live Route Card (null = none yet → "Pending") and its
+   *  ADR-253 approval state. */
+  routeCardCode: z.string().nullable().default(null),
+  routeCardApprovalStatus: z.enum(['pending', 'approved', 'rejected']).nullable().default(null),
+  /** EVERY live Production Order of this plan (oldest first) with its Job Card
+   *  — a JC in Trash comes back as null. productionOrderCode above stays the newest. */
+  productionOrders: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        code: z.string(),
+        status: z.string(),
+        jobCardId: z.string().uuid().nullable(),
+        jcCode: z.string().nullable(),
+      }),
+    )
+    .default([]),
   plannedStartDate: z.string().nullable().default(null),
   plannedEndDate: z.string().nullable().default(null),
   rawMaterialGradeText: z.string().nullable().default(null),

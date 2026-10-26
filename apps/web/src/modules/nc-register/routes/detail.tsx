@@ -21,7 +21,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
-import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
   headerPendingChange,
@@ -82,7 +82,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // Their per-field changes drive the inline amber chips next to the record
   // fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('NonConformance', detail?.id);
-  const pendingChanges = (pendingEdit.data?.rows ?? []).flatMap((r) => r.changes);
+  const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const softDelete = useSoftDeleteNcRegister();

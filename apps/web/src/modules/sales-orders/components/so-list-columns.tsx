@@ -329,6 +329,8 @@ export function soRowMenu(
     /** ADR-235 — Cancel SO: the Edit or Approve tick (the server decides). */
     canCancel: boolean;
     onCancel: (so: SalesOrderListItem) => void;
+    /** SO Preview box (so-preview-modal.tsx): header + every document per line. */
+    onOpenSoPreview: (so: SalesOrderListItem) => void;
     /** The SO print (use-order-print.tsx): in-app preview, and ⬇ PDF. */
     onPreview: (so: SalesOrderListItem) => void;
     onDownload: (so: SalesOrderListItem) => Promise<void>;
@@ -337,7 +339,14 @@ export function soRowMenu(
   const { canEdit, canDelete, canPlan, canAssign, onAssign, onDelete } = opts;
   const cancelled = so.status === 'cancelled';
   return [
-    { key: 'preview', label: 'Preview', icon: 'eye', onSelect: () => opts.onPreview(so) },
+    // First: the SO Preview box. Same right as the row itself (view).
+    { key: 'so-preview', label: 'Preview', icon: 'eye', onSelect: () => opts.onOpenSoPreview(so) },
+    {
+      key: 'preview',
+      label: 'Print Preview',
+      icon: 'printer',
+      onSelect: () => opts.onPreview(so),
+    },
     {
       key: 'download',
       label: 'Download PDF',
