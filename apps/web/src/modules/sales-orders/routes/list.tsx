@@ -42,6 +42,7 @@ import {
 } from '../components/so-list-columns';
 import { useOrderPrint } from '../components/use-order-print';
 import { SoExpandedPanel } from '../components/so-expanded-panel';
+import { SoPreviewModal } from '../components/so-preview-modal';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
 import { todayIst } from '@/lib/date';
@@ -155,6 +156,8 @@ function SalesOrdersListPage(): React.JSX.Element {
   // decides it. The row whose standard Cancel dialog is open.
   const canCancel = perms.edit || perms.approve;
   const [cancelSo, setCancelSo] = useState<SalesOrderListItem | null>(null);
+  // ⋯ → Preview: the order whose SO Preview box is open, or null.
+  const [soPreview, setSoPreview] = useState<SalesOrderListItem | null>(null);
 
   // Export status banner — an export that finds nothing, or fails, says so here.
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -365,6 +368,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                 onDelete: onDeleteSo,
                 canCancel,
                 onCancel: setCancelSo,
+                onOpenSoPreview: setSoPreview,
                 onPreview: (s) =>
                   orderPrint.preview(
                     { kind: 'so', id: s.id, code: s.code, clientId: s.clientId },
@@ -392,6 +396,8 @@ function SalesOrdersListPage(): React.JSX.Element {
       />
 
       {orderPrint.modal}
+
+      {soPreview ? <SoPreviewModal so={soPreview} onClose={() => setSoPreview(null)} /> : null}
 
       {previewPath ? (
         <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />

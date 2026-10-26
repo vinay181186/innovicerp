@@ -3,8 +3,9 @@
 // under the 400-line ceiling and the sheet is defined in one place, exactly as
 // SO Master does it (so-list-columns.tsx is the reference).
 //
-// One row per order. The first column (Production Order No.) is always pinned
-// and carries the fit table's ▸ — the row's one expand control. The five
+// One row per order. The first column is Sr No (owner 2026-10-26); it is
+// always pinned and carries the fit table's ▸ — the row's one expand control.
+// Production Order No. follows it and is pinned by default (PO_LIST_PINNED_IDS). The five
 // secondary facts (Plan No., SO / JWSO No., Internal SO No., POL, JC No.) ship
 // hidden by default (defaultHidden in list.tsx), so they ride in the ▸ detail
 // row rather than the main line. Labels per docs/NAMING.md: Production Order
@@ -71,8 +72,20 @@ function completedColor(po: ProductionOrderListItem): string {
 export function poListColumns(
   /** ADR-202 — Production Order ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
+  /** The first row's position on this page (ADR-201 paging), so Sr No keeps
+   *  counting across pages — page 2 starts at 26. */
+  offset = 0,
 ): DataTableColumn<ProductionOrderListItem>[] {
   return [
+    {
+      // Owner request 2026-10-26 — the client-list Sr No column. Column 0 of a
+      // fit table carries the row's ▸; the Production Order No. stays pinned
+      // through PO_LIST_PINNED_IDS.
+      id: 'sr_no',
+      header: 'Sr No',
+      className: 'text3',
+      render: (_po, i) => offset + i + 1,
+    },
     {
       id: 'pro_no',
       header: 'Production Order No.',
@@ -299,6 +312,10 @@ export function poListColumns(
     },
   ];
 }
+
+/** Pinned by default beside the always-pinned first column (Sr No), so the
+ *  Production Order No. is never dropped into ▸ on a narrow screen. */
+export const PO_LIST_PINNED_IDS = ['pro_no'];
 
 /** Column ids shipped in the ▸ detail by default (Plan No., SO / JWSO,
  *  Internal SO No., POL, JC No.), so the eight primary facts stay on the main

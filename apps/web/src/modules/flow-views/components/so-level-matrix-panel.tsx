@@ -9,14 +9,16 @@
 // Every code is a link. The figures come from GET /flow-views/sales-orders/:id/
 // level-matrix, which reads the same plan-coverage fragments and production
 // order rule the Plans and Production Order screens use.
-import { fmtOpSrNo } from '@innovic/shared';
+import { ROUTE_CARD_APPROVAL_LABEL, fmtOpSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/date';
 import { StatusBadge, type StatusKind } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useLevelMatrix } from '../api';
 import type {
   LevelJobCard,
+  LevelLineDoc,
   LevelOspDoc,
   LevelPlan,
   LevelProductionOrder,
@@ -155,6 +157,29 @@ function orderColumns(planCode: Map<string, string>): DataTableColumn<LevelProdu
       className: 'mono',
       render: (o) => planCode.get(o.planId) ?? '—',
     },
+    // The Route Card this order was raised on (and its revision).
+    {
+      header: 'Route Card No',
+      nowrap: true,
+      render: (o) =>
+        o.routeCardId && o.routeCardCode ? (
+          <span>
+            <Link
+              to="/route-cards/$id"
+              params={{ id: o.routeCardId }}
+              className={LINK_CLASS}
+              style={LINK_STYLE}
+            >
+              {o.routeCardCode}
+            </Link>
+            {o.routeCardRevision != null ? (
+              <span className="text3"> Rev {o.routeCardRevision}</span>
+            ) : null}
+          </span>
+        ) : (
+          <span className="text3">{o.routeCardCode ?? '—'}</span>
+        ),
+    },
     { header: 'Order Qty', align: 'right', nowrap: true, render: (o) => <N v={o.orderQty} /> },
     {
       header: 'Stock Received',
@@ -267,6 +292,49 @@ function jobCardColumns(orderCode: Map<string, string>): DataTableColumn<LevelJo
   ];
 }
 
+// Customer dispatches / tax invoices carrying the line (qty of THIS line).
+function lineDocColumns(kind: 'dispatch' | 'invoice'): DataTableColumn<LevelLineDoc>[] {
+  const dispatch = kind === 'dispatch';
+  return [
+    {
+      header: dispatch ? 'Dispatch No' : 'Invoice No',
+      nowrap: true,
+      render: (d) =>
+        dispatch ? (
+          <Link
+            to="/customer-dispatches/$id"
+            params={{ id: d.id }}
+            className={LINK_CLASS}
+            style={LINK_STYLE}
+          >
+            {d.code}
+          </Link>
+        ) : (
+          <Link to="/invoices/$id" params={{ id: d.id }} className={LINK_CLASS} style={LINK_STYLE}>
+            {d.code}
+          </Link>
+        ),
+    },
+    {
+      header: dispatch ? 'Dispatch Date' : 'Invoice Date',
+      nowrap: true,
+      className: 'mono',
+      render: (d) => fmtDate(d.date),
+    },
+    {
+      header: dispatch ? 'Dispatch Qty' : 'Billed Qty',
+      align: 'right',
+      nowrap: true,
+      render: (d) => <N v={d.qty} />,
+    },
+    {
+      header: dispatch ? 'Dispatch Status' : 'Invoice Status',
+      nowrap: true,
+      render: (d) => <StatusBadge kind={dispatch ? 'doc' : 'invoice'} status={d.status} />,
+    },
+  ];
+}
+
 function LevelHeading({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <div
@@ -284,8 +352,36 @@ function LineLevels({ line }: { line: LevelSoLine }): React.JSX.Element {
     () => new Map(line.productionOrders.map((o) => [o.id, o.code])),
     [line.productionOrders],
   );
+  // Added with the SO Preview; read defensively so an API not yet carrying
+  // them shows "none" instead of failing.
+  const routeCard = line.routeCard ?? null;
+  const dispatches = line.dispatches ?? [];
+  const invoices = line.invoices ?? [];
   return (
     <div style={{ padding: 'var(--sp-1) var(--sp-3) var(--sp-3)' }}>
+      <LevelHeading>Route Card</LevelHeading>
+      <div style={{ fontSize: 12 }}>
+        {routeCard ? (
+          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <Link
+              to="/route-cards/$id"
+              params={{ id: routeCard.id }}
+              className={LINK_CLASS}
+              style={LINK_STYLE}
+            >
+              {routeCard.code}
+            </Link>
+            <span className="text3">Rev {routeCard.currentRevision}</span>
+            <StatusBadge
+              kind="doc"
+              status={routeCard.approvalStatus}
+              label={ROUTE_CARD_APPROVAL_LABEL[routeCard.approvalStatus]}
+            />
+          </span>
+        ) : (
+          <span className="text3">No Route Card for this item yet.</span>
+        )}
+      </div>
       <LevelHeading>Plans ({line.plans.length})</LevelHeading>
       <DataTable<LevelPlan>
         columns={PLAN_COLUMNS}
@@ -309,6 +405,22 @@ function LineLevels({ line }: { line: LevelSoLine }): React.JSX.Element {
         density="compact"
         autoWidth
         emptyText="No Job Card yet."
+      />
+      <LevelHeading>Dispatches ({dispatches.length})</LevelHeading>
+      <DataTable<LevelLineDoc>
+        columns={lineDocColumns('dispatch')}
+        rows={dispatches}
+        density="compact"
+        autoWidth
+        emptyText="Not dispatched yet."
+      />
+      <LevelHeading>Invoices ({invoices.length})</LevelHeading>
+      <DataTable<LevelLineDoc>
+        columns={lineDocColumns('invoice')}
+        rows={invoices}
+        density="compact"
+        autoWidth
+        emptyText="Not billed yet."
       />
     </div>
   );

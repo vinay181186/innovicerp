@@ -29,6 +29,15 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
+import {
+  DocCodes,
+  RcCodes,
+  docText,
+  lineJcs,
+  linePros,
+  lineRouteCards,
+  rcText,
+} from './planning-doc-cells';
 import { lineStatusOf } from './planning-shared';
 
 /** The Plan Status ▾ tick list. A `badge` column filters on DISTINCT values, so
@@ -338,6 +347,38 @@ export function planningLineColumns(
       },
       title: (l) => plansCellText(l),
       filterValue: (l) => plansCellText(l),
+    },
+    // Owner-approved 2026-10-26: the documents each line has produced, one
+    // column each, or the grey word "Pending" (planning-doc-cells.tsx).
+    {
+      id: 'rc_no',
+      header: 'RC No.',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (l) => <RcCodes rcs={lineRouteCards(l)} />,
+      title: (l) => rcText(lineRouteCards(l)),
+      filterValue: (l) => rcText(lineRouteCards(l)),
+    },
+    {
+      id: 'pro_no',
+      header: 'PRO No.',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (l) => <DocCodes docs={linePros(l)} kind="pro" />,
+      title: (l) => docText(linePros(l)),
+      filterValue: (l) => docText(linePros(l)),
+    },
+    {
+      id: 'jc_no',
+      header: 'JC No.',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (l) => <DocCodes docs={lineJcs(l)} kind="jc" />,
+      title: (l) => docText(lineJcs(l)),
+      filterValue: (l) => docText(lineJcs(l)),
     },
   ];
 }

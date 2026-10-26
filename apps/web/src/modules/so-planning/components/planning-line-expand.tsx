@@ -18,6 +18,15 @@ import { fmtDate } from '@/lib/date';
 import { RowMenu, type RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 import { PrChip, planStatusOf } from './plan-chip';
+import {
+  DocCode,
+  DocCodes,
+  PendingText,
+  RcCodes,
+  planOwnJc,
+  planPros,
+  planRouteCards,
+} from './planning-doc-cells';
 import { hasPartRows } from './planning-line-menu';
 import { lineStatusOf } from './planning-shared';
 
@@ -28,12 +37,11 @@ function planTypeLabel(plan: PlanningPlanSummary): string {
   return 'Make';
 }
 
-/** The documents a plan has produced, as plain codes. They were loose links
- *  inside the old chip; in a table they are one cell. */
+/** The purchase requests a plan has raised, as plain codes. The Route Card,
+ *  Production Orders and Job Cards have their own columns now
+ *  (planning-doc-cells.tsx); "Linked" keeps only the PRs. */
 function planLinkedCodes(plan: PlanningPlanSummary): string[] {
   return [
-    plan.productionOrderCode,
-    plan.jcCode,
     plan.dpPrCode,
     plan.foPrCode,
     plan.foMatPrCode,
@@ -75,6 +83,32 @@ function buildItemRows(line: PlanningLine): ItemRow[] {
     rows.push({ key: plan.id, part: null, partShort: false, plan });
   }
   return rows;
+}
+
+/** One line per PRO, in the PRO column's order, so each Job Card sits beside
+ *  its own Production Order ("Pending" where that PRO has no live JC yet);
+ *  the plan's own Job Card (made without a PRO) follows. */
+function PlanJcCell({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
+  const own = planOwnJc(plan);
+  if (plan.productionOrders.length === 0 && !own) return <PendingText />;
+  return (
+    <>
+      {plan.productionOrders.map((po) => (
+        <div key={po.id}>
+          {po.jcCode ? (
+            <DocCode doc={{ code: po.jcCode, id: po.jobCardId }} kind="jc" />
+          ) : (
+            <PendingText />
+          )}
+        </div>
+      ))}
+      {own ? (
+        <div>
+          <DocCode doc={own} kind="jc" />
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
@@ -181,6 +215,9 @@ export function PlanningLineExpand({
                 <th>Planned Start</th>
                 <th>Planned End</th>
                 <th>Plan Status</th>
+                <th>RC No.</th>
+                <th>PRO No.</th>
+                <th>JC No.</th>
                 <th>Linked</th>
                 {showMenu ? <th style={{ width: 40 }} aria-label="Actions" /> : null}
               </tr>
@@ -220,9 +257,10 @@ export function PlanningLineExpand({
                     {/* No plan against this part yet — the gap this table exists
                         to show. Said in words, not left as an empty row. */}
                     {plan === null ? (
-                      // 7 = Plan No. + Type + Plan Qty + Planned Start +
-                      // Planned End + Plan Status + Linked.
-                      <td className="text3" colSpan={7}>
+                      // 10 = Plan No. + Type + Plan Qty + Planned Start +
+                      // Planned End + Plan Status + RC No. + PRO No. +
+                      // JC No. + Linked.
+                      <td className="text3" colSpan={10}>
                         No plan yet
                       </td>
                     ) : (
@@ -233,6 +271,15 @@ export function PlanningLineExpand({
                         <td className="mono">{fmtDate(plan.plannedStartDate)}</td>
                         <td className="mono">{fmtDate(plan.plannedEndDate)}</td>
                         <td style={{ color: st?.color, fontWeight: 700 }}>{st?.label}</td>
+                        <td>
+                          <RcCodes rcs={planRouteCards(plan)} />
+                        </td>
+                        <td>
+                          <DocCodes docs={planPros(plan)} kind="pro" stacked />
+                        </td>
+                        <td>
+                          <PlanJcCell plan={plan} />
+                        </td>
                         <td className="mono" title={linked.join(', ')}>
                           {linked.length > 0 ? linked.join(', ') : '—'}
                         </td>
