@@ -39,10 +39,12 @@ import { resolveNcSource } from '../nc-register/cascades';
 import type {
   FlowNcRef,
   LevelJobCard,
+  LevelLineDoc,
   LevelMatrixResponse,
   LevelOspDoc,
   LevelPlan,
   LevelProductionOrder,
+  LevelRouteCard,
   LevelSoLine,
   NcTimelineResponse,
   NcTimelineStep,
@@ -752,7 +754,7 @@ export async function getLevelMatrix(
     // SO lines — Billed = Σ live invoice-line qty (same as the SO detail).
     const lineRows = await rows(
       tx,
-      sql`SELECT sol.id, sol.line_no, COALESCE(i.code, sol.item_code_text) AS item_code, sol.part_name,
+      sql`SELECT sol.id, sol.line_no, sol.item_id, COALESCE(i.code, sol.item_code_text) AS item_code, sol.part_name,
             sol.client_po_line_no, sol.order_qty, sol.dispatched_qty, sol.status, sol.short_closed_at,
             (SELECT COALESCE(SUM(il.qty), 0) FROM public.invoice_lines il
               JOIN public.invoices inv ON inv.id = il.invoice_id AND inv.deleted_at IS NULL
@@ -794,6 +796,7 @@ export async function getLevelMatrix(
             tx,
             // ADR-222: item from the order ITSELF (stored text, live item as the name fallback).
             sql`SELECT po.id, po.code, po.plan_id, po.status, po.order_qty, po.credited_qty, po.lost_qty,
+                  po.route_card_id, po.route_card_code_text, po.route_card_revision,
                   -- ADR-222 — NULLIF as well as COALESCE: the fallback must fire on an
                   -- EMPTY STRING too, not only on NULL. On TEST the one blank name
                   -- (IN-PRO-00023) is NULL so plain COALESCE happens to work today, but
@@ -810,6 +813,81 @@ export async function getLevelMatrix(
     const poIds = poRows.map((p) => String(p['id']));
     const poPlan = new Map(poRows.map((p) => [String(p['id']), String(p['plan_id'])]));
     const planLine = new Map(planRows.map((p) => [p.id, p.soLineId]));
+
+    // The line ITEM's live Route Card — one per item; DISTINCT ON keeps the
+    // newest should a legacy duplicate exist. One query for all lines.
+    const lineItemIds = [
+      ...new Set(lineRows.map((l) => str(l['item_id'])).filter((v): v is string => v !== null)),
+    ];
+    const rcRows =
+      lineItemIds.length > 0
+        ? await rows(
+            tx,
+            sql`SELECT DISTINCT ON (rc.item_id) rc.item_id, rc.id, rc.code, rc.current_revision,
+                  rc.approval_status
+                FROM public.route_cards rc
+                WHERE rc.company_id = ${companyId}::uuid AND rc.deleted_at IS NULL
+                  AND rc.item_id = ANY(${sql.param(lineItemIds)}::uuid[])
+                ORDER BY rc.item_id, rc.created_at DESC`,
+          )
+        : [];
+    const rcByItem = new Map<string, LevelRouteCard>(
+      rcRows.map((r) => [
+        String(r['item_id']),
+        {
+          id: String(r['id']),
+          code: String(r['code']),
+          currentRevision: num(r['current_revision']),
+          approvalStatus: String(r['approval_status']) as LevelRouteCard['approvalStatus'],
+        },
+      ]),
+    );
+
+    // Customer dispatches and tax invoices that carry each line — live only
+    // (not deleted, not cancelled; the same test the dispatch and invoice
+    // modules use). Qty = THIS line's qty on that document. One query each.
+    const dispatchRows = await rows(
+      tx,
+      sql`SELECT cdl.sales_order_line_id AS line_id, cd.id, cd.code, cd.status::text AS status,
+            cd.dispatch_date::text AS doc_date, SUM(cdl.qty)::int AS qty
+          FROM public.customer_dispatch_lines cdl
+          JOIN public.customer_dispatches cd ON cd.id = cdl.customer_dispatch_id
+            AND cd.deleted_at IS NULL AND cd.status <> 'cancelled'
+          WHERE cdl.sales_order_line_id = ANY(${sql.param(lineIds)}::uuid[])
+            AND cdl.deleted_at IS NULL AND cd.company_id = ${companyId}::uuid
+          GROUP BY cdl.sales_order_line_id, cd.id, cd.code, cd.status, cd.dispatch_date
+          ORDER BY cd.dispatch_date, cd.code`,
+    );
+    const invoiceRows = await rows(
+      tx,
+      sql`SELECT il.sales_order_line_id AS line_id, inv.id, inv.code, inv.status::text AS status,
+            inv.invoice_date::text AS doc_date, SUM(il.qty)::int AS qty
+          FROM public.invoice_lines il
+          JOIN public.invoices inv ON inv.id = il.invoice_id
+            AND inv.deleted_at IS NULL AND inv.status <> 'cancelled'
+          WHERE il.sales_order_line_id = ANY(${sql.param(lineIds)}::uuid[])
+            AND il.deleted_at IS NULL AND inv.company_id = ${companyId}::uuid
+          GROUP BY il.sales_order_line_id, inv.id, inv.code, inv.status, inv.invoice_date
+          ORDER BY inv.invoice_date, inv.code`,
+    );
+    const docsByLine = (docRows: Row[]): Map<string, LevelLineDoc[]> => {
+      const m = new Map<string, LevelLineDoc[]>();
+      for (const d of docRows) {
+        const key = String(d['line_id']);
+        const arr = m.get(key) ?? [];
+        arr.push({
+          id: String(d['id']),
+          code: String(d['code']),
+          qty: num(d['qty']),
+          status: str(d['status']),
+          date: str(d['doc_date']),
+        });
+        m.set(key, arr);
+      }
+      return m;
+    };
+    const dispatchesByLine = docsByLine(dispatchRows);
+    const invoicesByLine = docsByLine(invoiceRows);
 
     // Job cards: built by one of those orders, or raised straight on the line.
     // Rework / repair children are left out (they re-make pieces the parent
@@ -978,6 +1056,12 @@ export async function getLevelMatrix(
             lostQty: num(p['lost_qty']),
             pendingQty: stopped ? 0 : Math.max(0, orderQty - credited),
             status,
+            routeCardId: str(p['route_card_id']),
+            routeCardCode: str(p['route_card_code_text']),
+            routeCardRevision:
+              p['route_card_revision'] === null || p['route_card_revision'] === undefined
+                ? null
+                : num(p['route_card_revision']),
           };
         });
       return {
@@ -996,6 +1080,9 @@ export async function getLevelMatrix(
         jobCards: jobCards
           .filter((j) => j.lineId === id)
           .map(({ lineId: _lineId, ...rest }) => rest),
+        routeCard: rcByItem.get(str(l['item_id']) ?? '') ?? null,
+        dispatches: dispatchesByLine.get(id) ?? [],
+        invoices: invoicesByLine.get(id) ?? [],
       };
     });
 
