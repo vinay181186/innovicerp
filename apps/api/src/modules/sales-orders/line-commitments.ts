@@ -484,3 +484,72 @@ export async function describeSoBlockingDocuments(
   }
   return parts.join('; ');
 }
+
+/**
+ * Is this Sales Order IN USE — does ANY live downstream work hang off it? The
+ * edit-approval rule (so-edit-registry isLive): an SO nothing uses yet edits
+ * directly even with Document Edit Approval on; once in use, edits go for
+ * approval. ONE SQL; its arms are the SO cancel's blocker reads (cancel.ts
+ * salesOrderCancelBlockers — same tables, same "live" tests) plus the stock
+ * bookings on its lines.
+ */
+export async function soInUse(
+  tx: DbTransaction,
+  companyId: string,
+  salesOrderId: string,
+): Promise<boolean> {
+  const lines = sql`SELECT id FROM public.sales_order_lines
+    WHERE sales_order_id = ${salesOrderId}::uuid AND company_id = ${companyId}::uuid
+      AND deleted_at IS NULL`;
+  const rows = (await tx.execute(sql`
+    SELECT (
+      EXISTS (SELECT 1 FROM public.plans
+               WHERE so_line_id IN (${lines}) AND deleted_at IS NULL
+                 AND plan_status <> 'cancelled')
+      OR EXISTS (SELECT 1 FROM public.job_cards
+                  WHERE source_so_line_id IN (${lines}) AND deleted_at IS NULL)
+      OR EXISTS (SELECT 1 FROM public.ml_plans
+                  WHERE sales_order_id = ${salesOrderId}::uuid AND company_id = ${companyId}::uuid
+                    AND deleted_at IS NULL AND status <> 'cancelled')
+      OR EXISTS (SELECT 1 FROM public.customer_dispatches cd
+                  WHERE cd.company_id = ${companyId}::uuid AND cd.deleted_at IS NULL
+                    AND cd.status <> 'cancelled'
+                    AND (cd.sales_order_id = ${salesOrderId}::uuid OR EXISTS (
+                      SELECT 1 FROM public.customer_dispatch_lines x
+                       WHERE x.customer_dispatch_id = cd.id AND x.deleted_at IS NULL
+                         AND x.sales_order_line_id IN (${lines}))))
+      OR EXISTS (SELECT 1 FROM public.invoices inv
+                  WHERE inv.company_id = ${companyId}::uuid AND inv.deleted_at IS NULL
+                    AND inv.status <> 'cancelled'
+                    AND (inv.sales_order_id = ${salesOrderId}::uuid OR EXISTS (
+                      SELECT 1 FROM public.invoice_lines x
+                       WHERE x.invoice_id = inv.id AND x.deleted_at IS NULL
+                         AND x.sales_order_line_id IN (${lines}))))
+      OR EXISTS (SELECT 1 FROM public.sales_order_lines
+                  WHERE id IN (${lines}) AND dispatched_qty > 0)
+      OR EXISTS (SELECT 1 FROM public.so_stock_reservations
+                  WHERE so_line_id IN (${lines}) AND deleted_at IS NULL
+                    AND status IN ('active', 'partially_consumed'))
+      OR EXISTS (SELECT 1 FROM public.purchase_requests
+                  WHERE source_so_line_id IN (${lines}) AND deleted_at IS NULL
+                    AND status <> 'cancelled')
+      OR EXISTS (SELECT 1 FROM public.purchase_order_lines pl
+                   JOIN public.purchase_orders po ON po.id = pl.purchase_order_id
+                  WHERE pl.source_so_line_id IN (${lines}) AND pl.deleted_at IS NULL
+                    AND po.deleted_at IS NULL AND po.status <> 'cancelled')
+      OR EXISTS (SELECT 1 FROM public.delivery_challans
+                  WHERE sales_order_line_id IN (${lines}) AND deleted_at IS NULL
+                    AND status <> 'cancelled')
+      OR EXISTS (SELECT 1 FROM public.store_issues
+                  WHERE sales_order_id = ${salesOrderId}::uuid AND company_id = ${companyId}::uuid
+                    AND deleted_at IS NULL AND reversed_at IS NULL)
+      OR EXISTS (SELECT 1 FROM public.assembly_part_reservations
+                  WHERE sales_order_id = ${salesOrderId}::uuid AND company_id = ${companyId}::uuid
+                    AND deleted_at IS NULL AND status IN ('active', 'partially_consumed'))
+      OR EXISTS (SELECT 1 FROM public.service_pos
+                  WHERE so_ref_id = ${salesOrderId}::uuid AND company_id = ${companyId}::uuid
+                    AND deleted_at IS NULL AND status <> 'cancelled')
+    ) AS "inUse"
+  `)) as unknown as Array<{ inUse: boolean }>;
+  return Boolean(rows[0]?.inUse);
+}

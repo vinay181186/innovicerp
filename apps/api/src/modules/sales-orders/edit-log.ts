@@ -61,8 +61,9 @@ export const SO_HEADER_FIELDS: readonly DiffField[] = [
 export const SO_MONEY_HEADER_FIELDS: readonly DiffField[] = [{ key: 'gstPercent', label: 'GST %' }];
 
 // The customer's drawing revision is never shown alone (NAMING) — the item and
-// its Rev are compared together as CODE/REV.
-const SO_LINE_FIELDS: readonly DiffField[] = [
+// its Rev are compared together as CODE/REV. Exported so the edit-approval
+// registry labels its line boxes the same way.
+export const SO_LINE_FIELDS: readonly DiffField[] = [
   { key: 'codeRev', label: 'CODE/REV' },
   { key: 'partName', label: 'Item Name' },
   { key: 'material', label: 'Material' },
@@ -74,7 +75,7 @@ const SO_LINE_FIELDS: readonly DiffField[] = [
   { key: 'dueDate', label: 'Due Date', format: day },
   { key: 'status', label: 'Line Status', format: words },
 ];
-const SO_MONEY_LINE_FIELDS: readonly DiffField[] = [{ key: 'rate', label: 'Rate' }];
+export const SO_MONEY_LINE_FIELDS: readonly DiffField[] = [{ key: 'rate', label: 'Rate' }];
 
 type LineSnap = SoLineRow & { codeRev: string };
 

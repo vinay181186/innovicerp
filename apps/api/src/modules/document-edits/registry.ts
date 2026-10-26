@@ -5,7 +5,8 @@
 //
 // Phase 1 enrolled PurchaseOrder; Phase 2a added PurchaseRequest, NonConformance
 // and Plan at RECORD/HEADER level; Phase 2b adds SalesOrder and JobWorkOrder,
-// also at RECORD/HEADER level (their child lines / milestones are not staged).
+// at RECORD/HEADER level; since 2026-10 their lines (and the SO's milestones)
+// are staged too, box by box, through ./line-boxes.ts.
 
 import type { AccessFormKey, DocumentEditEntity } from '@innovic/shared';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';

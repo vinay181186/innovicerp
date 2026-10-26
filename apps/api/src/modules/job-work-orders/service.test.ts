@@ -21,6 +21,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
+import { decideDocumentEdit } from '../document-edits/service';
 import * as service from './service';
 
 const TEST_PREFIX = 'T031-';
@@ -713,12 +714,15 @@ describe('JWSO line POL + Remarks (ADR-236)', () => {
   });
 });
 
-// ADR-236 + ADR-202: with Document Edit Approval ON, a POL-only or Remarks-only
-// change on a live JWSO is a LINE change and is refused like any other; an
-// unchanged resend (blank Remarks vs stored null) is not, so the header stages.
-describe('JWSO edit-approval gate — POL / Remarks are line changes (ADR-236)', () => {
+// ADR-202 line approval (2026-10): with Document Edit Approval ON, a JWSO is
+// staged only once it is IN USE (lib/jw-line-state.ts jwsoInUse). Then every
+// line change is a box — `line:<id>:<attr>`, `line:add:<n>`, `line:remove:<id>`
+// — approved through the real writer; a doomed change is refused at request by
+// rehearsing that writer. Integration tests: the house harness (TEST stack).
+describe('JWSO edit-approval — in-use rule + line boxes', () => {
   let cfgExisted = false;
   let origDocEditApproval = false;
+  const jcIds: string[] = [];
 
   beforeAll(async () => {
     const cfg = await db
@@ -758,94 +762,287 @@ describe('JWSO edit-approval gate — POL / Remarks are line changes (ADR-236)',
     await db
       .delete(documentEditRequests)
       .where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
+    for (const id of jcIds) await db.delete(jobCards).where(eq(jobCards.id, id));
   }, 180_000);
 
-  function liveJw(suffix: string) {
+  type LineSpec = { pol: string; qty: number };
+  function newJw(suffix: string, lines: LineSpec[] = [{ pol: '20', qty: 2 }]) {
     return service.createJobWorkOrder(
       {
         header: { code: `${TEST_PREFIX}${suffix}`, jwDate: '2026-05-02', clientId: firstClientId },
-        lines: [
-          {
-            partName: 'Gate Part',
-            clientPoLineNo: '20',
-            itemId: firstItemId,
-            uom: 'NOS',
-            orderQty: 2,
-          },
-        ],
+        lines: lines.map((l) => ({
+          partName: 'Gate Part',
+          clientPoLineNo: l.pol,
+          itemId: firstItemId,
+          uom: 'NOS' as const,
+          orderQty: l.qty,
+        })),
       },
       admin,
     );
   }
 
-  it('a POL-only change is refused', async () => {
-    const jw = await liveJw('GT1');
+  /** Put a Job Card on the line — the JWSO is then IN USE. Returns its code. */
+  async function putJc(lineId: string, qty: number): Promise<string> {
+    const code = `${TEST_PREFIX}JC-${Date.now()}-${jcIds.length}`;
+    const jc = await db
+      .insert(jobCards)
+      .values({
+        companyId: admin.companyId!,
+        code,
+        jcDate: '2026-05-02',
+        itemId: firstItemId,
+        orderQty: qty,
+        sourceJwLineId: lineId,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning({ id: jobCards.id });
+    jcIds.push(jc[0]!.id);
+    return code;
+  }
+
+  const lineInput = (id: string | undefined, pol: string, qty: number) => ({
+    ...(id ? { id } : {}),
+    partName: 'Gate Part',
+    clientPoLineNo: pol,
+    itemId: firstItemId,
+    uom: 'NOS' as const,
+    orderQty: qty,
+  });
+
+  async function readJwLine(id: string) {
+    const rows = await db.select().from(jobWorkOrderLines).where(eq(jobWorkOrderLines.id, id));
+    return rows[0]!;
+  }
+
+  it('nothing downstream: a line edit applies directly even with the gate on', async () => {
+    const jw = await newJw('LA1');
+    const res = await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(jw.lines[0]!.id, '21', 3)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    );
+    expect((res as DocumentEditStagedResult).staged).toBeUndefined();
+    const line = await readJwLine(jw.lines[0]!.id);
+    expect(line.clientPoLineNo).toBe('21');
+    expect(line.orderQty).toBe(3);
+  }, 180_000);
+
+  it('in use: a qty change is staged as line:<id>:orderQty; approve → applied', async () => {
+    const jw = await newJw('LA2');
+    const lineId = jw.lines[0]!.id;
+    await putJc(lineId, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(lineId, '20', 5)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    const box = staged.request.changes.find((c) => c.id === `line:${lineId}:orderQty`);
+    expect(box?.label).toBe('Line 1 · Order Qty');
+    expect(box?.before).toBe(2);
+    expect(box?.after).toBe(5);
+    expect((await readJwLine(lineId)).orderQty).toBe(2); // untouched while pending
+
+    await decideDocumentEdit(
+      { id: staged.request.id, decisions: [{ changeId: box!.id, decision: 'approve' }] },
+      admin,
+    );
+    expect((await readJwLine(lineId)).orderQty).toBe(5);
+  }, 180_000);
+
+  it('in use: reject → the line is unchanged', async () => {
+    const jw = await newJw('LA3');
+    const lineId = jw.lines[0]!.id;
+    await putJc(lineId, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(lineId, '20', 6)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const decided = await decideDocumentEdit(
+      {
+        id: staged.request.id,
+        decisions: [{ changeId: `line:${lineId}:orderQty`, decision: 'reject', reason: 'no' }],
+      },
+      admin,
+    );
+    expect(decided.status).toBe('rejected');
+    expect((await readJwLine(lineId)).orderQty).toBe(2);
+  }, 180_000);
+
+  it('in use: add a line and remove an unused line — one box each, approve applies both', async () => {
+    const jw = await newJw('LA4', [
+      { pol: '20', qty: 2 },
+      { pol: '30', qty: 3 },
+    ]);
+    const [l1, l2] = jw.lines;
+    await putJc(l1!.id, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        // Line 2 left out (removed); a new line added.
+        lines: [lineInput(l1!.id, '20', 2), lineInput(undefined, '40', 7)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const add = staged.request.changes.find((c) => c.id === 'line:add:1');
+    const remove = staged.request.changes.find((c) => c.id === `line:remove:${l2!.id}`);
+    expect(add?.label.startsWith(`Add line · ${firstItemCode}`)).toBe(true);
+    expect(add?.label.length).toBeLessThanOrEqual(80);
+    expect(remove?.label.startsWith('Remove line 2')).toBe(true);
+    expect(staged.request.changes).toHaveLength(2);
+
+    await decideDocumentEdit(
+      {
+        id: staged.request.id,
+        decisions: [
+          { changeId: add!.id, decision: 'approve' },
+          { changeId: remove!.id, decision: 'approve' },
+        ],
+      },
+      admin,
+    );
+    const live = await db
+      .select()
+      .from(jobWorkOrderLines)
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)));
+    expect(live.map((l) => l.clientPoLineNo).sort()).toEqual(['20', '40']);
+  }, 180_000);
+
+  it('removing a line a Job Card uses is refused at request, naming the Job Card', async () => {
+    const jw = await newJw('LA5', [
+      { pol: '20', qty: 2 },
+      { pol: '30', qty: 3 },
+    ]);
+    const jcCode = await putJc(jw.lines[0]!.id, 1);
+    const err = await service
+      .updateJobWorkOrderOrStage(
+        jw.id,
+        {
+          header: { clientId: firstClientId },
+          lines: [lineInput(jw.lines[1]!.id, '30', 3)],
+          expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+        },
+        admin,
+      )
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toContain(jcCode);
+    const pending = await db
+      .select()
+      .from(documentEditRequests)
+      .where(
+        and(eq(documentEditRequests.entityId, jw.id), eq(documentEditRequests.status, 'pending')),
+      );
+    expect(pending).toHaveLength(0);
+  }, 180_000);
+
+  it('qty below what is returned: refused at request, and at approval when it drifted', async () => {
+    const jw = await newJw('LA6', [{ pol: '20', qty: 4 }]);
+    const lineId = jw.lines[0]!.id;
+    await putJc(lineId, 1);
+    await db
+      .update(jobWorkOrderLines)
+      .set({ returnedQty: 3 })
+      .where(eq(jobWorkOrderLines.id, lineId));
+    const fresh = await service.getJobWorkOrder(jw.id, admin);
+    // At request: 4 → 2 is below the 3 returned.
     await expect(
       service.updateJobWorkOrderOrStage(
         jw.id,
         {
-          header: {},
-          lines: [
-            {
-              id: jw.lines[0]!.id,
-              partName: 'Gate Part',
-              clientPoLineNo: '21',
-              itemId: firstItemId,
-              uom: 'NOS',
-              orderQty: 2,
-            },
-          ],
+          header: { clientId: firstClientId },
+          lines: [lineInput(lineId, '20', 2)],
+          expectedUpdatedAt: new Date(fresh.updatedAt).toISOString(),
         },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ConflictError);
-  });
+    ).rejects.toBeInstanceOf(ValidationError);
 
-  it('a Remarks-only change is refused', async () => {
-    const jw = await liveJw('GT2');
+    // At approval: 4 → 3 stages (floor 3), then 1 more is returned (floor 4).
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(lineId, '20', 3)],
+        expectedUpdatedAt: new Date(fresh.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    await db
+      .update(jobWorkOrderLines)
+      .set({ returnedQty: 4 })
+      .where(eq(jobWorkOrderLines.id, lineId));
     await expect(
-      service.updateJobWorkOrderOrStage(
-        jw.id,
+      decideDocumentEdit(
         {
-          header: {},
-          lines: [
-            {
-              id: jw.lines[0]!.id,
-              partName: 'Gate Part',
-              clientPoLineNo: '20',
-              remarks: 'new note',
-              itemId: firstItemId,
-              uom: 'NOS',
-              orderQty: 2,
-            },
-          ],
+          id: staged.request.id,
+          decisions: [{ changeId: `line:${lineId}:orderQty`, decision: 'approve' }],
         },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ConflictError);
-  });
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect((await readJwLine(lineId)).orderQty).toBe(4);
+  }, 180_000);
 
-  it('an unchanged resend (blank Remarks vs stored null) is no line change — the header stages', async () => {
-    const jw = await liveJw('GT3');
+  it('partial approval: approve POL, reject qty → only POL is written', async () => {
+    const jw = await newJw('LA7');
+    const lineId = jw.lines[0]!.id;
+    await putJc(lineId, 1);
+    const staged = (await service.updateJobWorkOrderOrStage(
+      jw.id,
+      {
+        header: { clientId: firstClientId },
+        lines: [lineInput(lineId, '21', 3)],
+        expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    await decideDocumentEdit(
+      {
+        id: staged.request.id,
+        decisions: [
+          { changeId: `line:${lineId}:clientPoLineNo`, decision: 'approve' },
+          { changeId: `line:${lineId}:orderQty`, decision: 'reject', reason: 'keep qty' },
+        ],
+      },
+      admin,
+    );
+    const line = await readJwLine(lineId);
+    expect(line.clientPoLineNo).toBe('21');
+    expect(line.orderQty).toBe(2);
+  }, 180_000);
+
+  it('in use: an unchanged resend (blank Remarks vs stored null) is no line box — the header stages', async () => {
+    const jw = await newJw('LA8');
+    await putJc(jw.lines[0]!.id, 1);
     const res = (await service.updateJobWorkOrderOrStage(
       jw.id,
       {
-        header: { remarks: 'header note' },
-        lines: [
-          {
-            id: jw.lines[0]!.id,
-            partName: 'Gate Part',
-            clientPoLineNo: '20',
-            remarks: '',
-            itemId: firstItemId,
-            uom: 'NOS',
-            orderQty: 2,
-          },
-        ],
+        header: { clientId: firstClientId, remarks: 'header note' },
+        lines: [{ ...lineInput(jw.lines[0]!.id, '20', 2), remarks: '' }],
         expectedUpdatedAt: new Date(jw.updatedAt).toISOString(),
       },
       admin,
     )) as DocumentEditStagedResult;
     expect(res.staged).toBe(true);
-  });
+    expect(res.request.changes.map((c) => c.id)).toEqual(['remarks']);
+  }, 180_000);
 });

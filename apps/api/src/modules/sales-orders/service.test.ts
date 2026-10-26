@@ -7,8 +7,10 @@ import {
   approvalConfig,
   documentEditRequests,
   items,
+  jobCards,
   salesOrderLines,
   salesOrders,
+  soMilestones,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
@@ -19,6 +21,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
+import { decideDocumentEdit } from '../document-edits/service';
 import * as service from './service';
 
 // ADR-207 — every test Internal SO No. must start with "SO-"; the cleanup
@@ -846,12 +849,17 @@ describe('SO line POL + Remarks (ADR-236)', () => {
   });
 });
 
-// ADR-236 + ADR-202: with Document Edit Approval ON, a Remarks-only or POL-only
-// change on a live SO is a LINE change and is refused like any other; an
-// unchanged resend (blank Remarks vs stored null) is not, so the header stages.
-describe('SO edit-approval gate — POL / Remarks are line changes (ADR-236)', () => {
+// ADR-202 line approval (2026-10): with Document Edit Approval ON, an SO is
+// staged only once it is IN USE (line-commitments.ts soInUse). Then every line
+// and Delivery Schedule change is a box — `line:<id>:<attr>`, `line:add:<n>`,
+// `line:remove:<id>`, `ms:<id>:<attr>`, `ms:add:<n>`, `ms:remove:<id>` — and an
+// SO Status move is a header box; all applied through the real writer, and a
+// doomed change is refused at request by rehearsing that writer. Integration
+// tests: the house harness (TEST stack).
+describe('SO edit-approval — in-use rule + line / lot boxes', () => {
   let cfgExisted = false;
   let origDocEditApproval = false;
+  const jcIds: string[] = [];
 
   beforeAll(async () => {
     const cfg = await db
@@ -888,82 +896,299 @@ describe('SO edit-approval gate — POL / Remarks are line changes (ADR-236)', (
     } else {
       await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
     }
+    for (const id of jcIds) await db.delete(jobCards).where(eq(jobCards.id, id));
     const ids = (
       await db
         .select({ id: salesOrders.id })
         .from(salesOrders)
-        .where(like(salesOrders.internalSoNo, `${TEST_PREFIX}GT%`))
+        .where(like(salesOrders.internalSoNo, `${TEST_PREFIX}LA%`))
     ).map((r) => r.id);
     if (ids.length > 0) {
       await db.delete(documentEditRequests).where(inArray(documentEditRequests.entityId, ids));
+      await db.delete(soMilestones).where(inArray(soMilestones.salesOrderId, ids));
     }
   }, 180_000);
 
-  function liveSo(suffix: string) {
+  type LineSpec = { pol: string; qty: number };
+  function newSo(
+    suffix: string,
+    lines: LineSpec[] = [{ pol: '20', qty: 2 }],
+    milestones?: Array<{ lotNo: number; qty: number }>,
+  ) {
     return service.createSalesOrder(
       {
         header: soHeader(`${TEST_PREFIX}${suffix}`),
-        lines: [
-          {
-            partName: 'Gate Part',
-            clientPoLineNo: '20',
-            revision: 'A',
-            itemId: firstItemId,
-            uom: 'NOS',
-            orderQty: 2,
-            rate: 0,
-          },
-        ],
+        lines: lines.map((l) => ({
+          partName: 'Gate Part',
+          clientPoLineNo: l.pol,
+          revision: 'A',
+          itemId: firstItemId,
+          uom: 'NOS' as const,
+          orderQty: l.qty,
+          rate: 0,
+        })),
+        ...(milestones ? { milestones } : {}),
       },
       admin,
     );
   }
 
-  const gateLine = (id: string, extra: Partial<SalesOrderLineInput>): SalesOrderLineInput => ({
-    id,
+  /** Put a hand-raised Job Card on the line — the SO is then IN USE. */
+  async function putJc(lineId: string): Promise<string> {
+    const code = `T030-JC-${Date.now()}-${jcIds.length}`;
+    const jc = await db
+      .insert(jobCards)
+      .values({
+        companyId: admin.companyId!,
+        code,
+        jcDate: '2026-05-02',
+        itemId: firstItemId,
+        orderQty: 1,
+        sourceSoLineId: lineId,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning({ id: jobCards.id });
+    jcIds.push(jc[0]!.id);
+    return code;
+  }
+
+  const line = (id: string | undefined, pol: string, qty: number): SalesOrderLineInput => ({
+    ...(id ? { id } : {}),
     partName: 'Gate Part',
-    clientPoLineNo: '20',
+    clientPoLineNo: pol,
     revision: 'A',
     itemId: firstItemId,
     uom: 'NOS',
-    orderQty: 2,
+    orderQty: qty,
     rate: 0,
-    ...extra,
   });
 
-  it('a POL-only change is refused', async () => {
-    const so = await liveSo('GT1');
+  async function readSoLine(id: string) {
+    const rows = await db.select().from(salesOrderLines).where(eq(salesOrderLines.id, id));
+    return rows[0]!;
+  }
+
+  it('nothing downstream: a line edit applies directly even with the gate on', async () => {
+    const so = await newSo('LA1');
+    const res = await service.updateSalesOrderOrStage(
+      so.id,
+      {
+        header: {},
+        lines: [line(so.lines[0]!.id, '21', 3)],
+        expectedUpdatedAt: so.updatedAt,
+      },
+      admin,
+    );
+    expect((res as DocumentEditStagedResult).staged).toBeUndefined();
+    const l = await readSoLine(so.lines[0]!.id);
+    expect(l.clientPoLineNo).toBe('21');
+    expect(l.orderQty).toBe(3);
+  }, 180_000);
+
+  it('in use: a qty change is staged as line:<id>:orderQty; approve → applied; reject → unchanged', async () => {
+    const so = await newSo('LA2', [
+      { pol: '20', qty: 2 },
+      { pol: '30', qty: 4 },
+    ]);
+    const [l1, l2] = so.lines;
+    await putJc(l1!.id);
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      {
+        header: {},
+        lines: [line(l1!.id, '20', 5), line(l2!.id, '30', 6)],
+        expectedUpdatedAt: so.updatedAt,
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    const box1 = staged.request.changes.find((c) => c.id === `line:${l1!.id}:orderQty`);
+    const box2 = staged.request.changes.find((c) => c.id === `line:${l2!.id}:orderQty`);
+    expect(box1?.label).toBe('Line 1 · Order Qty');
+    expect(box2).toBeTruthy();
+    await decideDocumentEdit(
+      {
+        id: staged.request.id,
+        decisions: [
+          { changeId: box1!.id, decision: 'approve' },
+          { changeId: box2!.id, decision: 'reject', reason: 'no' },
+        ],
+      },
+      admin,
+    );
+    expect((await readSoLine(l1!.id)).orderQty).toBe(5);
+    expect((await readSoLine(l2!.id)).orderQty).toBe(4);
+  }, 180_000);
+
+  it('in use: add a line and remove an unused line — one box each', async () => {
+    const so = await newSo('LA3', [
+      { pol: '20', qty: 2 },
+      { pol: '30', qty: 3 },
+    ]);
+    const [l1, l2] = so.lines;
+    await putJc(l1!.id);
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      {
+        header: {},
+        lines: [line(l1!.id, '20', 2), line(undefined, '40', 7)],
+        expectedUpdatedAt: so.updatedAt,
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const add = staged.request.changes.find((c) => c.id === 'line:add:1');
+    const remove = staged.request.changes.find((c) => c.id === `line:remove:${l2!.id}`);
+    expect(add?.label.startsWith(`Add line · ${firstItemCode}`)).toBe(true);
+    expect(remove?.label.startsWith('Remove line 2')).toBe(true);
+    await decideDocumentEdit(
+      {
+        id: staged.request.id,
+        decisions: [
+          { changeId: add!.id, decision: 'approve' },
+          { changeId: remove!.id, decision: 'approve' },
+        ],
+      },
+      admin,
+    );
+    const live = await db
+      .select()
+      .from(salesOrderLines)
+      .where(and(eq(salesOrderLines.salesOrderId, so.id), isNull(salesOrderLines.deletedAt)));
+    expect(live.map((l) => l.clientPoLineNo).sort()).toEqual(['20', '40']);
+  }, 180_000);
+
+  it('qty below what is dispatched: refused at request, and at approval when it drifted', async () => {
+    const so = await newSo('LA4', [{ pol: '20', qty: 5 }]);
+    const lineId = so.lines[0]!.id;
+    await db
+      .update(salesOrderLines)
+      .set({ dispatchedQty: 3 })
+      .where(eq(salesOrderLines.id, lineId));
+    const fresh = await service.getSalesOrder(so.id, admin);
     await expect(
       service.updateSalesOrderOrStage(
         so.id,
-        { header: {}, lines: [gateLine(so.lines[0]!.id, { clientPoLineNo: '21' })] },
+        { header: {}, lines: [line(lineId, '20', 2)], expectedUpdatedAt: fresh.updatedAt },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ConflictError);
-  });
+    ).rejects.toBeInstanceOf(ValidationError);
 
-  it('a Remarks-only change is refused', async () => {
-    const so = await liveSo('GT2');
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      { header: {}, lines: [line(lineId, '20', 4)], expectedUpdatedAt: fresh.updatedAt },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    await db
+      .update(salesOrderLines)
+      .set({ dispatchedQty: 5 })
+      .where(eq(salesOrderLines.id, lineId));
     await expect(
-      service.updateSalesOrderOrStage(
-        so.id,
-        { header: {}, lines: [gateLine(so.lines[0]!.id, { remarks: 'new note' })] },
+      decideDocumentEdit(
+        {
+          id: staged.request.id,
+          decisions: [{ changeId: `line:${lineId}:orderQty`, decision: 'approve' }],
+        },
         admin,
       ),
-    ).rejects.toBeInstanceOf(ConflictError);
-  });
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect((await readSoLine(lineId)).orderQty).toBe(5);
+    await db
+      .update(salesOrderLines)
+      .set({ dispatchedQty: 0 })
+      .where(eq(salesOrderLines.id, lineId));
+  }, 180_000);
 
-  it('an unchanged resend (blank Remarks vs stored null) is no line change — the header stages', async () => {
-    const so = await liveSo('GT3');
+  it('partial approval: approve POL, reject qty → only POL is written', async () => {
+    const so = await newSo('LA5');
+    const lineId = so.lines[0]!.id;
+    await putJc(lineId);
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      { header: {}, lines: [line(lineId, '21', 3)], expectedUpdatedAt: so.updatedAt },
+      admin,
+    )) as DocumentEditStagedResult;
+    await decideDocumentEdit(
+      {
+        id: staged.request.id,
+        decisions: [
+          { changeId: `line:${lineId}:clientPoLineNo`, decision: 'approve' },
+          { changeId: `line:${lineId}:orderQty`, decision: 'reject', reason: 'keep qty' },
+        ],
+      },
+      admin,
+    );
+    const l = await readSoLine(lineId);
+    expect(l.clientPoLineNo).toBe('21');
+    expect(l.orderQty).toBe(2);
+  }, 180_000);
+
+  it('in use: a Delivery Schedule change is ms:<id>:qty + ms:add:1; approve applies both', async () => {
+    const so = await newSo('LA6', [{ pol: '20', qty: 4 }], [{ lotNo: 1, qty: 4 }]);
+    await putJc(so.lines[0]!.id);
+    const msId = so.milestones[0]!.id;
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      {
+        header: {},
+        milestones: [
+          { id: msId, lotNo: 1, qty: 2 },
+          { lotNo: 2, qty: 2 },
+        ],
+        expectedUpdatedAt: so.updatedAt,
+      },
+      admin,
+    )) as DocumentEditStagedResult;
+    const qtyBox = staged.request.changes.find((c) => c.id === `ms:${msId}:qty`);
+    const addBox = staged.request.changes.find((c) => c.id === 'ms:add:1');
+    expect(qtyBox?.label).toBe('Lot 1 · Qty');
+    expect(addBox?.label).toBe('Add lot · Lot 2 × 2');
+    await decideDocumentEdit(
+      {
+        id: staged.request.id,
+        decisions: [
+          { changeId: qtyBox!.id, decision: 'approve' },
+          { changeId: addBox!.id, decision: 'approve' },
+        ],
+      },
+      admin,
+    );
+    const lots = await db
+      .select()
+      .from(soMilestones)
+      .where(and(eq(soMilestones.salesOrderId, so.id), isNull(soMilestones.deletedAt)));
+    expect(lots.map((m) => [m.lotNo, m.qty]).sort()).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
+  }, 180_000);
+
+  it('in use: an SO Status move is a header box, not a refusal', async () => {
+    const so = await newSo('LA7');
+    await putJc(so.lines[0]!.id);
+    const staged = (await service.updateSalesOrderOrStage(
+      so.id,
+      { header: { status: 'draft' }, expectedUpdatedAt: so.updatedAt },
+      admin,
+    )) as DocumentEditStagedResult;
+    expect(staged.staged).toBe(true);
+    expect(staged.request.changes.map((c) => c.id)).toEqual(['status']);
+  }, 180_000);
+
+  it('in use: an unchanged resend (blank Remarks vs stored null) is no line box — the header stages', async () => {
+    const so = await newSo('LA8');
+    await putJc(so.lines[0]!.id);
     const res = (await service.updateSalesOrderOrStage(
       so.id,
       {
         header: { remarks: 'header note' },
-        lines: [gateLine(so.lines[0]!.id, { remarks: '' })],
+        lines: [{ ...line(so.lines[0]!.id, '20', 2), remarks: '' }],
         expectedUpdatedAt: so.updatedAt,
       },
       admin,
     )) as DocumentEditStagedResult;
     expect(res.staged).toBe(true);
-  });
+    expect(res.request.changes.map((c) => c.id)).toEqual(['remarks']);
+  }, 180_000);
 });
