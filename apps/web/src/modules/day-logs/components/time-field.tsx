@@ -188,8 +188,8 @@ export function TimeField({
           onEnter();
         }}
         style={{
-          width: '13ch',
-          minWidth: 110,
+          width: '14ch',
+          minWidth: 120,
           paddingRight: 30,
           ...(bad ? { borderColor: 'var(--red)' } : {}),
         }}

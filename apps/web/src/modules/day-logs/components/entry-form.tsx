@@ -128,7 +128,7 @@ export function EntryForm({
       style={{ padding: '10px 14px', marginBottom: 10, overflow: 'visible' }}
     >
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 10 }}>
-        <div>
+        <div style={{ display: 'grid', gap: 3 }}>
           <span className="form-label">Type</span>
           <div role="group" aria-label="Type" style={{ display: 'inline-flex' }}>
             {KINDS.map((k, i) => {
@@ -197,7 +197,7 @@ export function EntryForm({
             />
           </div>
         )}
-        <div>
+        <div style={{ display: 'grid', gap: 3 }}>
           <label className="form-label" htmlFor="dl-start">
             Start time <span className="req">*</span>
           </label>
@@ -211,7 +211,7 @@ export function EntryForm({
             placeholder={DAY_LOG_RULES.workFrom}
           />
         </div>
-        <div>
+        <div style={{ display: 'grid', gap: 3 }}>
           <label className="form-label" htmlFor="dl-stop">
             Stop time
           </label>
@@ -222,7 +222,7 @@ export function EntryForm({
             onChange={setStop}
             nowMin={nowMin}
             disabled={busy}
-            placeholder="empty = open"
+            placeholder="open"
           />
         </div>
       </div>
