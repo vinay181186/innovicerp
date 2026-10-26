@@ -201,6 +201,7 @@ export function summarizeDay(
   let workMin = 0;
   let breakMin = 0;
   let leaveMin = 0;
+  const present = ivals.filter((i) => i.kind !== 'leave');
   for (const i of ivals) {
     if (i.kind === 'work') workMin += i.b - i.a;
     else if (i.kind === 'break') breakMin += i.b - i.a;
@@ -218,8 +219,9 @@ export function summarizeDay(
     workMin,
     breakMin,
     leaveMin,
-    firstStart: ivals.length ? minToHhmm(Math.min(...ivals.map((i) => i.a))) : null,
-    lastStop: ivals.length ? minToHhmm(Math.max(...ivals.map((i) => i.b))) : null,
+    // First start / Last stop say when the person was in — a Leave is not.
+    firstStart: present.length ? minToHhmm(Math.min(...present.map((i) => i.a))) : null,
+    lastStop: present.length ? minToHhmm(Math.max(...present.map((i) => i.b))) : null,
     unloggedMin: workingDay ? Math.max(0, unloggedMin) : 0,
     open: ivals.some((i) => i.open),
     entryCount: ivals.filter((i) => i.kind === 'work').length,

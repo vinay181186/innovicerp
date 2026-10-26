@@ -84,7 +84,10 @@ export function EntryForm({
   /** An earlier entry: times and Type locked. */
   const timesLocked = editing !== null && !isLast;
   const openEntry = editing ? null : day.entries.find((e) => !e.toTime);
-  const blocked = start === null;
+  const leaveEnds = !editing && day.entries.some((e) => e.kind === 'leave');
+  const blocked = start === null || leaveEnds;
+  /** A Leave must start before the day's end (06:00 PM). */
+  const leaveTooLate = start !== null && start >= DAY_LOG_RULES.workTo;
 
   const options = (orders.data ?? []).map((o) => ({
     id: o.id,
@@ -111,8 +114,8 @@ export function EntryForm({
       });
     const body = {
       kind,
-      // Reason is optional; the shared schema still wants text on a non-break entry.
-      description: desc.trim() || (isLeave ? 'Leave' : ''),
+      // Reason is optional on a Leave — the server names it "Leave".
+      description: desc.trim(),
       startTime: startT,
       stopTime: stopT,
       orderType: noOrder ? null : (order?.type ?? null),
@@ -167,9 +170,16 @@ export function EntryForm({
                   type="button"
                   className={`btn${on ? ' btn-primary' : ' btn-ghost'}`}
                   aria-pressed={on}
-                  disabled={busy || timesLocked}
-                  title={timesLocked ? 'Only the last entry may change its Type' : undefined}
+                  disabled={busy || timesLocked || (k.kind === 'leave' && leaveTooLate)}
+                  title={
+                    timesLocked
+                      ? 'Only the last entry may change its Type'
+                      : k.kind === 'leave' && leaveTooLate
+                        ? 'A Leave must start before 06:00 PM'
+                        : undefined
+                  }
                   onClick={() => {
+                    if (kind === 'leave' && k.kind !== 'leave') setStop('');
                     setKind(k.kind);
                     if (k.kind !== 'work') setOrder(null);
                   }}
@@ -305,7 +315,9 @@ export function EntryForm({
         ) : null}
         {blocked ? (
           <span role="status" style={{ fontSize: 13, color: 'var(--text2)' }}>
-            Stop {openEntry?.description || 'the open entry'} first
+            {leaveEnds
+              ? 'The day ends with your Leave — remove it to add more'
+              : `Stop ${openEntry?.description || 'the open entry'} first`}
           </span>
         ) : null}
         {msg ? (

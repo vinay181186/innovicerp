@@ -28,11 +28,13 @@ const TODAY_CELLS: { key: string; label: string; of: DayLogCurrentStatus[]; colo
   { key: 'idle', label: 'Idle', of: ['idle'], color: 'var(--amber2)' },
   { key: 'not_started', label: 'Not started', of: ['not_started'] },
   { key: 'submitted', label: 'Submitted', of: ['submitted'], color: 'var(--green2)' },
+  { key: 'leave', label: 'Leave', of: ['leave'] },
 ];
 const PAST_CELLS: typeof TODAY_CELLS = [
   { key: 'submitted', label: 'Submitted', of: ['submitted'], color: 'var(--green2)' },
   { key: 'idle', label: 'Not submitted', of: ['idle', 'working', 'break'], color: 'var(--amber2)' },
   { key: 'not_started', label: 'No entries', of: ['not_started'] },
+  { key: 'leave', label: 'Leave', of: ['leave'] },
 ];
 
 export function NowCell({
