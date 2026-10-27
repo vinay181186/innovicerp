@@ -8,6 +8,7 @@
 import type { DayLogEntryKind } from '@innovic/shared';
 import {
   DAY_LOG_ENTRY_KIND_LABELS,
+  DAY_LOG_RULES,
   DAY_LOG_ENTRY_KINDS,
   DAY_LOG_OTHERS_REASONS,
   fmt12,
@@ -129,7 +130,7 @@ export function SheetDraftRow({
             // An Others row may end later today; Work / Break never after now.
             nowMin={isOthers ? null : nowMin}
             disabled={busy}
-            placeholder={isLast && !isOthers ? 'empty = open' : 'Stop'}
+            placeholder={isOthers ? 'e.g. 06:00 PM' : isLast ? 'empty = open' : 'Stop'}
             onEnter={onEnter}
           />
         </td>
@@ -138,7 +139,15 @@ export function SheetDraftRow({
             <ReasonSelect
               value={d.reason}
               disabled={busy}
-              onChange={(reason) => onChange({ reason })}
+              onChange={(reason) =>
+                // Full day always, and an afternoon Half day, run to the day's end.
+                onChange(
+                  reason === 'Full day' ||
+                    (reason === 'Half day' && start !== null && start !== DAY_LOG_RULES.workFrom)
+                    ? { reason, stop: fmt12(DAY_LOG_RULES.workTo) }
+                    : { reason },
+                )
+              }
             />
           ) : (
             <input

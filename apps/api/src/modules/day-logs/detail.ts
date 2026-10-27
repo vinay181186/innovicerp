@@ -193,7 +193,7 @@ export async function buildDetail(
       !blockedBy &&
       date <= clock.today &&
       (!strayOpen || strayOpen.date === date),
-    canManage: canManageUser(v, target.mainDept) && (!isOwner || v.isSuper),
+    canManage: canManageUser(v, target) && (!isOwner || v.isSuper),
     lastEntryId: lastEntryOf(lines.filter((l) => l.fromTime))?.id ?? null,
   };
 }
