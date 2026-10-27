@@ -1,13 +1,16 @@
 // Day Log DB-test fixture (TEST database only — imported by service.test.ts,
-// never by app code). Owner = a real non-admin user with a main department;
-// manager = the seed admin's id given an L5 matrix via asAccess. Every write
-// runs on a fixed clock (`at`) on days in 2001 (never real data); those days
-// and today are hard-deleted for the owner before each test and after the file.
+// never by app code). Owner = a real non-admin user holding L2+ in their main
+// department; approvers = the seed admin's id given an L5 matrix via asAccess.
+// Every write runs on a fixed clock (`at`) on days in 2000/2001 (never real
+// data); those days and today are hard-deleted for the owner before each test
+// and after the file.
 import {
-  type AddDayLogEntryInput,
+  ACCESS_DEPTS,
   type DayLogDetail,
   type DayLogEntry,
+  type DayLogSheetRow,
   type UpdateDayLogEntryInput,
+  normalizeDeptsMap,
 } from '@innovic/shared';
 import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
@@ -18,15 +21,20 @@ import { type DayLogClock, istClock } from './rules';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
+export const SAT = '2001-01-06';
+export const SUN = '2001-01-07';
 export const MON = '2001-01-01';
 export const TUE = '2001-01-02';
 export const WED = '2001-01-03';
+export const NEXT_MON = '2001-01-08';
 
 /** Filled by setupFixture() in beforeAll. */
 export const fx = {
   admin: undefined as unknown as AuthContext,
   ownerBase: undefined as unknown as AuthContext,
   ownerDept: '',
+  /** A department where the owner holds no L2+ right. */
+  otherDept: '',
   openSo: { id: '', code: '' },
 };
 
@@ -34,6 +42,11 @@ export const owner = (): AuthContext =>
   asAccess(fx.ownerBase, { departments: { [fx.ownerDept]: 'L1' } }, 'viewer');
 export const sameDeptAdmin = (): AuthContext =>
   asAccess(fx.admin, { departments: { [fx.ownerDept]: 'L5' } }, 'manager');
+export const otherDeptAdmin = (): AuthContext =>
+  asAccess(fx.admin, { departments: { [fx.otherDept]: 'L5' } }, 'manager');
+/** The owner as if they were L5 of their own department. */
+export const ownerAsAdmin = (): AuthContext =>
+  asAccess(fx.ownerBase, { departments: { [fx.ownerDept]: 'L5' } }, 'manager');
 
 /** A fixed clock: `date` is "today", `hhmm` is now. */
 export const at = (date: string, hhmm: string): DayLogClock => {
@@ -50,49 +63,44 @@ export async function wipeOwnerDays(): Promise<void> {
   `);
 }
 
-type Fields = Partial<Omit<AddDayLogEntryInput, 'date'>>;
-/** Add one entry; a remark is sent unless `f` says otherwise (compulsory on
- *  a closed Work / Others entry). */
-export const add = (date: string, clock: DayLogClock, f: Fields) =>
+type Fields = Partial<DayLogSheetRow>;
+const fields = (f: Fields) => ({
+  description: 'test work',
+  startTime: '09:00',
+  stopTime: '10:00',
+  ...f,
+});
+
+/** Add one row. */
+export const add = (date: string, clock: DayLogClock, f: Fields = {}) =>
   service.addEntry(
-    {
-      date,
-      kind: 'work',
-      description: 'test work',
-      startTime: '09:00',
-      remarks: 'done',
-      ...f,
-    } as AddDayLogEntryInput,
+    { date, kind: 'work', ...fields(f) } as Parameters<typeof service.addEntry>[0],
     owner(),
     clock,
   );
 
-/** Edit an entry as loaded (§20.4 updatedAt), changing only `f`. */
+/** Save rows as one sheet. */
+export const batch = (date: string, clock: DayLogClock, rows: Fields[]) =>
+  service.addEntries({ date, rows: rows.map(fields) }, owner(), clock);
+
+/** Ask for an edit of a row as loaded (§20.4 updatedAt), changing only `f`. */
 export const edit = (e: DayLogEntry, clock: DayLogClock, f: Partial<UpdateDayLogEntryInput>) =>
   service.updateEntry(
     e.id,
     {
-      kind: e.kind,
+      kind: 'work',
       description: e.description,
       startTime: e.fromTime,
-      stopTime: e.toTime,
+      stopTime: e.toTime ?? '',
       orderType: e.order?.type ?? null,
       orderId: e.order?.id ?? null,
-      remarks: e.remarks,
       updatedAt: e.updatedAt,
       ...f,
     } as UpdateDayLogEntryInput,
     owner(),
     clock,
   );
-export const times = (d: DayLogDetail) => d.entries.map((e) => [e.kind, e.fromTime, e.toTime]);
-
-/** A whole working day in two entries: 09:00–17:30 work, 17:30–18:00 break. */
-export async function fullDay(date: string): Promise<void> {
-  const c = at(date, '18:00');
-  await add(date, c, { startTime: '09:00', stopTime: '17:30' });
-  await add(date, c, { kind: 'break', description: 'Tea', startTime: '17:30', stopTime: '18:00' });
-}
+export const times = (d: DayLogDetail) => d.entries.map((e) => [e.fromTime, e.toTime]);
 
 /** The owner's Team Day Logs row as a same-department L5 sees it. */
 export async function teamRow(date: string, clock: DayLogClock) {
@@ -101,6 +109,8 @@ export async function teamRow(date: string, clock: DayLogClock) {
   if (!r) throw new Error('owner missing from Team Day Logs');
   return r;
 }
+
+const TEAM_TIERS = new Set(['L2', 'L3', 'L4', 'L5']);
 
 /** Pick the owner / admin / an open SO on TEST, then wipe the owner's test days. */
 export async function setupFixture(): Promise<void> {
@@ -115,9 +125,8 @@ export async function setupFixture(): Promise<void> {
     isActive: u.isActive,
   };
 
-  const { today } = istClock();
   const others = await db
-    .select({ user: users, mainDept: userAccess.mainDept })
+    .select({ user: users, mainDept: userAccess.mainDept, departments: userAccess.departments })
     .from(users)
     .innerJoin(userAccess, eq(userAccess.userId, users.id))
     .where(
@@ -128,19 +137,23 @@ export async function setupFixture(): Promise<void> {
         isNotNull(userAccess.mainDept),
         sql`${userAccess.deletedAt} IS NULL`,
         sql`${users.deletedAt} IS NULL`,
-        // One Open entry per user across ALL days — skip a user who has a
-        // real one on a day these tests do not wipe.
-        sql`NOT EXISTS (
-          SELECT 1 FROM public.daily_report_lines l
-          JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
-          WHERE dr.user_id = ${users.id} AND l.to_time IS NULL AND l.from_time IS NOT NULL
-            AND l.deleted_at IS NULL AND dr.report_date >= '2002-01-01'::date
-            AND dr.report_date <> ${today}::date)`,
       ),
-    )
-    .limit(1);
-  const o = others[0];
-  if (!o || !o.mainDept) throw new Error('TEST needs one non-admin user with a main department');
+    );
+  // The owner must be on their main department's team (L2+ there) and must
+  // NOT be on some other department's team (the other-dept L5 case).
+  const pick = others
+    .map((o) => {
+      const tiers = normalizeDeptsMap(
+        (o.departments ?? {}) as Parameters<typeof normalizeDeptsMap>[0],
+      );
+      const other = ACCESS_DEPTS.find((d) => !TEAM_TIERS.has(String(tiers[d.key] ?? '')));
+      return { o, ok: TEAM_TIERS.has(String(tiers[o.mainDept ?? ''] ?? '')), other };
+    })
+    .find((x) => x.ok && x.other);
+  if (!pick || !pick.o.mainDept || !pick.other) {
+    throw new Error('TEST needs one non-admin user with L2+ in their main department');
+  }
+  const o = pick.o;
   fx.ownerBase = {
     id: o.user.id,
     email: o.user.email,
@@ -148,12 +161,12 @@ export async function setupFixture(): Promise<void> {
     role: o.user.role,
     isActive: o.user.isActive,
   };
-  fx.ownerDept = o.mainDept;
+  fx.ownerDept = o.mainDept!;
+  fx.otherDept = pick.other.key;
 
   const so = (await db.execute(sql`
     SELECT id::text AS id, code FROM public.sales_orders
-    WHERE company_id = ${u.companyId}::uuid AND deleted_at IS NULL
-      AND status NOT IN ('cancelled', 'closed')
+    WHERE company_id = ${u.companyId}::uuid AND deleted_at IS NULL AND status = 'open'
     ORDER BY created_at DESC LIMIT 1
   `)) as unknown as Array<{ id: string; code: string }>;
   if (!so[0]) throw new Error('TEST needs one open Sales Order');

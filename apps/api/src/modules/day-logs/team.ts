@@ -23,7 +23,7 @@ import {
   sharedTeamDepts,
   viewerOf,
 } from './access';
-import { holidaysJson, iso, linesByReport, linesJson, toHolidays, toLines, ts } from './day';
+import { holidaysJson, linesByReport, linesJson, toHolidays, toLines, ts } from './day';
 import { summaryOf } from './detail';
 import { type DayLogClock, currentOf, istClock, latestWorkOf } from './rules';
 import { requireCompany } from './writes';
@@ -93,8 +93,8 @@ export async function getTeam(
     const h = byUser.get(p.id);
     const lines = h ? (linesBy.get(h.id) ?? []) : [];
     const status: DayLogStatus = h?.status ?? 'open';
-    const s = summaryOf(lines, nowMin, workingDay, status);
-    const now = currentOf(status, lines, iso(h?.submitted_at), isToday, s.lastStop, nowMin);
+    const s = summaryOf(lines, nowMin, workingDay);
+    const now = currentOf(lines, isToday, s.lastStop, nowMin);
     return {
       userId: p.id,
       userName: p.name,

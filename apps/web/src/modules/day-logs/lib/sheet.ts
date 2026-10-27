@@ -1,73 +1,70 @@
-// The ONE-SHEET My Day Log (owner-approved mockup 2026-10-27): the new rows
-// the user types before Save, and the small display helpers the sheet's rows
-// share. Nothing here decides a rule — each row's Start is shown for the eye
-// only (the server works it out), and every check is the server's; it answers
-// "Row N: …" for the row it refused.
+// The SIMPLE My Day Log sheet (owner final 2026-10-27): the new rows the user
+// types before Save, and the small helpers the sheet's rows share. A row is
+// Start * · Stop * · SO / JWSO · Working on *. The rule check is the shared
+// addDayLogEntriesInputSchema (the same one the server runs); the server
+// still answers "Row N: …" for anything only it can see (overlap, after now).
 
-import type { DayLogEntry, DayLogEntryKind, DayLogOrder, DayLogSheetRow } from '@innovic/shared';
-import { DAY_LOG_ENTRY_KIND_LABELS, hhmmToMin, parseTime } from '@innovic/shared';
+import type { AddDayLogEntriesInput, DayLogOrder, DayLogSheetRow } from '@innovic/shared';
+import { addDayLogEntriesInputSchema, fmt12, hhmmToMin, parseTime } from '@innovic/shared';
 
-/** A new row, not saved yet. `desc` is Working on / the break name; `reason`
- *  is an Others row's reason (its description once saved). */
+/** A new row, not saved yet. `desc` is Working on. */
 export interface Draft {
   key: number;
-  kind: DayLogEntryKind;
+  start: string;
   stop: string;
   desc: string;
-  reason: string;
   order: DayLogOrder | null;
-  remarks: string;
 }
 
 let nextKey = 1;
 
 export function blankDraft(): Draft {
-  return { key: nextKey++, kind: 'work', stop: '', desc: '', reason: '', order: null, remarks: '' };
+  return { key: nextKey++, start: '', stop: '', desc: '', order: null };
 }
 
 /** The user has typed or picked something in this row. */
 export function isFilled(d: Draft): boolean {
-  return Boolean(
-    d.stop.trim() ||
-    d.desc.trim() ||
-    d.reason ||
-    d.remarks.trim() ||
-    (d.kind === 'work' && d.order),
-  );
+  return Boolean(d.start.trim() || d.stop.trim() || d.desc.trim() || d.order);
 }
 
-/** Each draft's Start, for display: the first filled one starts at the day's
- *  nextStart, each next at the previous one's typed Stop; null = not known
- *  yet ("after row above"). Empty rows are skipped by Save, so they neither
- *  move nor break the chain. */
-export function draftStarts(nextStart: string | null, drafts: readonly Draft[]): (string | null)[] {
-  let s = nextStart;
-  return drafts.map((d) => {
-    const mine = s;
-    if (isFilled(d)) s = s === null ? null : parseTime(d.stop);
-    return mine;
-  });
-}
-
-/** Minutes between a draft's shown Start and its typed Stop, or null. */
-export function draftMinutes(start: string | null, stop: string): number | null {
+/** Minutes between two typed times, or null while either is not a time yet. */
+export function spanMinutes(start: string, stop: string): number | null {
+  const a = parseTime(start);
   const b = parseTime(stop);
-  if (!start || !b) return null;
-  const m = hhmmToMin(b) - hhmmToMin(start);
+  if (!a || !b) return null;
+  const m = hhmmToMin(b) - hhmmToMin(a);
   return m > 0 ? m : null;
 }
 
-/** The batch body's row for a draft. */
+/** The batch body's row for a draft (times already checked by checkDrafts). */
 export function toSheetRow(d: Draft): DayLogSheetRow {
-  const work = d.kind === 'work';
   return {
-    kind: d.kind,
-    description: d.kind === 'leave' ? d.reason : d.desc.trim(),
-    stopTime: d.stop.trim() ? parseTime(d.stop) : null,
-    orderType: work ? (d.order?.type ?? null) : null,
-    orderId: work ? (d.order?.id ?? null) : null,
-    remarks: d.remarks.trim() || null,
+    startTime: parseTime(d.start) ?? '',
+    stopTime: parseTime(d.stop) ?? '',
+    description: d.desc.trim(),
+    orderType: d.order?.type ?? null,
+    orderId: d.order?.id ?? null,
   };
+}
+
+/** The first row the shared rules refuse, as { index, text }; null = all fine. */
+export function checkDrafts(
+  date: string,
+  rows: readonly Draft[],
+): { index: number; text: string } | null {
+  for (let i = 0; i < rows.length; i += 1) {
+    const d = rows[i]!;
+    if (!parseTime(d.start))
+      return { index: i, text: 'Start time is compulsory — type 930 or pick it.' };
+    if (!parseTime(d.stop))
+      return { index: i, text: 'Stop time is compulsory — type 1030 or pick it.' };
+  }
+  const body: AddDayLogEntriesInput = { date, rows: rows.map(toSheetRow) };
+  const check = addDayLogEntriesInputSchema.safeParse(body);
+  if (check.success) return null;
+  const issue = check.error.issues[0];
+  const index = typeof issue?.path[1] === 'number' ? issue.path[1] : 0;
+  return { index, text: issue?.message ?? 'Check the row.' };
 }
 
 /** "Row 2: Stop must be after …" → { row: 2, text: "Stop must be after …" }. */
@@ -76,23 +73,7 @@ export function rowError(message: string): { row: number; text: string } | null 
   return m ? { row: Number(m[1]), text: m[2] ?? message } : null;
 }
 
-/** Type as shown: Work / Break / "Others · <reason>". */
-export function entryTypeText(e: Pick<DayLogEntry, 'kind' | 'description'>): string {
-  const label = DAY_LOG_ENTRY_KIND_LABELS[e.kind];
-  return e.kind === 'leave' && e.description ? `${label} · ${e.description}` : label;
+/** "10:30 AM–11:15 AM". */
+export function spanText(from: string, to: string | null): string {
+  return `${fmt12(from)}–${fmt12(to)}`;
 }
-
-/** The row's soft tint: Open blue, Others purple, Break grey. */
-export function entryTint(e: DayLogEntry): React.CSSProperties {
-  if (!e.toTime) return { background: 'var(--blue3)' };
-  if (e.kind === 'leave') return { background: 'var(--purple3)' };
-  if (e.kind === 'break') return { color: 'var(--text3)' };
-  return {};
-}
-
-/** Long text in a cell: one line, ellipsis, the whole text on hover. */
-export const CLIP: React.CSSProperties = {
-  maxWidth: 320,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-};

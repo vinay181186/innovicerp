@@ -2,16 +2,14 @@
 import { describe, expect, it } from 'vitest';
 import type { DayLine } from './day';
 import {
-  breakLimitProblem,
-  breakTotalWith,
+  blockedByOf,
+  currentOf,
   dmy,
+  dmyDay,
   entryMinutes,
   findOverlap,
-  firstGap,
   hm,
   istClock,
-  currentOf,
-  lastEntryOf,
   latestWorkOf,
   spanEnd,
 } from './rules';
@@ -44,6 +42,8 @@ const line = (
   order: code ? { type: 'so', id: '00000000-0000-0000-0000-000000000000', code } : null,
   late: false,
   updatedAt: '',
+  pending: null,
+  rejectReason: null,
 });
 
 describe('istClock', () => {
@@ -99,86 +99,41 @@ describe('findOverlap', () => {
   });
 });
 
-describe('breaks', () => {
-  it('totals closed and Open breaks (to now)', () => {
-    expect(
-      breakTotalWith([lunch], { kind: 'break', fromTime: '16:00', toTime: null }, 16 * 60 + 20),
-    ).toBe(50);
-    expect(breakTotalWith([lunch], { kind: 'work', fromTime: '09:00', toTime: '10:00' })).toBe(30);
+describe('yesterday first', () => {
+  it('blocks only when an earlier row exists and the calendar day before is empty', () => {
+    expect(blockedByOf({ hasEarlier: false, prevHasRows: false }, '2026-10-27')).toBeNull();
+    expect(blockedByOf({ hasEarlier: true, prevHasRows: true }, '2026-10-27')).toBeNull();
+    // Monday 2026-10-26 is blocked by Sunday 25-10 — Sundays are not skipped.
+    expect(blockedByOf({ hasEarlier: true, prevHasRows: false }, '2026-10-26')).toEqual({
+      date: '2026-10-25',
+      reason: '25-10-2026 (Sun) has no entries — fill it first',
+    });
   });
-  it('refuses over the limit only', () => {
-    expect(breakLimitProblem(60)).toBeNull();
-    expect(breakLimitProblem(61)).toMatch(/limit is 60/);
-  });
-});
-
-describe('lastEntryOf (strict order)', () => {
-  it('the latest-starting timed entry; untimed lines ignored', () => {
-    const a = withId(work('09:00', '10:00'));
-    const b = withId(work('10:00', '11:30'));
-    expect(lastEntryOf([b, a])).toBe(b);
-    expect(lastEntryOf([a, { ...b, fromTime: null }])).toBe(a);
-    expect(lastEntryOf([])).toBeNull();
-  });
-});
-
-describe('firstGap', () => {
-  it('whole window when nothing is logged', () => {
-    expect(firstGap([])).toBe('09:00 AM – 06:00 PM');
-  });
-  it('the slot before a break', () => {
-    expect(firstGap([work('09:00', '11:00'), lunch])).toBe('11:00 AM – 01:00 PM');
-  });
-  it('null when the day is covered', () => {
-    expect(firstGap([work('09:00', '13:00'), lunch, work('13:30', '18:00')])).toBeNull();
-  });
-  it('an Open entry covers up to now', () => {
-    expect(firstGap([work('09:00', null)], 10 * 60)).toBe('10:00 AM – 06:00 PM');
-  });
-  it('a hole in the middle', () => {
-    expect(firstGap([work('09:00', '10:00'), work('10:30', '18:00')])).toBe('10:00 AM – 10:30 AM');
+  it('dmyDay names the weekday', () => {
+    expect(dmyDay('2026-10-26')).toBe('26-10-2026 (Mon)');
   });
 });
 
 describe('Team current status', () => {
-  it('working / break / idle / not_started today', () => {
-    expect(currentOf('open', [line('work', '09:00', null, 'GRN')], null, true, null)).toEqual({
+  const day = [line('work', '09:00', '14:30', 'GRN')];
+  it('today: working within 30 min of the latest Stop, then idle; none = not started', () => {
+    expect(currentOf(day, true, '14:30', 15 * 60)).toEqual({
       status: 'working',
-      text: 'GRN · since 09:00 AM',
-      since: '09:00',
+      text: 'till 02:30 PM',
+      since: null,
     });
-    expect(currentOf('open', [line('break', '13:05', null, 'Lunch')], null, true, null).text).toBe(
-      'Lunch since 01:05 PM',
-    );
-    expect(currentOf('open', [line('work', '09:00', '11:00')], null, true, '11:00').text).toBe(
-      'since 11:00 AM',
-    );
-    expect(currentOf('open', [], null, true, null).status).toBe('not_started');
-  });
-  it('a past day: idle / not_started with no text; submitted / leave from the day', () => {
-    expect(currentOf('open', [line('work', '09:00', '11:00')], null, false, '11:00')).toEqual({
+    expect(currentOf(day, true, '14:30', 15 * 60 + 1)).toEqual({
       status: 'idle',
-      text: null,
+      text: 'since 02:30 PM',
       since: null,
     });
-    expect(currentOf('open', [], null, false, null).status).toBe('not_started');
-    expect(currentOf('submitted', [], '2026-10-26T12:30:00Z', false, null)).toEqual({
-      status: 'submitted',
-      text: null,
-      since: null,
-    });
-    expect(currentOf('leave', [], null, true, null).status).toBe('leave');
+    expect(currentOf([], true, null, 600).status).toBe('not_started');
   });
-  it('an Others row reads Others only while it is in progress', () => {
-    const o = [line('leave', '09:00', '10:30', 'Late coming'), line('work', '10:30', null, 'GRN')];
-    expect(currentOf('open', o, null, true, null, 9 * 60 + 30)).toEqual({
-      status: 'leave',
-      text: 'Late coming · from 09:00 AM',
-      since: null,
-    });
-    expect(currentOf('open', o, null, true, null, 11 * 60).status).toBe('working');
+  it('a past day: idle (Logged) with entries, else not started', () => {
+    expect(currentOf(day, false, '14:30')).toEqual({ status: 'idle', text: null, since: null });
+    expect(currentOf([], false, null).status).toBe('not_started');
   });
-  it('latest work: the Open one, else the latest-starting', () => {
+  it('latest work: an old Open one, else the latest-starting', () => {
     expect(
       latestWorkOf([
         line('work', '09:00', '10:00', 'a', 'IN-SO-1'),
@@ -191,6 +146,6 @@ describe('Team current status', () => {
         line('work', '10:00', '11:00', 'b'),
       ]),
     ).toEqual({ description: 'a', orderCode: 'IN-SO-1' });
-    expect(latestWorkOf([line('break', '13:00', '13:30')])).toBeNull();
+    expect(latestWorkOf([])).toBeNull();
   });
 });

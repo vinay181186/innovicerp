@@ -7,18 +7,13 @@
 //     ABOVE L1 (L2–L5) — by rights, not by main department (owner
 //     2026-10-27: "Kiran, QC Dept Admin, sees every person with QC L2/L3…").
 //     Anyone else sees only their own; another's day is "not found".
-//   - Manage (Reopen / Leave): Super Admin, or L5 over one of the person's
-//     L2+ departments. An Auditor never.
+//   - Approve an edit: Super Admin, or L5 over one of the person's L2+
+//     departments. Never one's own; an Auditor never.
 
 import { ACCESS_DEPTS, canWriteAnything, isUnconfigured, normalizeDeptsMap } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
-import {
-  type AuthContext,
-  type DbTransaction,
-  type FrozenAccess,
-  requestScope,
-} from '../../db/with-user-context';
+import { type AuthContext, type FrozenAccess, requestScope } from '../../db/with-user-context';
 import { toEffectiveAccess } from '../access-control/my-access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
@@ -148,6 +143,16 @@ export function canManageUser(v: Viewer, u: { departments: Record<string, unknow
 
 export const canSeeTeam = (v: Viewer): boolean => v.isSuper || v.auditor || v.l5.size > 0;
 
+/** May approve / reject this person's Day Log edits: Super Admin, or L5 of a
+ *  department where the person holds L2+. Never one's own; an Auditor never. */
+export const canApproveUser = (
+  v: Viewer,
+  u: { id: string; departments: Record<string, unknown> },
+): boolean => u.id !== v.userId && canManageUser(v, u);
+
+/** May approve anyone's edits at all (the Approvals tab). */
+export const canApproveAny = (v: Viewer): boolean => !v.auditor && (v.isSuper || v.l5.size > 0);
+
 export const deptLabelOf = (dept: string | null): string | null =>
   dept ? (ACCESS_DEPTS.find((d) => d.key === dept)?.label ?? dept) : null;
 
@@ -159,7 +164,7 @@ export interface DayUser {
 }
 
 /** One user of the company (active or not) as ONE json value (a scalar sub-select). */
-export const dayUserJson = (companyId: string, userId: string): SQL => sql`(
+export const dayUserJson = (companyId: string, userId: string | SQL): SQL => sql`(
   SELECT json_build_object('id', u.id::text, 'name', COALESCE(u.full_name, u.email),
            'mainDept', ua.main_dept, 'departments', COALESCE(ua.departments, '{}'::jsonb))
   FROM public.users u
@@ -174,63 +179,5 @@ export const toDayUser = (json: unknown): DayUser | null => (json ? (json as Day
  *  viewer may not see it. */
 export function visibleUser(v: Viewer, u: DayUser | null): DayUser {
   if (!u || !canSeeUser(v, u)) throw new NotFoundError('Day Log not found');
-  return u;
-}
-
-/** One user of the company (active or not) with their main department. */
-export async function loadDayUser(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
-): Promise<DayUser | null> {
-  const rows = (await tx.execute(sql`
-    SELECT u.id::text AS id, COALESCE(u.full_name, u.email) AS name,
-           ua.main_dept AS main_dept, COALESCE(ua.departments, '{}'::jsonb) AS departments
-    FROM public.users u
-    LEFT JOIN public.user_access ua
-      ON ua.user_id = u.id AND ua.company_id = ${companyId}::uuid AND ua.deleted_at IS NULL
-    WHERE u.id = ${userId}::uuid AND u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL
-    LIMIT 1
-  `)) as unknown as Array<{
-    id: string;
-    name: string;
-    main_dept: string | null;
-    departments: Record<string, unknown>;
-  }>;
-  const r = rows[0];
-  return r ? { id: r.id, name: r.name, mainDept: r.main_dept, departments: r.departments } : null;
-}
-
-/** The person whose day is asked for — "not found" when the viewer may not see it. */
-export async function requireVisibleUser(
-  tx: DbTransaction,
-  companyId: string,
-  v: Viewer,
-  userId: string,
-): Promise<DayUser> {
-  const u = await loadDayUser(tx, companyId, userId);
-  if (!u || !canSeeUser(v, u)) throw new NotFoundError('Day Log not found');
-  return u;
-}
-
-/** Reopen / Leave: visible AND manageable, else refused. */
-export async function requireManagedUser(
-  tx: DbTransaction,
-  companyId: string,
-  v: Viewer,
-  userId: string,
-): Promise<DayUser> {
-  const u = await requireVisibleUser(tx, companyId, v, userId);
-  // A Department Admin never reopens or marks Leave on their OWN day.
-  if (u.id === v.userId && !v.isSuper) {
-    throw new AuthorizationError(
-      'Another Department Admin or a Super Admin must do this on your own Day Log.',
-    );
-  }
-  if (!canManageUser(v, u)) {
-    throw new AuthorizationError(
-      "Only the person's Department Admin or a Super Admin can do this on a Day Log.",
-    );
-  }
   return u;
 }

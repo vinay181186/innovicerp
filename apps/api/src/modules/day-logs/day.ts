@@ -1,8 +1,7 @@
-// Day Log — the day header, the line / holiday SQL every read shares, and
-// opening / locking one day. The owner's entry writes lock through lock.ts;
-// Submit / Reopen / Leave through openDay / readHeader(lock) here (§20.3).
+// Day Log — the day header and the line / holiday SQL every read shares.
 // Reads are sub-selects returning json so one statement carries many facts
-// (each round trip to the database is the cost — owner 2026-10-27).
+// (each round trip to the database is the cost — owner 2026-10-27). Writes
+// lock the day through lock.ts.
 
 import {
   DAY_LOG_RULES,
@@ -12,14 +11,13 @@ import {
   type DayLogStatus,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
-import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { ConflictError } from '../../lib/errors';
 import { hm } from './rules';
 
 export interface DayHeader {
   id: string;
   userId: string;
   date: string;
+  /** Kept for old days; the simple sheet no longer submits or reopens. */
   status: DayLogStatus;
   submittedAt: string | null;
   submittedByName: string | null;
@@ -31,6 +29,16 @@ export interface DayHeader {
   updatedByName: string | null;
 }
 
+/** An edit waiting for approval (0225). */
+export interface PendingEdit {
+  fromTime: string;
+  toTime: string;
+  description: string;
+  order: DayLogOrder | null;
+  /** ISO, as stored (ms) — the approve / reject guard compares it. */
+  requestedAt: string;
+}
+
 export interface DayLine {
   id: string;
   reportId: string;
@@ -40,12 +48,13 @@ export interface DayLine {
   description: string;
   remarks: string | null;
   order: DayLogOrder | null;
-  /** Saved more than lateAfterMin after its Stop (never for an Open entry). */
+  /** First saved more than lateAfterMin after its Stop. */
   late: boolean;
   updatedAt: string;
-  /** Stored line_no — the tie-break of the time order (lastEntryOf).
-   *  Absent only on a line that is not stored (a batch row being judged). */
+  /** Stored line_no. Absent only on a line that is not stored (a batch row being judged). */
   lineNo?: number;
+  pending: PendingEdit | null;
+  rejectReason: string | null;
 }
 
 export const iso = (v: unknown): string | null =>
@@ -80,61 +89,25 @@ export function toHeader(r: Record<string, unknown>): DayHeader {
   };
 }
 
-/** The live header of (user, date), optionally locked FOR UPDATE. */
-export async function readHeader(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
-  date: string,
-  lock = false,
-): Promise<DayHeader | null> {
-  const rows = (await tx.execute(sql`
-    SELECT ${HEADER_COLS}
-    FROM public.daily_reports dr
-    WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
-      AND dr.report_date = ${date}::date AND dr.deleted_at IS NULL
-    ${lock ? sql`FOR UPDATE OF dr` : sql``}
-  `)) as unknown as Array<Record<string, unknown>>;
-  return rows[0] ? toHeader(rows[0]) : null;
-}
-
-/**
- * Open (user, date) for writing: insert the header if it is missing (ON
- * CONFLICT on daily_reports_user_day_uq — two first entries at once open ONE
- * day), then lock it FOR UPDATE. Nothing is copied into a new day.
- */
-export async function openDay(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
-  date: string,
-  actor: AuthContext,
-): Promise<DayHeader> {
-  await tx.execute(sql`
-    INSERT INTO public.daily_reports (company_id, user_id, report_date, created_by, updated_by)
-    VALUES (${companyId}::uuid, ${userId}::uuid, ${date}::date, ${actor.id}::uuid, ${actor.id}::uuid)
-    ON CONFLICT (company_id, user_id, report_date) WHERE deleted_at IS NULL DO NOTHING
-  `);
-  const h = await readHeader(tx, companyId, userId, date, true);
-  if (!h) throw new ConflictError('This day could not be opened — reload and try again');
-  return h;
-}
-
 /** A timestamptz as the ISO string iso() gives (ms truncated, like the
  *  driver's Date) — inside JSON, where the driver does not parse it. */
 export const ts = (col: string): SQL =>
   sql.raw(`to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`);
 
-/** LATE: saved more than lateAfterMin after (report date + Stop), India time. */
-export const lateSql = (reportDate: SQL, toTime: SQL, updatedAt: SQL): SQL => sql`
-  (${toTime} IS NOT NULL AND ${updatedAt} >
+/**
+ * LATE: FIRST saved (created_at) more than lateAfterMin after (report date +
+ * Stop), India time. created_at, not updated_at: a saved row changes only by
+ * an approved edit, and asking for / deciding an edit must not make it late.
+ */
+export const lateSql = (reportDate: SQL, toTime: SQL, createdAt: SQL): SQL => sql`
+  (${toTime} IS NOT NULL AND ${createdAt} >
      ((${reportDate} + ${toTime}) AT TIME ZONE 'Asia/Kolkata')
      + make_interval(mins => ${DAY_LOG_RULES.lateAfterMin}::int))`;
 
 /**
  * The live lines matching `where` as ONE json array (a scalar sub-select, so
  * it rides inside a bigger statement), in time order per day. `where` sees
- * l (line), dr (its day), so / jw.
+ * l (line), dr (its day).
  */
 export const linesJson = (companyId: string, where: SQL): SQL => sql`(
   SELECT COALESCE(json_agg(json_build_object(
@@ -143,21 +116,29 @@ export const linesJson = (companyId: string, where: SQL): SQL => sql`(
            'to_time', to_char(l.to_time, 'HH24:MI'), 'description', l.description,
            'remarks', l.remarks, 'updated_at', ${ts('l.updated_at')},
            'so_id', so.id::text, 'so_code', so.code, 'jw_id', jw.id::text, 'jw_code', jw.code,
-           'late', ${lateSql(sql`dr.report_date`, sql`l.to_time`, sql`l.updated_at`)})
+           'late', ${lateSql(sql`dr.report_date`, sql`l.to_time`, sql`l.created_at`)},
+           'p_from', to_char(l.pending_from, 'HH24:MI'), 'p_to', to_char(l.pending_to, 'HH24:MI'),
+           'p_desc', l.pending_description, 'p_at', ${ts('l.pending_at')},
+           'p_so_id', pso.id::text, 'p_so_code', pso.code,
+           'p_jw_id', pjw.id::text, 'p_jw_code', pjw.code, 'reject_reason', l.reject_reason)
          ORDER BY l.daily_report_id, l.from_time NULLS LAST, l.line_no), '[]'::json)
   FROM public.daily_report_lines l
   JOIN public.daily_reports dr ON dr.id = l.daily_report_id
   LEFT JOIN public.sales_orders so ON so.id = l.sales_order_id
   LEFT JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
+  LEFT JOIN public.sales_orders pso ON pso.id = l.pending_sales_order_id
+  LEFT JOIN public.job_work_orders pjw ON pjw.id = l.pending_job_work_order_id
   WHERE l.company_id = ${companyId}::uuid AND l.deleted_at IS NULL AND ${where})`;
+
+const orderOf = (r: Record<string, unknown>, p: string): DayLogOrder | null =>
+  r[`${p}so_id`]
+    ? { type: 'so', id: String(r[`${p}so_id`]), code: String(r[`${p}so_code`]) }
+    : r[`${p}jw_id`]
+      ? { type: 'jwso', id: String(r[`${p}jw_id`]), code: String(r[`${p}jw_code`]) }
+      : null;
 
 /** One element of linesJson → a DayLine. */
 export function toLine(r: Record<string, unknown>): DayLine {
-  const order: DayLogOrder | null = r['so_id']
-    ? { type: 'so', id: String(r['so_id']), code: String(r['so_code']) }
-    : r['jw_id']
-      ? { type: 'jwso', id: String(r['jw_id']), code: String(r['jw_code']) }
-      : null;
   return {
     id: String(r['id']),
     reportId: String(r['report_id']),
@@ -166,10 +147,20 @@ export function toLine(r: Record<string, unknown>): DayLine {
     toTime: hm(r['to_time'] as string | null),
     description: String(r['description'] ?? ''),
     remarks: (r['remarks'] as string | null) ?? null,
-    order,
+    order: orderOf(r, ''),
     late: r['late'] === true,
     updatedAt: iso(r['updated_at'])!,
     lineNo: Number(r['line_no'] ?? 0),
+    pending: r['p_at']
+      ? {
+          fromTime: String(r['p_from']),
+          toTime: String(r['p_to']),
+          description: String(r['p_desc'] ?? ''),
+          order: orderOf(r, 'p_'),
+          requestedAt: String(r['p_at']),
+        }
+      : null,
+    rejectReason: (r['reject_reason'] as string | null) ?? null,
   };
 }
 
@@ -201,49 +192,13 @@ export const inTimeOrder = (lines: readonly DayLine[]): DayLine[] =>
             : 1,
   );
 
-/** The live lines of many days in ONE read, in time order per day. */
-export async function loadLinesFor(
-  tx: DbTransaction,
-  companyId: string,
-  reportIds: readonly string[],
-): Promise<DayLine[]> {
-  if (reportIds.length === 0) return [];
-  const [r] = (await tx.execute(sql`
-    SELECT ${linesJson(companyId, sql`l.daily_report_id = ANY(${sql.param([...reportIds])}::uuid[])`)} AS lines
-  `)) as unknown as Array<{ lines: unknown }>;
-  return toLines(r?.lines);
-}
-
-/** One day's live lines, in time order. */
-export function loadLines(
-  tx: DbTransaction,
-  companyId: string,
-  reportId: string,
-): Promise<DayLine[]> {
-  return loadLinesFor(tx, companyId, [reportId]);
-}
-
-/** Lines → the shared span shape (lines without a From — old Daily Task
- *  Report rows — carry no time and are left out). */
+/** Lines → the shared span shape. Every row counts as work now (the sheet
+ *  has no Type); lines without a From — old Daily Task Report rows — carry
+ *  no time and are left out. */
 export function spansOf(lines: readonly DayLine[]): DayLogSpan[] {
   return lines
     .filter((l) => l.fromTime)
-    .map((l) => ({ kind: l.kind, fromTime: l.fromTime!, toTime: l.toTime }));
-}
-
-/** Holiday dates (and names) in [from, to]. */
-export async function holidaysBetween(
-  tx: DbTransaction,
-  companyId: string,
-  from: string,
-  to: string,
-): Promise<Map<string, string>> {
-  const rows = (await tx.execute(sql`
-    SELECT to_char(holiday_date, 'YYYY-MM-DD') AS d, name FROM public.company_holidays
-    WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-      AND holiday_date BETWEEN ${from}::date AND ${to}::date
-  `)) as unknown as Array<{ d: string; name: string }>;
-  return new Map(rows.map((r) => [r.d, r.name]));
+    .map((l) => ({ kind: 'work' as const, fromTime: l.fromTime!, toTime: l.toTime }));
 }
 
 /** Holidays in [from, to] as ONE json object { "YYYY-MM-DD": name } (a scalar sub-select). */

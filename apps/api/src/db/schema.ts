@@ -7108,6 +7108,20 @@ export const dailyReportLines = pgTable(
     jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
       onDelete: 'set null',
     }),
+    // Day Log (0225): an edit waiting for approval (pending_at NULL = none);
+    // the row keeps its values until it is approved.
+    pendingFrom: time('pending_from'),
+    pendingTo: time('pending_to'),
+    pendingDescription: text('pending_description'),
+    pendingSalesOrderId: uuid('pending_sales_order_id').references(() => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    pendingJobWorkOrderId: uuid('pending_job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'set null',
+    }),
+    pendingAt: timestamp('pending_at', { withTimezone: true }),
+    pendingBy: uuid('pending_by').references((): AnyPgColumn => users.id),
+    rejectReason: text('reject_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -7120,6 +7134,10 @@ export const dailyReportLines = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
+    // 0225 — the approvals list.
+    index('daily_report_lines_pending_idx')
+      .on(t.companyId)
+      .where(sql`${t.pendingAt} is not null and ${t.deletedAt} is null`),
     uniqueIndex('daily_report_lines_line_uq')
       .on(t.dailyReportId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),

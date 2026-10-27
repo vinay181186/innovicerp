@@ -1,33 +1,32 @@
-// Day Log — what the owner's entry writes share: one entry's fields checked
-// and resolved (prepare), the line write + header bump as ONE statement
-// (writeLines), the activity row and the open-entry race guard.
+// Day Log — what the entry writes share: one row's fields checked and
+// resolved (prepare), the line write + header bump as ONE statement
+// (writeLines) and the activity row.
 
-import {
-  type AddDayLogEntryInput,
-  type DayLogEntryKind,
-  type DayLogOrder,
-  type DayLogOrderType,
-  fmt12,
-} from '@innovic/shared';
+import { type DayLogOrder, type DayLogOrderType, fmt12 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { ConflictError } from '../../lib/errors';
+import { ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { type DayHeader, type DayLine, lateSql, ts } from './day';
 import { requireOpenOrder } from './orders';
 import { type DayLogClock, dmy } from './rules';
 import type { DaySnapshot } from './snapshot';
-import { hoursOf, uniqueHit, validateEntry } from './writes';
+import { hoursOf, validateEntry } from './writes';
 
-export type EntryFields = Omit<AddDayLogEntryInput, 'date'>;
-
-/** The stored shape of one entry's fields. */
-export interface Row {
-  kind: DayLogEntryKind;
+/** The fields of one row as the sheet / an edit sends them. */
+export interface EntryFields {
+  startTime: string;
+  stopTime: string;
   description: string;
+  orderType?: DayLogOrderType | null | undefined;
+  orderId?: string | null | undefined;
+}
+
+/** The stored shape of one row's fields (kind is always 'work' now). */
+export interface Row {
   fromTime: string;
-  toTime: string | null;
-  remarks: string | null;
+  toTime: string;
+  description: string;
   soId: string | null;
   jwId: string | null;
   orderCode: string | null;
@@ -42,36 +41,26 @@ export const ordersOf = (
 ): Array<{ type: DayLogOrderType; id: string }> =>
   rows.flatMap((r) => (r.orderType && r.orderId ? [{ type: r.orderType, id: r.orderId }] : []));
 
-/** Validate the fields under the lock and resolve the order (409 unless it is
- *  open — an order the entry already had is kept even if it closed since). */
+/** Validate one row under the lock against `others` (the day's other rows,
+ *  current values) and resolve its order (409 unless it is open — an order
+ *  the row already had is kept even if it closed since). */
 export function prepare(
-  h: DayHeader,
-  lines: readonly DayLine[],
+  date: string,
+  others: readonly DayLine[],
   input: EntryFields,
   self: DayLine | null,
   clock: DayLogClock,
-  snap: DaySnapshot,
+  snap: Pick<DaySnapshot, 'openOrders'>,
 ): Row {
-  const toTime = input.stopTime ?? null;
-  const others = lines.filter((l) => l.id !== self?.id);
   const orderType: DayLogOrderType | null = input.orderType ?? null;
   const orderId = input.orderId ?? null;
-  const description = input.description || (input.kind === 'break' ? 'Break' : '');
-  const remarks = input.remarks?.trim() || null;
+  if (!orderType !== !orderId) throw new ValidationError('Pick the SO / JWSO again');
+  const description = input.description.trim();
   validateEntry(
-    h,
+    date,
     others,
-    {
-      kind: input.kind,
-      fromTime: input.startTime,
-      toTime,
-      hasOrder: !!orderId,
-      description,
-      remarks,
-    },
-    self,
+    { fromTime: input.startTime, toTime: input.stopTime, description },
     clock,
-    snap.openLines,
   );
   let orderCode: string | null = null;
   if (orderType && orderId) {
@@ -81,11 +70,9 @@ export function prepare(
       : requireOpenOrder(snap.openOrders, orderType, orderId).code;
   }
   return {
-    kind: input.kind,
-    description,
     fromTime: input.startTime,
-    toTime,
-    remarks,
+    toTime: input.stopTime,
+    description,
     soId: orderType === 'so' ? orderId : null,
     jwId: orderType === 'jwso' ? orderId : null,
     orderCode,
@@ -103,7 +90,7 @@ export async function log(
   companyId: string,
   user: AuthContext,
   h: DayHeader,
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'STOP',
+  action: 'CREATE' | 'EDIT_REQUEST' | 'EDIT_APPROVED' | 'EDIT_REJECTED',
   detail: string,
 ): Promise<void> {
   await emitActivityLog(
@@ -118,16 +105,6 @@ export async function log(
     companyId,
     user,
   );
-}
-
-/** A second Open entry racing past the code check hits daily_report_lines_open_uq. */
-export async function guardUnique<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (e) {
-    if (uniqueHit(e)) throw new ConflictError('Another entry is already Open — reload');
-    throw e;
-  }
 }
 
 /** What a line write hands back (RETURNING) — enough to rebuild the line. */
@@ -164,10 +141,10 @@ export async function writeLines(
   }));
 }
 
-/** The RETURNING list of a line write (late as loadLines judges it). */
+/** The RETURNING list of a line write (late as linesJson judges it). */
 export const returning = (h: DayHeader): SQL => sql`
   id::text AS id, line_no, ${ts('updated_at')} AS updated_at,
-  ${lateSql(sql`${h.date}::date`, sql`to_time`, sql`updated_at`)} AS late`;
+  ${lateSql(sql`${h.date}::date`, sql`to_time`, sql`created_at`)} AS late`;
 
 export const orderOfRow = (r: Row): DayLogOrder | null =>
   r.soId
@@ -176,19 +153,21 @@ export const orderOfRow = (r: Row): DayLogOrder | null =>
       ? { type: 'jwso', id: r.jwId, code: r.orderCode ?? '' }
       : null;
 
-/** A written Row as the line loadLines would now read. */
+/** A newly written Row as linesJson would now read it. */
 export const lineOf = (r: Row, w: Written, reportId: string): DayLine => ({
   id: w.id,
   reportId,
-  kind: r.kind,
+  kind: 'work',
   fromTime: r.fromTime,
   toTime: r.toTime,
   description: r.description,
-  remarks: r.remarks,
+  remarks: null,
   order: orderOfRow(r),
   late: w.late,
   updatedAt: w.updatedAt,
   lineNo: w.lineNo,
+  pending: null,
+  rejectReason: null,
 });
 
 /** Multi-row INSERT of new lines from line_no `first` on. */
@@ -201,9 +180,9 @@ export function insertSql(
 ): SQL {
   const values = rows.map(
     (r, i) => sql`(${companyId}::uuid, ${h.id}::uuid, ${first + i}, ${r.description},
-      ${r.kind}, ${r.fromTime}::time, ${r.toTime}::time,
-      ${r.toTime ? 'completed' : 'in_progress'}, ${hoursOf(r.fromTime, r.toTime)},
-      ${r.remarks}, ${r.soId}::uuid, ${r.jwId}::uuid, ${user.id}::uuid, ${user.id}::uuid)`,
+      'work', ${r.fromTime}::time, ${r.toTime}::time,
+      'completed', ${hoursOf(r.fromTime, r.toTime)},
+      NULL, ${r.soId}::uuid, ${r.jwId}::uuid, ${user.id}::uuid, ${user.id}::uuid)`,
   );
   return sql`
     INSERT INTO public.daily_report_lines

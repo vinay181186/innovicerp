@@ -1,28 +1,26 @@
-// Person page (Team Day Logs → a name): one person's days over From – To
-// (default the 7 days ending on the team date). ONE strip from the server's
-// totals, then one row a day: Date · Day Status · First start · Last stop ·
-// Working hours · Break · Others · Entries · Late · SO / JWSO worked on ("LATE
-// IN Nm" beside the day status after Others · Late coming). A click on a
-// date opens that day's entries (read-only, with remarks) under it; the
-// team date opens expanded.
+// Person page (Team Day Logs → a name, owner final 2026-10-27): one
+// person's days over From – To (default the 7 days ending on the team date).
+// ONE strip from the server's totals (Days logged · Working hours · Avg per
+// day · Late entries), then one row a day: Date · First start · Last stop ·
+// Working hours · Entries · Late · SO / JWSO worked on. A click on a date
+// opens that day's entries under it (Start · Stop with LATE / "⏳ Edit
+// pending" · SO / JWSO · Time, and the Working on line); the team date opens
+// expanded.
 
 import { todayIst } from '@/lib/date';
-import type { PersonDayRow } from '@innovic/shared';
-import { DAY_LOG_ENTRY_KIND_LABELS, DAY_LOG_RULES, fmt12, fmtDuration } from '@innovic/shared';
+import { DAY_LOG_RULES, fmt12, fmtDuration } from '@innovic/shared';
 import { Fragment, useState } from 'react';
 import { StatStrip } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { useDayLog, usePersonDayLogs, useTeamDayLogs } from '../api';
-import { dayChip, errText, fmtDmy, liveNowMin, shiftDate, weekday } from '../lib/format';
+import { useDayLog, usePersonDayLogs } from '../api';
+import { errText, fmtDmy, shiftDate, weekday } from '../lib/format';
 import { DaySelect } from './day-header';
 import { EntriesTable } from './entries-table';
-import { LateInTag, NowCell } from './team-day-logs-tab';
 
 /** Default range length, days. */
 const DEFAULT_DAYS = 7;
-const COLS = 10;
+const COLS = 7;
 
-/** India's calendar day — only a default for a link that names no date. */
 function DayEntries({ userId, date }: { userId: string; date: string }): React.JSX.Element {
   const q = useDayLog({ userId, date });
   if (!q.data) {
@@ -57,13 +55,6 @@ export function PersonDayLogs({
   const query = usePersonDayLogs(userId, rangeFrom, rangeTo);
   const [open, setOpen] = useState<Record<string, boolean>>(() => ({ [anchor]: true }));
   const p = query.data;
-  const today = p?.today ?? todayIst();
-  const inRangeToday = rangeFrom <= today && today <= rangeTo;
-  // Today's live "Now" comes from the team table (same server reading).
-  const team = useTeamDayLogs(undefined, inRangeToday);
-  const live = team.data?.rows.find((r) => r.userId === userId) ?? null;
-  const nowMin = team.data ? liveNowMin(team.data.nowTime, team.dataUpdatedAt, Date.now()) : null;
-
   if (!p) {
     return (
       <div
@@ -74,14 +65,6 @@ export function PersonDayLogs({
       </div>
     );
   }
-
-  const status = (d: PersonDayRow): React.JSX.Element => {
-    if (d.date === p.today && d.status !== 'submitted' && d.status !== 'leave' && live) {
-      return <NowCell row={live} nowMin={nowMin} />;
-    }
-    const c = dayChip(d.status, d.date === p.today, d.entryCount > 0);
-    return <span className={`badge ${c.cls}`}>{c.label}</span>;
-  };
 
   return (
     <div>
@@ -123,12 +106,6 @@ export function PersonDayLogs({
           { key: 'days', label: 'Days logged', count: p.totals.daysLogged },
           { key: 'work', label: 'Working hours', count: fmtDuration(p.totals.workMin) },
           { key: 'avg', label: 'Avg per day', count: fmtDuration(p.totals.avgWorkMin) },
-          { key: 'break', label: 'Break', count: `${p.totals.breakMin} min` },
-          {
-            key: 'leave',
-            label: DAY_LOG_ENTRY_KIND_LABELS.leave,
-            count: fmtDuration(p.totals.leaveMin),
-          },
           {
             key: 'late',
             label: 'Late entries',
@@ -144,12 +121,9 @@ export function PersonDayLogs({
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Day Status</th>
                 <th>First start</th>
                 <th>Last stop</th>
                 <th className="th-num">Working hours</th>
-                <th className="th-num">Break</th>
-                <th className="th-num">{DAY_LOG_ENTRY_KIND_LABELS.leave}</th>
                 <th className="th-num">Entries</th>
                 <th>Late</th>
                 <th>SO / JWSO worked on</th>
@@ -180,21 +154,13 @@ export function PersonDayLogs({
                         <span className="text3">{isOpen ? '▾' : '▸'}</span> <b>{fmtDmy(d.date)}</b>{' '}
                         <span className="text3">{weekday(d.date)}</span>
                       </td>
-                      <td>
-                        {status(d)}
-                        <LateInTag min={d.lateInMin} />
-                      </td>
                       <td className="mono">{fmt12(d.firstStart)}</td>
                       <td className="mono">{fmt12(d.lastStop)}</td>
                       <td className="td-num mono fw-700">{fmtDuration(d.workMin)}</td>
-                      <td className="td-num mono">{d.breakMin} min</td>
-                      <td className="td-num mono">
-                        {d.leaveMin > 0 ? fmtDuration(d.leaveMin) : '—'}
-                      </td>
                       <td className="td-num mono">{d.entryCount}</td>
                       <td>
                         {d.lateCount > 0 ? (
-                          <span className="badge b-orange">{d.lateCount} Late</span>
+                          <span className="badge b-orange">{d.lateCount} LATE</span>
                         ) : (
                           '—'
                         )}

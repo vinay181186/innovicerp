@@ -5,15 +5,9 @@
 // SheetJS (xlsx, the existing dependency) only when asked, as op-log does.
 
 import type { DayLogDetail, TeamDayLogResponse } from '@innovic/shared';
-import {
-  DAY_LOG_CURRENT_STATUS_LABELS,
-  DAY_LOG_ENTRY_KIND_LABELS,
-  fmt12,
-  fmtDuration,
-} from '@innovic/shared';
+import { fmt12, fmtDuration } from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
-import { PAST_STATUS_LABEL } from './format';
-import { entryTypeText } from './sheet';
+import { nowChip } from './format';
 
 export interface ExportTable {
   /** Column keys deliberately avoid a `status` / `type` suffix: rowsToCsv
@@ -22,47 +16,38 @@ export interface ExportTable {
   rows: Record<string, string>[];
 }
 
+/** The day sheet: # · Start · Stop · SO / JWSO · Time · Working on. */
 export const DAY_COLUMNS = [
+  { key: 'row_no', label: '#' },
   { key: 'start_time', label: 'Start' },
   { key: 'stop_time', label: 'Stop' },
-  { key: 'time', label: 'Time' },
-  { key: 'kind', label: 'Type' },
-  { key: 'work', label: 'Working on' },
   { key: 'order_code', label: 'SO / JWSO' },
-  { key: 'entry_state', label: 'Status' },
-  { key: 'late', label: 'Late' },
-  { key: 'remark', label: 'Remark' },
+  { key: 'time', label: 'Time' },
+  { key: 'work', label: 'Working on' },
 ];
 
 export function dayTable(day: DayLogDetail): ExportTable {
   const rows = [...day.entries]
     .sort((a, b) => a.fromTime.localeCompare(b.fromTime))
-    .map((e) => ({
+    .map((e, i) => ({
+      row_no: String(i + 1),
       start_time: fmt12(e.fromTime),
       stop_time: e.toTime ? fmt12(e.toTime) : '',
-      time: fmtDuration(e.minutes),
-      kind: entryTypeText(e),
-      // An Others row's description is its reason — already in Type.
-      work: e.kind === 'leave' ? '' : e.description,
       order_code: e.order?.code ?? '',
-      entry_state: e.toTime ? 'Closed' : 'Open',
-      late: e.late ? 'LATE' : '',
-      remark: e.remarks ?? '',
+      time: fmtDuration(e.minutes),
+      work: e.description,
     }));
   return { columns: DAY_COLUMNS, rows };
 }
 
+/** Team Day Logs: User · Now · First start · Last stop · Working hours ·
+ *  Entries · Late. */
 export const TEAM_COLUMNS = [
   { key: 'user', label: 'User' },
   { key: 'current_now', label: 'Now' },
-  { key: 'latest_work', label: 'Working on (latest)' },
-  { key: 'latest_order', label: 'SO / JWSO' },
   { key: 'first_start', label: 'First start' },
   { key: 'last_stop', label: 'Last stop' },
   { key: 'work_hours', label: 'Working hours' },
-  { key: 'break_min', label: 'Break' },
-  { key: 'leave_min', label: DAY_LOG_ENTRY_KIND_LABELS.leave },
-  { key: 'late_in', label: 'Late in' },
   { key: 'entries', label: 'Entries' },
   { key: 'late', label: 'Late' },
 ];
@@ -73,19 +58,12 @@ export function teamTable(team: TeamDayLogResponse): ExportTable {
     columns: TEAM_COLUMNS,
     rows: team.rows.map((r) => ({
       user: r.userName,
-      current_now: isToday
-        ? [DAY_LOG_CURRENT_STATUS_LABELS[r.currentStatus], r.currentText]
-            .filter(Boolean)
-            .join(' · ')
-        : PAST_STATUS_LABEL[r.currentStatus],
-      latest_work: r.latestWork?.description ?? '',
-      latest_order: r.latestWork?.orderCode ?? '',
+      current_now: [nowChip(r, isToday).label, isToday ? r.currentText : null]
+        .filter(Boolean)
+        .join(' · '),
       first_start: r.firstStart ? fmt12(r.firstStart) : '',
       last_stop: r.lastStop ? fmt12(r.lastStop) : '',
       work_hours: fmtDuration(r.workMin),
-      break_min: `${r.breakMin} min`,
-      leave_min: r.leaveMin > 0 ? fmtDuration(r.leaveMin) : '',
-      late_in: r.lateInMin > 0 ? `${r.lateInMin} min` : '',
       entries: String(r.entryCount),
       late: r.lateCount > 0 ? String(r.lateCount) : '',
     })),

@@ -1,22 +1,20 @@
-// Day Log routes. Idempotency is global (ADR-172 plugin); the header row lock
-// and the partial-unique indexes back a double submit (§20).
+// Day Log routes. Idempotency is global (ADR-172 plugin); the day header
+// row lock backs a double submit (§20).
 
 import type { FastifyInstance } from 'fastify';
 import {
   addDayLogEntriesInputSchema,
   addDayLogEntryInputSchema,
-  dayLogDateInputSchema,
   dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
+  dayLogRejectInputSchema,
   holidayInputSchema,
   personDayLogQuerySchema,
-  stopDayLogEntryInputSchema,
   teamDayLogQuerySchema,
   updateDayLogEntryInputSchema,
 } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { dayLogReasonInputSchema } from './manage';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -64,33 +62,23 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     return service.updateEntry(id, updateDayLogEntryInputSchema.parse(req.body), req.user);
   });
 
-  app.post('/day-logs/entries/:id/stop', async (req) => {
+  // A saved row is never removed: no DELETE, no Stop (owner 2026-10-27).
+  // An edit (PATCH above) waits for approval:
+  app.get('/day-logs/approvals', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getApprovals(req.user);
+  });
+
+  app.post('/day-logs/entries/:id/approve', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    // A break stop may send no body at all.
-    const input = stopDayLogEntryInputSchema.parse(req.body ?? {});
-    return service.stopEntry(id, input, req.user);
+    return service.approveEntry(id, req.user);
   });
 
-  app.delete('/day-logs/entries/:id', async (req) => {
+  app.post('/day-logs/entries/:id/reject', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.deleteEntry(id, req.user);
-  });
-
-  app.post('/day-logs/submit', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.submitDay(dayLogDateInputSchema.parse(req.body), req.user);
-  });
-
-  app.post('/day-logs/reopen', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.reopenDay(dayLogReasonInputSchema.parse(req.body), req.user);
-  });
-
-  app.post('/day-logs/leave', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    return service.markLeave(dayLogReasonInputSchema.parse(req.body), req.user);
+    return service.rejectEntry(id, dayLogRejectInputSchema.parse(req.body), req.user);
   });
 
   app.get('/day-logs/holidays', async (req) => {

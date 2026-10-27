@@ -12,7 +12,7 @@
 // The All Tasks tab renders ONLY when the server says the caller is admin
 // (`isAdmin` on the list response) — never merely disabled — and the server
 // refuses view=all for anyone else regardless.
-// Day Log tabs (`?view=daylog|team|person`, `?date=`, `?user=`, `?from=`,
+// Day Log tabs (`?view=daylog|team|person|approvals`, `?date=`, `?user=`, `?from=`,
 // `?to=`): see
 // modules/day-logs/components/board-day-log.tsx.
 

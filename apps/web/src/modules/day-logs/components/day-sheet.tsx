@@ -1,38 +1,39 @@
-// My Day Log's ONE sheet (owner-approved mockup 2026-10-27): the day's saved
-// rows on top (read view, ✎ / ■ Stop / 🗑), then — only while the server
-// lets the owner write this day — a "New rows — not saved yet" separator,
-// the draft rows, "+ Add row" and ONE Save that sends every filled draft in
-// one batch (all or nothing). The server answers "Row N: …" for the row it
-// refused: the message shows under that row and every draft is kept. On
+// My Day Log's ONE sheet (owner final 2026-10-27): the day's saved rows on
+// top (read view, ✎ → edit for approval), then — only while the server lets
+// the owner add rows to this day — a "New rows — not saved yet" separator,
+// the draft rows, "+ Add row", Cancel and ONE Save that sends every filled
+// draft in one batch (all or nothing, POST /day-logs/entries/batch). The
+// shared rules are checked first; the server answers "Row N: …" for the row
+// it refused: the message shows under that row and every draft is kept. On
 // success ONLY the rows that batch carried leave the drafts (rows typed while
 // it ran stay; none left = one empty row). One Idempotency-Key per save
 // (useSaveKey): a double click or a resend after a timeout saves once.
-// While a save runs only the rows it carries are locked — every other draft
-// row, and every saved row whose own update / remove is not in flight, stays
-// usable (a background refetch never locks anything).
+// While a save runs only the rows it carries are locked.
 
 import type { DayLogDetail, UpdateDayLogEntryInput } from '@innovic/shared';
 import { useEffect, useState } from 'react';
 import { useSaveKey } from '@/lib/use-save-key';
-import {
-  useAddDayLogEntries,
-  useRemoveDayLogEntry,
-  useUpdateDayLogEntry,
-  type DayQuery,
-} from '../api';
+import { useAddDayLogEntries, useUpdateDayLogEntry, type DayQuery } from '../api';
 import { errText, fmtDmy } from '../lib/format';
-import { blankDraft, draftStarts, isFilled, rowError, toSheetRow, type Draft } from '../lib/sheet';
+import { blankDraft, checkDrafts, isFilled, rowError, toSheetRow, type Draft } from '../lib/sheet';
 import { SHEET_COLS, SheetHead, sortEntries } from './entries-table';
-import { SheetDraftRow, stopInputId } from './sheet-draft-row';
+import { SheetDraftRow, startInputId } from './sheet-draft-row';
 import { SheetSavedRow } from './sheet-saved-row';
 
 const COLS = SHEET_COLS;
+const SEP: React.CSSProperties = {
+  fontSize: 'var(--fs-xs)',
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '.05em',
+};
 
 export function DaySheet({
   day,
   q,
   nowMin,
   canWrite,
+  canAdd,
   editingId,
   onEditingId,
   onDirty,
@@ -42,37 +43,36 @@ export function DaySheet({
   nowMin: number | null;
   /** The server lets the owner write this day, and it is not still loading. */
   canWrite: boolean;
+  /** New rows may be added (canWrite and the day is not blocked). */
+  canAdd: boolean;
   editingId: string | null;
   onEditingId: (id: string | null) => void;
-  /** Some draft has something typed in it (Submit Day waits for it). */
+  /** Some draft has something typed in it. */
   onDirty: (dirty: boolean) => void;
 }): React.JSX.Element {
   const saveKey = useSaveKey();
   const addRows = useAddDayLogEntries(q, saveKey);
   const update = useUpdateDayLogEntry(q);
-  const remove = useRemoveDayLogEntry(q);
   const [drafts, setDrafts] = useState<Draft[]>(() => [blankDraft()]);
   const [rowErrs, setRowErrs] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [focusKey, setFocusKey] = useState<number | null>(null);
-  // Draft keys the in-flight batch carries, and saved-entry ids whose own
-  // update / stop / remove is in flight — only those rows are locked.
+  // Draft keys the in-flight batch carries, and the saved-entry id whose edit
+  // is in flight — only those rows are locked.
   const [savingKeys, setSavingKeys] = useState<ReadonlySet<number>>(() => new Set());
-  const [rowBusy, setRowBusy] = useState<ReadonlySet<string>>(() => new Set());
+  const [busyId, setBusyId] = useState<string | null>(null);
   const saving = addRows.isPending || savingKeys.size > 0;
-  const isToday = day.date === day.today;
   const filled = drafts.filter(isFilled);
-  const dirty = filled.length > 0;
+  const dirty = canAdd && filled.length > 0;
 
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   useEffect(() => {
     if (focusKey === null) return;
-    document.getElementById(stopInputId(focusKey))?.focus();
+    document.getElementById(startInputId(focusKey))?.focus();
     setFocusKey(null);
   }, [focusKey]);
 
   const entries = sortEntries(day.entries);
-  const starts = draftStarts(day.summary.nextStart, drafts);
 
   const patch = (key: number, p: Partial<Draft>): void =>
     setDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...p } : d)));
@@ -89,31 +89,34 @@ export function DaySheet({
   const cancelRows = (): void => {
     setRowErrs({});
     setMsg(null);
-    setDrafts((ds) => ds.filter((d) => savingKeys.has(d.key)));
-  };
-  /** Lock one saved row while its own write runs. */
-  const track = <T,>(id: string, p: Promise<T>): Promise<T> => {
-    setRowBusy((s) => new Set(s).add(id));
-    return p.finally(() =>
-      setRowBusy((s) => {
-        const n = new Set(s);
-        n.delete(id);
-        return n;
-      }),
-    );
-  };
-  const run = (id: string, p: Promise<unknown>, ok: string): Promise<unknown> =>
-    track(id, p).then(() => {
-      setMsg({ ok: true, text: ok });
+    setDrafts((ds) => {
+      const keep = ds.filter((d) => savingKeys.has(d.key));
+      return keep.length ? keep : [blankDraft()];
     });
+  };
+
+  async function sendEdit(id: string, body: UpdateDayLogEntryInput): Promise<void> {
+    setBusyId(id);
+    try {
+      await update.mutateAsync({ id, ...body });
+      onEditingId(null);
+      setMsg({
+        ok: true,
+        text: 'Edit sent for approval — the row keeps its old values until it is approved.',
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function save(): Promise<void> {
     if (saving || !filled.length) return;
     setMsg(null);
     setRowErrs({});
-    const bad = filled.find((d) => d.stop.trim() && toSheetRow(d).stopTime === null);
-    if (bad) {
-      setRowErrs({ [bad.key]: 'Stop time: type it as 1030, 3pm or 03:15 PM.' });
+    const bad = checkDrafts(day.date, filled);
+    const badRow = bad ? filled[bad.index] : undefined;
+    if (bad && badRow) {
+      setRowErrs({ [badRow.key]: bad.text });
       setMsg({ ok: false, text: 'Nothing saved — fix the red row.' });
       return;
     }
@@ -142,14 +145,23 @@ export function DaySheet({
     }
   }
 
+  const msgLine = msg ? (
+    <span
+      role={msg.ok ? 'status' : 'alert'}
+      style={{ fontSize: 13, color: msg.ok ? 'var(--green2)' : 'var(--red2)' }}
+    >
+      {msg.text}
+    </span>
+  ) : null;
+
   return (
     <>
       <div className="panel" style={{ padding: 0, marginBottom: 8 }}>
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <SheetHead actions />
+            <SheetHead actions required />
             <tbody>
-              {entries.length === 0 && !canWrite ? (
+              {entries.length === 0 && !canAdd ? (
                 <tr>
                   <td colSpan={COLS} className="empty-state">
                     Nothing logged on {fmtDmy(day.date)}.
@@ -161,55 +173,31 @@ export function DaySheet({
                   key={e.id}
                   e={e}
                   n={i + 1}
-                  isLast={e.id === day.lastEntryId}
-                  isToday={isToday}
                   nowMin={nowMin}
-                  canWrite={canWrite}
+                  canEdit={canWrite}
                   editing={editingId === e.id}
-                  busy={rowBusy.has(e.id)}
+                  busy={busyId === e.id}
                   onEdit={() => {
                     setMsg(null);
                     onEditingId(e.id);
                   }}
                   onCancelEdit={() => onEditingId(null)}
-                  onUpdate={(body: UpdateDayLogEntryInput) =>
-                    run(e.id, update.mutateAsync({ id: e.id, ...body }), 'Row updated.').then(() =>
-                      onEditingId(null),
-                    )
-                  }
-                  onRemove={() => {
-                    setMsg(null);
-                    if (editingId === e.id) onEditingId(null);
-                    track(e.id, remove.mutateAsync(e.id)).catch((x: unknown) =>
-                      setMsg({ ok: false, text: errText(x) }),
-                    );
-                  }}
+                  onUpdate={(body) => sendEdit(e.id, body)}
                 />
               ))}
-              {canWrite && drafts.length > 0 ? (
+              {canAdd && drafts.length > 0 ? (
                 <tr style={{ background: 'var(--bg3)' }}>
-                  <td
-                    colSpan={COLS}
-                    className="td-left text3"
-                    style={{
-                      fontSize: 'var(--fs-xs)',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '.05em',
-                    }}
-                  >
+                  <td colSpan={COLS} className="td-left text3" style={SEP}>
                     New rows — not saved yet
                   </td>
                 </tr>
               ) : null}
-              {canWrite
+              {canAdd
                 ? drafts.map((d, j) => (
                     <SheetDraftRow
                       key={d.key}
                       d={d}
                       n={entries.length + j + 1}
-                      start={starts[j] ?? null}
-                      isLast={j === drafts.length - 1}
                       nowMin={nowMin}
                       error={rowErrs[d.key] ?? null}
                       saving={savingKeys.has(d.key)}
@@ -225,7 +213,7 @@ export function DaySheet({
           </table>
         </div>
       </div>
-      {canWrite ? (
+      {canAdd ? (
         <div
           style={{
             display: 'flex',
@@ -238,23 +226,11 @@ export function DaySheet({
           <button type="button" className="btn btn-ghost" onClick={addRow}>
             + Add row
           </button>
-          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-            Enter in the last row = new row
-          </span>
-          {msg ? (
-            <span
-              role={msg.ok ? 'status' : 'alert'}
-              style={{ fontSize: 13, color: msg.ok ? 'var(--green2)' : 'var(--red2)' }}
-            >
-              {msg.text}
-            </span>
-          ) : null}
+          {msgLine}
           <span style={{ flex: 1 }} />
-          {drafts.length > 0 ? (
-            <button type="button" className="btn btn-ghost" onClick={cancelRows}>
-              Cancel
-            </button>
-          ) : null}
+          <button type="button" className="btn btn-ghost" onClick={cancelRows}>
+            Cancel
+          </button>
           <button
             type="button"
             className="btn btn-primary"
@@ -265,10 +241,8 @@ export function DaySheet({
             {saving ? 'Saving…' : filled.length > 1 ? `Save (${filled.length} rows)` : 'Save'}
           </button>
         </div>
-      ) : msg ? (
-        <div role="alert" style={{ fontSize: 13, color: 'var(--red2)', marginBottom: 10 }}>
-          {msg.text}
-        </div>
+      ) : msgLine ? (
+        <div style={{ marginBottom: 10 }}>{msgLine}</div>
       ) : null}
     </>
   );

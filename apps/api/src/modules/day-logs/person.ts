@@ -77,15 +77,8 @@ export async function getPerson(
     const h = byDate.get(d);
     if (!workingDay && !h) continue;
     const lines = h ? (linesBy.get(h.id) ?? []) : [];
-    const s = summaryOf(
-      lines,
-      d === clock.today ? clock.nowMin : undefined,
-      workingDay,
-      h?.status ?? 'open',
-    );
-    const orderCodes = [
-      ...new Set(lines.filter((l) => l.kind === 'work' && l.order).map((l) => l.order!.code)),
-    ];
+    const s = summaryOf(lines, d === clock.today ? clock.nowMin : undefined, workingDay);
+    const orderCodes = [...new Set(lines.filter((l) => l.order).map((l) => l.order!.code))];
     days.push({
       date: d,
       workingDay,

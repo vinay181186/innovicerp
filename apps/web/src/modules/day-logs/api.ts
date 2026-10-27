@@ -1,5 +1,5 @@
-// Day Log data hooks (owner 2026-10-26, design approved 2026-10-26). One
-// hook per endpoint of /day-logs; every write answers the whole day
+// Day Log data hooks (owner 2026-10-26; simple sheet final 2026-10-27). One
+// hook per endpoint of /day-logs; every day write answers the whole day
 // (DayLogDetail), so a write puts that answer straight into the day's cache
 // and invalidates the rest of `dayLogKeys.all` (team table, person page).
 // The screen shows the server's `summary` — it never works out the rules
@@ -8,13 +8,13 @@
 import type {
   AddDayLogEntriesInput,
   DayLogAccess,
-  DayLogDateInput,
+  DayLogApprovalsResponse,
   DayLogDetail,
   DayLogOrderOption,
   Holiday,
   HolidayInput,
+  DayLogRejectInput,
   PersonDayLogResponse,
-  StopDayLogEntryInput,
   TeamDayLogResponse,
   UpdateDayLogEntryInput,
 } from '@innovic/shared';
@@ -36,9 +36,10 @@ export const dayLogKeys = {
     [...dayLogKeys.all, 'person', userId, from, to] as const,
   orders: (search: string) => [...dayLogKeys.all, 'order-options', search] as const,
   holidays: () => [...dayLogKeys.all, 'holidays'] as const,
+  approvals: () => [...dayLogKeys.all, 'approvals'] as const,
 };
 
-/** Live screens read again every minute (an Open entry's time moves on). */
+/** The team table reads again every minute (Working / Idle move on). */
 const LIVE_MS = 60_000;
 
 function qs(params: Record<string, string | undefined>): string {
@@ -63,11 +64,6 @@ export function useDayLog(q: DayQuery, enabled = true) {
     queryKey: dayLogKeys.day(q),
     queryFn: () => apiFetch<DayLogDetail>(`/day-logs/day${qs({ date: q.date, userId: q.userId })}`),
     refetchOnWindowFocus: true,
-    // Today with an Open entry: its time is counted to now by the server.
-    refetchInterval: (query) => {
-      const d = query.state.data;
-      return d && d.date === d.today && d.summary.open ? LIVE_MS : false;
-    },
     placeholderData: keepPreviousData,
     enabled,
   });
@@ -118,6 +114,16 @@ export function useHolidays(enabled = true) {
   });
 }
 
+/** Day Log edits waiting for the caller's approval (only when canApprove). */
+export function useDayLogApprovals(enabled = true) {
+  return useQuery<DayLogApprovalsResponse>({
+    queryKey: dayLogKeys.approvals(),
+    queryFn: () => apiFetch<DayLogApprovalsResponse>('/day-logs/approvals'),
+    refetchOnWindowFocus: true,
+    enabled,
+  });
+}
+
 // ── Writes ──
 
 /** A write that answers the day: the answer replaces that day in the cache
@@ -157,7 +163,8 @@ export function useAddDayLogEntries(q: DayQuery, saveKey?: SaveKey) {
   );
 }
 
-/** Edit an entry; carries the updatedAt it was loaded with (§20.4). */
+/** Edit a saved entry — staged for approval (the row shows "Edit pending");
+ *  carries the updatedAt it was loaded with (§20.4). */
 export function useUpdateDayLogEntry(q: DayQuery) {
   return useDayWrite<{ id: string } & UpdateDayLogEntryInput>(
     ({ id, ...input }) =>
@@ -166,28 +173,23 @@ export function useUpdateDayLogEntry(q: DayQuery) {
   );
 }
 
-/** ■ Stop an Open entry at the server's now, with its remark (compulsory
- *  on Work / Others unless the entry already has one). */
-export function useStopDayLogEntry(q: DayQuery) {
-  return useDayWrite<{ id: string } & StopDayLogEntryInput>(
-    ({ id, ...input }) =>
-      apiFetch<DayLogDetail>(`/day-logs/entries/${id}/stop`, { method: 'POST', json: input }),
-    q,
-  );
+/** Approve one staged edit (the new values apply). */
+export function useApproveDayLogEdit() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, string>({
+    mutationFn: (id) => apiFetch(`/day-logs/entries/${id}/approve`, { method: 'POST' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
+  });
 }
 
-export function useRemoveDayLogEntry(q: DayQuery) {
-  return useDayWrite<string>(
-    (id) => apiFetch<DayLogDetail>(`/day-logs/entries/${id}`, { method: 'DELETE' }),
-    q,
-  );
-}
-
-export function useSubmitDayLog(q: DayQuery) {
-  return useDayWrite<DayLogDateInput>(
-    (input) => apiFetch<DayLogDetail>('/day-logs/submit', { method: 'POST', json: input }),
-    q,
-  );
+/** Reject one staged edit with a reason (the row keeps its values). */
+export function useRejectDayLogEdit() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, { id: string } & DayLogRejectInput>({
+    mutationFn: ({ id, ...input }) =>
+      apiFetch(`/day-logs/entries/${id}/reject`, { method: 'POST', json: input }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
+  });
 }
 
 export function useAddHoliday() {

@@ -1,12 +1,11 @@
-// The two banners that stop a day before it starts:
-//   blockedBy — an earlier working day is still open → "Open <date>";
-//   strayOpen — an entry left Open on an earlier day → "Edit it" opens that
-//               day and starts editing that entry.
+// The banner that stops a day before it starts (owner final 2026-10-27):
+// blockedBy — the previous calendar day has no saved row → "<date> has no
+// entries — fill it first" with "Open <date>". No new rows on the blocked
+// day; the blocking day itself takes rows as usual.
 
 import type { DayLogDetail } from '@innovic/shared';
-import { fmt12 } from '@innovic/shared';
 import { Banner } from '@/ui/feedback';
-import { fmtDmy } from '../lib/format';
+import { fmtDmy, weekday } from '../lib/format';
 
 export function BlockedNotice({
   day,
@@ -18,7 +17,11 @@ export function BlockedNotice({
   if (!day.blockedBy) return null;
   const d = day.blockedBy.date;
   return (
-    <Banner tone="warn" role="alert" title={day.blockedBy.reason}>
+    <Banner
+      tone="warn"
+      role="alert"
+      title={`${fmtDmy(d)} (${weekday(d)}) has no entries — fill it first.`}
+    >
       <button
         type="button"
         className="btn btn-primary btn-sm"
@@ -26,34 +29,6 @@ export function BlockedNotice({
         onClick={() => onDate(d)}
       >
         Open {fmtDmy(d)}
-      </button>
-    </Banner>
-  );
-}
-
-export function StrayOpenNotice({
-  day,
-  onEdit,
-}: {
-  day: DayLogDetail;
-  /** Open that day and start editing that entry. */
-  onEdit: (date: string, entryId: string) => void;
-}): React.JSX.Element | null {
-  const s = day.strayOpen;
-  if (!s || s.date === day.date) return null;
-  return (
-    <Banner
-      tone="warn"
-      role="alert"
-      title={`${fmtDmy(s.date)} ${fmt12(s.fromTime)} is still open — Edit it and give a Stop time`}
-    >
-      <button
-        type="button"
-        className="btn btn-primary btn-sm"
-        style={{ marginTop: 6 }}
-        onClick={() => onEdit(s.date, s.entryId)}
-      >
-        Edit it
       </button>
     </Banner>
   );

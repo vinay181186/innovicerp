@@ -2,7 +2,7 @@
 // days, newest first) and the ONE summary strip of a day (server figures).
 
 import type { DayLogSummaryOut } from '@innovic/shared';
-import { DAY_LOG_ENTRY_KIND_LABELS, fmt12, fmtDuration } from '@innovic/shared';
+import { fmt12, fmtDuration } from '@innovic/shared';
 import { StatStrip } from '@/ui/data';
 import { fmtDmy, recentDays, weekday } from '../lib/format';
 
@@ -45,34 +45,16 @@ export function DaySelect({
   );
 }
 
-/** Working hours · Break · Others · First start · Last stop · Late entries,
- *  and Late in (orange) when the day began with Others · Late coming. */
+/** Working hours · First start · Last stop · Entries (server figures). */
 export function DaySummaryStrip({ s }: { s: DayLogSummaryOut }): React.JSX.Element {
   return (
     <StatStrip
       style={{ marginBottom: 10 }}
       items={[
         { key: 'work', label: 'Working hours', count: fmtDuration(s.workMin) },
-        { key: 'break', label: 'Break', count: `${s.breakMin} min` },
-        { key: 'leave', label: DAY_LOG_ENTRY_KIND_LABELS.leave, count: fmtDuration(s.leaveMin) },
         { key: 'first', label: 'First start', count: fmt12(s.firstStart) },
         { key: 'last', label: 'Last stop', count: fmt12(s.lastStop) },
-        {
-          key: 'late',
-          label: 'Late entries',
-          count: s.lateCount,
-          color: s.lateCount > 0 ? 'var(--amber2)' : undefined,
-        },
-        ...(s.lateInMin > 0
-          ? [
-              {
-                key: 'late-in',
-                label: 'Late in',
-                count: `${s.lateInMin} min`,
-                color: 'var(--amber2)',
-              },
-            ]
-          : []),
+        { key: 'entries', label: 'Entries', count: s.entryCount },
       ]}
     />
   );

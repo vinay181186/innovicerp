@@ -6,13 +6,13 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { isUniqueViolation } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { canSeeTeam, loadViewer } from './access';
+import { canApproveAny, canSeeTeam, loadViewer } from './access';
 import { dmy } from './rules';
 import { requireCompany } from './writes';
 
 export async function getAccess(user: AuthContext): Promise<DayLogAccess> {
   const v = await loadViewer(user);
-  return { canSeeTeam: canSeeTeam(v), canManageHolidays: v.isSuper };
+  return { canSeeTeam: canSeeTeam(v), canApprove: canApproveAny(v), canManageHolidays: v.isSuper };
 }
 
 // ── Holidays ────────────────────────────────────────────────────────────────
