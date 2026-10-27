@@ -130,7 +130,7 @@ export function SheetDraftRow({
             // An Others row may end later today; Work / Break never after now.
             nowMin={isOthers ? null : nowMin}
             disabled={busy}
-            placeholder={isOthers ? 'e.g. 06:00 PM' : isLast ? 'empty = open' : 'Stop'}
+            placeholder={isOthers ? 'e.g. 06:00 PM' : isLast ? 'blank = open' : 'Stop'}
             onEnter={onEnter}
           />
         </td>

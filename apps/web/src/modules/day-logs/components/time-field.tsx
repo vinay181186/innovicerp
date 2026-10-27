@@ -30,7 +30,7 @@ const EDGE = 8;
 
 type PickerPos = { left: number; top: number } | { left: number; bottom: number };
 
-const BOX: React.CSSProperties = { width: '14ch', minWidth: 120 };
+const BOX: React.CSSProperties = { width: '17ch', minWidth: 150 };
 const COL: React.CSSProperties = {
   display: 'grid',
   gap: 2,
