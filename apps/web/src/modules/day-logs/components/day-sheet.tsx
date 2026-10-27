@@ -13,7 +13,6 @@ import { useSaveKey } from '@/lib/use-save-key';
 import {
   useAddDayLogEntries,
   useRemoveDayLogEntry,
-  useStopDayLogEntry,
   useUpdateDayLogEntry,
   type DayQuery,
 } from '../api';
@@ -47,13 +46,12 @@ export function DaySheet({
   const saveKey = useSaveKey();
   const addRows = useAddDayLogEntries(q, saveKey);
   const update = useUpdateDayLogEntry(q);
-  const stop = useStopDayLogEntry(q);
   const remove = useRemoveDayLogEntry(q);
   const [drafts, setDrafts] = useState<Draft[]>(() => [blankDraft()]);
   const [rowErrs, setRowErrs] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [focusKey, setFocusKey] = useState<number | null>(null);
-  const busy = addRows.isPending || update.isPending || stop.isPending || remove.isPending;
+  const busy = addRows.isPending || update.isPending || remove.isPending;
   const isToday = day.date === day.today;
   const filled = drafts.filter(isFilled);
   const dirty = filled.length > 0;
@@ -150,12 +148,6 @@ export function DaySheet({
                   onUpdate={(body: UpdateDayLogEntryInput) =>
                     run(update.mutateAsync({ id: e.id, ...body }), 'Row updated.').then(() =>
                       onEditingId(null),
-                    )
-                  }
-                  onStop={(remarks) =>
-                    run(
-                      stop.mutateAsync(remarks ? { id: e.id, remarks } : { id: e.id }),
-                      'Stopped.',
                     )
                   }
                   onRemove={() => {
