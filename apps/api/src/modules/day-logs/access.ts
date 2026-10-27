@@ -10,10 +10,16 @@
 //   - Manage (Reopen / Leave): Super Admin, or L5 over one of the person's
 //     L2+ departments. An Auditor never.
 
-import { ACCESS_DEPTS, canWriteAnything, normalizeDeptsMap } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
-import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { getMyAccess } from '../access-control/service';
+import { ACCESS_DEPTS, canWriteAnything, isUnconfigured, normalizeDeptsMap } from '@innovic/shared';
+import { type SQL, sql } from 'drizzle-orm';
+import { db } from '../../db/client';
+import {
+  type AuthContext,
+  type DbTransaction,
+  type FrozenAccess,
+  requestScope,
+} from '../../db/with-user-context';
+import { toEffectiveAccess } from '../access-control/my-access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
 export interface Viewer {
@@ -27,12 +33,65 @@ export interface Viewer {
   writer: boolean;
 }
 
-/** Read the caller's access BEFORE a transaction opens (ADR-229). */
-export async function loadViewer(user: AuthContext): Promise<Viewer> {
-  if (user.role === 'admin') {
+/**
+ * The caller's user_access row as ONE json value (a scalar sub-select), so
+ * the access read rides inside the request's first statement instead of
+ * getMyAccess's own transaction (4 round trips). Same row, same filter.
+ */
+export const accessJson = (userId: string, companyId: string): SQL => sql`(
+  SELECT json_build_object('fullAccess', ua.full_access, 'auditor', ua.auditor,
+           'drawingDownload', ua.drawing_download, 'departments', ua.departments,
+           'forms', ua.forms)
+  FROM public.user_access ua
+  WHERE ua.user_id = ${userId}::uuid AND ua.company_id = ${companyId}::uuid
+    AND ua.deleted_at IS NULL
+  LIMIT 1)`;
+
+/**
+ * The caller's access from `row` (accessJson) — exactly what getMyAccess
+ * answers: the request's memo first (ADR-229; tests pre-fill it), else the
+ * row through the same toEffectiveAccess, then remembered for the request.
+ * null for role admin (no read needed — every guard passes them).
+ */
+export async function resolveAccess(user: AuthContext, row: unknown): Promise<FrozenAccess | null> {
+  if (user.role === 'admin') return null;
+  const scope = requestScope(user);
+  if (scope?.myAccess) return scope.myAccess;
+  const r = (row ?? {}) as Record<string, unknown>;
+  const eff = toEffectiveAccess({
+    fullAccess: (r['fullAccess'] as boolean | null) ?? null,
+    auditor: (r['auditor'] as boolean | null) ?? null,
+    drawingDownload: (r['drawingDownload'] as boolean | null) ?? null,
+    departments: r['departments'] ?? null,
+    forms: r['forms'] ?? null,
+  });
+  for (const perms of Object.values(eff.forms)) Object.freeze(perms);
+  Object.freeze(eff.forms);
+  Object.freeze(eff.departments);
+  const frozen: FrozenAccess = Object.freeze(eff);
+  if (scope) scope.myAccess = Promise.resolve(frozen);
+  return frozen;
+}
+
+/** requireCanWrite (lib/access.ts) on access already read — same refusals. */
+export function assertCanWrite(eff: FrozenAccess | null): void {
+  if (!eff) return; // role admin
+  if (eff.auditor) {
+    throw new AuthorizationError('Auditor access is view-only. Ask an admin if you need to save.');
+  }
+  if (isUnconfigured(eff)) {
+    throw new AuthorizationError(
+      'Your account has no access configured yet. Ask an admin to set your ' +
+        'department tiers in Access Control.',
+    );
+  }
+}
+
+/** The Viewer of access already read (resolveAccess). */
+export function viewerOf(user: AuthContext, eff: FrozenAccess | null): Viewer {
+  if (!eff) {
     return { userId: user.id, isSuper: true, auditor: false, l5: new Set(), writer: true };
   }
-  const eff = await getMyAccess(user);
   const tiers = normalizeDeptsMap(eff.departments ?? {});
   const l5 = new Set(
     Object.entries(tiers)
@@ -46,6 +105,22 @@ export async function loadViewer(user: AuthContext): Promise<Viewer> {
     l5,
     writer: canWriteAnything(eff),
   };
+}
+
+const noCompany = (): AuthorizationError =>
+  new AuthorizationError('User is not assigned to a company');
+
+/** The caller's Viewer on its own — ONE statement (none for an admin or a
+ *  request that already read its access). */
+export async function loadViewer(user: AuthContext): Promise<Viewer> {
+  if (user.role === 'admin' || requestScope(user)?.myAccess) {
+    return viewerOf(user, await resolveAccess(user, null));
+  }
+  if (!user.companyId) throw noCompany();
+  const [r] = (await db.execute(
+    sql`SELECT ${accessJson(user.id, user.companyId)} AS access`,
+  )) as unknown as Array<{ access: unknown }>;
+  return viewerOf(user, await resolveAccess(user, r?.access));
 }
 
 /** Tiers that put a person on a Department Admin's team (above L1 viewer). */
@@ -81,6 +156,25 @@ export interface DayUser {
   name: string;
   mainDept: string | null;
   departments: Record<string, unknown>;
+}
+
+/** One user of the company (active or not) as ONE json value (a scalar sub-select). */
+export const dayUserJson = (companyId: string, userId: string): SQL => sql`(
+  SELECT json_build_object('id', u.id::text, 'name', COALESCE(u.full_name, u.email),
+           'mainDept', ua.main_dept, 'departments', COALESCE(ua.departments, '{}'::jsonb))
+  FROM public.users u
+  LEFT JOIN public.user_access ua
+    ON ua.user_id = u.id AND ua.company_id = ${companyId}::uuid AND ua.deleted_at IS NULL
+  WHERE u.id = ${userId}::uuid AND u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL
+  LIMIT 1)`;
+
+export const toDayUser = (json: unknown): DayUser | null => (json ? (json as DayUser) : null);
+
+/** The person whose day is asked for, already read — "not found" when the
+ *  viewer may not see it. */
+export function visibleUser(v: Viewer, u: DayUser | null): DayUser {
+  if (!u || !canSeeUser(v, u)) throw new NotFoundError('Day Log not found');
+  return u;
 }
 
 /** One user of the company (active or not) with their main department. */

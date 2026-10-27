@@ -1,9 +1,9 @@
 // Day Log — what every owner write shares: the guards, the entry lock and
 // the ONE validation of an entry (entries.ts uses it for add and edit).
-// Every write: requireCanWrite (no page tick — ADR-232) → lock the day header
-// FOR UPDATE (openDay / lockHeaderById) → re-read the lines INSIDE that lock
-// → validate → write → bump the header (§20.3). `hours` is written only by
-// entries.ts, from From/To (§20.1).
+// Every write: lock the day header (lock.ts — the same statement reads the
+// access, checked first: assertCanWrite, no page tick — ADR-232) → read the
+// day's snapshot INSIDE that lock → validate in memory → write → bump the
+// header (§20.3). `hours` is written only by entries.ts, from From/To (§20.1).
 
 import {
   DAY_LOG_OTHERS_REASONS,
@@ -15,8 +15,7 @@ import {
   minToHhmm,
   summarizeDay,
 } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
-import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import type { AuthContext } from '../../db/with-user-context';
 import { isUniqueViolation } from '../../lib/db-retry';
 import {
   AuthorizationError,
@@ -24,9 +23,9 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { type Viewer, loadDayUser } from './access';
-import { type DayHeader, type DayLine, lockHeaderById, spansOf } from './day';
-import { buildDetail, findBlockedBy, findStrayOpen, notOpenError } from './detail';
+import type { Viewer } from './access';
+import { type DayHeader, type DayLine, inTimeOrder, spansOf } from './day';
+import { blockedByOf, detailOf, notOpenError, strayOpenOf } from './detail';
 import {
   type DayLogClock,
   breakLimitProblem,
@@ -36,6 +35,7 @@ import {
   istHm,
   lastEntryOf,
 } from './rules';
+import type { DaySnapshot, OpenLine } from './snapshot';
 
 export const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -50,19 +50,13 @@ export const hoursOf = (fromTime: string, toTime: string | null): string =>
 export const uniqueHit = (e: unknown): boolean =>
   isUniqueViolation(e) || isUniqueViolation((e as { cause?: unknown } | null)?.cause);
 
-/** Open day, not in the future, no Open entry left on another day, D3. */
-export async function guardOwnerWrite(
-  tx: DbTransaction,
-  companyId: string,
-  h: DayHeader,
-  today: string,
-): Promise<void> {
+/** Open day, not in the future, no Open entry left on another day, D3 —
+ *  judged on the snapshot read under the day lock. */
+export function guardOwnerWrite(h: DayHeader, snap: DaySnapshot, today: string): void {
   if (h.status !== 'open') throw notOpenError(h);
   if (h.date > today) throw new ValidationError(`${dmy(h.date)} has not come yet`);
-  const [stray, blocked] = await Promise.all([
-    findStrayOpen(tx, companyId, h.userId, today),
-    findBlockedBy(tx, companyId, h.userId, h.date),
-  ]);
+  const stray = strayOpenOf(snap.openLines, today);
+  const blocked = blockedByOf(snap, h.date);
   if (stray && stray.date !== h.date) {
     throw new ConflictError(
       `Your entry on ${dmy(stray.date)} is still Open since ${fmt12(stray.fromTime)} — give it a Stop time first`,
@@ -71,38 +65,35 @@ export async function guardOwnerWrite(
   if (blocked) throw new ConflictError(blocked.reason);
 }
 
-export async function ownerDetail(
-  tx: DbTransaction,
-  companyId: string,
+/**
+ * The owner's DayLogDetail after a write, built in memory from the snapshot
+ * read under the lock plus what the write returned: `lines` are the day's
+ * lines after it. D3 looks only at earlier days, so a write on this day
+ * never changes it; this day's Open entries come from `lines`.
+ */
+export function ownerDetailAfter(
+  snap: DaySnapshot,
+  h: DayHeader,
+  lines: readonly DayLine[],
   v: Viewer,
-  user: AuthContext,
-  date: string,
   clock: DayLogClock,
-): Promise<DayLogDetail> {
-  const me = await loadDayUser(tx, companyId, user.id);
-  if (!me) throw new NotFoundError('User not found');
-  return buildDetail(tx, companyId, v, me, date, clock);
-}
-
-/** The entry's day, locked; owner only (someone else's → not found). */
-export async function lockOwnEntry(
-  tx: DbTransaction,
-  companyId: string,
-  user: AuthContext,
-  entryId: string,
-): Promise<DayHeader> {
-  const rows = (await tx.execute(sql`
-    SELECT l.daily_report_id::text AS report_id FROM public.daily_report_lines l
-    JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
-    WHERE l.id = ${entryId}::uuid AND l.company_id = ${companyId}::uuid AND l.deleted_at IS NULL
-      AND dr.user_id = ${user.id}::uuid
-  `)) as unknown as Array<{ report_id: string }>;
-  const reportId = rows[0]?.report_id;
-  if (!reportId) throw new NotFoundError('Entry not found');
-  // The day lock (§20.3).
-  const h = await lockHeaderById(tx, companyId, reportId);
-  if (!h) throw new NotFoundError('Entry not found');
-  return h;
+): DayLogDetail {
+  if (!snap.target) throw new NotFoundError('User not found');
+  const ordered = inTimeOrder(lines);
+  const openLines: OpenLine[] = [
+    ...snap.openLines.filter((o) => o.date !== h.date),
+    ...ordered
+      .filter((l) => l.fromTime && !l.toTime)
+      .map((l) => ({ id: l.id, date: h.date, fromTime: l.fromTime! })),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return detailOf(
+    { header: h, lines: ordered, holidays: snap.holidays, openLines },
+    blockedByOf(snap, h.date),
+    v,
+    snap.target,
+    h.date,
+    clock,
+  );
 }
 
 /** 409 for an edit whose loaded updatedAt is no longer the entry's (§20.4). */
@@ -123,23 +114,12 @@ export interface EntryCandidate {
 }
 
 /** The caller's Open entry on ANY day other than `exceptId` (one at a time). */
-async function openElsewhere(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
+function openElsewhere(
+  openLines: readonly OpenLine[],
   exceptId: string | null,
-): Promise<{ date: string; fromTime: string } | null> {
-  const rows = (await tx.execute(sql`
-    SELECT to_char(dr.report_date, 'YYYY-MM-DD') AS d, to_char(l.from_time, 'HH24:MI') AS f
-    FROM public.daily_report_lines l
-    JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
-    WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
-      AND l.to_time IS NULL AND l.from_time IS NOT NULL AND l.deleted_at IS NULL
-      ${exceptId ? sql`AND l.id <> ${exceptId}::uuid` : sql``}
-    LIMIT 1
-  `)) as unknown as Array<{ d: string; f: string }>;
-  const r = rows[0];
-  return r ? { date: r.d, fromTime: r.f } : null;
+): { date: string; fromTime: string } | null {
+  const r = openLines.find((l) => l.id !== exceptId);
+  return r ? { date: r.date, fromTime: r.fromTime } : null;
 }
 
 /**
@@ -235,15 +215,14 @@ function checkFields(cand: EntryCandidate): void {
  * Every rule of one entry, checked under the day lock against the day's
  * OTHER live lines (`others` excludes `self`, the entry being edited).
  */
-export async function validateEntry(
-  tx: DbTransaction,
-  companyId: string,
+export function validateEntry(
   h: DayHeader,
   others: readonly DayLine[],
   cand: EntryCandidate,
   self: DayLine | null,
   clock: DayLogClock,
-): Promise<void> {
+  openLines: readonly OpenLine[],
+): void {
   const isToday = h.date === clock.today;
   const nowMin = isToday ? clock.nowMin : undefined;
   const nowHm = fmt12(minToHhmm(clock.nowMin));
@@ -266,7 +245,7 @@ export async function validateEntry(
     throw new ValidationError(`Give a Stop time — ${dmy(h.date)} is over`);
   }
   if (!cand.toTime) {
-    const open = await openElsewhere(tx, companyId, h.userId, self?.id ?? null);
+    const open = openElsewhere(openLines, self?.id ?? null);
     if (open) {
       const where = open.date === h.date ? '' : ` on ${dmy(open.date)}`;
       throw new ConflictError(

@@ -1,6 +1,8 @@
-// Day Log — reading one day, opening it and locking it. Every write goes
-// through openDay / readHeader(lock) / lockHeaderById, so the header row lock
-// (§20.3) is taken in one place.
+// Day Log — the day header, the line / holiday SQL every read shares, and
+// opening / locking one day. The owner's entry writes lock through lock.ts;
+// Submit / Reopen / Leave through openDay / readHeader(lock) here (§20.3).
+// Reads are sub-selects returning json so one statement carries many facts
+// (each round trip to the database is the cost — owner 2026-10-27).
 
 import {
   DAY_LOG_RULES,
@@ -9,7 +11,7 @@ import {
   type DayLogSpan,
   type DayLogStatus,
 } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError } from '../../lib/errors';
 import { hm } from './rules';
@@ -41,6 +43,9 @@ export interface DayLine {
   /** Saved more than lateAfterMin after its Stop (never for an Open entry). */
   late: boolean;
   updatedAt: string;
+  /** Stored line_no — the tie-break of the time order (lastEntryOf).
+   *  Absent only on a line that is not stored (a batch row being judged). */
+  lineNo?: number;
 }
 
 export const iso = (v: unknown): string | null =>
@@ -50,7 +55,7 @@ export const iso = (v: unknown): string | null =>
       ? v.toISOString()
       : new Date(String(v)).toISOString();
 
-const HEADER_COLS = sql`
+export const HEADER_COLS = sql`
   dr.id::text AS id, dr.user_id::text AS user_id, to_char(dr.report_date, 'YYYY-MM-DD') AS date,
   dr.day_status AS status, dr.submitted_at, dr.reopened_at, dr.reopen_reason, dr.leave_reason,
   dr.updated_at,
@@ -58,7 +63,7 @@ const HEADER_COLS = sql`
   (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = dr.reopened_by) AS reopened_by_name,
   (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = dr.updated_by) AS updated_by_name`;
 
-function toHeader(r: Record<string, unknown>): DayHeader {
+export function toHeader(r: Record<string, unknown>): DayHeader {
   return {
     id: String(r['id']),
     userId: String(r['user_id']),
@@ -93,21 +98,6 @@ export async function readHeader(
   return rows[0] ? toHeader(rows[0]) : null;
 }
 
-/** Lock a header by id (§20.3 — every write takes this lock first). */
-export async function lockHeaderById(
-  tx: DbTransaction,
-  companyId: string,
-  id: string,
-): Promise<DayHeader | null> {
-  const rows = (await tx.execute(sql`
-    SELECT ${HEADER_COLS}
-    FROM public.daily_reports dr
-    WHERE dr.id = ${id}::uuid AND dr.company_id = ${companyId}::uuid AND dr.deleted_at IS NULL
-    FOR UPDATE OF dr
-  `)) as unknown as Array<Record<string, unknown>>;
-  return rows[0] ? toHeader(rows[0]) : null;
-}
-
 /**
  * Open (user, date) for writing: insert the header if it is missing (ON
  * CONFLICT on daily_reports_user_day_uq — two first entries at once open ONE
@@ -130,66 +120,98 @@ export async function openDay(
   return h;
 }
 
-/** Bump the header so Realtime (daily_reports in LIVE_TABLES) tells every screen. */
-export async function touchDay(tx: DbTransaction, id: string, actor: AuthContext): Promise<void> {
-  await tx.execute(sql`
-    UPDATE public.daily_reports SET updated_at = now(), updated_by = ${actor.id}::uuid
-    WHERE id = ${id}::uuid
-  `);
+/** A timestamptz as the ISO string iso() gives (ms truncated, like the
+ *  driver's Date) — inside JSON, where the driver does not parse it. */
+export const ts = (col: string): SQL =>
+  sql.raw(`to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`);
+
+/** LATE: saved more than lateAfterMin after (report date + Stop), India time. */
+export const lateSql = (reportDate: SQL, toTime: SQL, updatedAt: SQL): SQL => sql`
+  (${toTime} IS NOT NULL AND ${updatedAt} >
+     ((${reportDate} + ${toTime}) AT TIME ZONE 'Asia/Kolkata')
+     + make_interval(mins => ${DAY_LOG_RULES.lateAfterMin}::int))`;
+
+/**
+ * The live lines matching `where` as ONE json array (a scalar sub-select, so
+ * it rides inside a bigger statement), in time order per day. `where` sees
+ * l (line), dr (its day), so / jw.
+ */
+export const linesJson = (companyId: string, where: SQL): SQL => sql`(
+  SELECT COALESCE(json_agg(json_build_object(
+           'id', l.id::text, 'report_id', l.daily_report_id::text, 'line_no', l.line_no,
+           'kind', l.kind, 'from_time', to_char(l.from_time, 'HH24:MI'),
+           'to_time', to_char(l.to_time, 'HH24:MI'), 'description', l.description,
+           'remarks', l.remarks, 'updated_at', ${ts('l.updated_at')},
+           'so_id', so.id::text, 'so_code', so.code, 'jw_id', jw.id::text, 'jw_code', jw.code,
+           'late', ${lateSql(sql`dr.report_date`, sql`l.to_time`, sql`l.updated_at`)})
+         ORDER BY l.daily_report_id, l.from_time NULLS LAST, l.line_no), '[]'::json)
+  FROM public.daily_report_lines l
+  JOIN public.daily_reports dr ON dr.id = l.daily_report_id
+  LEFT JOIN public.sales_orders so ON so.id = l.sales_order_id
+  LEFT JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
+  WHERE l.company_id = ${companyId}::uuid AND l.deleted_at IS NULL AND ${where})`;
+
+/** One element of linesJson → a DayLine. */
+export function toLine(r: Record<string, unknown>): DayLine {
+  const order: DayLogOrder | null = r['so_id']
+    ? { type: 'so', id: String(r['so_id']), code: String(r['so_code']) }
+    : r['jw_id']
+      ? { type: 'jwso', id: String(r['jw_id']), code: String(r['jw_code']) }
+      : null;
+  return {
+    id: String(r['id']),
+    reportId: String(r['report_id']),
+    kind: r['kind'] as DayLogEntryKind,
+    fromTime: hm(r['from_time'] as string | null),
+    toTime: hm(r['to_time'] as string | null),
+    description: String(r['description'] ?? ''),
+    remarks: (r['remarks'] as string | null) ?? null,
+    order,
+    late: r['late'] === true,
+    updatedAt: iso(r['updated_at'])!,
+    lineNo: Number(r['line_no'] ?? 0),
+  };
 }
 
-/** Next line_no under the header lock (keeps daily_report_lines_line_uq). */
-export async function nextLineNo(tx: DbTransaction, reportId: string): Promise<number> {
-  const [r] = (await tx.execute(sql`
-    SELECT COALESCE(max(line_no), 0)::int + 1 AS n FROM public.daily_report_lines
-    WHERE daily_report_id = ${reportId}::uuid AND deleted_at IS NULL
-  `)) as unknown as Array<{ n: number }>;
-  return Number(r?.n ?? 1);
+export const toLines = (json: unknown): DayLine[] =>
+  ((json as Array<Record<string, unknown>> | null) ?? []).map(toLine);
+
+/** Lines grouped by their day (report id). */
+export function linesByReport(lines: readonly DayLine[]): Map<string, DayLine[]> {
+  const by = new Map<string, DayLine[]>();
+  for (const l of lines) {
+    const arr = by.get(l.reportId) ?? [];
+    arr.push(l);
+    by.set(l.reportId, arr);
+  }
+  return by;
 }
 
-/** The live lines of many days in ONE read, in time order per day. LATE:
- *  created more than lateAfterMin after (report date + Stop) in India time. */
+/** The SQL order (From, NULLs last, then line_no) — for lines changed in memory. */
+export const inTimeOrder = (lines: readonly DayLine[]): DayLine[] =>
+  [...lines].sort((a, b) =>
+    a.fromTime === b.fromTime
+      ? (a.lineNo ?? 0) - (b.lineNo ?? 0)
+      : a.fromTime === null
+        ? 1
+        : b.fromTime === null
+          ? -1
+          : a.fromTime < b.fromTime
+            ? -1
+            : 1,
+  );
+
+/** The live lines of many days in ONE read, in time order per day. */
 export async function loadLinesFor(
   tx: DbTransaction,
   companyId: string,
   reportIds: readonly string[],
 ): Promise<DayLine[]> {
   if (reportIds.length === 0) return [];
-  const rows = (await tx.execute(sql`
-    SELECT l.id::text AS id, l.daily_report_id::text AS report_id, l.kind,
-           to_char(l.from_time, 'HH24:MI') AS from_time, to_char(l.to_time, 'HH24:MI') AS to_time,
-           l.description, l.remarks, l.updated_at,
-           so.id::text AS so_id, so.code AS so_code, jw.id::text AS jw_id, jw.code AS jw_code,
-           (l.to_time IS NOT NULL AND l.updated_at >
-              ((dr.report_date + l.to_time) AT TIME ZONE 'Asia/Kolkata')
-              + make_interval(mins => ${DAY_LOG_RULES.lateAfterMin}::int)) AS late
-    FROM public.daily_report_lines l
-    JOIN public.daily_reports dr ON dr.id = l.daily_report_id
-    LEFT JOIN public.sales_orders so ON so.id = l.sales_order_id
-    LEFT JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
-    WHERE l.daily_report_id = ANY(${sql.param([...reportIds])}::uuid[])
-      AND l.company_id = ${companyId}::uuid AND l.deleted_at IS NULL
-    ORDER BY l.daily_report_id, l.from_time NULLS LAST, l.line_no
-  `)) as unknown as Array<Record<string, unknown>>;
-  return rows.map((r) => {
-    const order: DayLogOrder | null = r['so_id']
-      ? { type: 'so', id: String(r['so_id']), code: String(r['so_code']) }
-      : r['jw_id']
-        ? { type: 'jwso', id: String(r['jw_id']), code: String(r['jw_code']) }
-        : null;
-    return {
-      id: String(r['id']),
-      reportId: String(r['report_id']),
-      kind: r['kind'] as DayLogEntryKind,
-      fromTime: hm(r['from_time'] as string | null),
-      toTime: hm(r['to_time'] as string | null),
-      description: String(r['description'] ?? ''),
-      remarks: (r['remarks'] as string | null) ?? null,
-      order,
-      late: r['late'] === true,
-      updatedAt: iso(r['updated_at'])!,
-    };
-  });
+  const [r] = (await tx.execute(sql`
+    SELECT ${linesJson(companyId, sql`l.daily_report_id = ANY(${sql.param([...reportIds])}::uuid[])`)} AS lines
+  `)) as unknown as Array<{ lines: unknown }>;
+  return toLines(r?.lines);
 }
 
 /** One day's live lines, in time order. */
@@ -223,3 +245,13 @@ export async function holidaysBetween(
   `)) as unknown as Array<{ d: string; name: string }>;
   return new Map(rows.map((r) => [r.d, r.name]));
 }
+
+/** Holidays in [from, to] as ONE json object { "YYYY-MM-DD": name } (a scalar sub-select). */
+export const holidaysJson = (companyId: string, from: string, to: string): SQL => sql`(
+  SELECT COALESCE(json_object_agg(to_char(holiday_date, 'YYYY-MM-DD'), name), '{}'::json)
+  FROM public.company_holidays
+  WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+    AND holiday_date BETWEEN ${from}::date AND ${to}::date)`;
+
+export const toHolidays = (json: unknown): Map<string, string> =>
+  new Map(Object.entries((json as Record<string, string> | null) ?? {}));

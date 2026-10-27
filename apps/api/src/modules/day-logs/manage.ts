@@ -19,10 +19,18 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireCanWrite } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { loadViewer, requireManagedUser, requireVisibleUser } from './access';
+import {
+  loadViewer,
+  requireManagedUser,
+  requireVisibleUser,
+  resolveAccess,
+  viewerOf,
+  visibleUser,
+} from './access';
 import { holidaysBetween, loadLines, openDay, readHeader, spansOf } from './day';
-import { buildDetail, findBlockedBy, notOpenError } from './detail';
+import { blockedByOf, buildDetail, detailOf, findBlockedBy, notOpenError } from './detail';
 import { type DayLogClock, dmy, firstGap, istClock } from './rules';
+import { readSnapshot } from './snapshot';
 import { requireCompany } from './writes';
 
 /** Reopen / Leave body. Kept here: the shared contract (day-log.ts) no longer
@@ -35,19 +43,24 @@ export const dayLogReasonInputSchema = z.object({
 export type DayLogReasonInput = z.infer<typeof dayLogReasonInputSchema>;
 
 /** GET a day. Creates nothing: a day with no header reads as Open with no
- *  entries. Someone else's day → not found unless allowed. */
+ *  entries. Someone else's day → not found unless allowed. ONE statement:
+ *  the viewer's access and the whole day (snapshot.ts), judged in memory. */
 export async function getDay(
   query: DayLogQuery,
   user: AuthContext,
   clock: DayLogClock = istClock(), // tests only — routes never pass it
 ): Promise<DayLogDetail> {
   const companyId = requireCompany(user);
-  const v = await loadViewer(user); // before the tx (ADR-229)
   const date = query.date ?? clock.today;
-  return withUserContext(user, async (tx) => {
-    const target = await requireVisibleUser(tx, companyId, v, query.userId ?? user.id);
-    return buildDetail(tx, companyId, v, target, date, clock);
+  const snap = await readSnapshot({
+    companyId,
+    viewerId: user.id,
+    targetId: query.userId ?? user.id,
+    date,
   });
+  const v = viewerOf(user, await resolveAccess(user, snap.access));
+  const target = visibleUser(v, snap.target);
+  return detailOf(snap, blockedByOf(snap, date), v, target, date, clock);
 }
 
 /** Submit Day: nothing Open and 09:00–18:00 fully covered (work + break).

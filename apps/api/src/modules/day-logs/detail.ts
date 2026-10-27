@@ -1,5 +1,6 @@
 // Day Log — the D3 check (an unfinished earlier working day), the stray
-// Open entry on an earlier day, the entry shape and the whole DayLogDetail.
+// Open entry on an earlier day, the entry shape and the whole DayLogDetail —
+// all judged in memory on one snapshot (snapshot.ts).
 
 import {
   DAY_LOG_LATE_COMING,
@@ -12,84 +13,55 @@ import {
   minToHhmm,
   summarizeDay,
 } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ConflictError } from '../../lib/errors';
 import { addDays } from '../dashboard/personal/util';
 import { type DayUser, type Viewer, canManageUser, deptLabelOf } from './access';
-import {
-  type DayHeader,
-  type DayLine,
-  holidaysBetween,
-  loadLines,
-  readHeader,
-  spansOf,
-} from './day';
+import { type DayHeader, type DayLine, spansOf } from './day';
 import { dmy, entryMinutes, istHm, lastEntryOf } from './rules';
+import { type DaySnapshot, LOOKBACK_DAYS, type OpenLine, readSnapshot } from './snapshot';
 
-/** How far back the D3 look-up walks for the previous working day. */
-const LOOKBACK_DAYS = 40;
 /**
  * D3 — the user's most recent working day before `date` must be finished
  * (submitted, Leave, or nothing missing). Never blocks someone with no day
- * before `date` at all (a new user).
+ * before `date` at all (a new user). Judged on the snapshot of `date`.
  */
-export async function findBlockedBy(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
+export function blockedByOf(
+  snap: DaySnapshot,
   date: string,
-): Promise<{ date: string; reason: string } | null> {
-  // The "any earlier day" check and the holidays go in one pipelined trip.
-  const [anyRows, hol] = await Promise.all([
-    tx.execute(sql`
-    SELECT EXISTS (
-      SELECT 1 FROM public.daily_reports dr
-      WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
-        AND dr.report_date < ${date}::date AND dr.deleted_at IS NULL
-        -- an empty day (every entry removed) does not start the rule
-        AND (dr.day_status <> 'open' OR EXISTS (
-          SELECT 1 FROM public.daily_report_lines l
-          WHERE l.daily_report_id = dr.id AND l.kind = 'work' AND l.deleted_at IS NULL))
-    ) AS has
-  `) as unknown as Promise<Array<{ has: boolean }>>,
-    holidaysBetween(tx, companyId, addDays(date, -LOOKBACK_DAYS), addDays(date, -1)),
-  ]);
-  if (!anyRows[0]?.has) return null;
-
-  const holDates = [...hol.keys()];
+): { date: string; reason: string } | null {
+  if (!snap.hasEarlier) return null;
+  const holDates = [...snap.holidays.keys()];
   let prev = addDays(date, -1);
   for (let i = 0; i < LOOKBACK_DAYS && !isWorkingDay(prev, holDates); i += 1)
     prev = addDays(prev, -1);
-
   // D3 — the day must be Submitted (or Leave), not merely filled.
-  const h = await readHeader(tx, companyId, userId, prev);
-  if (h && h.status !== 'open') return null;
+  const status = snap.earlier.get(prev);
+  if (status && status !== 'open') return null;
   return {
     date: prev,
     reason: `${dmy(prev)} is not finished — complete and submit it, or ask your Department Admin to mark Leave`,
   };
 }
 
-/** An entry (work or break) left Open on a day before `today`. */
-export async function findStrayOpen(
+/** D3 on its own (Submit) — one statement. */
+export async function findBlockedBy(
   tx: DbTransaction,
   companyId: string,
   userId: string,
+  date: string,
+): Promise<{ date: string; reason: string } | null> {
+  const snap = await readSnapshot({ companyId, viewerId: null, targetId: userId, date }, tx);
+  return blockedByOf(snap, date);
+}
+
+/** An entry (work or break) left Open on a day before `today`. */
+export function strayOpenOf(
+  openLines: readonly OpenLine[],
   today: string,
-): Promise<{ date: string; entryId: string; fromTime: string } | null> {
-  const rows = (await tx.execute(sql`
-    SELECT to_char(dr.report_date, 'YYYY-MM-DD') AS d, l.id::text AS id,
-           to_char(l.from_time, 'HH24:MI') AS f
-    FROM public.daily_report_lines l
-    JOIN public.daily_reports dr ON dr.id = l.daily_report_id AND dr.deleted_at IS NULL
-    WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
-      AND dr.report_date < ${today}::date
-      AND l.to_time IS NULL AND l.from_time IS NOT NULL AND l.deleted_at IS NULL
-    ORDER BY dr.report_date DESC LIMIT 1
-  `)) as unknown as Array<{ d: string; id: string; f: string }>;
-  const r = rows[0];
-  return r ? { date: r.d, entryId: r.id, fromTime: r.f } : null;
+): { date: string; entryId: string; fromTime: string } | null {
+  const r = openLines.find((l) => l.date < today); // latest day first
+  return r ? { date: r.date, entryId: r.id, fromTime: r.fromTime } : null;
 }
 
 /** `nowMin` only when the line's day is today (an Open entry counts to now). */
@@ -139,24 +111,19 @@ export function summaryOf(
   };
 }
 
-/** The whole DayLogDetail for (target, date), as the viewer sees it. */
-export async function buildDetail(
-  tx: DbTransaction,
-  companyId: string,
+/** The whole DayLogDetail for (target, date), as the viewer sees it, from
+ *  a snapshot of that day (read, or brought up to date after a write). */
+export function detailOf(
+  snap: Pick<DaySnapshot, 'header' | 'lines' | 'holidays' | 'openLines'>,
+  blockedBy: { date: string; reason: string } | null,
   v: Viewer,
   target: DayUser,
   date: string,
   clock: { today: string; nowMin: number },
-): Promise<DayLogDetail> {
-  // Independent reads, pipelined on the one connection (one round trip).
-  const [header, hol, blockedBy, strayOpen] = await Promise.all([
-    readHeader(tx, companyId, target.id, date),
-    holidaysBetween(tx, companyId, date, date),
-    findBlockedBy(tx, companyId, target.id, date),
-    findStrayOpen(tx, companyId, target.id, clock.today),
-  ]);
-  const lines = header ? await loadLines(tx, companyId, header.id) : [];
-  const holidayName = hol.get(date) ?? null;
+): DayLogDetail {
+  const { header, lines } = snap;
+  const strayOpen = strayOpenOf(snap.openLines, clock.today);
+  const holidayName = snap.holidays.get(date) ?? null;
   const workingDay = isWorkingDay(date, holidayName ? [date] : []);
   const nowMin = date === clock.today ? clock.nowMin : undefined;
   const status: DayLogStatus = header?.status ?? 'open';
@@ -196,6 +163,19 @@ export async function buildDetail(
     canManage: canManageUser(v, target) && (!isOwner || v.isSuper),
     lastEntryId: lastEntryOf(lines.filter((l) => l.fromTime))?.id ?? null,
   };
+}
+
+/** detailOf on a fresh read — ONE statement (Submit / Reopen / Leave). */
+export async function buildDetail(
+  tx: DbTransaction,
+  companyId: string,
+  v: Viewer,
+  target: DayUser,
+  date: string,
+  clock: { today: string; nowMin: number },
+): Promise<DayLogDetail> {
+  const snap = await readSnapshot({ companyId, viewerId: null, targetId: target.id, date }, tx);
+  return detailOf(snap, blockedByOf(snap, date), v, target, date, clock);
 }
 
 /** 409 for a write on a day that is not open, naming who closed it and when. */
