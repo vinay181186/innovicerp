@@ -98,6 +98,7 @@ export async function getTeam(
         leaveMin: s.leaveMin,
         entryCount: s.entryCount,
         lateCount: s.lateCount,
+        lateInMin: s.lateInMin,
       };
     });
 

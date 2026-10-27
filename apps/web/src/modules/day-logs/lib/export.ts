@@ -13,6 +13,7 @@ import {
 } from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
 import { PAST_STATUS_LABEL } from './format';
+import { entryTypeText } from './sheet';
 
 export interface ExportTable {
   /** Column keys deliberately avoid a `status` / `type` suffix: rowsToCsv
@@ -40,8 +41,9 @@ export function dayTable(day: DayLogDetail): ExportTable {
       start_time: fmt12(e.fromTime),
       stop_time: e.toTime ? fmt12(e.toTime) : '',
       time: fmtDuration(e.minutes),
-      kind: DAY_LOG_ENTRY_KIND_LABELS[e.kind],
-      work: e.description,
+      kind: entryTypeText(e),
+      // An Others row's description is its reason — already in Type.
+      work: e.kind === 'leave' ? '' : e.description,
       order_code: e.order?.code ?? '',
       entry_state: e.toTime ? 'Closed' : 'Open',
       late: e.late ? 'LATE' : '',
@@ -59,7 +61,8 @@ export const TEAM_COLUMNS = [
   { key: 'last_stop', label: 'Last stop' },
   { key: 'work_hours', label: 'Working hours' },
   { key: 'break_min', label: 'Break' },
-  { key: 'leave_min', label: 'Leave' },
+  { key: 'leave_min', label: DAY_LOG_ENTRY_KIND_LABELS.leave },
+  { key: 'late_in', label: 'Late in' },
   { key: 'entries', label: 'Entries' },
   { key: 'late', label: 'Late' },
 ];
@@ -82,6 +85,7 @@ export function teamTable(team: TeamDayLogResponse): ExportTable {
       work_hours: fmtDuration(r.workMin),
       break_min: `${r.breakMin} min`,
       leave_min: r.leaveMin > 0 ? fmtDuration(r.leaveMin) : '',
+      late_in: r.lateInMin > 0 ? `${r.lateInMin} min` : '',
       entries: String(r.entryCount),
       late: r.lateCount > 0 ? String(r.lateCount) : '',
     })),

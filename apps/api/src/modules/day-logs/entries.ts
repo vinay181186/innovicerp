@@ -12,6 +12,7 @@ import {
   type DayLogDetail,
   type DayLogEntryKind,
   type DayLogOrderType,
+  type StopDayLogEntryInput,
   type UpdateDayLogEntryInput,
   fmt12,
   hhmmToMin,
@@ -53,10 +54,10 @@ import {
   validateEntry,
 } from './writes';
 
-type EntryFields = Omit<AddDayLogEntryInput, 'date'>;
+export type EntryFields = Omit<AddDayLogEntryInput, 'date'>;
 
 /** The stored shape of one entry's fields. */
-interface Row {
+export interface Row {
   kind: DayLogEntryKind;
   description: string;
   fromTime: string;
@@ -69,7 +70,7 @@ interface Row {
 
 /** Validate the fields under the lock and resolve the order (409 unless it is
  *  open — an order the entry already had is kept even if it closed since). */
-async function prepare(
+export async function prepare(
   tx: DbTransaction,
   companyId: string,
   h: DayHeader,
@@ -82,12 +83,21 @@ async function prepare(
   const others = lines.filter((l) => l.id !== self?.id);
   const orderType: DayLogOrderType | null = input.orderType ?? null;
   const orderId = input.orderId ?? null;
+  const description = input.description || (input.kind === 'break' ? 'Break' : '');
+  const remarks = input.remarks?.trim() || null;
   await validateEntry(
     tx,
     companyId,
     h,
     others,
-    { kind: input.kind, fromTime: input.startTime, toTime, hasOrder: !!orderId },
+    {
+      kind: input.kind,
+      fromTime: input.startTime,
+      toTime,
+      hasOrder: !!orderId,
+      description,
+      remarks,
+    },
     self,
     clock,
   );
@@ -100,22 +110,23 @@ async function prepare(
   }
   return {
     kind: input.kind,
-    description:
-      input.description ||
-      (input.kind === 'break' ? 'Break' : input.kind === 'leave' ? 'Leave' : ''),
+    description,
     fromTime: input.startTime,
     toTime,
-    remarks: input.remarks || null,
+    remarks,
     soId: orderType === 'so' ? orderId : null,
     jwId: orderType === 'jwso' ? orderId : null,
     orderCode,
   };
 }
 
-const label = (r: { fromTime: string; toTime: string | null; description: string }): string =>
-  `${fmt12(r.fromTime)}–${r.toTime ? fmt12(r.toTime) : 'Open'} ${r.description}`;
+export const label = (r: {
+  fromTime: string;
+  toTime: string | null;
+  description: string;
+}): string => `${fmt12(r.fromTime)}–${r.toTime ? fmt12(r.toTime) : 'Open'} ${r.description}`;
 
-async function log(
+export async function log(
   tx: DbTransaction,
   companyId: string,
   user: AuthContext,
@@ -138,7 +149,7 @@ async function log(
 }
 
 /** A second Open entry racing past the code check hits daily_report_lines_open_uq. */
-async function guardUnique<T>(fn: () => Promise<T>): Promise<T> {
+export async function guardUnique<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
@@ -237,6 +248,7 @@ export async function updateEntry(
  *  ran (the CHECK refuses a 0-minute line), so it is removed. */
 export async function stopEntry(
   entryId: string,
+  input: StopDayLogEntryInput,
   user: AuthContext,
   clock: DayLogClock = istClock(),
 ): Promise<DayLogDetail> {
@@ -255,6 +267,11 @@ export async function stopEntry(
     }
     const nowHm = minToHhmm(clock.nowMin);
     const removed = clock.nowMin <= hhmmToMin(self.fromTime);
+    // The remark is compulsory on a stopped Work entry (kept if it has one).
+    const remarks = input.remarks?.trim() || self.remarks?.trim() || null;
+    if (!removed && self.kind !== 'break' && !remarks) {
+      throw new ValidationError('Remark is compulsory when you stop');
+    }
     if (!removed && self.kind === 'break') {
       const lines = await loadLines(tx, companyId, h.id);
       const problem = breakLimitProblem(
@@ -277,7 +294,7 @@ export async function stopEntry(
         : sql`
           UPDATE public.daily_report_lines
           SET to_time = ${nowHm}::time, status = 'completed', hours = ${hoursOf(self.fromTime, nowHm)},
-              updated_at = now(), updated_by = ${user.id}::uuid
+              remarks = ${remarks}, updated_at = now(), updated_by = ${user.id}::uuid
           WHERE id = ${entryId}::uuid AND to_time IS NULL AND deleted_at IS NULL
           RETURNING id`,
     )) as unknown as unknown[];

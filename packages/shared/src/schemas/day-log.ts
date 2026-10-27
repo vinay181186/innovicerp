@@ -12,11 +12,18 @@
 //     removed; earlier entries may change their text / SO / remark. Never
 //     past now. Breaks total at most DAY_LOG_RULES.breakLimitMin a day.
 //   - Times are stored 24-hour "HH:MM" and SHOWN as "09:00 AM" (fmt12).
-//   - LEAVE (owner 2026-10-26, option A): a third Type for leaving early /
-//     half day / permission. Starts at nextStart like any entry, always ends
-//     at workTo (06:00 PM) — it may be entered before that time comes — has
-//     no SO, is never Open, and is the day's LAST entry. It covers time for
-//     Submit but counts as neither work nor break (leaveMin).
+//   - OTHERS (kind 'leave', shown "Others"; owner 2026-10-27): late coming /
+//     half day / full day / permission / personal. Its description IS the
+//     reason (DAY_LOG_OTHERS_REASONS). Starts at nextStart like any entry; the
+//     user sets its Stop (≤ 06:00 PM) — it may end in the future; no SO; never
+//     Open; work may follow it once the time has come. It covers time for
+//     Submit but counts as neither work nor break (leaveMin). A day whose
+//     first entry is Others · Late coming has lateInMin.
+//   - ONE SHEET: many new rows are saved together (addDayLogEntriesInputSchema)
+//     — all or nothing; each row starts where the previous ended; only the
+//     last row may be left Open.
+//   - REMARK is compulsory on every Work / Others entry that has a Stop time,
+//     and when an Open entry is stopped.
 //   - An entry saved more than lateAfterMin after its Stop time is LATE.
 //   - Submit Day needs 09:00–18:00 fully covered (work + break) and nothing
 //     Open; it locks the day. Only the owner writes the log.
@@ -59,8 +66,19 @@ export type DayLogEntryKind = (typeof DAY_LOG_ENTRY_KINDS)[number];
 export const DAY_LOG_ENTRY_KIND_LABELS: Record<DayLogEntryKind, string> = {
   work: 'Work',
   break: 'Break',
-  leave: 'Leave',
+  leave: 'Others',
 };
+
+/** The reason an Others entry is for — stored as its description. */
+export const DAY_LOG_OTHERS_REASONS = [
+  'Late coming',
+  'Half day',
+  'Full day',
+  'Permission',
+  'Personal',
+] as const;
+export type DayLogOthersReason = (typeof DAY_LOG_OTHERS_REASONS)[number];
+export const DAY_LOG_LATE_COMING = 'Late coming' satisfies DayLogOthersReason;
 
 export const DAY_LOG_ORDER_TYPES = ['so', 'jwso'] as const;
 export type DayLogOrderType = (typeof DAY_LOG_ORDER_TYPES)[number];
@@ -83,7 +101,7 @@ export const DAY_LOG_CURRENT_STATUS_LABELS: Record<DayLogCurrentStatus, string> 
   idle: 'Idle',
   not_started: 'Not started',
   submitted: 'Submitted',
-  leave: 'Leave',
+  leave: 'Others',
 };
 
 // ── Time helpers ────────────────────────────────────────────────────────────
@@ -256,6 +274,16 @@ function entryRules<T extends z.ZodTypeAny>(schema: T): T {
       { message: 'Write what you worked on', path: ['description'] },
     )
     .refine(
+      (v: { kind: DayLogEntryKind; description: string }) =>
+        v.kind !== 'leave' || (DAY_LOG_OTHERS_REASONS as readonly string[]).includes(v.description),
+      { message: 'Pick the reason (Late coming, Half day…)', path: ['description'] },
+    )
+    .refine(
+      (v: { kind: DayLogEntryKind; stopTime?: string | null; remarks?: string | null }) =>
+        v.kind === 'break' || !v.stopTime || (v.remarks ?? '').trim().length > 0,
+      { message: 'Remark is compulsory when Start and Stop are filled', path: ['remarks'] },
+    )
+    .refine(
       (v: { startTime: string; stopTime?: string | null }) =>
         !v.stopTime || hhmmToMin(v.stopTime) > hhmmToMin(v.startTime),
       { message: 'Stop time must be after Start time', path: ['stopTime'] },
@@ -277,6 +305,31 @@ export const updateDayLogEntryInputSchema = entryRules(
   }),
 );
 export type UpdateDayLogEntryInput = z.infer<typeof updateDayLogEntryInputSchema>;
+
+/** One row of the sheet. Its Start is the previous row's Stop (the first
+ *  row: the day's nextStart) — the server works it out, never the screen. */
+const sheetRowSchema = z.object({
+  kind: entryFields.kind,
+  description: entryFields.description,
+  stopTime: entryFields.stopTime,
+  orderType: entryFields.orderType,
+  orderId: entryFields.orderId,
+  remarks: entryFields.remarks,
+});
+export type DayLogSheetRow = z.infer<typeof sheetRowSchema>;
+
+/** Save several new rows at once — all or nothing. */
+export const addDayLogEntriesInputSchema = z.object({
+  date: dateStr,
+  rows: z.array(sheetRowSchema).min(1).max(40),
+});
+export type AddDayLogEntriesInput = z.infer<typeof addDayLogEntriesInputSchema>;
+
+/** ■ Stop an Open entry: the remark is compulsory (kept if it has one). */
+export const stopDayLogEntryInputSchema = z.object({
+  remarks: z.string().trim().max(2000).nullish(),
+});
+export type StopDayLogEntryInput = z.infer<typeof stopDayLogEntryInputSchema>;
 
 export const dayLogDateInputSchema = z.object({ date: dateStr });
 export type DayLogDateInput = z.infer<typeof dayLogDateInputSchema>;
@@ -353,6 +406,8 @@ export const dayLogSummarySchema = z.object({
   entryCount: z.number().int(),
   nextStart: z.string().nullable(),
   lateCount: z.number().int(),
+  /** Minutes of a first-entry Others · Late coming (0 when none). */
+  lateInMin: z.number().int(),
 });
 export type DayLogSummaryOut = z.infer<typeof dayLogSummarySchema>;
 
@@ -415,6 +470,7 @@ export const teamDayLogRowSchema = z.object({
   leaveMin: z.number().int(),
   entryCount: z.number().int(),
   lateCount: z.number().int(),
+  lateInMin: z.number().int(),
 });
 export type TeamDayLogRow = z.infer<typeof teamDayLogRowSchema>;
 
@@ -440,6 +496,7 @@ export const personDayRowSchema = z.object({
   leaveMin: z.number().int(),
   entryCount: z.number().int(),
   lateCount: z.number().int(),
+  lateInMin: z.number().int(),
   orderCodes: z.array(z.string()),
 });
 export type PersonDayRow = z.infer<typeof personDayRowSchema>;

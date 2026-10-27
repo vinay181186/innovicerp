@@ -6,6 +6,7 @@
 // entries.ts, from From/To (§20.1).
 
 import {
+  DAY_LOG_OTHERS_REASONS,
   DAY_LOG_RULES,
   type DayLogDetail,
   type DayLogEntryKind,
@@ -117,6 +118,8 @@ export interface EntryCandidate {
   fromTime: string;
   toTime: string | null;
   hasOrder: boolean;
+  description: string;
+  remarks: string | null;
 }
 
 /** The caller's Open entry on ANY day other than `exceptId` (one at a time). */
@@ -159,10 +162,6 @@ function checkOrder(
     }
     return 'fixed';
   }
-  // Leave (owner 2026-10-26) runs to the end of the day — nothing after it.
-  if (others.some((l) => l.kind === 'leave' && l.fromTime)) {
-    throw new ValidationError('The day ends with your Leave');
-  }
   const open = others.find((l) => l.fromTime && !l.toTime);
   if (open) {
     throw new ConflictError(`Stop ${open.description} (since ${fmt12(open.fromTime)}) first`);
@@ -182,18 +181,34 @@ function checkOrder(
 }
 
 /**
- * LEAVE (owner 2026-10-26, option A): leaving early / half day / permission.
- * No SO / JWSO, always closed, Stop is the end of the work window and the
- * Start lies before it. Its Start follows strict order like any entry
- * (checkOrder) and it is the day's last entry (nothing may follow it).
+ * OTHERS (kind 'leave'; owner 2026-10-27): late coming / half day / full day /
+ * permission / personal. The description IS the reason; no SO / JWSO; never
+ * Open; the user sets its Stop, at most the end of the work window — it may
+ * lie after now (its Start may not: validateEntry). Strict order like any
+ * entry, and entries may follow it once their time has come.
  */
-function checkLeave(cand: EntryCandidate): void {
-  if (cand.hasOrder) throw new ValidationError('A Leave cannot be for an SO / JWSO');
-  if (cand.toTime !== DAY_LOG_RULES.workTo) {
-    throw new ValidationError(`Leave runs to ${fmt12(DAY_LOG_RULES.workTo)}`);
+function checkOthers(cand: EntryCandidate): void {
+  if (!(DAY_LOG_OTHERS_REASONS as readonly string[]).includes(cand.description)) {
+    throw new ValidationError('Pick the reason (Late coming, Half day…)');
   }
-  if (hhmmToMin(cand.fromTime) >= hhmmToMin(DAY_LOG_RULES.workTo)) {
-    throw new ValidationError(`A Leave must start before ${fmt12(DAY_LOG_RULES.workTo)}`);
+  if (cand.hasOrder) throw new ValidationError('Others cannot be for an SO / JWSO');
+  if (!cand.toTime) throw new ValidationError('Give the Stop time of Others');
+  if (hhmmToMin(cand.toTime) > hhmmToMin(DAY_LOG_RULES.workTo)) {
+    throw new ValidationError(`Others must stop by ${fmt12(DAY_LOG_RULES.workTo)}`);
+  }
+}
+
+/** The field rules the shared schema also states — re-checked here because
+ *  the sheet rows (and tests) reach validateEntry without them. */
+function checkFields(cand: EntryCandidate): void {
+  if (cand.kind === 'work' && !cand.description) {
+    throw new ValidationError('Write what you worked on');
+  }
+  if (cand.toTime && hhmmToMin(cand.toTime) <= hhmmToMin(cand.fromTime)) {
+    throw new ValidationError('Stop time must be after Start time');
+  }
+  if (cand.kind !== 'break' && cand.toTime && !(cand.remarks ?? '').trim()) {
+    throw new ValidationError('Remark is compulsory when Start and Stop are filled');
   }
 }
 
@@ -217,13 +232,14 @@ export async function validateEntry(
   if (cand.kind === 'break' && cand.hasOrder) {
     throw new ValidationError('A break cannot be for an SO / JWSO');
   }
-  if (cand.kind === 'leave') checkLeave(cand);
+  checkFields(cand);
+  if (cand.kind === 'leave') checkOthers(cand);
   // The order check — inside the day lock, against lines re-read under it (§20.3).
   if (checkOrder(others, self, cand) === 'fixed') return; // times unchanged: nothing more to judge
   if (isToday && hhmmToMin(cand.fromTime) > clock.nowMin) {
     throw new ValidationError(`Start ${fmt12(cand.fromTime)} is later than now (${nowHm})`);
   }
-  // A Leave may be entered before its 06:00 PM Stop comes; its Start may not.
+  // Others may be entered before its Stop comes; its Start may not.
   if (isToday && cand.kind !== 'leave' && cand.toTime && hhmmToMin(cand.toTime) > clock.nowMin) {
     throw new ValidationError(`Stop ${fmt12(cand.toTime)} is later than now (${nowHm})`);
   }

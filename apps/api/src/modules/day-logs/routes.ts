@@ -3,12 +3,14 @@
 
 import type { FastifyInstance } from 'fastify';
 import {
+  addDayLogEntriesInputSchema,
   addDayLogEntryInputSchema,
   dayLogDateInputSchema,
   dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
   holidayInputSchema,
   personDayLogQuerySchema,
+  stopDayLogEntryInputSchema,
   teamDayLogQuerySchema,
   updateDayLogEntryInputSchema,
 } from '@innovic/shared';
@@ -50,6 +52,12 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     return service.addEntry(addDayLogEntryInputSchema.parse(req.body), req.user);
   });
 
+  // ONE SHEET: several new rows, all or nothing.
+  app.post('/day-logs/entries/batch', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.addEntries(addDayLogEntriesInputSchema.parse(req.body), req.user);
+  });
+
   app.patch('/day-logs/entries/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
@@ -59,7 +67,9 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
   app.post('/day-logs/entries/:id/stop', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.stopEntry(id, req.user);
+    // A break stop may send no body at all.
+    const input = stopDayLogEntryInputSchema.parse(req.body ?? {});
+    return service.stopEntry(id, input, req.user);
   });
 
   app.delete('/day-logs/entries/:id', async (req) => {

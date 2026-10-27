@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import { leaveCases } from './leave-cases';
+import { sheetCases } from './sheet-cases';
 import * as service from './service';
 import {
   MON,
@@ -57,16 +58,16 @@ describe('Day Log — add / Open / Stop', () => {
     expect(e.toTime).toBeNull();
     expect(e.minutes).toBe(60);
     expect(d1.summary.open).toBe(true);
-    const d2 = await service.stopEntry(e.id, owner(), at(MON, '10:30'));
+    const d2 = await service.stopEntry(e.id, {}, owner(), at(MON, '10:30'));
     expect(times(d2)).toEqual([['work', '09:00', '10:30']]);
-    await expect(service.stopEntry(e.id, owner(), at(MON, '10:40'))).rejects.toBeInstanceOf(
+    await expect(service.stopEntry(e.id, {}, owner(), at(MON, '10:40'))).rejects.toBeInstanceOf(
       ConflictError,
     );
   });
 
   it('Stop in the minute it started removes the entry', async () => {
     const d = await add(MON, at(MON, '09:00'), { startTime: '09:00' });
-    const out = await service.stopEntry(d.entries[0]!.id, owner(), at(MON, '09:00'));
+    const out = await service.stopEntry(d.entries[0]!.id, {}, owner(), at(MON, '09:00'));
     expect(out.entries).toHaveLength(0);
   });
 
@@ -254,7 +255,7 @@ describe('Day Log — submit and races', () => {
   it('the earlier Open entry cannot be Stopped at now — it gets a Stop time by edit', async () => {
     const d = await add(MON, at(MON, '17:00'), { startTime: '09:00' });
     const e = d.entries[0]!;
-    await expect(service.stopEntry(e.id, owner(), at(TUE, '09:30'))).rejects.toBeInstanceOf(
+    await expect(service.stopEntry(e.id, {}, owner(), at(TUE, '09:30'))).rejects.toBeInstanceOf(
       ValidationError,
     );
     const fixed = await edit(e, at(TUE, '09:30'), { description: 'late work', stopTime: '19:30' });
@@ -358,3 +359,4 @@ describe('Day Log — LATE, orders, person, team', () => {
 });
 
 leaveCases();
+sheetCases();
