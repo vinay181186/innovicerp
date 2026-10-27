@@ -122,6 +122,11 @@ const TimePicker = forwardRef<
       className="ss-list"
       style={{
         position: 'fixed',
+        // Reset both edges first: the shared .ss-list class sets
+        // `top: calc(100% + …)`, which pushed an upward-opening picker below
+        // the bottom of a short (laptop) window — invisible.
+        top: 'auto',
+        bottom: 'auto',
         ...pos,
         right: 'auto',
         width: PICKER_W,
