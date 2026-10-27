@@ -262,9 +262,12 @@ export function TimeField({
         disabled={disabled}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        // Clicking or tabbing into the box opens the clock — typing still works.
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
         onBlur={() => void tidy()}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
+          if (e.key === 'Escape' || e.key === 'Tab') setOpen(false);
           if (e.key !== 'Enter' || !onEnter) return;
           e.preventDefault();
           if (value.trim() === '' || tidy()) onEnter();
