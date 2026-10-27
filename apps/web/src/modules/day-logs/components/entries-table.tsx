@@ -1,13 +1,16 @@
 // A day's saved entries, read-only, in the sheet's columns (owner-approved
 // one-sheet mockup 2026-10-27): # · Type · Start · Stop (LATE) · Working on ·
-// SO / JWSO · Remark · Time. Type is Work / Break (italic) / "Others ·
-// <reason>"; Others rows tinted, the Open row tinted. `EntryCells` is the
-// one drawing of a saved row — My Day Log's sheet uses it too.
+// SO / JWSO · Time, and the Remark on its own line under the row (owner
+// 2026-10-27: no Remark column). Type is Work / Break (italic) / "Others ·
+// <reason>"; Others rows tinted, the Open row tinted — both lines. `EntryCells`
+// is the one drawing of a saved row — My Day Log's sheet uses it too.
 
 import type { DayLogEntry } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
+import { Fragment } from 'react';
 import { fmtDmy } from '../lib/format';
 import { CLIP, entryTint, entryTypeText } from '../lib/sheet';
+import { NO_GAP, RemarkLine } from './remark-line';
 
 /** The sheet's columns, in order (the actions column is the caller's). */
 export const SHEET_HEADS = [
@@ -17,9 +20,16 @@ export const SHEET_HEADS = [
   'Stop',
   'Working on',
   'SO / JWSO',
-  'Remark',
   'Time',
 ] as const;
+
+/** Columns of My Day Log's sheet: the heads plus the actions column. */
+export const SHEET_COLS = SHEET_HEADS.length + 1;
+
+/** A saved row's <tr> style: its tint, and no rule above its Remark line. */
+export function entryRowStyle(e: DayLogEntry): React.CSSProperties {
+  return e.remarks?.trim() ? { ...entryTint(e), ...NO_GAP } : entryTint(e);
+}
 
 export function SheetHead({ actions }: { actions: boolean }): React.JSX.Element {
   return (
@@ -48,7 +58,7 @@ export function LateTag(): React.JSX.Element {
   );
 }
 
-/** One saved entry's eight cells (no <tr>). */
+/** One saved entry's seven cells (no <tr>). */
 export function EntryCells({ e, n }: { e: DayLogEntry; n: number }): React.JSX.Element {
   const open = !e.toTime;
   const work = e.kind === 'leave' ? '' : e.description;
@@ -65,9 +75,6 @@ export function EntryCells({ e, n }: { e: DayLogEntry; n: number }): React.JSX.E
         {work}
       </td>
       <td className="td-code">{e.order?.code ?? '—'}</td>
-      <td title={e.remarks ?? undefined} style={{ ...CLIP, color: 'var(--text2)' }}>
-        {e.remarks ?? ''}
-      </td>
       <td className="td-num mono">{fmtDuration(e.minutes)}</td>
     </>
   );
@@ -101,9 +108,12 @@ export function EntriesTable({
             </tr>
           ) : null}
           {list.map((e, i) => (
-            <tr key={e.id} style={entryTint(e)}>
-              <EntryCells e={e} n={i + 1} />
-            </tr>
+            <Fragment key={e.id}>
+              <tr style={entryRowStyle(e)}>
+                <EntryCells e={e} n={i + 1} />
+              </tr>
+              <RemarkLine text={e.remarks} span={SHEET_HEADS.length - 1} tint={entryTint(e)} />
+            </Fragment>
           ))}
         </tbody>
       </table>

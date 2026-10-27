@@ -19,11 +19,11 @@ import {
 } from '../api';
 import { errText, fmtDmy } from '../lib/format';
 import { blankDraft, draftStarts, isFilled, rowError, toSheetRow, type Draft } from '../lib/sheet';
-import { SHEET_HEADS, SheetHead, sortEntries } from './entries-table';
+import { SHEET_COLS, SheetHead, sortEntries } from './entries-table';
 import { SheetDraftRow, stopInputId } from './sheet-draft-row';
 import { SheetSavedRow } from './sheet-saved-row';
 
-const COLS = SHEET_HEADS.length + 1;
+const COLS = SHEET_COLS;
 
 export function DaySheet({
   day,
