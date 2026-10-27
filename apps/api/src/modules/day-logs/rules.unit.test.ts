@@ -28,7 +28,7 @@ const withId = (s: { kind: 'work' | 'break'; fromTime: string; toTime: string | 
   description: s.kind === 'break' ? 'Lunch' : 'job',
 });
 const line = (
-  kind: 'work' | 'break',
+  kind: 'work' | 'break' | 'leave',
   fromTime: string,
   toTime: string | null,
   description = 'job',
@@ -168,6 +168,15 @@ describe('Team current status', () => {
       since: null,
     });
     expect(currentOf('leave', [], null, true, null).status).toBe('leave');
+  });
+  it('an Others row reads Others only while it is in progress', () => {
+    const o = [line('leave', '09:00', '10:30', 'Late coming'), line('work', '10:30', null, 'GRN')];
+    expect(currentOf('open', o, null, true, null, 9 * 60 + 30)).toEqual({
+      status: 'leave',
+      text: 'Late coming · from 09:00 AM',
+      since: null,
+    });
+    expect(currentOf('open', o, null, true, null, 11 * 60).status).toBe('working');
   });
   it('latest work: the Open one, else the latest-starting', () => {
     expect(

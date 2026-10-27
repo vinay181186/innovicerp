@@ -1,30 +1,23 @@
-// "My Day Log" tab of the Task Board (design approved 2026-10-26). One day
-// of the signed-in user: Day select + Today + day chip + Submit Day, ONE
-// summary strip (server figures), the blocked / stray-open banners, the ONE
-// entry form and the entries table.
+// "My Day Log" tab of the Task Board (design approved 2026-10-26; one-sheet
+// layout approved 2026-10-27). One day of the signed-in user: Day select +
+// Today + day chip + Submit Day, ONE summary strip (server figures), the
+// blocked / stray-open banners, and the ONE sheet (saved rows, then new rows,
+// one Save — day-sheet.tsx).
 //
 // Every write follows the SERVER's canWrite, never useCanWrite(): a
 // view-only L1 user still logs their own day. A day the server does not let
-// the user write (past, submitted) is read-only: no form, no actions.
+// the user write (past, submitted) is read-only: no new rows, no actions.
 
-import type { DayLogEntry } from '@innovic/shared';
-import { useEffect, useState } from 'react';
+import { DAY_LOG_RULES, fmt12 } from '@innovic/shared';
+import { useCallback, useEffect, useState } from 'react';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
-import {
-  useDayLog,
-  useDayLogAccess,
-  useRemoveDayLogEntry,
-  useStopDayLogEntry,
-  useSubmitDayLog,
-  type DayQuery,
-} from '../api';
+import { useDayLog, useDayLogAccess, useSubmitDayLog, type DayQuery } from '../api';
 import { dayTable, fileSlug } from '../lib/export';
 import { dayChip, errText, liveNowMin } from '../lib/format';
 import { printDayLog } from '../lib/print-day-log';
 import { DaySelect, DaySummaryStrip } from './day-header';
 import { BlockedNotice, StrayOpenNotice } from './day-notices';
-import { EntriesTable } from './entries-table';
-import { EntryForm } from './entry-form';
+import { DaySheet } from './day-sheet';
 import { HolidaysModal } from './holidays-modal';
 import { PrintExportTools } from './print-export-tools';
 
@@ -39,13 +32,13 @@ export function DayLogTab({
   const query = useDayLog(q);
   const access = useDayLogAccess();
   const submit = useSubmitDayLog(q);
-  const stop = useStopDayLogEntry(q);
-  const remove = useRemoveDayLogEntry(q);
   const [editingId, setEditingId] = useState<string | null>(null);
   // The stray-open banner: open that day, then edit that entry once it loads.
   const [pendingEdit, setPendingEdit] = useState<{ date: string; id: string } | null>(null);
   const [modal, setModal] = useState<'submit' | 'holidays' | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  // The sheet has typed, unsaved rows — Submit Day waits for them.
+  const [dirty, setDirty] = useState(false);
+  const onDirty = useCallback((d: boolean) => setDirty(d), []);
   // Re-draw every 30 s so the picker's "after now" limit and Now stay current.
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
@@ -76,21 +69,12 @@ export function DayLogTab({
   const nowMin = isToday ? liveNowMin(day.nowTime, query.dataUpdatedAt, tick) : null;
   // While another day is loading the old one stays on screen — no writes then.
   const canWrite = day.canWrite && !query.isPlaceholderData;
-  const editing = day.entries.find((e) => e.id === editingId) ?? null;
-  // Strict order: only the server's last entry may change its times / be removed.
-  const lastId = day.lastEntryId;
   const chip = dayChip(day.status, isToday);
-  const canSubmit = day.summary.unloggedMin === 0 && !day.summary.open;
-  const busy = stop.isPending || remove.isPending;
+  const canSubmit = day.summary.unloggedMin === 0 && !day.summary.open && !dirty;
 
   const goDate = (d: string): void => {
     setEditingId(null);
-    setErr(null);
     onDate(d === day.today ? undefined : d);
-  };
-  const run = (p: Promise<unknown>): void => {
-    setErr(null);
-    p.catch((e: unknown) => setErr(errText(e)));
   };
 
   return (
@@ -131,6 +115,15 @@ export function DayLogTab({
             type="button"
             className="btn btn-primary"
             disabled={!canWrite || !canSubmit || submit.isPending}
+            title={
+              dirty
+                ? 'Save or drop the new rows first'
+                : day.summary.open
+                  ? 'Stop the open row first'
+                  : day.summary.unloggedMin > 0
+                    ? `${day.summary.unloggedMin} min of ${fmt12(DAY_LOG_RULES.workFrom)} – ${fmt12(DAY_LOG_RULES.workTo)} not logged yet`
+                    : undefined
+            }
             onClick={() => setModal('submit')}
           >
             Submit Day
@@ -150,48 +143,16 @@ export function DayLogTab({
         }}
       />
 
-      {canWrite ? (
-        <EntryForm
-          key={`${day.date}:${editing?.id ?? 'new'}`}
-          day={day}
-          q={q}
-          nowMin={nowMin}
-          editing={editing}
-          isLast={editing !== null && editing.id === lastId}
-          onDone={() => setEditingId(null)}
-        />
-      ) : null}
-
-      {err ? (
-        <Banner tone="error" onDismiss={() => setErr(null)}>
-          {err}
-        </Banner>
-      ) : null}
-
-      <div className="panel" style={{ padding: 0, marginBottom: 10 }}>
-        <EntriesTable
-          date={day.date}
-          entries={day.entries}
-          actions={
-            canWrite
-              ? {
-                  busy,
-                  editingId,
-                  lastId,
-                  onStop: isToday ? (e: DayLogEntry) => run(stop.mutateAsync(e.id)) : null,
-                  onEdit: (e: DayLogEntry) => {
-                    setErr(null);
-                    setEditingId(e.id);
-                  },
-                  onRemove: (e: DayLogEntry) => {
-                    if (editingId === e.id) setEditingId(null);
-                    run(remove.mutateAsync(e.id));
-                  },
-                }
-              : null
-          }
-        />
-      </div>
+      <DaySheet
+        key={day.date}
+        day={day}
+        q={q}
+        nowMin={nowMin}
+        canWrite={canWrite}
+        editingId={editingId}
+        onEditingId={setEditingId}
+        onDirty={onDirty}
+      />
 
       {modal === 'submit' ? (
         <ConfirmDialog

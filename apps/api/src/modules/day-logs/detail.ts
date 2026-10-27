@@ -2,6 +2,7 @@
 // Open entry on an earlier day, the entry shape and the whole DayLogDetail.
 
 import {
+  DAY_LOG_LATE_COMING,
   type DayLogDetail,
   type DayLogEntry,
   type DayLogStatus,
@@ -107,6 +108,16 @@ export function toEntry(l: DayLine, nowMin?: number): DayLogEntry {
   };
 }
 
+/** Minutes of the day's FIRST entry when it is Others · Late coming, else 0. */
+export function lateInOf(lines: readonly DayLine[], nowMin?: number): number {
+  const first = lines
+    .filter((l) => l.fromTime)
+    .reduce<DayLine | null>((a, l) => (!a || l.fromTime! < a.fromTime! ? l : a), null);
+  return first?.kind === 'leave' && first.description === DAY_LOG_LATE_COMING
+    ? entryMinutes(first.fromTime!, first.toTime, nowMin)
+    : 0;
+}
+
 /** summarizeDay + the LATE count — one reading for detail, team and person. */
 export function summaryOf(
   lines: readonly DayLine[],
@@ -124,6 +135,7 @@ export function summaryOf(
     // A Leave day owes no time.
     unloggedMin: status === 'leave' ? 0 : whole,
     lateCount: lines.filter((l) => l.late).length,
+    lateInMin: lateInOf(lines, nowMin),
   };
 }
 

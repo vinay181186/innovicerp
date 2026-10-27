@@ -5,10 +5,12 @@
 //   writes.ts  — guards + the ONE entry check     team.ts   — Team Day Logs
 //   person.ts  — one person over a date range     orders.ts — SO / JWSO picker + check
 //   day.ts     — read / open / lock one day       detail.ts — D3, stray Open, the DayLogDetail
+//   sheet.ts   — many new rows at once (one sheet)
 //   holidays.ts — holidays, tab access            access.ts — who sees and manages whose day
 // Rules of the day itself live in packages/shared day-log.ts (summarizeDay…).
 
 export { addEntry, deleteEntry, stopEntry, updateEntry } from './entries';
+export { addEntries } from './sheet';
 export { getDay, markLeave, reopenDay, submitDay } from './manage';
 export { getTeam } from './team';
 export { getPerson } from './person';

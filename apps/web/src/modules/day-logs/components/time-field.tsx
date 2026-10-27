@@ -6,14 +6,16 @@
 //
 // The 🕒 button opens an Hour (01–12) · Minute (5-min) · AM/PM picker with
 // Now and Set. `nowMin` (today only) greys every time after now. The picker
-// hangs from the field's RIGHT edge and opens leftwards (it was cut off at
-// the screen's right edge); when there is no room on the left either it
-// hangs from the left edge instead.
+// is drawn on <body> at a fixed spot next to the field (the sheet's table
+// scrolls and would clip it): right edges lined up, opening downwards, and
+// moved so it always stays on screen — upwards when there is no room below,
+// rightwards when there is none on the left.
 //
 // LockedTime is the read-only look for a time the user may not change.
 
 import { fmt12, hhmmToMin, minToHhmm, parseTime } from '@innovic/shared';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const HOURS12 = Array.from({ length: 12 }, (_, i) => i + 1);
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
@@ -21,6 +23,11 @@ const two = (n: number): string => String(n).padStart(2, '0');
 /** 12-hour clock hour + AM/PM → 0–23. */
 const to24 = (h12: number, pm: boolean): number => (h12 % 12) + (pm ? 12 : 0);
 const PICKER_W = 280;
+/** About the picker's height, for choosing above / below. */
+const PICKER_H = 300;
+const EDGE = 8;
+
+type PickerPos = { left: number; top: number } | { left: number; bottom: number };
 
 const BOX: React.CSSProperties = { width: '14ch', minWidth: 120 };
 const COL: React.CSSProperties = {
@@ -68,17 +75,10 @@ export function LockedTime({
   );
 }
 
-function TimePicker({
-  value,
-  nowMin,
-  side,
-  onSet,
-}: {
-  value: string;
-  nowMin: number | null;
-  side: 'right' | 'left';
-  onSet: (t: string) => void;
-}): React.JSX.Element {
+const TimePicker = forwardRef<
+  HTMLDivElement,
+  { value: string; nowMin: number | null; pos: PickerPos; onSet: (t: string) => void }
+>(function TimePicker({ value, nowMin, pos, onSet }, ref): React.JSX.Element {
   const start = parseTime(value);
   const startMin = start ? hhmmToMin(start) : (nowMin ?? 9 * 60);
   const [h, setH] = useState(Math.floor(startMin / 60));
@@ -119,11 +119,14 @@ function TimePicker({
 
   return (
     <div
+      ref={ref}
       className="ss-list"
       style={{
+        position: 'fixed',
+        ...pos,
+        right: 'auto',
         width: PICKER_W,
-        maxWidth: 'calc(100vw - 16px)',
-        ...(side === 'right' ? { right: 0, left: 'auto' } : { left: 0, right: 'auto' }),
+        maxWidth: `calc(100vw - ${2 * EDGE}px)`,
         padding: 8,
         maxHeight: 'none',
       }}
@@ -176,7 +179,7 @@ function TimePicker({
       </div>
     </div>
   );
-}
+});
 
 export function TimeField({
   value,
@@ -196,30 +199,52 @@ export function TimeField({
   placeholder?: string | undefined;
   /** Today: the live server minute — later times are greyed in the picker. */
   nowMin?: number | null | undefined;
-  /** Enter pressed with a valid time in the box. */
+  /** Enter pressed with a valid time, or nothing, in the box. */
   onEnter?: (() => void) | undefined;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
-  const [side, setSide] = useState<'right' | 'left'>('right');
+  const [pos, setPos] = useState<PickerPos | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const bad = value.trim() !== '' && parseTime(value) === null;
 
   useEffect(() => {
     if (!open) return undefined;
     const close = (e: MouseEvent): void => {
-      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!boxRef.current?.contains(t) && !popRef.current?.contains(t)) setOpen(false);
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
 
-  // Open leftwards from the right edge; only when that would run off the
-  // left of the screen, hang from the left edge instead.
+  // Where the picker goes, on screen. Re-measured on any scroll (capture:
+  // the table's own scroller too) and on resize.
   useLayoutEffect(() => {
-    if (!open || !boxRef.current) return;
-    const r = boxRef.current.getBoundingClientRect();
-    const w = Math.min(PICKER_W, window.innerWidth - 16);
-    setSide(r.right - w >= 8 ? 'right' : 'left');
+    if (!open) {
+      setPos(null);
+      return undefined;
+    }
+    const measure = (): void => {
+      const el = boxRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const w = Math.min(PICKER_W, window.innerWidth - 2 * EDGE);
+      const left = Math.max(EDGE, Math.min(window.innerWidth - w - EDGE, r.right - w));
+      const below = window.innerHeight - r.bottom - EDGE;
+      setPos(
+        below < PICKER_H && r.top - EDGE > below
+          ? { left, bottom: window.innerHeight - r.top + 4 }
+          : { left, top: r.bottom + 4 },
+      );
+    };
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
   }, [open]);
 
   const tidy = (): string | null => {
@@ -247,7 +272,8 @@ export function TimeField({
         onKeyDown={(e) => {
           if (e.key === 'Escape') setOpen(false);
           if (e.key !== 'Enter' || !onEnter) return;
-          if (tidy()) onEnter();
+          e.preventDefault();
+          if (value.trim() === '' || tidy()) onEnter();
         }}
         style={{
           ...BOX,
@@ -272,17 +298,21 @@ export function TimeField({
       >
         🕒
       </button>
-      {open ? (
-        <TimePicker
-          value={value}
-          nowMin={nowMin}
-          side={side}
-          onSet={(t) => {
-            onChange(fmt12(t));
-            setOpen(false);
-          }}
-        />
-      ) : null}
+      {open && pos
+        ? createPortal(
+            <TimePicker
+              ref={popRef}
+              value={value}
+              nowMin={nowMin}
+              pos={pos}
+              onSet={(t) => {
+                onChange(fmt12(t));
+                setOpen(false);
+              }}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

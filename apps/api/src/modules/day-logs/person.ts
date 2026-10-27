@@ -88,6 +88,7 @@ export async function getPerson(
         leaveMin: s.leaveMin,
         entryCount: s.entryCount,
         lateCount: s.lateCount,
+        lateInMin: s.lateInMin,
         orderCodes,
       });
       if (s.entryCount > 0) totals.daysLogged += 1;

@@ -3,7 +3,7 @@
 // these only turn loaded data into chips, date labels and a ticking clock.
 
 import type { DayLogCurrentStatus, DayLogStatus } from '@innovic/shared';
-import { DAY_LOG_STATUS_LABELS, hhmmToMin } from '@innovic/shared';
+import { DAY_LOG_CURRENT_STATUS_LABELS, DAY_LOG_STATUS_LABELS, hhmmToMin } from '@innovic/shared';
 
 export const DAY_STATUS_BADGE: Record<DayLogStatus, string> = {
   open: 'b-blue',
@@ -28,7 +28,7 @@ export const PAST_STATUS_LABEL: Record<DayLogCurrentStatus, string> = {
   idle: 'Not submitted',
   not_started: 'No entries',
   submitted: 'Submitted',
-  leave: 'Leave',
+  leave: DAY_LOG_CURRENT_STATUS_LABELS.leave,
 };
 
 export function dayStatusLabel(s: DayLogStatus): string {
@@ -82,4 +82,10 @@ export function liveNowMin(serverNow: string, fetchedAt: number, nowMs: number):
 /** Error text for an inline notice. */
 export function errText(e: unknown, fallback = 'Something went wrong. Try again.'): string {
   return e instanceof Error && e.message ? e.message : fallback;
+}
+
+/** "LATE IN 15m" beside a name / day status, when the day began with
+ *  Others · Late coming; null otherwise. */
+export function lateInText(lateInMin: number): string | null {
+  return lateInMin > 0 ? `LATE IN ${lateInMin}m` : null;
 }

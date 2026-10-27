@@ -51,6 +51,8 @@ export async function wipeOwnerDays(): Promise<void> {
 }
 
 type Fields = Partial<Omit<AddDayLogEntryInput, 'date'>>;
+/** Add one entry; a remark is sent unless `f` says otherwise (compulsory on
+ *  a closed Work / Others entry). */
 export const add = (date: string, clock: DayLogClock, f: Fields) =>
   service.addEntry(
     {
@@ -58,6 +60,7 @@ export const add = (date: string, clock: DayLogClock, f: Fields) =>
       kind: 'work',
       description: 'test work',
       startTime: '09:00',
+      remarks: 'done',
       ...f,
     } as AddDayLogEntryInput,
     owner(),

@@ -3,18 +3,31 @@
 // a past day: Submitted · Not submitted · No entries — plus Team working
 // hours. A count click filters the table to it, a second click shows all.
 // Columns: User (link to the person page) · Now · Working on (latest) ·
-// First start · Last stop · Working hours · Break · Leave · Entries · Late. The
+// First start · Last stop · Working hours · Break · Others · Entries · Late;
+// "LATE IN Nm" beside the name when the day began with Others · Late coming. The
 // Working chip ticks its elapsed time from runningSince on the server clock;
 // the table reads again every minute (api.ts).
 
 import type { DayLogCurrentStatus, TeamDayLogRow } from '@innovic/shared';
-import { DAY_LOG_CURRENT_STATUS_LABELS, fmt12, fmtDuration, hhmmToMin } from '@innovic/shared';
+import {
+  DAY_LOG_CURRENT_STATUS_LABELS,
+  DAY_LOG_ENTRY_KIND_LABELS,
+  fmt12,
+  fmtDuration,
+  hhmmToMin,
+} from '@innovic/shared';
 import { useEffect, useState } from 'react';
 import { StatStrip } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { useTeamDayLogs } from '../api';
 import { teamTable } from '../lib/export';
-import { CURRENT_STATUS_BADGE, errText, liveNowMin, PAST_STATUS_LABEL } from '../lib/format';
+import {
+  CURRENT_STATUS_BADGE,
+  errText,
+  lateInText,
+  liveNowMin,
+  PAST_STATUS_LABEL,
+} from '../lib/format';
 import { printTeamDayLogs } from '../lib/print-day-log';
 import { DaySelect } from './day-header';
 import { PrintExportTools } from './print-export-tools';
@@ -28,13 +41,13 @@ const TODAY_CELLS: { key: string; label: string; of: DayLogCurrentStatus[]; colo
   { key: 'idle', label: 'Idle', of: ['idle'], color: 'var(--amber2)' },
   { key: 'not_started', label: 'Not started', of: ['not_started'] },
   { key: 'submitted', label: 'Submitted', of: ['submitted'], color: 'var(--green2)' },
-  { key: 'leave', label: 'Leave', of: ['leave'] },
+  { key: 'leave', label: DAY_LOG_CURRENT_STATUS_LABELS.leave, of: ['leave'] },
 ];
 const PAST_CELLS: typeof TODAY_CELLS = [
   { key: 'submitted', label: 'Submitted', of: ['submitted'], color: 'var(--green2)' },
   { key: 'idle', label: 'Not submitted', of: ['idle', 'working', 'break'], color: 'var(--amber2)' },
   { key: 'not_started', label: 'No entries', of: ['not_started'] },
-  { key: 'leave', label: 'Leave', of: ['leave'] },
+  { key: 'leave', label: DAY_LOG_CURRENT_STATUS_LABELS.leave, of: ['leave'] },
 ];
 
 export function NowCell({
@@ -62,6 +75,17 @@ export function NowCell({
         </span>
       ) : null}
     </>
+  );
+}
+
+/** "LATE IN 15m" — the day began with Others · Late coming. */
+export function LateInTag({ min }: { min: number }): React.JSX.Element | null {
+  const text = lateInText(min);
+  if (!text) return null;
+  return (
+    <span className="badge b-orange" style={{ marginLeft: 6 }} title="Others · Late coming">
+      {text}
+    </span>
   );
 }
 
@@ -170,7 +194,7 @@ export function TeamDayLogsTab({
                 <th>Last stop</th>
                 <th className="th-num">Working hours</th>
                 <th className="th-num">Break</th>
-                <th className="th-num">Leave</th>
+                <th className="th-num">{DAY_LOG_ENTRY_KIND_LABELS.leave}</th>
                 <th className="th-num">Entries</th>
                 <th>Late</th>
               </tr>
@@ -202,6 +226,7 @@ export function TeamDayLogsTab({
                     >
                       {r.userName}
                     </button>
+                    <LateInTag min={r.lateInMin} />
                   </td>
                   <td
                     title={r.currentText ?? undefined}

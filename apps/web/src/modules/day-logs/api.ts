@@ -6,7 +6,7 @@
 // itself (CLAUDE.md §6 rule 1).
 
 import type {
-  AddDayLogEntryInput,
+  AddDayLogEntriesInput,
   DayLogAccess,
   DayLogDateInput,
   DayLogDetail,
@@ -14,6 +14,7 @@ import type {
   Holiday,
   HolidayInput,
   PersonDayLogResponse,
+  StopDayLogEntryInput,
   TeamDayLogResponse,
   UpdateDayLogEntryInput,
 } from '@innovic/shared';
@@ -138,14 +139,15 @@ function useDayWrite<TInput>(run: (input: TInput) => Promise<DayLogDetail>, q: D
   });
 }
 
-/** Add an entry. `saveKey`: one Idempotency-Key reused for every retry of
- *  the same save, so a double click or a resend after a timeout makes ONE
- *  entry (ADR-172 R2). */
-export function useAddDayLogEntry(q: DayQuery, saveKey?: SaveKey) {
-  return useDayWrite<AddDayLogEntryInput>(
+/** Save the sheet's new rows together — all or nothing (the server answers
+ *  "Row N: …" for the row it refused). `saveKey`: one Idempotency-Key reused
+ *  for every retry of the same save, so a double click or a resend after a
+ *  timeout saves the rows ONCE (ADR-172 R2). */
+export function useAddDayLogEntries(q: DayQuery, saveKey?: SaveKey) {
+  return useDayWrite<AddDayLogEntriesInput>(
     (input) =>
       withSaveKey(saveKey, (headers) =>
-        apiFetch<DayLogDetail>('/day-logs/entries', {
+        apiFetch<DayLogDetail>('/day-logs/entries/batch', {
           method: 'POST',
           json: input,
           ...(headers ? { headers } : {}),
@@ -164,10 +166,12 @@ export function useUpdateDayLogEntry(q: DayQuery) {
   );
 }
 
-/** ■ Stop an Open entry at the server's now. */
+/** ■ Stop an Open entry at the server's now, with its remark (compulsory
+ *  on Work / Others unless the entry already has one). */
 export function useStopDayLogEntry(q: DayQuery) {
-  return useDayWrite<string>(
-    (id) => apiFetch<DayLogDetail>(`/day-logs/entries/${id}/stop`, { method: 'POST' }),
+  return useDayWrite<{ id: string } & StopDayLogEntryInput>(
+    ({ id, ...input }) =>
+      apiFetch<DayLogDetail>(`/day-logs/entries/${id}/stop`, { method: 'POST', json: input }),
     q,
   );
 }
