@@ -1,12 +1,14 @@
 // One NEW row of the My Day Log sheet (not saved yet): Type select (Work /
 // Break / Others) · Start locked (shown only — the server works it out) ·
 // Stop typed or picked (🕒) · Working on (Work / Break) or Reason (Others) ·
-// SO / JWSO (Work only) · Remark ("Remark *" unless Break) · Time · ✕.
-// Enter in the last row adds a row (the sheet focuses its Stop).
+// SO / JWSO (Work only) · Time · ✕, then the Remark line under it ("Remark *"
+// unless Break) — a full-width textarea. Enter in the last row's fields adds
+// a row (the sheet focuses its Stop); Enter in the Remark is a newline.
 
 import type { DayLogEntryKind } from '@innovic/shared';
 import {
   DAY_LOG_ENTRY_KIND_LABELS,
+  DAY_LOG_RULES,
   DAY_LOG_ENTRY_KINDS,
   DAY_LOG_OTHERS_REASONS,
   fmt12,
@@ -14,7 +16,9 @@ import {
 } from '@innovic/shared';
 import type { Draft } from '../lib/sheet';
 import { draftMinutes } from '../lib/sheet';
+import { SHEET_COLS } from './entries-table';
 import { OrderSelect } from './order-select';
+import { NO_GAP, RemarkEditLine } from './remark-line';
 import { TimeField } from './time-field';
 
 export function ReasonSelect({
@@ -91,7 +95,7 @@ export function SheetDraftRow({
   const tint: React.CSSProperties = error ? { background: 'var(--amber3)' } : {};
   return (
     <>
-      <tr style={tint}>
+      <tr style={{ ...tint, ...NO_GAP }}>
         <td className="mono">{n}</td>
         <td>
           <select
@@ -126,7 +130,7 @@ export function SheetDraftRow({
             // An Others row may end later today; Work / Break never after now.
             nowMin={isOthers ? null : nowMin}
             disabled={busy}
-            placeholder={isLast && !isOthers ? 'empty = open' : 'Stop'}
+            placeholder={isOthers ? 'e.g. 06:00 PM' : isLast ? 'blank = open' : 'Stop'}
             onEnter={onEnter}
           />
         </td>
@@ -135,7 +139,15 @@ export function SheetDraftRow({
             <ReasonSelect
               value={d.reason}
               disabled={busy}
-              onChange={(reason) => onChange({ reason })}
+              onChange={(reason) =>
+                // Full day always, and an afternoon Half day, run to the day's end.
+                onChange(
+                  reason === 'Full day' ||
+                    (reason === 'Half day' && start !== null && start !== DAY_LOG_RULES.workFrom)
+                    ? { reason, stop: fmt12(DAY_LOG_RULES.workTo) }
+                    : { reason },
+                )
+              }
             />
           ) : (
             <input
@@ -162,37 +174,37 @@ export function SheetDraftRow({
             <span className="text3">—</span>
           )}
         </td>
-        <td>
-          <input
-            className="innovic-input"
-            aria-label="Remark"
-            maxLength={2000}
-            placeholder={isBreak ? 'Remark' : 'Remark *'}
-            value={d.remarks}
-            disabled={busy}
-            onKeyDown={enter}
-            onChange={(e) => onChange({ remarks: e.target.value })}
-            style={{ minWidth: 180 }}
-          />
-        </td>
         <td className="td-num mono">{mins !== null ? fmtDuration(mins) : ''}</td>
         <td>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            title="Drop this row"
-            aria-label="Drop this row"
+            title="Remove this unsaved row"
+            aria-label="Remove this unsaved row"
             disabled={busy}
             onClick={onDrop}
           >
-            ✕
+            ✕ Remove
           </button>
         </td>
       </tr>
+      <RemarkEditLine
+        value={d.remarks}
+        onChange={(remarks) => onChange({ remarks })}
+        required={!isBreak}
+        disabled={busy}
+        span={SHEET_COLS - 1}
+        tint={tint}
+      />
       {error ? (
         <tr style={tint}>
           <td />
-          <td colSpan={8} role="alert" className="td-left" style={{ color: 'var(--red2)' }}>
+          <td
+            colSpan={SHEET_COLS - 1}
+            role="alert"
+            className="td-left"
+            style={{ color: 'var(--red2)' }}
+          >
             {error}
           </td>
         </tr>

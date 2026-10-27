@@ -19,11 +19,11 @@ import {
 } from '../api';
 import { errText, fmtDmy } from '../lib/format';
 import { blankDraft, draftStarts, isFilled, rowError, toSheetRow, type Draft } from '../lib/sheet';
-import { SHEET_HEADS, SheetHead, sortEntries } from './entries-table';
+import { SHEET_COLS, SheetHead, sortEntries } from './entries-table';
 import { SheetDraftRow, stopInputId } from './sheet-draft-row';
 import { SheetSavedRow } from './sheet-saved-row';
 
-const COLS = SHEET_HEADS.length + 1;
+const COLS = SHEET_COLS;
 
 export function DaySheet({
   day,
@@ -77,10 +77,13 @@ export function DaySheet({
   };
   const dropRow = (key: number): void => {
     setRowErrs({});
-    setDrafts((ds) => {
-      const rest = ds.filter((d) => d.key !== key);
-      return rest.length ? rest : [blankDraft()];
-    });
+    setDrafts((ds) => ds.filter((d) => d.key !== key));
+  };
+  /** Cancel: drop every unsaved row. */
+  const cancelRows = (): void => {
+    setRowErrs({});
+    setMsg(null);
+    setDrafts([]);
   };
   const run = (p: Promise<unknown>, ok: string): Promise<unknown> =>
     p.then(() => {
@@ -164,7 +167,7 @@ export function DaySheet({
                   }}
                 />
               ))}
-              {canWrite ? (
+              {canWrite && drafts.length > 0 ? (
                 <tr style={{ background: 'var(--bg3)' }}>
                   <td
                     colSpan={COLS}
@@ -228,6 +231,11 @@ export function DaySheet({
             </span>
           ) : null}
           <span style={{ flex: 1 }} />
+          {drafts.length > 0 ? (
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={cancelRows}>
+              Cancel
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn btn-primary"

@@ -192,9 +192,28 @@ function checkOthers(cand: EntryCandidate): void {
     throw new ValidationError('Pick the reason (Late coming, Half day…)');
   }
   if (cand.hasOrder) throw new ValidationError('Others cannot be for an SO / JWSO');
-  if (!cand.toTime) throw new ValidationError('Give the Stop time of Others');
-  if (hhmmToMin(cand.toTime) > hhmmToMin(DAY_LOG_RULES.workTo)) {
-    throw new ValidationError(`Others must stop by ${fmt12(DAY_LOG_RULES.workTo)}`);
+  const dayStart = DAY_LOG_RULES.workFrom;
+  const dayEnd = DAY_LOG_RULES.workTo;
+  if (!cand.toTime) {
+    throw new ValidationError(`Give the Stop time — ${fmt12(dayEnd)} for the rest of the day`);
+  }
+  if (hhmmToMin(cand.toTime) > hhmmToMin(dayEnd)) {
+    throw new ValidationError(`Others must stop by ${fmt12(dayEnd)}`);
+  }
+  // Reason-specific shape (owner 2026-10-27 audit).
+  const r = cand.description;
+  if (r === 'Late coming' && cand.fromTime !== dayStart) {
+    throw new ValidationError(`Late coming is the day's first row, from ${fmt12(dayStart)}`);
+  }
+  if (r === 'Full day' && (cand.fromTime !== dayStart || cand.toTime !== dayEnd)) {
+    throw new ValidationError(
+      `Full day runs ${fmt12(dayStart)} – ${fmt12(dayEnd)} — use Half day or Permission for part of a day`,
+    );
+  }
+  if (r === 'Half day' && cand.fromTime !== dayStart && cand.toTime !== dayEnd) {
+    throw new ValidationError(
+      `Half day is the morning (from ${fmt12(dayStart)}) or the afternoon (to ${fmt12(dayEnd)}) — use Permission for a gap in the day`,
+    );
   }
 }
 

@@ -4,7 +4,7 @@
 // browser type="time". The parent keeps the raw text and reads
 // parseTime(value) — 24-hour "HH:MM" for the API, null = "not a time yet".
 //
-// The 🕒 button opens an Hour (01–12) · Minute (5-min) · AM/PM picker with
+// The 🕒 button opens an Hour ("09 AM" … "11 PM") · Minute (5-min) picker with
 // Now and Set. `nowMin` (today only) greys every time after now. The picker
 // is drawn on <body> at a fixed spot next to the field (the sheet's table
 // scrolls and would clip it): right edges lined up, opening downwards, and
@@ -17,11 +17,12 @@ import { fmt12, hhmmToMin, minToHhmm, parseTime } from '@innovic/shared';
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-const HOURS12 = Array.from({ length: 12 }, (_, i) => i + 1);
+const HOURS24 = Array.from({ length: 24 }, (_, i) => i);
+/** 13 → "01 PM". */
+const hourLabel = (h: number): string =>
+  `${String(h % 12 === 0 ? 12 : h % 12).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 const two = (n: number): string => String(n).padStart(2, '0');
-/** 12-hour clock hour + AM/PM → 0–23. */
-const to24 = (h12: number, pm: boolean): number => (h12 % 12) + (pm ? 12 : 0);
 const PICKER_W = 280;
 /** About the picker's height, for choosing above / below. */
 const PICKER_H = 300;
@@ -29,7 +30,7 @@ const EDGE = 8;
 
 type PickerPos = { left: number; top: number } | { left: number; bottom: number };
 
-const BOX: React.CSSProperties = { width: '14ch', minWidth: 120 };
+const BOX: React.CSSProperties = { width: '17ch', minWidth: 150 };
 const COL: React.CSSProperties = {
   display: 'grid',
   gap: 2,
@@ -83,8 +84,6 @@ const TimePicker = forwardRef<
   const startMin = start ? hhmmToMin(start) : (nowMin ?? 9 * 60);
   const [h, setH] = useState(Math.floor(startMin / 60));
   const [m, setM] = useState(Math.floor((startMin % 60) / 5) * 5);
-  const pm = h >= 12;
-  const h12 = h % 12 === 0 ? 12 : h % 12;
   const after = (min: number): boolean => nowMin !== null && min > nowMin;
   const hourRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -134,12 +133,14 @@ const TimePicker = forwardRef<
       <div className="mono fw-700" style={{ fontSize: 'var(--fs-lg)', textAlign: 'center' }}>
         {fmt12(minToHhmm(h * 60 + m))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 6, marginTop: 6 }}>
         <div>
           <div style={COL_HEAD}>Hour</div>
           <div style={COL}>
-            {HOURS12.map((x) =>
-              opt(two(x), x === h12, after(to24(x, pm) * 60), () => goHour(to24(x, pm)), x === h12),
+            {/* One list, AM/PM on each hour — any earlier hour is one click
+                away (a separate AM/PM switch greyed them in the afternoon). */}
+            {HOURS24.map((x) =>
+              opt(hourLabel(x), x === h, after(x * 60), () => goHour(x), x === h),
             )}
           </div>
         </div>
@@ -147,13 +148,6 @@ const TimePicker = forwardRef<
           <div style={COL_HEAD}>Minute</div>
           <div style={COL}>
             {MINUTES.map((x) => opt(two(x), x === m, after(h * 60 + x), () => setM(x)))}
-          </div>
-        </div>
-        <div>
-          <div style={COL_HEAD}>AM/PM</div>
-          <div style={COL}>
-            {opt('AM', !pm, false, () => goHour(to24(h12, false)))}
-            {opt('PM', pm, after(to24(h12, true) * 60), () => goHour(to24(h12, true)))}
           </div>
         </div>
       </div>
@@ -268,9 +262,12 @@ export function TimeField({
         disabled={disabled}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        // Clicking or tabbing into the box opens the clock — typing still works.
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
         onBlur={() => void tidy()}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
+          if (e.key === 'Escape' || e.key === 'Tab') setOpen(false);
           if (e.key !== 'Enter' || !onEnter) return;
           e.preventDefault();
           if (value.trim() === '' || tidy()) onEnter();

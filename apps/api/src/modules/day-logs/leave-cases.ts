@@ -47,7 +47,7 @@ export function leaveCases(): void {
         'Pick the reason',
       );
       await expect(add(WED, c, others('Permission', '13:30', null))).rejects.toThrow(
-        'Give the Stop time of Others',
+        'Give the Stop time',
       );
       await expect(add(WED, c, others('Permission', '13:30', '18:30'))).rejects.toThrow(
         'Others must stop by 06:00 PM',

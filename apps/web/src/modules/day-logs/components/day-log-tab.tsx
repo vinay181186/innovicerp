@@ -73,6 +73,8 @@ export function DayLogTab({
   const canSubmit = day.summary.unloggedMin === 0 && !day.summary.open && !dirty;
 
   const goDate = (d: string): void => {
+    if (dirty && !window.confirm('You have rows that are not saved. Leave this day and lose them?'))
+      return;
     setEditingId(null);
     onDate(d === day.today ? undefined : d);
   };

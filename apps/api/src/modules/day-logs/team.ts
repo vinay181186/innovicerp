@@ -10,10 +10,10 @@ import {
   isWorkingDay,
   minToHhmm,
 } from '@innovic/shared';
-import { type SQL, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
-import { canSeeTeam, deptLabelOf, loadViewer } from './access';
+import { canSeeTeam, canSeeUser, deptLabelOf, loadViewer, sharedTeamDepts } from './access';
 import { type DayLine, holidaysBetween, iso, loadLinesFor } from './day';
 import { summaryOf } from './detail';
 import { type DayLogClock, currentOf, istClock, latestWorkOf } from './rules';
@@ -35,16 +35,25 @@ export async function getTeam(
   const wide = v.isSuper || v.auditor;
 
   return withUserContext(user, async (tx) => {
-    const scope: SQL = wide ? sql`TRUE` : sql`ua.main_dept = ANY(${sql.param([...v.l5])}::text[])`;
-    const people = (await tx.execute(sql`
-      SELECT u.id::text AS id, COALESCE(u.full_name, u.email) AS name, ua.main_dept
+    // Team by RIGHTS: everyone (Super Admin / Auditor), else people holding
+    // L2+ in a department the viewer is L5 of (canSeeUser — one rule).
+    const all = (await tx.execute(sql`
+      SELECT u.id::text AS id, COALESCE(u.full_name, u.email) AS name, ua.main_dept,
+             COALESCE(ua.departments, '{}'::jsonb) AS departments
       FROM public.users u
       LEFT JOIN public.user_access ua
         ON ua.user_id = u.id AND ua.company_id = ${companyId}::uuid AND ua.deleted_at IS NULL
       WHERE u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL AND u.is_active
-        AND ${scope}
       ORDER BY COALESCE(u.full_name, u.email)
-    `)) as unknown as Array<{ id: string; name: string; main_dept: string | null }>;
+    `)) as unknown as Array<{
+      id: string;
+      name: string;
+      main_dept: string | null;
+      departments: Record<string, unknown>;
+    }>;
+    const people = all
+      .filter((p) => wide || canSeeUser(v, p))
+      .map((p) => ({ ...p, team: wide ? [] : sharedTeamDepts(v, p.departments) }));
     const ids = people.map((p) => p.id);
 
     const headers = ids.length
@@ -84,7 +93,8 @@ export async function getTeam(
       return {
         userId: p.id,
         userName: p.name,
-        deptLabel: deptLabelOf(p.main_dept),
+        // The department that puts them on this admin's team, else their own.
+        deptLabel: deptLabelOf(p.team[0] ?? p.main_dept),
         dayLogId: h?.id ?? null,
         status,
         currentStatus: now.status,

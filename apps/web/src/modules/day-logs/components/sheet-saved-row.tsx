@@ -4,9 +4,11 @@
 //            a Work / Others entry without one opens an inline "Remark *"
 //            line with Save stop / Cancel (the remark is compulsory).
 //   ✎      — inline edit: Working on (Reason for Others), SO / JWSO (Work
-//            only), Remark; Stop only on the day's LAST row (lastEntryId) and
+//            only), Remark (full width, on the line under the row); Stop
+//            only on the day's LAST row (lastEntryId) and
 //            only when it is closed — or Open on an earlier day (the
 //            stray-open fix). Update / Cancel. Start is never edited.
+// The remark shows on its own line under the row (no Remark column).
 // The edit carries the updatedAt the row had when editing began (§20.4).
 
 import type { DayLogEntry, DayLogOrder, UpdateDayLogEntryInput } from '@innovic/shared';
@@ -20,8 +22,9 @@ import {
 import { useState } from 'react';
 import { errText } from '../lib/format';
 import { entryTint, entryTypeText } from '../lib/sheet';
-import { EntryCells } from './entries-table';
+import { EntryCells, entryRowStyle, SHEET_COLS } from './entries-table';
 import { OrderSelect } from './order-select';
+import { NO_GAP, RemarkEditLine, RemarkLine } from './remark-line';
 import { ReasonSelect } from './sheet-draft-row';
 import { TimeField } from './time-field';
 
@@ -31,7 +34,12 @@ function ErrorLine({ text, tint }: { text: string; tint: React.CSSProperties }):
   return (
     <tr style={tint}>
       <td />
-      <td colSpan={8} role="alert" className="td-left" style={{ color: 'var(--red2)' }}>
+      <td
+        colSpan={SHEET_COLS - 1}
+        role="alert"
+        className="td-left"
+        style={{ color: 'var(--red2)' }}
+      >
         {text}
       </td>
     </tr>
@@ -90,7 +98,7 @@ function EditRow({
 
   return (
     <>
-      <tr style={EDIT_TINT}>
+      <tr style={{ ...EDIT_TINT, ...NO_GAP }}>
         <td className="mono">{n}</td>
         <td>{e.kind === 'break' ? <i>{entryTypeText(e)}</i> : entryTypeText(e)}</td>
         <td className="mono">{fmt12(e.fromTime)}</td>
@@ -130,18 +138,6 @@ function EditRow({
             <span className="text3">—</span>
           )}
         </td>
-        <td>
-          <input
-            className="innovic-input"
-            aria-label="Remark"
-            maxLength={2000}
-            placeholder={e.kind === 'break' ? 'Remark' : 'Remark *'}
-            value={remarks}
-            disabled={busy}
-            onChange={(x) => setRemarks(x.target.value)}
-            style={{ minWidth: 180 }}
-          />
-        </td>
         <td className="td-num mono">{fmtDuration(e.minutes)}</td>
         <td>
           <div style={{ display: 'inline-flex', gap: 4 }}>
@@ -164,6 +160,14 @@ function EditRow({
           </div>
         </td>
       </tr>
+      <RemarkEditLine
+        value={remarks}
+        onChange={setRemarks}
+        required={e.kind !== 'break'}
+        disabled={busy}
+        span={SHEET_COLS - 1}
+        tint={EDIT_TINT}
+      />
       {err ? <ErrorLine text={err} tint={EDIT_TINT} /> : null}
     </>
   );
@@ -197,7 +201,7 @@ function StopLine({
     <>
       <tr style={tint}>
         <td />
-        <td colSpan={8} className="td-left">
+        <td colSpan={SHEET_COLS - 1} className="td-left">
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
             <b>Stop at {nowMin !== null ? fmt12(minToHhmm(nowMin)) : 'now'}</b>
             <input
@@ -301,7 +305,7 @@ export function SheetSavedRow({
 
   return (
     <>
-      <tr style={tint}>
+      <tr style={entryRowStyle(e)}>
         <EntryCells e={e} n={n} />
         <td>
           {canWrite ? (
@@ -342,6 +346,7 @@ export function SheetSavedRow({
           ) : null}
         </td>
       </tr>
+      <RemarkLine text={e.remarks} span={SHEET_COLS - 1} tint={tint} />
       {stopping ? (
         <StopLine
           nowMin={nowMin}

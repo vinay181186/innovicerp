@@ -3,10 +3,12 @@
 //   - Writes: the owner only, on their own day. Any set-up user except an L7
 //     Auditor (requireCanWrite — no page tick, so an L1 viewer logs their day).
 //   - Read someone else's day / the team: Super Admin and Auditor → everyone;
-//     an L5 Department Admin → people whose main department is one they hold
-//     L5 in. Anyone else sees only their own; another's day is "not found".
-//   - Manage (Reopen / Leave): Super Admin, or L5 over the person's
-//     main department. An Auditor never.
+//     an L5 Department Admin of department D → everyone holding a D right
+//     ABOVE L1 (L2–L5) — by rights, not by main department (owner
+//     2026-10-27: "Kiran, QC Dept Admin, sees every person with QC L2/L3…").
+//     Anyone else sees only their own; another's day is "not found".
+//   - Manage (Reopen / Leave): Super Admin, or L5 over one of the person's
+//     L2+ departments. An Auditor never.
 
 import { ACCESS_DEPTS, canWriteAnything, normalizeDeptsMap } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
@@ -46,14 +48,27 @@ export async function loadViewer(user: AuthContext): Promise<Viewer> {
   };
 }
 
-export function canSeeUser(v: Viewer, userId: string, mainDept: string | null): boolean {
-  if (userId === v.userId || v.isSuper || v.auditor) return true;
-  return !!mainDept && v.l5.has(mainDept);
+/** Tiers that put a person on a Department Admin's team (above L1 viewer). */
+const TEAM_TIERS: ReadonlySet<string> = new Set(['L2', 'L3', 'L4', 'L5']);
+
+/** The viewer's L5 departments in which `departments` holds L2–L5. */
+export function sharedTeamDepts(v: Viewer, departments: Record<string, unknown>): string[] {
+  if (v.l5.size === 0) return [];
+  const tiers = normalizeDeptsMap(departments as Parameters<typeof normalizeDeptsMap>[0]);
+  return [...v.l5].filter((d) => TEAM_TIERS.has(String(tiers[d] ?? '')));
 }
 
-export function canManageUser(v: Viewer, mainDept: string | null): boolean {
+export function canSeeUser(
+  v: Viewer,
+  u: { id: string; departments: Record<string, unknown> },
+): boolean {
+  if (u.id === v.userId || v.isSuper || v.auditor) return true;
+  return sharedTeamDepts(v, u.departments).length > 0;
+}
+
+export function canManageUser(v: Viewer, u: { departments: Record<string, unknown> }): boolean {
   if (v.auditor) return false;
-  return v.isSuper || (!!mainDept && v.l5.has(mainDept));
+  return v.isSuper || sharedTeamDepts(v, u.departments).length > 0;
 }
 
 export const canSeeTeam = (v: Viewer): boolean => v.isSuper || v.auditor || v.l5.size > 0;
@@ -100,7 +115,7 @@ export async function requireVisibleUser(
   userId: string,
 ): Promise<DayUser> {
   const u = await loadDayUser(tx, companyId, userId);
-  if (!u || !canSeeUser(v, u.id, u.mainDept)) throw new NotFoundError('Day Log not found');
+  if (!u || !canSeeUser(v, u)) throw new NotFoundError('Day Log not found');
   return u;
 }
 
@@ -118,7 +133,7 @@ export async function requireManagedUser(
       'Another Department Admin or a Super Admin must do this on your own Day Log.',
     );
   }
-  if (!canManageUser(v, u.mainDept)) {
+  if (!canManageUser(v, u)) {
     throw new AuthorizationError(
       "Only the person's Department Admin or a Super Admin can do this on a Day Log.",
     );
