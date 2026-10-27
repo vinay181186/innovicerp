@@ -1,0 +1,188 @@
+/* My Day Log — the one-line sheet (owner approved "Option B", 2026-10-27)
+   and the thin summary line. Tokens only.
+   Every entry is ONE grid row: # · Start · Stop · Time · SO / JWSO ·
+   Working on · action. Every control is 36px tall and every cell starts on
+   the same top line, so nothing shifts row to row. Under 980px the row
+   stacks: Start | Stop, then SO, then Working on full width. */
+
+/* ── summary: one thin bordered line ── */
+.dl-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg3);
+}
+.dl-sum .dl-k {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text3);
+}
+.dl-sum .dl-v {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-left: 6px;
+}
+.dl-sum .dl-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+
+/* ── the sheet ── */
+.dl-sheet {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg2);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.dl-cols {
+  display: grid;
+  grid-template-columns: 34px 140px 140px 64px 160px minmax(260px, 1fr) 34px;
+  gap: 8px 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.dl-cols:last-child {
+  border-bottom: 0;
+}
+.dl-head {
+  padding-block: 7px;
+  background: var(--bg3);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dl-cols > .dl-c {
+  min-height: 36px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  line-height: 1.4;
+}
+.dl-head > .dl-c {
+  min-height: 0;
+}
+.dl-cols .dl-n {
+  font-family: var(--mono);
+  color: var(--text3);
+}
+.dl-cols .dl-t {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.dl-cols .dl-dur {
+  justify-content: flex-end;
+  font-family: var(--mono);
+  color: var(--text3);
+  font-variant-numeric: tabular-nums;
+}
+.dl-cols .dl-so {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.dl-cols .dl-act {
+  justify-content: flex-end;
+}
+/* Saved Working on text: same 36px line box, wraps and grows the row. */
+.dl-cols > .dl-wtxt {
+  display: block;
+  min-height: 36px;
+  min-width: 0;
+  padding-top: 8px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dl-small {
+  font-size: var(--fs-xs);
+  margin-top: 2px;
+  white-space: normal;
+}
+.dl-cols .dl-field {
+  min-width: 0;
+}
+.dl-cols .dl-field .innovic-input {
+  height: 36px;
+}
+/* Working on box: grows as you type (height set by the component). */
+.dl-cols textarea.dl-wbox {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  max-height: none;
+  margin: 0;
+  padding: 8px 10px;
+  line-height: 1.45;
+  resize: none;
+  overflow: hidden;
+}
+.dl-cols .dl-wcell {
+  min-width: 0;
+}
+.dl-cols .dl-icon {
+  width: 28px;
+  padding: 0;
+}
+/* The red "Row N: …" line, under its row. */
+.dl-cols > .dl-err {
+  grid-column: 2 / -1;
+}
+.dl-new {
+  background: var(--bg3);
+}
+.dl-warn {
+  background: var(--amber3);
+}
+.dl-saving {
+  opacity: 0.6;
+}
+.dl-bar {
+  padding: 6px 12px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.dl-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg3);
+}
+.dl-note {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+
+@media (max-width: 980px) {
+  .dl-head {
+    display: none;
+  }
+  .dl-cols {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dl-cols > .dl-n,
+  .dl-cols > .dl-so,
+  .dl-cols > .dl-sofield,
+  .dl-cols > .dl-wtxt,
+  .dl-cols > .dl-wcell,
+  .dl-cols > .dl-err {
+    grid-column: 1 / -1;
+  }
+}

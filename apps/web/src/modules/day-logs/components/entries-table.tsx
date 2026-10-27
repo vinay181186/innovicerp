@@ -1,8 +1,8 @@
-// A day's saved entries in the sheet's columns (owner final 2026-10-27):
-// # · Start · Stop · SO / JWSO · Time, and the "Working on" line under every
-// row. `EntryCells` is the one drawing of a saved row — My Day Log's sheet
-// uses it too. The read-only table (person page, admin view) adds the LATE
-// tag and the "⏳ Edit pending" marker beside the Stop.
+// A day's saved entries, read-only (person page): # · Start · Stop ·
+// SO / JWSO · Time, and the "Working on" line under every row; the LATE tag
+// and the "⏳ Edit pending" marker sit beside the Stop. My Day Log's own
+// sheet is the one-line grid (sheet-saved-row.tsx); it shares PendingTag
+// and sortEntries from here.
 
 import type { DayLogEntry } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
@@ -10,29 +10,18 @@ import { Fragment } from 'react';
 import { fmtDmy } from '../lib/format';
 import { NO_GAP, WorkLine } from './work-line';
 
-/** The sheet's columns, in order (the actions column is the caller's). */
+/** The read-only table's columns, in order. */
 export const SHEET_HEADS = ['#', 'Start', 'Stop', 'SO / JWSO', 'Time'] as const;
 
-/** Columns of My Day Log's sheet: the heads plus the actions column. */
-export const SHEET_COLS = SHEET_HEADS.length + 1;
-
-export function SheetHead({
-  actions,
-  required = false,
-}: {
-  actions: boolean;
-  /** "Start *" / "Stop *" — the sheet where rows are typed. */
-  required?: boolean;
-}): React.JSX.Element {
+export function SheetHead(): React.JSX.Element {
   return (
     <thead>
       <tr>
         {SHEET_HEADS.map((h) => (
           <th key={h} className={h === 'Time' ? 'th-num' : undefined}>
-            {required && (h === 'Start' || h === 'Stop') ? `${h} *` : h}
+            {h}
           </th>
         ))}
-        {actions ? <th aria-label="Actions" /> : null}
       </tr>
     </thead>
   );
@@ -63,26 +52,18 @@ export function PendingTag({ e }: { e: DayLogEntry }): React.JSX.Element | null 
   );
 }
 
-/** One saved entry's five cells (no <tr>). */
-export function EntryCells({
-  e,
-  n,
-  adminView = false,
-}: {
-  e: DayLogEntry;
-  n: number;
-  /** The LATE tag and pending marker beside the Stop — the admin's person
-   *  page only (owner 2026-10-27: never on the user's own My Day Log). */
-  adminView?: boolean;
-}): React.JSX.Element {
+/** One saved entry's five cells (no <tr>). The LATE tag and pending marker
+ *  beside the Stop are the admin's person page only (owner 2026-10-27: never
+ *  on the user's own My Day Log). */
+function EntryCells({ e, n }: { e: DayLogEntry; n: number }): React.JSX.Element {
   return (
     <>
       <td className="mono">{n}</td>
       <td className="mono">{fmt12(e.fromTime)}</td>
       <td className="mono">
         {fmt12(e.toTime)}
-        {adminView && e.late ? <LateTag /> : null}
-        {adminView && e.pending ? (
+        {e.late ? <LateTag /> : null}
+        {e.pending ? (
           <>
             {' '}
             <PendingTag e={e} />
@@ -113,7 +94,7 @@ export function EntriesTable({
   return (
     <div className={compact ? 'tbl-wrap tbl-nofreeze' : 'tbl-wrap'}>
       <table className={compact ? 'innovic-table tbl-compact' : 'innovic-table'}>
-        <SheetHead actions={false} />
+        <SheetHead />
         <tbody>
           {list.length === 0 ? (
             <tr>
@@ -125,7 +106,7 @@ export function EntriesTable({
           {list.map((e, i) => (
             <Fragment key={e.id}>
               <tr style={NO_GAP}>
-                <EntryCells e={e} n={i + 1} adminView />
+                <EntryCells e={e} n={i + 1} />
               </tr>
               <WorkLine
                 e={{ ...e, pending: null, rejectReason: null }}

@@ -159,6 +159,7 @@ export function TimeField({
   placeholder = '09:00 AM',
   nowMin = null,
   onEnter,
+  fill = false,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -170,6 +171,8 @@ export function TimeField({
   nowMin?: number | null | undefined;
   /** Enter pressed with a valid time, or nothing, in the box. */
   onEnter?: (() => void) | undefined;
+  /** Fill the parent's width (My Day Log's sheet cell) instead of 17ch. */
+  fill?: boolean | undefined;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<PickerPos | null>(null);
@@ -223,7 +226,7 @@ export function TimeField({
   };
 
   return (
-    <div ref={boxRef} style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={boxRef} style={{ position: 'relative', display: fill ? 'block' : 'inline-block' }}>
       <input
         id={id}
         type="text"
@@ -248,7 +251,7 @@ export function TimeField({
           if (value.trim() === '' || tidy()) onEnter();
         }}
         style={{
-          ...BOX,
+          ...(fill ? { width: '100%' } : BOX),
           paddingRight: 30,
           ...(bad ? { borderColor: 'var(--red)' } : {}),
         }}

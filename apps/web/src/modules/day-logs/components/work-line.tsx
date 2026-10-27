@@ -1,11 +1,13 @@
-// The full-width "Working on" line under EVERY sheet row (owner final
-// 2026-10-27). The first cell stays empty under "#"; one cell spans the rest.
-//   WorkLine     — read view: "Working on: …" (pre-wrap), plus the
-//                  "Waiting for approval → …" line of a pending edit and the
-//                  orange "Edit rejected: <reason>" line.
-//   WorkEditLine — a textarea that GROWS AS YOU TYPE (auto height, no
-//                  scrollbar, no resize handle). Enter is a plain newline.
-// The row above passes NO_GAP on its <tr> so no rule shows between the two.
+// "Working on" — the compulsory free text of every entry.
+//   WorkLine — the read-only table's full-width line under a row (person
+//              page): "Working on: …" (pre-wrap).
+//   WorkText — My Day Log's one-line sheet (owner "Option B", 2026-10-27):
+//              the text in its own cell (pre-wrap), with the small
+//              "Waiting for approval → …" line of a pending edit and the
+//              orange "Edit rejected: <reason>" line under it, same cell.
+//   WorkBox  — the sheet's textarea in that cell. It GROWS AS YOU TYPE (auto
+//              height, no scrollbar, no resize handle). Enter is a newline.
+// NO_GAP goes on the table row above a WorkLine so no rule shows between.
 
 import type { DayLogEntry } from '@innovic/shared';
 import { useLayoutEffect, useRef } from 'react';
@@ -15,26 +17,16 @@ import { spanText } from '../lib/sheet';
  *  (the theme hands a <tr>'s inline border-bottom to its cells). */
 export const NO_GAP: React.CSSProperties = { borderBottom: 'none' };
 
-export const WORK_PLACEHOLDER = 'Whatever you want to mention — work, lunch, meeting, leave…';
+export const WORK_PLACEHOLDER = 'Working on * — work, lunch, meeting, leave…';
 
-/** The dark bold "Working on *" label (owner 2026-10-27: compulsory, must stand out). */
+/** The dark bold "Working on" label (owner 2026-10-27: must stand out). */
 const LABEL: React.CSSProperties = { color: 'var(--text)', fontWeight: 700 };
 
-const SMALL: React.CSSProperties = { fontSize: 'var(--fs-xs)', marginTop: 2 };
+type WorkFacts = Pick<DayLogEntry, 'description' | 'pending' | 'rejectReason'>;
 
-export function WorkLine({
-  e,
-  span,
-  tint,
-}: {
-  e: Pick<DayLogEntry, 'description' | 'pending' | 'rejectReason'>;
-  /** Columns the line spans (all but "#"). */
-  span: number;
-  tint?: React.CSSProperties | undefined;
-}): React.JSX.Element {
-  const p = e.pending;
+export function WorkLine({ e, span }: { e: WorkFacts; span: number }): React.JSX.Element {
   return (
-    <tr style={tint}>
+    <tr>
       <td />
       <td
         colSpan={span}
@@ -42,38 +34,44 @@ export function WorkLine({
         style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingTop: 0 }}
       >
         <span style={LABEL}>Working on:</span> {e.description}
-        {p ? (
-          <div className="text3" style={SMALL}>
-            Waiting for approval → {spanText(p.fromTime, p.toTime)}
-            {p.order ? ` · ${p.order.code}` : ''} · {p.description}
-          </div>
-        ) : null}
-        {!p && e.rejectReason ? (
-          <div style={{ ...SMALL, color: 'var(--amber2)', fontWeight: 700 }}>
-            Edit rejected: {e.rejectReason}
-          </div>
-        ) : null}
       </td>
     </tr>
   );
 }
 
-export function WorkEditLine({
+/** A saved entry's Working on cell of the one-line sheet. */
+export function WorkText({ e }: { e: WorkFacts }): React.JSX.Element {
+  const p = e.pending;
+  return (
+    <div className="dl-wtxt">
+      {e.description}
+      {p ? (
+        <div className="dl-small text3">
+          Waiting for approval → {spanText(p.fromTime, p.toTime)}
+          {p.order ? ` · ${p.order.code}` : ''} · {p.description}
+        </div>
+      ) : null}
+      {!p && e.rejectReason ? (
+        <div className="dl-small fw-700" style={{ color: 'var(--amber2)' }}>
+          Edit rejected: {e.rejectReason}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The Working on box of a new / edited row; `children` go under it. */
+export function WorkBox({
   value,
   onChange,
   disabled,
-  span,
-  tint,
   placeholder = WORK_PLACEHOLDER,
   children,
 }: {
   value: string;
   onChange: (v: string) => void;
   disabled: boolean;
-  span: number;
-  tint: React.CSSProperties;
   placeholder?: string;
-  /** Shown under the box (the row's error). */
   children?: React.ReactNode;
 }): React.JSX.Element {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -85,34 +83,27 @@ export function WorkEditLine({
     el.style.height = `${el.scrollHeight + 2}px`;
   }, [value]);
   return (
-    <tr style={tint}>
-      <td />
-      <td colSpan={span} className="td-left" style={{ paddingTop: 0 }}>
-        <label style={{ ...LABEL, display: 'block', marginBottom: 3 }}>
-          Working on <span style={{ color: 'var(--red2)' }}>*</span>
-        </label>
-        <textarea
-          ref={ref}
-          className="innovic-textarea"
-          aria-label="Working on"
-          rows={3}
-          maxLength={2000}
-          placeholder={placeholder}
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          style={{ resize: 'none', overflow: 'hidden', maxHeight: 'none', minHeight: 64 }}
-        />
-        {children}
-      </td>
-    </tr>
+    <div className="dl-wcell">
+      <textarea
+        ref={ref}
+        className="innovic-textarea dl-wbox"
+        aria-label="Working on"
+        rows={3}
+        maxLength={2000}
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {children}
+    </div>
   );
 }
 
-/** The red line under a row's Working on box. */
+/** The red "Row N: …" line, full width under its row. */
 export function RowError({ text }: { text: string }): React.JSX.Element {
   return (
-    <div role="alert" style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)', paddingTop: 4 }}>
+    <div role="alert" className="dl-err" style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}>
       {text}
     </div>
   );

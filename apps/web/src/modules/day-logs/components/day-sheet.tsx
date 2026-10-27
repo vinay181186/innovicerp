@@ -16,17 +16,25 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { useAddDayLogEntries, useUpdateDayLogEntry, type DayQuery } from '../api';
 import { errText, fmtDmy } from '../lib/format';
 import { blankDraft, checkDrafts, isFilled, rowError, toSheetRow, type Draft } from '../lib/sheet';
-import { SHEET_COLS, SheetHead, sortEntries } from './entries-table';
+import { sortEntries } from './entries-table';
 import { SheetDraftRow, startInputId } from './sheet-draft-row';
 import { SheetSavedRow } from './sheet-saved-row';
+import '../day-log-sheet.css';
 
-const COLS = SHEET_COLS;
-const SEP: React.CSSProperties = {
-  fontSize: 'var(--fs-xs)',
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '.05em',
-};
+/** The sheet's header row — the same grid as every entry row. */
+function SheetGridHead(): React.JSX.Element {
+  return (
+    <div className="dl-cols dl-head" aria-hidden>
+      <span className="dl-c">#</span>
+      <span className="dl-c">Start *</span>
+      <span className="dl-c">Stop *</span>
+      <span className="dl-c dl-dur">Time</span>
+      <span className="dl-c">SO / JWSO</span>
+      <span className="dl-c">Working on *</span>
+      <span className="dl-c" />
+    </div>
+  );
+}
 
 export function DaySheet({
   day,
@@ -156,94 +164,72 @@ export function DaySheet({
 
   return (
     <>
-      <div className="panel" style={{ padding: 0, marginBottom: 8 }}>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SheetHead actions required />
-            <tbody>
-              {entries.length === 0 && !canAdd ? (
-                <tr>
-                  <td colSpan={COLS} className="empty-state">
-                    Nothing logged on {fmtDmy(day.date)}.
-                  </td>
-                </tr>
-              ) : null}
-              {entries.map((e, i) => (
-                <SheetSavedRow
-                  key={e.id}
-                  e={e}
-                  n={i + 1}
-                  nowMin={nowMin}
-                  canEdit={canWrite}
-                  editing={editingId === e.id}
-                  busy={busyId === e.id}
-                  onEdit={() => {
-                    setMsg(null);
-                    onEditingId(e.id);
-                  }}
-                  onCancelEdit={() => onEditingId(null)}
-                  onUpdate={(body) => sendEdit(e.id, body)}
-                />
-              ))}
-              {canAdd && drafts.length > 0 ? (
-                <tr style={{ background: 'var(--bg3)' }}>
-                  <td colSpan={COLS} className="td-left text3" style={SEP}>
-                    New rows — not saved yet
-                  </td>
-                </tr>
-              ) : null}
-              {canAdd
-                ? drafts.map((d, j) => (
-                    <SheetDraftRow
-                      key={d.key}
-                      d={d}
-                      n={entries.length + j + 1}
-                      nowMin={nowMin}
-                      error={rowErrs[d.key] ?? null}
-                      saving={savingKeys.has(d.key)}
-                      onChange={(p) => patch(d.key, p)}
-                      onDrop={() => dropRow(d.key)}
-                      onEnter={() => {
-                        if (j === drafts.length - 1) addRow();
-                      }}
-                    />
-                  ))
-                : null}
-            </tbody>
-          </table>
-        </div>
+      <div className="dl-sheet">
+        <SheetGridHead />
+        {entries.length === 0 && !canAdd ? (
+          <div className="empty-state">Nothing logged on {fmtDmy(day.date)}.</div>
+        ) : null}
+        {entries.map((e, i) => (
+          <SheetSavedRow
+            key={e.id}
+            e={e}
+            n={i + 1}
+            nowMin={nowMin}
+            canEdit={canWrite}
+            editing={editingId === e.id}
+            busy={busyId === e.id}
+            onEdit={() => {
+              setMsg(null);
+              onEditingId(e.id);
+            }}
+            onCancelEdit={() => onEditingId(null)}
+            onUpdate={(body) => sendEdit(e.id, body)}
+          />
+        ))}
+        {canAdd && drafts.length > 0 ? (
+          <div className="dl-bar">New rows — not saved yet</div>
+        ) : null}
+        {canAdd
+          ? drafts.map((d, j) => (
+              <SheetDraftRow
+                key={d.key}
+                d={d}
+                n={entries.length + j + 1}
+                nowMin={nowMin}
+                error={rowErrs[d.key] ?? null}
+                saving={savingKeys.has(d.key)}
+                onChange={(p) => patch(d.key, p)}
+                onDrop={() => dropRow(d.key)}
+                onEnter={() => {
+                  if (j === drafts.length - 1) addRow();
+                }}
+              />
+            ))
+          : null}
+        {canAdd ? (
+          <div className="dl-foot">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>
+              + Add row
+            </button>
+            <span className="dl-note">Enter in Stop = new row</span>
+            {msgLine}
+            <span style={{ flex: 1 }} />
+            <button type="button" className="btn btn-ghost" onClick={cancelRows}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={saving || !dirty}
+              onClick={() => void save()}
+              style={{ minWidth: 120 }}
+            >
+              {saving ? 'Saving…' : filled.length > 1 ? `Save (${filled.length} rows)` : 'Save'}
+            </button>
+          </div>
+        ) : null}
       </div>
-      {canAdd ? (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 10,
-          }}
-        >
-          <button type="button" className="btn btn-ghost" onClick={addRow}>
-            + Add row
-          </button>
-          {msgLine}
-          <span style={{ flex: 1 }} />
-          <button type="button" className="btn btn-ghost" onClick={cancelRows}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={saving || !dirty}
-            onClick={() => void save()}
-            style={{ minWidth: 120 }}
-          >
-            {saving ? 'Saving…' : filled.length > 1 ? `Save (${filled.length} rows)` : 'Save'}
-          </button>
-        </div>
-      ) : msgLine ? (
-        <div style={{ marginBottom: 10 }}>{msgLine}</div>
-      ) : null}
+      {!canAdd && msgLine ? <div style={{ marginBottom: 10 }}>{msgLine}</div> : null}
     </>
   );
 }
