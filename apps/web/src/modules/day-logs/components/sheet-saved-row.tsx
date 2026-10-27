@@ -174,25 +174,41 @@ function EditRow({
 }
 
 function StopLine({
+  e,
   nowMin,
   busy,
-  onStop,
+  onSave,
   onCancel,
 }: {
+  e: DayLogEntry;
   nowMin: number | null;
   busy: boolean;
-  onStop: (remarks: string) => Promise<unknown>;
+  /** Closes the Open row at the chosen Stop through the normal row update. */
+  onSave: (body: UpdateDayLogEntryInput) => Promise<unknown>;
   onCancel: () => void;
 }): React.JSX.Element {
-  const [remarks, setRemarks] = useState('');
+  const [stopText, setStopText] = useState(nowMin !== null ? fmt12(minToHhmm(nowMin)) : '');
+  const [remarks, setRemarks] = useState(e.remarks ?? '');
   const [err, setErr] = useState<string | null>(null);
   const tint: React.CSSProperties = { background: 'var(--blue3)' };
+  const needRemark = e.kind !== 'break';
   const go = async (): Promise<void> => {
     if (busy) return;
-    if (!remarks.trim()) return setErr('Remark is compulsory when you stop.');
+    const stopTime = parseTime(stopText);
+    if (!stopTime) return setErr('Pick the Stop time (click the box).');
+    if (needRemark && !remarks.trim()) return setErr('Remark is compulsory when you stop.');
     setErr(null);
     try {
-      await onStop(remarks.trim());
+      await onSave({
+        kind: e.kind,
+        description: e.description,
+        startTime: e.fromTime,
+        stopTime,
+        orderType: e.order?.type ?? null,
+        orderId: e.order?.id ?? null,
+        remarks: remarks.trim() || null,
+        updatedAt: e.updatedAt,
+      });
     } catch (x) {
       setErr(errText(x));
     }
@@ -203,13 +219,21 @@ function StopLine({
         <td />
         <td colSpan={SHEET_COLS - 1} className="td-left">
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-            <b>Stop at {nowMin !== null ? fmt12(minToHhmm(nowMin)) : 'now'}</b>
+            <b>Stop at</b>
+            <TimeField
+              ariaLabel="Stop time"
+              value={stopText}
+              onChange={setStopText}
+              nowMin={nowMin}
+              disabled={busy}
+              placeholder="Stop"
+              onEnter={() => void go()}
+            />
             <input
               className="innovic-input"
               aria-label="Remark"
-              autoFocus
               maxLength={2000}
-              placeholder="Remark * — what was done"
+              placeholder={needRemark ? 'Remark * — what was done' : 'Remark'}
               value={remarks}
               disabled={busy}
               onChange={(x) => setRemarks(x.target.value)}
@@ -255,7 +279,6 @@ export function SheetSavedRow({
   onEdit,
   onCancelEdit,
   onUpdate,
-  onStop,
   onRemove,
 }: {
   e: DayLogEntry;
@@ -271,8 +294,6 @@ export function SheetSavedRow({
   onEdit: () => void;
   onCancelEdit: () => void;
   onUpdate: (body: UpdateDayLogEntryInput) => Promise<unknown>;
-  /** Stop at the server's now; `remarks` only when asked for. */
-  onStop: (remarks: string | null) => Promise<unknown>;
   onRemove: () => void;
 }): React.JSX.Element {
   const [stopping, setStopping] = useState(false);
@@ -295,10 +316,6 @@ export function SheetSavedRow({
 
   const stopNow = (): void => {
     setErr(null);
-    if (e.kind === 'break' || (e.remarks ?? '').trim()) {
-      onStop(null).catch((x: unknown) => setErr(errText(x)));
-      return;
-    }
     setStopping(true);
   };
   const tint = entryTint(e);
@@ -349,10 +366,11 @@ export function SheetSavedRow({
       <RemarkLine text={e.remarks} span={SHEET_COLS - 1} tint={tint} />
       {stopping ? (
         <StopLine
+          e={e}
           nowMin={nowMin}
           busy={busy}
-          onStop={async (r) => {
-            await onStop(r);
+          onSave={async (body) => {
+            await onUpdate(body);
             setStopping(false);
           }}
           onCancel={() => setStopping(false)}
