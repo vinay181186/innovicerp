@@ -1,34 +1,21 @@
-// Day Log (owner 2026-10-26, design approved 2026-10-26) — the user's own
-// log of the working day on the Task Board. Built on the Daily Task Report
-// tables (daily_reports = the day, daily_report_lines = its entries;
-// migrations 0222 / 0223). Rules:
-//   - ONE entry form. Type Work or Break, Start time, Stop time, a remark;
-//     work may be against one SO or JWSO. Both times = the entry is Closed;
-//     Start only = it is Open (running) until Stop. One Open entry at a time.
-//   - STRICT ORDER (owner 2026-10-26): every day starts at 09:00 AM. An
-//     entry's Start is always where the previous entry ended (09:00 for the
-//     first) — `nextStart`, locked; the next entry can only be added once the
-//     last one is Closed. Only the LAST entry may change its times or be
-//     removed; earlier entries may change their text / SO / remark. Never
-//     past now. Breaks total at most DAY_LOG_RULES.breakLimitMin a day.
-//   - Times are stored 24-hour "HH:MM" and SHOWN as "09:00 AM" (fmt12).
-//   - OTHERS (kind 'leave', shown "Others"; owner 2026-10-27): late coming /
-//     half day / full day / permission / personal. Its description IS the
-//     reason (DAY_LOG_OTHERS_REASONS). Starts at nextStart like any entry; the
-//     user sets its Stop (≤ 06:00 PM) — it may end in the future; no SO; never
-//     Open; work may follow it once the time has come. It covers time for
-//     Submit but counts as neither work nor break (leaveMin). A day whose
-//     first entry is Others · Late coming has lateInMin.
-//   - ONE SHEET: many new rows are saved together (addDayLogEntriesInputSchema)
-//     — all or nothing; each row starts where the previous ended; only the
-//     last row may be left Open.
-//   - REMARK is compulsory on every Work / Others entry that has a Stop time,
-//     and when an Open entry is stopped.
-//   - An entry saved more than lateAfterMin after its Stop time is LATE.
-//   - Submit Day needs 09:00–18:00 fully covered (work + break) and nothing
-//     Open; it locks the day. Only the owner writes the log.
-// The pure helpers below are shared so the screen shows exactly what the
-// server will accept.
+// Day Log — SIMPLE SHEET (owner 2026-10-27, final). Built on daily_reports /
+// daily_report_lines (0222–0225). Rules:
+//   - A row is Start · Stop · SO / JWSO (optional) · Working on. Start AND
+//     Stop are compulsory (typed or picked, AM/PM); Working on is free text
+//     (work, lunch, meeting, leave — whatever the user wants to mention). No
+//     Type, Remark, Open/Closed, ■ Stop, Break, Others or Submit Day.
+//   - Rows never overlap and never end after now. Many new rows save at once.
+//   - A SAVED row is never removed. ✎ an edit → it goes for APPROVAL: the row
+//     keeps its values and shows "Edit pending" until a Department Admin
+//     (L5 of a dept where the person holds L2+) or a Super Admin approves
+//     (new values apply) or rejects (reason shown). Never one's own.
+//   - A day can be written only when the PREVIOUS CALENDAR DAY has at least
+//     one saved row (no skipping Sundays / holidays — the user types
+//     "Sunday" / "Holiday"); a person's very first day is not locked.
+//   - LATE (saved > lateAfterMin after its Stop) is shown to admins only.
+// Older fields (kind, remarks, statuses, Others) stay in the contract for old
+// rows but the screens no longer use them. The pure helpers below are shared
+// so the screen shows exactly what the server will accept.
 
 import { z } from 'zod';
 
@@ -254,12 +241,13 @@ export function summarizeDay(
 // ── Inputs ──────────────────────────────────────────────────────────────────
 
 const entryFields = {
-  kind: z.enum(DAY_LOG_ENTRY_KINDS),
-  /** Working on (work, required) / break name (optional, default "Break"). */
-  description: z.string().trim().max(500).default(''),
+  /** Always 'work' now (kept for old rows). */
+  kind: z.enum(DAY_LOG_ENTRY_KINDS).default('work'),
+  /** Working on — compulsory, free text. */
+  description: z.string().trim().max(2000).default(''),
   startTime: hhmmSchema,
-  /** Empty = the entry is Open from startTime. */
-  stopTime: hhmmSchema.nullish(),
+  /** Compulsory. */
+  stopTime: hhmmSchema,
   /** Work only: the SO or JWSO it was for. */
   orderType: z.enum(DAY_LOG_ORDER_TYPES).nullish(),
   orderId: z.string().uuid().nullish(),
@@ -268,24 +256,13 @@ const entryFields = {
 
 function entryRules<T extends z.ZodTypeAny>(schema: T): T {
   return schema
+    .refine((v: { description: string }) => v.description.length > 0, {
+      message: 'Write what you worked on',
+      path: ['description'],
+    })
     .refine(
-      (v: { kind: DayLogEntryKind; description: string }) =>
-        v.kind !== 'work' || v.description.length > 0,
-      { message: 'Write what you worked on', path: ['description'] },
-    )
-    .refine(
-      (v: { kind: DayLogEntryKind; description: string }) =>
-        v.kind !== 'leave' || (DAY_LOG_OTHERS_REASONS as readonly string[]).includes(v.description),
-      { message: 'Pick the reason (Late coming, Half day…)', path: ['description'] },
-    )
-    .refine(
-      (v: { kind: DayLogEntryKind; stopTime?: string | null; remarks?: string | null }) =>
-        v.kind === 'break' || !v.stopTime || (v.remarks ?? '').trim().length > 0,
-      { message: 'Remark is compulsory when Start and Stop are filled', path: ['remarks'] },
-    )
-    .refine(
-      (v: { startTime: string; stopTime?: string | null }) =>
-        !v.stopTime || hhmmToMin(v.stopTime) > hhmmToMin(v.startTime),
+      (v: { startTime: string; stopTime: string }) =>
+        hhmmToMin(v.stopTime) > hhmmToMin(v.startTime),
       { message: 'Stop time must be after Start time', path: ['stopTime'] },
     )
     .refine(
@@ -300,22 +277,23 @@ export type AddDayLogEntryInput = z.infer<typeof addDayLogEntryInputSchema>;
 export const updateDayLogEntryInputSchema = entryRules(
   z.object({
     ...entryFields,
-    /** §20.4 — the entry's updatedAt as loaded. */
+    /** §20.4 — the entry's updatedAt as loaded. An edit of a SAVED row is
+     *  not applied: it is staged for approval (pending). */
     updatedAt: z.string(),
   }),
 );
 export type UpdateDayLogEntryInput = z.infer<typeof updateDayLogEntryInputSchema>;
 
-/** One row of the sheet. Its Start is the previous row's Stop (the first
- *  row: the day's nextStart) — the server works it out, never the screen. */
-const sheetRowSchema = z.object({
-  kind: entryFields.kind,
-  description: entryFields.description,
-  stopTime: entryFields.stopTime,
-  orderType: entryFields.orderType,
-  orderId: entryFields.orderId,
-  remarks: entryFields.remarks,
-});
+/** One new row of the sheet: Start, Stop and Working on compulsory. */
+const sheetRowSchema = entryRules(
+  z.object({
+    startTime: entryFields.startTime,
+    stopTime: entryFields.stopTime,
+    description: entryFields.description,
+    orderType: entryFields.orderType,
+    orderId: entryFields.orderId,
+  }),
+);
 export type DayLogSheetRow = z.infer<typeof sheetRowSchema>;
 
 /** Save several new rows at once — all or nothing. */
@@ -392,8 +370,56 @@ export const dayLogEntrySchema = z.object({
   remarks: z.string().nullable(),
   late: z.boolean(),
   updatedAt: z.string(),
+  /** An edit waiting for approval (the row still shows its old values). */
+  pending: z
+    .object({
+      fromTime: z.string(),
+      toTime: z.string(),
+      description: z.string(),
+      order: dayLogOrderSchema.nullable(),
+      requestedAt: z.string(),
+    })
+    .nullable(),
+  /** The last edit was rejected: why (cleared by the next edit). */
+  rejectReason: z.string().nullable(),
 });
 export type DayLogEntry = z.infer<typeof dayLogEntrySchema>;
+
+/** One edit waiting for the caller's approval. */
+export const dayLogApprovalRowSchema = z.object({
+  entryId: z.string().uuid(),
+  userId: z.string().uuid(),
+  userName: z.string(),
+  date: z.string(),
+  current: z.object({
+    fromTime: z.string(),
+    toTime: z.string().nullable(),
+    description: z.string(),
+    orderCode: z.string().nullable(),
+  }),
+  proposed: z.object({
+    fromTime: z.string(),
+    toTime: z.string(),
+    description: z.string(),
+    orderCode: z.string().nullable(),
+  }),
+  requestedAt: z.string(),
+});
+export type DayLogApprovalRow = z.infer<typeof dayLogApprovalRowSchema>;
+
+export const dayLogApprovalsResponseSchema = z.object({ rows: z.array(dayLogApprovalRowSchema) });
+export type DayLogApprovalsResponse = z.infer<typeof dayLogApprovalsResponseSchema>;
+
+/** Approve / Reject name the request the approver SAW (its requestedAt), so
+ *  a newer edit sent meanwhile is never decided unseen (§20.2). */
+export const dayLogApproveInputSchema = z.object({ requestedAt: z.string() });
+export type DayLogApproveInput = z.infer<typeof dayLogApproveInputSchema>;
+
+export const dayLogRejectInputSchema = z.object({
+  requestedAt: z.string(),
+  reason: z.string().trim().min(3, 'Give a reason').max(500),
+});
+export type DayLogRejectInput = z.infer<typeof dayLogRejectInputSchema>;
 
 export const dayLogSummarySchema = z.object({
   workMin: z.number().int(),
@@ -531,6 +557,8 @@ export type Holiday = z.infer<typeof holidaySchema>;
 /** Who may open the Team Day Logs tab (drives the tab itself, §20.5). */
 export const dayLogAccessSchema = z.object({
   canSeeTeam: z.boolean(),
+  /** May approve other people's Day Log edits (Dept Admin / Super Admin). */
+  canApprove: z.boolean(),
   canManageHolidays: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;

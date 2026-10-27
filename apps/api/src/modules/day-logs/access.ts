@@ -7,13 +7,14 @@
 //     ABOVE L1 (L2–L5) — by rights, not by main department (owner
 //     2026-10-27: "Kiran, QC Dept Admin, sees every person with QC L2/L3…").
 //     Anyone else sees only their own; another's day is "not found".
-//   - Manage (Reopen / Leave): Super Admin, or L5 over one of the person's
-//     L2+ departments. An Auditor never.
+//   - Approve an edit: Super Admin, or L5 over one of the person's L2+
+//     departments. Never one's own; an Auditor never.
 
-import { ACCESS_DEPTS, canWriteAnything, normalizeDeptsMap } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
-import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { getMyAccess } from '../access-control/service';
+import { ACCESS_DEPTS, canWriteAnything, isUnconfigured, normalizeDeptsMap } from '@innovic/shared';
+import { type SQL, sql } from 'drizzle-orm';
+import { db } from '../../db/client';
+import { type AuthContext, type FrozenAccess, requestScope } from '../../db/with-user-context';
+import { toEffectiveAccess } from '../access-control/my-access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
 export interface Viewer {
@@ -27,12 +28,65 @@ export interface Viewer {
   writer: boolean;
 }
 
-/** Read the caller's access BEFORE a transaction opens (ADR-229). */
-export async function loadViewer(user: AuthContext): Promise<Viewer> {
-  if (user.role === 'admin') {
+/**
+ * The caller's user_access row as ONE json value (a scalar sub-select), so
+ * the access read rides inside the request's first statement instead of
+ * getMyAccess's own transaction (4 round trips). Same row, same filter.
+ */
+export const accessJson = (userId: string, companyId: string): SQL => sql`(
+  SELECT json_build_object('fullAccess', ua.full_access, 'auditor', ua.auditor,
+           'drawingDownload', ua.drawing_download, 'departments', ua.departments,
+           'forms', ua.forms)
+  FROM public.user_access ua
+  WHERE ua.user_id = ${userId}::uuid AND ua.company_id = ${companyId}::uuid
+    AND ua.deleted_at IS NULL
+  LIMIT 1)`;
+
+/**
+ * The caller's access from `row` (accessJson) — exactly what getMyAccess
+ * answers: the request's memo first (ADR-229; tests pre-fill it), else the
+ * row through the same toEffectiveAccess, then remembered for the request.
+ * null for role admin (no read needed — every guard passes them).
+ */
+export async function resolveAccess(user: AuthContext, row: unknown): Promise<FrozenAccess | null> {
+  if (user.role === 'admin') return null;
+  const scope = requestScope(user);
+  if (scope?.myAccess) return scope.myAccess;
+  const r = (row ?? {}) as Record<string, unknown>;
+  const eff = toEffectiveAccess({
+    fullAccess: (r['fullAccess'] as boolean | null) ?? null,
+    auditor: (r['auditor'] as boolean | null) ?? null,
+    drawingDownload: (r['drawingDownload'] as boolean | null) ?? null,
+    departments: r['departments'] ?? null,
+    forms: r['forms'] ?? null,
+  });
+  for (const perms of Object.values(eff.forms)) Object.freeze(perms);
+  Object.freeze(eff.forms);
+  Object.freeze(eff.departments);
+  const frozen: FrozenAccess = Object.freeze(eff);
+  if (scope) scope.myAccess = Promise.resolve(frozen);
+  return frozen;
+}
+
+/** requireCanWrite (lib/access.ts) on access already read — same refusals. */
+export function assertCanWrite(eff: FrozenAccess | null): void {
+  if (!eff) return; // role admin
+  if (eff.auditor) {
+    throw new AuthorizationError('Auditor access is view-only. Ask an admin if you need to save.');
+  }
+  if (isUnconfigured(eff)) {
+    throw new AuthorizationError(
+      'Your account has no access configured yet. Ask an admin to set your ' +
+        'department tiers in Access Control.',
+    );
+  }
+}
+
+/** The Viewer of access already read (resolveAccess). */
+export function viewerOf(user: AuthContext, eff: FrozenAccess | null): Viewer {
+  if (!eff) {
     return { userId: user.id, isSuper: true, auditor: false, l5: new Set(), writer: true };
   }
-  const eff = await getMyAccess(user);
   const tiers = normalizeDeptsMap(eff.departments ?? {});
   const l5 = new Set(
     Object.entries(tiers)
@@ -46,6 +100,22 @@ export async function loadViewer(user: AuthContext): Promise<Viewer> {
     l5,
     writer: canWriteAnything(eff),
   };
+}
+
+const noCompany = (): AuthorizationError =>
+  new AuthorizationError('User is not assigned to a company');
+
+/** The caller's Viewer on its own — ONE statement (none for an admin or a
+ *  request that already read its access). */
+export async function loadViewer(user: AuthContext): Promise<Viewer> {
+  if (user.role === 'admin' || requestScope(user)?.myAccess) {
+    return viewerOf(user, await resolveAccess(user, null));
+  }
+  if (!user.companyId) throw noCompany();
+  const [r] = (await db.execute(
+    sql`SELECT ${accessJson(user.id, user.companyId)} AS access`,
+  )) as unknown as Array<{ access: unknown }>;
+  return viewerOf(user, await resolveAccess(user, r?.access));
 }
 
 /** Tiers that put a person on a Department Admin's team (above L1 viewer). */
@@ -73,6 +143,16 @@ export function canManageUser(v: Viewer, u: { departments: Record<string, unknow
 
 export const canSeeTeam = (v: Viewer): boolean => v.isSuper || v.auditor || v.l5.size > 0;
 
+/** May approve / reject this person's Day Log edits: Super Admin, or L5 of a
+ *  department where the person holds L2+. Never one's own; an Auditor never. */
+export const canApproveUser = (
+  v: Viewer,
+  u: { id: string; departments: Record<string, unknown> },
+): boolean => u.id !== v.userId && canManageUser(v, u);
+
+/** May approve anyone's edits at all (the Approvals tab). */
+export const canApproveAny = (v: Viewer): boolean => !v.auditor && (v.isSuper || v.l5.size > 0);
+
 export const deptLabelOf = (dept: string | null): string | null =>
   dept ? (ACCESS_DEPTS.find((d) => d.key === dept)?.label ?? dept) : null;
 
@@ -83,60 +163,21 @@ export interface DayUser {
   departments: Record<string, unknown>;
 }
 
-/** One user of the company (active or not) with their main department. */
-export async function loadDayUser(
-  tx: DbTransaction,
-  companyId: string,
-  userId: string,
-): Promise<DayUser | null> {
-  const rows = (await tx.execute(sql`
-    SELECT u.id::text AS id, COALESCE(u.full_name, u.email) AS name,
-           ua.main_dept AS main_dept, COALESCE(ua.departments, '{}'::jsonb) AS departments
-    FROM public.users u
-    LEFT JOIN public.user_access ua
-      ON ua.user_id = u.id AND ua.company_id = ${companyId}::uuid AND ua.deleted_at IS NULL
-    WHERE u.id = ${userId}::uuid AND u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL
-    LIMIT 1
-  `)) as unknown as Array<{
-    id: string;
-    name: string;
-    main_dept: string | null;
-    departments: Record<string, unknown>;
-  }>;
-  const r = rows[0];
-  return r ? { id: r.id, name: r.name, mainDept: r.main_dept, departments: r.departments } : null;
-}
+/** One user of the company (active or not) as ONE json value (a scalar sub-select). */
+export const dayUserJson = (companyId: string, userId: string | SQL): SQL => sql`(
+  SELECT json_build_object('id', u.id::text, 'name', COALESCE(u.full_name, u.email),
+           'mainDept', ua.main_dept, 'departments', COALESCE(ua.departments, '{}'::jsonb))
+  FROM public.users u
+  LEFT JOIN public.user_access ua
+    ON ua.user_id = u.id AND ua.company_id = ${companyId}::uuid AND ua.deleted_at IS NULL
+  WHERE u.id = ${userId}::uuid AND u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL
+  LIMIT 1)`;
 
-/** The person whose day is asked for — "not found" when the viewer may not see it. */
-export async function requireVisibleUser(
-  tx: DbTransaction,
-  companyId: string,
-  v: Viewer,
-  userId: string,
-): Promise<DayUser> {
-  const u = await loadDayUser(tx, companyId, userId);
+export const toDayUser = (json: unknown): DayUser | null => (json ? (json as DayUser) : null);
+
+/** The person whose day is asked for, already read — "not found" when the
+ *  viewer may not see it. */
+export function visibleUser(v: Viewer, u: DayUser | null): DayUser {
   if (!u || !canSeeUser(v, u)) throw new NotFoundError('Day Log not found');
-  return u;
-}
-
-/** Reopen / Leave: visible AND manageable, else refused. */
-export async function requireManagedUser(
-  tx: DbTransaction,
-  companyId: string,
-  v: Viewer,
-  userId: string,
-): Promise<DayUser> {
-  const u = await requireVisibleUser(tx, companyId, v, userId);
-  // A Department Admin never reopens or marks Leave on their OWN day.
-  if (u.id === v.userId && !v.isSuper) {
-    throw new AuthorizationError(
-      'Another Department Admin or a Super Admin must do this on your own Day Log.',
-    );
-  }
-  if (!canManageUser(v, u)) {
-    throw new AuthorizationError(
-      "Only the person's Department Admin or a Super Admin can do this on a Day Log.",
-    );
-  }
   return u;
 }

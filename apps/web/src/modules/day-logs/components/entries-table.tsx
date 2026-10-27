@@ -1,43 +1,35 @@
-// A day's saved entries, read-only, in the sheet's columns (owner-approved
-// one-sheet mockup 2026-10-27): # · Type · Start · Stop (LATE) · Working on ·
-// SO / JWSO · Time, and the Remark on its own line under the row (owner
-// 2026-10-27: no Remark column). Type is Work / Break (italic) / "Others ·
-// <reason>"; Others rows tinted, the Open row tinted — both lines. `EntryCells`
-// is the one drawing of a saved row — My Day Log's sheet uses it too.
+// A day's saved entries in the sheet's columns (owner final 2026-10-27):
+// # · Start · Stop · SO / JWSO · Time, and the "Working on" line under every
+// row. `EntryCells` is the one drawing of a saved row — My Day Log's sheet
+// uses it too. The read-only table (person page, admin view) adds the LATE
+// tag and the "⏳ Edit pending" marker beside the Stop.
 
 import type { DayLogEntry } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
 import { Fragment } from 'react';
 import { fmtDmy } from '../lib/format';
-import { CLIP, entryTint, entryTypeText } from '../lib/sheet';
-import { NO_GAP, RemarkLine } from './remark-line';
+import { NO_GAP, WorkLine } from './work-line';
 
 /** The sheet's columns, in order (the actions column is the caller's). */
-export const SHEET_HEADS = [
-  '#',
-  'Type',
-  'Start',
-  'Stop',
-  'Working on',
-  'SO / JWSO',
-  'Time',
-] as const;
+export const SHEET_HEADS = ['#', 'Start', 'Stop', 'SO / JWSO', 'Time'] as const;
 
 /** Columns of My Day Log's sheet: the heads plus the actions column. */
 export const SHEET_COLS = SHEET_HEADS.length + 1;
 
-/** A saved row's <tr> style: its tint, and no rule above its Remark line. */
-export function entryRowStyle(e: DayLogEntry): React.CSSProperties {
-  return e.remarks?.trim() ? { ...entryTint(e), ...NO_GAP } : entryTint(e);
-}
-
-export function SheetHead({ actions }: { actions: boolean }): React.JSX.Element {
+export function SheetHead({
+  actions,
+  required = false,
+}: {
+  actions: boolean;
+  /** "Start *" / "Stop *" — the sheet where rows are typed. */
+  required?: boolean;
+}): React.JSX.Element {
   return (
     <thead>
       <tr>
         {SHEET_HEADS.map((h) => (
           <th key={h} className={h === 'Time' ? 'th-num' : undefined}>
-            {h}
+            {required && (h === 'Start' || h === 'Stop') ? `${h} *` : h}
           </th>
         ))}
         {actions ? <th aria-label="Actions" /> : null}
@@ -58,21 +50,44 @@ export function LateTag(): React.JSX.Element {
   );
 }
 
-/** One saved entry's seven cells (no <tr>). */
-export function EntryCells({ e, n }: { e: DayLogEntry; n: number }): React.JSX.Element {
-  const open = !e.toTime;
-  const work = e.kind === 'leave' ? '' : e.description;
+export function PendingTag({ e }: { e: DayLogEntry }): React.JSX.Element | null {
+  if (!e.pending) return null;
+  return (
+    <span
+      className="fw-700"
+      style={{ color: 'var(--amber2)', fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
+      title="An edit of this row is waiting for approval"
+    >
+      ⏳ Edit pending
+    </span>
+  );
+}
+
+/** One saved entry's five cells (no <tr>). */
+export function EntryCells({
+  e,
+  n,
+  adminView = false,
+}: {
+  e: DayLogEntry;
+  n: number;
+  /** The LATE tag and pending marker beside the Stop — the admin's person
+   *  page only (owner 2026-10-27: never on the user's own My Day Log). */
+  adminView?: boolean;
+}): React.JSX.Element {
   return (
     <>
       <td className="mono">{n}</td>
-      <td>{e.kind === 'break' ? <i>{entryTypeText(e)}</i> : entryTypeText(e)}</td>
       <td className="mono">{fmt12(e.fromTime)}</td>
       <td className="mono">
-        {open ? '● open' : fmt12(e.toTime)}
-        {e.late ? <LateTag /> : null}
-      </td>
-      <td title={work || undefined} style={CLIP}>
-        {work}
+        {fmt12(e.toTime)}
+        {adminView && e.late ? <LateTag /> : null}
+        {adminView && e.pending ? (
+          <>
+            {' '}
+            <PendingTag e={e} />
+          </>
+        ) : null}
       </td>
       <td className="td-code">{e.order?.code ?? '—'}</td>
       <td className="td-num mono">{fmtDuration(e.minutes)}</td>
@@ -109,10 +124,13 @@ export function EntriesTable({
           ) : null}
           {list.map((e, i) => (
             <Fragment key={e.id}>
-              <tr style={entryRowStyle(e)}>
-                <EntryCells e={e} n={i + 1} />
+              <tr style={NO_GAP}>
+                <EntryCells e={e} n={i + 1} adminView />
               </tr>
-              <RemarkLine text={e.remarks} span={SHEET_HEADS.length - 1} tint={entryTint(e)} />
+              <WorkLine
+                e={{ ...e, pending: null, rejectReason: null }}
+                span={SHEET_HEADS.length - 1}
+              />
             </Fragment>
           ))}
         </tbody>

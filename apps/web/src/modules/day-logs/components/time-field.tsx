@@ -10,8 +10,6 @@
 // scrolls and would clip it): right edges lined up, opening downwards, and
 // moved so it always stays on screen — upwards when there is no room below,
 // rightwards when there is none on the left.
-//
-// LockedTime is the read-only look for a time the user may not change.
 
 import { fmt12, hhmmToMin, minToHhmm, parseTime } from '@innovic/shared';
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -47,34 +45,6 @@ const COL_HEAD: React.CSSProperties = {
   textTransform: 'uppercase',
   textAlign: 'center',
 };
-
-/** A time shown read-only: the locked look, no picker. */
-export function LockedTime({
-  id,
-  ariaLabel,
-  value,
-  title,
-}: {
-  id?: string | undefined;
-  ariaLabel: string;
-  /** 24-hour "HH:MM", or null = no time. */
-  value: string | null;
-  title: string;
-}): React.JSX.Element {
-  return (
-    <input
-      id={id}
-      type="text"
-      readOnly
-      className="innovic-input mono"
-      aria-label={ariaLabel}
-      title={title}
-      value={value ? fmt12(value) : ''}
-      placeholder="—"
-      style={BOX}
-    />
-  );
-}
 
 const TimePicker = forwardRef<
   HTMLDivElement,
@@ -122,6 +92,11 @@ const TimePicker = forwardRef<
       className="ss-list"
       style={{
         position: 'fixed',
+        // Reset both edges first: the shared .ss-list class sets
+        // `top: calc(100% + …)`, which pushed an upward-opening picker below
+        // the bottom of a short (laptop) window — invisible.
+        top: 'auto',
+        bottom: 'auto',
         ...pos,
         right: 'auto',
         width: PICKER_W,

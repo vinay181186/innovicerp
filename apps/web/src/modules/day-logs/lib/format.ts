@@ -2,51 +2,25 @@
 // server's `summary` / row figures carry every number the user is judged by;
 // these only turn loaded data into chips, date labels and a ticking clock.
 
-import type { DayLogCurrentStatus, DayLogStatus } from '@innovic/shared';
-import { DAY_LOG_CURRENT_STATUS_LABELS, DAY_LOG_STATUS_LABELS, hhmmToMin } from '@innovic/shared';
+import type { TeamDayLogRow } from '@innovic/shared';
+import { DAY_LOG_CURRENT_STATUS_LABELS, hhmmToMin } from '@innovic/shared';
 
-export const DAY_STATUS_BADGE: Record<DayLogStatus, string> = {
-  open: 'b-blue',
-  submitted: 'b-green',
-  leave: 'b-grey',
-};
-
-/** Team Day Logs "Now" chip. */
-export const CURRENT_STATUS_BADGE: Record<DayLogCurrentStatus, string> = {
-  working: 'b-blue',
-  break: 'b-grey',
-  idle: 'b-orange',
-  not_started: 'b-grey',
-  submitted: 'b-green',
-  leave: 'b-grey',
-};
-
-/** A PAST day's chip label for the same status (no "now" on a past day). */
-export const PAST_STATUS_LABEL: Record<DayLogCurrentStatus, string> = {
-  working: 'Not submitted',
-  break: 'Not submitted',
-  idle: 'Not submitted',
-  not_started: 'No entries',
-  submitted: 'Submitted',
-  leave: DAY_LOG_CURRENT_STATUS_LABELS.leave,
-};
-
-export function dayStatusLabel(s: DayLogStatus): string {
-  return DAY_LOG_STATUS_LABELS[s];
-}
-
-/** The day chip: Submitted / Leave, else Open today and Not submitted on a past day. */
-export function dayChip(
-  status: DayLogStatus | null,
+/** Team Day Logs "Now" chip. Today: Working / Idle / Not started; a past
+ *  day: Logged / No entries. (Older statuses fall back on the entry count.) */
+export function nowChip(
+  r: Pick<TeamDayLogRow, 'currentStatus' | 'entryCount'>,
   isToday: boolean,
-  hasEntries = true,
 ): { cls: string; label: string } {
-  if (status === 'submitted' || status === 'leave')
-    return { cls: DAY_STATUS_BADGE[status], label: dayStatusLabel(status) };
-  if (isToday) return { cls: 'b-blue', label: 'Open' };
-  return hasEntries
-    ? { cls: 'b-orange', label: 'Not submitted' }
-    : { cls: 'b-grey', label: 'No entries' };
+  if (!isToday) {
+    return r.entryCount > 0
+      ? { cls: 'b-green', label: 'Logged' }
+      : { cls: 'b-grey', label: 'No entries' };
+  }
+  if (r.currentStatus === 'working')
+    return { cls: 'b-blue', label: DAY_LOG_CURRENT_STATUS_LABELS.working };
+  if (r.currentStatus === 'not_started' || r.entryCount === 0)
+    return { cls: 'b-grey', label: DAY_LOG_CURRENT_STATUS_LABELS.not_started };
+  return { cls: 'b-orange', label: DAY_LOG_CURRENT_STATUS_LABELS.idle };
 }
 
 /** Calendar day ± n, "YYYY-MM-DD" (UTC arithmetic, so no DST/zone drift). */
@@ -73,7 +47,7 @@ export function recentDays(today: string, count: number): string[] {
 }
 
 /** The server's clock moved on by the time since it answered — display only
- *  (the Working elapsed figure, the time picker's "Now" and its upper limit). */
+ *  (the time picker's "Now" and its upper limit). */
 export function liveNowMin(serverNow: string, fetchedAt: number, nowMs: number): number {
   const drift = Math.max(0, Math.floor((nowMs - fetchedAt) / 60_000));
   return Math.min(24 * 60 - 1, hhmmToMin(serverNow) + drift);
@@ -82,10 +56,4 @@ export function liveNowMin(serverNow: string, fetchedAt: number, nowMs: number):
 /** Error text for an inline notice. */
 export function errText(e: unknown, fallback = 'Something went wrong. Try again.'): string {
   return e instanceof Error && e.message ? e.message : fallback;
-}
-
-/** "LATE IN 15m" beside a name / day status, when the day began with
- *  Others · Late coming; null otherwise. */
-export function lateInText(lateInMin: number): string | null {
-  return lateInMin > 0 ? `LATE IN ${lateInMin}m` : null;
 }

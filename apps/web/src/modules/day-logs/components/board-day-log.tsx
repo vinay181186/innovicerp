@@ -1,28 +1,32 @@
 // The Day Log's tabs on the Task Board (owner 2026-10-26): "My Day Log"
-// (everyone) and "Team Day Logs" (only when GET /day-logs/access says
-// canSeeTeam, §20.5). They are not task views — shared TASK_VIEWS stays as
+// (everyone), "Team Day Logs" (only when GET /day-logs/access says
+// canSeeTeam) and "Approvals · Day Log (N)" (only when it says canApprove,
+// §20.5; owner 2026-10-27). They are not task views — shared TASK_VIEWS stays as
 // it is — so the board accepts these keys in its own `view` param and draws
 // this body instead of the task table.
 //   view=daylog&date=          my day
 //   view=team&date=            the team table for a day
 //   view=person&user=&from=&to=&date=   one person's days (Team tab stays lit)
+//   view=approvals              Day Log edits waiting for the caller's approval
 
 import { z } from 'zod';
-import { useDayLogAccess } from '../api';
+import { useDayLogAccess, useDayLogApprovals } from '../api';
+import { DayLogApprovals } from './day-log-approvals';
 import { DayLogTab } from './day-log-tab';
 import { PersonDayLogs } from './person-day-logs';
 import { TeamDayLogsTab } from './team-day-logs-tab';
 
 /** The tabs drawn on the strip. */
-export const DAY_LOG_TABS = ['daylog', 'team'] as const;
+export const DAY_LOG_TABS = ['daylog', 'team', 'approvals'] as const;
 export type DayLogTabKey = (typeof DAY_LOG_TABS)[number];
 /** Every `view` the day log answers (the person page has no tab of its own). */
-export const DAY_LOG_VIEWS = ['daylog', 'team', 'person'] as const;
+export const DAY_LOG_VIEWS = ['daylog', 'team', 'person', 'approvals'] as const;
 export type DayLogViewKey = (typeof DAY_LOG_VIEWS)[number];
 
 const LABELS: Record<DayLogTabKey, string> = {
   daylog: 'My Day Log',
   team: 'Team Day Logs',
+  approvals: 'Approvals · Day Log',
 };
 
 const dateParam = z
@@ -40,7 +44,7 @@ export const dayLogSearchShape = {
 };
 
 export function isDayLogTab(v: string): v is DayLogViewKey {
-  return v === 'daylog' || v === 'team' || v === 'person';
+  return (DAY_LOG_VIEWS as readonly string[]).includes(v);
 }
 
 /** The tab to light on the strip: the person page belongs to Team. */
@@ -48,12 +52,21 @@ export function dayLogTabOf(v: DayLogViewKey): DayLogTabKey {
   return v === 'person' ? 'team' : v;
 }
 
-/** The tabs to draw: Team only for whoever the server lets see it. */
+/** The tabs to draw: Team / Approvals only for whoever the server lets see
+ *  them; Approvals carries its waiting count. */
 export function useDayLogBoardTabs(): { key: DayLogTabKey; label: string }[] {
   const access = useDayLogAccess();
-  return DAY_LOG_TABS.filter((t) => t === 'daylog' || access.data?.canSeeTeam).map((key) => ({
+  const canApprove = Boolean(access.data?.canApprove);
+  const approvals = useDayLogApprovals(canApprove);
+  const shown: Record<DayLogTabKey, boolean> = {
+    daylog: true,
+    team: Boolean(access.data?.canSeeTeam),
+    approvals: canApprove,
+  };
+  return DAY_LOG_TABS.filter((t) => shown[t]).map((key) => ({
     key,
-    label: LABELS[key],
+    label:
+      key === 'approvals' ? `${LABELS[key]} (${approvals.data?.rows.length ?? 0})` : LABELS[key],
   }));
 }
 
@@ -92,11 +105,13 @@ export function DayLogBoardBody({
       />
     );
   }
+  if (tab === 'approvals') return <DayLogApprovals />;
   if (tab === 'team' || tab === 'person') {
     return (
       <TeamDayLogsTab
         date={date}
         onDate={(d) => onNav({ date: d })}
+        onApprovals={() => onNav({ view: 'approvals', user: undefined })}
         onOpenPerson={(u, d) =>
           onNav({ view: 'person', user: u, date: d, from: undefined, to: undefined })
         }

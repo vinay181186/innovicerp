@@ -1,74 +1,50 @@
 // Day Log — ONE SHEET (POST /day-logs/entries/batch, owner 2026-10-27), TEST
 // database. Registered by service.test.ts (sheetCases()) so it shares that
 // file's fixture and runs in the same file, one test after another.
-import type { DayLogSheetRow } from '@innovic/shared';
 import { describe, expect, it } from 'vitest';
 import { ValidationError } from '../../lib/errors';
 import * as service from './service';
-import { MON, add, at, owner, times } from './test-fixture';
-
-const work = (stopTime: string | null, remarks: string | null = 'done'): DayLogSheetRow => ({
-  kind: 'work',
-  description: 'sheet work',
-  stopTime,
-  remarks,
-});
-const brk = (stopTime: string | null): DayLogSheetRow => ({
-  kind: 'break',
-  description: 'Tea',
-  stopTime,
-});
-const batch = (rows: DayLogSheetRow[], clock = at(MON, '13:00')) =>
-  service.addEntries({ date: MON, rows }, owner(), clock);
+import { MON, add, at, batch, owner, times } from './test-fixture';
 
 export function sheetCases(): void {
   describe('Day Log — one sheet (batch)', () => {
-    it('3 rows are saved with chained starts, after the existing entries', async () => {
+    it('rows with their own Start / Stop save together, in any order given', async () => {
       await add(MON, at(MON, '13:00'), { startTime: '09:00', stopTime: '10:00' });
-      const d = await batch([work('11:00'), brk('11:15'), work(null)]);
-      expect(times(d)).toEqual([
-        ['work', '09:00', '10:00'],
-        ['work', '10:00', '11:00'],
-        ['break', '11:00', '11:15'],
-        ['work', '11:15', null],
+      const d = await batch(MON, at(MON, '13:00'), [
+        { startTime: '11:30', stopTime: '12:30', description: 'later' },
+        { startTime: '10:00', stopTime: '11:00', description: 'earlier' },
       ]);
-      expect(d.summary.open).toBe(true);
+      expect(times(d)).toEqual([
+        ['09:00', '10:00'],
+        ['10:00', '11:00'],
+        ['11:30', '12:30'],
+      ]);
+      expect(d.entries.every((e) => e.kind === 'work' && e.pending === null)).toBe(true);
     });
 
-    it('a bad row 2 saves nothing and says "Row 2:"', async () => {
-      const err = await batch([work('10:00'), work('11:00', null), work('12:00')]).catch(
-        (e: unknown) => e,
-      );
+    it('all or nothing: a bad row 2 saves nothing and says "Row 2:"', async () => {
+      const err = await batch(MON, at(MON, '13:00'), [
+        { startTime: '09:00', stopTime: '10:00' },
+        { startTime: '09:30', stopTime: '10:30', description: 'clash' },
+        { startTime: '11:00', stopTime: '12:00' },
+      ]).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(ValidationError);
-      expect((err as Error).message).toBe(
-        'Row 2: Remark is compulsory when Start and Stop are filled',
-      );
+      expect((err as Error).message).toMatch(/^Row 2: Overlaps 09:00 AM – 10:00 AM/);
       const day = await service.getDay({ date: MON }, owner(), at(MON, '13:00'));
       expect(day.entries).toHaveLength(0);
     });
 
-    it('an Open row that is not the last is refused', async () => {
-      await expect(batch([work('10:00'), work(null), work('12:00')])).rejects.toThrow(
-        'Row 2: Give a Stop time — only the last row may be left Open',
-      );
-    });
-
-    it('breaks count across the batch; a Stop later than now names its row', async () => {
+    it('a Stop later than now names its row; an earlier saved row counts too', async () => {
       await expect(
-        batch([work('10:00'), brk('10:40'), work('11:00'), brk('11:30')]),
-      ).rejects.toThrow(/^Row 4: Breaks would add up to 70 minutes/);
-      await expect(batch([work('10:00'), work('13:30')])).rejects.toThrow(
-        'Row 2: Stop 01:30 PM is later than now (01:00 PM)',
-      );
-      const day = await service.getDay({ date: MON }, owner(), at(MON, '13:00'));
-      expect(day.entries).toHaveLength(0);
-    });
-
-    it('a batch while an entry is Open is refused at row 1', async () => {
-      await add(MON, at(MON, '10:00'), { startTime: '09:00', description: 'GRN' });
-      await expect(batch([work('12:00')])).rejects.toThrow(
-        'Row 1: Stop GRN (since 09:00 AM) first',
-      );
+        batch(MON, at(MON, '13:00'), [
+          { startTime: '09:00', stopTime: '10:00' },
+          { startTime: '12:00', stopTime: '13:30' },
+        ]),
+      ).rejects.toThrow('Row 2: Stop 01:30 PM is later than now (01:00 PM)');
+      await add(MON, at(MON, '13:00'), { startTime: '11:00', stopTime: '12:00' });
+      await expect(
+        batch(MON, at(MON, '13:00'), [{ startTime: '11:45', stopTime: '12:15' }]),
+      ).rejects.toThrow(/^Row 1: Overlaps 11:00 AM – 12:00 PM/);
     });
   });
 }
