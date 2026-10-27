@@ -11,6 +11,7 @@
 import {
   type DayLogApprovalRow,
   type DayLogApprovalsResponse,
+  type DayLogApproveInput,
   type DayLogRejectInput,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
@@ -62,7 +63,8 @@ const pendingJson = (companyId: string): SQL => sql`(
   LEFT JOIN public.job_work_orders jw ON jw.id = l.job_work_order_id
   LEFT JOIN public.sales_orders pso ON pso.id = l.pending_sales_order_id
   LEFT JOIN public.job_work_orders pjw ON pjw.id = l.pending_job_work_order_id
-  WHERE l.company_id = ${companyId}::uuid AND l.pending_at IS NOT NULL AND l.deleted_at IS NULL)`;
+  WHERE l.company_id = ${companyId}::uuid AND l.pending_at IS NOT NULL AND l.deleted_at IS NULL
+    AND u.deleted_at IS NULL)`;
 
 type PendingRow = {
   entryId: string;
@@ -130,6 +132,7 @@ interface Decision {
 async function decide<T>(
   user: AuthContext,
   entryId: string,
+  seenAt: string,
   fn: (d: Decision) => Promise<T>,
 ): Promise<T> {
   const companyId = requireCompany(user);
@@ -156,6 +159,12 @@ async function decide<T>(
     const self = snap.lines.find((l) => l.id === entryId);
     if (!self) throw new NotFoundError('Entry not found');
     if (!self.pending) throw new ConflictError(DECIDED);
+    // §20.2 — decide only the request the approver saw.
+    if (new Date(self.pending.requestedAt).getTime() !== new Date(seenAt).getTime()) {
+      throw new ConflictError(
+        'This edit was changed after you opened it — reload and check it again',
+      );
+    }
     const others = snap.lines.filter((l) => l.id !== entryId);
     return fn({ tx, companyId, v, h, self: { ...self, pending: self.pending }, others });
   });
@@ -176,10 +185,11 @@ const sameRequest = (d: Decision): SQL => sql`
 
 export async function approveEntry(
   entryId: string,
+  input: DayLogApproveInput,
   user: AuthContext,
   clock: DayLogClock = istClock(), // tests only — routes never pass it
 ): Promise<DayLogApprovalsResponse> {
-  return decide(user, entryId, async (d) => {
+  return decide(user, entryId, input.requestedAt, async (d) => {
     const p = d.self.pending;
     // Re-checked under the day lock: the other rows may have changed since.
     try {
@@ -229,7 +239,7 @@ export async function rejectEntry(
 ): Promise<DayLogApprovalsResponse> {
   const reason = input.reason.trim();
   if (reason.length < 3) throw new ValidationError('Give a reason');
-  return decide(user, entryId, async (d) => {
+  return decide(user, entryId, input.requestedAt, async (d) => {
     const [w] = await writeLines(
       d.tx,
       d.h,

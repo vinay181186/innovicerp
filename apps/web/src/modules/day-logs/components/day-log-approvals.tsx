@@ -43,7 +43,7 @@ export function DayLogApprovals(): React.JSX.Element {
     setBusyId(r.entryId);
     setMsg(null);
     try {
-      await approve.mutateAsync(r.entryId);
+      await approve.mutateAsync({ id: r.entryId, requestedAt: r.requestedAt });
       setMsg({ ok: true, text: `Approved — ${r.userName}'s row now shows the new values.` });
     } catch (e) {
       setMsg({ ok: false, text: errText(e) });
@@ -61,7 +61,11 @@ export function DayLogApprovals(): React.JSX.Element {
     }
     setBusyId(r.entryId);
     try {
-      await reject.mutateAsync({ id: r.entryId, reason: reason.trim() });
+      await reject.mutateAsync({
+        id: r.entryId,
+        requestedAt: r.requestedAt,
+        reason: reason.trim(),
+      });
       setRejecting(null);
       setMsg({
         ok: true,

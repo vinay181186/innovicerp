@@ -176,9 +176,11 @@ export function useUpdateDayLogEntry(q: DayQuery) {
 /** Approve one staged edit (the new values apply). */
 export function useApproveDayLogEdit() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, string>({
-    mutationFn: (id) => apiFetch(`/day-logs/entries/${id}/approve`, { method: 'POST' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
+  return useMutation<unknown, Error, { id: string; requestedAt: string }>({
+    mutationFn: ({ id, requestedAt }) =>
+      apiFetch(`/day-logs/entries/${id}/approve`, { method: 'POST', json: { requestedAt } }),
+    // Success or a "someone got there first" refusal: re-read either way.
+    onSettled: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
   });
 }
 
@@ -188,7 +190,7 @@ export function useRejectDayLogEdit() {
   return useMutation<unknown, Error, { id: string } & DayLogRejectInput>({
     mutationFn: ({ id, ...input }) =>
       apiFetch(`/day-logs/entries/${id}/reject`, { method: 'POST', json: input }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
+    onSettled: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
   });
 }
 

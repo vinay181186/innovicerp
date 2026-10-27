@@ -7,6 +7,7 @@ import {
   addDayLogEntryInputSchema,
   dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
+  dayLogApproveInputSchema,
   dayLogRejectInputSchema,
   holidayInputSchema,
   personDayLogQuerySchema,
@@ -72,7 +73,7 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
   app.post('/day-logs/entries/:id/approve', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
-    return service.approveEntry(id, req.user);
+    return service.approveEntry(id, dayLogApproveInputSchema.parse(req.body), req.user);
   });
 
   app.post('/day-logs/entries/:id/reject', async (req) => {

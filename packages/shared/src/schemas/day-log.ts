@@ -410,8 +410,13 @@ export type DayLogApprovalRow = z.infer<typeof dayLogApprovalRowSchema>;
 export const dayLogApprovalsResponseSchema = z.object({ rows: z.array(dayLogApprovalRowSchema) });
 export type DayLogApprovalsResponse = z.infer<typeof dayLogApprovalsResponseSchema>;
 
-/** Reject needs a reason; Approve takes none. */
+/** Approve / Reject name the request the approver SAW (its requestedAt), so
+ *  a newer edit sent meanwhile is never decided unseen (§20.2). */
+export const dayLogApproveInputSchema = z.object({ requestedAt: z.string() });
+export type DayLogApproveInput = z.infer<typeof dayLogApproveInputSchema>;
+
 export const dayLogRejectInputSchema = z.object({
+  requestedAt: z.string(),
   reason: z.string().trim().min(3, 'Give a reason').max(500),
 });
 export type DayLogRejectInput = z.infer<typeof dayLogRejectInputSchema>;

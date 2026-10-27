@@ -64,7 +64,11 @@ export function approvalCases(): void {
         'An edit is already waiting for approval',
       );
       // Rejected → nothing waits; the ORIGINAL load (old updatedAt) is now stale.
-      await service.rejectEntry(after.id, { reason: 'not right' }, sameDeptAdmin());
+      await service.rejectEntry(
+        after.id,
+        { requestedAt: after.pending!.requestedAt, reason: 'not right' },
+        sameDeptAdmin(),
+      );
       await expect(edit(e, C, { stopTime: '10:15' })).rejects.toBeInstanceOf(ConflictError);
     });
 
@@ -78,7 +82,12 @@ export function approvalCases(): void {
 
     it('a same-department L5 approves: the new values apply; a second decision is a 409', async () => {
       const { after } = await requested();
-      const res = await service.approveEntry(after.id, sameDeptAdmin(), C);
+      const res = await service.approveEntry(
+        after.id,
+        { requestedAt: after.pending!.requestedAt },
+        sameDeptAdmin(),
+        C,
+      );
       expect(res.rows.filter((r) => r.entryId === after.id)).toHaveLength(0);
       const day = await service.getDay({ date: MON }, owner(), C);
       const row = day.entries[0]!;
@@ -89,19 +98,37 @@ export function approvalCases(): void {
         90,
       ]);
       expect(row.pending).toBeNull();
-      await expect(service.approveEntry(after.id, sameDeptAdmin(), C)).rejects.toThrow(
-        'This edit was already approved or rejected — reload',
-      );
       await expect(
-        service.rejectEntry(after.id, { reason: 'late' }, sameDeptAdmin()),
+        service.approveEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt },
+          sameDeptAdmin(),
+          C,
+        ),
+      ).rejects.toThrow('This edit was already approved or rejected — reload');
+      await expect(
+        service.rejectEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt, reason: 'late' },
+          sameDeptAdmin(),
+        ),
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
     it('approve and reject at once — exactly one wins', async () => {
       const { after } = await requested();
       const res = await Promise.allSettled([
-        service.approveEntry(after.id, sameDeptAdmin(), C),
-        service.rejectEntry(after.id, { reason: 'no thanks' }, sameDeptAdmin()),
+        service.approveEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt },
+          sameDeptAdmin(),
+          C,
+        ),
+        service.rejectEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt, reason: 'no thanks' },
+          sameDeptAdmin(),
+        ),
       ]);
       expect(res.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       const lost = res.find((r) => r.status === 'rejected') as PromiseRejectedResult;
@@ -110,7 +137,11 @@ export function approvalCases(): void {
 
     it('reject keeps the values and shows the reason; the next edit clears it', async () => {
       const { after } = await requested();
-      await service.rejectEntry(after.id, { reason: 'Stop was 10:00' }, sameDeptAdmin());
+      await service.rejectEntry(
+        after.id,
+        { requestedAt: after.pending!.requestedAt, reason: 'Stop was 10:00' },
+        sameDeptAdmin(),
+      );
       const day = await service.getDay({ date: MON }, owner(), C);
       const row = day.entries[0]!;
       expect([row.toTime, row.description, row.pending, row.rejectReason]).toEqual([
@@ -127,21 +158,40 @@ export function approvalCases(): void {
     it('approval re-checks overlap against the rows saved since the request', async () => {
       const { after } = await requested(); // asks 09:00–10:30
       await add(MON, C, { startTime: '10:15', stopTime: '11:00' });
-      await expect(service.approveEntry(after.id, sameDeptAdmin(), C)).rejects.toThrow(
-        /^Cannot approve — Overlaps 10:15 AM – 11:00 AM/,
-      );
+      await expect(
+        service.approveEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt },
+          sameDeptAdmin(),
+          C,
+        ),
+      ).rejects.toThrow(/^Cannot approve — Overlaps 10:15 AM – 11:00 AM/);
     });
 
     it('nobody approves their own edit; another department L5 cannot either', async () => {
       const { after } = await requested();
-      await expect(service.approveEntry(after.id, ownerAsAdmin(), C)).rejects.toBeInstanceOf(
-        AuthorizationError,
-      );
-      await expect(service.approveEntry(after.id, otherDeptAdmin(), C)).rejects.toBeInstanceOf(
-        AuthorizationError,
-      );
       await expect(
-        service.rejectEntry(after.id, { reason: 'nope' }, otherDeptAdmin()),
+        service.approveEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt },
+          ownerAsAdmin(),
+          C,
+        ),
+      ).rejects.toBeInstanceOf(AuthorizationError);
+      await expect(
+        service.approveEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt },
+          otherDeptAdmin(),
+          C,
+        ),
+      ).rejects.toBeInstanceOf(AuthorizationError);
+      await expect(
+        service.rejectEntry(
+          after.id,
+          { requestedAt: after.pending!.requestedAt, reason: 'nope' },
+          otherDeptAdmin(),
+        ),
       ).rejects.toBeInstanceOf(AuthorizationError);
       expect((await service.getApprovals(ownerAsAdmin())).rows.map((r) => r.entryId)).not.toContain(
         after.id,

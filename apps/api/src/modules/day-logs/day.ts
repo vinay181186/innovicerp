@@ -196,9 +196,12 @@ export const inTimeOrder = (lines: readonly DayLine[]): DayLine[] =>
  *  has no Type); lines without a From — old Daily Task Report rows — carry
  *  no time and are left out. */
 export function spansOf(lines: readonly DayLine[]): DayLogSpan[] {
-  return lines
-    .filter((l) => l.fromTime)
-    .map((l) => ({ kind: 'work' as const, fromTime: l.fromTime!, toTime: l.toTime }));
+  return (
+    lines
+      .filter((l) => l.fromTime)
+      // The stored kind: old Break / Others rows never count as working hours.
+      .map((l) => ({ kind: l.kind, fromTime: l.fromTime!, toTime: l.toTime }))
+  );
 }
 
 /** Holidays in [from, to] as ONE json object { "YYYY-MM-DD": name } (a scalar sub-select). */
