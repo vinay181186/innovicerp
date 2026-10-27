@@ -12,11 +12,14 @@ export function OrderSelect({
   onChange,
   disabled,
   id,
+  fill = false,
 }: {
   value: DayLogOrder | null;
   onChange: (o: DayLogOrder | null) => void;
   disabled?: boolean | undefined;
   id?: string | undefined;
+  /** Fill the parent's width (My Day Log's sheet cell). */
+  fill?: boolean | undefined;
 }): React.JSX.Element {
   const [search, setSearch] = useState('');
   const orders = useDayLogOrderOptions(search);
@@ -26,7 +29,7 @@ export function OrderSelect({
     name: [o.ref, o.party].filter(Boolean).join(' · ') || (o.type === 'so' ? 'SO' : 'JWSO'),
   }));
   return (
-    <div style={{ minWidth: 170 }}>
+    <div style={fill ? { width: '100%', minWidth: 0 } : { minWidth: 170 }}>
       <SearchableSelect
         id={id}
         ariaLabel="SO / JWSO"
@@ -37,7 +40,7 @@ export function OrderSelect({
         onSearch={setSearch}
         loading={orders.isFetching}
         error={orders.error}
-        placeholder="SO / JWSO no. or customer"
+        placeholder={fill ? 'SO / JWSO' : 'SO / JWSO no. or customer'}
         disabled={disabled}
         clearable
         onChange={(pick) => {

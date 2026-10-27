@@ -1,10 +1,11 @@
 // Shared bits of the Day Log screens: the "Day" select (today + earlier
-// days, newest first) and the ONE summary strip of a day (server figures).
+// days, newest first) and the ONE thin summary line of a day (server figures).
 
 import type { DayLogSummaryOut } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
-import { StatStrip } from '@/ui/data';
+import { Fragment } from 'react';
 import { fmtDmy, recentDays, weekday } from '../lib/format';
+import '../day-log-sheet.css';
 
 /** How many days the Day select offers. */
 export const DAY_SELECT_DAYS = 31;
@@ -45,17 +46,26 @@ export function DaySelect({
   );
 }
 
-/** Working hours · First start · Last stop · Entries (server figures). */
+/** Working hours · First start · Last stop · Entries (server figures) —
+ *  one thin line (owner "Option B", 2026-10-27). */
 export function DaySummaryStrip({ s }: { s: DayLogSummaryOut }): React.JSX.Element {
+  const items: [string, string | number][] = [
+    ['Working hours', fmtDuration(s.workMin)],
+    ['First start', fmt12(s.firstStart)],
+    ['Last stop', fmt12(s.lastStop)],
+    ['Entries', s.entryCount],
+  ];
   return (
-    <StatStrip
-      style={{ marginBottom: 10 }}
-      items={[
-        { key: 'work', label: 'Working hours', count: fmtDuration(s.workMin) },
-        { key: 'first', label: 'First start', count: fmt12(s.firstStart) },
-        { key: 'last', label: 'Last stop', count: fmt12(s.lastStop) },
-        { key: 'entries', label: 'Entries', count: s.entryCount },
-      ]}
-    />
+    <div className="dl-sum">
+      {items.map(([k, v], i) => (
+        <Fragment key={k}>
+          {i > 0 ? <span className="dl-sep" aria-hidden /> : null}
+          <span>
+            <span className="dl-k">{k}</span>
+            <span className="dl-v">{v}</span>
+          </span>
+        </Fragment>
+      ))}
+    </div>
   );
 }

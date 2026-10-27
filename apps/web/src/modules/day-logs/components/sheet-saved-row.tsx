@@ -1,12 +1,14 @@
-// One SAVED row of the My Day Log sheet (owner final 2026-10-27). A saved
-// row is never removed. Read view = the shared EntryCells, then:
+// One SAVED row of the My Day Log sheet (owner "Option B", 2026-10-27), all
+// on one line: # · Start · Stop · Time · SO / JWSO · Working on · action.
+// A saved row is never removed. At the row end:
 //   ✎                 — inline edit: Start, Stop, SO / JWSO and the Working on
-//                       box, with "Send for approval" / Cancel. The edit is
+//                       box, with "Send for approval" / Cancel under the box
+//                       (same cell). The edit is
 //                       NOT applied: it is staged until a Department Admin
 //                       approves it (PATCH /day-logs/entries/:id).
-//   ⏳ Edit pending    — instead of ✎ while an edit waits; the Working on line
-//                       shows "Waiting for approval → …".
-//   Edit rejected: …  — orange, under Working on; ✎ is offered again.
+//   ⏳                — instead of ✎ while an edit waits; the Working on cell
+//                       shows "Waiting for approval → …" under the text.
+//   Edit rejected: …  — orange, under the text; ✎ is offered again.
 // The edit carries the updatedAt the row had when editing began (§20.4).
 
 import type { DayLogEntry, DayLogOrder, UpdateDayLogEntryInput } from '@innovic/shared';
@@ -14,12 +16,9 @@ import { fmt12, fmtDuration, parseTime, updateDayLogEntryInputSchema } from '@in
 import { useState } from 'react';
 import { errText } from '../lib/format';
 import { spanMinutes } from '../lib/sheet';
-import { EntryCells, PendingTag, SHEET_COLS } from './entries-table';
 import { OrderSelect } from './order-select';
 import { TimeField } from './time-field';
-import { NO_GAP, RowError, WorkEditLine, WorkLine } from './work-line';
-
-const EDIT_TINT: React.CSSProperties = { background: 'var(--amber3)' };
+import { RowError, WorkBox, WorkText } from './work-line';
 
 function EditRow({
   e,
@@ -70,65 +69,52 @@ function EditRow({
   }
 
   return (
-    <>
-      <tr style={{ ...EDIT_TINT, ...NO_GAP }}>
-        <td className="mono">{n}</td>
-        <td>
-          <TimeField
-            ariaLabel="Start time"
-            value={start}
-            onChange={setStart}
-            nowMin={nowMin}
+    <div className="dl-cols dl-warn">
+      <span className="dl-c dl-n">{n}</span>
+      <div className="dl-field">
+        <TimeField
+          ariaLabel="Start time"
+          value={start}
+          onChange={setStart}
+          nowMin={nowMin}
+          disabled={busy}
+          placeholder="Start *"
+          fill
+        />
+      </div>
+      <div className="dl-field">
+        <TimeField
+          ariaLabel="Stop time"
+          value={stop}
+          onChange={setStop}
+          nowMin={nowMin}
+          disabled={busy}
+          placeholder="Stop *"
+          fill
+        />
+      </div>
+      <span className="dl-c dl-dur">{mins !== null ? fmtDuration(mins) : ''}</span>
+      <div className="dl-field dl-sofield">
+        <OrderSelect value={order} disabled={busy} onChange={setOrder} fill />
+      </div>
+      <WorkBox value={desc} onChange={setDesc} disabled={busy}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
             disabled={busy}
-            placeholder="Start *"
-          />
-        </td>
-        <td>
-          <TimeField
-            ariaLabel="Stop time"
-            value={stop}
-            onChange={setStop}
-            nowMin={nowMin}
-            disabled={busy}
-            placeholder="Stop *"
-          />
-        </td>
-        <td>
-          <OrderSelect value={order} disabled={busy} onChange={setOrder} />
-        </td>
-        <td className="td-num mono">{mins !== null ? fmtDuration(mins) : ''}</td>
-        <td>
-          <div style={{ display: 'inline-flex', gap: 4 }}>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={busy}
-              onClick={() => void send()}
-            >
-              {busy ? 'Sending…' : 'Send for approval'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={busy}
-              onClick={onCancel}
-            >
-              Cancel
-            </button>
-          </div>
-        </td>
-      </tr>
-      <WorkEditLine
-        value={desc}
-        onChange={setDesc}
-        disabled={busy}
-        span={SHEET_COLS - 1}
-        tint={EDIT_TINT}
-        placeholder="Working on *"
-      >
-        {err ? <RowError text={err} /> : null}
-      </WorkEditLine>
-    </>
+            onClick={() => void send()}
+          >
+            {busy ? 'Sending…' : 'Send for approval'}
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </WorkBox>
+      <span className="dl-c dl-act" />
+      {err ? <RowError text={err} /> : null}
+    </div>
   );
 }
 
@@ -168,27 +154,36 @@ export function SheetSavedRow({
   }
 
   return (
-    <>
-      <tr style={NO_GAP}>
-        <EntryCells e={e} n={n} />
-        <td>
-          {e.pending ? (
-            <PendingTag e={e} />
-          ) : canEdit ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              title="Edit — goes for approval"
-              aria-label="Edit this row (goes for approval)"
-              disabled={busy}
-              onClick={onEdit}
-            >
-              ✎
-            </button>
-          ) : null}
-        </td>
-      </tr>
-      <WorkLine e={e} span={SHEET_COLS - 1} />
-    </>
+    <div className="dl-cols">
+      <span className="dl-c dl-n">{n}</span>
+      <span className="dl-c dl-t">{fmt12(e.fromTime)}</span>
+      <span className="dl-c dl-t">{fmt12(e.toTime)}</span>
+      <span className="dl-c dl-dur">{fmtDuration(e.minutes)}</span>
+      <span className="dl-c dl-so">{e.order?.code ?? '—'}</span>
+      <WorkText e={e} />
+      <span className="dl-c dl-act">
+        {e.pending ? (
+          <span
+            className="fw-700"
+            style={{ color: 'var(--amber2)' }}
+            title="An edit of this row is waiting for approval"
+            aria-label="Edit pending"
+          >
+            ⏳
+          </span>
+        ) : canEdit ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm dl-icon"
+            title="Edit — goes for approval"
+            aria-label="Edit this row (goes for approval)"
+            disabled={busy}
+            onClick={onEdit}
+          >
+            ✎
+          </button>
+        ) : null}
+      </span>
+    </div>
   );
 }

@@ -1,17 +1,16 @@
-// One NEW row of the My Day Log sheet (not saved yet, owner final
-// 2026-10-27): # · Start * · Stop * (both typed or picked — the clock opens
-// on click) · SO / JWSO · Time · ✕ Remove, then the full-width "Working on *"
-// box under it that grows as you type. Enter in the row's time boxes adds a
-// row when it is the last one (the sheet focuses the new row's Start); Enter
-// in Working on is a newline. "Row N: …" from the server shows under it.
+// One NEW row of the My Day Log sheet (not saved yet; owner "Option B",
+// 2026-10-27) — all on one line: # · Start * · Stop * (typed or picked — the
+// clock opens on click) · Time · SO / JWSO · Working on * (grows as you
+// type) · ✕. Enter in the row's time boxes adds a row when it is the last
+// one (the sheet focuses the new row's Start); Enter in Working on is a
+// newline. "Row N: …" from the check / server shows under the row.
 
 import { fmtDuration } from '@innovic/shared';
 import type { Draft } from '../lib/sheet';
 import { spanMinutes } from '../lib/sheet';
-import { SHEET_COLS } from './entries-table';
 import { OrderSelect } from './order-select';
 import { TimeField } from './time-field';
-import { NO_GAP, RowError, WorkEditLine } from './work-line';
+import { RowError, WorkBox } from './work-line';
 
 export function startInputId(key: number): string {
   return `dl-draft-start-${key}`;
@@ -42,68 +41,58 @@ export function SheetDraftRow({
   onEnter: () => void;
 }): React.JSX.Element {
   const mins = spanMinutes(d.start, d.stop);
-  const tint: React.CSSProperties = error
-    ? { background: 'var(--amber3)' }
-    : saving
-      ? { opacity: 0.6 }
-      : {};
+  const tint = error ? ' dl-warn' : saving ? ' dl-new dl-saving' : ' dl-new';
   return (
-    <>
-      <tr style={{ ...tint, ...NO_GAP }}>
-        <td className="mono">{n}</td>
-        <td>
-          <TimeField
-            id={startInputId(d.key)}
-            ariaLabel="Start time"
-            value={d.start}
-            onChange={(start) => onChange({ start })}
-            nowMin={nowMin}
-            disabled={saving}
-            placeholder="Start *"
-            onEnter={onEnter}
-          />
-        </td>
-        <td>
-          <TimeField
-            ariaLabel="Stop time"
-            value={d.stop}
-            onChange={(stop) => onChange({ stop })}
-            nowMin={nowMin}
-            disabled={saving}
-            placeholder="Stop *"
-            onEnter={onEnter}
-          />
-        </td>
-        <td>
-          <OrderSelect
-            value={d.order}
-            disabled={saving}
-            onChange={(order) => onChange({ order })}
-          />
-        </td>
-        <td className="td-num mono">{mins !== null ? fmtDuration(mins) : ''}</td>
-        <td>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            title="Remove this unsaved row"
-            aria-label="Remove this unsaved row"
-            disabled={saving}
-            onClick={onDrop}
-          >
-            {saving ? 'Saving…' : '✕ Remove'}
-          </button>
-        </td>
-      </tr>
-      <WorkEditLine
-        value={d.desc}
-        onChange={(desc) => onChange({ desc })}
-        disabled={saving}
-        span={SHEET_COLS - 1}
-        tint={tint}
-      >
-        {error ? <RowError text={error} /> : null}
-      </WorkEditLine>
-    </>
+    <div className={`dl-cols${tint}`}>
+      <span className="dl-c dl-n">{n}</span>
+      <div className="dl-field">
+        <TimeField
+          id={startInputId(d.key)}
+          ariaLabel="Start time"
+          value={d.start}
+          onChange={(start) => onChange({ start })}
+          nowMin={nowMin}
+          disabled={saving}
+          placeholder="Start *"
+          onEnter={onEnter}
+          fill
+        />
+      </div>
+      <div className="dl-field">
+        <TimeField
+          ariaLabel="Stop time"
+          value={d.stop}
+          onChange={(stop) => onChange({ stop })}
+          nowMin={nowMin}
+          disabled={saving}
+          placeholder="Stop *"
+          onEnter={onEnter}
+          fill
+        />
+      </div>
+      <span className="dl-c dl-dur">{mins !== null ? fmtDuration(mins) : ''}</span>
+      <div className="dl-field dl-sofield">
+        <OrderSelect
+          value={d.order}
+          disabled={saving}
+          onChange={(order) => onChange({ order })}
+          fill
+        />
+      </div>
+      <WorkBox value={d.desc} onChange={(desc) => onChange({ desc })} disabled={saving} />
+      <span className="dl-c dl-act">
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm dl-icon"
+          title={saving ? 'Saving…' : 'Remove this unsaved row'}
+          aria-label="Remove this unsaved row"
+          disabled={saving}
+          onClick={onDrop}
+        >
+          ✕
+        </button>
+      </span>
+      {error ? <RowError text={error} /> : null}
+    </div>
   );
 }
