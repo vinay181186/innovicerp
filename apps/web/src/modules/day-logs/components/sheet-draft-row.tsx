@@ -63,7 +63,7 @@ export function SheetDraftRow({
   isLast,
   nowMin,
   error,
-  busy,
+  saving,
   onChange,
   onDrop,
   onEnter,
@@ -78,7 +78,8 @@ export function SheetDraftRow({
   nowMin: number | null;
   /** The server's "Row N: …" for this row. */
   error: string | null;
-  busy: boolean;
+  /** The running Save carries this row — locked until it answers. */
+  saving: boolean;
   onChange: (patch: Partial<Draft>) => void;
   onDrop: () => void;
   /** Enter pressed in this row. */
@@ -92,7 +93,11 @@ export function SheetDraftRow({
     e.preventDefault();
     onEnter();
   };
-  const tint: React.CSSProperties = error ? { background: 'var(--amber3)' } : {};
+  const tint: React.CSSProperties = error
+    ? { background: 'var(--amber3)' }
+    : saving
+      ? { opacity: 0.6 }
+      : {};
   return (
     <>
       <tr style={{ ...tint, ...NO_GAP }}>
@@ -102,7 +107,7 @@ export function SheetDraftRow({
             className="innovic-select"
             aria-label="Type"
             value={d.kind}
-            disabled={busy}
+            disabled={saving}
             onKeyDown={enter}
             onChange={(e) => {
               const kind = e.target.value as DayLogEntryKind;
@@ -129,7 +134,7 @@ export function SheetDraftRow({
             onChange={(stop) => onChange({ stop })}
             // An Others row may end later today; Work / Break never after now.
             nowMin={isOthers ? null : nowMin}
-            disabled={busy}
+            disabled={saving}
             placeholder={isOthers ? 'e.g. 06:00 PM' : isLast ? 'blank = open' : 'Stop'}
             onEnter={onEnter}
           />
@@ -138,7 +143,7 @@ export function SheetDraftRow({
           {isOthers ? (
             <ReasonSelect
               value={d.reason}
-              disabled={busy}
+              disabled={saving}
               onChange={(reason) =>
                 // Full day always, and an afternoon Half day, run to the day's end.
                 onChange(
@@ -156,7 +161,7 @@ export function SheetDraftRow({
               maxLength={500}
               placeholder={isBreak ? 'Lunch, Tea…' : 'What did you work on?'}
               value={d.desc}
-              disabled={busy}
+              disabled={saving}
               onKeyDown={enter}
               onChange={(e) => onChange({ desc: e.target.value })}
               style={{ minWidth: 180 }}
@@ -167,7 +172,7 @@ export function SheetDraftRow({
           {d.kind === 'work' ? (
             <OrderSelect
               value={d.order}
-              disabled={busy}
+              disabled={saving}
               onChange={(order) => onChange({ order })}
             />
           ) : (
@@ -181,10 +186,10 @@ export function SheetDraftRow({
             className="btn btn-ghost btn-sm"
             title="Remove this unsaved row"
             aria-label="Remove this unsaved row"
-            disabled={busy}
+            disabled={saving}
             onClick={onDrop}
           >
-            ✕ Remove
+            {saving ? 'Saving…' : '✕ Remove'}
           </button>
         </td>
       </tr>
@@ -192,7 +197,7 @@ export function SheetDraftRow({
         value={d.remarks}
         onChange={(remarks) => onChange({ remarks })}
         required={!isBreak}
-        disabled={busy}
+        disabled={saving}
         span={SHEET_COLS - 1}
         tint={tint}
       />

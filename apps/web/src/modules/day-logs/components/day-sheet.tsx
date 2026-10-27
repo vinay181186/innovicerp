@@ -4,8 +4,12 @@
 // the draft rows, "+ Add row" and ONE Save that sends every filled draft in
 // one batch (all or nothing). The server answers "Row N: …" for the row it
 // refused: the message shows under that row and every draft is kept. On
-// success the drafts go back to one empty row. One Idempotency-Key per save
+// success ONLY the rows that batch carried leave the drafts (rows typed while
+// it ran stay; none left = one empty row). One Idempotency-Key per save
 // (useSaveKey): a double click or a resend after a timeout saves once.
+// While a save runs only the rows it carries are locked — every other draft
+// row, and every saved row whose own update / remove is not in flight, stays
+// usable (a background refetch never locks anything).
 
 import type { DayLogDetail, UpdateDayLogEntryInput } from '@innovic/shared';
 import { useEffect, useState } from 'react';
@@ -51,7 +55,11 @@ export function DaySheet({
   const [rowErrs, setRowErrs] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [focusKey, setFocusKey] = useState<number | null>(null);
-  const busy = addRows.isPending || update.isPending || remove.isPending;
+  // Draft keys the in-flight batch carries, and saved-entry ids whose own
+  // update / stop / remove is in flight — only those rows are locked.
+  const [savingKeys, setSavingKeys] = useState<ReadonlySet<number>>(() => new Set());
+  const [rowBusy, setRowBusy] = useState<ReadonlySet<string>>(() => new Set());
+  const saving = addRows.isPending || savingKeys.size > 0;
   const isToday = day.date === day.today;
   const filled = drafts.filter(isFilled);
   const dirty = filled.length > 0;
@@ -77,19 +85,30 @@ export function DaySheet({
     setRowErrs({});
     setDrafts((ds) => ds.filter((d) => d.key !== key));
   };
-  /** Cancel: drop every unsaved row. */
+  /** Cancel: drop every unsaved row (not the ones a running save carries). */
   const cancelRows = (): void => {
     setRowErrs({});
     setMsg(null);
-    setDrafts([]);
+    setDrafts((ds) => ds.filter((d) => savingKeys.has(d.key)));
   };
-  const run = (p: Promise<unknown>, ok: string): Promise<unknown> =>
-    p.then(() => {
+  /** Lock one saved row while its own write runs. */
+  const track = <T,>(id: string, p: Promise<T>): Promise<T> => {
+    setRowBusy((s) => new Set(s).add(id));
+    return p.finally(() =>
+      setRowBusy((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      }),
+    );
+  };
+  const run = (id: string, p: Promise<unknown>, ok: string): Promise<unknown> =>
+    track(id, p).then(() => {
       setMsg({ ok: true, text: ok });
     });
 
   async function save(): Promise<void> {
-    if (busy || !filled.length) return;
+    if (saving || !filled.length) return;
     setMsg(null);
     setRowErrs({});
     const bad = filled.find((d) => d.stop.trim() && toSheetRow(d).stopTime === null);
@@ -98,9 +117,15 @@ export function DaySheet({
       setMsg({ ok: false, text: 'Nothing saved — fix the red row.' });
       return;
     }
+    const sent = new Set(filled.map((d) => d.key));
+    setSavingKeys(sent);
     try {
       await addRows.mutateAsync({ date: day.date, rows: filled.map(toSheetRow) });
-      setDrafts([blankDraft()]);
+      // Only the rows this batch carried are saved — keep anything typed meanwhile.
+      setDrafts((ds) => {
+        const rest = ds.filter((d) => !sent.has(d.key));
+        return rest.length ? rest : [blankDraft()];
+      });
       setMsg({ ok: true, text: `Saved ${filled.length} row${filled.length > 1 ? 's' : ''}.` });
     } catch (e) {
       const text = errText(e);
@@ -112,6 +137,8 @@ export function DaySheet({
       } else {
         setMsg({ ok: false, text });
       }
+    } finally {
+      setSavingKeys(new Set());
     }
   }
 
@@ -139,23 +166,23 @@ export function DaySheet({
                   nowMin={nowMin}
                   canWrite={canWrite}
                   editing={editingId === e.id}
-                  busy={busy}
+                  busy={rowBusy.has(e.id)}
                   onEdit={() => {
                     setMsg(null);
                     onEditingId(e.id);
                   }}
                   onCancelEdit={() => onEditingId(null)}
                   onUpdate={(body: UpdateDayLogEntryInput) =>
-                    run(update.mutateAsync({ id: e.id, ...body }), 'Row updated.').then(() =>
+                    run(e.id, update.mutateAsync({ id: e.id, ...body }), 'Row updated.').then(() =>
                       onEditingId(null),
                     )
                   }
                   onRemove={() => {
                     setMsg(null);
                     if (editingId === e.id) onEditingId(null);
-                    remove
-                      .mutateAsync(e.id)
-                      .catch((x: unknown) => setMsg({ ok: false, text: errText(x) }));
+                    track(e.id, remove.mutateAsync(e.id)).catch((x: unknown) =>
+                      setMsg({ ok: false, text: errText(x) }),
+                    );
                   }}
                 />
               ))}
@@ -185,7 +212,7 @@ export function DaySheet({
                       isLast={j === drafts.length - 1}
                       nowMin={nowMin}
                       error={rowErrs[d.key] ?? null}
-                      busy={busy}
+                      saving={savingKeys.has(d.key)}
                       onChange={(p) => patch(d.key, p)}
                       onDrop={() => dropRow(d.key)}
                       onEnter={() => {
@@ -208,7 +235,7 @@ export function DaySheet({
             marginBottom: 10,
           }}
         >
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={addRow}>
+          <button type="button" className="btn btn-ghost" onClick={addRow}>
             + Add row
           </button>
           <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
@@ -224,22 +251,18 @@ export function DaySheet({
           ) : null}
           <span style={{ flex: 1 }} />
           {drafts.length > 0 ? (
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={cancelRows}>
+            <button type="button" className="btn btn-ghost" onClick={cancelRows}>
               Cancel
             </button>
           ) : null}
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || !dirty}
+            disabled={saving || !dirty}
             onClick={() => void save()}
             style={{ minWidth: 120 }}
           >
-            {addRows.isPending
-              ? 'Saving…'
-              : filled.length > 1
-                ? `Save (${filled.length} rows)`
-                : 'Save'}
+            {saving ? 'Saving…' : filled.length > 1 ? `Save (${filled.length} rows)` : 'Save'}
           </button>
         </div>
       ) : msg ? (

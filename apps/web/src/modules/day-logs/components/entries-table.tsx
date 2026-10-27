@@ -59,7 +59,17 @@ export function LateTag(): React.JSX.Element {
 }
 
 /** One saved entry's seven cells (no <tr>). */
-export function EntryCells({ e, n }: { e: DayLogEntry; n: number }): React.JSX.Element {
+export function EntryCells({
+  e,
+  n,
+  showLate = true,
+}: {
+  e: DayLogEntry;
+  n: number;
+  /** The LATE tag beside the Stop — off on the user's own My Day Log (owner
+   *  2026-10-27); the admin's person page keeps it. */
+  showLate?: boolean;
+}): React.JSX.Element {
   const open = !e.toTime;
   const work = e.kind === 'leave' ? '' : e.description;
   return (
@@ -69,7 +79,7 @@ export function EntryCells({ e, n }: { e: DayLogEntry; n: number }): React.JSX.E
       <td className="mono">{fmt12(e.fromTime)}</td>
       <td className="mono">
         {open ? '● open' : fmt12(e.toTime)}
-        {e.late ? <LateTag /> : null}
+        {showLate && e.late ? <LateTag /> : null}
       </td>
       <td title={work || undefined} style={CLIP}>
         {work}

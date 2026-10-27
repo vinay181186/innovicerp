@@ -323,7 +323,7 @@ export function SheetSavedRow({
   return (
     <>
       <tr style={entryRowStyle(e)}>
-        <EntryCells e={e} n={n} />
+        <EntryCells e={e} n={n} showLate={false} />
         <td>
           {canWrite ? (
             <div style={{ display: 'inline-flex', gap: 4 }}>
