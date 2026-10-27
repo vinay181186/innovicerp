@@ -15,8 +15,10 @@ import { spanText } from '../lib/sheet';
  *  (the theme hands a <tr>'s inline border-bottom to its cells). */
 export const NO_GAP: React.CSSProperties = { borderBottom: 'none' };
 
-export const WORK_PLACEHOLDER =
-  'Working on * — whatever you want to mention (work, lunch, meeting, leave…)';
+export const WORK_PLACEHOLDER = 'Whatever you want to mention — work, lunch, meeting, leave…';
+
+/** The dark bold "Working on *" label (owner 2026-10-27: compulsory, must stand out). */
+const LABEL: React.CSSProperties = { color: 'var(--text)', fontWeight: 700 };
 
 const SMALL: React.CSSProperties = { fontSize: 'var(--fs-xs)', marginTop: 2 };
 
@@ -39,7 +41,7 @@ export function WorkLine({
         className="td-left"
         style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingTop: 0 }}
       >
-        <span className="text3 fw-700">Working on:</span> {e.description}
+        <span style={LABEL}>Working on:</span> {e.description}
         {p ? (
           <div className="text3" style={SMALL}>
             Waiting for approval → {spanText(p.fromTime, p.toTime)}
@@ -86,17 +88,20 @@ export function WorkEditLine({
     <tr style={tint}>
       <td />
       <td colSpan={span} className="td-left" style={{ paddingTop: 0 }}>
+        <label style={{ ...LABEL, display: 'block', marginBottom: 3 }}>
+          Working on <span style={{ color: 'var(--red2)' }}>*</span>
+        </label>
         <textarea
           ref={ref}
           className="innovic-textarea"
           aria-label="Working on"
-          rows={1}
+          rows={3}
           maxLength={2000}
           placeholder={placeholder}
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          style={{ resize: 'none', overflow: 'hidden', maxHeight: 'none', minHeight: 34 }}
+          style={{ resize: 'none', overflow: 'hidden', maxHeight: 'none', minHeight: 64 }}
         />
         {children}
       </td>
