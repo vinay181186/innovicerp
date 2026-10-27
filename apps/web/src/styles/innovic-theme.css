@@ -779,6 +779,26 @@ body.density-compact {
   border-color: var(--blue);
   color: #fff;
 }
+/* Green / red keep their colour in a cell too — else the white ✓ / ✗ on the
+   Approvals Action column sit on the light sheet button and vanish. */
+.innovic-table.tbl-grid .btn-sm.btn-success {
+  background: var(--green2);
+  border-color: var(--green2);
+  color: #fff;
+}
+.innovic-table.tbl-grid .btn-sm.btn-success:hover {
+  background: var(--green2-hover);
+  border-color: var(--green2-hover);
+}
+.innovic-table.tbl-grid .btn-sm.btn-danger {
+  background: var(--red2);
+  border-color: var(--red2);
+  color: #fff;
+}
+.innovic-table.tbl-grid .btn-sm.btn-danger:hover {
+  background: var(--red2-hover);
+  border-color: var(--red2-hover);
+}
 /* Job Card list's action block: every button fills its grid cell so the
    2-across block reads as one tidy panel whatever the label lengths. */
 .innovic-table.tbl-grid td:last-child .jc-row-acts .btn-sm {
