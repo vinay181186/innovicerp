@@ -180,12 +180,12 @@ export function SheetDraftRow({
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            title="Drop this row"
-            aria-label="Drop this row"
+            title="Remove this unsaved row"
+            aria-label="Remove this unsaved row"
             disabled={busy}
             onClick={onDrop}
           >
-            ✕
+            ✕ Remove
           </button>
         </td>
       </tr>
