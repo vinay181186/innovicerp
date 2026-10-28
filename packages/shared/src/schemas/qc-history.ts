@@ -219,6 +219,8 @@ export const qcRegisterQuerySchema = z.object({
   grnLineId: z.string().uuid().optional(),
   /** ADR-251: only incoming calls of these GRN Types (job-card calls drop out). */
   grnType: grnTypeListParam,
+  /** Sort & Filter (ADR-200) over the register's columns — QC_REGISTER_SF_FIELDS. */
+  sf: sfRawParamSchema,
   limit: limitParam,
   offset: offsetParam,
 });
@@ -260,14 +262,93 @@ export interface PartyGrnQcRow {
   waitDays: number;
 }
 
-export type QcRegisterPendingItem =
-  | { kind: 'op'; row: QcHistoryPendingRow }
-  | { kind: 'inc'; row: IncomingQcPendingRow; grnType: Exclude<QcGrnType, 'party_grn'> }
-  | { kind: 'pgrn'; row: PartyGrnQcRow };
-export type QcRegisterCompletedItem =
-  | { kind: 'op'; row: QcHistoryLogRow }
-  | { kind: 'inc'; row: IncomingQcCompletedRow; grnType: Exclude<QcGrnType, 'party_grn'> }
-  | { kind: 'pgrn'; row: PartyGrnQcRow };
+/** One machine that logged output on the source step (NAMING.md "Actual Machine"). */
+export interface QcMachineOutput {
+  /** machines.code, e.g. CNC-1. */
+  code: string;
+  /** Pieces this machine completed on the step (v_op_machine_output.completed_qty). */
+  qty: number;
+}
+
+/** The step a job-card QC call inspects the output of: the nearest EARLIER
+ *  job-card op that is not itself a QC step (op_type <> 'qc'). Null when there
+ *  is none (e.g. MIR / MCR as the first steps) and on GRN / Party GRN calls. */
+export interface QcSourceStep {
+  jcOpId: string;
+  opSeq: number;
+  operation: string | null;
+  /** The step is outsourced (OSP) — no machine of ours; both cells read "Outsourced". */
+  outsourced: boolean;
+  /** NAMING.md "Planned Machine": jc_ops.machine_id → machines.code, else
+   *  machine_code_text; null when none is set or the step is outsourced. */
+  plannedMachine: string | null;
+  /** NAMING.md "Actual Machine": every machine that logged output on the step,
+   *  most pieces first. Empty = nothing logged yet / outsourced. */
+  actualMachines: QcMachineOutput[];
+}
+
+/** Facts the register adds to every call, whatever its kind. */
+export interface QcRegisterFacts {
+  /** NAMING.md "Client PO No.": the SO's client_po_no, else the JWSO's
+   *  (job_work_orders.client_po_no). Null on a purchase GRN call / when blank. */
+  clientPoNo: string | null;
+  /** Job-card calls only; null for GRN / Party GRN calls. */
+  sourceStep: QcSourceStep | null;
+}
+
+export type QcRegisterPendingItem = QcRegisterFacts &
+  (
+    | { kind: 'op'; row: QcHistoryPendingRow }
+    | { kind: 'inc'; row: IncomingQcPendingRow; grnType: Exclude<QcGrnType, 'party_grn'> }
+    | { kind: 'pgrn'; row: PartyGrnQcRow }
+  );
+export type QcRegisterCompletedItem = QcRegisterFacts &
+  (
+    | { kind: 'op'; row: QcHistoryLogRow }
+    | { kind: 'inc'; row: IncomingQcCompletedRow; grnType: Exclude<QcGrnType, 'party_grn'> }
+    | { kind: 'pgrn'; row: PartyGrnQcRow }
+  );
+
+/** ADR-200 Sort & Filter fields of the QC Call Register. The web column's
+ *  `sortFilterField` and the server's column map (qc-history/register-sf.ts)
+ *  both use exactly these names. Columns not listed (Days Waiting, Response
+ *  Days, Stage, Result, Report) have no ▾ — their value is worked out per kind
+ *  of call and cannot be sorted the same way across job-card, GRN and Party GRN. */
+export const QC_REGISTER_PENDING_SF_FIELDS = [
+  'docNo',
+  'itemCode',
+  'itemName',
+  'qcPending',
+  'calledDate',
+  'pol',
+  'soVendor',
+  'soInternalNo',
+  'clientPoNo',
+  'operation',
+  'receivedQty',
+  'assignedTo',
+  'plannedMachine',
+  'actualMachine',
+] as const;
+export const QC_REGISTER_COMPLETED_SF_FIELDS = [
+  'docNo',
+  'itemCode',
+  'itemName',
+  'accepted',
+  'rejected',
+  'attended',
+  'inspectedBy',
+  'pol',
+  'soVendor',
+  'soInternalNo',
+  'clientPoNo',
+  'operation',
+  'calledDate',
+  'logNo',
+  'remarks',
+  'plannedMachine',
+  'actualMachine',
+] as const;
 
 export interface QcRegisterStageSummary {
   /** Open calls in this stage. */

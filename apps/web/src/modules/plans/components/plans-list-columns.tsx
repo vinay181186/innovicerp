@@ -1,5 +1,5 @@
-// Plans list — the fit table's columns, row tint, ▸ detail and ⋯ menu (ADR-199
-// table standard 2026-10-01). Split out of routes/list.tsx so that file stays
+// Plans list — the fit table's columns, row tint and ⋯ menu (ADR-199; the ▸ detail is
+// in plan-expanded.tsx). Split out of routes/list.tsx so that file stays
 // under the 400-line ceiling and the sheet is defined in one place.
 //
 // One row per plan, every visible fact its own one-line column (the stacked
@@ -8,16 +8,10 @@
 // one expand control, which opens the secondary facts (POL, SO/JWSO, Order Qty,
 // Covered, PRO No., JC No., Dispatch date). Labels per docs/NAMING.md.
 
-import {
-  PRODUCTION_ORDER_STATUS_LABEL,
-  type ListPlansResponse,
-  type PlanStatus,
-  type PlanType,
-} from '@innovic/shared';
+import { type ListPlansResponse, type PlanStatus, type PlanType } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import { ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
@@ -173,6 +167,35 @@ export function plansListColumns(
       title: (row) => row.itemName ?? row.itemNameText ?? '',
     },
     {
+      // The system SO / JWSO number the plan was raised against (the ▸ reveal
+      // still shows it with the Internal SO No. beside it).
+      id: 'so_jwso',
+      sortFilterField: 'soCodeText',
+      header: 'SO / JWSO No.',
+      kind: 'code',
+      className: 'mono',
+      nowrap: true,
+      render: (row) => (row.soCodeText ? row.soCodeText : <span className="text3">—</span>),
+    },
+    {
+      // ADR-207 — the office's own number, its OWN column beside the system
+      // SO / JWSO No. A JWSO-sourced or ad-hoc plan never has one.
+      id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
+      header: 'Internal SO No.',
+      kind: 'code',
+      className: 'mono',
+      nowrap: true,
+      render: (row) =>
+        row.soInternalNo?.trim() ? (
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {row.soInternalNo}
+          </span>
+        ) : (
+          <span className="text3">—</span>
+        ),
+    },
+    {
       id: 'plan_qty',
       sortFilterField: 'planQty',
       filterType: 'num',
@@ -222,87 +245,6 @@ export function plansListColumns(
       },
     },
   ];
-}
-
-/** One labelled fact in the ▸ reveal. */
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div style={{ minWidth: 120 }}>
-      <div
-        className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: 13 }}>{children}</div>
-    </div>
-  );
-}
-
-/**
- * The ▸ reveal: the secondary facts kept off the row (POL, SO/JWSO, Ln, Order
- * Qty, Covered, PRO No., JC No., Dispatch date). PRO No. / JC No. are real
- * links; the rest are read-only.
- */
-export function PlanExpanded({ row }: { row: PlanRow }): React.JSX.Element {
-  const poStatus = row.productionOrderStatus
-    ? ((PRODUCTION_ORDER_STATUS_LABEL as Record<string, string | undefined>)[
-        row.productionOrderStatus
-      ] ?? row.productionOrderStatus)
-    : undefined;
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, padding: '10px 14px' }}>
-      <Field label="POL">
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {row.clientPoLineNo ?? '—'}
-        </span>
-      </Field>
-      <Field label="SO / JWSO No.">
-        <span className="mono">
-          {row.soCodeText ? soNoWithInternal(row.soCodeText, row.soInternalNo) : '—'}
-        </span>
-      </Field>
-      <Field label="Ln">{row.lineNo ?? '—'}</Field>
-      <Field label="Order Qty">
-        <span className="mono fw-700">{row.orderQty}</span>
-      </Field>
-      <Field label="Covered">
-        <span className="mono">{row.derivedStatus ? row.coveredQty : '—'}</span>
-      </Field>
-      <Field label="PRO No.">
-        {row.productionOrderId && row.productionOrderCode ? (
-          <Link
-            to="/production-orders/$id"
-            params={{ id: row.productionOrderId }}
-            className="td-code"
-            title={poStatus ? `Production Order · ${poStatus}` : 'Production Order'}
-          >
-            {row.productionOrderCode}
-          </Link>
-        ) : (
-          <span className="text3">—</span>
-        )}
-      </Field>
-      <Field label="JC No.">
-        {row.jcId && row.jcCode ? (
-          <Link to="/job-cards/$id" params={{ id: row.jcId }} className="td-code">
-            {row.jcCode}
-          </Link>
-        ) : (
-          <span className="text3">—</span>
-        )}
-      </Field>
-      <Field label="Dispatch date">
-        {row.customerDispatchDate ? fmtDate(row.customerDispatchDate) : '—'}
-      </Field>
-    </div>
-  );
 }
 
 /** The ⋯ menu's link renderer: the Create … steps carry a query string

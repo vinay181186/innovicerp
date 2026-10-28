@@ -16,10 +16,15 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fetchAllPages } from '@/lib/list-paging';
 import { Banner } from '@/ui/feedback/Banner';
 import { fetchQcRegister } from '@/modules/qc-history/api';
-import { exportCompletedQc, exportPendingQc } from '@/modules/qc-history/lib/export';
+import {
+  type QcExportExtras,
+  exportCompletedQc,
+  exportPendingQc,
+} from '@/modules/qc-history/lib/export';
 import { PartyGrnQcModal } from '@/modules/party-grn/components/party-grn-qc-modal';
 import type { RaisedNc } from './qc-call-inspect-form';
 import type { CompletedVM } from './qc-call-completed-columns';
+import { factExportCells } from './qc-call-fact-columns';
 import { type PendingVM, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import type { QcView } from './qc-sheet';
 
@@ -75,31 +80,39 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
   };
 }
 
-/** Export every call matching the register query (search + stage + Mine). */
+/** Export every call matching the register query (search + stage + Mine +
+ *  Sort & Filter), with the register's own facts (Planned / Actual Machine —
+ *  not on Incoming QC — and Client PO No.) as the last columns. */
 export async function exportRegister(
   query: Omit<QcRegisterQuery, 'limit' | 'offset'>,
   view: QcView,
+  incoming: boolean,
 ): Promise<void> {
   const all = await fetchAllPages((limit, offset) => fetchQcRegister({ ...query, limit, offset }));
+  const extras: QcExportExtras = { ops: [], inc: [] };
+  const facts = (it: PendingVM | CompletedVM): void =>
+    void (it.kind === 'op' ? extras.ops : extras.inc).push(factExportCells(it, !incoming));
   if (view === 'pending') {
     const ops: QcHistoryPendingRow[] = [];
     const inc: IncomingQcPendingRow[] = [];
     for (const it of all as PendingVM[]) {
+      facts(it);
       if (it.kind === 'op') ops.push(it.row);
       else if (it.kind === 'pgrn') inc.push(pgrnAsPending(it.row));
       else inc.push(it.row);
     }
-    exportPendingQc(ops, inc);
+    exportPendingQc(ops, inc, extras);
     return;
   }
   const ops: QcHistoryLogRow[] = [];
   const inc: IncomingQcCompletedRow[] = [];
   for (const it of all as CompletedVM[]) {
+    facts(it);
     if (it.kind === 'op') ops.push(it.row);
     else if (it.kind === 'pgrn') inc.push(pgrnAsCompleted(it.row));
     else inc.push(it.row);
   }
-  exportCompletedQc(ops, inc);
+  exportCompletedQc(ops, inc, extras);
 }
 
 /** ADR-234 — the link after "NC-xxx raised —". Dispose needs NC Advance, so

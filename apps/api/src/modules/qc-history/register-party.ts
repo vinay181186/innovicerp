@@ -11,6 +11,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import type { PartyGrnQcRow } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
+import { PGRN_CLIENT_PO_NO } from './register-facts';
 
 function pgrnJoins(): SQL {
   return sql`
@@ -45,12 +46,12 @@ export function pgrnCompletedFrom(companyId: string): SQL {
       AND pgl.qc_at IS NOT NULL`;
 }
 
-const CUSTOMER = sql`COALESCE(c.name, jw.customer_name, pg.client_code_text)`;
-const JW_CODE = sql`COALESCE(jw.code, pg.jw_code_text)`;
-const PART_CODE = sql`COALESCE(part.code, jwl.item_code_text)`;
-const PM_CODE = sql`COALESCE(pm.code, pgl.party_material_code_text)`;
+export const CUSTOMER = sql`COALESCE(c.name, jw.customer_name, pg.client_code_text)`;
+export const JW_CODE = sql`COALESCE(jw.code, pg.jw_code_text)`;
+export const PART_CODE = sql`COALESCE(part.code, jwl.item_code_text)`;
+export const PM_CODE = sql`COALESCE(pm.code, pgl.party_material_code_text)`;
 /** QC day in IST (qc_at is a UTC timestamp). */
-const QC_DAY = sql`(pgl.qc_at AT TIME ZONE 'Asia/Kolkata')::date`;
+export const QC_DAY = sql`(pgl.qc_at AT TIME ZONE 'Asia/Kolkata')::date`;
 
 /** Pending qty of a pending Party GRN line — the whole received qty. */
 export const PGRN_PENDING_QTY = sql`pgl.received_qty`;
@@ -80,7 +81,7 @@ export const PGRN_COMPLETED_SELECT = sql`${PGRN_COMMON},
   GREATEST(0, (${QC_DAY} - pg.grn_date))::int AS "waitDays"`;
 
 /** `AND (… ILIKE …)` over PGRN no., JWSO code, part code, RM code, customer,
- *  POL (ADR-236 — the other two register halves search POL too). */
+ *  POL (ADR-236 — the other two register halves search POL too), Client PO No. */
 export function pgrnSearchWhere(term: string | undefined): SQL {
   const q = (term ?? '').trim().replace(/\s+/g, ' ');
   if (q === '') return sql``;
@@ -93,6 +94,8 @@ export function pgrnSearchWhere(term: string | undefined): SQL {
     CUSTOMER,
     PM_CODE,
     sql`jwl.client_po_line_no`,
+    // The JWSO's Client PO No. (register-facts.ts).
+    PGRN_CLIENT_PO_NO,
   ];
   return sql`AND (${sql.join(
     cols.map((col) => sql`${col} ILIKE ${p} ESCAPE '\\'`),

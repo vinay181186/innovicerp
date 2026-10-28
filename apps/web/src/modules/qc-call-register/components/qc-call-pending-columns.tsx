@@ -5,7 +5,8 @@
 // the one set of accessors the columns read.
 //
 // Visible columns (first pinned = Doc No.): Doc No. · Item Code · Item Name ·
-// QC Pending · Called Date · Days Waiting · Stage. The secondary facts — POL,
+// QC Pending · Called Date · Days Waiting · Planned Machine · Actual Machine ·
+// Client PO No. · Stage. The secondary facts — POL,
 // SO / Vendor, Operation, Assigned To — start hidden (PENDING_HIDDEN) so the
 // fit engine drops them into the ▸ detail row. A pending call has not been
 // inspected yet, so the completed-only facts the sheet used to imply (response
@@ -26,6 +27,7 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
+import { factColumns } from './qc-call-fact-columns';
 import { QC_STAGES, dayDiff, processStage, type QcStage } from './qc-sheet';
 
 /** One pending call, from either feed — the register's own item, so a GRN
@@ -155,6 +157,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'doc_no',
+      sortFilterField: 'docNo',
       header: 'Doc No.',
       nowrap: true,
       render: (vm) =>
@@ -195,6 +198,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       nowrap: true,
       className: 'mono fw-700',
@@ -203,6 +207,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
@@ -212,6 +217,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'qc_pending',
+      sortFilterField: 'qcPending',
       header: 'QC Pending',
       align: 'right',
       nowrap: true,
@@ -220,6 +226,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'called_date',
+      sortFilterField: 'calledDate',
       kind: 'date',
       header: 'Called Date',
       className: 'mono',
@@ -234,6 +241,8 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       render: (vm) => waitDisplay(vm),
       filterValue: (vm) => waitDaysOf(vm),
     },
+    // Planned Machine · Actual Machine · Client PO No. (qc-call-fact-columns).
+    ...factColumns<PendingVM>(),
     {
       id: 'stage',
       kind: 'badge',
@@ -249,6 +258,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     // ─── ▸ detail (hidden by default) ───────────────────────────────────────
     {
       id: 'pol',
+      sortFilterField: 'pol',
       header: 'POL',
       nowrap: true,
       render: (vm) => (
@@ -259,6 +269,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'so_vendor',
+      sortFilterField: 'soVendor',
       header: 'SO / Vendor',
       align: 'left',
       ellipsis: true,
@@ -267,9 +278,9 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       // ADR-207 — the office's own Internal SO No., its own column beside the
-      // SO / Vendor one so the two SO numbers can be told apart. No
-      // `sortFilterField`: this register has no server-side sort / filter map.
+      // SO / Vendor one so the two SO numbers can be told apart.
       id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
       kind: 'code',
       header: 'Internal SO No.',
       className: 'mono fw-700',
@@ -278,6 +289,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'operation',
+      sortFilterField: 'operation',
       header: 'Operation',
       align: 'left',
       ellipsis: true,
@@ -286,6 +298,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'received_qty',
+      sortFilterField: 'receivedQty',
       header: 'Received Qty',
       align: 'right',
       nowrap: true,
@@ -294,6 +307,7 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
     },
     {
       id: 'assigned_to',
+      sortFilterField: 'assignedTo',
       header: 'Assigned To',
       align: 'left',
       ellipsis: true,

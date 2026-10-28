@@ -1,18 +1,13 @@
-// QC Call Register — Completed view columns (ADR-199 fit table). One unified row
-// per completed inspection, from either feed: a job-card QC log entry (process
-// QC) or a GRN line that has been inspected (incoming QC). CompletedVM maps the
-// two shapes onto one set of accessors.
+// QC Call Register — Completed view columns (ADR-199 fit table). One row per
+// completed inspection: a job-card QC log entry, an inspected GRN line, or
+// (ADR-203) a Party GRN line — CompletedVM maps them onto one set of accessors.
+// Party GRN reads as on Pending: Item Code = the finished part, Item Name = the
+// customer RM, SO / Vendor = the customer, Remarks = the reject reason.
 //
-// Visible columns (first pinned = Doc No.): Doc No. · Item Code · Accepted ·
-// Rejected · QC Result · Attended · Inspected By. Everything else — Item Name,
-// POL, SO / Vendor, Operation, Called Date, Response days, Log No., Remarks and
-// the QC report — starts hidden (COMPLETED_HIDDEN) so the fit engine shows it in
-// the ▸ detail row. Row click opens the document (the page owns navigation).
-//
-// ADR-203: a third kind, 'pgrn' — a Party GRN line (customer material) whose
-// Incoming QC is booked. Same reading as on the Pending view: Item Code = the
-// finished part (CODE/REV), Item Name = the customer RM, SO / Vendor = the
-// customer, Remarks = the reject reason.
+// Visible (Doc No. pinned): Doc No. · Item Code · Accepted · Deviated · QC
+// Result · Attended · Inspected By · Planned Machine · Actual Machine · Client
+// PO No. The rest starts hidden (COMPLETED_HIDDEN) in the ▸ detail row. Row
+// click opens the document (the page owns navigation).
 
 import type { QcRegisterCompletedItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
@@ -21,6 +16,7 @@ import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
+import { factColumns } from './qc-call-fact-columns';
 import { incomingStageLabel, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import { QC_STAGES, dayDiff, processStage } from './qc-sheet';
 
@@ -185,6 +181,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     {
       // First column — pinned by the table standard (ADR-199).
       id: 'doc_no',
+      sortFilterField: 'docNo',
       header: 'Doc No.',
       nowrap: true,
       render: (vm) =>
@@ -236,6 +233,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'item_code',
+      sortFilterField: 'itemCode',
       header: 'Item Code',
       nowrap: true,
       className: 'mono fw-700',
@@ -244,6 +242,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'accepted',
+      sortFilterField: 'accepted',
       header: 'Accepted',
       align: 'right',
       nowrap: true,
@@ -252,6 +251,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'rejected',
+      sortFilterField: 'rejected',
       header: 'Deviated',
       align: 'right',
       nowrap: true,
@@ -268,6 +268,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'attended',
+      sortFilterField: 'attended',
       kind: 'date',
       header: 'Attended',
       className: 'mono',
@@ -276,12 +277,15 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'inspected_by',
+      sortFilterField: 'inspectedBy',
       header: 'Inspected By',
       align: 'left',
       ellipsis: true,
       render: (vm) => inspectedByOf(vm) ?? '—',
       title: (vm) => inspectedByOf(vm) ?? '',
     },
+    // Planned Machine · Actual Machine · Client PO No. (qc-call-fact-columns).
+    ...factColumns<CompletedVM>(),
     // ─── ▸ detail (hidden by default) ───────────────────────────────────────
     {
       id: 'stage',
@@ -297,6 +301,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'item_name',
+      sortFilterField: 'itemName',
       header: 'Item Name',
       align: 'left',
       ellipsis: true,
@@ -305,6 +310,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'pol',
+      sortFilterField: 'pol',
       header: 'POL',
       nowrap: true,
       render: (vm) => (
@@ -315,6 +321,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'so_vendor',
+      sortFilterField: 'soVendor',
       header: 'SO / Vendor',
       align: 'left',
       ellipsis: true,
@@ -323,9 +330,9 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       // ADR-207 — the office's own Internal SO No., its own column beside the
-      // SO / Vendor one so the two SO numbers can be told apart. No
-      // `sortFilterField`: this register has no server-side sort / filter map.
+      // SO / Vendor one so the two SO numbers can be told apart.
       id: 'so_internal_no',
+      sortFilterField: 'soInternalNo',
       kind: 'code',
       header: 'Internal SO No.',
       className: 'mono fw-700',
@@ -334,6 +341,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'operation',
+      sortFilterField: 'operation',
       header: 'Operation',
       align: 'left',
       ellipsis: true,
@@ -342,6 +350,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'called_date',
+      sortFilterField: 'calledDate',
       kind: 'date',
       header: 'Called Date',
       className: 'mono',
@@ -358,6 +367,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'log_no',
+      sortFilterField: 'logNo',
       header: 'Log No.',
       nowrap: true,
       className: 'mono',
@@ -365,6 +375,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'remarks',
+      sortFilterField: 'remarks',
       header: 'Remarks',
       align: 'left',
       ellipsis: true,

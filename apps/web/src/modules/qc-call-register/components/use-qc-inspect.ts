@@ -12,6 +12,7 @@ import type {
   QcGrnType,
   QcHistoryPendingRow,
   QcRegisterPendingItem,
+  QcSourceStep,
 } from '@innovic/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useQcRegister } from '@/modules/qc-history/api';
@@ -38,6 +39,8 @@ export function useQcInspect(args: {
   inspect: InspectTarget;
   setInspect: (t: InspectTarget) => void;
   inspectOp: QcHistoryPendingRow | null;
+  /** The step the open op call inspects (Planned / Actual Machine), null when none. */
+  inspectOpStep: QcSourceStep | null;
   inspectInc: IncomingQcPendingRow | null;
 } {
   const { pageRows, lineParam, opParam, stripParam, grnType } = args;
@@ -66,11 +69,12 @@ export function useQcInspect(args: {
   // A pending-view read, so its row is a pending call.
   const fresh = lookup.data?.items[0] as QcRegisterPendingItem | undefined;
 
-  const findOp = (id: string): QcHistoryPendingRow | null => {
-    if (fresh?.kind === 'op' && fresh.row.jcOpId === id) return fresh.row;
+  // The whole register item (row + the facts it carries, e.g. sourceStep).
+  const findOp = (id: string): QcRegisterPendingItem | null => {
+    if (fresh?.kind === 'op' && fresh.row.jcOpId === id) return fresh;
     if (lookup.data) return null;
     const p = pageRows.find((r) => r.kind === 'op' && r.row.jcOpId === id);
-    return p?.kind === 'op' ? p.row : null;
+    return p?.kind === 'op' ? p : null;
   };
   const findInc = (id: string): IncomingQcPendingRow | null => {
     if (fresh?.kind === 'inc' && fresh.row.grnLineId === id) return fresh.row;
@@ -78,7 +82,9 @@ export function useQcInspect(args: {
     const p = pageRows.find((r) => r.kind === 'inc' && r.row.grnLineId === id);
     return p?.kind === 'inc' ? p.row : null;
   };
-  const inspectOp = inspect?.kind === 'op' ? findOp(inspect.jcOpId) : null;
+  const opItem = inspect?.kind === 'op' ? findOp(inspect.jcOpId) : null;
+  const inspectOp = opItem?.kind === 'op' ? opItem.row : null;
+  const inspectOpStep = opItem?.sourceStep ?? null;
   const inspectInc = inspect?.kind === 'inc' ? findInc(inspect.grnLineId) : null;
 
   // DEEP LINK — ?line= / ?op= open the popup once the call has been read and is
@@ -110,5 +116,5 @@ export function useQcInspect(args: {
     if (inspect && lookup.data && lookup.data.items.length === 0) setInspect(null);
   }, [inspect, lookup.data]);
 
-  return { inspect, setInspect, inspectOp, inspectInc };
+  return { inspect, setInspect, inspectOp, inspectOpStep, inspectInc };
 }

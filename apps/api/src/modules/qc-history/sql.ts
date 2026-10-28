@@ -8,6 +8,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { CLIENT_PO_NO_SQL } from './register-facts';
 
 export function dateLike(v: unknown): string {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
@@ -24,8 +25,16 @@ export const PEND_IS_LAST = sql`(vos.op_seq = (SELECT MAX(lo.op_seq) FROM public
 export const LOG_IS_LAST = sql`(jo.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
   WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL))`;
 
-/** CODE/REV exactly as the Item Code cell prints it (itemCodeWithRev). */
-export const ITEM_CODE_REV = sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`;
+/** CODE/REV exactly as the Item Code cell prints it (itemCodeWithRev): the
+ *  code, then '/' + the drawing revision when there is one; no code → null.
+ *  The one builder — the register's GRN and Party GRN columns use it too. */
+export function codeRevSql(code: SQL, rev: SQL): SQL {
+  return sql`(${code} || COALESCE('/' || NULLIF(btrim(${rev}), ''), ''))`;
+}
+export const ITEM_CODE_REV = codeRevSql(
+  sql`i.code`,
+  sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
+);
 
 /** Pending QC ops: FROM … WHERE (company + qc op + something waiting). */
 export function pendingFrom(companyId: string): SQL {
@@ -118,6 +127,9 @@ export function opSearchWhere(term: string | undefined): SQL {
     sql`${ITEM_CODE_REV}`,
     sql`i.name`,
     sql`jo.operation`,
+    // The QC Call Register's Client PO No. (SO's, else JWSO's). Additive:
+    // QC History's search box finds a row by its Client PO No. too.
+    CLIENT_PO_NO_SQL,
   ];
   return sql`AND (${sql.join(
     cols.map((c) => sql`${c} ILIKE ${p} ESCAPE '\\'`),
