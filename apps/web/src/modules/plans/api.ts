@@ -38,6 +38,8 @@ export const plansKeys = {
       q.opsSource ?? null,
       q.derivedStatus ?? null,
       q.poPending ?? null,
+      // ADR-200 — without it a ▾ sort / filter never re-reads the list.
+      q.sf ?? null,
       q.limit,
       q.offset,
     ] as const,
