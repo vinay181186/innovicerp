@@ -15,6 +15,7 @@ export function planSfColumns(effectiveStatus: SQL): SfColumnMap {
   return {
     code: { sql: sql`${plans.code}`, type: 'text' },
     planDate: { sql: sql`${plans.planDate}`, type: 'date' },
+    plannedEndDate: { sql: sql`${plans.plannedEndDate}`, type: 'date' },
     planType: { sql: sql`${plans.planType}`, type: 'list' },
     // The SO / JWSO No. cell — the display code the plan stores for whichever
     // source it has (plans.so_code_text, the same value listPlans returns as
