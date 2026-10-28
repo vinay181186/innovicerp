@@ -2,7 +2,8 @@
 // fit table (ADR-199, table standard 2026-10-01): one ruled sheet, Plan No.
 // pinned first, every visible fact its own column, the secondary facts in the
 // row's ▸ reveal, and the next-step actions in the row's ⋯. The columns, the
-// row tint, the ▸ reveal and the ⋯ menu live in components/plans-list-columns.
+// row tint and the ⋯ menu live in components/plans-list-columns, the ▸ reveal in
+// components/plan-expanded.
 //
 // ADR-170 (Production Orders): the same list is Production → Master → Plans.
 // An All | Pending dropdown in the filter bar (was two pills) — where Pending is
@@ -31,8 +32,8 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { NeedsPlanningTable } from '../components/needs-planning-table';
 import { PlanCancelDialog, planCancelMenuItems } from '../components/plan-cancel';
+import { PlanExpanded } from '../components/plan-expanded';
 import {
-  PlanExpanded,
   STATUS_BADGE,
   planRowMenu,
   planRowTint,

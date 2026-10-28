@@ -59,6 +59,8 @@ export function QcCallRegisterHeader(props: {
   onToggleMine: () => void;
   search: string;
   setSearch: (s: string) => void;
+  /** ADR-200: a column filter is applied on the table on show. */
+  sfFiltering: boolean;
   onClearFilters: () => void;
   stageStats: Record<QcStage, StageStat>;
   grnType: QcGrnType | null;
@@ -153,7 +155,9 @@ export function QcCallRegisterHeader(props: {
         </>
       }
       onClearFilters={props.onClearFilters}
-      filtersActive={stage !== null || grnType !== null || mineOnly || search.trim() !== ''}
+      filtersActive={
+        stage !== null || grnType !== null || mineOnly || search.trim() !== '' || props.sfFiltering
+      }
       tools={
         <>
           <div style={{ display: 'flex', gap: 4 }}>

@@ -14,6 +14,12 @@
 // modal does its own signedUrl) — we do NOT depend on the qc-documents module
 // (it is being rebuilt separately).
 
+import {
+  QC_REPORT_ACCEPT,
+  QC_REPORT_TYPES_LABEL,
+  attachmentSizeError,
+  attachmentTypeAllowed,
+} from '@innovic/shared';
 import { useState } from 'react';
 import { uploadFile } from '@/lib/storage';
 import { FilePreviewModal, fileNameFromPath } from './file-preview-modal';
@@ -49,8 +55,13 @@ export function QcReportAttach({
       setErr('No company on session — cannot upload.');
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setErr('File too large (max 10 MB).');
+    if (!attachmentTypeAllowed(file.name, QC_REPORT_ACCEPT)) {
+      setErr(`${file.name}: only ${QC_REPORT_TYPES_LABEL} files.`);
+      return;
+    }
+    const tooBig = attachmentSizeError(file);
+    if (tooBig) {
+      setErr(tooBig);
       return;
     }
     setErr(null);
@@ -84,7 +95,7 @@ export function QcReportAttach({
         📎 {busy ? 'Uploading…' : fileName ? fileName : 'Attach QC Report'}
         <input
           type="file"
-          accept="image/*,.pdf"
+          accept={QC_REPORT_ACCEPT}
           style={{ display: 'none' }}
           disabled={!companyId || busy}
           onChange={(e) => void handlePick(e)}

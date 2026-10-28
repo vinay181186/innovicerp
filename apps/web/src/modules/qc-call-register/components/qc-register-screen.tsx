@@ -8,12 +8,12 @@
 // Page right: qc_submit · view.
 // mode 'incoming' (Incoming QC): only Direct Purchase GRNs and Party GRNs (the query
 // always carries grnType); no Stage / Mine / TPI / Full History, and no
-// Operation / Assigned To columns. Page right: qc_incoming · view; Inspect
+// Operation / Assigned To / Machine columns. Page right: qc_incoming · view; Inspect
 // needs qc_incoming · entry. OSP returns and NC returns stay on the register.
 //
 // ADR-201: 25 calls a page, paged + searched + filtered on the server (GET
 // /qc-history/register); counts are its whole-register figures; Export fetches
-// every match. Browser Sort & Filter is off (mixed kinds of row).
+// every match. Sort & Filter (ADR-200) runs on the server, one state per table.
 
 import {
   INCOMING_QC_GRN_TYPES,
@@ -29,7 +29,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, ROW_TINT, type RowMenuItem } from '@/ui/data';
-import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { TpiView } from '@/modules/tpi/components/tpi-view';
@@ -37,7 +36,7 @@ import { IncomingQcInspectModal } from '@/modules/incoming-qc/components/incomin
 import { QcCallInspectModal } from './qc-call-inspect-modal';
 import type { RaisedNc } from './qc-call-inspect-form';
 import { QC_STAGES, type QcStage, type QcView } from './qc-sheet';
-import { useQcCallData } from './qc-call-data';
+import { useQcCallData, useQcTableSf } from './qc-call-data';
 import { PgrnQcPopup, RaisedNcBanner, exportRegister } from './qc-call-extras';
 import { useQcInspect } from './use-qc-inspect';
 import { QcCallTabs } from './qc-call-tabs';
@@ -67,9 +66,13 @@ export interface QcScreenParams {
 /** The URL writes the screen makes: the page, and stripping a consumed link. */
 export type QcScreenPatch = { page?: number | undefined; line?: undefined; op?: undefined };
 
-/** Columns the Incoming QC screen leaves out — no job-card op stands behind a
- *  GRN or Party GRN call, and QC Command assigns process calls only. */
-const INCOMING_DROPPED = new Set(['operation', 'assigned_to']);
+/** Columns Incoming QC leaves out — no job-card op (so no step, no machine)
+ *  stands behind a GRN / Party GRN call; QC Command assigns process calls only. */
+const INCOMING_DROPPED = new Set(['operation', 'assigned_to', 'planned_machine', 'actual_machine']);
+const keepCol =
+  (incoming: boolean) =>
+  (c: { id?: string | undefined }): boolean =>
+    !incoming || !INCOMING_DROPPED.has(c.id ?? '');
 
 export function QcRegisterScreen(props: {
   mode: QcScreenMode;
@@ -97,10 +100,8 @@ export function QcRegisterScreen(props: {
   const [raisedNc, setRaisedNc] = useState<RaisedNc | null>(null);
   // "Mine": only the pending calls QC Command assigned to the signed-in user.
   const [mineOnly, setMineOnly] = useState(false);
-  // ADR-232: the Access Control ticks alone decide, no role check:
-  //   job-card op QC (op-entry submitQcLog): qc_submit entry;
-  //   incoming GRN QC and a Party GRN line (ADR-203): qc_incoming entry.
-  // A user who can inspect no kind of call on this screen gets no ⋯ column.
+  // ADR-232: the ticks alone decide — op QC: qc_submit entry; GRN / Party GRN
+  // QC: qc_incoming entry. A user who can inspect nothing gets no ⋯ column.
   const { data: eff } = useMyAccess();
   const canEntry = !incoming && effectiveFormPerms(eff, 'qc_submit').entry;
   const canIncoming = effectiveFormPerms(eff, 'qc_incoming').entry;
@@ -110,7 +111,7 @@ export function QcRegisterScreen(props: {
     (p: number): void => patchSearch({ page: p > 1 ? p : undefined }),
     [patchSearch],
   );
-  // The search box reaches the server 300 ms after typing stops.
+  // Search reaches the server 300 ms after typing stops; Sort & Filter at once.
   const [q, setQ] = useState(normalizeSearchTerm(params.search ?? ''));
   useEffect(() => {
     const next = normalizeSearchTerm(search);
@@ -121,16 +122,11 @@ export function QcRegisterScreen(props: {
     }, 300);
     return () => window.clearTimeout(id);
   }, [search, q, gotoPage]);
+  const { pendKey, compKey, pendSf, compSf, sf } = useQcTableSf(incoming, view, gotoPage);
 
   // Fit-table columns — static, so built once.
-  const pendCols = useMemo(
-    () => pendingColumns().filter((c) => !incoming || !INCOMING_DROPPED.has(c.id ?? '')),
-    [incoming],
-  );
-  const compCols = useMemo(
-    () => completedColumns().filter((c) => !incoming || !INCOMING_DROPPED.has(c.id ?? '')),
-    [incoming],
-  );
+  const pendCols = useMemo(() => pendingColumns().filter(keepCol(incoming)), [incoming]);
+  const compCols = useMemo(() => completedColumns().filter(keepCol(incoming)), [incoming]);
 
   // One page of the register + the server's counts and totals. Incoming QC
   // always narrows to its own GRN Types (and the Incoming stage).
@@ -140,12 +136,13 @@ export function QcRegisterScreen(props: {
     search: q,
     mineOnly: !incoming && mineOnly,
     grnType: grnType ? [grnType] : incoming ? INCOMING_QC_GRN_TYPES : undefined,
+    sf: sf.param,
     page,
   });
   useClampPage(page, qc.loaded ? qc.total : undefined, gotoPage);
 
   // Inspect popup: deep link (?line= / ?op=), fresh row, auto-close when it leaves.
-  const { setInspect, inspectOp, inspectInc } = useQcInspect({
+  const { setInspect, inspectOp, inspectOpStep, inspectInc } = useQcInspect({
     pageRows: qc.pendingRows,
     lineParam: params.line,
     opParam: incoming ? undefined : params.op,
@@ -153,14 +150,12 @@ export function QcRegisterScreen(props: {
     stripParam: (key) => patchSearch(key === 'line' ? { line: undefined } : { op: undefined }),
   });
 
-  // A Party GRN line's QC popup (ADR-203) — kept apart from useQcInspect, which
-  // reads job-card op / GRN line calls only.
+  // A Party GRN line's QC popup (ADR-203) — useQcInspect reads op / GRN calls only.
   const [inspectPgrn, setInspectPgrn] = useState<PartyGrnQcRow | null>(null);
   const pendingRows: PendingVM[] = qc.pendingRows;
   const completedRows: CompletedVM[] = qc.completedRows;
 
-  // A GRN-line inspection is saved by the incoming-qc module, which refreshes
-  // its own feed; the screen reads /qc-history/register, so refresh it too.
+  // The popups refresh their own feeds; this screen reads /qc-history/register.
   const closeInspect = (): void => {
     setInspect(null);
     setInspectPgrn(null);
@@ -189,15 +184,13 @@ export function QcRegisterScreen(props: {
       void nav({ to: '/goods-receipt-notes/$id', params: { id: vm.row.grnId } });
       return;
     }
-    // A log row carries the card's code, not always its id — fall back to the
-    // Job Cards list searched on that code when the id is absent.
+    // A log row may carry only the card's code — then the list searched on it.
     void (vm.row.jobCardId
       ? nav({ to: '/job-cards/$id', params: { id: vm.row.jobCardId } })
       : nav({ to: '/job-cards', search: { search: vm.row.jcCode, page: 1 } }));
   };
 
-  // Inspect is the ⋯ row item; left out for a kind of call this viewer cannot
-  // inspect. The menu stops the click, so the row's own open still works.
+  // Inspect is the ⋯ row item, hidden for a kind of call this viewer cannot inspect.
   const pendingRowMenu = showAction
     ? (vm: PendingVM): RowMenuItem[] => [
         {
@@ -221,9 +214,7 @@ export function QcRegisterScreen(props: {
       </QcCallTabs>
     );
 
-  // "Hide page" (Access Control → Config): once access has loaded, a user whose
-  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
-  // is undefined only while access loads — don't block then.
+  // "Hide page": once access has loaded (`eff` set), no VIEW = the no-access panel.
   if (eff && !effectiveFormPerms(eff, incoming ? 'qc_incoming' : 'qc_submit').view) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
@@ -234,7 +225,7 @@ export function QcRegisterScreen(props: {
     );
   }
 
-  // TPI first, ahead of the QC loading/error gates: TPI runs off its own query.
+  // TPI first, ahead of the QC loading/error gates (its own query).
   if (!incoming && tab === 'tpi') {
     return shell(<TpiView />);
   }
@@ -253,7 +244,13 @@ export function QcRegisterScreen(props: {
         <div className="empty-state" style={{ color: 'var(--red2)' }}>
           {qc.error instanceof Error
             ? qc.error.message
-            : `Could not load ${incoming ? 'Incoming QC' : 'QC Call Register'}. Try again.`}
+            : `Could not load ${incoming ? 'Incoming QC' : 'QC Call Register'}. Try again.`}{' '}
+          {/* No header here — a column filter the server refused is cleared here. */}
+          {sf.filtering ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={sf.clearFilters}>
+              Clear column filters
+            </button>
+          ) : null}
         </div>
       </div>,
     );
@@ -266,7 +263,7 @@ export function QcRegisterScreen(props: {
     : stageLabel && typeLabel
       ? `${stageLabel} · ${typeLabel}`
       : stageLabel;
-  const narrowed = stageName !== null || q !== '';
+  const narrowed = stageName !== null || q !== '' || sf.filtering;
   const pendingEmptyText =
     narrowed || mineOnly
       ? 'No QC calls match.'
@@ -309,7 +306,10 @@ export function QcRegisterScreen(props: {
         }}
         search={search}
         setSearch={setSearch}
+        sfFiltering={sf.filtering}
         onClearFilters={() => {
+          pendSf.clearFilters();
+          compSf.clearFilters();
           setStage(null);
           setGrnType(null);
           setMineOnly(false);
@@ -323,7 +323,7 @@ export function QcRegisterScreen(props: {
         completeCount={totals.completeCount}
         pcsPending={totals.pcsPending}
         isEmpty={qc.total === 0}
-        onExport={() => void exportRegister(qc.query, view)}
+        onExport={() => void exportRegister(qc.query, view, incoming)}
       />
 
       {raisedNc ? <RaisedNcBanner nc={raisedNc} onDismiss={() => setRaisedNc(null)} /> : null}
@@ -333,12 +333,12 @@ export function QcRegisterScreen(props: {
       {view === 'pending' ? (
         <Panel bodyPadding="none">
           <DataTable
-            tableKey={incoming ? TABLE_KEYS.incomingQcCallPending : TABLE_KEYS.qcCallPending}
+            tableKey={pendKey}
             columns={pendCols}
             rows={pendingRows}
             rowKey={pendingVmKey}
             defaultHidden={PENDING_HIDDEN}
-            sortFilter={false}
+            sortFilterServer={pendSf}
             emptyText={pendingEmptyText}
             onRowClick={onPendingRowClick}
             rowClassName={(vm) =>
@@ -350,12 +350,12 @@ export function QcRegisterScreen(props: {
       ) : (
         <Panel bodyPadding="none">
           <DataTable
-            tableKey={incoming ? TABLE_KEYS.incomingQcCallCompleted : TABLE_KEYS.qcCallCompleted}
+            tableKey={compKey}
             columns={compCols}
             rows={completedRows}
             rowKey={completedVmKey}
             defaultHidden={COMPLETED_HIDDEN}
-            sortFilter={false}
+            sortFilterServer={compSf}
             emptyText={completedEmptyText}
             onRowClick={onCompletedRowClick}
           />
@@ -377,6 +377,7 @@ export function QcRegisterScreen(props: {
         <QcCallInspectModal
           key={inspectOp.jcOpId}
           o={inspectOp}
+          step={inspectOpStep}
           onClose={closeInspect}
           onNcRaised={setRaisedNc}
         />

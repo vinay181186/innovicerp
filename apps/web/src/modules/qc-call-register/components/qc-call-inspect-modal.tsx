@@ -19,20 +19,42 @@
 // and below the ExitConfirmDialog (600) so the question sits over the form it
 // asks about.
 
-import { type QcHistoryPendingRow, opSrNo } from '@innovic/shared';
+import { type QcHistoryPendingRow, type QcSourceStep, opSrNo } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { QtyStrip } from '@/ui/data';
+import { actualMachineText, plannedMachineText, stepOpLabel } from './qc-call-fact-columns';
 import { QcCallInspectForm, type RaisedNc } from './qc-call-inspect-form';
+
+/** The step under inspection — "Inspecting step | Planned Machine | Actual
+ *  Machine" — read before any qty is typed. Same wording as the register's
+ *  Planned / Actual Machine columns. */
+function StepFacts({ step }: { step: QcSourceStep | null }): React.JSX.Element {
+  return (
+    <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+      <QtyStrip
+        items={[
+          { label: 'Inspecting step', value: step ? stepOpLabel(step) : '— first step' },
+          { label: 'Planned Machine', value: plannedMachineText(step) || '—' },
+          { label: 'Actual Machine', value: actualMachineText(step) || '—' },
+        ]}
+      />
+    </div>
+  );
+}
 
 export function QcCallInspectModal({
   o,
+  step,
   onClose,
   onNcRaised,
 }: {
   o: QcHistoryPendingRow;
+  /** The register item's sourceStep (the step whose output is inspected). */
+  step?: QcSourceStep | null | undefined;
   onClose: () => void;
   /** A reject raised an NC — the register shows it with a link (ADR-190). */
   onNcRaised?: ((nc: RaisedNc) => void) | undefined;
@@ -175,6 +197,7 @@ export function QcCallInspectModal({
             <X size={14} />
           </button>
         </div>
+        <StepFacts step={step ?? null} />
 
         {canEntry ? (
           <QcCallInspectForm

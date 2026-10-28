@@ -42,6 +42,14 @@ function stamp(): string {
   return todayIst();
 }
 
+/** Extra columns per row, index-aligned with the two row arrays — the QC Call
+ *  Register's Planned Machine / Actual Machine / Client PO No. QC History
+ *  passes none, so its sheets are unchanged. */
+export interface QcExportExtras {
+  ops: Record<string, unknown>[];
+  inc: Record<string, unknown>[];
+}
+
 function download(rows: Record<string, unknown>[], sheetName: string, filename: string): void {
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -62,10 +70,11 @@ function tagged(
 export function exportCompletedQc(
   logs: QcHistoryLogRow[],
   incoming: IncomingQcCompletedRow[] = [],
+  extras?: QcExportExtras,
 ): void {
   const mixed = incoming.length > 0;
   const rows = [
-    ...logs.map((l) =>
+    ...logs.map((l, i) =>
       tagged(mixed, 'Process', '', {
         'JC No.': l.jcCode,
         Op: `Op ${opSrNo(l.opSeq)}`,
@@ -82,9 +91,10 @@ export function exportCompletedQc(
         'Inspected By': l.inspector ?? '',
         Remarks: l.remarks ?? '',
         'Log No.': l.logNo,
+        ...extras?.ops[i],
       }),
     ),
-    ...incoming.map((l) =>
+    ...incoming.map((l, i) =>
       tagged(mixed, 'Incoming', l.grnNo, {
         'JC No.': '',
         Op: '',
@@ -101,6 +111,7 @@ export function exportCompletedQc(
         'Inspected By': l.qcInspectedBy ?? '',
         Remarks: l.qcRemarks ?? '',
         'Log No.': '',
+        ...extras?.inc[i],
       }),
     ),
   ];
@@ -110,10 +121,11 @@ export function exportCompletedQc(
 export function exportPendingQc(
   pending: QcHistoryPendingRow[],
   incoming: IncomingQcPendingRow[] = [],
+  extras?: QcExportExtras,
 ): void {
   const mixed = incoming.length > 0;
   const rows = [
-    ...pending.map((o) =>
+    ...pending.map((o, i) =>
       tagged(mixed, 'Process', '', {
         'JC No.': o.jcCode,
         Op: `Op ${opSrNo(o.opSeq)}`,
@@ -132,9 +144,10 @@ export function exportPendingQc(
         'QC Pending': o.qcPending,
         'Pending Since': fmtDate(o.pendSince),
         Overdue: o.overdue ? 'Yes' : '',
+        ...extras?.ops[i],
       }),
     ),
-    ...incoming.map((o) =>
+    ...incoming.map((o, i) =>
       tagged(mixed, 'Incoming', o.grnNo, {
         'JC No.': o.jcCode ?? '',
         Op: o.opSeq != null ? `Op ${opSrNo(o.opSeq)}` : '',
@@ -153,6 +166,7 @@ export function exportPendingQc(
         'QC Pending': o.pendingQty,
         'Pending Since': fmtDate(o.grnDate),
         Overdue: '',
+        ...extras?.inc[i],
       }),
     ),
   ];

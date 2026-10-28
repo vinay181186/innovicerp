@@ -22,6 +22,7 @@
 // rule: QC report attachments, client PO files, email reference files. If you
 // are reaching for it to open a drawing, reach for `@/lib/drawing-url` instead.
 
+import { attachmentSizeError } from '@innovic/shared';
 import { supabase } from './supabase';
 
 export const DEFAULT_BUCKET = 'qc-docs';
@@ -33,12 +34,16 @@ interface UploadOpts {
   folder?: string;
 }
 
-/** Uploads a file to Storage and returns its path within the bucket. */
+/** Uploads a file to Storage and returns its path within the bucket. Every
+ *  caller gets the shared size rule (ATTACHMENT_MAX_BYTES, which the bucket
+ *  also enforces — migration 0226), so no screen shows Storage's raw error. */
 export async function uploadFile(
   file: File,
   companyId: string,
   opts?: UploadOpts,
 ): Promise<string> {
+  const tooBig = attachmentSizeError(file);
+  if (tooBig) throw new Error(tooBig);
   const bucket = opts?.bucket ?? DEFAULT_BUCKET;
   const safe = file.name.replace(/[^\w.-]+/g, '_');
   const folder = opts?.folder ? `${opts.folder}/` : '';

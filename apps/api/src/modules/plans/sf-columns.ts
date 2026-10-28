@@ -16,6 +16,10 @@ export function planSfColumns(effectiveStatus: SQL): SfColumnMap {
     code: { sql: sql`${plans.code}`, type: 'text' },
     planDate: { sql: sql`${plans.planDate}`, type: 'date' },
     planType: { sql: sql`${plans.planType}`, type: 'list' },
+    // The SO / JWSO No. cell — the display code the plan stores for whichever
+    // source it has (plans.so_code_text, the same value listPlans returns as
+    // soCodeText). A plan column, so the count query can use it too.
+    soCodeText: { sql: sql`${plans.soCodeText}`, type: 'text' },
     // ADR-207 — the Internal SO No. of the plan's order, the SAME scalar
     // listPlans SELECTs (service.ts PLAN_SO_INTERNAL_NO_SQL): read live through
     // the plan's SO line, never copied onto the plan. Keyed on plans.so_line_id

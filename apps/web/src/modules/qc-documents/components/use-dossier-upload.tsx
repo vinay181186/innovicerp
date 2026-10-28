@@ -16,18 +16,16 @@ import { useSession } from '@/lib/session';
 import { useSaveKey } from '@/lib/use-save-key';
 import {
   QC_REPORT_ACCEPT,
-  QC_REPORT_MAX_BYTES,
-  qcDocumentsKeys,
-  uploadQcFile,
-  useCreateQcDocument,
-} from '../api';
+  QC_REPORT_TYPES_LABEL,
+  attachmentSizeError,
+  attachmentTypeAllowed,
+} from '@innovic/shared';
+import { qcDocumentsKeys, uploadQcFile, useCreateQcDocument } from '../api';
 
 /** What the picked file belongs to. */
 export type UploadTarget =
   | { opLogId: string; label: string }
   | { reportTypeId: string; soLineId?: string; jwLineId?: string; label: string };
-
-const ALLOWED = QC_REPORT_ACCEPT.split(',');
 
 /** One key per upload slot: a QC entry, or a report folder on one POL. */
 export function uploadSlotKey(
@@ -72,13 +70,13 @@ export function useDossierUpload(): {
     e.target.value = '';
     const t = target.current;
     if (!file || !t) return;
-    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    if (!ALLOWED.includes(ext)) {
-      setErr(`${file.name}: only PDF, JPG, PNG, Word or Excel files.`);
+    if (!attachmentTypeAllowed(file.name, QC_REPORT_ACCEPT)) {
+      setErr(`${file.name}: only ${QC_REPORT_TYPES_LABEL} files.`);
       return;
     }
-    if (file.size > QC_REPORT_MAX_BYTES) {
-      setErr(`${file.name} is larger than 10 MB.`);
+    const tooBig = attachmentSizeError(file);
+    if (tooBig) {
+      setErr(tooBig);
       return;
     }
     if (!companyId) {

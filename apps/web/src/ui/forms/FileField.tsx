@@ -11,7 +11,7 @@
 //
 // PHASE 2 SCOPE: PRESENTATIONAL ONLY. Those three files are untouched and
 // still in use. Everything they own that is not markup — the companyId check,
-// `uploadFile` / `uploadItemImage`, the 10 MB and 5 MB limits, the in-browser
+// `uploadFile` / `uploadItemImage`, the attachment limit (ATTACHMENT_MAX_BYTES, 50 MB) and the 5 MB image limit, the in-browser
 // resize, the busy/error state, and opening the file through
 // `FilePreviewModal` — stays with the caller and arrives here as `busy` /
 // `error` / `fileName` / `onPick` / `onRemove` / `onView`. That is what makes

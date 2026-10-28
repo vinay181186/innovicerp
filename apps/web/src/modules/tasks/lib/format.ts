@@ -3,7 +3,7 @@
 // IST), the priority / status colour ladders, and the Related-To → page map.
 
 import type { TaskPriority, TaskRelatedType, TaskRow, TaskStatus } from '@innovic/shared';
-import { TASK_STATUS_LABELS } from '@innovic/shared';
+import { TASK_STATUS_LABELS, attachmentSizeError } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 
 /** `2026-09-22` → `22-Sep-2026`; null/blank → `—`. */
@@ -99,10 +99,12 @@ export function relatedNavPage(type: TaskRelatedType, id: string): string {
   }
 }
 
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-
-/** Reject any file over 10 MB; returns the first offender's name or null. */
+/** Reject any file over the shared attachment limit (ATTACHMENT_MAX_BYTES);
+ *  returns the message for the first offender, or null. */
 export function oversizedFile(files: File[]): string | null {
-  const bad = files.find((f) => f.size > MAX_ATTACHMENT_BYTES);
-  return bad ? bad.name : null;
+  for (const f of files) {
+    const msg = attachmentSizeError(f);
+    if (msg) return msg;
+  }
+  return null;
 }

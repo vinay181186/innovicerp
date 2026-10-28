@@ -15,6 +15,8 @@ import {
 import { useMemo, useRef } from 'react';
 import { LIST_PAGE_SIZE, pageOffset } from '@/lib/list-paging';
 import { useQcRegister } from '@/modules/qc-history/api';
+import { type ServerSortFilter, useServerSortFilter } from '@/ui/data/sort-filter/server-state';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { QcStage, QcView, StageStat } from './qc-sheet';
 
 export interface QcCallData {
@@ -24,7 +26,7 @@ export interface QcCallData {
   pendingRows: QcRegisterPendingItem[];
   /** This page's completed entries (view = completed), newest first. */
   completedRows: QcRegisterCompletedItem[];
-  /** Calls matching view + stage + search + Mine, over all pages. */
+  /** Calls matching view + stage + search + Mine + Sort & Filter, over all pages. */
   total: number;
   /** Stage figures over the WHOLE register, for the stage dropdown. */
   stageStats: Record<QcStage, StageStat>;
@@ -85,10 +87,12 @@ export function useQcCallData(args: {
   mineOnly: boolean;
   /** ADR-251: only incoming calls of these GRN Types; undefined = no narrowing. */
   grnType: readonly QcGrnType[] | undefined;
+  /** ADR-200 Sort & Filter param of the table on show (useServerSortFilter). */
+  sf: string | undefined;
   /** 1-based page. */
   page: number;
 }): QcCallData {
-  const { view, stage, search, mineOnly, grnType, page } = args;
+  const { view, stage, search, mineOnly, grnType, sf, page } = args;
   // A stable key for the memo below — the caller may build a fresh array.
   const grnTypeKey = grnType?.join(',') ?? '';
   const query = useMemo(
@@ -99,8 +103,10 @@ export function useQcCallData(args: {
       // "Mine" is a pending-queue filter: QC Command assigns open calls only.
       mine: view === 'pending' && mineOnly ? 'true' : undefined,
       grnType: grnTypeKey ? (grnTypeKey.split(',') as QcGrnType[]) : undefined,
+      // In the query (not only the page read) so Export gets the same rows.
+      sf,
     }),
-    [view, stage, search, mineOnly, grnTypeKey],
+    [view, stage, search, mineOnly, grnTypeKey, sf],
   );
   const res = useQcRegister({ ...query, limit: LIST_PAGE_SIZE, offset: pageOffset(page) });
   const data = res.data;
@@ -142,4 +148,24 @@ export function useQcCallData(args: {
     isFetching: res.isFetching,
     error: res.error,
   };
+}
+
+/** ADR-200 server Sort & Filter: one state per table (Pending / Completed, and
+ *  their own keys on Incoming QC). `sf` is the one on show; a change goes to page 1. */
+export function useQcTableSf(
+  incoming: boolean,
+  view: QcView,
+  gotoPage: (p: number) => void,
+): {
+  pendKey: string;
+  compKey: string;
+  pendSf: ServerSortFilter;
+  compSf: ServerSortFilter;
+  sf: ServerSortFilter;
+} {
+  const pendKey = incoming ? TABLE_KEYS.incomingQcCallPending : TABLE_KEYS.qcCallPending;
+  const compKey = incoming ? TABLE_KEYS.incomingQcCallCompleted : TABLE_KEYS.qcCallCompleted;
+  const pendSf = useServerSortFilter(pendKey, () => gotoPage(1));
+  const compSf = useServerSortFilter(compKey, () => gotoPage(1));
+  return { pendKey, compKey, pendSf, compSf, sf: view === 'pending' ? pendSf : compSf };
 }

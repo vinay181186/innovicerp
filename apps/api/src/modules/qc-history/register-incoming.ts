@@ -9,6 +9,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import type { IncomingQcCompletedRow, IncomingQcPendingRow, QcGrnType } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { CLIENT_PO_NO_SQL } from './register-facts';
 
 /** A GRN's own GRN Type (no Party GRN — that is a different table). */
 export type IncGrnType = Exclude<QcGrnType, 'party_grn'>;
@@ -74,9 +75,9 @@ export function incCompletedFrom(companyId: string): SQL {
       AND (l.qc_accepted_qty > 0 OR l.qc_rejected_qty > 0)`;
 }
 
-const ITEM_CODE = sql`COALESCE(i.code, l.item_code_text)`;
-const ITEM_REV = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
-const VENDOR = sql`COALESCE(v.name, h.vendor_code_text)`;
+export const ITEM_CODE = sql`COALESCE(i.code, l.item_code_text)`;
+export const ITEM_REV = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
+export const VENDOR = sql`COALESCE(v.name, h.vendor_code_text)`;
 
 export const INC_PENDING_SELECT = sql`
   l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
@@ -116,6 +117,8 @@ export function incSearchWhere(term: string | undefined, pending: boolean): SQL 
     ITEM_REV,
     sql`COALESCE(i.name, l.item_name)`,
     VENDOR,
+    // Client PO No. (the SO's, else the JWSO's — register-facts.ts).
+    CLIENT_PO_NO_SQL,
     ...(pending ? [sql`h.po_code_text`] : []),
   ];
   return sql`AND (${sql.join(
