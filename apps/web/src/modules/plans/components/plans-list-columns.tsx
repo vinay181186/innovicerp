@@ -133,6 +133,17 @@ export function plansListColumns(
       render: (row) => fmtDate(row.planDate),
     },
     {
+      // NAMING.md "Plan End Date" — plans.planned_end_date; blank on a plan
+      // saved without a schedule.
+      id: 'planned_end_date',
+      sortFilterField: 'plannedEndDate',
+      kind: 'date',
+      header: 'Plan End Date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (row) => fmtDate(row.plannedEndDate),
+    },
+    {
       id: 'plan_type',
       sortFilterField: 'planType',
       filterOptions: TYPE_OPTIONS,
