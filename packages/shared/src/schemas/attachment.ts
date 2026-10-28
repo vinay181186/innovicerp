@@ -10,11 +10,15 @@ export const ATTACHMENT_MAX_MB = 50;
 export const ATTACHMENT_MAX_BYTES = ATTACHMENT_MAX_MB * 1024 * 1024;
 
 /** What a QC report may be — the same list on every QC screen (Op Entry, QC
- *  Call inspect, Incoming QC, TPI, QC Docs Upload, Dossier). */
-export const QC_REPORT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx';
+ *  Call inspect, Incoming QC, TPI, QC Docs Upload, Dossier). Keeps every photo
+ *  type the QC attach took before (it accepted any image). */
+export const QC_REPORT_ACCEPT =
+  '.pdf,.jpg,.jpeg,.png,.webp,.gif,.bmp,.heic,.heif,.doc,.docx,.xls,.xlsx';
+export const QC_REPORT_TYPES_LABEL = 'PDF, photo, Word or Excel';
 
+/** Rounded UP to 0.1 MB, so a file just over the limit never reads as "50.0". */
 function fmtMb(bytes: number): string {
-  return (bytes / (1024 * 1024)).toFixed(1);
+  return (Math.ceil((bytes / (1024 * 1024)) * 10) / 10).toFixed(1);
 }
 
 /** The message to show when a picked file is too big, or null when it fits. */

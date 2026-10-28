@@ -1037,7 +1037,7 @@ function FormsSection() {
             <FileField onPick={() => undefined} />
             <FileField fileName="qc-report-0042.pdf" onRemove={() => undefined} />
             <FileField busy />
-            <FileField error="File is larger than 10 MB" />
+            <FileField error="scan.pdf is 63.2 MB. The limit is 50 MB — scan at 150–200 dpi or split the file." />
             <FileField disabled />
           </div>
         </State>

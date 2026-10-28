@@ -15,4 +15,12 @@
 -- ceiling, 50 MB on PROD). Apply to BOTH test and production (release script).
 -- ============================================================
 
-UPDATE storage.buckets SET file_size_limit = 52428800 WHERE id = 'qc-docs';
+DO $$
+DECLARE n integer;
+BEGIN
+  UPDATE storage.buckets SET file_size_limit = 52428800 WHERE id = 'qc-docs';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION '0226: expected 1 qc-docs bucket row, updated %', n;
+  END IF;
+END $$;

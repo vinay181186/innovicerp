@@ -14,7 +14,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { useSaveKey } from '@/lib/use-save-key';
-import { QC_REPORT_ACCEPT, attachmentSizeError, attachmentTypeAllowed } from '@innovic/shared';
+import {
+  QC_REPORT_ACCEPT,
+  QC_REPORT_TYPES_LABEL,
+  attachmentSizeError,
+  attachmentTypeAllowed,
+} from '@innovic/shared';
 import { qcDocumentsKeys, uploadQcFile, useCreateQcDocument } from '../api';
 
 /** What the picked file belongs to. */
@@ -66,7 +71,7 @@ export function useDossierUpload(): {
     const t = target.current;
     if (!file || !t) return;
     if (!attachmentTypeAllowed(file.name, QC_REPORT_ACCEPT)) {
-      setErr(`${file.name}: only PDF, JPG, PNG, Word or Excel files.`);
+      setErr(`${file.name}: only ${QC_REPORT_TYPES_LABEL} files.`);
       return;
     }
     const tooBig = attachmentSizeError(file);
