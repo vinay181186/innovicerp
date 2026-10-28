@@ -12,7 +12,8 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useReportTypes } from '@/modules/report-types/api';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
-import { QC_REPORT_ACCEPT, QC_REPORT_MAX_BYTES, uploadQcFile, useCreateQcDocument } from '../api';
+import { QC_REPORT_ACCEPT, attachmentSizeError } from '@innovic/shared';
+import { uploadQcFile, useCreateQcDocument } from '../api';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 
 export function UploadModal({
@@ -57,8 +58,9 @@ export function UploadModal({
       setErr('Pick the Document Type.');
       return;
     }
-    if (file.size > QC_REPORT_MAX_BYTES) {
-      setErr('File too large (max 10 MB).');
+    const tooBig = attachmentSizeError(file);
+    if (tooBig) {
+      setErr(tooBig);
       return;
     }
     setBusy(true);

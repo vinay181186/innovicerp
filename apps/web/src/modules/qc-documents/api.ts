@@ -50,10 +50,6 @@ export function uploadQcFile(file: File, companyId: string): Promise<string> {
   return uploadFile(file, companyId, { folder: 'qc-docs' });
 }
 
-/** ADR-252 — what a QC report file may be, and how big. */
-export const QC_REPORT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx';
-export const QC_REPORT_MAX_BYTES = 10 * 1024 * 1024;
-
 /** Link for LOOKING at a stored QC document.
  *
  *  Minted by the server since 2026-09-11, not by the browser. Two things follow:

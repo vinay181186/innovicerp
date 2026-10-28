@@ -124,6 +124,7 @@ export * from './schemas/doc-number';
 export * from './schemas/global-search';
 export * from './schemas/auth-recovery';
 export * from './schemas/item-image';
+export * from './schemas/attachment';
 export * from './schemas/design-tracker';
 export * from './schemas/design-project';
 export * from './schemas/prod-so-list';

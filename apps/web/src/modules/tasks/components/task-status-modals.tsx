@@ -3,6 +3,7 @@
 // both invalidate the board on success.
 
 import type { TaskAttachmentInput, TaskRow } from '@innovic/shared';
+import { ATTACHMENT_MAX_MB } from '@innovic/shared';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
@@ -109,7 +110,7 @@ export function CompleteModal({
   async function submit(): Promise<void> {
     setErr(null);
     const big = oversizedFile(files);
-    if (big) return setErr(`${big} cannot be more than 10 MB.`);
+    if (big) return setErr(big);
     if (files.length > 10) return setErr('Attachment cannot be more than 10 files.');
     const companyId = me?.companyId ?? null;
     if (files.length > 0 && !companyId)
@@ -180,7 +181,7 @@ export function CompleteModal({
             className="innovic-input"
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           />
-          <div className="form-help">Optional — up to 10 files, 10 MB each.</div>
+          <div className="form-help">Optional — up to 10 files, {ATTACHMENT_MAX_MB} MB each.</div>
         </div>
       </div>
       <FormError msg={err} />

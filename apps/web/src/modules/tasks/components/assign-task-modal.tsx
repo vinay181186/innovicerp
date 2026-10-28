@@ -14,6 +14,7 @@ import type {
   TaskRelatedType,
 } from '@innovic/shared';
 import {
+  ATTACHMENT_MAX_MB,
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
   TASK_RELATED_TYPES,
@@ -103,7 +104,7 @@ export function AssignTaskModal({
     if (startDate && startDate > dueDate) return setErr('Start Date cannot be after Due Date.');
     if (relatedType && !relatedId) return setErr('Reference No. is required.');
     const big = oversizedFile(files);
-    if (big) return setErr(`${big} cannot be more than 10 MB.`);
+    if (big) return setErr(big);
     if (files.length > 10) return setErr('Attachment cannot be more than 10 files.');
     const companyId = me?.companyId ?? null;
     if (files.length > 0 && !companyId)
@@ -332,7 +333,7 @@ export function AssignTaskModal({
             className="innovic-input"
             onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           />
-          <div className="form-help">Up to 10 files, 10 MB each.</div>
+          <div className="form-help">Up to 10 files, {ATTACHMENT_MAX_MB} MB each.</div>
         </div>
       </div>
 
