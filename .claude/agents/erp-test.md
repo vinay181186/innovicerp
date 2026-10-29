@@ -81,7 +81,7 @@ proves it, and report the undo. The rest of this section is the production rule.
 
 Build it on TEST — a separate database, safe to write. Never point a spec at PRODUCTION unless the
 brief says so explicitly. The user has explicitly authorised this:
-*"to test any new feature you have right to create test SO, test JC and check new feature."*
+_"to test any new feature you have right to create test SO, test JC and check new feature."_
 
 So when the data a feature needs does not exist, **create it**. Do not report "nothing to test
 against" and stop — that was the old rule and it is gone.
@@ -123,8 +123,8 @@ where it stopped and what was missing.
 3. **Know the cascade before each save.** Saving in this ERP moves quantities and flips statuses
    on job cards, POs and stock. Read the module's `cascades.ts` first.
 4. **Report the undo in the right order.** The app's own Cancel/reverse action unwinds a cascade;
-   a SQL soft-delete does NOT. Always: *cancel in the app first, then SQL if you want the row
-   gone.* Never hand over SQL alone. Note `apps/api/test/global-setup.ts` only cleans `'T%-%'`
+   a SQL soft-delete does NOT. Always: _cancel in the app first, then SQL if you want the row
+   gone._ Never hand over SQL alone. Note `apps/api/test/global-setup.ts` only cleans `'T%-%'`
    rows — nothing auto-removes `E2E_` data, so your report is the only cleanup record.
 
 ## LIVE UPDATES — the two-browser check (CLAUDE.md §22)
@@ -142,11 +142,11 @@ A red test is the point of the exercise. Do not shrug it off and do not work aro
 
 **First, decide which kind it is:**
 
-| | |
-|---|---|
-| **A real defect** — wrong label, field in the wrong place, value not saved, value read back into the wrong field, page errors | fix it (below) |
-| **The app correctly refusing** — e.g. *"Cannot outsource 1 pcs — only 0 available"* | not a bug. Build the missing data and try again. |
-| **A weak selector in your own spec** | yours to fix, in `apps/web/e2e/` |
+|                                                                                                                               |                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **A real defect** — wrong label, field in the wrong place, value not saved, value read back into the wrong field, page errors | fix it (below)                                   |
+| **The app correctly refusing** — e.g. _"Cannot outsource 1 pcs — only 0 available"_                                           | not a bug. Build the missing data and try again. |
+| **A weak selector in your own spec**                                                                                          | yours to fix, in `apps/web/e2e/`                 |
 
 **To fix a real defect, dispatch the agent that owns the code:**
 

@@ -84,7 +84,7 @@ it on TEST. Finish the job there. **PRODUCTION is never yours:** it gets every m
 other route to PROD is blocked by design — never work around it. (`../../.env.local` is PROD.)
 
 **How to run it.** Write `apps/api/src/db/migrations/NNNN_x.sql` (next free number — list the
-folder; follow the newest file and `migrations/README.md`), then apply *that exact file* on TEST
+folder; follow the newest file and `migrations/README.md`), then apply _that exact file_ on TEST
 with the project runner, which refuses any database that is not the one `DB_TARGET` names:
 `DB_TARGET=TEST pnpm --filter @innovic/api exec dotenv -e <test.env> -- tsx src/db/apply-sql.ts src/db/migrations/NNNN_x.sql`
 (TEST creds: the `TEST_*` vars in `C:/Innovic_projects/innovic-erp/erp/.env.local`). Never
@@ -106,9 +106,11 @@ SQL only. `seed` also stays banned — it is not a migration, it rewrites data.
    comparable existing table's policy block. Never ship a table without them.
 
 3. **Before dropping or retyping a column, count what you would destroy:**
+
    ```sql
    select count(*) from public.<table> where <column> is not null;
    ```
+
    - **0 rows** → go ahead.
    - **more than 0** → STOP. Do not run it. Report the count and ask the user, because a
      dropped column takes its data with it and `git revert` will not bring it back.

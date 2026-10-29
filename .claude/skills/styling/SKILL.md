@@ -38,9 +38,14 @@ value is clipped, not wrapped:
 ```tsx
 <span
   className="text3"
-  style={{ maxWidth: 120, display: 'inline-block', overflow: 'hidden',
-           textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-  title={row.original.remarks ?? ''}   // full text on hover
+  style={{
+    maxWidth: 120,
+    display: 'inline-block',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  }}
+  title={row.original.remarks ?? ''} // full text on hover
 >
   {row.original.remarks ?? ''}
 </span>
@@ -181,7 +186,7 @@ already mirror it — JWSO, Job Cards, Purchase Orders.
 
 ```tsx
 // No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next).
-const LIST_LIMIT = 1000;   // SO list; the sibling document lists use 200
+const LIST_LIMIT = 1000; // SO list; the sibling document lists use 200
 
 const query = useMemo(() => ({ ...filters, limit: LIST_LIMIT, offset: 0 }), [filters]);
 ```
@@ -190,9 +195,11 @@ The count line under the list says which of the two things happened, so a
 truncated list can never look complete:
 
 ```tsx
-{total > LIST_LIMIT
-  ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
-  : `Showing all ${total} sales order${total === 1 ? '' : 's'}`}
+{
+  total > LIST_LIMIT
+    ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+    : `Showing all ${total} sales order${total === 1 ? '' : 's'}`;
+}
 ```
 
 **Which lists scroll:** the ones a person works through daily and needs to scan
