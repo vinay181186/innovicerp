@@ -19,8 +19,8 @@ Values that are short labels — `SO No.`, `Date`, item codes, quantities, statu
 sets `white-space: nowrap` on both `.innovic-table th` and `.innovic-table td`, and
 `.tbl-wrap` has `overflow-x: auto`, so any table built with the `innovic-table` class
 keeps every cell on one line and scrolls sideways instead of wrapping. So: **build
-tables with `<table className="innovic-table">` inside `<div className="tbl-wrap">`
-and the no-wrap behavior comes for free.**
+lists with `DataTable` from `@/ui/data` (ADR-199) — it renders the `innovic-table` markup — and
+the no-wrap behavior comes for free.** Never hand-write a new `<table className="innovic-table">` list.
 
 Only add a per-cell override when an element somehow escapes that (a custom table not
 using `innovic-table`):
@@ -113,10 +113,11 @@ left-aligned page, and the "active" ring reads as a selected card rather than a
 filter.
 
 **Right** — reuse the shared component, never hand-roll the row:
-`apps/web/src/components/shared/stat-strip.tsx` → `<StatStrip>`.
+`apps/web/src/ui/data/StatStrip.tsx` → `<StatStrip>` (import from `@/ui/data`; the older
+`components/shared/stat-strip.tsx` copy is still on some screens — do not use it for new work).
 
 ```tsx
-import { StatStrip } from '@/components/shared/stat-strip';
+import { StatStrip } from '@/ui/data';
 
 // Filter stats (Purchase Requests) — pass onClick + active:
 <StatStrip
@@ -163,7 +164,16 @@ Non-negotiables for the strip:
   rule (first-in-row loses the left border only if you compute it — simplest is to
   let it wrap and accept the divider).
 
-## Rule 4 — Document lists scroll; high-volume registers still page
+## Rule 4 — Every list pages 25 rows from the server (ADR-201, owner 2026-10-02)
+
+**This replaces the old "document lists and masters scroll" rule below — it is kept only as
+history.** Every list, masters and working screens included, shows 25 rows/page with Prev/Next
+and loads only that page; counts, KPIs and totals come from the server; Excel export / print use
+`fetchAllPages`; pickers keep their bigger limits. Helpers: `apps/web/src/lib/list-paging.ts`
+(`LIST_PAGE_SIZE`, `pageSearchParam`, `fetchAllPages`) and server sort/filter
+`@/ui/data/sort-filter/server-state` (ADR-200).
+
+### Superseded (history, do not copy)
 
 The SO/WO Master list does NOT paginate: one fetch at offset 0, everything in a
 single scrolling list, no Prev/Next (user decision). Three sibling document lists

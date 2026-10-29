@@ -119,6 +119,10 @@ Realtime ONLY on Op Entry, Live Operations Board, Machine Status, Task Allocatio
 
 WebSocket connections cost server memory (~50 KB each). 100 users × 5 tabs = 500 connections. Polling scales linearly with simple HTTP, easier to debug, no reconnect logic on most screens.
 
+### Superseded (note added 2026-10-29)
+
+**Superseded by ADR-230 (2026-10-14).** Realtime is no longer limited to four screens, and there is no default 30 s / 60 s polling. Live tables are listed once in `LIVE_TABLES`; other screens refresh on open/focus or set `refetchInterval`. How to apply it to a new page: CLAUDE.md §22.
+
 ---
 
 ## ADR-005: RLS for multi-tenancy and authorization

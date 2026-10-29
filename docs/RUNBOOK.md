@@ -392,7 +392,7 @@ These three flows do multiple writes inside one transaction. If a save feels slo
 Symptom: opening browser devtools Network tab and seeing the same endpoint hit 5+ times within a second. Causes:
 
 - `refetchOnWindowFocus` + `refetchOnMount` + `staleTime: 0` together → every tab focus triggers a full refetch chain.
-- Polling interval too aggressive (current convention: 30s for lists, 60s for detail, per ADR-004; dashboard tiles poll at 60s; live ops board uses Realtime subs, not polling).
+- Polling interval too aggressive. There is no default polling (ADR-230 superseded ADR-004's 30s/60s): live tables refresh via Realtime, a few watched screens set a 60 s `refetchInterval` fallback — see CLAUDE.md §22.
 - `placeholderData: prev` is good (stops UI flash) but doesn't reduce request count — it just makes the loading state invisible.
 
 Fix path: open `apps/web/src/modules/<module>/api.ts`, check the `useQuery` options. If `staleTime` is missing, add it. If a list invalidates on every mutation in the same module, that's intentional — but cross-module invalidations (GRN write invalidating PO cache, NC dispose invalidating op-entry + job-cards) need to be explicit; review the cascade fanout in the relevant `useMutation` `onSuccess`.

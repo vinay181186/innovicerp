@@ -19,14 +19,15 @@ here instead. If a rule changes, it changes once, in this file.
   shares this git index with a second terminal in the same repo; a bare commit once
   swept 22 unrelated files into one commit. Git is the user's. (Main-session git is
   governed by "SHARED-FILE COMMITS" below.)
-- **Never run `pnpm --filter @innovic/api test`.** Its `global-setup.ts` runs
-  `DELETE FROM public.job_cards WHERE code LIKE 'T%-%'` against the **PRODUCTION**
-  database, and the integration tests write real rows. **A path filter does NOT
-  narrow it** — the argument is dropped and the whole suite still runs.
+- **Never run `pnpm --filter @innovic/api test`** unless your brief says so. Its
+  `global-setup.ts` now refuses PRODUCTION and runs on TEST only, but it runs
+  `DELETE FROM public.job_cards WHERE code LIKE 'T%-%'` there and the integration
+  tests write real rows. **A path filter does NOT narrow it** — the argument is
+  dropped and the whole suite still runs.
 - **Never run `db:push` or `seed`.** `db:push` is drizzle-kit diffing the whole
   schema and deciding for itself what to change; it can drop things nobody asked
   about. `seed` rewrites data. (Hand-written numbered SQL is a different thing —
-  see erp-backend, which is authorised for it.)
+  see erp-backend, which is authorised for it on TEST only, via `apply-sql.ts`.)
 - **Never start a server and leave it running.**
 - **Never "improve" code outside the task you were given.** Scope creep in a
   parallel agent lands in someone else's diff.
@@ -43,9 +44,15 @@ There are two stacks:
 `.env.local` at the repo root points at **PRODUCTION**. Anything you run locally
 that reads it touches real data.
 
-There is no staging for the *code*: the user deploys and eyeballs the live app.
-That is why the checks below are the only safety net, and why your report is the
-user's only record of what happened.
+Code goes to TEST first (`test` branch) and is eyeballed there; PRODUCTION only via
+`release/release-prod.sh` (CLAUDE.md §19), which also applies the migrations. TEST
+credentials are the `TEST_*` vars in `C:/Innovic_projects/innovic-erp/erp/.env.local`.
+The checks below are the last automated safety net, and your report is the user's
+record of what happened.
+
+**Every new page / module follows CLAUDE.md §22** — key factory, `REFRESH_POLICY`
+mode, live-table recipe, invalidation through imported key factories (never literal
+arrays), `apps/web/src/ui/` components. `refresh-coverage.test.ts` enforces it.
 
 ## VERIFICATION — you do NOT run the full checks
 
@@ -246,3 +253,49 @@ When introducing a new field:
    persistence, validation, up/downstream links.
 6. Run /code-review high, fix findings, re-verify.
 7. Report: what changed, why, what was left unchanged, assumptions, risks.
+
+## NAMES — LOOK IT UP BEFORE YOU INVENT ONE
+
+`docs/NAMING.md` is the register of every name in this system. Read the row before you
+name anything: a screen label, a column header, a Zod field, a DB column, an Excel header,
+a print heading, a document code prefix.
+
+- The fact is in the register → use that name. No second name, no shortened variant.
+- The fact is NOT in the register → add the row in the same commit as your code.
+- You think the registered name is wrong → change the register and every use together.
+  Never add a second name and leave both alive.
+
+Two faults, both real, both found on 2026-09-23:
+
+- One fact under many names — the customer's PO line number answered to `CPO`, `CPO Ln`,
+  `Client PO Ln` and `PO Line#`; the sales-order number to seventeen different labels.
+- One name over many facts — `Rev` labelled four different revisions; a bare `Date` header
+  meant seventeen different dates, `Qty` twelve, `Status` sixty-one tables of unrelated
+  states.
+
+So:
+
+- A column header names the FACT, not the row's subject. `GRN Date`, not `Date`.
+  `PO Status`, not `Status`. A bare one only where the table has exactly one such fact.
+- A short form must be unique app-wide. `POL` qualified; `Rev` did not.
+- A joined-in fact takes the qualified name: the SO line owns `revision`, everything
+  downstream calls it `itemRevision`.
+- `xxxText` is a snapshot and only ever a fallback — read `xxx ?? xxxText`.
+- Never write one fact into another fact's field. Our line number is `lineNo`, the
+  customer's is `clientPoLineNo`, and they do not match.
+
+Before you report done: grep the label you added across `apps/web/src`. If those words
+already appear elsewhere meaning something else, you have created the fault.
+
+## WRITES — the five rules (full text: CLAUDE.md §20)
+
+- **One number, one writer.** Grep every existing writer of a qty column before adding
+  one; reuse that function. Two writers double-count (Stop Operation vs the op log).
+- **Status changes are conditional.** `UPDATE … WHERE status = '<expected>'` and check the
+  row count; 0 rows means someone beat you — say who, do not overwrite.
+- **Limits are checked under the parent's lock.** `SELECT … FOR UPDATE`, sum, insert — one
+  transaction. Ship a test that fires two requests at once.
+- **Edits carry `updatedAt`.** Save `WHERE updated_at = ?`; answer 409 "changed by X at
+  …" instead of wiping someone else's edit.
+- **A screen only offers an action whose data it already loads.** Otherwise the button can
+  only fail; add the fields in the same commit or do not render it.

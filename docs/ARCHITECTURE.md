@@ -24,7 +24,7 @@ Supabase Pro (Mumbai, ap-south-1)
 - **Supabase Postgres** — single source of truth; RLS-enforced multi-tenancy
 - **Supabase Storage** — file uploads with same access policies as DB
 - **Supabase Auth** — JWT issuance and validation
-- **Supabase Realtime** — selective WebSocket delivery for hot screens (Op Entry, Live Operations Board, Machine Status, Task Allocation)
+- **Supabase Realtime** — live updates: a change to a table in `LIVE_TABLES` refreshes the screens that show it on every PC (ADR-230)
 
 ## Authorization Model
 
@@ -35,10 +35,18 @@ Roles: `admin`, `manager`, `operator`, `qc`, `procurement`, `dispatch`, `design`
 
 Every table has `company_id`. RLS enforces isolation. JWT claim `company_id` set on Postgres session via `current_company_id()` helper.
 
-## Realtime Strategy
+## Live updates (ADR-230 — supersedes ADR-004)
 
-**Realtime on:** Op Entry, Live Operations Board, Machine Status, Task Allocation.
-**Polling elsewhere:** 30s lists, 60s detail screens.
+- **One list of live tables:** `LIVE_TABLES` in `packages/shared/src/lib/live-tables.ts`.
+- **Table → screens:** `LIVE_TABLE_KEYS` in `apps/web/src/lib/live-updates/table-keys.ts` maps each live table to the TanStack Query key roots it refreshes (typed Record — an unmapped table fails the build).
+- **Database:** each live table is in the `supabase_realtime` publication via a hand-written, guarded migration (pattern: `0217_cancel_requests.sql`; newest `0222_day_log.sql`).
+- **Flow:** the change message is a doorbell, never data — changes are batched (750 ms quiet, 2 s max), then the mapped keys are invalidated and the screen re-reads through the API. Every (re)connect re-reads what is on screen; a drop shows "Live updates paused" in the top bar.
+- **Privacy:** Realtime sends the row to every subscriber that passes the table's RLS SELECT policy — publish only tables whose company-wide read is acceptable.
+- **Same PC:** each mutation invalidates its own module's key root and every other module root showing the same data, imported from that module's key factory.
+- **Not live:** no default polling. TanStack defaults (`apps/web/src/main.tsx`): staleTime 30 s, refetch on window focus, retry 1. Screens that are not live refresh on open/focus, or set `refetchInterval` (60 s fallback on JC/SO/PO/GRN/PR/PRO lists).
+- **Every key root is declared** live / poll / on-open in `REFRESH_POLICY` (`apps/web/src/lib/live-updates/refresh-policy.ts`), checked by `refresh-coverage.test.ts`.
+
+How to build a new page against this: CLAUDE.md §22.
 
 ## Performance Targets (at 100 concurrent users)
 
