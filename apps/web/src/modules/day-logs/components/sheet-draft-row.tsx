@@ -48,7 +48,7 @@ export function SheetDraftRow({
       <div className="dl-field">
         <TimeField
           id={startInputId(d.key)}
-          ariaLabel="Start time"
+          ariaLabel="Start Time"
           value={d.start}
           onChange={(start) => onChange({ start })}
           nowMin={nowMin}
@@ -60,7 +60,7 @@ export function SheetDraftRow({
       </div>
       <div className="dl-field">
         <TimeField
-          ariaLabel="Stop time"
+          ariaLabel="Stop Time"
           value={d.stop}
           onChange={(stop) => onChange({ stop })}
           nowMin={nowMin}

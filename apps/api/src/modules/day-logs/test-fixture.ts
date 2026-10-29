@@ -36,6 +36,8 @@ export const fx = {
   /** A department where the owner holds no L2+ right. */
   otherDept: '',
   openSo: { id: '', code: '' },
+  /** ADR-255 — a third user (neither owner nor seed admin), if TEST has one. */
+  thirdBase: null as AuthContext | null,
 };
 
 export const owner = (): AuthContext =>
@@ -44,6 +46,14 @@ export const sameDeptAdmin = (): AuthContext =>
   asAccess(fx.admin, { departments: { [fx.ownerDept]: 'L5' } }, 'manager');
 export const otherDeptAdmin = (): AuthContext =>
   asAccess(fx.admin, { departments: { [fx.otherDept]: 'L5' } }, 'manager');
+/** ADR-255 — a Super Admin (Full Access) — the seed admin's id. */
+export const superAdmin = (): AuthContext => asAccess(fx.admin, { fullAccess: true }, 'manager');
+/** A second Super Admin (the third user given Full Access), or null. */
+export const otherSuperAdmin = (): AuthContext | null =>
+  fx.thirdBase ? asAccess(fx.thirdBase, { fullAccess: true }, 'manager') : null;
+/** The owner as if they held Full Access (replying on their own entry). */
+export const ownerAsSuper = (): AuthContext =>
+  asAccess(fx.ownerBase, { fullAccess: true }, 'manager');
 /** The owner as if they were L5 of their own department. */
 export const ownerAsAdmin = (): AuthContext =>
   asAccess(fx.ownerBase, { departments: { [fx.ownerDept]: 'L5' } }, 'manager');
@@ -56,6 +66,16 @@ export const at = (date: string, hhmm: string): DayLogClock => {
 
 export async function wipeOwnerDays(): Promise<void> {
   const { today } = istClock();
+  // ADR-255 — the revisions / replies of those days first (their line FK has
+  // no cascade), in the same statement.
+  const days = sql`SELECT l.id FROM public.daily_report_lines l
+    JOIN public.daily_reports dr ON dr.id = l.daily_report_id
+    WHERE dr.user_id = ${fx.ownerBase.id}::uuid
+      AND (dr.report_date < '2002-01-01'::date OR dr.report_date = ${today}::date)`;
+  await db.execute(sql`
+    WITH a AS (DELETE FROM public.daily_report_line_text_revisions WHERE line_id IN (${days})),
+         b AS (DELETE FROM public.daily_report_line_replies WHERE line_id IN (${days}))
+    SELECT 1`);
   await db.execute(sql`
     DELETE FROM public.daily_reports
     WHERE user_id = ${fx.ownerBase.id}::uuid
@@ -100,6 +120,18 @@ export const edit = (e: DayLogEntry, clock: DayLogClock, f: Partial<UpdateDayLog
     owner(),
     clock,
   );
+/** ADR-255 — the owner's direct Working On edit of a row as loaded. */
+export const work = (e: DayLogEntry, clock: DayLogClock, description: string) =>
+  service.updateWork(e.id, { description, updatedAt: e.updatedAt }, owner(), clock);
+
+/** ADR-255 — a line's stored revisions, oldest first (straight from the table). */
+export async function revisionsOf(lineId: string) {
+  return (await db.execute(sql`
+    SELECT text_rev_no, description FROM public.daily_report_line_text_revisions
+    WHERE line_id = ${lineId}::uuid AND deleted_at IS NULL ORDER BY text_rev_no
+  `)) as unknown as Array<{ text_rev_no: number; description: string }>;
+}
+
 export const times = (d: DayLogDetail) => d.entries.map((e) => [e.fromTime, e.toTime]);
 
 /** The owner's Team Day Logs row as a same-department L5 sees it. */
@@ -162,6 +194,16 @@ export async function setupFixture(): Promise<void> {
     isActive: o.user.isActive,
   };
   fx.ownerDept = o.mainDept!;
+  const third = others.find((x) => x.user.id !== o.user.id)?.user;
+  fx.thirdBase = third
+    ? {
+        id: third.id,
+        email: third.email,
+        companyId: third.companyId,
+        role: third.role,
+        isActive: third.isActive,
+      }
+    : null;
   fx.otherDept = pick.other.key;
 
   const so = (await db.execute(sql`

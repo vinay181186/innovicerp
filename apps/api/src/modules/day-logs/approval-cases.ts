@@ -19,7 +19,8 @@ import {
 
 const C = at(MON, '17:00');
 
-/** One saved row 09:00–10:00 and its edit request to 09:00–10:30 "longer". */
+/** One saved row 09:00–10:00 and its edit request to 09:00–10:30. It also
+ *  sends Working On "longer" — IGNORED on this path (ADR-255). */
 async function requested() {
   const d = await add(MON, C, { startTime: '09:00', stopTime: '10:00' });
   const e = d.entries[0]!;
@@ -32,7 +33,7 @@ const mine = async () =>
 
 export function approvalCases(): void {
   describe('Day Log — edit approval', () => {
-    it('an edit goes pending; the live values do not change', async () => {
+    it('an edit goes pending; the live values do not change; the sent text is ignored', async () => {
       const { after } = await requested();
       expect([after.fromTime, after.toTime, after.description]).toEqual([
         '09:00',
@@ -42,7 +43,7 @@ export function approvalCases(): void {
       expect(after.pending).toMatchObject({
         fromTime: '09:00',
         toTime: '10:30',
-        description: 'longer',
+        description: 'test work', // ADR-255 — the live text, not "longer"
         order: null,
       });
       const day = await service.getDay({ date: MON }, owner(), C);
@@ -54,8 +55,15 @@ export function approvalCases(): void {
         entryId: after.id,
         date: MON,
         current: { fromTime: '09:00', toTime: '10:00', description: 'test work' },
-        proposed: { fromTime: '09:00', toTime: '10:30', description: 'longer' },
+        proposed: { fromTime: '09:00', toTime: '10:30', description: 'test work' },
       });
+    });
+
+    it('an edit of Working On alone is "Nothing changed" here (ADR-255)', async () => {
+      const d = await add(MON, C, { startTime: '09:00', stopTime: '10:00' });
+      await expect(edit(d.entries[0]!, C, { description: 'other text' })).rejects.toThrow(
+        'Nothing changed',
+      );
     });
 
     it('a second edit while one waits is a 409; a stale updatedAt is a 409', async () => {
@@ -80,7 +88,7 @@ export function approvalCases(): void {
       );
     });
 
-    it('a same-department L5 approves: the new values apply; a second decision is a 409', async () => {
+    it('a same-department L5 approves: the new times apply, the text does not; a second decision is a 409', async () => {
       const { after } = await requested();
       const res = await service.approveEntry(
         after.id,
@@ -94,7 +102,7 @@ export function approvalCases(): void {
       expect([row.fromTime, row.toTime, row.description, row.minutes]).toEqual([
         '09:00',
         '10:30',
-        'longer',
+        'test work', // ADR-255 — approving never changes Working On
         90,
       ]);
       expect(row.pending).toBeNull();
@@ -150,9 +158,9 @@ export function approvalCases(): void {
         null,
         'Stop was 10:00',
       ]);
-      const again = await edit(row, C, { description: 'GRN entry' });
+      const again = await edit(row, C, { stopTime: '10:15' });
       expect(again.entries[0]!.rejectReason).toBeNull();
-      expect(again.entries[0]!.pending?.description).toBe('GRN entry');
+      expect(again.entries[0]!.pending?.toTime).toBe('10:15');
     });
 
     it('approval re-checks overlap against the rows saved since the request', async () => {

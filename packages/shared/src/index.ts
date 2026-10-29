@@ -179,6 +179,7 @@ export * from './schemas/stock-valuation';
 export * from './schemas/task';
 export * from './schemas/daily-task-report';
 export * from './schemas/day-log';
+export * from './schemas/day-log-text';
 export * from './schemas/dashboard-home';
 export * from './schemas/table-prefs';
 export * from './schemas/list-query';

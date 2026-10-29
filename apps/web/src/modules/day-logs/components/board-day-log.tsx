@@ -4,9 +4,9 @@
 // §20.5; owner 2026-10-27). They are not task views — shared TASK_VIEWS stays as
 // it is — so the board accepts these keys in its own `view` param and draws
 // this body instead of the task table.
-//   view=daylog&date=          my day
+//   view=daylog&date=&line=    my day (line = the entry to open, ADR-255)
 //   view=team&date=            the team table for a day
-//   view=person&user=&from=&to=&date=   one person's days (Team tab stays lit)
+//   view=person&user=&date=    one person's day (Team tab stays lit)
 //   view=approvals              Day Log edits waiting for the caller's approval
 
 import { z } from 'zod';
@@ -39,8 +39,8 @@ const dateParam = z
 export const dayLogSearchShape = {
   date: dateParam,
   user: z.string().uuid().optional().catch(undefined),
-  from: dateParam,
-  to: dateParam,
+  /** My Day Log: the entry to open and scroll to (Home notification link). */
+  line: z.string().uuid().optional().catch(undefined),
 };
 
 export function isDayLogTab(v: string): v is DayLogViewKey {
@@ -74,23 +74,20 @@ export interface DayLogNav {
   view?: DayLogViewKey;
   date?: string | undefined;
   user?: string | undefined;
-  from?: string | undefined;
-  to?: string | undefined;
+  line?: string | undefined;
 }
 
 export function DayLogBoardBody({
   tab,
   date,
   user,
-  from,
-  to,
+  line,
   onNav,
 }: {
   tab: DayLogViewKey;
   date: string | undefined;
   user: string | undefined;
-  from: string | undefined;
-  to: string | undefined;
+  line: string | undefined;
   onNav: (n: DayLogNav) => void;
 }): React.JSX.Element {
   if (tab === 'person' && user) {
@@ -98,10 +95,8 @@ export function DayLogBoardBody({
       <PersonDayLogs
         userId={user}
         date={date}
-        from={from}
-        to={to}
-        onRange={(f, t) => onNav({ from: f, to: t })}
-        onBack={() => onNav({ view: 'team', user: undefined, from: undefined, to: undefined })}
+        onDate={(d) => onNav({ date: d })}
+        onBack={() => onNav({ view: 'team', user: undefined })}
       />
     );
   }
@@ -112,11 +107,9 @@ export function DayLogBoardBody({
         date={date}
         onDate={(d) => onNav({ date: d })}
         onApprovals={() => onNav({ view: 'approvals', user: undefined })}
-        onOpenPerson={(u, d) =>
-          onNav({ view: 'person', user: u, date: d, from: undefined, to: undefined })
-        }
+        onOpenPerson={(u, d) => onNav({ view: 'person', user: u, date: d, line: undefined })}
       />
     );
   }
-  return <DayLogTab date={date} onDate={(d) => onNav({ date: d })} />;
+  return <DayLogTab date={date} line={line} onDate={(d) => onNav({ date: d, line: undefined })} />;
 }

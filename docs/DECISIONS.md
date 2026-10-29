@@ -14668,3 +14668,56 @@ user with the Tasks page found all 24 PROD tasks.
 - A personal to-do still cannot be reassigned (unchanged); to hand work over, Assign a
   new task.
 - Verified read-only on PROD data: 864 user × task combinations, 0 mismatches.
+
+## ADR-255: Day Log — direct Working On edits with a hidden history, Super Admin replies on Home
+
+**Date:** 2026-10-29
+**Status:** Accepted (owner "go", 2026-10-29; mockup https://claude.ai/artifact/RL1dxn177hyZLbxPg4LBk1)
+
+### Context
+
+Every edit of a saved Day Log entry waited for approval (0225) and the approved text
+overwrote the old one, so no history was kept. The owner wants users to correct their
+Working On text freely, while the Super Admin can see every earlier version and what
+changed — without the user getting any hint of the tracking — and wants to reply to an
+entry, with the user told through the Home dashboard.
+
+### Decision
+
+- **Working On is edited directly** (`PATCH /day-logs/entries/:id/work`). Each changed
+  save writes `daily_report_line_text_revisions` (Text Rev 0 = first save, +1 per change)
+  in the same transaction, under the day header lock, with a §20.4 `updatedAt` check.
+  Nothing about the text edit goes to `activity_log` (that page is open to every user).
+- **Start / Stop / SO edits keep the approval flow** (D1); that path no longer changes or
+  logs the text.
+- **Super Admin only** (role admin / Full Access) sees Text Rev No / Date / Time and the
+  history with a word diff, and may send and edit replies (many per entry). The owner sees
+  replies and a 🔔 on the row until the entry is opened; `seen_at` is per reply and is reset
+  when the reply is edited.
+- **Home 🔔 / Notifications** carries each unseen reply to the owner until it is seen — no
+  3-day window, ahead of the 50-note cap, also for admin recipients (the rule-based notes
+  stay excluded for them).
+- **Screens:** My Day Log and Team Day Logs › person move to the FIT table (ADR-199). The
+  person page loses the day strip and From–To and gets one date picker. New rows are
+  added under the table (the engine has no per-row ▸-free draft row).
+- **Privacy:** both new tables have RLS on with a deny-all client SELECT policy and are not
+  published to Realtime; the API (BYPASSRLS) is the only reader. Live refresh comes from the
+  existing `daily_reports` header bump.
+- **Backfill (0228):** Text Rev 0 for every live entry; the 9 approved PROD edits get Rev 0
+  = old text / Rev 1 = new text, recovered from their EDIT_APPROVED activity text.
+
+### Alternatives Considered
+
+- Keep approval for text edits — rejected by the owner.
+- Reply notes as an `activity_log` rule — rejected: rules go to anyone holding a right,
+  drop after 3 days and are "seen" by one global time.
+- Draft rows inside the FIT table — rejected: needs a shared engine change used by ~90 lists.
+
+### Consequences
+
+- Positive: free text corrections, a full audit of what was written, a direct line from
+  the Super Admin to the user.
+- Negative: Department Admins no longer see text changes at all (Super Admin only).
+- Risks: the history is only as private as the API checks — every revision read is gated
+  by `isSuper` in one place.
+

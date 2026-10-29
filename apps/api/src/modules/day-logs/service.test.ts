@@ -7,6 +7,7 @@ import { db } from '../../db/client';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import { approvalCases } from './approval-cases';
 import { sheetCases } from './sheet-cases';
+import { textCases } from './text-cases';
 import * as service from './service';
 import {
   MON,
@@ -19,7 +20,6 @@ import {
   at,
   fx,
   owner,
-  sameDeptAdmin,
   setupFixture,
   teamRow,
   times,
@@ -153,7 +153,7 @@ describe('Day Log — yesterday first', () => {
   });
 });
 
-describe('Day Log — LATE, orders, person, team', () => {
+describe('Day Log — LATE, orders, team', () => {
   it('LATE: first saved more than 60 minutes after its Stop (India time)', async () => {
     const d = await add(MON, at(MON, '12:00'));
     expect(d.entries[0]!.late).toBe(true); // created in 2026 for a 2001 day
@@ -175,30 +175,6 @@ describe('Day Log — LATE, orders, person, team', () => {
     expect(opts.find((o) => o.id === fx.openSo.id)).toMatchObject({
       type: 'so',
       code: fx.openSo.code,
-    });
-  });
-
-  it('person range: one row per working day, totals', async () => {
-    await add(MON, at(MON, '18:00'), { startTime: '09:00', stopTime: '17:30' });
-    await add(TUE, at(TUE, '12:00'), {
-      startTime: '09:00',
-      stopTime: '11:00',
-      orderType: 'so',
-      orderId: fx.openSo.id,
-    });
-    const p = await service.getPerson(
-      { userId: fx.ownerBase.id, from: MON, to: WED },
-      sameDeptAdmin(),
-      at(TUE, '12:00'),
-    );
-    expect(p.to).toBe(TUE); // clipped to today
-    expect(p.days.map((d) => d.date)).toEqual([TUE, MON]);
-    expect(p.days[0]!.orderCodes).toEqual([fx.openSo.code]);
-    expect(p.totals).toMatchObject({
-      daysLogged: 2,
-      workMin: 510 + 120,
-      avgWorkMin: 315,
-      breakMin: 0,
     });
   });
 
@@ -232,3 +208,4 @@ describe('Day Log — LATE, orders, person, team', () => {
 
 approvalCases();
 sheetCases();
+textCases();

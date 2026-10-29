@@ -17,8 +17,9 @@ import type { DaySnapshot } from './snapshot';
 /** Yesterday first (rules.ts — pure, unit-tested). */
 export { blockedByOf };
 
-/** `nowMin` only when the line's day is today (an old Open entry counts to now). */
-export function toEntry(l: DayLine, nowMin?: number): DayLogEntry {
+/** `nowMin` only when the line's day is today (an old Open entry counts to now).
+ *  `withReplies` — ADR-255: only the entry's owner and a Super Admin. */
+export function toEntry(l: DayLine, nowMin?: number, withReplies = false): DayLogEntry {
   return {
     id: l.id,
     kind: l.kind,
@@ -30,6 +31,7 @@ export function toEntry(l: DayLine, nowMin?: number): DayLogEntry {
     remarks: l.remarks,
     late: l.late,
     updatedAt: l.updatedAt,
+    replies: withReplies ? (l.replies ?? []) : [],
     pending: l.pending,
     rejectReason: l.rejectReason,
   };
@@ -69,6 +71,7 @@ export function detailOf(
   const workingDay = isWorkingDay(date, holidayName ? [date] : []);
   const nowMin = date === clock.today ? clock.nowMin : undefined;
   const isOwner = target.id === v.userId;
+  const withReplies = isOwner || v.isSuper;
 
   return {
     id: header?.id ?? null,
@@ -81,7 +84,7 @@ export function detailOf(
     status: header?.status ?? 'open',
     workingDay,
     holidayName,
-    entries: lines.filter((l) => l.fromTime).map((l) => toEntry(l, nowMin)),
+    entries: lines.filter((l) => l.fromTime).map((l) => toEntry(l, nowMin, withReplies)),
     summary: summaryOf(lines, nowMin, workingDay),
     submittedAt: header?.submittedAt ?? null,
     submittedByName: header?.submittedByName ?? null,

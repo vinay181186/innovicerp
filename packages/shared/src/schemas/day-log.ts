@@ -277,8 +277,10 @@ export type AddDayLogEntryInput = z.infer<typeof addDayLogEntryInputSchema>;
 export const updateDayLogEntryInputSchema = entryRules(
   z.object({
     ...entryFields,
-    /** §20.4 — the entry's updatedAt as loaded. An edit of a SAVED row is
-     *  not applied: it is staged for approval (pending). */
+    /** §20.4 — the entry's updatedAt as loaded. A Start / Stop / SO edit of
+     *  a SAVED row is not applied: it is staged for approval (pending).
+     *  ADR-255: `description` is IGNORED here (the screen sends the current
+     *  text) — Working On changes only through updateDayLogWorkInputSchema. */
     updatedAt: z.string(),
   }),
 );
@@ -328,13 +330,6 @@ export type DayLogQuery = z.infer<typeof dayLogQuerySchema>;
 export const teamDayLogQuerySchema = z.object({ date: dateStr.optional() });
 export type TeamDayLogQuery = z.infer<typeof teamDayLogQuerySchema>;
 
-export const personDayLogQuerySchema = z.object({
-  userId: z.string().uuid(),
-  from: dateStr,
-  to: dateStr,
-});
-export type PersonDayLogQuery = z.infer<typeof personDayLogQuerySchema>;
-
 export const dayLogOrderOptionsQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
 });
@@ -357,6 +352,21 @@ export const dayLogOrderOptionSchema = dayLogOrderSchema.extend({
 });
 export type DayLogOrderOption = z.infer<typeof dayLogOrderOptionSchema>;
 
+/** ADR-255 — a Super Admin reply as the entry's OWNER sees it (My Day Log).
+ *  No revision fact ever travels to the owner. day-log-text.ts builds the
+ *  Super Admin's view of a reply on top of this. */
+export const dayLogOwnReplySchema = z.object({
+  id: z.string().uuid(),
+  body: z.string(),
+  authorName: z.string(),
+  sentAt: z.string(),
+  /** null = never edited. */
+  editedAt: z.string().nullable(),
+  /** Not opened since it was sent / last edited — drives the row's 🔔. */
+  unread: z.boolean(),
+});
+export type DayLogOwnReply = z.infer<typeof dayLogOwnReplySchema>;
+
 export const dayLogEntrySchema = z.object({
   id: z.string().uuid(),
   kind: z.enum(DAY_LOG_ENTRY_KINDS),
@@ -370,7 +380,10 @@ export const dayLogEntrySchema = z.object({
   remarks: z.string().nullable(),
   late: z.boolean(),
   updatedAt: z.string(),
-  /** An edit waiting for approval (the row still shows its old values). */
+  /** ADR-255 — Super Admin replies, oldest first (owner's view). */
+  replies: z.array(dayLogOwnReplySchema),
+  /** An edit of Start / Stop / SO waiting for approval (the row still shows
+   *  its old values). Working On is edited directly (ADR-255), never here. */
   pending: z
     .object({
       fromTime: z.string(),
@@ -509,43 +522,6 @@ export const teamDayLogResponseSchema = z.object({
   rows: z.array(teamDayLogRowSchema),
 });
 export type TeamDayLogResponse = z.infer<typeof teamDayLogResponseSchema>;
-
-export const personDayRowSchema = z.object({
-  date: z.string(),
-  workingDay: z.boolean(),
-  /** null = no day row yet (nothing logged). */
-  status: z.enum(DAY_LOG_STATUSES).nullable(),
-  firstStart: z.string().nullable(),
-  lastStop: z.string().nullable(),
-  workMin: z.number().int(),
-  breakMin: z.number().int(),
-  leaveMin: z.number().int(),
-  entryCount: z.number().int(),
-  lateCount: z.number().int(),
-  lateInMin: z.number().int(),
-  orderCodes: z.array(z.string()),
-});
-export type PersonDayRow = z.infer<typeof personDayRowSchema>;
-
-export const personDayLogResponseSchema = z.object({
-  userId: z.string().uuid(),
-  userName: z.string(),
-  deptLabel: z.string().nullable(),
-  from: z.string(),
-  to: z.string(),
-  today: z.string(),
-  /** Newest first; every date in the range (working days and days with entries). */
-  days: z.array(personDayRowSchema),
-  totals: z.object({
-    daysLogged: z.number().int(),
-    workMin: z.number().int(),
-    avgWorkMin: z.number().int(),
-    breakMin: z.number().int(),
-    leaveMin: z.number().int(),
-    lateCount: z.number().int(),
-  }),
-});
-export type PersonDayLogResponse = z.infer<typeof personDayLogResponseSchema>;
 
 export const holidaySchema = z.object({
   id: z.string().uuid(),

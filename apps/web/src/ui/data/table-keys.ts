@@ -136,6 +136,13 @@ export const TABLE_KEYS = {
   designTracker: 'design-tracker',
   taskBoard: 'task-board',
   dailyTaskReports: 'daily-task-reports',
+  /** Day Log (ADR-255): My Day Log's saved entries; Team Day Logs › a person. */
+  myDayLog: 'my-day-log',
+  personDayLog: 'person-day-log',
+  teamDayLogs: 'team-day-logs',
+  /** Day Log: Task Board › Approvals · Day Log; the Holidays modal's list. */
+  dayLogApprovals: 'day-log-approvals',
+  dayLogHolidays: 'day-log-holidays',
   alertsDashboard: 'alerts-dashboard',
   alertDrill: 'alert-drill',
   activityLog: 'activity-log',

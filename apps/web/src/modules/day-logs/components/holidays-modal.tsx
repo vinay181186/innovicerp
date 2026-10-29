@@ -1,11 +1,38 @@
 // Company holidays (a holiday is not a working day — nothing is required).
 // Shown only to whoever GET /day-logs/access says may manage them.
 
+import type { Holiday } from '@innovic/shared';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
+import { DataTable } from '@/ui/data';
+import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
 import { useAddHoliday, useHolidays, useRemoveHoliday } from '../api';
 import { errText } from '../lib/format';
+
+/** The FIT table (ADR-199) with the ADR-200 Sort & Filter ▾ in the browser
+ *  (every holiday is loaded); the row's ⋯ holds Remove. */
+const COLUMNS: DataTableColumn<Holiday>[] = [
+  {
+    id: 'date',
+    header: 'Holiday Date',
+    kind: 'date',
+    className: 'mono',
+    filterValue: (h) => h.date,
+    render: (h) => fmtDate(h.date),
+  },
+  {
+    id: 'name',
+    header: 'Holiday',
+    kind: 'text',
+    align: 'left',
+    ellipsis: true,
+    title: (h) => h.name,
+    filterValue: (h) => h.name,
+    render: (h) => h.name,
+  },
+];
 
 export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const q = useHolidays();
@@ -38,43 +65,26 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
         </button>
       }
     >
-      {q.isLoading ? <div className="empty-state">Loading…</div> : null}
-      <div className="tbl-wrap" style={{ maxHeight: 320 }}>
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th>Holiday Date</th>
-              <th>Holiday</th>
-              <th aria-label="Remove" />
-            </tr>
-          </thead>
-          <tbody>
-            {(q.data?.holidays ?? []).map((h) => (
-              <tr key={h.id}>
-                <td className="mono">{fmtDate(h.date)}</td>
-                <td title={h.name}>{h.name}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={busy}
-                    onClick={() => void run(remove.mutateAsync(h.id))}
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {q.data && q.data.holidays.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="empty-state">
-                  No holidays set.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Holiday>
+        tableKey={TABLE_KEYS.dayLogHolidays}
+        columns={COLUMNS}
+        rows={q.data?.holidays ?? []}
+        rowKey={(h) => h.id}
+        loading={q.isLoading}
+        maxHeight={320}
+        empty={q.isError ? errText(q.error, 'Could not load the holidays.') : 'No holidays set.'}
+        rowMenuLabel={(h) => `Actions for ${h.name}`}
+        rowMenu={(h) => [
+          {
+            key: 'remove',
+            label: 'Remove',
+            icon: 'trash-2',
+            group: 'danger',
+            disabledReason: busy ? 'Working…' : undefined,
+            onSelect: () => run(remove.mutateAsync(h.id)).then(() => undefined),
+          },
+        ]}
+      />
       <div
         style={{
           display: 'flex',

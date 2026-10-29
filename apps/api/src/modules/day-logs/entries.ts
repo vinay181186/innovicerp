@@ -1,7 +1,8 @@
 // Day Log — the owner's rows (simple sheet, owner 2026-10-27): add one row,
-// and ask for an edit of a saved row. A saved row is never removed and never
-// changed directly: the edit is STAGED on it (pending_*) until an approver
-// decides (approvals.ts). Each runs in ONE transaction under the day header
+// and ask for an edit of a saved row. A saved row is never removed; its
+// Start / Stop / SO edit is STAGED on it (pending_*) until an approver
+// decides (approvals.ts). Working On is NOT part of that edit (ADR-255): it
+// changes directly through text.ts, and this path never changes it. Each runs in ONE transaction under the day header
 // lock (lock.ts) with the day re-read inside it in one statement (§20.3).
 // Round trips per write: BEGIN, lock, snapshot, line write + header bump,
 // activity, COMMIT.
@@ -16,6 +17,7 @@ import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertCanWrite, resolveAccess, viewerOf } from './access';
 import {
+  REV0_AFTER,
   insertSql,
   label,
   lineOf,
@@ -25,6 +27,7 @@ import {
   ordersOf,
   prepare,
   returning,
+  spanLabel,
   writeLines,
 } from './entry-write';
 import { dayTx, lockEntryDay, openDayLocked, requireHeader } from './lock';
@@ -48,7 +51,14 @@ export async function addEntry(
     if (input.date > clock.today) throw new ValidationError(`${dmy(input.date)} has not come yet`);
     const h = locked.header;
     const snap = await readSnapshot(
-      { companyId, viewerId: null, targetId: user.id, date: h.date, orders: ordersOf([input]) },
+      {
+        companyId,
+        viewerId: null,
+        targetId: user.id,
+        date: h.date,
+        replies: true,
+        orders: ordersOf([input]),
+      },
       tx,
     );
     guardOwnerWrite(h.date, snap, clock.today);
@@ -58,6 +68,7 @@ export async function addEntry(
       h,
       user,
       insertSql(companyId, h, user, [r], nextLineNo(snap.lines)),
+      REV0_AFTER, // ADR-255 — Text Rev 0, same statement
     );
     await log(
       tx,
@@ -75,7 +86,9 @@ export async function addEntry(
 /**
  * ✎ an edit of a saved row → staged for approval. The proposed values are
  * checked exactly like a new row, against the OTHER rows' current values.
- * The live values do not change; reject_reason is cleared.
+ * The live values do not change; reject_reason is cleared. ADR-255: the
+ * input description is IGNORED — pending_description carries the CURRENT
+ * Working On, and nothing of the text reaches activity_log.
  */
 export async function updateEntry(
   entryId: string,
@@ -90,7 +103,14 @@ export async function updateEntry(
     assertCanWrite(eff);
     const h = requireHeader(locked);
     const snap = await readSnapshot(
-      { companyId, viewerId: null, targetId: user.id, date: h.date, orders: ordersOf([input]) },
+      {
+        companyId,
+        viewerId: null,
+        targetId: user.id,
+        date: h.date,
+        replies: true,
+        orders: ordersOf([input]),
+      },
       tx,
     );
     guardOwnerWrite(h.date, snap, clock.today);
@@ -101,11 +121,18 @@ export async function updateEntry(
       throw staleEntryError(self.updatedAt);
     }
     const others = snap.lines.filter((l) => l.id !== entryId);
-    const r = prepare(h.date, others, input, self, clock, snap);
+    // ADR-255 — the live Working On, never the sent one.
+    const r = prepare(
+      h.date,
+      others,
+      { ...input, description: self.description },
+      self,
+      clock,
+      snap,
+    );
     const same =
       r.fromTime === self.fromTime &&
       r.toTime === self.toTime &&
-      r.description === self.description &&
       (r.soId ?? r.jwId) === (self.order?.id ?? null);
     if (same) throw new ValidationError('Nothing changed');
     // §20.4 — only over what was loaded, and only when nothing is waiting.
@@ -116,7 +143,7 @@ export async function updateEntry(
       sql`
       UPDATE public.daily_report_lines
       SET pending_from = ${r.fromTime}::time, pending_to = ${r.toTime}::time,
-          pending_description = ${r.description},
+          pending_description = description,
           pending_sales_order_id = ${r.soId}::uuid, pending_job_work_order_id = ${r.jwId}::uuid,
           pending_at = now(), pending_by = ${user.id}::uuid, reject_reason = NULL,
           updated_at = now(), updated_by = ${user.id}::uuid
@@ -131,7 +158,7 @@ export async function updateEntry(
       user,
       h,
       'EDIT_REQUEST',
-      `asked to change ${label({ fromTime: self.fromTime, toTime: self.toTime, description: self.description })} to ${label(r)}`,
+      `asked to change ${spanLabel({ fromTime: self.fromTime, toTime: self.toTime }, self.order?.code ?? null)} to ${spanLabel(r, r.orderCode)}`,
     );
     const lines = snap.lines.map((l) =>
       l.id === entryId

@@ -7,6 +7,7 @@ import {
   DAY_LOG_RULES,
   type DayLogEntryKind,
   type DayLogOrder,
+  type DayLogOwnReply,
   type DayLogSpan,
   type DayLogStatus,
 } from '@innovic/shared';
@@ -55,6 +56,9 @@ export interface DayLine {
   lineNo?: number;
   pending: PendingEdit | null;
   rejectReason: string | null;
+  /** ADR-255 — Super Admin replies, oldest first (owner's view). Read only
+   *  where linesJson is asked for them (a day read); absent = none read. */
+  replies?: DayLogOwnReply[];
 }
 
 export const iso = (v: unknown): string | null =>
@@ -105,11 +109,35 @@ export const lateSql = (reportDate: SQL, toTime: SQL, createdAt: SQL): SQL => sq
      + make_interval(mins => ${DAY_LOG_RULES.lateAfterMin}::int))`;
 
 /**
+ * ADR-255 — a line's live replies as the OWNER sees them (no revision fact),
+ * oldest first: a correlated sub-select inside linesJson, so a day's replies
+ * ride in the same statement (no per-line query).
+ */
+const repliesJson = sql`(
+  SELECT COALESCE(json_agg(json_build_object(
+           'id', rp.id::text, 'body', rp.body,
+           'authorName', COALESCE(au.full_name, au.email),
+           'sentAt', ${ts('rp.sent_at')},
+           'editedAt', CASE WHEN rp.edited_at IS NULL THEN NULL ELSE ${ts('rp.edited_at')} END,
+           'unread', rp.seen_at IS NULL)
+         ORDER BY rp.sent_at, rp.id), '[]'::json)
+  FROM public.daily_report_line_replies rp
+  JOIN public.users au ON au.id = rp.created_by
+  WHERE rp.line_id = l.id AND rp.company_id = l.company_id AND rp.deleted_at IS NULL)`;
+
+/** ADR-255 — the replies of `ids` (lines of one company) as ONE json object
+ *  { lineId: [reply…] } — a Super Admin reading someone else's day. */
+export const repliesOfLinesJson = (companyId: string, ids: readonly string[]): SQL => sql`(
+  SELECT COALESCE(json_object_agg(l.id::text, ${repliesJson}), '{}'::json)
+  FROM public.daily_report_lines l
+  WHERE l.company_id = ${companyId}::uuid AND l.id = ANY(${sql.param([...ids])}::uuid[]))`;
+
+/**
  * The live lines matching `where` as ONE json array (a scalar sub-select, so
  * it rides inside a bigger statement), in time order per day. `where` sees
- * l (line), dr (its day).
+ * l (line), dr (its day). `withReplies` adds each line's replies (a day read).
  */
-export const linesJson = (companyId: string, where: SQL): SQL => sql`(
+export const linesJson = (companyId: string, where: SQL, withReplies = false): SQL => sql`(
   SELECT COALESCE(json_agg(json_build_object(
            'id', l.id::text, 'report_id', l.daily_report_id::text, 'line_no', l.line_no,
            'kind', l.kind, 'from_time', to_char(l.from_time, 'HH24:MI'),
@@ -120,7 +148,8 @@ export const linesJson = (companyId: string, where: SQL): SQL => sql`(
            'p_from', to_char(l.pending_from, 'HH24:MI'), 'p_to', to_char(l.pending_to, 'HH24:MI'),
            'p_desc', l.pending_description, 'p_at', ${ts('l.pending_at')},
            'p_so_id', pso.id::text, 'p_so_code', pso.code,
-           'p_jw_id', pjw.id::text, 'p_jw_code', pjw.code, 'reject_reason', l.reject_reason)
+           'p_jw_id', pjw.id::text, 'p_jw_code', pjw.code, 'reject_reason', l.reject_reason,
+           'replies', ${withReplies ? repliesJson : sql`NULL::json`})
          ORDER BY l.daily_report_id, l.from_time NULLS LAST, l.line_no), '[]'::json)
   FROM public.daily_report_lines l
   JOIN public.daily_reports dr ON dr.id = l.daily_report_id
@@ -161,6 +190,7 @@ export function toLine(r: Record<string, unknown>): DayLine {
         }
       : null,
     rejectReason: (r['reject_reason'] as string | null) ?? null,
+    ...(Array.isArray(r['replies']) ? { replies: r['replies'] as DayLogOwnReply[] } : {}),
   };
 }
 

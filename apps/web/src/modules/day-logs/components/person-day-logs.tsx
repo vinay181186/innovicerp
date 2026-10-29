@@ -1,195 +1,233 @@
-// Person page (Team Day Logs → a name, owner final 2026-10-27): one
-// person's days over From – To (default the 7 days ending on the team date).
-// ONE strip from the server's totals (Days logged · Working hours · Avg per
-// day · Late entries), then one row a day: Date · First start · Last stop ·
-// Working hours · Entries · Late · SO / JWSO worked on. A click on a date
-// opens that day's entries under it (Start · Stop with LATE / "⏳ Edit
-// pending" · SO / JWSO · Time, and the Working on line); the team date opens
-// expanded.
+// Person page (Team Day Logs → a name, ADR-255): ONE person, ONE day.
+// Header: ← Team Day Logs, the name, the department, a date box (max today;
+// opens on the team date, else today) and Print / Export. Then the day's
+// entries on the FIT table: Sr No · Start Time · Stop Time · Working Hours ·
+// Text Rev No · Text Rev Date · Text Rev Time · Working On (one line). The
+// three Text Rev columns are a Super Admin's only (the server sends them null
+// to anyone else). ▸ opens, for a Super Admin, every Working On version with
+// a word diff (LEFT) and the replies with Send reply (RIGHT); for anyone
+// else the full text only. Search (Working On, SO / JWSO — and every earlier
+// Text Rev for a Super Admin) and the ADR-200 Sort & Filter ▾ run in the
+// browser: the whole day is loaded.
 
-import { todayIst } from '@/lib/date';
-import { DAY_LOG_RULES, fmt12, fmtDuration } from '@innovic/shared';
-import { Fragment, useState } from 'react';
-import { StatStrip } from '@/ui/data';
+import type { DayLogPersonDay, DayLogPersonDayEntry } from '@innovic/shared';
+import { fmt12, fmtDuration } from '@innovic/shared';
+import { useState } from 'react';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { DataTable, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
-import { useDayLog, usePersonDayLogs } from '../api';
-import { errText, fmtDmy, shiftDate, weekday } from '../lib/format';
-import { DaySelect } from './day-header';
-import { EntriesTable } from './entries-table';
+import { Input } from '@/ui/forms';
+import { PageState } from '@/ui/layout';
+import { usePersonDay } from '../api';
+import { personDayTable, fileSlug } from '../lib/export';
+import { errText, firstName, fmtDmy, istStamp } from '../lib/format';
+import { printPersonDay } from '../lib/print-day-log';
+import { sortEntries } from '../lib/sheet';
+import { EntrySearch } from './entry-search';
+import { PersonReplies } from './person-replies';
+import { PersonRevisions } from './person-revisions';
+import { PrintExportTools } from './print-export-tools';
+import '../day-log-sheet.css';
 
-/** Default range length, days. */
-const DEFAULT_DAYS = 7;
-const COLS = 7;
+type Entry = DayLogPersonDayEntry;
 
-function DayEntries({ userId, date }: { userId: string; date: string }): React.JSX.Element {
-  const q = useDayLog({ userId, date });
-  if (!q.data) {
+const REV_IDS = ['textRevNo', 'textRevDate', 'textRevTime'];
+
+function columns(): DataTableColumn<Entry>[] {
+  const revAt = (r: Entry) => (r.textRevNo ? istStamp(r.textRevisedAt) : null);
+  return [
+    { id: 'srNo', header: 'Sr No', kind: 'code', className: 'mono', render: (r) => r.srNo },
+    {
+      id: 'start',
+      header: 'Start Time',
+      kind: 'date',
+      className: 'mono',
+      render: (r) => fmt12(r.fromTime),
+      filterValue: (r) => r.fromTime,
+    },
+    {
+      id: 'stop',
+      header: 'Stop Time',
+      kind: 'date',
+      className: 'mono',
+      render: (r) => fmt12(r.toTime),
+      filterValue: (r) => r.toTime,
+    },
+    {
+      id: 'hours',
+      header: 'Working Hours',
+      kind: 'num',
+      align: 'right',
+      className: 'mono fw-700',
+      render: (r) => fmtDuration(r.minutes),
+      filterValue: (r) => r.minutes,
+    },
+    {
+      id: 'textRevNo',
+      header: 'Text Rev No',
+      kind: 'num',
+      align: 'right',
+      className: 'mono',
+      render: (r) => r.textRevNo ?? '—',
+      filterValue: (r) => r.textRevNo,
+    },
+    {
+      id: 'textRevDate',
+      header: 'Text Rev Date',
+      kind: 'date',
+      className: 'mono',
+      render: (r) => revAt(r)?.date ?? '—',
+      filterValue: (r) => (r.textRevNo ? r.textRevisedAt : null),
+    },
+    {
+      id: 'textRevTime',
+      header: 'Text Rev Time',
+      kind: 'date',
+      className: 'mono',
+      render: (r) => revAt(r)?.time ?? '—',
+    },
+    {
+      id: 'work',
+      header: 'Working On',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      title: (r) => r.description,
+      filterValue: (r) => r.description,
+      render: (r) => (
+        <>
+          {r.replies.length ? (
+            <span
+              className="dl-rc"
+              title={`${r.replies.length} repl${r.replies.length > 1 ? 'ies' : 'y'}`}
+            >
+              💬{r.replies.length}{' '}
+            </span>
+          ) : null}
+          {r.description}
+        </>
+      ),
+    },
+  ];
+}
+
+function PersonExpand({ r, p }: { r: Entry; p: DayLogPersonDay }): React.JSX.Element {
+  if (!p.isSuperAdmin) {
     return (
-      <div className="empty-state" style={{ color: q.isError ? 'var(--red2)' : undefined }}>
-        {q.isError ? errText(q.error, 'Could not load the day.') : 'Loading…'}
+      <div className="dl-expand">
+        <span className="dl-xl">Working On</span>
+        <div className="dl-full">{r.description}</div>
       </div>
     );
   }
-  return <EntriesTable date={date} entries={q.data.entries} compact />;
+  return (
+    <div className="dl-expand dl-panes">
+      <PersonRevisions revisions={r.revisions} />
+      <PersonReplies entryId={r.id} replies={r.replies} first={firstName(p.userName)} />
+    </div>
+  );
 }
 
 export function PersonDayLogs({
   userId,
   date,
-  from,
-  to,
-  onRange,
+  onDate,
   onBack,
 }: {
   userId: string;
-  /** The team date the page was opened from. */
+  /** ?date= — the team date the page was opened from; none = today. */
   date: string | undefined;
-  from: string | undefined;
-  to: string | undefined;
-  onRange: (from: string, to: string) => void;
+  onDate: (d: string) => void;
   onBack: () => void;
 }): React.JSX.Element {
-  const anchor = date ?? todayIst();
-  const rangeTo = to ?? anchor;
-  const rangeFrom = from ?? shiftDate(rangeTo, -(DEFAULT_DAYS - 1));
-  const query = usePersonDayLogs(userId, rangeFrom, rangeTo);
-  const [open, setOpen] = useState<Record<string, boolean>>(() => ({ [anchor]: true }));
+  const query = usePersonDay(userId, date);
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const [term, setTerm] = useState('');
   const p = query.data;
   if (!p) {
-    return (
-      <div
-        className="empty-state"
-        style={{ padding: 40, color: query.isError ? 'var(--red2)' : undefined }}
-      >
-        {query.isError ? errText(query.error, "Could not load this person's days.") : 'Loading…'}
-      </div>
+    return query.isError ? (
+      <PageState
+        state="error"
+        message={errText(query.error, "Could not load this person's day.")}
+      />
+    ) : (
+      <PageState state="loading" />
     );
   }
 
+  const rows = sortEntries(p.entries);
+  const needle = normalizeSearchTerm(term);
+  const shown = needle
+    ? rows.filter((r) =>
+        matchesSearchTerm(
+          [r.description, r.order?.code, ...r.revisions.map((v) => v.description)],
+          needle,
+        ),
+      )
+    : rows;
+  const cols = columns().filter((c) => p.isSuperAdmin || !REV_IDS.includes(c.id ?? ''));
+  const toggle = (id: string): void =>
+    setOpen((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const goDate = (d: string): void => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d <= p.today && d !== p.date) {
+      setOpen(new Set());
+      onDate(d);
+    }
+  };
+
   return (
     <div>
-      <div
-        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}
-      >
+      <div className="dl-toolbar">
         <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
           ← Team Day Logs
         </button>
-        <strong style={{ fontSize: 'var(--fs-md)' }}>{p.userName}</strong>
+        <span className="section-hdr dl-name">{p.userName}</span>
         {p.deptLabel ? <span className="text3">{p.deptLabel}</span> : null}
+        <Input
+          type="date"
+          mono
+          fieldWidth="md"
+          aria-label="Day"
+          max={p.today}
+          value={p.date}
+          onChange={(e) => goDate(e.target.value)}
+        />
         <span style={{ flex: 1 }} />
-        <label className="text3" htmlFor="dl-from">
-          From
-        </label>
-        <DaySelect
-          id="dl-from"
-          ariaLabel="From"
-          value={rangeFrom}
-          today={p.today}
-          days={DAY_LOG_RULES.maxRangeDays}
-          onChange={(f) => onRange(f, f > rangeTo ? f : rangeTo)}
-        />
-        <label className="text3" htmlFor="dl-to">
-          To
-        </label>
-        <DaySelect
-          id="dl-to"
-          ariaLabel="To"
-          value={rangeTo}
-          today={p.today}
-          days={DAY_LOG_RULES.maxRangeDays}
-          onChange={(t) => onRange(t < rangeFrom ? t : rangeFrom, t)}
+        <PrintExportTools
+          table={personDayTable(p)}
+          fileName={`day-log-${fileSlug(p.userName)}-${p.date}`}
+          sheetName="Day Log"
+          onPrint={(company) => printPersonDay(p, company)}
         />
       </div>
-      <StatStrip
-        style={{ marginBottom: 10 }}
-        items={[
-          { key: 'days', label: 'Days logged', count: p.totals.daysLogged },
-          { key: 'work', label: 'Working hours', count: fmtDuration(p.totals.workMin) },
-          { key: 'avg', label: 'Avg per day', count: fmtDuration(p.totals.avgWorkMin) },
-          {
-            key: 'late',
-            label: 'Late entries',
-            count: p.totals.lateCount,
-            color: p.totals.lateCount > 0 ? 'var(--amber2)' : undefined,
-          },
-        ]}
-      />
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
-      <div className="panel" style={{ padding: 0 }}>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>First start</th>
-                <th>Last stop</th>
-                <th className="th-num">Working hours</th>
-                <th className="th-num">Entries</th>
-                <th>Late</th>
-                <th>SO / JWSO worked on</th>
-              </tr>
-            </thead>
-            <tbody>
-              {p.days.length === 0 ? (
-                <tr>
-                  <td colSpan={COLS} className="empty-state">
-                    No days in this range.
-                  </td>
-                </tr>
-              ) : null}
-              {p.days.map((d) => {
-                const isOpen = Boolean(open[d.date]);
-                const codes = d.orderCodes.join(', ');
-                return (
-                  <Fragment key={d.date}>
-                    <tr
-                      aria-expanded={isOpen}
-                      style={{
-                        cursor: 'pointer',
-                        ...(isOpen ? { background: 'var(--blue3)' } : {}),
-                      }}
-                      onClick={() => setOpen((o) => ({ ...o, [d.date]: !o[d.date] }))}
-                    >
-                      <td className="mono">
-                        <span className="text3">{isOpen ? '▾' : '▸'}</span> <b>{fmtDmy(d.date)}</b>{' '}
-                        <span className="text3">{weekday(d.date)}</span>
-                      </td>
-                      <td className="mono">{fmt12(d.firstStart)}</td>
-                      <td className="mono">{fmt12(d.lastStop)}</td>
-                      <td className="td-num mono fw-700">{fmtDuration(d.workMin)}</td>
-                      <td className="td-num mono">{d.entryCount}</td>
-                      <td>
-                        {d.lateCount > 0 ? (
-                          <span className="badge b-orange">{d.lateCount} LATE</span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td
-                        className="mono"
-                        title={codes || undefined}
-                        style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                      >
-                        {codes || '—'}
-                      </td>
-                    </tr>
-                    {isOpen ? (
-                      <tr>
-                        <td
-                          colSpan={COLS}
-                          style={{ background: 'var(--bg3)', padding: '8px 10px 12px 28px' }}
-                        >
-                          <DayEntries userId={userId} date={d.date} />
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <EntrySearch
+        value={term}
+        onChange={setTerm}
+        placeholder={
+          p.isSuperAdmin
+            ? 'Search Working On (every Text Rev), SO / JWSO…'
+            : 'Search Working On, SO / JWSO…'
+        }
+        shown={shown.length}
+        total={rows.length}
+      />
+      <DataTable<Entry>
+        tableKey={TABLE_KEYS.personDayLog}
+        wrapClassName="dl-fit"
+        columns={cols}
+        rows={shown}
+        empty={needle ? `No entries match "${needle}".` : `Nothing logged on ${fmtDmy(p.date)}.`}
+        onRowClick={(r) => toggle(r.id)}
+        onToggleExpanded={(r) => toggle(r.id)}
+        renderExpanded={(r) => (open.has(r.id) ? <PersonExpand r={r} p={p} /> : null)}
+      />
     </div>
   );
 }

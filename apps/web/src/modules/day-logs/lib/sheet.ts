@@ -4,7 +4,12 @@
 // addDayLogEntriesInputSchema (the same one the server runs); the server
 // still answers "Row N: …" for anything only it can see (overlap, after now).
 
-import type { AddDayLogEntriesInput, DayLogOrder, DayLogSheetRow } from '@innovic/shared';
+import type {
+  AddDayLogEntriesInput,
+  DayLogEntry,
+  DayLogOrder,
+  DayLogSheetRow,
+} from '@innovic/shared';
 import { addDayLogEntriesInputSchema, fmt12, hhmmToMin, parseTime } from '@innovic/shared';
 
 /** A new row, not saved yet. `desc` is Working on. */
@@ -14,17 +19,33 @@ export interface Draft {
   stop: string;
   desc: string;
   order: DayLogOrder | null;
+  /** The Start it was opened with (the previous Stop) — alone it is not "typed". */
+  auto: string;
 }
 
 let nextKey = 1;
 
-export function blankDraft(): Draft {
-  return { key: nextKey++, start: '', stop: '', desc: '', order: null };
+/** A new empty row; `start` prefills Start (the previous row's Stop). */
+export function blankDraft(start = ''): Draft {
+  return { key: nextKey++, start, stop: '', desc: '', order: null, auto: start };
 }
 
-/** The user has typed or picked something in this row. */
+/** The Start a new row gets: the given Stop when it is a time, else ''. */
+export function startFrom(stop: string | null | undefined): string {
+  const t = stop ? parseTime(stop) : null;
+  return t ? fmt12(t) : '';
+}
+
+/** Saved entries in Start Time order (Sr No order). */
+export function sortEntries<T extends Pick<DayLogEntry, 'fromTime'>>(entries: readonly T[]): T[] {
+  return [...entries].sort((a, b) => a.fromTime.localeCompare(b.fromTime));
+}
+
+/** The user has typed or picked something in this row (a prefilled Start
+ *  alone does not count). */
 export function isFilled(d: Draft): boolean {
-  return Boolean(d.start.trim() || d.stop.trim() || d.desc.trim() || d.order);
+  const start = d.start.trim() && d.start !== d.auto;
+  return Boolean(start || d.stop.trim() || d.desc.trim() || d.order);
 }
 
 /** Minutes between two typed times, or null while either is not a time yet. */

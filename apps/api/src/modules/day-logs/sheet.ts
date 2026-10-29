@@ -14,6 +14,7 @@ import { AppError, ValidationError } from '../../lib/errors';
 import { assertCanWrite, resolveAccess, viewerOf } from './access';
 import type { DayLine } from './day';
 import {
+  REV0_AFTER,
   type Row,
   insertSql,
   label,
@@ -65,7 +66,14 @@ export async function addEntries(
     if (input.date > clock.today) throw new ValidationError(`${dmy(input.date)} has not come yet`);
     const h = locked.header;
     const snap = await readSnapshot(
-      { companyId, viewerId: null, targetId: user.id, date: h.date, orders: ordersOf(input.rows) },
+      {
+        companyId,
+        viewerId: null,
+        targetId: user.id,
+        date: h.date,
+        replies: true,
+        orders: ordersOf(input.rows),
+      },
       tx,
     );
     guardOwnerWrite(h.date, snap, clock.today);
@@ -84,6 +92,7 @@ export async function addEntries(
       h,
       user,
       insertSql(companyId, h, user, rows, nextLineNo(lines)),
+      REV0_AFTER, // ADR-255 — every row's Text Rev 0, same statement
     );
     const names = rows.map((r) => `${label(r)}${r.orderCode ? ` (${r.orderCode})` : ''}`);
     await log(tx, companyId, user, h, 'CREATE', `added ${rows.length} rows: ${names.join('; ')}`);
