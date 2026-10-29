@@ -1,6 +1,11 @@
 // Task Board data hooks (ADR-176). One hook per endpoint; every mutation
 // invalidates `taskKeys.all` so the board, its tab counters, the unread badge
-// and any open detail refetch together.
+// and any open detail refetch together — and the home dashboard, whose To do
+// block and My Tasks widget read the same rows.
+//
+// Not a live table (CLAUDE.md §22): Realtime would send every task row, private
+// to-dos included (ADR-254), to every user of the company. So the board polls
+// at the safety-refresh interval instead.
 
 import type {
   AddTaskCommentInput,
@@ -23,7 +28,9 @@ import type {
 } from '@innovic/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
+import { dashboardKeys } from '@/modules/dashboard/api';
 
 export const taskKeys = {
   all: ['tasks'] as const,
@@ -59,6 +66,7 @@ export function useTaskList(query: ListTasksQuery) {
     queryKey: taskKeys.list(query),
     queryFn: () => apiFetch<ListTasksResponse>(`/tasks${toQuery(query)}`),
     staleTime: 15_000,
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     // Switching a tab or a filter keeps the board on screen (with the
     // "Updating…" mark) instead of flashing the whole page to "Loading…".
     placeholderData: keepPreviousData,
@@ -116,11 +124,18 @@ export function useNextTaskCode(type: TaskType, enabled = true) {
 
 // ── Writes ──
 
+/** The board and every home-dashboard view of tasks (To do block, widgets). */
+function invalidateTaskViews(qc: ReturnType<typeof useQueryClient>): void {
+  void qc.invalidateQueries({ queryKey: taskKeys.all });
+  void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+  void qc.invalidateQueries({ queryKey: dashboardKeys.widgets() });
+}
+
 function useTaskMutation<TInput, TOut = TaskDetail>(run: (input: TInput) => Promise<TOut>) {
   const qc = useQueryClient();
   return useMutation<TOut, Error, TInput>({
     mutationFn: run,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: taskKeys.all }),
+    onSuccess: () => invalidateTaskViews(qc),
   });
 }
 
@@ -191,7 +206,7 @@ export function useMarkTasksViewed() {
   return useMutation<{ updated: number }, Error, void>({
     mutationFn: () => apiFetch<{ updated: number }>('/tasks/mark-viewed', { method: 'POST' }),
     onSuccess: (res) => {
-      if (res.updated > 0) void qc.invalidateQueries({ queryKey: taskKeys.all });
+      if (res.updated > 0) invalidateTaskViews(qc);
     },
   });
 }

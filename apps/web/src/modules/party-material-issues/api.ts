@@ -8,6 +8,10 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
+import { jobCardsKeys } from '@/modules/job-cards/api';
+import { partyMaterialsKeys } from '@/modules/party-materials/api';
+import { partyStockLedgerKeys } from '@/modules/party-stock-ledger/api';
 
 export const partyMaterialIssuesKeys = {
   all: ['party-material-issues'] as const,
@@ -74,11 +78,11 @@ export function useCreatePartyMaterialIssue() {
       void qc.invalidateQueries({ queryKey: partyMaterialIssuesKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Party material stocks changed
-      void qc.invalidateQueries({ queryKey: ['party-materials'] });
+      void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
       // ADR-103: the issued qty is now what unlocks production, so the JC
       // status (RM AVAIL tile) and the op board must both refresh.
-      void qc.invalidateQueries({ queryKey: ['job-cards'] });
-      void qc.invalidateQueries({ queryKey: ['jc-ops'] });
+      void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
+      void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
     },
   });
 }
@@ -105,10 +109,10 @@ export function useReturnPartyMaterialIssueToStore() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyMaterialIssuesKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      void qc.invalidateQueries({ queryKey: ['party-materials'] });
-      void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
-      void qc.invalidateQueries({ queryKey: ['job-cards'] });
-      void qc.invalidateQueries({ queryKey: ['jc-ops'] });
+      void qc.invalidateQueries({ queryKey: partyMaterialsKeys.all });
+      void qc.invalidateQueries({ queryKey: partyStockLedgerKeys.all });
+      void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
+      void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
     },
   });
 }
