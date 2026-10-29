@@ -55,12 +55,12 @@ Normally the shared files are frozen by the user BEFORE any agent is dispatched 
 There is one shape of task where that inverts: when the shared file IS the deliverable and
 **you are the only agent running.** The user says so explicitly in the brief. Then:
 
-| If the brief names… | You may also edit… |
-|---|---|
-| the shared list-search component / hook | that one module under `apps/web/src/components/shared/` |
+| If the brief names…                                                | You may also edit…                                                                                                                |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| the shared list-search component / hook                            | that one module under `apps/web/src/components/shared/`                                                                           |
 | the header chrome, the gap under the topbar, the header background | `styles/innovic-theme.css`, `routes/_authenticated.tsx`, `components/shared/topbar.tsx` / `breadcrumbs.tsx` / `open-tabs-bar.tsx` |
-| the global table alignment | the `.innovic-table` / `.td-*` rules in `styles/innovic-theme.css` |
-| the shared document print builder | `apps/web/src/lib/print/doc-print.ts` |
+| the global table alignment                                         | the `.innovic-table` / `.td-*` rules in `styles/innovic-theme.css`                                                                |
+| the shared document print builder                                  | `apps/web/src/lib/print/doc-print.ts`                                                                                             |
 
 **The unlock is never implied, and never applies while another agent is running.** If the brief
 says "add a search box to the Vendors list", you REUSE the shared component; you do not reopen

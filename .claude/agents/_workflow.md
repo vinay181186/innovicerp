@@ -9,11 +9,11 @@ Agents read `_house-rules.md`; this file is why they get what they get.
 
 Twelve agent runs in one session: **~1.1M tokens, ~2h40m of agent wall-clock.**
 
-| brief | tokens |
-|---|---|
+| brief                                    | tokens    |
+| ---------------------------------------- | --------- |
 | exact file list + the cause, handed over | 24k – 53k |
-| "find and fix every print button" | **180k** |
-| "verify the print format end to end" | **214k** |
+| "find and fix every print button"        | **180k**  |
+| "verify the print format end to end"     | **214k**  |
 
 Same repo, same tools. The cost tracked **how precise the brief was**, not how big the task
 was. Everything below follows from that one fact.
@@ -54,7 +54,7 @@ Agents own folders. These files belong to nobody and are needed by everybody:
 **Make every change these need YOURSELF, first, and freeze them.** Then dispatch.
 
 Freezing `packages/shared` was already being done and produced zero contract collisions across
-twelve agents. The other files were *not* frozen, and every stall of the session was in them —
+twelve agents. The other files were _not_ frozen, and every stall of the session was in them —
 three separate round trips where an agent hit a forbidden file, stopped, and waited.
 
 Same discipline, wider list. That is the whole change.

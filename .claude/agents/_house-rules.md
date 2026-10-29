@@ -36,10 +36,10 @@ here instead. If a rule changes, it changes once, in this file.
 
 There are two stacks:
 
-| | database | deployed from |
-|---|---|---|
-| **production** — innovicerp.com | the live one, real orders | `main` |
-| **test** — innovic-erp.pages.dev | separate, safe to write | `test` |
+|                                  | database                  | deployed from |
+| -------------------------------- | ------------------------- | ------------- |
+| **production** — innovicerp.com  | the live one, real orders | `main`        |
+| **test** — innovic-erp.pages.dev | separate, safe to write   | `test`        |
 
 `.env.local` at the repo root points at **PRODUCTION**. Anything you run locally
 that reads it touches real data.
@@ -85,12 +85,12 @@ report rather than half-verifying it.
 
 Measured in this repo, so these are facts rather than hopes:
 
-| command | scope | time | verdict |
-|---|---|---|---|
-| `npx eslint src/modules/<x>` | one module | **~7s** | **use it** |
-| `npx vitest run <one.test.ts>` | one file, no DB | ~7s | **use it** |
-| `npx tsc --noEmit <one file>` | — | — | **NEVER — see below** |
-| `pnpm typecheck` (full tree) | everything | **2m12s** | the gate's, not yours |
+| command                        | scope           | time      | verdict               |
+| ------------------------------ | --------------- | --------- | --------------------- |
+| `npx eslint src/modules/<x>`   | one module      | **~7s**   | **use it**            |
+| `npx vitest run <one.test.ts>` | one file, no DB | ~7s       | **use it**            |
+| `npx tsc --noEmit <one file>`  | —               | —         | **NEVER — see below** |
+| `pnpm typecheck` (full tree)   | everything      | **2m12s** | the gate's, not yours |
 
 Run the scoped lint on the module you touched, from `apps/web` or `apps/api`. It uses the
 project's own eslint config, so a clean result means something. It is cheap enough that
@@ -120,12 +120,12 @@ exact paths you may touch. **Start from the brief, not from a survey of the repo
 Do **not** read these end to end. They are 12,700 lines between them and reading
 them costs more than the task:
 
-| file | lines | how to use it |
-|---|---|---|
-| `docs/DECISIONS.md` | 7,800+ | **grep for the ADR numbers your brief names.** Never read whole. |
-| `docs/page-registry.yaml` | 2,180 | grep for your page only |
-| `docs/SCHEMA.md` | 1,750 | grep for your table only |
-| `CLAUDE.md` | 940 | skim once if you have not this session |
+| file                      | lines  | how to use it                                                    |
+| ------------------------- | ------ | ---------------------------------------------------------------- |
+| `docs/DECISIONS.md`       | 7,800+ | **grep for the ADR numbers your brief names.** Never read whole. |
+| `docs/page-registry.yaml` | 2,180  | grep for your page only                                          |
+| `docs/SCHEMA.md`          | 1,750  | grep for your table only                                         |
+| `CLAUDE.md`               | 940    | skim once if you have not this session                           |
 
 If your brief does not name the ADRs and you think a behaviour might be deliberate,
 `grep -n "ADR-" ` the module's own source first — the code cites its own ADRs in
@@ -137,11 +137,11 @@ costs an hour.
 
 ## FOLDER OWNERSHIP — what makes parallel work safe
 
-| agent | owns |
-|---|---|
-| `erp-frontend` | `apps/web/src/` |
-| `erp-backend` | `apps/api/` |
-| `erp-test` | `apps/web/e2e/` |
+| agent             | owns                          |
+| ----------------- | ----------------------------- |
+| `erp-frontend`    | `apps/web/src/`               |
+| `erp-backend`     | `apps/api/`                   |
+| `erp-test`        | `apps/web/e2e/`               |
 | `erp-deploy-gate` | nothing — read-only by design |
 
 You may **read** anything. You may **edit** only your own folder.
@@ -241,7 +241,9 @@ Example of what to prevent: a UI restyle that made JC per-op show Log directly,
 skipping Start. Look may change; flow must not.
 
 ## NEW FIELD — STANDARD FLOW
+
 When introducing a new field:
+
 1. State the business need and where its value comes from.
 2. Reuse the closest existing field pattern (DB column, API, validation, form control,
    permission) — no new pattern unless required.

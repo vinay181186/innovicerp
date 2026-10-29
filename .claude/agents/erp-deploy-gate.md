@@ -64,6 +64,7 @@ If any fail: **VERDICT: NO-GO.** Quote the actual error. Do not say "probably fi
 guess at severity, do not suggest deploying anyway.
 
 **BANNED — never run these:**
+
 - `pnpm test` / `pnpm --filter @innovic/api test` — the api suite refuses PRODUCTION and runs on
   TEST only, but it writes real rows there and is not the gate's job. (`pnpm --filter web test`
   above is fine — it touches no database.)
@@ -82,6 +83,7 @@ with a second terminal working in the same repo.** A bare `git commit` here has 
 swept 22 unrelated files into one commit.
 
 So list three separate groups, explicitly:
+
 - files the agents said they changed
 - files modified that **no agent claimed** ← flag these loudly, they belong to the other
   terminal and must be EXCLUDED from the commit
@@ -92,6 +94,7 @@ So list three separate groups, explicitly:
 The question that matters is: **does this change reach outside the page it was meant to touch?**
 
 Check whether the diff includes any of:
+
 - `packages/shared/**` — read by both web and api
 - `apps/web/src/components/shared/**` — used by many pages
 - `apps/web/src/styles/innovic-theme.css` — used by every page

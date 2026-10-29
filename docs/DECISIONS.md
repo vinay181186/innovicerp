@@ -13229,6 +13229,7 @@ finally works as designed.
 - End-to-end check: phases 1-6 server code run against the TEST database inside one rolled-back
   transaction (BOMs, links, loop refusal, tree, cost, import preview, eligibility, plan snapshot, raise,
   To Raise cap, SO guard, both reports) — all as designed; nothing left on TEST.
+
 ---
 
 ## ADR-227: One rule for every document number — the server states it, the browser never sends it
@@ -13239,9 +13240,9 @@ finally works as designed.
 ### Context
 
 The owner, pointing at the work another terminal had just shipped for two
-documents: *"i have work for rc no preview , bom no preview. at save time of doc
+documents: _"i have work for rc no preview , bom no preview. at save time of doc
 doc got final no. trace it work by other terminal. apply to other doc. where
-system no. gen exist. plan"*
+system no. gen exist. plan"_
 
 That work is **ADR-224**, and its own Scope section names the rest as "the next
 phase". This is that phase. The trace went wider than the create screens, so the
@@ -13254,13 +13255,13 @@ survive that check (below).
 editable with a live duplicate check; ADR-060 and ADR-064 made the auto-assigned
 number visible on create screens (Class A with a box, Class B without); ADR-224
 fixed the send rule for Route Card and BOM. ADR-060's own Consequences wrote the
-bug down and accepted it: *"editable fields submit the shown code, so a rare
-concurrent create can surface a ConflictError."* It kept coming back because
+bug down and accepted it: _"editable fields submit the shown code, so a rare
+concurrent create can surface a ConflictError."_ It kept coming back because
 **nothing was ever written down** — `CLAUDE.md` and `docs/CONVENTIONS.md` said
 nothing about numbering at all.
 
 **What the trace actually found.** 43 numberers across the API. The lock was
-centralised long ago (`lockDocSeries`, 20 series) and the number-*picking* never
+centralised long ago (`lockDocSeries`, 20 series) and the number-_picking_ never
 was: ~43 hand-written "find the highest and add one" copies differing in padding
 (2, 3, 4 or 5 digits), in computation (five distinct strategies), in prefix
 anchoring (six variants), in whether a year segment exists (one of 43), in
@@ -13270,7 +13271,7 @@ that, the create screens were the smaller half of the problem.
 **Live evidence** (TEST; PRODUCTION's transactional tables were cleared by the
 owner on 2026-10-07, so TEST is the only real data): **no duplicate numbers
 anywhere today**, and `PLN-0001…0031` with no gaps. This is prevention, not
-repair. But: five hand-typed Route Card codes (`ZZ-RMTEST-RC-NORM`) sort *above*
+repair. But: five hand-typed Route Card codes (`ZZ-RMTEST-RC-NORM`) sort _above_
 `IN-RC-00018`; Purchase Orders run two series in one table plus `/R1` tails; Job
 Cards carry a year segment taken from **UTC**, so the series rolls over 5½ hours
 early on 1 January; and NC numbers are two different shapes, nine `NC-9` and five
@@ -13287,30 +13288,30 @@ CONVENTIONS.md; it is not duplicated here.
 
 `CLAUDE.md` was deliberately **not** touched: Section 2 says the master spec
 changes "only when the user explicitly approves a change to project-wide rules",
-and the owner declined the pointer (*"not getting"* — it was my housekeeping, not
+and the owner declined the pointer (_"not getting"_ — it was my housekeeping, not
 their decision).
 
 **The owner's four decisions, in their words:**
 
-1. *"donot touch item cretion"* — **Item Master is out of scope**, and it is the
+1. _"donot touch item cretion"_ — **Item Master is out of scope**, and it is the
    worst of the five create screens.
-2. *"Burn the number … 00022 is gone forever … One number only ever means one
-   paper. yes."* — a deleted document's number is never re-issued.
-3. *"dcno , pono ,jwso i never type by hand. it i already system generated"* — so
+2. _"Burn the number … 00022 is gone forever … One number only ever means one
+   paper. yes."_ — a deleted document's number is never re-issued.
+3. _"dcno , pono ,jwso i never type by hand. it i already system generated"_ — so
    those three become read-only previews.
 4. A Retire/Obsolete action and the 45-generator refactor were both **declined**
    or deliberately deferred.
 
 ### What shipped
 
-| Phase | Change |
-|---|---|
-| 1 | **Three creates stopped trusting a caller-supplied number.** JW Invoice (a *tax invoice number*), JW Return Challan and Party Material Issue each did `input.code ?? next…` beside a comment claiming the typed number "is checked under the same series lock". No check existed. `code` is gone from all three create schemas. |
-| 2 | **Six series gained the lock they never had.** Tasks (`TSK-`/`TODO-`, one table one lock), CAPA, Design Tracker, Design Project, DCR, DCN. Tasks matters most: every non-viewer can raise one, per job-card operation, from two paths. The three design series share one `nextSequence(table, prefix)`, so the lock is keyed on the caller's table via an explicit map — an unknown table is now an error rather than an unlocked insert. |
-| 3a | **Four numberers stopped re-issuing a deleted number**: BOM, Route Card, and `nextSeriesCode` which serves both the PR and PO series. |
-| 4a | **Customer, Vendor and Operator stopped sending the suggestion.** Browser-side only; the server already numbered them correctly when nothing arrived. `code` stays optional in those contracts on purpose — the Excel import matches by Code and `VND-ACME` is legitimate. |
-| 5 | **PO, JWSO and DC numbers became read-only previews.** `DocNumberInput` gained a `preview` mode, as a discriminated union so passing `value`/`onChange` in preview mode is a type error rather than a no-op. The PO form's own inline copy — two refs tracking whose number was in the box, the "Already used"/"Number not used" wording, the ✓/✗ class, the blur padding, two blocking rules and `docNo.checking` in `disabled` — is gone. |
-| 6 | **The rule written into `docs/CONVENTIONS.md`.** |
+| Phase | Change                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | **Three creates stopped trusting a caller-supplied number.** JW Invoice (a _tax invoice number_), JW Return Challan and Party Material Issue each did `input.code ?? next…` beside a comment claiming the typed number "is checked under the same series lock". No check existed. `code` is gone from all three create schemas.                                                                                                             |
+| 2     | **Six series gained the lock they never had.** Tasks (`TSK-`/`TODO-`, one table one lock), CAPA, Design Tracker, Design Project, DCR, DCN. Tasks matters most: every non-viewer can raise one, per job-card operation, from two paths. The three design series share one `nextSequence(table, prefix)`, so the lock is keyed on the caller's table via an explicit map — an unknown table is now an error rather than an unlocked insert.   |
+| 3a    | **Four numberers stopped re-issuing a deleted number**: BOM, Route Card, and `nextSeriesCode` which serves both the PR and PO series.                                                                                                                                                                                                                                                                                                       |
+| 4a    | **Customer, Vendor and Operator stopped sending the suggestion.** Browser-side only; the server already numbered them correctly when nothing arrived. `code` stays optional in those contracts on purpose — the Excel import matches by Code and `VND-ACME` is legitimate.                                                                                                                                                                  |
+| 5     | **PO, JWSO and DC numbers became read-only previews.** `DocNumberInput` gained a `preview` mode, as a discriminated union so passing `value`/`onChange` in preview mode is a type error rather than a no-op. The PO form's own inline copy — two refs tracking whose number was in the box, the "Already used"/"Number not used" wording, the ✓/✗ class, the blur padding, two blocking rules and `docNo.checking` in `disabled` — is gone. |
+| 6     | **The rule written into `docs/CONVENTIONS.md`.**                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ### Two audit findings that did NOT survive verification
 
@@ -13320,7 +13321,7 @@ Recorded because both were about to be "fixed":
    none.** `lockSoRow` precedes the `MAX(unit_no)` read in `markUnitAssembled`
    and `startAssembly`, and `lockSoOfUnit` (which resolves the unit's SO and
    calls `lockSoRow`) precedes it in `stopAssembly`. That is `SELECT … FROM
-   sales_orders … FOR NO KEY UPDATE` — the same guarantee at a better grain,
+sales_orders … FOR NO KEY UPDATE` — the same guarantee at a better grain,
    per-order rather than per-company. What misled the audit was a **stale
    comment** saying the unique index was all there was, true before ADR-193 M15
    and not since. I had already added an `assembly_units` series and a `scope`
@@ -13341,8 +13342,8 @@ Recorded because both were about to be "fixed":
   own blast radius, and the endpoint still serves the preview.
 - **A deleted document's number is gone for ever**, so registers now have gaps
   where something was deleted. Intended.
-- **Item Master is unchanged and still collides**: its box is editable *and*
-  autofocused *and* the suggestion is always sent, so two people on New Item both
+- **Item Master is unchanged and still collides**: its box is editable _and_
+  autofocused _and_ the suggestion is always sent, so two people on New Item both
   get `ITM-0042` and the second save is refused. By the owner's instruction.
 - **Nothing about a document number can disable Save** on any converted screen.
 
@@ -13379,20 +13380,20 @@ Verified: typecheck (shared + api + web), eslint, prettier on own lines, and the
 
 ### Complex cases worth running by hand
 
-| Case | Expected |
-|---|---|
-| Two tabs on New Vendor, save both within a second | `VND-041` and `VND-042`, no refusal |
-| Two users raise a Task in the same second | two numbers, neither save lost |
-| Raise a Task, delete it, raise another | the second gets a **new** number, never the deleted one |
-| Delete the newest Route Card, then create one | a **gap** in the series — the deleted number is not reused |
-| New PO: switch PO Type between Material and Job Work | the previewed number follows the series (`IN-MPO-` ↔ `IN-JWPO-`) and stays read-only |
-| New PO / JWSO / DC | no `★` on the number, no ✓/✗, Save never blocked by it |
-| Edit an existing PO | number still shown read-only, "permanent once the PO exists" |
-| Edit an existing JWSO | number read-only, save unaffected |
-| `POST /jw-invoices` with `"code":"lol"` | stored number is `IN-JWINV-…`; the field is no longer in the contract |
-| Excel-import 50 vendors while someone saves one by hand | no collision, no whole-sheet rollback |
-| A Job Card raised at 00:30 IST on 1 January | **known defect, not fixed**: the year segment comes from UTC, so it is still last year's |
-| New Item, two tabs | **still collides** — out of scope by instruction |
+| Case                                                    | Expected                                                                                 |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Two tabs on New Vendor, save both within a second       | `VND-041` and `VND-042`, no refusal                                                      |
+| Two users raise a Task in the same second               | two numbers, neither save lost                                                           |
+| Raise a Task, delete it, raise another                  | the second gets a **new** number, never the deleted one                                  |
+| Delete the newest Route Card, then create one           | a **gap** in the series — the deleted number is not reused                               |
+| New PO: switch PO Type between Material and Job Work    | the previewed number follows the series (`IN-MPO-` ↔ `IN-JWPO-`) and stays read-only     |
+| New PO / JWSO / DC                                      | no `★` on the number, no ✓/✗, Save never blocked by it                                   |
+| Edit an existing PO                                     | number still shown read-only, "permanent once the PO exists"                             |
+| Edit an existing JWSO                                   | number read-only, save unaffected                                                        |
+| `POST /jw-invoices` with `"code":"lol"`                 | stored number is `IN-JWINV-…`; the field is no longer in the contract                    |
+| Excel-import 50 vendors while someone saves one by hand | no collision, no whole-sheet rollback                                                    |
+| A Job Card raised at 00:30 IST on 1 January             | **known defect, not fixed**: the year segment comes from UTC, so it is still last year's |
+| New Item, two tabs                                      | **still collides** — out of scope by instruction                                         |
 
 ## ADR-229: A request reads the caller's access once, however many guards ask
 
@@ -13883,11 +13884,13 @@ and CAPA's admin-only user list.
 **Status:** Accepted (owner: "in jwso creation client po no must be unique in jwso module means jwso list. in so creation client pono must be unique in so module means so list." — "go")
 
 ### Context
+
 Only SO create checked the Client PO No., and against SOs AND JWSOs together (legacy
 addSO L12431). SO edit, JWSO create and JWSO edit did not check, and two saves at
 the same moment could both pass.
 
 ### Decision
+
 One helper, `apps/api/src/lib/client-po-unique.ts` (`assertClientPoNoFree`), used by
 SO create/update and JWSO create/update (the edit-approval apply path runs the same
 update Tx). Scope: SO vs other live SOs; JWSO vs other live JWSOs; the same number on
@@ -13898,6 +13901,7 @@ transaction advisory lock on the number (lockDocSeries pattern) serialises two s
 old duplicate still saves while its number is unchanged.
 
 ### Consequences
+
 - Positive: one rule in one place; race-safe; no schema change.
 - Negative: an edit staged for approval (gate OFF today) is checked when approved, not when staged.
 
@@ -13907,6 +13911,7 @@ old duplicate still saves while its number is unchanged.
 **Status:** Accepted (owner: "per so no. jwso, sono user can preview print download. refer to po print doc" — title "JW Sales Order" — "go")
 
 ### Decision
+
 SO detail and JWSO detail get **⋯ → Print**, on the same sheet as the PO
 (`lib/print/sheet-print.ts`), built in one file
 `apps/web/src/modules/sales-orders/lib/print-order.ts`. Customer box from the
@@ -13926,6 +13931,7 @@ toolbar now says "To download: press Print, then choose Save as PDF".
 **Status:** Accepted (owner: "i want that in master list. three dots also show. print choose then download is confusing" — "i want direct symbol for download" — option A "go")
 
 ### Decision
+
 SO and JWSO, in the list row ⋯ and the detail ⋯: **Preview** (the print sheet in
 the same in-app box drawings use — `components/shared/sheet-preview-modal.tsx`,
 with 🖨 Print · ⬇ Download · ✕) and **Download PDF** (saves `<code>.pdf` in one
@@ -13934,11 +13940,13 @@ The PDF is made in the browser by `lib/print/sheet-pdf.ts` from the same sheet
 HTML (letterhead repeats per page; cancelled SO lines left out, as in ADR-239).
 
 ### Dependency
+
 jsPDF 2.5.2 + html2canvas 1.4.1 (the two halves of html2pdf.js, used directly so
 the PDF is taken from an iframe holding the sheet's own styles). Both load only
 on the ⬇ click (separate chunks, ~166 kB gzip), never at app start.
 
 ### Consequences
+
 - A drawing downloads a stored file; an order is built from data, hence the library.
 - The PDF's text is an image (not selectable/searchable). Server-side PDF (option B) rejected: new infrastructure.
 
@@ -13948,6 +13956,7 @@ on the ⬇ click (separate chunks, ~166 kB gzip), never at app start.
 **Status:** Accepted (owner: audit "where this feature is necessary" → "go A+B")
 
 ### Decision
+
 `openSheetPrintWindow` / `openSheetHtmlWindow` / `printWindow` no longer open a
 pop-up: they hand the finished document to `apps/web/src/lib/print/preview-host.tsx`
 (host mounted once in `routes/_authenticated.tsx`), which shows the SO/JWSO
@@ -14519,6 +14528,7 @@ cancel is pending.
 ### Phase C, part 1 (2026-10-24, migration 0220)
 
 Five documents that had no real cancel join the registry:
+
 - **Sales Order** — the standard Cancel is the ONLY header-cancel writer
   (`PATCH` status → cancelled is refused). Only a Draft / Open SO; blocked by any
   live plan, Multi-Level Plan, Production Order, hand-raised Job Card, PR / PO
@@ -14540,8 +14550,8 @@ Five documents that had no real cancel join the registry:
   restores a cancelled GRN.
 - **Item Issue** (owner rule): refused once the Job Card's first operation has an
   entry or is running.
-Part 2 (next): Job Card, Production Order (cancels its own unused Job Card),
-DC receipt, and Incoming QC reversal.
+  Part 2 (next): Job Card, Production Order (cancels its own unused Job Card),
+  DC receipt, and Incoming QC reversal.
 
 ### Phase C, part 2 (2026-10-26, migration 0221)
 
@@ -14569,7 +14579,7 @@ DC receipt, and Incoming QC reversal.
   receipt refuses). A return-to-vendor replacement receipt is refused (the NC
   side has no inverse yet).
 - Trash never lists or restores a cancelled Job Card / Production Order.
-Part 3 (next): reversing a finished Incoming QC.
+  Part 3 (next): reversing a finished Incoming QC.
 
 ## ADR-253: A new Route Card must be approved before it is used
 
@@ -14596,7 +14606,7 @@ with no card.
 3. Approve / Reject: Approve tick on Route Card Master; creator may approve
    their own card (same as PO / PR). Reject needs a reason. PR/PO pattern:
    plan locks → card FOR UPDATE → conditional UPDATE `WHERE approval_status =
-   'pending'` + assertRowUpdated (§20.2). History + activity log.
+'pending'` + assertRowUpdated (§20.2). History + activity log.
 4. A pending / rejected card is not in use, so editing it saves directly; a
    rejected card that is saved goes back to `pending`. An APPROVED card's edits
    keep the ADR-249 engine: held for approval while the company switch is ON

@@ -27,7 +27,7 @@ returns the picked row's **id** via `onChange` (never the label).
 1. Add a `const [xSearch, setXSearch] = useState('')` and call the entity's list hook with
    `{ search: xSearch || undefined, limit: 20-50, offset: 0 }`.
 2. Render `<SearchableSelect value={id} onChange={setId} onSearch={setXSearch}
-   loading={query.isFetching} options={items.map(r => ({ id, code, name }))} />`.
+loading={query.isFetching} options={items.map(r => ({ id, code, name }))} />`.
 3. Keep storing the **same value** you stored before (usually the id). If the field
    stored a code-text snapshot, map on pick: `onChange={(id) => setCode(opts.find(o => o.id===id)?.code ?? '')}`
    and pass `valueLabel={currentCode}`.
@@ -37,13 +37,13 @@ endpoints (job-work), dedupe to one entry per header id first.
 
 ## Hooks per entity
 
-| Entity        | Hook (`apps/web/src/modules/...`)          | Response → option fields                          | search param |
-| ------------- | ------------------------------------------ | -------------------------------------------------- | ------------ |
-| Sales Order   | `sales-orders/api` → `useSalesOrdersList`  | `data.items[]` → `{ id, code, customerName }`       | `?search=`   |
-| Vendor        | `vendors/api` → `useVendorsList`           | `data.vendors[]` → `{ id, code, name }`             | `?search=`   |
-| JWSO / JW     | `job-work-orders/api` → `useJobWorkOrdersList` | `data.items[]` (one per line) → dedupe by `jwId` → `{ jwId, code, customerName }` | `?search=` (+ `status`) |
-| Item          | `items/api` → `useItemsList`               | `data.items[]` → `{ id, code, name }`               | `?search=`   |
-| Client        | `clients/api` → `useClientsList`           | `data.clients[]` → `{ id, code, name }`             | `?search=`   |
+| Entity      | Hook (`apps/web/src/modules/...`)              | Response → option fields                                                          | search param            |
+| ----------- | ---------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------- |
+| Sales Order | `sales-orders/api` → `useSalesOrdersList`      | `data.items[]` → `{ id, code, customerName }`                                     | `?search=`              |
+| Vendor      | `vendors/api` → `useVendorsList`               | `data.vendors[]` → `{ id, code, name }`                                           | `?search=`              |
+| JWSO / JW   | `job-work-orders/api` → `useJobWorkOrdersList` | `data.items[]` (one per line) → dedupe by `jwId` → `{ jwId, code, customerName }` | `?search=` (+ `status`) |
+| Item        | `items/api` → `useItemsList`                   | `data.items[]` → `{ id, code, name }`                                             | `?search=`              |
+| Client      | `clients/api` → `useClientsList`               | `data.clients[]` → `{ id, code, name }`                                           | `?search=`              |
 
 ## Constraints (non-negotiable)
 

@@ -1163,11 +1163,11 @@ ADR-230 is the design; this section is how to apply it.
 
 ### 22.1 How a screen stays fresh
 
-| Layer | What happens | Where |
-| ----- | ------------ | ----- |
-| Same PC | The mutation's `onSuccess` invalidates the key roots of every screen showing that data | the module's `api.ts` |
-| Other PCs (live) | Supabase Realtime: a change to a table in `LIVE_TABLES` invalidates the roots mapped in `LIVE_TABLE_KEYS`; batched 750 ms quiet / 2 s max; on reconnect every screen on display re-reads; top bar shows "Live updates paused" while down | `packages/shared/src/lib/live-tables.ts`, `apps/web/src/lib/live-updates/` |
-| Safety net | `apps/web/src/main.tsx`: staleTime 30 s, refetch on window focus, retry 1. **There is no default polling** — a screen that is not live refreshes only on open/focus unless its hook sets `refetchInterval` (60 s `LIVE_FALLBACK_POLL_MS`, as on the JC/SO/PO/GRN/PR/PRO lists) | the module's hooks |
+| Layer            | What happens                                                                                                                                                                                                                                                                   | Where                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Same PC          | The mutation's `onSuccess` invalidates the key roots of every screen showing that data                                                                                                                                                                                         | the module's `api.ts`                                                      |
+| Other PCs (live) | Supabase Realtime: a change to a table in `LIVE_TABLES` invalidates the roots mapped in `LIVE_TABLE_KEYS`; batched 750 ms quiet / 2 s max; on reconnect every screen on display re-reads; top bar shows "Live updates paused" while down                                       | `packages/shared/src/lib/live-tables.ts`, `apps/web/src/lib/live-updates/` |
+| Safety net       | `apps/web/src/main.tsx`: staleTime 30 s, refetch on window focus, retry 1. **There is no default polling** — a screen that is not live refreshes only on open/focus unless its hook sets `refetchInterval` (60 s `LIVE_FALLBACK_POLL_MS`, as on the JC/SO/PO/GRN/PR/PRO lists) | the module's hooks                                                         |
 
 ### 22.2 The checklist
 
@@ -1182,11 +1182,11 @@ ADR-230 is the design; this section is how to apply it.
 3. **Make a table live** — all three steps in one change:
    a. add it to `LIVE_TABLES` (`packages/shared/src/lib/live-tables.ts`);
    b. hand-written migration adding it to the `supabase_realtime` publication with the
-      guarded `DO $$ … $$` block from `0217_cancel_requests.sql` (newest: `0222_day_log.sql`);
-      apply on TEST with `apply-sql.ts` (`DB_TARGET=TEST`); PROD only via the release
-      script (§19);
+   guarded `DO $$ … $$` block from `0217_cancel_requests.sql` (newest: `0222_day_log.sql`);
+   apply on TEST with `apply-sql.ts` (`DB_TARGET=TEST`); PROD only via the release
+   script (§19);
    c. map it in `LIVE_TABLE_KEYS` (`apps/web/src/lib/live-updates/table-keys.ts`) to every
-      root whose screen shows that table (typed Record — a missing mapping fails the build).
+   root whose screen shows that table (typed Record — a missing mapping fails the build).
    **Privacy:** Realtime sends the changed ROW to every subscriber that passes the table's
    RLS SELECT policy. Publish only tables whose company-wide read is acceptable. Private
    data (personal to-dos, pay, tokens) → column-list publication, or not live.
@@ -1204,16 +1204,16 @@ ADR-230 is the design; this section is how to apply it.
 7. **Components from `apps/web/src/ui/`** — never hand-roll a dropdown, table, file input
    or `window.confirm()`:
 
-   | Need | Use |
-   | ---- | --- |
-   | List | `DataTable` (FIT table, ADR-199; register its `tableKey` in `ui/data/table-keys.ts`) + `ListHeader`; sort/filter ADR-200/201, 25 rows/page from the server — masters too |
-   | Picker | `SearchableSelect` (`@/ui/forms`) |
-   | Create / edit layout | `ClusterGrid`, `FormField` |
-   | File | `FileField` |
-   | Confirm | `ConfirmDialog` |
-   | Counts above a list | `StatStrip` (`@/ui/data`) |
-   | Loading / empty / sync | `Skeleton`, `EmptyState`, `PageState`, `SyncDot` |
-   | HTTP | `apiFetch` (`apps/web/src/lib/api.ts`) inside TanStack Query hooks |
+   | Need                   | Use                                                                                                                                                                      |
+   | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+   | List                   | `DataTable` (FIT table, ADR-199; register its `tableKey` in `ui/data/table-keys.ts`) + `ListHeader`; sort/filter ADR-200/201, 25 rows/page from the server — masters too |
+   | Picker                 | `SearchableSelect` (`@/ui/forms`)                                                                                                                                        |
+   | Create / edit layout   | `ClusterGrid`, `FormField`                                                                                                                                               |
+   | File                   | `FileField`                                                                                                                                                              |
+   | Confirm                | `ConfirmDialog`                                                                                                                                                          |
+   | Counts above a list    | `StatStrip` (`@/ui/data`)                                                                                                                                                |
+   | Loading / empty / sync | `Skeleton`, `EmptyState`, `PageState`, `SyncDot`                                                                                                                         |
+   | HTTP                   | `apiFetch` (`apps/web/src/lib/api.ts`) inside TanStack Query hooks                                                                                                       |
 
 8. **Loading, empty and error states on every screen** — a failed load never looks like
    "no rows".
