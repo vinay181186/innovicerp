@@ -22,10 +22,13 @@
 // Rows never carry money: only codes, names, refs, quantities and remarks, so
 // a row is safe for every tier that can open the page.
 
+import { sql } from 'drizzle-orm';
+import { tasks } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { getMyAccess } from '../access-control/service';
+import { visibleTasksWhere } from '../tasks/history';
 import { allowedSearchKinds } from './permissions';
-import { buildCountSql, buildSearchSql } from './query';
+import { buildCountSql, buildSearchSql, type KindScopes } from './query';
 import type {
   GlobalSearchKind,
   GlobalSearchQuery,
@@ -79,15 +82,21 @@ export async function globalSearch(
       : []
     : kinds;
 
+  // Tasks follow the Task Board rule (canViewTask): own / assigned / assigned
+  // by me, admins every task — and a My To-Do row only for its writer.
+  const scopes: KindScopes = {
+    task: sql`EXISTS (SELECT 1 FROM public.tasks WHERE ${tasks.id} = t.id AND ${visibleTasksWhere(companyId, user)})`,
+  };
+
   const { rows, countRows } = await withUserContext(user, async (tx) => {
     const countRows = (await tx.execute(
-      buildCountSql(kinds, companyId, input.q),
+      buildCountSql(kinds, companyId, input.q, scopes),
     )) as unknown as CountRow[];
     const rows =
       pageKinds.length === 0
         ? []
         : ((await tx.execute(
-            buildSearchSql(pageKinds, companyId, input.q, input.limit, input.offset),
+            buildSearchSql(pageKinds, companyId, input.q, input.limit, input.offset, scopes),
           )) as unknown as Row[]);
     return { rows, countRows };
   });

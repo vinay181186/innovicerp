@@ -19,7 +19,7 @@ import {
   type TaskStatus,
   type TaskType,
 } from '@innovic/shared';
-import { and, asc, eq, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { taskHistory, tasks, users } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
@@ -64,13 +64,25 @@ export function isUnreadRow(
 }
 
 // ── Visibility ────────────────────────────────────────────────────────────
+// A My To-Do row (I wrote it for myself) is private: only its writer sees it,
+// admins included (owner 2026-10-29).
 // Non-admin: I created it, it is assigned to me, or I assigned it.
-// Admin: every task in the company.
+// Admin: every other task in the company.
+
+/** My To-Do row — the same test the board's To-Do tab uses. */
+export function isPrivateTodo(r: Pick<TaskRecord, 'createdBy' | 'assignedTo'>): boolean {
+  return r.assignedTo != null && r.createdBy === r.assignedTo;
+}
+
+/** SQL form of isPrivateTodo over `public.tasks` (alias-free columns). */
+export const privateTodoSql = (): SQL =>
+  sql`(${tasks.assignedTo} IS NOT NULL AND ${tasks.createdBy} = ${tasks.assignedTo})`;
 
 export function canViewTask(
   r: Pick<TaskRecord, 'createdBy' | 'assignedTo' | 'assignedBy'>,
   user: AuthContext,
 ): boolean {
+  if (isPrivateTodo(r)) return r.createdBy === user.id;
   if (isAdmin(user)) return true;
   return r.createdBy === user.id || r.assignedTo === user.id || r.assignedBy === user.id;
 }
@@ -78,9 +90,11 @@ export function canViewTask(
 // SQL form of canViewTask, used by list queries. Always company + soft-delete.
 export function visibleTasksWhere(companyId: string, user: AuthContext): SQL {
   const base = and(eq(tasks.companyId, companyId), isNull(tasks.deletedAt));
-  if (isAdmin(user)) return base as SQL;
+  const notOthersTodo = sql`(NOT ${privateTodoSql()} OR ${tasks.createdBy} = ${user.id})`;
+  if (isAdmin(user)) return and(base, notOthersTodo) as SQL;
   return and(
     base,
+    notOthersTodo,
     or(eq(tasks.createdBy, user.id), eq(tasks.assignedTo, user.id), eq(tasks.assignedBy, user.id)),
   ) as SQL;
 }

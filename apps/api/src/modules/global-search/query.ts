@@ -43,8 +43,13 @@ interface Patterns {
 /** `WHERE l.<fk> = t.id AND l.deleted_at IS NULL` for the line table. */
 const lineScope = (ln: KindLines): SQL => sql`${ln.fk} = t.id AND l.deleted_at IS NULL`;
 
-/** The WHERE clause: tenant + soft delete + "anything matches the term". */
-function whereSql(m: KindMeta, companyId: string, p: Patterns): SQL {
+/** Extra per-kind row rule from the caller (e.g. the Task Board visibility
+ *  rule for `task`), ANDed into that kind's WHERE. Kept out of the registry so
+ *  this file stays free of database imports. */
+export type KindScopes = Partial<Record<GlobalSearchKind, SQL>>;
+
+/** The WHERE clause: tenant + soft delete + caller's scope + "anything matches the term". */
+function whereSql(m: KindMeta, companyId: string, p: Patterns, scopes: KindScopes): SQL {
   const like = (e: SQL): SQL => sql`${e} ILIKE ${p.any} ESCAPE '\\'`;
   const matchers: SQL[] = [like(m.docNo)];
   if (m.party) matchers.push(like(m.party));
@@ -58,7 +63,8 @@ function whereSql(m: KindMeta, companyId: string, p: Patterns): SQL {
         WHERE ${lineScope(m.lines)} AND (${or(m.lines.match.map(like))}))`,
     );
   }
-  return sql`t.company_id = ${companyId}::uuid AND t.deleted_at IS NULL AND (${or(matchers)})`;
+  const scope = scopes[m.kind];
+  return sql`t.company_id = ${companyId}::uuid AND t.deleted_at IS NULL${scope ? sql` AND ${scope}` : sql``} AND (${or(matchers)})`;
 }
 
 /** jsonb array of the linked-doc refs and header-level particulars, nulls dropped, order kept. */
@@ -125,7 +131,7 @@ function hitSql(m: KindMeta, p: Patterns): SQL {
 // One SELECT per kind, all shaped to the same 10 columns so they UNION cleanly.
 // `match_rank` is 0 when the doc no. starts with the term (exact-code hits
 // float to the top), 1 otherwise.
-function rowBranchSql(m: KindMeta, companyId: string, p: Patterns): SQL {
+function rowBranchSql(m: KindMeta, companyId: string, p: Patterns, scopes: KindScopes): SQL {
   const date = m.date ? sql`to_char(${m.date}, 'YYYY-MM-DD')` : sql`NULL::text`;
   const lines = m.lines
     ? sql`${headLinesSql(m)} || COALESCE(ln.lines_json, '[]'::jsonb)`
@@ -142,11 +148,11 @@ function rowBranchSql(m: KindMeta, companyId: string, p: Patterns): SQL {
       ${hitSql(m, p)} AS hit,
       CASE WHEN ${m.docNo} ILIKE ${p.prefix} ESCAPE '\\' THEN 0 ELSE 1 END AS match_rank
     FROM ${m.from} ${m.lines ? linesLateralSql(m.lines) : sql``}
-    WHERE ${whereSql(m, companyId, p)}`;
+    WHERE ${whereSql(m, companyId, p, scopes)}`;
 }
 
-function countBranchSql(m: KindMeta, companyId: string, p: Patterns): SQL {
-  return sql`SELECT ${m.kind}::text AS kind FROM ${m.from} WHERE ${whereSql(m, companyId, p)}`;
+function countBranchSql(m: KindMeta, companyId: string, p: Patterns, scopes: KindScopes): SQL {
+  return sql`SELECT ${m.kind}::text AS kind FROM ${m.from} WHERE ${whereSql(m, companyId, p, scopes)}`;
 }
 
 function patterns(q: string): Patterns {
@@ -168,9 +174,10 @@ export function buildSearchSql(
   q: string,
   limit: number,
   offset = 0,
+  scopes: KindScopes = {},
 ): SQL {
   const p = patterns(q);
-  const branches = pick(kinds).map((m) => rowBranchSql(m, companyId, p));
+  const branches = pick(kinds).map((m) => rowBranchSql(m, companyId, p, scopes));
   const limitPlusOne = limit + 1;
   return sql`
     SELECT u.kind, u.id, u.doc_no, u.doc_date, u.party, u.lines, u.qty, u.status, u.hit
@@ -185,9 +192,10 @@ export function buildCountSql(
   kinds: readonly GlobalSearchKind[],
   companyId: string,
   q: string,
+  scopes: KindScopes = {},
 ): SQL {
   const p = patterns(q);
-  const branches = pick(kinds).map((m) => countBranchSql(m, companyId, p));
+  const branches = pick(kinds).map((m) => countBranchSql(m, companyId, p, scopes));
   return sql`
     SELECT u.kind, COUNT(*)::int AS n
     FROM (${sql.join(branches, sql` UNION ALL `)}) u

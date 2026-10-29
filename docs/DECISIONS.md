@@ -14623,3 +14623,34 @@ with no card.
   Approve tick acts (Kiran L5, Tejas L4, full-access admins on 2026-10-24).
 - Risks: a reader of route cards missed → a pending card used; mitigated by the
   single helper and the server-side check in PRO create.
+
+## ADR-254: A My To-Do is private — admins no longer see other people's to-dos
+
+**Date:** 2026-10-29
+**Status:** Accepted (owner "yes", 2026-10-29)
+
+### Context
+
+ADR-176 gave admins an All Tasks tab over "every company task". On PROD that put all
+14 personal to-dos of 7 people in front of 6 admin logins, who could also open, edit,
+cancel and reassign them. Global Search had no per-person rule for tasks at all: any
+user with the Tasks page found all 24 PROD tasks.
+
+### Decision
+
+- A My To-Do row (`created_by = assigned_to`, the board's own To-Do test) is seen only
+  by its writer — admins included. One rule: `isPrivateTodo` / `privateTodoSql` in
+  `tasks/history.ts`, applied inside `canViewTask` and `visibleTasksWhere`, so the
+  board, the task detail / link, every task write and Global Search all agree.
+- All Tasks (admin) lists and counts only tasks between two people — never a to-do,
+  not even the admin's own.
+- Global Search scopes `task` rows by `visibleTasksWhere` (per-kind `KindScopes`
+  passed into the pure query builder).
+
+### Consequences
+
+- No migration, no data change. Opening someone else's to-do by link → "Task not
+  found".
+- A personal to-do still cannot be reassigned (unchanged); to hand work over, Assign a
+  new task.
+- Verified read-only on PROD data: 864 user × task combinations, 0 mismatches.
