@@ -8,7 +8,7 @@ import type { OspProcess, OspProcessInput } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, X } from 'lucide-react';
 import { useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, useSaveKey, withSaveKey } from '@/lib/use-save-key';
 import { canDeleteRecords, useMyAccess } from '@/lib/access-control';

@@ -21,6 +21,7 @@ import type {
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
+import { dashboardKeys } from '@/modules/dashboard/api';
 
 export interface DayQuery {
   date?: string | undefined;
@@ -141,6 +142,8 @@ function useDayWrite<TInput>(run: (input: TInput) => Promise<DayLogDetail>, q: D
         queryKey: dayLogKeys.all,
         predicate: (x) => !shown || JSON.stringify(x.queryKey) !== own,
       });
+      // The home "Daily report" widget counts today's finished entries.
+      void qc.invalidateQueries({ queryKey: dashboardKeys.widgets() });
     },
   });
 }

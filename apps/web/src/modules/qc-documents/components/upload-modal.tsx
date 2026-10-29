@@ -5,7 +5,7 @@
 import { QC_DOC_CATEGORIES, type CreateQcDocumentInput, type QcDocCategory } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';

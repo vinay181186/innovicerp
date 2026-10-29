@@ -12,7 +12,7 @@
 import type { DispatchableLine } from '@innovic/shared';
 import { X } from 'lucide-react';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 

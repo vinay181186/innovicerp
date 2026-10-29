@@ -31,6 +31,8 @@ import { dispatchKeys } from '@/modules/customer-dispatches/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
 import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { goodsReceiptNotesKeys } from '@/modules/goods-receipt-notes/api';
+import { itemsKeys } from '@/modules/items/api';
+import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
 import { invoiceKeys } from '@/modules/invoices/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
@@ -40,6 +42,8 @@ import { jwReturnsKeys } from '@/modules/jw-returns/api';
 import { ncRegisterKeys } from '@/modules/nc-register/api';
 import { partyGrnKeys } from '@/modules/party-grn/api';
 import { partyMaterialIssuesKeys } from '@/modules/party-material-issues/api';
+import { partyMaterialsKeys } from '@/modules/party-materials/api';
+import { partyStockLedgerKeys } from '@/modules/party-stock-ledger/api';
 import { plansKeys, stockReservationKeys } from '@/modules/plans/api';
 import { productionOrdersKeys } from '@/modules/production-orders/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
@@ -84,12 +88,12 @@ function invalidateAfterCancel(qc: QueryClient): void {
     purchaseRequestsKeys.all,
     purchaseOrdersKeys.all,
     ncRegisterKeys.all,
-    ['party-materials'],
-    ['party-stock-ledger'],
-    ['job-cards'],
-    ['jc-ops'],
+    partyMaterialsKeys.all,
+    partyStockLedgerKeys.all,
+    jcOpsBoardKeys.all,
+    // material/api.ts has no key factory; its queries are keyed ['material', …].
     ['material'],
-    ['items'],
+    itemsKeys.all,
     // Phase C part 1.
     goodsReceiptNotesKeys.all,
     jwDcKeys.all,

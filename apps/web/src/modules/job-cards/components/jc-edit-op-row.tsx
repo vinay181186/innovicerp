@@ -40,7 +40,7 @@
 import type { JcOpEnriched, OpLog } from '@innovic/shared';
 import { fmtOpSrNo, SHIFT_LABELS } from '@innovic/shared';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';

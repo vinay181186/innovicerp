@@ -40,7 +40,6 @@ import { isWholeNumberUom, roundQty } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -53,7 +52,7 @@ import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-m
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
+import { Cluster, ClusterFact, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
 import { goodsReceiptNotesKeys } from '../api';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
 import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';

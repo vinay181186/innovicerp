@@ -46,7 +46,8 @@ Routes ONLY: declare endpoint, validate input via Zod, call service, return resp
 ## React Component Discipline
 
 - Components are presentational. Logic in custom hooks.
-- Forms use react-hook-form + Zod resolver.
+- Forms: shared Zod schemas; react-hook-form + Zod resolver on the older forms, component state on newer ones — match the module you copy.
+- Build screens from the in-house UI kit `apps/web/src/ui/` and follow CLAUDE.md §22 (refresh plan, live tables, invalidation).
 - Server state via TanStack Query, NEVER `useEffect` + `fetch`.
 - Local UI state in Zustand or component state.
 - No prop drilling beyond 2 levels — use Zustand.
@@ -75,7 +76,7 @@ and must NOT be a hand-typed field at the point of use.**
 
 ## API Client (frontend)
 
-- Single `apiClient` in `apps/web/src/lib/api.ts` (axios or ky).
+- Single `apiFetch` in `apps/web/src/lib/api.ts` (plain `fetch`, no axios / ky).
 - Adds auth header from Supabase session automatically.
 - Refreshes token on 401.
 

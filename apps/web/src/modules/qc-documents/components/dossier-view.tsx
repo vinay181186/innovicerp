@@ -10,7 +10,7 @@
 import type { QcDossierLine, QcDossierOrderKind } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';

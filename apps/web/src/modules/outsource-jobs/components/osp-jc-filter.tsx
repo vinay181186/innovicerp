@@ -4,7 +4,7 @@
 // the Job Card numbers found; the pick is sent as `sourceJcCode`.
 
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 
 export function OspJcFilter({

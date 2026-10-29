@@ -4,7 +4,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';

@@ -26,7 +26,7 @@
 // box does not read as "no vendor at all".
 
 import { useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useVendorsList } from '@/modules/vendors/api';
 
 export interface VendorPickerProps {

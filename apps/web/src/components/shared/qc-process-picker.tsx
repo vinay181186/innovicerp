@@ -33,7 +33,7 @@
 // one that is in use is refused by the server (qc-processes/service.ts).
 
 import { useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useQcProcessesList } from '@/modules/qc-processes/api';
 
 export interface QcProcessPickerProps {

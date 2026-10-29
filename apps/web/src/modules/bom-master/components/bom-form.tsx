@@ -38,7 +38,6 @@ import {
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { itemsKeys, useItemsList } from '@/modules/items/api';
@@ -49,7 +48,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { Cluster, ClusterGrid, FormField } from '@/ui/forms';
+import { Cluster, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextBomNo } from '../api';
 

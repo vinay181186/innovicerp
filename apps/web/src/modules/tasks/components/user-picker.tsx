@@ -5,7 +5,7 @@
 
 import type { TaskUserOption } from '@innovic/shared';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { roleLabel } from '@/lib/role-label';
 
 export function UserPicker({

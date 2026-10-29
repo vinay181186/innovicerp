@@ -65,6 +65,49 @@ describe('LiveSync', () => {
     expect(invalidatedRoots()).toEqual(['*']);
   });
 
+  it('never shows live when the token cannot hear the company', () => {
+    const t = fakeTransport();
+    sync.start(t.transport, 'co-1');
+    t.sink().connected();
+    expect(sync.getStatus()).toBe('live');
+    sync.reportTokenProblem('token_no_company');
+    expect(sync.getStatus()).toBe('paused');
+    expect(warn).toHaveBeenCalledTimes(1);
+    t.sink().disconnected('CHANNEL_ERROR');
+    t.sink().connected();
+    expect(sync.getStatus()).toBe('paused');
+  });
+
+  it('logs a token problem even while already paused', () => {
+    const t = fakeTransport();
+    sync.start(t.transport, 'co-1');
+    t.sink().disconnected('CHANNEL_ERROR');
+    warn.mockClear();
+    sync.reportTokenProblem('token_other_company');
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes live and re-reads when a refreshed token names the company again', () => {
+    const t = fakeTransport();
+    sync.start(t.transport, 'co-1');
+    t.sink().connected();
+    sync.reportTokenProblem('token_no_company');
+    invalidate.mockClear();
+    sync.clearTokenProblem();
+    expect(sync.getStatus()).toBe('live');
+    expect(invalidatedRoots()).toEqual(['*']);
+  });
+
+  it('stays paused after the token is fixed while the channel is down', () => {
+    const t = fakeTransport();
+    sync.start(t.transport, 'co-1');
+    sync.reportTokenProblem('token_no_company');
+    sync.clearTokenProblem();
+    expect(sync.getStatus()).toBe('paused');
+    t.sink().connected();
+    expect(sync.getStatus()).toBe('live');
+  });
+
   it('refreshes the mapped screens once per burst', () => {
     const t = fakeTransport();
     sync.start(t.transport, 'co-1');

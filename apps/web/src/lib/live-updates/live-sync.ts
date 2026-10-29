@@ -36,6 +36,11 @@ export class LiveSync {
   private readonly statusListeners = new Set<() => void>();
   private readonly recordListeners = new Map<string, Set<RecordListener>>();
   private readonly batcher: ChangeBatcher;
+  /** Set when the login token cannot hear this company (token-check.ts):
+   *  the channel may still say "connected", but nothing will arrive. */
+  private tokenProblem: string | null = null;
+  /** The transport's own last word: connected (true) or not (false). */
+  private transportUp = false;
 
   constructor(private readonly queryClient: QueryClient) {
     this.batcher = new ChangeBatcher((batch) => this.apply(batch), {
@@ -48,6 +53,8 @@ export class LiveSync {
 
   /** Start a transport for one company. Returns the stop function. */
   start(transport: LiveTransport, companyId: string): () => void {
+    this.tokenProblem = null;
+    this.transportUp = false;
     this.setStatus('connecting');
     const connectTimer = setTimeout(() => {
       if (this.status === 'connecting') {
@@ -65,6 +72,9 @@ export class LiveSync {
       connected: () => {
         if (stopped) return;
         clearTimeout(connectTimer);
+        this.transportUp = true;
+        // A token that cannot hear the company never counts as live.
+        if (this.tokenProblem !== null) return;
         // Only a transition re-reads; a transport repeating "connected" is a no-op.
         if (this.status === 'live') return;
         this.setStatus('live');
@@ -76,6 +86,7 @@ export class LiveSync {
       disconnected: (reason, error) => {
         if (stopped) return;
         clearTimeout(connectTimer);
+        this.transportUp = false;
         this.markDown(transport.name, reason, error);
       },
     };
@@ -94,6 +105,28 @@ export class LiveSync {
       stopTransport?.();
       this.setStatus('off');
     };
+  }
+
+  /** The token check found the login cannot hear its company: show the
+   *  marker even though the channel says it is connected. Always logged, also
+   *  when the marker is already up for another reason. */
+  reportTokenProblem(reason: string): void {
+    if (this.tokenProblem === reason) return;
+    this.tokenProblem = reason;
+    const detail = { transport: 'token', reason };
+    console.warn('[live-updates] paused', detail);
+    captureWarning('live-updates paused', detail);
+    this.setStatus('paused');
+  }
+
+  /** A refreshed token names the company again. If the channel is up, the
+   *  screens become live — and re-read, since changes were missed meanwhile. */
+  clearTokenProblem(): void {
+    if (this.tokenProblem === null) return;
+    this.tokenProblem = null;
+    if (!this.transportUp) return;
+    this.setStatus('live');
+    this.refreshEverythingOnScreen();
   }
 
   // ─── Status (read by the top-bar marker via useSyncExternalStore) ────────

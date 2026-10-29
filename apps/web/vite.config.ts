@@ -55,5 +55,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
+    // Unit tests only. e2e/*.spec.ts are Playwright (`pnpm test:e2e`); vitest
+    // picking them up made `pnpm --filter web test` fail on every run.
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

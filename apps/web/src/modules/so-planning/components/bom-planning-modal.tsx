@@ -16,7 +16,7 @@ import type {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';

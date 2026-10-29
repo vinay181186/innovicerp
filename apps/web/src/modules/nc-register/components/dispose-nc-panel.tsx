@@ -23,7 +23,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SearchableSelect, type SearchableOption } from '@/components/shared/searchable-select';
+import { SearchableSelect, type SearchableOption } from '@/ui/forms';
 import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { useNcSourceChallanCandidates } from '../api';

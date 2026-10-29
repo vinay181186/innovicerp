@@ -12,15 +12,22 @@
 import type { LiveTable } from '@innovic/shared';
 import type { QueryKey } from '@tanstack/react-query';
 import { approvalsKeys } from '@/modules/approvals/api';
+import { dispatchKeys } from '@/modules/customer-dispatches/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
 import { dayLogKeys } from '@/modules/day-logs/api';
 import { cancelKeys } from '@/modules/cancel-requests/api';
+import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { documentEditsKeys } from '@/modules/document-edits/api';
 import { goodsReceiptNotesKeys } from '@/modules/goods-receipt-notes/api';
 import { incomingQcKeys } from '@/modules/incoming-qc/api';
+import { invoiceKeys } from '@/modules/invoices/api';
 import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jobQueueKeys } from '@/modules/job-queue/api';
+import { jwInvoicesKeys } from '@/modules/jw-invoices/api';
+import { mlBomsKeys } from '@/modules/ml-bom/api';
+import { mlPlansKeys } from '@/modules/ml-plan/api';
+import { ncRegisterKeys } from '@/modules/nc-register/api';
 import { opEntryKeys } from '@/modules/op-entry/api';
 import { plansKeys } from '@/modules/plans/api';
 import { productionDashboardKeys } from '@/modules/production-dashboard/api';
@@ -28,7 +35,9 @@ import { productionOrdersKeys } from '@/modules/production-orders/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 import { qcCommandKeys } from '@/modules/qc-command/api';
+import { QC_DOCUMENT_VIEWS } from '@/modules/qc-documents/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
+import { routeCardsKeys } from '@/modules/route-cards/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
 import { shopFloorKeys } from '@/modules/shop-floor/api';
 import { soOverviewKeys } from '@/modules/so-overview/api';
@@ -95,6 +104,43 @@ const PRODUCTION_ORDER_VIEWS: readonly QueryKey[] = [
   jobCardsKeys.all,
 ];
 
+/** 0227 — a Route Card or its ops. Approval drives PRO / plan status (ADR-253)
+ *  and the home "RC pending approval" rows; ML BOM / ML Plan show the card. */
+const ROUTE_CARD_VIEWS: readonly QueryKey[] = [
+  routeCardsKeys.all,
+  plansKeys.all,
+  soPlanningKeys.all,
+  productionOrdersKeys.all,
+  jobCardsKeys.all,
+  mlBomsKeys.all,
+  mlPlansKeys.all,
+  dashboardKeys.home(),
+];
+
+/** 0227 — a delivery challan (OSP / RTV / returnable) moves op progress, the
+ *  PO's sent qty, the NC it returns against and GRN-against-DC. */
+const DELIVERY_CHALLAN_VIEWS: readonly QueryKey[] = [
+  deliveryChallansKeys.all,
+  jcOpsBoardKeys.all,
+  jobCardsKeys.all,
+  purchaseOrdersKeys.all,
+  ncRegisterKeys.all,
+  goodsReceiptNotesKeys.all,
+  soStatusKeys.all,
+];
+
+/** 0227 — an NC raised, disposed or closed: the register, the JC and op it
+ *  came from, the QC screens and the home rows. */
+const NC_VIEWS: readonly QueryKey[] = [
+  ncRegisterKeys.all,
+  jobCardsKeys.all,
+  opEntryKeys.all,
+  qcCommandKeys.all,
+  incomingQcKeys.all,
+  goodsReceiptNotesKeys.all,
+  dashboardKeys.home(),
+];
+
 export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> = {
   job_cards: PRODUCTION_VIEWS,
   jc_ops: OP_VIEWS,
@@ -119,13 +165,32 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
     cancelKeys.all,
     approvalsKeys.all,
     dashboardKeys.home(),
-    ['invoices'],
-    ['jw-invoices'],
-    ['customer-dispatches'],
+    invoiceKeys.all,
+    jwInvoicesKeys.all,
+    dispatchKeys.all,
   ],
   production_orders: [...PRODUCTION_ORDER_VIEWS, dashboardKeys.home()],
   production_order_closes: PRODUCTION_ORDER_VIEWS,
   // Day Log (owner 2026-10-26): a day submitted / reopened / left on Leave, or
   // a timer started on another PC — My Day Log and Team Day Logs.
-  daily_reports: [dayLogKeys.all],
+  daily_reports: [dayLogKeys.all, dashboardKeys.widgets()],
+  customer_dispatches: [
+    dispatchKeys.all,
+    salesOrdersKeys.all,
+    soStatusKeys.all,
+    soOverviewKeys.all,
+    dashboardKeys.home(),
+  ],
+  delivery_challans: DELIVERY_CHALLAN_VIEWS,
+  nc_register: NC_VIEWS,
+  // 0227 — the same screens this PC refreshes after its own QC upload.
+  qc_documents: QC_DOCUMENT_VIEWS,
+  // ML Plan reads the ML BOM tree it was planned from.
+  ml_boms: [mlBomsKeys.all, mlPlansKeys.all],
+  ml_bom_lines: [mlBomsKeys.all, mlPlansKeys.all],
+  // The SO detail shows its ML plans.
+  ml_plans: [mlPlansKeys.all, salesOrdersKeys.all],
+  ml_plan_nodes: [mlPlansKeys.all],
+  route_cards: ROUTE_CARD_VIEWS,
+  route_card_ops: ROUTE_CARD_VIEWS,
 };

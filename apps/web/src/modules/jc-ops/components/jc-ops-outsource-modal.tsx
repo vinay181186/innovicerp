@@ -5,7 +5,7 @@
 import { type JcOpsBoardRow, type OutsourceOpBalanceInput, opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useVendorsList } from '@/modules/vendors/api';
 import { useOutsourceOpBalance } from '../api';

@@ -28,6 +28,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { todayIst } from '@/lib/date';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -119,7 +120,10 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     [search.search, search.status, sf.param, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query);
+  const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query, {
+    // Not a live table (CLAUDE.md §22): the safety refresh keeps the list current.
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+  });
   // Access matrix (jw_create, dept Sales) replaces the old admin/manager flag.
   //   New JWSO -> entry; Edit -> edit; whole-JWSO delete -> edit AND approve.
   const { data: eff } = useMyAccess();

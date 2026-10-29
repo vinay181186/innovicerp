@@ -26,7 +26,6 @@ import type {
 import { opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -58,6 +57,7 @@ import {
   FormField,
   IdentCode,
   IdentSep,
+  SearchableSelect,
 } from '@/ui/forms';
 import { Modal } from './modal';
 

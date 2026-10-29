@@ -11,7 +11,7 @@ import {
   type RaiseMlPlanOrderLine,
 } from '@innovic/shared';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useVendorsList } from '@/modules/vendors/api';

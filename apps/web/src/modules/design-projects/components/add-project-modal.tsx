@@ -8,7 +8,7 @@ import { type CreateDesignProjectInput } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { todayIst } from '@/lib/date';
 import { Banner } from '@/ui/feedback';
 import { soNoWithInternal } from '@/lib/so-number';

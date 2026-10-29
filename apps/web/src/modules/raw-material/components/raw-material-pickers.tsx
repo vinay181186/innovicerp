@@ -15,7 +15,7 @@
 // row is renamed or deactivated. On clear, both go null.
 
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useMaterialGradesList, useMaterialSizesList } from '../api';
 
 // The picker only ever shows a page of matches for what was typed, so it stays

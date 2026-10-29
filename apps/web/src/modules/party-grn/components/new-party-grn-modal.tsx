@@ -20,7 +20,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';

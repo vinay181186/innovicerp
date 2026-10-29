@@ -101,6 +101,14 @@ jobs:
       - name: Unit tests (no database)
         run: pnpm --filter @innovic/api test:unit
 
+      # CLAUDE.md §22 — web unit tests need no database; they include
+      # refresh-coverage (every screen has a refresh plan, no refresh names a
+      # list that does not exist). When the secrets are set, `pnpm test` below
+      # runs them as part of every package, so this step covers the other case.
+      - name: Web unit tests (no database)
+        if: steps.secrets.outputs.ready != 'true'
+        run: pnpm --filter @innovic/web test
+
       - name: Test
         if: steps.secrets.outputs.ready == 'true'
         run: pnpm test

@@ -12,7 +12,9 @@ matched only a prefix.
 
 ## The rule
 
-Reuse `apps/web/src/components/shared/searchable-select.tsx` — `<SearchableSelect>`.
+Import `<SearchableSelect>` from `@/ui/forms` (`apps/web/src/ui/forms/SearchableSelect.tsx`) — the UI-kit
+entry every screen uses. It is a thin wrapper over the live behaviour in
+`apps/web/src/components/shared/searchable-select.tsx`: fix behaviour there, import from `@/ui/forms`.
 
 It already does: type-to-search input, dropdown opens on focus/click, scrollable
 (max-h 16rem), case-insensitive substring match **anywhere** in the label (found by

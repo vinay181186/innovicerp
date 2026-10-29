@@ -14,6 +14,9 @@ import { apiFetch } from '@/lib/api';
 import { drawingViewUrl, saveDrawing } from '@/lib/drawing-url';
 import { uploadFile } from '@/lib/storage';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
+import { dashboardKeys } from '@/modules/dashboard/api';
+import { jobCardsKeys } from '@/modules/job-cards/api';
+import { soDocumentsKeys } from '@/modules/so-documents/api';
 
 export const qcDocumentsKeys = {
   all: ['qc-documents'] as const,
@@ -119,6 +122,20 @@ export function fetchQcDossierUrls(input: QcDossierUrlsInput): Promise<QcDossier
   });
 }
 
+/** Every screen that reads qc_documents: QC Docs + Dossier, SO Documents, the
+ *  Job Card's reports, and the home dashboard's "report missing" rows. Used by
+ *  this PC's saves and by live updates (table-keys.ts) — one list. */
+export const QC_DOCUMENT_VIEWS = [
+  qcDocumentsKeys.all,
+  soDocumentsKeys.all,
+  jobCardsKeys.all,
+  dashboardKeys.home(),
+] as const;
+
+function invalidateQcDocViews(qc: ReturnType<typeof useQueryClient>): void {
+  for (const queryKey of QC_DOCUMENT_VIEWS) void qc.invalidateQueries({ queryKey });
+}
+
 export function useCreateQcDocument(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<QcDocument, Error, CreateQcDocumentInput>({
@@ -130,7 +147,7 @@ export function useCreateQcDocument(saveKey?: SaveKey) {
           ...(headers ? { headers } : {}),
         }),
       ),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: qcDocumentsKeys.all }),
+    onSuccess: () => invalidateQcDocViews(qc),
   });
 }
 
@@ -138,6 +155,6 @@ export function useDeleteQcDocument() {
   const qc = useQueryClient();
   return useMutation<{ id: string }, Error, string>({
     mutationFn: (id) => apiFetch<{ id: string }>(`/qc-documents/${id}`, { method: 'DELETE' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: qcDocumentsKeys.all }),
+    onSuccess: () => invalidateQcDocViews(qc),
   });
 }

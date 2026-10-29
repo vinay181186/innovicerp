@@ -55,9 +55,14 @@ export interface SearchableSelectProps {
   selectedLabel?: ((o: SearchableOption) => string) | undefined;
   id?: string | undefined;
   className?: string | undefined;
+  /** Accessible name when no <label> points at the box (a picker in a table
+   *  cell is named only by its column header). Passed straight through. */
+  ariaLabel?: string | undefined;
   emptyText?: string | undefined;
   /** The list hook's error; shown in place of `emptyText` when set. */
   error?: unknown;
+  /** Opt-in × that clears a picked value. Off by default. Passed straight through. */
+  clearable?: boolean | undefined;
   /** Applied to a wrapper around the control (design-ref API). */
   style?: React.CSSProperties | undefined;
 }
@@ -79,8 +84,10 @@ export function SearchableSelect({
   selectedLabel,
   id,
   className,
+  ariaLabel,
   emptyText,
   error,
+  clearable,
   style,
 }: SearchableSelectProps): React.JSX.Element {
   const control = (
@@ -96,8 +103,10 @@ export function SearchableSelect({
       selectedLabel={selectedLabel}
       id={id}
       className={className}
+      ariaLabel={ariaLabel}
       emptyText={emptyText}
       error={error}
+      clearable={clearable}
     />
   );
   // Only wrap when there is something to put on the wrapper. The extra node

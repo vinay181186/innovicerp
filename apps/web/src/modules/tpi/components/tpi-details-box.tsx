@@ -4,7 +4,7 @@
 // State stays with the card; this box only draws and edits it.
 
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useTpiMastersList } from '@/modules/tpi-masters/api';
 
 export function TpiDetailsBox(props: {

@@ -111,3 +111,35 @@ An orchestrator would sit exactly here, doing steps 1, 2, 3, 4 and handing back 
 **Do not build it until steps 1–5 are habit.** It cannot rescue a vague brief; it would just
 produce vague briefs faster, and it would need the whole codebase in context to trace properly —
 rebuilding the very problem this order exists to avoid, one level up.
+
+---
+
+## STEP 0 — cross-session coordination (do this before step 2 fan-out)
+
+3–10 sessions run at once in separate worktrees. They cannot see each other's
+uncommitted work, so before you claim scope, consult the shared **advisory** registry.
+It is NOT a lock — the real safety net is still worktree isolation + explicit-path
+commits + `erp-deploy-gate`. Full docs: `C:/Innovic_projects/innovic-erp/.ai-coord/README.md`.
+
+`sid` = your Claude session id (the uuid in your scratchpad path).
+
+```sh
+C=C:/Innovic_projects/innovic-erp/.ai-coord/ai-coord.mjs
+```
+
+1. **Register** when you START substantial work (multi-file / fan-out / a migration) —
+   not for a read-only trace or a one-line fix:
+   `node "$C" register --sid <uuid> --task "<short>" --branch <b> --worktree <abs> --paths "<narrowest module folders>"`
+2. **Check before you fan out or edit** a shared/cross-cutting area:
+   `node "$C" check --sid <uuid> --paths "<proposed>"` → exit 1 = overlap.
+   - No overlap → proceed.
+   - Overlap with an active session → do NOT edit the contested path. Work the
+     non-overlapping parts; if the tasks are truly incompatible, ask the owner. Never
+     overwrite another session's work.
+   - Overlap flagged `[POSSIBLY STALE >6h]` → still do not auto-steal; confirm with the owner.
+3. **Update** when your scope grows: `node "$C" update --sid <uuid> --add-paths "<more>"`.
+4. **Done** when finished (keeps a history record, releases the claim):
+   `node "$C" done --sid <uuid>`.
+
+Claim the narrowest real scope (module folders, not `apps/`). This complements — does
+not replace — the SHARED-FILE PRE-PASS: you still freeze `packages/shared` etc. yourself.
