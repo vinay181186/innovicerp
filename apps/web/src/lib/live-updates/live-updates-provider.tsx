@@ -14,9 +14,11 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useSession } from '@/lib/session';
+import { supabase } from '@/lib/supabase';
 import type { RecordWatch } from '@/lib/use-record-watch';
 import { activeTransport } from './active-transport';
 import { LiveSync, type LiveStatus } from './live-sync';
+import { tokenCompanyProblem } from './token-check';
 
 const LiveSyncContext = createContext<LiveSync | null>(null);
 
@@ -29,7 +31,24 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }): Reac
     // No company yet (session still loading) or no transport in this build:
     // nothing to listen to. The fallback refreshes still run.
     if (!activeTransport || !companyId) return;
-    return sync.start(activeTransport, companyId);
+    const stop = sync.start(activeTransport, companyId);
+    let cancelled = false;
+    const check = (): void => {
+      void tokenCompanyProblem(companyId).then((problem) => {
+        if (cancelled) return;
+        if (problem === null) sync.clearTokenProblem();
+        else sync.reportTokenProblem(problem);
+      });
+    };
+    check();
+    const { data: auth } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') check();
+    });
+    return () => {
+      cancelled = true;
+      auth.subscription.unsubscribe();
+      stop();
+    };
   }, [sync, companyId]);
 
   return <LiveSyncContext.Provider value={sync}>{children}</LiveSyncContext.Provider>;
