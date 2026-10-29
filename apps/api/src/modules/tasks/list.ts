@@ -33,6 +33,7 @@ import {
   isUnreadRow,
   istToday,
   loadUserNames,
+  privateTodoSql,
   requireCompany,
   rowToTask,
   visibleTasksWhere,
@@ -91,7 +92,7 @@ export async function listTasks(
           ? and(eq(tasks.createdBy, me), or(ne(tasks.assignedTo, me), isNull(tasks.assignedTo)))
           : query.view === 'todo'
             ? and(eq(tasks.createdBy, me), eq(tasks.assignedTo, me))
-            : undefined; // all — admin, whole company
+            : sql`NOT ${privateTodoSql()}`; // all — admin, whole company, never a My To-Do row
     const viewSql = and(visibleTasksWhere(companyId, user), viewWhere) as SQL;
 
     // KPI cards over the whole view, BEFORE row filters. Overdue rows count
@@ -147,6 +148,7 @@ export async function listTasks(
             eq(tasks.companyId, companyId),
             isNull(tasks.deletedAt),
             inArray(tasks.status, [...OPEN_STATUSES]),
+            sql`NOT ${privateTodoSql()}`,
           ),
         );
       viewCounts.all = Number(allOpen[0]?.n ?? 0);
