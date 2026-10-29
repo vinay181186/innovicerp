@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
@@ -47,6 +48,8 @@ export function fetchInvoiceList(q: ListInvoicesQuery): Promise<ListInvoicesResp
 export function useInvoiceList(q: ListInvoicesQuery) {
   return useQuery<ListInvoicesResponse>({
     queryKey: invoiceKeys.list(q),
+    // Not a live table (CLAUDE.md §22): the safety refresh keeps the list current.
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     queryFn: () => fetchInvoiceList(q),
     staleTime: 15_000,
     placeholderData: (prev) => prev,
