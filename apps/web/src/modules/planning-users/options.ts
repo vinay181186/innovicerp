@@ -3,7 +3,7 @@
 // so the "Assembled By" box reads the same way as every "Issued To" box.
 
 import { shortName, type PlanningUserOption } from '@innovic/shared';
-import type { SearchableOption } from '@/components/shared/searchable-select';
+import type { SearchableOption } from '@/ui/forms';
 
 /** The person's NAME leads each row; the second half only exists to tell two
  *  people apart. Tier codes are meaningless on their own, so 'L3' is shown as

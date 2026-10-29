@@ -4,7 +4,7 @@
 
 import type { DayLogOrder } from '@innovic/shared';
 import { useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useDayLogOrderOptions } from '../api';
 
 export function OrderSelect({

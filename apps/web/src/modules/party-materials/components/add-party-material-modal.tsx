@@ -13,7 +13,7 @@
 // screen; it is for adding one by hand.
 
 import { useEffect, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useClientsList } from '../../clients/api';
 import { useItem, useItemsList } from '../../items/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';

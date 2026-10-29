@@ -21,7 +21,7 @@ import {
   TASK_RELATED_TYPE_LABELS,
 } from '@innovic/shared';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
 import { useCreateTask, useNextTaskCode, useRelatedOptions, useTaskUserOptions } from '../api';

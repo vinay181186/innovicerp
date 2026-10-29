@@ -7,7 +7,7 @@
 import { computeGstTotals, type CreateJwInvoiceInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
 import { useSaveKey } from '@/lib/use-save-key';
 import { roundedRuleTaxRows } from '@/modules/invoices/lib/gst-split';

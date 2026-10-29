@@ -14,7 +14,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Trash2 } from 'lucide-react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import {
   MaterialGradePicker,
   MaterialSizePicker,

@@ -33,8 +33,7 @@ import {
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
-import { DocNumberInput } from '@/components/shared/doc-number-input';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { DocNumberInput, SearchableSelect } from '@/ui/forms';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';

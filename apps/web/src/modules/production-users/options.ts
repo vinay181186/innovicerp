@@ -3,7 +3,7 @@
 // box reads the same way as every "QC By" box.
 
 import { shortName, type ProductionUserOption } from '@innovic/shared';
-import type { SearchableOption } from '@/components/shared/searchable-select';
+import type { SearchableOption } from '@/ui/forms';
 
 /** The person's NAME leads each row; the second half only exists to tell two
  *  people apart. Tier codes are meaningless on the shop floor on their own, so
@@ -25,9 +25,7 @@ export function toProductionSearchOptions(options: ProductionUserOption[]): Sear
     const searchText = o.name;
     // No badge → render the bare name, otherwise the picker draws a dangling
     // "Name — " with nothing after the dash.
-    return b
-      ? { id: o.id, code: n, name: b, searchText }
-      : { id: o.id, name: n, searchText };
+    return b ? { id: o.id, code: n, name: b, searchText } : { id: o.id, name: n, searchText };
   });
 }
 

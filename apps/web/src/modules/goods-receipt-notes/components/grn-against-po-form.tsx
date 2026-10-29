@@ -17,13 +17,12 @@
 
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut, roundQty } from '@innovic/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayIst } from '@/lib/date';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { Cluster, ClusterGrid, FormField } from '@/ui/forms';
+import { Cluster, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
 import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
 import { GrnVendorCluster } from './grn-vendor-cluster';

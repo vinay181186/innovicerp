@@ -15,7 +15,6 @@ import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { SearchableSelect as LineSearchableSelect } from '@/components/shared/searchable-select';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -544,7 +543,7 @@ function InvoiceNewPage(): React.JSX.Element {
                 >
                   {line?.clientPoLineNo ?? '—'}
                 </span>
-                <LineSearchableSelect
+                <SearchableSelect
                   value={card.soLineId}
                   onChange={(id) => {
                     const l = id ? lines.find((x) => x.salesOrderLineId === id) : null;

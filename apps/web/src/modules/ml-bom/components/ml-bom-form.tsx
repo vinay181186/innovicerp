@@ -6,10 +6,9 @@
 import { type MlBomLineInput, qtyUomProblem } from '@innovic/shared';
 import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { Cluster, ClusterGrid, FormField } from '@/ui/forms';
+import { Cluster, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextMlBomNo } from '../api';
 import { MlBomLinesTable, type MlBomFormLineDraft, emptyMlBomLine } from './ml-bom-lines-table';

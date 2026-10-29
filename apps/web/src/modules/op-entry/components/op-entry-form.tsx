@@ -17,7 +17,7 @@ import { AlertTriangle, Loader2, Play, PackagePlus, ShieldCheck, Square } from '
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';

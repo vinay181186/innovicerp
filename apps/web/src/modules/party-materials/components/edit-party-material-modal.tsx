@@ -12,7 +12,7 @@
 
 import { type PartyMaterialListItem, type UpdatePartyMaterialInput } from '@innovic/shared';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useClientsList } from '../../clients/api';
 import { useItemsList } from '../../items/api';
 import { useUpdatePartyMaterial } from '../api';

@@ -46,7 +46,7 @@ import {
   usePendingEditForDoc,
 } from '@/modules/document-edits/api';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useOpFlow } from '@/modules/flow-views/api';

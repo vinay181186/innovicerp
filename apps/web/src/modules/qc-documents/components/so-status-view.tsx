@@ -9,7 +9,7 @@
 
 import type { SoQcLine, SoStatus } from '@innovic/shared';
 import { useCallback, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';

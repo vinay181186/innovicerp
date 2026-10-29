@@ -12,7 +12,7 @@ import { opSrNo } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useOutsourceOpBalance } from '@/modules/jc-ops/api';
 import { useVendorsList } from '@/modules/vendors/api';

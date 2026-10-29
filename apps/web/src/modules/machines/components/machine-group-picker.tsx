@@ -14,7 +14,7 @@
 // which on a PATCH means "leave this field alone" and would silently do nothing.
 
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
+import { SearchableSelect } from '@/ui/forms';
 import { useMachineGroupsList } from '../api';
 
 // The picker only ever shows a page of matches for what was typed, so it stays

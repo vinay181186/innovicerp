@@ -35,7 +35,7 @@
 // header names it) and the placeholder is caller-supplied.
 
 import { useEffect, useRef, useState } from 'react';
-import { type SearchableOption, SearchableSelect } from '@/components/shared/searchable-select';
+import { type SearchableOption, SearchableSelect } from '@/ui/forms';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { prBalanceText } from '@/modules/purchase-requests/lib/pr-balance';

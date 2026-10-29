@@ -17,7 +17,7 @@
 // the open list keeps the full option text.
 
 import { useState } from 'react';
-import { type SearchableOption, SearchableSelect } from '@/components/shared/searchable-select';
+import { type SearchableOption, SearchableSelect } from '@/ui/forms';
 import { type PlanPickerItem, planPickerLabel, usePlanPickerList } from '../api';
 
 export interface PlanPickerProps {

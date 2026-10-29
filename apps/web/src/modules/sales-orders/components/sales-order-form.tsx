@@ -64,10 +64,9 @@ import {
   type UseFormReturn,
 } from 'react-hook-form';
 import { todayLocal } from '@/lib/date';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';

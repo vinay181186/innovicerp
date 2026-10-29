@@ -68,7 +68,6 @@ import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Truck } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { useSaveKey } from '@/lib/use-save-key';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { VendorPicker } from '@/components/shared/vendor-picker';
@@ -82,7 +81,7 @@ import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { useCreateNcDc, useNcRegister } from '@/modules/nc-register/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid } from '@/ui/forms';
+import { FormField, FormGrid, DocNumberInput } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   deliveryChallansKeys,
