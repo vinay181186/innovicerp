@@ -4,22 +4,27 @@
 // working hours. A count click filters the table to it, a second click shows
 // all; "Edits to approve" opens the Approvals tab. Columns: User (link to
 // the person page) · Now · First start · Last stop · Working hours · Entries
-// · Late (the LATE count — this tab is the admins' only). The table reads
-// again every minute (api.ts).
+// · Late (the LATE count — this tab is the admins' only) on the FIT table
+// (ADR-199) with the ADR-200 Sort & Filter ▾ and a User search, both in the
+// browser (the whole team for the day is loaded); a row click opens the
+// person page. The table reads again every minute (api.ts).
 
 import type { TeamDayLogRow } from '@innovic/shared';
-import { fmt12, fmtDuration } from '@innovic/shared';
+import { fmtDuration } from '@innovic/shared';
 import { useState } from 'react';
-import { StatStrip } from '@/ui/data';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { DataTable, StatStrip } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
+import { Input, SearchInput } from '@/ui/forms';
+import { PageState } from '@/ui/layout';
 import { useDayLogAccess, useDayLogApprovals, useTeamDayLogs } from '../api';
 import { teamTable } from '../lib/export';
 import { errText, nowChip } from '../lib/format';
 import { printTeamDayLogs } from '../lib/print-day-log';
-import { DaySelect } from './day-header';
 import { PrintExportTools } from './print-export-tools';
-
-const COLS = 7;
+import { teamColumns } from './team-day-logs-columns';
+import '../day-log-sheet.css';
 
 /** The strip's status cells, by the Now chip's label. */
 const TODAY_CELLS: { label: string; color?: string }[] = [
@@ -31,38 +36,6 @@ const PAST_CELLS: typeof TODAY_CELLS = [
   { label: 'Logged', color: 'var(--green2)' },
   { label: 'No entries' },
 ];
-
-export function NowCell({
-  row,
-  isToday,
-}: {
-  row: Pick<TeamDayLogRow, 'currentStatus' | 'currentText' | 'entryCount'>;
-  isToday: boolean;
-}): React.JSX.Element {
-  const c = nowChip(row, isToday);
-  const text = isToday ? row.currentText : null;
-  return (
-    <>
-      <span className={`badge ${c.cls}`}>{c.label}</span>
-      {text ? (
-        <span className="text3" style={{ marginLeft: 6 }}>
-          {text}
-        </span>
-      ) : null}
-    </>
-  );
-}
-
-const LINK: React.CSSProperties = {
-  border: 0,
-  background: 'none',
-  padding: 0,
-  font: 'inherit',
-  fontWeight: 700,
-  color: 'var(--blue)',
-  cursor: 'pointer',
-  textDecoration: 'underline',
-};
 
 export function TeamDayLogsTab({
   date,
@@ -81,15 +54,16 @@ export function TeamDayLogsTab({
   const approvals = useDayLogApprovals(canApprove);
   const team = query.data;
   const [only, setOnly] = useState<string | null>(null);
+  const [term, setTerm] = useState('');
 
   if (!team) {
-    return (
-      <div
-        className="empty-state"
-        style={{ padding: 40, color: query.isError ? 'var(--red2)' : undefined }}
-      >
-        {query.isError ? errText(query.error, 'Could not load the team day logs.') : 'Loading…'}
-      </div>
+    return query.isError ? (
+      <PageState
+        state="error"
+        message={errText(query.error, 'Could not load the team day logs.')}
+      />
+    ) : (
+      <PageState state="loading" />
     );
   }
 
@@ -97,7 +71,9 @@ export function TeamDayLogsTab({
   const cells = isToday ? TODAY_CELLS : PAST_CELLS;
   const labelOf = (r: TeamDayLogRow): string => nowChip(r, isToday).label;
   const filter = cells.find((c) => c.label === only) ?? null;
-  const rows = filter ? team.rows.filter((r) => labelOf(r) === filter.label) : team.rows;
+  const byChip = filter ? team.rows.filter((r) => labelOf(r) === filter.label) : team.rows;
+  const needle = normalizeSearchTerm(term);
+  const rows = needle ? byChip.filter((r) => matchesSearchTerm([r.userName], needle)) : byChip;
   const teamWork = team.rows.reduce((n, r) => n + r.workMin, 0);
   const toApprove = approvals.data?.rows.length ?? 0;
 
@@ -109,11 +85,16 @@ export function TeamDayLogsTab({
         <label className="text3" htmlFor="dl-team-day">
           Day
         </label>
-        <DaySelect
+        <Input
           id="dl-team-day"
+          type="date"
+          mono
+          fieldWidth="md"
+          max={team.today}
           value={team.date}
-          today={team.today}
-          onChange={(d) => {
+          onChange={(e) => {
+            const d = e.target.value;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > team.today || d === team.date) return;
             setOnly(null);
             onDate(d === team.today ? undefined : d);
           }}
@@ -154,71 +135,33 @@ export function TeamDayLogsTab({
         ]}
       />
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
-      <div className="panel" style={{ padding: 0 }}>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Now</th>
-                <th>First start</th>
-                <th>Last stop</th>
-                <th className="th-num">Working hours</th>
-                <th className="th-num">Entries</th>
-                <th>Late</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={COLS} className="empty-state">
-                    {filter
-                      ? `No one is ${filter.label} — click the count again to show all.`
-                      : 'No one to show for this day.'}
-                  </td>
-                </tr>
-              ) : null}
-              {rows.map((r) => (
-                <tr
-                  key={r.userId}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onOpenPerson(r.userId, team.date)}
-                >
-                  <td title={r.userName}>
-                    <button
-                      type="button"
-                      style={LINK}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenPerson(r.userId, team.date);
-                      }}
-                    >
-                      {r.userName}
-                    </button>
-                  </td>
-                  <td
-                    title={r.currentText ?? undefined}
-                    style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}
-                  >
-                    <NowCell row={r} isToday={isToday} />
-                  </td>
-                  <td className="mono">{fmt12(r.firstStart)}</td>
-                  <td className="mono">{fmt12(r.lastStop)}</td>
-                  <td className="td-num mono fw-700">{fmtDuration(r.workMin)}</td>
-                  <td className="td-num mono">{r.entryCount}</td>
-                  <td>
-                    {r.lateCount > 0 ? (
-                      <span className="badge b-orange">{r.lateCount} LATE</span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="dl-searchbar" role="search">
+        <SearchInput value={term} onChange={setTerm} placeholder="Search User…" />
+        {needle ? (
+          <span className="text3 dl-small">
+            Showing {rows.length} of {byChip.length}
+          </span>
+        ) : null}
+        {needle ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTerm('')}>
+            Clear search
+          </button>
+        ) : null}
       </div>
+      <DataTable<TeamDayLogRow>
+        tableKey={TABLE_KEYS.teamDayLogs}
+        columns={teamColumns(isToday)}
+        rows={rows}
+        rowKey={(r) => r.userId}
+        empty={
+          needle
+            ? `No user matches "${needle}".`
+            : filter
+              ? `No one is ${filter.label} — click the count again to show all.`
+              : 'No one to show for this day.'
+        }
+        onRowClick={(r) => onOpenPerson(r.userId, team.date)}
+      />
     </div>
   );
 }

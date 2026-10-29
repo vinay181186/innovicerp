@@ -172,7 +172,10 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   production_orders: [...PRODUCTION_ORDER_VIEWS, dashboardKeys.home()],
   production_order_closes: PRODUCTION_ORDER_VIEWS,
   // Day Log (owner 2026-10-26): a day submitted / reopened / left on Leave, or
-  // a timer started on another PC — My Day Log and Team Day Logs.
+  // a timer started on another PC — My Day Log and Team Day Logs. ADR-255: NOT
+  // dashboardKeys.home() — daily_reports is company-wide readable, so that
+  // would refetch every user's Home on every save; a reply reaches the owner's
+  // Home 🔔 on its 60 s poll / focus refetch instead.
   daily_reports: [dayLogKeys.all, dashboardKeys.widgets()],
   customer_dispatches: [
     dispatchKeys.all,

@@ -1,50 +1,10 @@
-// Shared bits of the Day Log screens: the "Day" select (today + earlier
-// days, newest first) and the ONE thin summary line of a day (server figures).
+// The ONE thin summary line of a Day Log day (server figures). Every Day Log
+// screen picks its day with a native date box (ADR-255).
 
 import type { DayLogSummaryOut } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
 import { Fragment } from 'react';
-import { fmtDmy, recentDays, weekday } from '../lib/format';
 import '../day-log-sheet.css';
-
-/** How many days the Day select offers. */
-export const DAY_SELECT_DAYS = 31;
-
-export function DaySelect({
-  value,
-  today,
-  onChange,
-  days = DAY_SELECT_DAYS,
-  ariaLabel = 'Day',
-  id,
-}: {
-  value: string;
-  today: string;
-  onChange: (d: string) => void;
-  days?: number;
-  ariaLabel?: string;
-  id?: string;
-}): React.JSX.Element {
-  const list = recentDays(today, days);
-  // A day outside the list (an old link) still shows as picked.
-  if (!list.includes(value)) list.push(value);
-  return (
-    <select
-      id={id}
-      className="innovic-select mono"
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      style={{ width: 'auto' }}
-    >
-      {list.map((d) => (
-        <option key={d} value={d}>
-          {fmtDmy(d)} ({weekday(d)}){d === today ? ' · today' : ''}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 /** Working hours · First start · Last stop · Entries (server figures) —
  *  one thin line (owner "Option B", 2026-10-27). */

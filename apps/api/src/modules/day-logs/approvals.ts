@@ -7,6 +7,9 @@
 // Approve / reject run under the day lock of the row (§20.3) and are
 // conditional on the SAME request still waiting (§20.2) — a second decision
 // is a 409.
+// ADR-255: an edit here is Start / Stop / SO only — approving never changes
+// Working On (that is edited directly, text.ts) and no activity text here
+// carries it.
 
 import {
   type DayLogApprovalRow,
@@ -33,7 +36,7 @@ import {
   viewerOf,
 } from './access';
 import { type DayHeader, type DayLine, ts } from './day';
-import { label, log, returning, writeLines } from './entry-write';
+import { log, returning, spanLabel, writeLines } from './entry-write';
 import { dayTx, lockAnyEntryDay, requireHeader } from './lock';
 import { type DayLogClock, istClock } from './rules';
 import { readSnapshot } from './snapshot';
@@ -51,7 +54,7 @@ const pendingJson = (companyId: string): SQL => sql`(
            'cFrom', to_char(l.from_time, 'HH24:MI'), 'cTo', to_char(l.to_time, 'HH24:MI'),
            'cDesc', l.description, 'cCode', COALESCE(so.code, jw.code),
            'pFrom', to_char(l.pending_from, 'HH24:MI'), 'pTo', to_char(l.pending_to, 'HH24:MI'),
-           'pDesc', l.pending_description, 'pCode', COALESCE(pso.code, pjw.code),
+           'pCode', COALESCE(pso.code, pjw.code),
            'requestedAt', ${ts('l.pending_at')})
          ORDER BY l.pending_at), '[]'::json)
   FROM public.daily_report_lines l
@@ -78,7 +81,6 @@ type PendingRow = {
   cCode: string | null;
   pFrom: string;
   pTo: string;
-  pDesc: string | null;
   pCode: string | null;
   requestedAt: string;
 };
@@ -101,7 +103,8 @@ function approvalsOf(v: Viewer, json: unknown): DayLogApprovalsResponse {
       proposed: {
         fromTime: p.pFrom,
         toTime: p.pTo,
-        description: p.pDesc ?? '',
+        // ADR-255 — Working On is not part of the edit: the live text.
+        description: p.cDesc,
         orderCode: p.pCode,
       },
       requestedAt: p.requestedAt,
@@ -178,6 +181,10 @@ async function listAfter(d: Decision): Promise<DayLogApprovalsResponse> {
   return approvalsOf(d.v, r?.rows);
 }
 
+/** "<from–to (SO)> to <from–to (SO)>" — times and order only (ADR-255). */
+const spans = (d: Decision): string =>
+  `${spanLabel({ fromTime: d.self.fromTime ?? '', toTime: d.self.toTime }, d.self.order?.code ?? null)} to ${spanLabel(d.self.pending, d.self.pending.order?.code ?? null)}`;
+
 /** Only the request that was checked: `pending_at` as loaded (§20.2). */
 const sameRequest = (d: Decision): SQL => sql`
   id = ${d.self.id}::uuid AND deleted_at IS NULL AND pending_at IS NOT NULL
@@ -196,7 +203,7 @@ export async function approveEntry(
       validateEntry(
         d.h.date,
         d.others,
-        { fromTime: p.fromTime, toTime: p.toTime, description: p.description },
+        { fromTime: p.fromTime, toTime: p.toTime, description: d.self.description },
         clock,
       );
     } catch (e) {
@@ -209,7 +216,7 @@ export async function approveEntry(
       user,
       sql`
       UPDATE public.daily_report_lines
-      SET from_time = pending_from, to_time = pending_to, description = pending_description,
+      SET from_time = pending_from, to_time = pending_to,
           sales_order_id = pending_sales_order_id, job_work_order_id = pending_job_work_order_id,
           kind = 'work', status = 'completed', hours = ${hoursOf(p.fromTime, p.toTime)},
           pending_from = NULL, pending_to = NULL, pending_description = NULL,
@@ -220,14 +227,7 @@ export async function approveEntry(
       RETURNING ${returning(d.h)}`,
     );
     if (!w) throw new ConflictError(DECIDED);
-    await log(
-      d.tx,
-      d.companyId,
-      user,
-      d.h,
-      'EDIT_APPROVED',
-      `approved the change of ${label({ fromTime: d.self.fromTime ?? '', toTime: d.self.toTime, description: d.self.description })} to ${label(p)}`,
-    );
+    await log(d.tx, d.companyId, user, d.h, 'EDIT_APPROVED', `approved the change of ${spans(d)}`);
     return listAfter(d);
   });
 }
@@ -260,7 +260,7 @@ export async function rejectEntry(
       user,
       d.h,
       'EDIT_REJECTED',
-      `rejected the change of ${label({ fromTime: d.self.fromTime ?? '', toTime: d.self.toTime, description: d.self.description })} to ${label(d.self.pending)}: ${reason}`,
+      `rejected the change of ${spans(d)}: ${reason}`,
     );
     return listAfter(d);
   });

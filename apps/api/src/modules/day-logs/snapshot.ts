@@ -47,6 +47,9 @@ export interface SnapshotAsk {
   targetId: string;
   date: string;
   orders?: ReadonlyArray<{ type: DayLogOrderType; id: string }>;
+  /** ADR-255 — read each line's replies (only where they are shown: the
+   *  owner's own day and its write responses). Default: not read. */
+  replies?: boolean;
 }
 
 const idsOf = (ask: SnapshotAsk, type: DayLogOrderType): string[] => [
@@ -76,7 +79,7 @@ export function snapshotSql(ask: SnapshotAsk): SQL {
       (SELECT row_to_json(h) FROM (
          SELECT ${HEADER_COLS} FROM public.daily_reports dr
          WHERE ${day} AND dr.report_date = ${date}::date) h) AS header,
-      ${linesJson(co, sql`${day} AND dr.report_date = ${date}::date`)} AS lines,
+      ${linesJson(co, sql`${day} AND dr.report_date = ${date}::date`, ask.replies === true)} AS lines,
       ${holidaysJson(co, date, date)} AS holidays,
       EXISTS (SELECT 1 ${timedLine} AND dr.report_date < ${date}::date) AS has_earlier,
       EXISTS (SELECT 1 ${timedLine} AND dr.report_date = ${addDays(date, -1)}::date) AS prev_has_rows,

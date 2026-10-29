@@ -1,20 +1,82 @@
 // Task Board tab "Approvals · Day Log (N)" (owner final 2026-10-27), shown
 // only when GET /day-logs/access says canApprove (§20.5). One row per staged
-// edit (GET /day-logs/approvals): User · Day · Change (Was: struck through /
-// New: in green) · ✓ Approve · ✗ Reject. Reject asks for a reason first.
-// The server decides who may approve whom (never one's own) and answers 409
-// when someone else already decided — the message shows above the table.
+// edit (GET /day-logs/approvals) on the FIT table (ADR-199) with the ADR-200
+// Sort & Filter ▾ and a User search, both in the browser (every waiting edit
+// is loaded): User · Day · Change: Was (struck through) · Change: New (in
+// green). The row's ⋯ holds ✓ Approve and ✗ Reject; Reject asks for a reason
+// first. The server decides who may approve whom (never one's own) and
+// answers 409 when someone else already decided — the message shows above
+// the table.
 
 import type { DayLogApprovalRow } from '@innovic/shared';
 import { useState } from 'react';
+import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
+import { DataTable } from '@/ui/data';
+import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { SearchInput } from '@/ui/forms';
+import { PageState } from '@/ui/layout';
 import { useApproveDayLogEdit, useDayLogApprovals, useRejectDayLogEdit } from '../api';
 import { errText, fmtDmy, weekday } from '../lib/format';
 import { spanText } from '../lib/sheet';
+import '../day-log-sheet.css';
 
 function changeText(v: DayLogApprovalRow['current'] | DayLogApprovalRow['proposed']): string {
   return [spanText(v.fromTime, v.toTime), v.orderCode, v.description].filter(Boolean).join(' · ');
 }
+
+const COLUMNS: DataTableColumn<DayLogApprovalRow>[] = [
+  {
+    id: 'user',
+    header: 'User',
+    kind: 'text',
+    align: 'left',
+    ellipsis: true,
+    className: 'fw-700',
+    title: (r) => r.userName,
+    filterValue: (r) => r.userName,
+    render: (r) => r.userName,
+  },
+  {
+    id: 'day',
+    header: 'Day',
+    kind: 'date',
+    className: 'mono',
+    filterValue: (r) => r.date,
+    render: (r) => (
+      <>
+        {fmtDmy(r.date)} <span className="text3">{weekday(r.date)}</span>
+      </>
+    ),
+  },
+  {
+    id: 'was',
+    header: 'Change: Was',
+    kind: 'text',
+    align: 'left',
+    ellipsis: true,
+    title: (r) => `Was: ${changeText(r.current)}`,
+    filterValue: (r) => changeText(r.current),
+    render: (r) => (
+      <span style={{ color: 'var(--text3)', textDecoration: 'line-through' }}>
+        Was: {changeText(r.current)}
+      </span>
+    ),
+  },
+  {
+    id: 'new',
+    header: 'Change: New',
+    kind: 'text',
+    align: 'left',
+    ellipsis: true,
+    title: (r) => `New: ${changeText(r.proposed)}`,
+    filterValue: (r) => changeText(r.proposed),
+    render: (r) => (
+      <span style={{ color: 'var(--green2)', fontWeight: 600 }}>New: {changeText(r.proposed)}</span>
+    ),
+  },
+];
 
 export function DayLogApprovals(): React.JSX.Element {
   const query = useDayLogApprovals();
@@ -25,18 +87,21 @@ export function DayLogApprovals(): React.JSX.Element {
   const [rejecting, setRejecting] = useState<DayLogApprovalRow | null>(null);
   const [reason, setReason] = useState('');
   const [rejectErr, setRejectErr] = useState<string | null>(null);
+  const [term, setTerm] = useState('');
 
   if (!query.data) {
-    return (
-      <div
-        className="empty-state"
-        style={{ padding: 40, color: query.isError ? 'var(--red2)' : undefined }}
-      >
-        {query.isError ? errText(query.error, 'Could not load the edits to approve.') : 'Loading…'}
-      </div>
+    return query.isError ? (
+      <PageState
+        state="error"
+        message={errText(query.error, 'Could not load the edits to approve.')}
+      />
+    ) : (
+      <PageState state="loading" />
     );
   }
-  const rows = query.data.rows;
+  const all = query.data.rows;
+  const needle = normalizeSearchTerm(term);
+  const rows = needle ? all.filter((r) => matchesSearchTerm([r.userName], needle)) : all;
 
   const doApprove = async (r: DayLogApprovalRow): Promise<void> => {
     if (busyId) return;
@@ -78,6 +143,8 @@ export function DayLogApprovals(): React.JSX.Element {
     }
   };
 
+  const busyReason = busyId !== null ? 'Working…' : undefined;
+
   return (
     <div>
       <div
@@ -88,73 +155,47 @@ export function DayLogApprovals(): React.JSX.Element {
       </div>
       {msg ? <Banner tone={msg.ok ? 'success' : 'error'}>{msg.text}</Banner> : null}
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
-      <div className="panel" style={{ padding: 0 }}>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Day</th>
-                <th>Change</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="empty-state">
-                    No edits waiting.
-                  </td>
-                </tr>
-              ) : null}
-              {rows.map((r) => {
-                const busy = busyId === r.entryId;
-                return (
-                  <tr key={r.entryId}>
-                    <td className="fw-700">{r.userName}</td>
-                    <td className="mono">
-                      {fmtDmy(r.date)} <span className="text3">{weekday(r.date)}</span>
-                    </td>
-                    <td className="td-left" style={{ whiteSpace: 'pre-wrap', minWidth: 320 }}>
-                      <div style={{ color: 'var(--text3)', textDecoration: 'line-through' }}>
-                        Was: {changeText(r.current)}
-                      </div>
-                      <div style={{ color: 'var(--green2)', fontWeight: 600 }}>
-                        New: {changeText(r.proposed)}
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'inline-flex', gap: 4 }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={busyId !== null}
-                          onClick={() => void doApprove(r)}
-                        >
-                          {busy && !rejecting ? 'Approving…' : '✓ Approve'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={busyId !== null}
-                          onClick={() => {
-                            setMsg(null);
-                            setReason('');
-                            setRejectErr(null);
-                            setRejecting(r);
-                          }}
-                        >
-                          ✗ Reject
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      <div className="dl-searchbar" role="search">
+        <SearchInput value={term} onChange={setTerm} placeholder="Search User…" />
+        {needle ? (
+          <span className="text3 dl-small">
+            Showing {rows.length} of {all.length}
+          </span>
+        ) : null}
+        {needle ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTerm('')}>
+            Clear search
+          </button>
+        ) : null}
       </div>
+      <DataTable<DayLogApprovalRow>
+        tableKey={TABLE_KEYS.dayLogApprovals}
+        columns={COLUMNS}
+        rows={rows}
+        rowKey={(r) => r.entryId}
+        empty={needle ? `No user matches "${needle}".` : 'No edits waiting.'}
+        rowMenuLabel={(r) => `Actions for ${r.userName}'s edit on ${fmtDmy(r.date)}`}
+        rowMenu={(r) => [
+          {
+            key: 'approve',
+            label: '✓ Approve',
+            disabledReason: busyReason,
+            onSelect: () => doApprove(r),
+          },
+          {
+            key: 'reject',
+            label: '✗ Reject',
+            group: 'danger',
+            disabledReason: busyReason,
+            onSelect: () => {
+              setMsg(null);
+              setReason('');
+              setRejectErr(null);
+              setRejecting(r);
+            },
+          },
+        ]}
+      />
       {rejecting ? (
         <ConfirmDialog
           title={`Reject ${rejecting.userName}'s edit?`}

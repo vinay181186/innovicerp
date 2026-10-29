@@ -1,36 +1,45 @@
-// My Day Log's ONE sheet (owner final 2026-10-27): the day's saved rows on
-// top (read view, ✎ → edit for approval), then — only while the server lets
-// the owner add rows to this day — a "New rows — not saved yet" separator,
-// the draft rows, "+ Add row", Cancel and ONE Save that sends every filled
-// draft in one batch (all or nothing, POST /day-logs/entries/batch). The
-// shared rules are checked first; the server answers "Row N: …" for the row
-// it refused: the message shows under that row and every draft is kept. On
-// success ONLY the rows that batch carried leave the drafts (rows typed while
-// it ran stay; none left = one empty row). One Idempotency-Key per save
+// My Day Log's sheet (ADR-255): the day's saved entries on the FIT table
+// (my-day-table.tsx), then — only while the server lets the owner add rows to
+// this day — "+ Add entry" BELOW the table, which opens the new-rows form
+// right under it: the draft rows (the first Start filled from the last Stop,
+// each further row's Start from the row above), "+ Add row", Cancel and ONE
+// Save that sends every filled draft in one batch (all or nothing, POST
+// /day-logs/entries/batch). The shared rules are checked first; the server
+// answers "Row N: ..." for the row it refused: the message shows under that row
+// and every draft is kept. On success ONLY the rows that batch carried leave
+// the drafts (none left = the form closes). One Idempotency-Key per save
 // (useSaveKey): a double click or a resend after a timeout saves once.
 // While a save runs only the rows it carries are locked.
 
-import type { DayLogDetail, UpdateDayLogEntryInput } from '@innovic/shared';
+import type { DayLogDetail } from '@innovic/shared';
 import { useEffect, useState } from 'react';
 import { useSaveKey } from '@/lib/use-save-key';
-import { useAddDayLogEntries, useUpdateDayLogEntry, type DayQuery } from '../api';
-import { errText, fmtDmy } from '../lib/format';
-import { blankDraft, checkDrafts, isFilled, rowError, toSheetRow, type Draft } from '../lib/sheet';
-import { sortEntries } from './entries-table';
+import { useAddDayLogEntries, type DayQuery } from '../api';
+import { errText } from '../lib/format';
+import {
+  blankDraft,
+  checkDrafts,
+  isFilled,
+  rowError,
+  sortEntries,
+  startFrom,
+  toSheetRow,
+  type Draft,
+} from '../lib/sheet';
+import { MyDayTable } from './my-day-table';
 import { SheetDraftRow, startInputId } from './sheet-draft-row';
-import { SheetSavedRow } from './sheet-saved-row';
 import '../day-log-sheet.css';
 
 /** The sheet's header row — the same grid as every entry row. */
 function SheetGridHead(): React.JSX.Element {
   return (
     <div className="dl-cols dl-head" aria-hidden>
-      <span className="dl-c">#</span>
-      <span className="dl-c">Start *</span>
-      <span className="dl-c">Stop *</span>
-      <span className="dl-c dl-dur">Time</span>
+      <span className="dl-c">Sr No</span>
+      <span className="dl-c">Start Time *</span>
+      <span className="dl-c">Stop Time *</span>
+      <span className="dl-c dl-dur">Working Hours</span>
       <span className="dl-c">SO / JWSO</span>
-      <span className="dl-c">Working on *</span>
+      <span className="dl-c">Working On *</span>
       <span className="dl-c" />
     </div>
   );
@@ -42,8 +51,7 @@ export function DaySheet({
   nowMin,
   canWrite,
   canAdd,
-  editingId,
-  onEditingId,
+  line,
   onDirty,
 }: {
   day: DayLogDetail;
@@ -53,22 +61,23 @@ export function DaySheet({
   canWrite: boolean;
   /** New rows may be added (canWrite and the day is not blocked). */
   canAdd: boolean;
-  editingId: string | null;
-  onEditingId: (id: string | null) => void;
+  /** ?line= — the entry to open and scroll to. */
+  line: string | undefined;
   /** Some draft has something typed in it. */
   onDirty: (dirty: boolean) => void;
 }): React.JSX.Element {
   const saveKey = useSaveKey();
   const addRows = useAddDayLogEntries(q, saveKey);
-  const update = useUpdateDayLogEntry(q);
-  const [drafts, setDrafts] = useState<Draft[]>(() => [blankDraft()]);
+  const entries = sortEntries(day.entries);
+  /** Where a new entry starts: the last saved Stop. */
+  const lastStop = startFrom(day.summary.nextStart ?? entries[entries.length - 1]?.toTime);
+  const [adding, setAdding] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
   const [rowErrs, setRowErrs] = useState<Record<number, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [focusKey, setFocusKey] = useState<number | null>(null);
-  // Draft keys the in-flight batch carries, and the saved-entry id whose edit
-  // is in flight — only those rows are locked.
+  // Draft keys the in-flight batch carries — only those rows are locked.
   const [savingKeys, setSavingKeys] = useState<ReadonlySet<number>>(() => new Set());
-  const [busyId, setBusyId] = useState<string | null>(null);
   const saving = addRows.isPending || savingKeys.size > 0;
   const filled = drafts.filter(isFilled);
   const dirty = canAdd && filled.length > 0;
@@ -80,42 +89,35 @@ export function DaySheet({
     setFocusKey(null);
   }, [focusKey]);
 
-  const entries = sortEntries(day.entries);
-
   const patch = (key: number, p: Partial<Draft>): void =>
     setDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...p } : d)));
+  const openAdd = (): void => {
+    setMsg(null);
+    setRowErrs({});
+    const d = blankDraft(lastStop);
+    setDrafts([d]);
+    setAdding(true);
+    setFocusKey(d.key);
+  };
   const addRow = (): void => {
-    const d = blankDraft();
+    const d = blankDraft(startFrom(drafts[drafts.length - 1]?.stop) || lastStop);
     setDrafts((ds) => [...ds, d]);
     setFocusKey(d.key);
   };
   const dropRow = (key: number): void => {
     setRowErrs({});
-    setDrafts((ds) => ds.filter((d) => d.key !== key));
+    const rest = drafts.filter((d) => d.key !== key);
+    setDrafts(rest);
+    if (!rest.length) setAdding(false);
   };
   /** Cancel: drop every unsaved row (not the ones a running save carries). */
   const cancelRows = (): void => {
     setRowErrs({});
     setMsg(null);
-    setDrafts((ds) => {
-      const keep = ds.filter((d) => savingKeys.has(d.key));
-      return keep.length ? keep : [blankDraft()];
-    });
+    const keep = drafts.filter((d) => savingKeys.has(d.key));
+    setDrafts(keep);
+    if (!keep.length) setAdding(false);
   };
-
-  async function sendEdit(id: string, body: UpdateDayLogEntryInput): Promise<void> {
-    setBusyId(id);
-    try {
-      await update.mutateAsync({ id, ...body });
-      onEditingId(null);
-      setMsg({
-        ok: true,
-        text: 'Edit sent for approval — the row keeps its old values until it is approved.',
-      });
-    } finally {
-      setBusyId(null);
-    }
-  }
 
   async function save(): Promise<void> {
     if (saving || !filled.length) return;
@@ -135,7 +137,8 @@ export function DaySheet({
       // Only the rows this batch carried are saved — keep anything typed meanwhile.
       setDrafts((ds) => {
         const rest = ds.filter((d) => !sent.has(d.key));
-        return rest.length ? rest : [blankDraft()];
+        if (!rest.length) setAdding(false);
+        return rest;
       });
       setMsg({ ok: true, text: `Saved ${filled.length} row${filled.length > 1 ? 's' : ''}.` });
     } catch (e) {
@@ -162,56 +165,49 @@ export function DaySheet({
     </span>
   ) : null;
 
+  const showForm = canAdd && adding;
   return (
     <>
-      <div className="dl-sheet">
-        <SheetGridHead />
-        {entries.length === 0 && !canAdd ? (
-          <div className="empty-state">Nothing logged on {fmtDmy(day.date)}.</div>
-        ) : null}
-        {entries.map((e, i) => (
-          <SheetSavedRow
-            key={e.id}
-            e={e}
-            n={i + 1}
-            nowMin={nowMin}
-            canEdit={canWrite}
-            editing={editingId === e.id}
-            busy={busyId === e.id}
-            onEdit={() => {
-              setMsg(null);
-              onEditingId(e.id);
-            }}
-            onCancelEdit={() => onEditingId(null)}
-            onUpdate={(body) => sendEdit(e.id, body)}
-          />
-        ))}
-        {canAdd && drafts.length > 0 ? (
-          <div className="dl-bar">New rows — not saved yet</div>
-        ) : null}
-        {canAdd
-          ? drafts.map((d, j) => (
-              <SheetDraftRow
-                key={d.key}
-                d={d}
-                n={entries.length + j + 1}
-                nowMin={nowMin}
-                error={rowErrs[d.key] ?? null}
-                saving={savingKeys.has(d.key)}
-                onChange={(p) => patch(d.key, p)}
-                onDrop={() => dropRow(d.key)}
-                onEnter={() => {
-                  if (j === drafts.length - 1) addRow();
-                }}
-              />
-            ))
-          : null}
-        {canAdd ? (
+      <MyDayTable
+        day={day}
+        q={q}
+        nowMin={nowMin}
+        canWrite={canWrite}
+        line={line}
+        onMessage={(text) => setMsg({ ok: true, text })}
+      />
+      {canAdd && !showForm ? (
+        <div className="dl-addbar">
+          <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>
+            + Add entry
+          </button>
+          {msgLine}
+        </div>
+      ) : null}
+      {showForm ? (
+        <div className="dl-sheet">
+          <div className="dl-bar">New entries — not saved yet</div>
+          <SheetGridHead />
+          {drafts.map((d, j) => (
+            <SheetDraftRow
+              key={d.key}
+              d={d}
+              n={entries.length + j + 1}
+              nowMin={nowMin}
+              error={rowErrs[d.key] ?? null}
+              saving={savingKeys.has(d.key)}
+              onChange={(p) => patch(d.key, p)}
+              onDrop={() => dropRow(d.key)}
+              onEnter={() => {
+                if (j === drafts.length - 1) addRow();
+              }}
+            />
+          ))}
           <div className="dl-foot">
             <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>
               + Add row
             </button>
-            <span className="dl-note">Enter in Stop = new row</span>
+            <span className="dl-note">Enter in Stop Time = new row</span>
             {msgLine}
             <span style={{ flex: 1 }} />
             <button type="button" className="btn btn-ghost" onClick={cancelRows}>
@@ -227,9 +223,9 @@ export function DaySheet({
               {saving ? 'Saving…' : filled.length > 1 ? `Save (${filled.length} rows)` : 'Save'}
             </button>
           </div>
-        ) : null}
-      </div>
-      {!canAdd && msgLine ? <div style={{ marginBottom: 10 }}>{msgLine}</div> : null}
+        </div>
+      ) : null}
+      {!canAdd && msgLine ? <div className="dl-addbar">{msgLine}</div> : null}
     </>
   );
 }

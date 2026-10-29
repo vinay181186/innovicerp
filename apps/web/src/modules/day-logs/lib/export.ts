@@ -4,10 +4,11 @@
 // CSV goes through the reports module's rowsToCsv / downloadCsv; Excel loads
 // SheetJS (xlsx, the existing dependency) only when asked, as op-log does.
 
-import type { DayLogDetail, TeamDayLogResponse } from '@innovic/shared';
+import type { DayLogDetail, DayLogPersonDay, TeamDayLogResponse } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
-import { nowChip } from './format';
+import { istStamp, nowChip } from './format';
+import { sortEntries } from './sheet';
 
 export interface ExportTable {
   /** Column keys deliberately avoid a `status` / `type` suffix: rowsToCsv
@@ -16,28 +17,59 @@ export interface ExportTable {
   rows: Record<string, string>[];
 }
 
-/** The day sheet: # · Start · Stop · SO / JWSO · Time · Working on. */
+/** My Day Log: Sr No · Start Time · Stop Time · Working Hours · SO / JWSO ·
+ *  Working On (full text, never cut). */
 export const DAY_COLUMNS = [
-  { key: 'row_no', label: '#' },
-  { key: 'start_time', label: 'Start' },
-  { key: 'stop_time', label: 'Stop' },
+  { key: 'sr_no', label: 'Sr No' },
+  { key: 'start_time', label: 'Start Time' },
+  { key: 'stop_time', label: 'Stop Time' },
+  { key: 'work_hours', label: 'Working Hours' },
   { key: 'order_code', label: 'SO / JWSO' },
-  { key: 'time', label: 'Time' },
-  { key: 'work', label: 'Working on' },
+  { key: 'work', label: 'Working On' },
 ];
 
+/** Column keys the print right-aligns. */
+export const DAY_NUM_KEYS = ['sr_no', 'work_hours', 'text_rev_no'] as const;
+
 export function dayTable(day: DayLogDetail): ExportTable {
-  const rows = [...day.entries]
-    .sort((a, b) => a.fromTime.localeCompare(b.fromTime))
-    .map((e, i) => ({
-      row_no: String(i + 1),
+  const rows = sortEntries(day.entries).map((e, i) => ({
+    sr_no: String(i + 1),
+    start_time: fmt12(e.fromTime),
+    stop_time: e.toTime ? fmt12(e.toTime) : '',
+    work_hours: fmtDuration(e.minutes),
+    order_code: e.order?.code ?? '',
+    work: e.description,
+  }));
+  return { columns: DAY_COLUMNS, rows };
+}
+
+/** Team Day Logs › a person, one day: Sr No · Start Time · Stop Time ·
+ *  Working Hours · (Super Admin: Text Rev No · Text Rev Date · Text Rev
+ *  Time ·) SO / JWSO · Working On. */
+export function personDayTable(p: DayLogPersonDay): ExportTable {
+  const rev = p.isSuperAdmin
+    ? [
+        { key: 'text_rev_no', label: 'Text Rev No' },
+        { key: 'text_rev_date', label: 'Text Rev Date' },
+        { key: 'text_rev_time', label: 'Text Rev Time' },
+      ]
+    : [];
+  const columns = [...DAY_COLUMNS.slice(0, 4), ...rev, ...DAY_COLUMNS.slice(4)];
+  const rows = sortEntries(p.entries).map((e) => {
+    const at = e.textRevNo ? istStamp(e.textRevisedAt) : null;
+    return {
+      sr_no: String(e.srNo),
       start_time: fmt12(e.fromTime),
       stop_time: e.toTime ? fmt12(e.toTime) : '',
+      work_hours: fmtDuration(e.minutes),
+      text_rev_no: e.textRevNo === null ? '' : String(e.textRevNo),
+      text_rev_date: at?.date ?? '',
+      text_rev_time: at?.time ?? '',
       order_code: e.order?.code ?? '',
-      time: fmtDuration(e.minutes),
       work: e.description,
-    }));
-  return { columns: DAY_COLUMNS, rows };
+    };
+  });
+  return { columns, rows };
 }
 
 /** Team Day Logs: User · Now · First start · Last stop · Working hours ·

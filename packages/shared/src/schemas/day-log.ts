@@ -330,13 +330,6 @@ export type DayLogQuery = z.infer<typeof dayLogQuerySchema>;
 export const teamDayLogQuerySchema = z.object({ date: dateStr.optional() });
 export type TeamDayLogQuery = z.infer<typeof teamDayLogQuerySchema>;
 
-export const personDayLogQuerySchema = z.object({
-  userId: z.string().uuid(),
-  from: dateStr,
-  to: dateStr,
-});
-export type PersonDayLogQuery = z.infer<typeof personDayLogQuerySchema>;
-
 export const dayLogOrderOptionsQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
 });
@@ -529,43 +522,6 @@ export const teamDayLogResponseSchema = z.object({
   rows: z.array(teamDayLogRowSchema),
 });
 export type TeamDayLogResponse = z.infer<typeof teamDayLogResponseSchema>;
-
-export const personDayRowSchema = z.object({
-  date: z.string(),
-  workingDay: z.boolean(),
-  /** null = no day row yet (nothing logged). */
-  status: z.enum(DAY_LOG_STATUSES).nullable(),
-  firstStart: z.string().nullable(),
-  lastStop: z.string().nullable(),
-  workMin: z.number().int(),
-  breakMin: z.number().int(),
-  leaveMin: z.number().int(),
-  entryCount: z.number().int(),
-  lateCount: z.number().int(),
-  lateInMin: z.number().int(),
-  orderCodes: z.array(z.string()),
-});
-export type PersonDayRow = z.infer<typeof personDayRowSchema>;
-
-export const personDayLogResponseSchema = z.object({
-  userId: z.string().uuid(),
-  userName: z.string(),
-  deptLabel: z.string().nullable(),
-  from: z.string(),
-  to: z.string(),
-  today: z.string(),
-  /** Newest first; every date in the range (working days and days with entries). */
-  days: z.array(personDayRowSchema),
-  totals: z.object({
-    daysLogged: z.number().int(),
-    workMin: z.number().int(),
-    avgWorkMin: z.number().int(),
-    breakMin: z.number().int(),
-    leaveMin: z.number().int(),
-    lateCount: z.number().int(),
-  }),
-});
-export type PersonDayLogResponse = z.infer<typeof personDayLogResponseSchema>;
 
 export const holidaySchema = z.object({
   id: z.string().uuid(),

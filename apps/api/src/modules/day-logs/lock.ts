@@ -89,11 +89,36 @@ export async function lockEntryDay(
 /** An approver's lock: the day of ANYONE's entry in the company, FOR UPDATE,
  *  with the caller's access and the person (one statement). Header null =
  *  no such live entry. Whether the caller may approve is judged after. */
-export async function lockAnyEntryDay(
+export const lockAnyEntryDay = (
   tx: DbTransaction,
   user: AuthContext,
   companyId: string,
   entryId: string,
+): Promise<Locked & { target: DayUser | null }> =>
+  lockLineDay(tx, user, companyId, sql`${entryId}::uuid`);
+
+/** ADR-255 — the same lock, found from a reply: the day of the reply's line
+ *  (header null = no such live reply / line). */
+export const lockReplyDay = (
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  replyId: string,
+): Promise<Locked & { target: DayUser | null }> =>
+  lockLineDay(
+    tx,
+    user,
+    companyId,
+    sql`(SELECT rp.line_id FROM public.daily_report_line_replies rp
+         WHERE rp.id = ${replyId}::uuid AND rp.company_id = ${companyId}::uuid
+           AND rp.deleted_at IS NULL)`,
+  );
+
+async function lockLineDay(
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  lineId: SQL,
 ): Promise<Locked & { target: DayUser | null }> {
   const rows = (await tx.execute(sql`
     SELECT c.cfg, ${accessJson(user.id, companyId)} AS access, h.*,
@@ -105,7 +130,7 @@ export async function lockAnyEntryDay(
       FROM public.daily_reports dr
       WHERE dr.id = (
           SELECT l.daily_report_id FROM public.daily_report_lines l
-          WHERE l.id = ${entryId}::uuid AND l.company_id = ${companyId}::uuid
+          WHERE l.id = ${lineId} AND l.company_id = ${companyId}::uuid
             AND l.deleted_at IS NULL)
         AND dr.company_id = ${companyId}::uuid AND dr.deleted_at IS NULL
       FOR UPDATE OF dr

@@ -109,7 +109,8 @@ WITH ev AS (
   WHERE l.deleted_at IS NULL AND l.from_time IS NOT NULL AND l.to_time IS NOT NULL
 ), m AS (
   SELECT ev.ev_id, ev.ts, lab.line_id, lab.company_id, lab.updated_by, lab.description AS new_text,
-         substr(left(ev.body, length(ev.body) - length(' to ' || lab.new_label)), 19) AS old_text
+         regexp_replace(left(ev.body, length(ev.body) - length(' to ' || lab.new_label)),
+           '^[0-9]{2}:[0-9]{2} [AP]M–([0-9]{2}:[0-9]{2} [AP]M|Open) ', '') AS old_text
   FROM ev JOIN lab ON lab.day_id = ev.day_id
    AND right(ev.body, length(' to ' || lab.new_label)) = ' to ' || lab.new_label
 ), one AS (

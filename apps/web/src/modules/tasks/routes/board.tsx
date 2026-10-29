@@ -12,9 +12,8 @@
 // The All Tasks tab renders ONLY when the server says the caller is admin
 // (`isAdmin` on the list response) — never merely disabled — and the server
 // refuses view=all for anyone else regardless.
-// Day Log tabs (`?view=daylog|team|person|approvals`, `?date=`, `?user=`, `?from=`,
-// `?to=`): see
-// modules/day-logs/components/board-day-log.tsx.
+// Day Log tabs (`?view=daylog|team|person|approvals`, `?date=`, `?user=`, `?line=`):
+// see modules/day-logs/components/board-day-log.tsx.
 
 import type {
   ListTasksQuery,
@@ -150,8 +149,7 @@ function TaskBoardPage(): React.JSX.Element {
         task: undefined,
         date: undefined,
         user: undefined,
-        from: undefined,
-        to: undefined,
+        line: undefined,
         page: 1,
       }),
       replace: true,
@@ -336,8 +334,7 @@ function TaskBoardPage(): React.JSX.Element {
             goDay({
               view: isDayLogTab(t) ? t : 'daylog',
               user: undefined,
-              from: undefined,
-              to: undefined,
+              line: undefined,
             })
           }
         />
@@ -348,8 +345,7 @@ function TaskBoardPage(): React.JSX.Element {
           tab={dayTab}
           date={routeSearch.date}
           user={routeSearch.user}
-          from={routeSearch.from}
-          to={routeSearch.to}
+          line={routeSearch.line}
           onNav={goDay}
         />
       ) : (

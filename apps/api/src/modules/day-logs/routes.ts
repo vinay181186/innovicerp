@@ -8,11 +8,14 @@ import {
   dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
   dayLogApproveInputSchema,
+  dayLogPersonDayQuerySchema,
   dayLogRejectInputSchema,
+  editDayLogReplyInputSchema,
   holidayInputSchema,
-  personDayLogQuerySchema,
+  sendDayLogReplyInputSchema,
   teamDayLogQuerySchema,
   updateDayLogEntryInputSchema,
+  updateDayLogWorkInputSchema,
 } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -36,9 +39,10 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     return service.getTeam(teamDayLogQuerySchema.parse(req.query), req.user);
   });
 
-  app.get('/day-logs/person', async (req) => {
+  // ADR-255 — Team Day Logs › a person, one day (revisions for a Super Admin).
+  app.get('/day-logs/person-day', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.getPerson(personDayLogQuerySchema.parse(req.query), req.user);
+    return service.getPersonDay(dayLogPersonDayQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/day-logs/order-options', async (req) => {
@@ -61,6 +65,38 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.updateEntry(id, updateDayLogEntryInputSchema.parse(req.body), req.user);
+  });
+
+  // ADR-255 — Working On is edited directly by the owner (no approval).
+  app.patch('/day-logs/entries/:id/work', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.updateWork(id, updateDayLogWorkInputSchema.parse(req.body), req.user);
+  });
+
+  // ADR-255 — Super Admin replies; the owner marks an entry's replies seen.
+  app.post('/day-logs/entries/:id/replies', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const result = await service.sendReply(
+      id,
+      sendDayLogReplyInputSchema.parse(req.body),
+      req.user,
+    );
+    reply.code(201);
+    return result;
+  });
+
+  app.patch('/day-logs/replies/:id', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.editReply(id, editDayLogReplyInputSchema.parse(req.body), req.user);
+  });
+
+  app.post('/day-logs/entries/:id/replies/seen', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.markRepliesSeen(id, req.user);
   });
 
   // A saved row is never removed: no DELETE, no Stop (owner 2026-10-27).

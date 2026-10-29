@@ -7177,6 +7177,93 @@ export const dailyReportLines = pgTable(
   ],
 ).enableRLS();
 
+// ─── Day Log: Working On revisions + Super Admin replies (0228, ADR-255) ──
+// Read and written by the API only (deny-all SELECT for client roles, not in
+// Realtime): the owner must never see that edits are kept.
+export const dailyReportLineTextRevisions = pgTable(
+  'daily_report_line_text_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    lineId: uuid('line_id')
+      .notNull()
+      .references(() => dailyReportLines.id),
+    // Text Rev 0 = first save, +1 per changed save.
+    textRevNo: integer('text_rev_no').notNull(),
+    description: text('description').notNull(),
+    savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('dl_text_revisions_rev_chk', sql`${t.textRevNo} >= 0`),
+    uniqueIndex('dl_text_revisions_line_rev_uq')
+      .on(t.lineId, t.textRevNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('dl_text_revisions_company_line_idx')
+      .on(t.companyId, t.lineId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('dl_text_revisions_no_client_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`false`,
+    }),
+  ],
+).enableRLS();
+
+export const dailyReportLineReplies = pgTable(
+  'daily_report_line_replies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    lineId: uuid('line_id')
+      .notNull()
+      .references(() => dailyReportLines.id),
+    body: text('body').notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    // When the entry's owner first opened it since it was sent / last edited.
+    seenAt: timestamp('seen_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // The author (a Super Admin).
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('dl_replies_body_chk', sql`length(btrim(${t.body})) > 0`),
+    index('dl_replies_company_line_idx')
+      .on(t.companyId, t.lineId, t.sentAt)
+      .where(sql`${t.deletedAt} is null`),
+    index('dl_replies_unseen_idx')
+      .on(t.companyId, t.lineId)
+      .where(sql`${t.seenAt} is null and ${t.deletedAt} is null`),
+    pgPolicy('dl_replies_no_client_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`false`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Day Log: break template + company holidays (migration 0222) ──────────
 // Each user's own breaks; copied into a day's break lines when the day is
 // opened (earlier days keep their snapshot).

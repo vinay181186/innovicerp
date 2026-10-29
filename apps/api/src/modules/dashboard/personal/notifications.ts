@@ -4,6 +4,9 @@
 // the matching home list uses (or the approvals inbox for approvals). Full
 // Access / role admin callers get none (owner decision).
 //
+// ADR-255 — plus Day Log replies (day-log-replies.ts): first, for every
+// caller, until the entry is opened; outside the window and the cap.
+//
 // The "seen" time is the caller's own user_ui_settings row; it only ever
 // moves forward (GREATEST in one statement) and never past the server's now.
 
@@ -18,6 +21,7 @@ import {
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../../db/with-user-context';
 import { type DashAccess, hasTick } from '../access';
+import { dayLogReplyNote, readDayLogReplies } from './day-log-replies';
 import { type ListCtx, listDef } from './lists';
 import { runList } from './list-query';
 import { addDays, codePart, entityHref, str } from './util';
@@ -366,8 +370,9 @@ export async function buildNotifications(
   approvals: ApprovalInboxResponse | null,
 ): Promise<{ items: DashNote[]; unseen: number; seenAt: string | null }> {
   const seenAt = await readSeenAt(tx, c.cid, me);
+  const replyNotes = (await readDayLogReplies(tx, c.cid, me)).map(dayLogReplyNote);
   const rules = rulesFor(a);
-  if (rules.length === 0) return { items: [], unseen: 0, seenAt };
+  if (rules.length === 0) return { items: replyNotes, unseen: replyNotes.length, seenAt };
 
   const toPendingSql = sql`COALESCE(a.changes @> ${RC_TO_PENDING_CHANGE}::jsonb, false)`;
   const pairs: SQL[] = rules.map((r) =>
@@ -429,7 +434,7 @@ export async function buildNotifications(
       oneDoc.add(k);
       return true;
     })
-    .slice(0, NOTE_MAX)
+    .slice(0, Math.max(0, NOTE_MAX - replyNotes.length))
     .map(({ ev, rule, key }) => ({
       key,
       ts: ev.ts.toISOString(),
@@ -442,7 +447,8 @@ export async function buildNotifications(
       ],
       unseen: Number.isNaN(seenMs) || ev.ts.getTime() > seenMs,
     }));
-  return { items, unseen: items.filter((n) => n.unseen).length, seenAt };
+  const unseen = replyNotes.length + items.filter((n) => n.unseen).length;
+  return { items: [...replyNotes, ...items], unseen, seenAt };
 }
 
 // ── Seen time ──

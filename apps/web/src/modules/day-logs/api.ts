@@ -8,15 +8,19 @@
 import type {
   AddDayLogEntriesInput,
   DayLogAccess,
+  DayLogAdminReply,
   DayLogApprovalsResponse,
   DayLogDetail,
   DayLogOrderOption,
+  DayLogPersonDay,
+  EditDayLogReplyInput,
   Holiday,
   HolidayInput,
   DayLogRejectInput,
-  PersonDayLogResponse,
+  SendDayLogReplyInput,
   TeamDayLogResponse,
   UpdateDayLogEntryInput,
+  UpdateDayLogWorkInput,
 } from '@innovic/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -33,8 +37,9 @@ export const dayLogKeys = {
   access: () => [...dayLogKeys.all, 'access'] as const,
   day: (q: DayQuery) => [...dayLogKeys.all, 'day', q.date ?? '', q.userId ?? ''] as const,
   team: (date: string) => [...dayLogKeys.all, 'team', date] as const,
-  person: (userId: string, from: string, to: string) =>
-    [...dayLogKeys.all, 'person', userId, from, to] as const,
+  /** Team Day Logs › a person, one day (ADR-255). */
+  personDay: (userId: string, date: string) =>
+    [...dayLogKeys.all, 'person-day', userId, date] as const,
   orders: (search: string) => [...dayLogKeys.all, 'order-options', search] as const,
   holidays: () => [...dayLogKeys.all, 'holidays'] as const,
   approvals: () => [...dayLogKeys.all, 'approvals'] as const,
@@ -84,10 +89,12 @@ export function useTeamDayLogs(date: string | undefined, enabled = true) {
   });
 }
 
-export function usePersonDayLogs(userId: string, from: string, to: string) {
-  return useQuery<PersonDayLogResponse>({
-    queryKey: dayLogKeys.person(userId, from, to),
-    queryFn: () => apiFetch<PersonDayLogResponse>(`/day-logs/person${qs({ userId, from, to })}`),
+/** Team Day Logs › a person, one day: entries, and for a Super Admin every
+ *  Working On revision and the replies (ADR-255). No date = the server's today. */
+export function usePersonDay(userId: string, date: string | undefined) {
+  return useQuery<DayLogPersonDay>({
+    queryKey: dayLogKeys.personDay(userId, date ?? ''),
+    queryFn: () => apiFetch<DayLogPersonDay>(`/day-logs/person-day${qs({ userId, date })}`),
     refetchOnWindowFocus: true,
     placeholderData: keepPreviousData,
   });
@@ -142,8 +149,10 @@ function useDayWrite<TInput>(run: (input: TInput) => Promise<DayLogDetail>, q: D
         queryKey: dayLogKeys.all,
         predicate: (x) => !shown || JSON.stringify(x.queryKey) !== own,
       });
-      // The home "Daily report" widget counts today's finished entries.
+      // The home "Daily report" widget counts today's finished entries; the
+      // home 🔔 lists Day Log replies (ADR-255).
       void qc.invalidateQueries({ queryKey: dashboardKeys.widgets() });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     },
   });
 }
@@ -166,14 +175,84 @@ export function useAddDayLogEntries(q: DayQuery, saveKey?: SaveKey) {
   );
 }
 
-/** Edit a saved entry — staged for approval (the row shows "Edit pending");
- *  carries the updatedAt it was loaded with (§20.4). */
+/** ADR-255 — the owner's DIRECT Working On edit (no approval); carries the
+ *  entry's updatedAt (§20.4) and the form's Idempotency-Key (ADR-172). */
+export function useUpdateDayLogWork(q: DayQuery, saveKey?: SaveKey) {
+  return useDayWrite<{ id: string } & UpdateDayLogWorkInput>(
+    ({ id, ...input }) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<DayLogDetail>(`/day-logs/entries/${id}/work`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    q,
+  );
+}
+
+/** Edit Start / Stop / SO of a saved entry — staged for approval (the row
+ *  shows ⏳); carries the updatedAt it was loaded with (§20.4). The server
+ *  ignores `description` here (ADR-255) — send the current text. */
 export function useUpdateDayLogEntry(q: DayQuery) {
   return useDayWrite<{ id: string } & UpdateDayLogEntryInput>(
     ({ id, ...input }) =>
       apiFetch<DayLogDetail>(`/day-logs/entries/${id}`, { method: 'PATCH', json: input }),
     q,
   );
+}
+
+/** Refresh every Day Log screen and the home 🔔 after a reply write. */
+function useAfterReply(): () => void {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: dayLogKeys.all });
+    void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+  };
+}
+
+/** ADR-255 — the owner opened an entry with unread replies: they are seen
+ *  (the row's 🔔 goes, the Super Admin sees "Seen by"). Idempotent. */
+export function useMarkDayLogRepliesSeen() {
+  const after = useAfterReply();
+  return useMutation<{ seen: number }, Error, string>({
+    mutationFn: (entryId) =>
+      apiFetch<{ seen: number }>(`/day-logs/entries/${entryId}/replies/seen`, { method: 'POST' }),
+    onSuccess: after,
+  });
+}
+
+/** ADR-255 — Super Admin replies on an entry; one click = one reply (saveKey). */
+export function useSendDayLogReply(saveKey?: SaveKey) {
+  const after = useAfterReply();
+  return useMutation<DayLogAdminReply, Error, { entryId: string } & SendDayLogReplyInput>({
+    mutationFn: ({ entryId, ...input }) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<DayLogAdminReply>(`/day-logs/entries/${entryId}/replies`, {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: after,
+  });
+}
+
+/** ADR-255 — Super Admin edits a reply (§20.4 updatedAt; the owner sees it
+ *  as unread again). */
+export function useEditDayLogReply(saveKey?: SaveKey) {
+  const after = useAfterReply();
+  return useMutation<DayLogAdminReply, Error, { replyId: string } & EditDayLogReplyInput>({
+    mutationFn: ({ replyId, ...input }) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<DayLogAdminReply>(`/day-logs/replies/${replyId}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: after,
+  });
 }
 
 /** Approve one staged edit (the new values apply). */
