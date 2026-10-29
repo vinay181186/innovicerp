@@ -277,8 +277,10 @@ export type AddDayLogEntryInput = z.infer<typeof addDayLogEntryInputSchema>;
 export const updateDayLogEntryInputSchema = entryRules(
   z.object({
     ...entryFields,
-    /** §20.4 — the entry's updatedAt as loaded. An edit of a SAVED row is
-     *  not applied: it is staged for approval (pending). */
+    /** §20.4 — the entry's updatedAt as loaded. A Start / Stop / SO edit of
+     *  a SAVED row is not applied: it is staged for approval (pending).
+     *  ADR-255: `description` is IGNORED here (the screen sends the current
+     *  text) — Working On changes only through updateDayLogWorkInputSchema. */
     updatedAt: z.string(),
   }),
 );
@@ -357,6 +359,21 @@ export const dayLogOrderOptionSchema = dayLogOrderSchema.extend({
 });
 export type DayLogOrderOption = z.infer<typeof dayLogOrderOptionSchema>;
 
+/** ADR-255 — a Super Admin reply as the entry's OWNER sees it (My Day Log).
+ *  No revision fact ever travels to the owner. day-log-text.ts builds the
+ *  Super Admin's view of a reply on top of this. */
+export const dayLogOwnReplySchema = z.object({
+  id: z.string().uuid(),
+  body: z.string(),
+  authorName: z.string(),
+  sentAt: z.string(),
+  /** null = never edited. */
+  editedAt: z.string().nullable(),
+  /** Not opened since it was sent / last edited — drives the row's 🔔. */
+  unread: z.boolean(),
+});
+export type DayLogOwnReply = z.infer<typeof dayLogOwnReplySchema>;
+
 export const dayLogEntrySchema = z.object({
   id: z.string().uuid(),
   kind: z.enum(DAY_LOG_ENTRY_KINDS),
@@ -370,7 +387,10 @@ export const dayLogEntrySchema = z.object({
   remarks: z.string().nullable(),
   late: z.boolean(),
   updatedAt: z.string(),
-  /** An edit waiting for approval (the row still shows its old values). */
+  /** ADR-255 — Super Admin replies, oldest first (owner's view). */
+  replies: z.array(dayLogOwnReplySchema),
+  /** An edit of Start / Stop / SO waiting for approval (the row still shows
+   *  its old values). Working On is edited directly (ADR-255), never here. */
   pending: z
     .object({
       fromTime: z.string(),
