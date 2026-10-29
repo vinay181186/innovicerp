@@ -29,6 +29,22 @@ export const LIVE_TABLES = [
   // Day Log (0222) — every entry write touches its day row, so the day row
   // alone refreshes My Day Log and Team Day Logs.
   'daily_reports',
+  // 0227 (live-update standard, owner 2026-10-29). Already published by 0205
+  // for the record watch; now they refresh lists too.
+  'customer_dispatches',
+  'delivery_challans',
+  'nc_register',
+  // 0227 — newly published.
+  'qc_documents',
+  'ml_boms',
+  'ml_bom_lines',
+  'ml_plans',
+  'ml_plan_nodes',
+  'route_cards',
+  'route_card_ops',
+  // NOT live, on purpose: `tasks` (Realtime sends the whole row to every user
+  // of the company — private to-dos, ADR-254 — and ignores publication column
+  // lists, tested on TEST 2026-10-29). The Task Board polls instead.
 ] as const;
 
 export type LiveTable = (typeof LIVE_TABLES)[number];
