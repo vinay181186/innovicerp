@@ -203,6 +203,8 @@ export function useSoftDeleteNcRegister() {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      // OW-143: a deleted deviation NC changes the JWSO Customer RM status.
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
       qc.removeQueries({ queryKey: ncRegisterKeys.detail(id) });
     },
   });

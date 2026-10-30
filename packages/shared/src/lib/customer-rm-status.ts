@@ -70,12 +70,17 @@ export function customerRmGrnPendingQty(q: CustomerRmQty): number {
 
 /** The one word. The state that needs action comes first:
  *  Deviated → Inspection → Partial / Awaited → Accepted → Issuing → Issued. */
-export function customerRmStatus(q: CustomerRmQty, cancelled: boolean): CustomerRmStatus {
+export function customerRmStatus(
+  q: CustomerRmQty,
+  cancelled: boolean,
+  /** A JWSO passes the Σ of its lines' own GRN Pending (customerRmTotal). */
+  grnPendingQty: number = customerRmGrnPendingQty(q),
+): CustomerRmStatus {
   if (cancelled) return 'none';
   if (q.requiredQty === 0 && q.receivedQty === 0) return 'none';
   if (q.deviatedQty > 0) return 'deviated';
   if (q.qcPendingQty > 0) return 'inspection';
-  if (customerRmGrnPendingQty(q) > 0) {
+  if (grnPendingQty > 0) {
     return q.acceptedQty > 0 ? 'partial' : 'awaited';
   }
   if (q.inStoreQty > 0) return q.issuedQty > 0 ? 'issuing' : 'accepted';
@@ -107,4 +112,31 @@ export function sumCustomerRmQty(rows: readonly CustomerRmQty[]): CustomerRmQty 
     t.returnedQty += r.returnedQty;
   }
   return t;
+}
+
+/** What the API sends for one line: its quantities, GRN Pending and the word. */
+export interface CustomerRmFigures extends CustomerRmQty {
+  grnPendingQty: number;
+  status: CustomerRmStatus;
+}
+
+/** One JWSO line's figures. */
+export function customerRmLine(q: CustomerRmQty, cancelled: boolean): CustomerRmFigures {
+  return {
+    ...q,
+    grnPendingQty: customerRmGrnPendingQty(q),
+    status: customerRmStatus(q, cancelled),
+  };
+}
+
+/** A whole JWSO's figures from its lines: quantities summed, but GRN Pending
+ *  summed LINE BY LINE — one line's surplus never hides another line's
+ *  shortfall (code review 2026-10-30). */
+export function customerRmTotal(
+  lines: readonly CustomerRmQty[],
+  cancelled: boolean,
+): CustomerRmFigures {
+  const q = sumCustomerRmQty(lines);
+  const grnPendingQty = lines.reduce((a, l) => a + customerRmGrnPendingQty(l), 0);
+  return { ...q, grnPendingQty, status: customerRmStatus(q, cancelled, grnPendingQty) };
 }

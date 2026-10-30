@@ -17,12 +17,7 @@
 // GRN stamps its header's deleted_at, so the header join drops it.
 
 import { sql } from 'drizzle-orm';
-import {
-  type CustomerRm,
-  type CustomerRmQty,
-  customerRmGrnPendingQty,
-  customerRmStatus,
-} from '@innovic/shared';
+import type { CustomerRmQty } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { PENDING_QC_SQL } from '../party-grn/service';
 
@@ -46,7 +41,10 @@ export async function customerRmByJw(
   const rows = (await tx.execute(sql`
     WITH ln AS (
       SELECT l.id, l.job_work_order_id,
-             CASE WHEN l.rm_item_id IS NOT NULL OR l.party_material_id IS NOT NULL
+             -- A short-closed or cancelled line needs nothing more from the
+             -- customer (the Party GRN picker drops it too).
+             CASE WHEN (l.rm_item_id IS NOT NULL OR l.party_material_id IS NOT NULL)
+                       AND l.short_closed_at IS NULL AND l.status <> 'cancelled'
                   THEN l.order_qty ELSE 0 END AS required_qty
         FROM public.job_work_order_lines l
        WHERE l.company_id = ${companyId}::uuid
@@ -132,13 +130,4 @@ export async function customerRmByJw(
       },
     };
   });
-}
-
-/** Quantities + cancelled flag → the `customerRm` object the API sends. */
-export function toCustomerRm(qty: CustomerRmQty, cancelled: boolean): CustomerRm {
-  return {
-    ...qty,
-    grnPendingQty: customerRmGrnPendingQty(qty),
-    status: customerRmStatus(qty, cancelled),
-  };
 }

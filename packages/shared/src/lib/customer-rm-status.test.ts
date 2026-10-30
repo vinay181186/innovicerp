@@ -3,6 +3,7 @@ import {
   CUSTOMER_RM_STATUS_LABEL,
   customerRmGrnPendingQty,
   customerRmStatus,
+  customerRmTotal,
   sumCustomerRmQty,
   type CustomerRmQty,
 } from './customer-rm-status';
@@ -100,5 +101,15 @@ describe('customerRmStatus (OW-143)', () => {
     const total = sumCustomerRmQty([lineA, lineB]);
     expect(total.requiredQty).toBe(16);
     expect(customerRmStatus(total, false)).toBe('partial');
+  });
+
+  it("one line's surplus never hides another line's shortfall", () => {
+    // Line A needs nothing (old line) but holds 5 accepted; line B needs 5, has none.
+    const lineA = q({ requiredQty: 0, receivedQty: 5, acceptedQty: 5, inStoreQty: 5 });
+    const lineB = q({ requiredQty: 5 });
+    expect(customerRmGrnPendingQty(sumCustomerRmQty([lineA, lineB]))).toBe(0); // the trap
+    const total = customerRmTotal([lineA, lineB], false);
+    expect(total.grnPendingQty).toBe(5);
+    expect(total.status).toBe('partial');
   });
 });

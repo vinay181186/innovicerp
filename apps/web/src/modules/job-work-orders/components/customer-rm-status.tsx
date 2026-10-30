@@ -30,13 +30,13 @@ function breakdown(v: CustomerRm): string {
     `Received (Party GRN): ${v.receivedQty}`,
     RULE,
     `GRN Pending: ${v.grnPendingQty}`,
-    `QC Pending: ${v.qcPendingQty}`,
-    `Deviated – NC Open: ${v.deviatedQty}`,
+    `Waiting QC: ${v.qcPendingQty}`,
+    `Deviated (NC open): ${v.deviatedQty}`,
     `In Store: ${v.inStoreQty}`,
     `Issued to JC: ${v.issuedQty}`,
     `Returned to Customer: ${v.returnedQty}`,
     RULE,
-    `Accepted at QC (total): ${v.acceptedQty}`,
+    `Accepted: ${v.acceptedQty}`,
   ].join('\n');
 }
 
