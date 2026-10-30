@@ -24,5 +24,6 @@ export * from './StatStrip';
 export * from './Timeline';
 // ⋯ row-action menu (owner-approved spec 2026-10-01).
 export * from './RowMenu';
+export * from './HoverCard';
 // Shared ⋯ link renderer that splits `to?query` into path + search.
 export * from './row-menu-link';
