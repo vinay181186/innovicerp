@@ -10,6 +10,9 @@
 // ADR-255: an edit here is Start / Stop / SO only — approving never changes
 // Working On (that is edited directly, text.ts) and no activity text here
 // carries it.
+// ADR-256 (2026-10-30): new edits save directly (entries.ts); only an edit
+// staged before that still waits here. Approving it adds an Entry Rev (the
+// whole line after it, entry-write.ts revisionAfter); rejecting adds none.
 
 import {
   type DayLogApprovalRow,
@@ -36,7 +39,7 @@ import {
   viewerOf,
 } from './access';
 import { type DayHeader, type DayLine, ts } from './day';
-import { log, returning, spanLabel, writeLines } from './entry-write';
+import { REV_COLS, log, returning, revisionAfter, spanLabel, writeLines } from './entry-write';
 import { dayTx, lockAnyEntryDay, requireHeader } from './lock';
 import { type DayLogClock, istClock } from './rules';
 import { readSnapshot } from './snapshot';
@@ -224,7 +227,14 @@ export async function approveEntry(
           pending_at = NULL, pending_by = NULL, reject_reason = NULL,
           updated_at = now(), updated_by = ${user.id}::uuid
       WHERE ${sameRequest(d)}
-      RETURNING ${returning(d.h)}`,
+      RETURNING ${returning(d.h)}, ${REV_COLS}`,
+      // ADR-256 — the approved values are an Entry Rev too (same statement).
+      revisionAfter(user.id, {
+        description: d.self.description,
+        fromTime: d.self.fromTime,
+        toTime: d.self.toTime,
+        order: d.self.order,
+      }),
     );
     if (!w) throw new ConflictError(DECIDED);
     await log(d.tx, d.companyId, user, d.h, 'EDIT_APPROVED', `approved the change of ${spans(d)}`);

@@ -1,4 +1,7 @@
 // Day Log — EDIT APPROVAL (0225, owner 2026-10-27), TEST database.
+// ADR-256 (2026-10-30): a new edit saves directly (edit-cases.ts); only an
+// edit staged BEFORE that still waits here, so these cases stage it straight
+// in the table (stagePending) and check it is still decided correctly.
 // Registered by service.test.ts (approvalCases()) so it shares that file's
 // fixture and runs in the same file, one test after another.
 import { describe, expect, it } from 'vitest';
@@ -14,18 +17,17 @@ import {
   owner,
   ownerAsAdmin,
   sameDeptAdmin,
-  times,
+  stagePending,
 } from './test-fixture';
 
 const C = at(MON, '17:00');
 
-/** One saved row 09:00–10:00 and its edit request to 09:00–10:30. It also
- *  sends Working On "longer" — IGNORED on this path (ADR-255). */
+/** One saved row 09:00–10:00 and an old-style waiting edit to 09:00–10:30. */
 async function requested() {
   const d = await add(MON, C, { startTime: '09:00', stopTime: '10:00' });
   const e = d.entries[0]!;
-  const after = await edit(e, C, { stopTime: '10:30', description: 'longer' });
-  return { e, after: after.entries[0]! };
+  const after = await stagePending(e, C, '10:30');
+  return { e, after };
 }
 
 const mine = async () =>
@@ -33,22 +35,14 @@ const mine = async () =>
 
 export function approvalCases(): void {
   describe('Day Log — edit approval', () => {
-    it('an edit goes pending; the live values do not change; the sent text is ignored', async () => {
+    it('an old waiting edit is listed; the live values are unchanged', async () => {
       const { after } = await requested();
       expect([after.fromTime, after.toTime, after.description]).toEqual([
         '09:00',
         '10:00',
         'test work',
       ]);
-      expect(after.pending).toMatchObject({
-        fromTime: '09:00',
-        toTime: '10:30',
-        description: 'test work', // ADR-255 — the live text, not "longer"
-        order: null,
-      });
-      const day = await service.getDay({ date: MON }, owner(), C);
-      expect(times(day)).toEqual([['09:00', '10:00']]);
-      expect(day.entries[0]!.pending?.toTime).toBe('10:30');
+      expect(after.pending).toMatchObject({ fromTime: '09:00', toTime: '10:30', order: null });
       const rows = await mine();
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
@@ -59,33 +53,17 @@ export function approvalCases(): void {
       });
     });
 
-    it('an edit of Working On alone is "Nothing changed" here (ADR-255)', async () => {
-      const d = await add(MON, C, { startTime: '09:00', stopTime: '10:00' });
-      await expect(edit(d.entries[0]!, C, { description: 'other text' })).rejects.toThrow(
-        'Nothing changed',
-      );
-    });
-
-    it('a second edit while one waits is a 409; a stale updatedAt is a 409', async () => {
+    it('a new edit while an old one waits is a 409; after rejecting, the old load is stale', async () => {
       const { e, after } = await requested();
       await expect(edit(after, C, { stopTime: '10:15' })).rejects.toThrow(
         'An edit is already waiting for approval',
       );
-      // Rejected → nothing waits; the ORIGINAL load (old updatedAt) is now stale.
       await service.rejectEntry(
         after.id,
         { requestedAt: after.pending!.requestedAt, reason: 'not right' },
         sameDeptAdmin(),
       );
       await expect(edit(e, C, { stopTime: '10:15' })).rejects.toBeInstanceOf(ConflictError);
-    });
-
-    it('the proposed values are checked like a new row (overlap with the others)', async () => {
-      await add(MON, C, { startTime: '09:00', stopTime: '10:00' });
-      const d = await add(MON, C, { startTime: '10:00', stopTime: '11:00' });
-      await expect(edit(d.entries[1]!, C, { startTime: '09:30' })).rejects.toThrow(
-        /^Overlaps 09:00 AM – 10:00 AM/,
-      );
     });
 
     it('a same-department L5 approves: the new times apply, the text does not; a second decision is a 409', async () => {
@@ -158,9 +136,10 @@ export function approvalCases(): void {
         null,
         'Stop was 10:00',
       ]);
+      // ADR-256 — the next edit saves directly and clears the reason.
       const again = await edit(row, C, { stopTime: '10:15' });
       expect(again.entries[0]!.rejectReason).toBeNull();
-      expect(again.entries[0]!.pending?.toTime).toBe('10:15');
+      expect([again.entries[0]!.toTime, again.entries[0]!.pending]).toEqual(['10:15', null]);
     });
 
     it('approval re-checks overlap against the rows saved since the request', async () => {

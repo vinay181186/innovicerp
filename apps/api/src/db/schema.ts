@@ -7177,11 +7177,11 @@ export const dailyReportLines = pgTable(
   ],
 ).enableRLS();
 
-// ─── Day Log: Working On revisions + Super Admin replies (0228, ADR-255) ──
+// ─── Day Log: entry revisions + Super Admin replies (0228, 0229, ADR-255/256)
 // Read and written by the API only (deny-all SELECT for client roles, not in
 // Realtime): the owner must never see that edits are kept.
-export const dailyReportLineTextRevisions = pgTable(
-  'daily_report_line_text_revisions',
+export const dailyReportLineRevisions = pgTable(
+  'daily_report_line_revisions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     companyId: uuid('company_id')
@@ -7190,9 +7190,18 @@ export const dailyReportLineTextRevisions = pgTable(
     lineId: uuid('line_id')
       .notNull()
       .references(() => dailyReportLines.id),
-    // Text Rev 0 = first save, +1 per changed save.
-    textRevNo: integer('text_rev_no').notNull(),
+    // Entry Rev 0 = first save, +1 per changed save of ANY field (0229, ADR-256).
+    entryRevNo: integer('entry_rev_no').notNull(),
+    // The whole entry as it was after that save.
     description: text('description').notNull(),
+    fromTime: time('from_time'),
+    toTime: time('to_time'),
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'set null',
+    }),
     savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -7206,14 +7215,24 @@ export const dailyReportLineTextRevisions = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
-    check('dl_text_revisions_rev_chk', sql`${t.textRevNo} >= 0`),
-    uniqueIndex('dl_text_revisions_line_rev_uq')
-      .on(t.lineId, t.textRevNo)
+    check('dl_revisions_rev_chk', sql`${t.entryRevNo} >= 0`),
+    check(
+      'dl_revisions_one_order_chk',
+      sql`${t.salesOrderId} IS NULL OR ${t.jobWorkOrderId} IS NULL`,
+    ),
+    index('dl_revisions_so_idx')
+      .on(t.salesOrderId)
+      .where(sql`${t.salesOrderId} IS NOT NULL`),
+    index('dl_revisions_jw_idx')
+      .on(t.jobWorkOrderId)
+      .where(sql`${t.jobWorkOrderId} IS NOT NULL`),
+    uniqueIndex('dl_revisions_line_rev_uq')
+      .on(t.lineId, t.entryRevNo)
       .where(sql`${t.deletedAt} is null`),
-    index('dl_text_revisions_company_line_idx')
+    index('dl_revisions_company_line_idx')
       .on(t.companyId, t.lineId)
       .where(sql`${t.deletedAt} is null`),
-    pgPolicy('dl_text_revisions_no_client_read', {
+    pgPolicy('dl_revisions_no_client_read', {
       for: 'select',
       to: 'authenticated',
       using: sql`false`,

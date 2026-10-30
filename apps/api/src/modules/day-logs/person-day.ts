@@ -1,15 +1,16 @@
 // Day Log — Team Day Logs › a person, ONE day (ADR-255): the entries with
-// Sr No by Start Time, and — for a Super Admin only — each entry's Working On
-// revisions and the replies. Anyone else allowed to see the person (canSeeUser)
-// gets the entries with no revision fact and no replies.
+// Sr No by Start Time, and — for a Super Admin only — each entry's Entry Revs
+// (ADR-256: the whole entry — Working On, Start, Stop, SO / JWSO — after every
+// changed save) and the replies. Anyone else allowed to see the person
+// (canSeeUser) gets the entries with no revision fact and no replies.
 // Statements: 1 (access, person, lines) + 1 more for a Super Admin (every
 // revision and reply of the day's lines, two json aggregates) — no per-entry query.
 
 import type {
   DayLogAdminReply,
+  DayLogEntryRevision,
   DayLogPersonDay,
   DayLogPersonDayQuery,
-  DayLogTextRevision,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { db } from '../../db/client';
@@ -28,7 +29,19 @@ import { ADMIN_REPLY_COLS, toAdminReply } from './replies';
 import { type DayLogClock, entryMinutes, istClock } from './rules';
 import { requireCompany } from './writes';
 
-type RevRow = DayLogTextRevision & { lineId: string };
+type RevRow = DayLogEntryRevision & { lineId: string };
+
+/** The SO / JWSO of a revision row (alias tr) as json, with its code — or null. */
+const REV_ORDER = sql.raw(`CASE
+  WHEN tr.sales_order_id IS NOT NULL THEN json_build_object(
+    'type', 'so', 'id', tr.sales_order_id::text,
+    'code', (SELECT s.code FROM public.sales_orders s
+             WHERE s.id = tr.sales_order_id AND s.company_id = tr.company_id))
+  WHEN tr.job_work_order_id IS NOT NULL THEN json_build_object(
+    'type', 'jwso', 'id', tr.job_work_order_id::text,
+    'code', (SELECT j.code FROM public.job_work_orders j
+             WHERE j.id = tr.job_work_order_id AND j.company_id = tr.company_id))
+  END`);
 
 /** Group json rows by their line id. */
 function byLine<T extends { lineId: string }>(rows: readonly T[]): Map<string, T[]> {
@@ -66,10 +79,13 @@ export async function getPersonDay(
     const [x] = (await db.execute(sql`
       SELECT
         (SELECT COALESCE(json_agg(json_build_object(
-                  'lineId', tr.line_id::text, 'textRevNo', tr.text_rev_no,
-                  'description', tr.description, 'savedAt', ${ts('tr.saved_at')})
-                ORDER BY tr.line_id, tr.text_rev_no DESC), '[]'::json)
-         FROM public.daily_report_line_text_revisions tr
+                  'lineId', tr.line_id::text, 'entryRevNo', tr.entry_rev_no,
+                  'description', tr.description,
+                  'fromTime', to_char(tr.from_time, 'HH24:MI'),
+                  'toTime', to_char(tr.to_time, 'HH24:MI'),
+                  'order', ${REV_ORDER}, 'savedAt', ${ts('tr.saved_at')})
+                ORDER BY tr.line_id, tr.entry_rev_no DESC), '[]'::json)
+         FROM public.daily_report_line_revisions tr
          WHERE tr.company_id = ${companyId}::uuid AND tr.deleted_at IS NULL
            AND tr.line_id = ANY(${sql.param(ids)}::uuid[])) AS revs,
         (SELECT COALESCE(json_agg(row_to_json(q) ORDER BY q.sent_at, q.id), '[]'::json) FROM (
@@ -107,11 +123,14 @@ export async function getPersonDay(
         minutes: entryMinutes(l.fromTime!, l.toTime, nowMin),
         order: l.order,
         description: l.description,
-        textRevNo: admin ? (top?.textRevNo ?? 0) : null,
-        textRevisedAt: admin && top && top.textRevNo > 0 ? top.savedAt : null,
-        revisions: lr.map(({ textRevNo, description, savedAt }) => ({
-          textRevNo,
+        entryRevNo: admin ? (top?.entryRevNo ?? 0) : null,
+        entryRevisedAt: admin && top && top.entryRevNo > 0 ? top.savedAt : null,
+        revisions: lr.map(({ entryRevNo, description, fromTime, toTime, order, savedAt }) => ({
+          entryRevNo,
           description,
+          fromTime,
+          toTime,
+          order,
           savedAt,
         })),
         replies: admin ? (replies.get(l.id) ?? []).map((q) => q.reply) : [],

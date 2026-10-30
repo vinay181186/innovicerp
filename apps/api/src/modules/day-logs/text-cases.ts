@@ -40,32 +40,32 @@ const personDay = (as: Parameters<typeof service.getPersonDay>[1]) =>
 
 export function textCases(): void {
   describe('Day Log — Working On direct edit (ADR-255)', () => {
-    it('a new entry has Text Rev 0; the sheet batch too', async () => {
+    it('a new entry has Entry Rev 0; the sheet batch too', async () => {
       const e = await saved();
-      expect(await revisionsOf(e.id)).toEqual([{ text_rev_no: 0, description: 'test work' }]);
+      expect(await revisionsOf(e.id)).toEqual([{ entry_rev_no: 0, description: 'test work' }]);
       const d = await service.addEntries(
         { date: MON, rows: [{ startTime: '11:00', stopTime: '12:00', description: 'batch row' }] },
         owner(),
         C,
       );
       const b = d.entries.find((x) => x.description === 'batch row')!;
-      expect(await revisionsOf(b.id)).toEqual([{ text_rev_no: 0, description: 'batch row' }]);
+      expect(await revisionsOf(b.id)).toEqual([{ entry_rev_no: 0, description: 'batch row' }]);
     });
 
-    it('a direct edit changes the text at once, keeps Rev 1, writes no activity', async () => {
+    it('a direct edit changes the text at once, keeps Entry Rev 1, writes no activity', async () => {
       const e = await saved();
       const marker = `dl-text-${Date.now()}`;
       const d = await work(e, C, marker);
       const row = d.entries[0]!;
       expect([row.description, row.pending]).toEqual([marker, null]);
       expect(await revisionsOf(e.id)).toEqual([
-        { text_rev_no: 0, description: 'test work' },
-        { text_rev_no: 1, description: marker },
+        { entry_rev_no: 0, description: 'test work' },
+        { entry_rev_no: 1, description: marker },
       ]);
       expect(await activityWith(marker)).toBe(0);
       // A second changed save is Rev 2.
       await work(row, C, `${marker}-2`);
-      expect((await revisionsOf(e.id)).map((r) => r.text_rev_no)).toEqual([0, 1, 2]);
+      expect((await revisionsOf(e.id)).map((r) => r.entry_rev_no)).toEqual([0, 1, 2]);
     });
 
     it('the same text is "Nothing changed"; a stale updatedAt is a 409', async () => {
@@ -73,7 +73,7 @@ export function textCases(): void {
       await expect(work(e, C, '  test work ')).rejects.toThrow('Nothing changed');
       await work(e, C, 'first change');
       await expect(work(e, C, 'second change')).rejects.toBeInstanceOf(ConflictError);
-      expect((await revisionsOf(e.id)).map((r) => r.text_rev_no)).toEqual([0, 1]);
+      expect((await revisionsOf(e.id)).map((r) => r.entry_rev_no)).toEqual([0, 1]);
     });
 
     it('two direct edits at once — exactly one wins; revisions 0 and 1 only', async () => {
@@ -82,7 +82,7 @@ export function textCases(): void {
       expect(res.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       const lost = res.find((r) => r.status === 'rejected') as PromiseRejectedResult;
       expect(lost.reason).toBeInstanceOf(ConflictError);
-      expect((await revisionsOf(e.id)).map((r) => r.text_rev_no)).toEqual([0, 1]);
+      expect((await revisionsOf(e.id)).map((r) => r.entry_rev_no)).toEqual([0, 1]);
     });
 
     it('an old Others (leave) row cannot be text-edited', async () => {
@@ -92,7 +92,7 @@ export function textCases(): void {
       );
       const row = (await service.getDay({ date: MON }, owner(), C)).entries[0]!;
       await expect(work(row, C, 'new text')).rejects.toThrow('This row cannot be edited');
-      expect((await revisionsOf(e.id)).map((r) => r.text_rev_no)).toEqual([0]);
+      expect((await revisionsOf(e.id)).map((r) => r.entry_rev_no)).toEqual([0]);
     });
 
     it("someone else's entry cannot be text-edited", async () => {
@@ -117,7 +117,7 @@ export function textCases(): void {
         editedAt: null,
       });
       const keys = Object.keys(row).concat(Object.keys(row.replies[0]!));
-      for (const k of ['textRevNo', 'textRevisedAt', 'revisions', 'seenAt']) {
+      for (const k of ['entryRevNo', 'entryRevisedAt', 'revisions', 'seenAt']) {
         expect(keys).not.toContain(k);
       }
     });
@@ -139,9 +139,9 @@ export function textCases(): void {
       const s = await personDay(superAdmin());
       expect(s.isSuperAdmin).toBe(true);
       const se = s.entries[0]!;
-      expect([se.srNo, se.textRevNo, se.minutes]).toEqual([1, 1, 60]);
-      expect(se.textRevisedAt).not.toBeNull();
-      expect(se.revisions.map((r) => [r.textRevNo, r.description])).toEqual([
+      expect([se.srNo, se.entryRevNo, se.minutes]).toEqual([1, 1, 60]);
+      expect(se.entryRevisedAt).not.toBeNull();
+      expect(se.revisions.map((r) => [r.entryRevNo, r.description])).toEqual([
         [1, 'v1'],
         [0, 'test work'],
       ]);
@@ -149,8 +149,8 @@ export function textCases(): void {
       const l = await personDay(sameDeptAdmin());
       expect(l.isSuperAdmin).toBe(false);
       expect(l.entries[0]).toMatchObject({
-        textRevNo: null,
-        textRevisedAt: null,
+        entryRevNo: null,
+        entryRevisedAt: null,
         revisions: [],
         replies: [],
         description: 'v1',

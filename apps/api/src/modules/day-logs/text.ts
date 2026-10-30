@@ -1,13 +1,14 @@
 // Day Log — Working On edited DIRECTLY by the entry's owner (ADR-255, owner
 // 2026-10-29). No approval: the text changes at once, and every changed save
-// keeps a revision (daily_report_line_text_revisions — Text Rev 0 = first
-// save, +1 per changed save). The owner is never told revisions exist, and
+// adds an Entry Rev (daily_report_line_revisions — the whole line after the
+// save; ADR-256: one history for every field, entry-write.ts revisionAfter).
+// The owner is never told revisions exist, and
 // NOTHING about this edit is written to activity_log (readable by every user).
 // Also here: the owner marking an entry's replies seen.
 //
 // §20: the day header lock (lockEntryDay) serialises every write on the day,
-// so "next revision number" is read and written under it in ONE statement;
-// the unique (line_id, text_rev_no) index is the backstop. The text UPDATE is
+// so "next Entry Rev number" is read and written under it in ONE statement;
+// the unique (line_id, entry_rev_no) index is the backstop. The text UPDATE is
 // conditional on the updatedAt the screen loaded (§20.4).
 
 import type { DayLogDetail, UpdateDayLogWorkInput } from '@innovic/shared';
@@ -15,31 +16,11 @@ import { sql } from 'drizzle-orm';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { assertCanWrite, resolveAccess, viewerOf } from './access';
-import { REV_COLS, returning, writeLines } from './entry-write';
+import { REV_COLS, returning, revisionAfter, writeLines } from './entry-write';
 import { dayTx, lockEntryDay, requireHeader } from './lock';
 import { type DayLogClock, istClock } from './rules';
 import { readSnapshot } from './snapshot';
 import { guardOwnerWrite, ownerDetailAfter, requireCompany, staleEntryError } from './writes';
-
-/**
- * The revisions one text save adds, reading `w` (the updated line):
- * normally Text Rev max+1 = the new text; on a line that has NO revision yet
- * (should not happen after 0228, kept as a guard) first Rev 0 = the OLD text,
- * saved when the line was, then Rev 1 = the new text.
- */
-const revisionsAfter = (oldText: string, newText: string, userId: string) => sql`
-  INSERT INTO public.daily_report_line_text_revisions
-    (company_id, line_id, text_rev_no, description, saved_at, created_by, updated_by)
-  SELECT w.company_id, w.id::uuid, x.n, x.d, x.s, ${userId}::uuid, ${userId}::uuid
-  FROM w
-  CROSS JOIN LATERAL (
-    SELECT COALESCE(MAX(r.text_rev_no), -1) AS m
-    FROM public.daily_report_line_text_revisions r
-    WHERE r.line_id = w.id::uuid AND r.deleted_at IS NULL) mx
-  CROSS JOIN LATERAL (VALUES
-    (0, ${oldText}::text, w.created_at, mx.m = -1),
-    (GREATEST(mx.m, 0) + 1, ${newText}::text, now(), true)) x(n, d, s, keep)
-  WHERE x.keep`;
 
 /** PATCH /day-logs/entries/:id/work — the owner's direct Working On edit. */
 export async function updateWork(
@@ -84,7 +65,12 @@ export async function updateWork(
       WHERE id = ${entryId}::uuid AND deleted_at IS NULL
         AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${input.updatedAt}::timestamptz)
       RETURNING ${returning(h)}, ${REV_COLS}`,
-      revisionsAfter(self.description, text, user.id),
+      revisionAfter(user.id, {
+        description: self.description,
+        fromTime: self.fromTime,
+        toTime: self.toTime,
+        order: self.order,
+      }),
     );
     if (!w) throw new ConflictError('This entry was changed — reload and redo your change');
     // No activity_log row (ADR-255).

@@ -191,9 +191,9 @@ export function useUpdateDayLogWork(q: DayQuery, saveKey?: SaveKey) {
   );
 }
 
-/** Edit Start / Stop / SO of a saved entry — staged for approval (the row
- *  shows ⏳); carries the updatedAt it was loaded with (§20.4). The server
- *  ignores `description` here (ADR-255) — send the current text. */
+/** ADR-256 — edit Start / Stop / SO of a saved entry, saved DIRECTLY (no
+ *  approval; a Super Admin sees the change on Team Day Logs); carries the
+ *  updatedAt it was loaded with (§20.4). The server ignores `description` here (ADR-255) — send the current text. */
 export function useUpdateDayLogEntry(q: DayQuery) {
   return useDayWrite<{ id: string } & UpdateDayLogEntryInput>(
     ({ id, ...input }) =>

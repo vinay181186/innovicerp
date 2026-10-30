@@ -1,7 +1,8 @@
 // Day Log — what the entry writes share: one row's fields checked and
 // resolved (prepare), the line write + header bump as ONE statement
-// (writeLines) and the activity row. ADR-255: a new line's Text Rev 0 is
-// written in that same statement (REV0_AFTER).
+// (writeLines) and the activity row. ADR-255/256: every save that changes a
+// line adds its Entry Rev — the whole line after the save — in that same
+// statement, through the ONE writer here (revisionAfter).
 
 import { type DayLogOrder, type DayLogOrderType, fmt12 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
@@ -87,7 +88,7 @@ export const label = (r: {
 }): string => `${fmt12(r.fromTime)}–${r.toTime ? fmt12(r.toTime) : 'Open'} ${r.description}`;
 
 /** ADR-255 — Start–Stop and the SO / JWSO of a row, WITHOUT its Working On:
- *  the approval path's activity text (activity_log is readable by every user,
+ *  the edit / approval activity text (activity_log is readable by every user,
  *  so no Working On edit may be recorded there). */
 export const spanLabel = (
   r: { fromTime: string; toTime: string | null },
@@ -100,7 +101,7 @@ export async function log(
   companyId: string,
   user: AuthContext,
   h: DayHeader,
-  action: 'CREATE' | 'EDIT_REQUEST' | 'EDIT_APPROVED' | 'EDIT_REJECTED',
+  action: 'CREATE' | 'EDIT' | 'EDIT_APPROVED' | 'EDIT_REJECTED',
   detail: string,
 ): Promise<void> {
   await emitActivityLog(
@@ -129,7 +130,7 @@ export interface Written {
  * ONE statement: `change` (an INSERT / UPDATE … RETURNING ${RETURNING}) and
  * the header bump that tells every screen (daily_reports is in Realtime).
  * `after` is an optional further write reading `w` (the changed lines) —
- * the text revisions (ADR-255). A change that hits 0 rows returns [] — the
+ * the Entry Rev (revisionAfter, ADR-255/256). A change that hits 0 rows returns [] — the
  * caller throws, and the whole transaction (bump included) rolls back.
  */
 export async function writeLines(
@@ -183,19 +184,55 @@ export const lineOf = (r: Row, w: Written, reportId: string): DayLine => ({
   rejectReason: null,
 });
 
-/** The RETURNING a revision write (REV0_AFTER / text.ts) reads from `w`. */
-export const REV_COLS = sql`company_id, created_at, created_by`;
+/** The RETURNING the revision writer (revisionAfter) reads from `w`: the
+ *  line after the save. Every line write that adds an Entry Rev ends with it. */
+export const REV_COLS = sql`company_id, created_at, description, from_time, to_time,
+  sales_order_id, job_work_order_id`;
 
-/** ADR-255 — Text Rev 0 of every line `w` just inserted (insertSql), in the
- *  same statement: the first saved Working On, saved when the line was. */
-export const REV0_AFTER = sql`
-  INSERT INTO public.daily_report_line_text_revisions
-    (company_id, line_id, text_rev_no, description, saved_at, created_by, updated_by)
-  SELECT w.company_id, w.id::uuid, 0, w.description, w.created_at, w.created_by, w.created_by
-  FROM w`;
+/** A line's values before a save (revisionAfter's "no Entry Rev yet" guard). */
+export interface RevSnapshot {
+  description: string;
+  fromTime: string | null;
+  toTime: string | null;
+  order: DayLogOrder | null;
+}
 
-/** Multi-row INSERT of new lines from line_no `first` on — pass REV0_AFTER
- *  to writeLines with it (its RETURNING carries what Rev 0 needs). */
+/**
+ * ADR-256 — the ONE Entry Rev writer (new row, Working On edit, Start / Stop /
+ * SO edit, approval of an old waiting edit). For every line `w` just wrote
+ * (RETURNING ${REV_COLS}): Entry Rev max+1 = the whole line after the save
+ * (a new line has none yet → Rev 0). `old` = the line before an EDIT: on a
+ * line with no Entry Rev at all (should not happen after 0228, kept as a
+ * guard) Rev 0 = those old values, saved when the line was, then Rev 1.
+ * Runs under the day header lock; the unique (line_id, entry_rev_no) index
+ * is the backstop.
+ */
+export function revisionAfter(userId: string, old?: RevSnapshot): SQL {
+  const first = old
+    ? sql`(0, ${old.description}::text, ${old.fromTime}::time, ${old.toTime}::time,
+        ${old.order?.type === 'so' ? old.order.id : null}::uuid,
+        ${old.order?.type === 'jwso' ? old.order.id : null}::uuid, w.created_at, mx.m = -1),`
+    : sql``;
+  const next = old ? sql`GREATEST(mx.m, 0) + 1` : sql`mx.m + 1`;
+  return sql`
+  INSERT INTO public.daily_report_line_revisions
+    (company_id, line_id, entry_rev_no, description, from_time, to_time, sales_order_id,
+     job_work_order_id, saved_at, created_by, updated_by)
+  SELECT w.company_id, w.id::uuid, x.n, x.d, x.f, x.t, x.so, x.jw, x.s, ${userId}::uuid, ${userId}::uuid
+  FROM w
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(MAX(r.entry_rev_no), -1) AS m
+    FROM public.daily_report_line_revisions r
+    WHERE r.line_id = w.id::uuid AND r.deleted_at IS NULL) mx
+  CROSS JOIN LATERAL (VALUES ${first}
+    (${next}, w.description, w.from_time, w.to_time, w.sales_order_id, w.job_work_order_id,
+     now(), true)) x(n, d, f, t, so, jw, s, keep)
+  WHERE x.keep`;
+}
+
+/** Multi-row INSERT of new lines from line_no `first` on — pass
+ *  revisionAfter(user.id) to writeLines with it (Entry Rev 0; its RETURNING
+ *  carries REV_COLS). */
 export function insertSql(
   companyId: string,
   h: DayHeader,
@@ -214,7 +251,7 @@ export function insertSql(
       (company_id, daily_report_id, line_no, description, kind, from_time, to_time,
        status, hours, remarks, sales_order_id, job_work_order_id, created_by, updated_by)
     VALUES ${sql.join(values, sql`, `)}
-    RETURNING ${returning(h)}, description, ${REV_COLS}`;
+    RETURNING ${returning(h)}, ${REV_COLS}`;
 }
 
 /** Next line_no under the header lock (keeps daily_report_lines_line_uq). */
