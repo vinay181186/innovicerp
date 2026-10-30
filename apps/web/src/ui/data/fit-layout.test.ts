@@ -27,30 +27,63 @@ function routeCardInput(avail: number): FitInput {
   };
 }
 
-describe('fitColumns — spare width', () => {
-  it('spreads the left-over width over every column, not only the text ones', () => {
-    const r = fitColumns(routeCardInput(1870));
-    const used = Object.values(r.w).reduce((a, b) => a + b, 0);
-    expect(used).toBeLessThanOrEqual(r.budget);
-    expect(r.budget - used).toBeLessThan(r.visible.length);
-    // Each code / date column grows past its exact fit…
-    expect(r.w['rc']).toBeGreaterThan(115);
-    expect(r.w['updated']).toBeGreaterThan(115);
-    // …and Item Name no longer swallows ~300 px of empty space.
-    expect(r.w['name']).toBeLessThan(300);
-  });
+const sum = (w: Record<string, number>) => Object.values(w).reduce((a, b) => a + b, 0);
 
-  it('changes nothing when there is no spare width', () => {
-    const tight = routeCardInput(1000);
-    const r = fitColumns(tight);
+describe('fitColumns — spare width', () => {
+  it('never makes a column wider than its content; the rest is empty space after ⋯', () => {
+    const r = fitColumns(routeCardInput(1870));
+    // Code / date columns stay at their exact fit…
     expect(r.w['rc']).toBe(115);
     expect(r.w['updated']).toBe(115);
+    // …text columns grow only until their full text shows…
+    expect(r.w['name']).toBe(170);
+    expect(r.w['rm']).toBe(270);
+    // …and the left-over is the empty end column; the row still fills the width.
+    expect(r.fill).toBe(710);
+    expect(sum(r.w) + r.fill).toBe(r.budget);
   });
 
-  it('keeps text columns growing toward their ideal first', () => {
-    // Room for the minimums + a little: text columns take it all.
+  it('changes nothing for short columns when there is no spare width', () => {
+    const r = fitColumns(routeCardInput(1000));
+    expect(r.w['rc']).toBe(115);
+    expect(r.w['updated']).toBe(115);
+    expect(r.fill).toBe(0);
+    expect(sum(r.w)).toBe(r.budget);
+  });
+
+  it('gives a little spare width to the cut text columns only, filling the width exactly', () => {
+    // Room for the minimums + 125 px, while the texts want 50 + 120: the
+    // smaller need is finished first, the rest goes to the other.
     const r = fitColumns(routeCardInput(1000 + 55 + 60));
     expect(r.w['rc']).toBe(115);
-    expect((r.w['name'] ?? 0) + (r.w['rm'] ?? 0)).toBeGreaterThan(120 + 150);
+    expect(r.w['name']).toBe(170);
+    expect(r.w['rm']).toBe(150 + 75);
+    expect(r.fill).toBe(0);
+    expect(sum(r.w)).toBe(r.budget);
+  });
+
+  it('does not let one very long text starve a short one', () => {
+    const input = routeCardInput(1000 + 55 + 60);
+    // RM Grade / RM Size holds one 3000 px note.
+    const r = fitColumns({
+      ...input,
+      widths: { ...input.widths, rm: columnWidth('text', 150, 3000, 0) },
+    });
+    expect(r.w['name']).toBe(170); // shows in full
+    expect(r.w['rm']).toBe(150 + 75);
+    expect(sum(r.w)).toBe(r.budget);
+  });
+
+  it('lets a long text column grow to its full length (no 300 px stop)', () => {
+    expect(columnWidth('text', 90, 900, 0)).toEqual({ min: 120, ideal: 900 });
+  });
+
+  it('puts all spare width in the empty end column when no column is text', () => {
+    const input = routeCardInput(1870);
+    const r = fitColumns({ ...input, kinds: {} });
+    // Every column at its measured width, nothing spread over them…
+    for (const k of r.visible) expect(r.w[k]).toBe(input.widths[k]?.min);
+    // …all of the spare width (1815 − 935) is the empty space.
+    expect(r.fill).toBe(880);
   });
 });

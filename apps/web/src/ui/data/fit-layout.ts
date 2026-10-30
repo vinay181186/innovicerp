@@ -9,13 +9,11 @@ import type { DataTableColumnKind } from './data-table-types';
 export const PIN_W = 14;
 /** Text columns never get less than this (unless the header / content is narrower). */
 export const TEXT_MIN = 120;
-/** Text columns stop asking for spare width at this. */
-export const TEXT_IDEAL_MAX = 300;
 
 export interface ColumnWidth {
   /** Never narrower than this. */
   min: number;
-  /** Wants this much when there is spare room. */
+  /** Wants this much when there is spare room (a text column: its full text). */
   ideal: number;
 }
 
@@ -46,6 +44,9 @@ export interface FitResult {
   warn: boolean;
   /** Width available to the data columns, px. */
   budget: number;
+  /** Spare px left once every column shows its full content — drawn as an
+   *  empty column after the Action column, never added to a data column. */
+  fill: number;
 }
 
 /** Measured header + content width -> the column's min / ideal. */
@@ -57,7 +58,7 @@ export function columnWidth(
 ): ColumnWidth {
   if (kind === 'text') {
     const min = Math.max(head, Math.min(content, TEXT_MIN), floor);
-    return { min, ideal: Math.max(min, Math.min(content, TEXT_IDEAL_MAX)) };
+    return { min, ideal: Math.max(min, content) };
   }
   // Every other kind — including `control` (an in-cell input / picker) — takes
   // its exact measured width and never shares the spare room (min === ideal).
@@ -121,26 +122,24 @@ export function fitColumns(input: FitInput): FitResult {
   for (const k of vis) w[k] = minOf(input, k);
   let spare = budget - need(vis);
 
-  // Share the spare width between text columns in proportion to what each
-  // still wants; anything left after that is spread over EVERY column in
-  // proportion to its width, so no text column ends up a wide empty gap
-  // beside cramped code / date columns.
-  const texts = vis.filter((k) => input.kinds[k] === 'text');
+  // Spare width goes only to text columns cut with "…", until each shows its
+  // full text. Not enough for all: the smallest needs are finished first and
+  // the rest is shared evenly, so one very long note cannot starve a short
+  // name. No column ever grows past its content: whatever is left is returned
+  // as `fill` (empty space after ⋯).
   const wantOf = (k: string) => Math.max(0, (input.widths[k]?.ideal ?? 0) - minOf(input, k));
-  const want = texts.reduce((a, k) => a + wantOf(k), 0);
-  if (want > 0 && spare > 0) {
-    const give = Math.min(spare, want);
-    for (const k of texts) w[k] = (w[k] ?? 0) + Math.floor((give * wantOf(k)) / want);
-    spare = budget - Object.values(w).reduce((a, b) => a + b, 0);
-  }
-  if (spare > 0 && vis.length > 0) {
-    const total = vis.reduce((a, k) => a + (w[k] ?? 0), 0);
-    const share = (k: string) =>
-      total > 0 ? Math.floor((spare * (w[k] ?? 0)) / total) : Math.floor(spare / vis.length);
-    const add = Object.fromEntries(vis.map((k) => [k, share(k)]));
-    for (const k of vis) w[k] = (w[k] ?? 0) + (add[k] ?? 0);
-  }
-  return { visible: vis, dropped, w, warn, budget };
+  const cut = vis
+    .filter((k) => input.kinds[k] === 'text' && wantOf(k) > 0)
+    .sort((a, b) => wantOf(a) - wantOf(b));
+  cut.forEach((k, i) => {
+    const left = cut.length - i;
+    // The last (largest) one also takes the rounding crumbs.
+    const room = Math.max(0, spare);
+    const give = Math.min(wantOf(k), left === 1 ? room : Math.floor(room / left));
+    w[k] = (w[k] ?? 0) + give;
+    spare -= give;
+  });
+  return { visible: vis, dropped, w, warn, budget, fill: Math.max(0, spare) };
 }
 
 /** Would column 0 + every pin + this column still fit? (prototype `canPin`). */

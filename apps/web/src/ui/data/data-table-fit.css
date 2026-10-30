@@ -49,6 +49,15 @@
   table-layout: auto;
 }
 
+/* Spare width once every column shows its full content (fit-layout `fill`)
+   goes to the Action column, with ⋯ held at its left edge: ⋯ sits next to the
+   last data column and the empty space trails after it. No data column is
+   stretched loose. */
+.innovic-table.tbl-grid.dt-fit.dt-act-fill > thead > tr > th:last-child,
+.innovic-table.tbl-grid.dt-fit.dt-act-fill > tbody > tr > td.dt-k-actions {
+  text-align: left;
+}
+
 /* R1 — every row one line; text cut with "…". Headers are never narrower
    than their measured width, so `clip` never actually cuts one. */
 .innovic-table.tbl-grid.dt-fit > thead > tr > th {
