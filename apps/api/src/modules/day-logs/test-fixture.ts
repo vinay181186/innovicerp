@@ -41,11 +41,11 @@ export const fx = {
 };
 
 export const owner = (): AuthContext =>
-  asAccess(fx.ownerBase, { departments: { [fx.ownerDept]: 'L1' } }, 'viewer');
+  asAccess(fx.ownerBase, { departments: { [fx.ownerDept]: 'L1', tasks: 'L1' } }, 'viewer');
 export const sameDeptAdmin = (): AuthContext =>
-  asAccess(fx.admin, { departments: { [fx.ownerDept]: 'L5' } }, 'manager');
+  asAccess(fx.admin, { departments: { [fx.ownerDept]: 'L5', tasks: 'L1' } }, 'manager');
 export const otherDeptAdmin = (): AuthContext =>
-  asAccess(fx.admin, { departments: { [fx.otherDept]: 'L5' } }, 'manager');
+  asAccess(fx.admin, { departments: { [fx.otherDept]: 'L5', tasks: 'L1' } }, 'manager');
 /** ADR-255 — a Super Admin (Full Access) — the seed admin's id. */
 export const superAdmin = (): AuthContext => asAccess(fx.admin, { fullAccess: true }, 'manager');
 /** A second Super Admin (the third user given Full Access), or null. */
@@ -56,7 +56,7 @@ export const ownerAsSuper = (): AuthContext =>
   asAccess(fx.ownerBase, { fullAccess: true }, 'manager');
 /** The owner as if they were L5 of their own department. */
 export const ownerAsAdmin = (): AuthContext =>
-  asAccess(fx.ownerBase, { departments: { [fx.ownerDept]: 'L5' } }, 'manager');
+  asAccess(fx.ownerBase, { departments: { [fx.ownerDept]: 'L5', tasks: 'L1' } }, 'manager');
 
 /** A fixed clock: `date` is "today", `hhmm` is now. */
 export const at = (date: string, hhmm: string): DayLogClock => {
@@ -203,18 +203,23 @@ export async function setupFixture(): Promise<void> {
       ),
     );
   // The owner must be on their main department's team (L2+ there) and must
-  // NOT be on some other department's team (the other-dept L5 case).
+  // NOT be on some other department's team (the other-dept L5 case). Team and
+  // Approvals read the owner's REAL access row, so it must open Day Log too
+  // (a Tasks tier, ADR-257).
   const pick = others
     .map((o) => {
       const tiers = normalizeDeptsMap(
         (o.departments ?? {}) as Parameters<typeof normalizeDeptsMap>[0],
       );
       const other = ACCESS_DEPTS.find((d) => !TEAM_TIERS.has(String(tiers[d.key] ?? '')));
-      return { o, ok: TEAM_TIERS.has(String(tiers[o.mainDept ?? ''] ?? '')), other };
+      const ok = TEAM_TIERS.has(String(tiers[o.mainDept ?? ''] ?? '')) && tiers['tasks'] != null;
+      return { o, ok, other };
     })
     .find((x) => x.ok && x.other);
   if (!pick || !pick.o.mainDept || !pick.other) {
-    throw new Error('TEST needs one non-admin user with L2+ in their main department');
+    throw new Error(
+      'TEST needs one non-admin user with L2+ in their main department and a Tasks tier',
+    );
   }
   const o = pick.o;
   fx.ownerBase = {

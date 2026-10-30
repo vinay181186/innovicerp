@@ -101,7 +101,7 @@ export const GLOBAL_SEARCH_KIND_META: Record<GlobalSearchKind, GlobalSearchKindM
   'party-grn': { label: 'Party GRN', gate: { formKey: 'party_create' } },
   'party-material-issue': { label: 'Party Issue', gate: { formKey: 'party_create' } },
   'jw-dc-inward': { label: 'JW DC In', gate: { formKey: 'ospdc_create' } },
-  task: { label: 'Task', gate: { dept: 'tasks' } },
+  task: { label: 'Task', gate: { formKey: 'taskboard_view' } },
   'design-tracker': { label: 'Design Tracker', gate: { formKey: 'design_create' } },
 };
 

@@ -29,6 +29,9 @@ export const LIVE_TABLES = [
   // Day Log (0222) — every entry write touches its day row, so the day row
   // alone refreshes My Day Log and Team Day Logs.
   'daily_reports',
+  // Teams Config (0230) — a new / removed pair opens or closes the Team Day
+  // Logs tab for both people at once.
+  'day_log_team_mates',
   // 0227 (live-update standard, owner 2026-10-29). Already published by 0205
   // for the record watch; now they refresh lists too.
   'customer_dispatches',

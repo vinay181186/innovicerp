@@ -25,6 +25,36 @@ export interface RightHolder {
   isAdmin: boolean;
   /** users.role — what loadApprovalContext asks for its admin shortcut. */
   role: string;
+  /** May be given a task (Task Board not hidden, ADR-257) — the Remind target. */
+  opensTaskBoard: boolean;
+}
+
+/** One person's user row + user_access columns (LEFT JOINed, so nullable). */
+export interface PersonAccessRow {
+  role: string;
+  acFullAccess: boolean | null;
+  acAuditor: boolean | null;
+  acDepartments: unknown;
+  acForms: unknown;
+}
+
+/** Does this OTHER person hold `action` on `form`? Role admin and Full Access
+ *  always; everyone else by the same effective matrix as the page guard. The
+ *  one copy of that rule for rows read in bulk (ADR-250, ADR-257). */
+export function personHolds(
+  r: PersonAccessRow,
+  form: AccessFormKey,
+  action: AccessAction,
+): boolean {
+  if (r.role === 'admin') return true;
+  const eff = toEffectiveAccess({
+    fullAccess: r.acFullAccess,
+    auditor: r.acAuditor,
+    drawingDownload: false,
+    departments: r.acDepartments,
+    forms: r.acForms,
+  });
+  return effectiveFormPerms(eff, form)[action];
 }
 
 /** Active users of the company holding `action` on `form`. Their main
@@ -64,19 +94,13 @@ export async function listUsersWithRight(
   for (const r of rows) {
     const isAdmin = r.role === 'admin' || (r.acFullAccess ?? false);
     if (isAdmin && !opts.includeAdmins) continue;
-    const eff = toEffectiveAccess({
-      fullAccess: r.acFullAccess,
-      auditor: r.acAuditor,
-      drawingDownload: false,
-      departments: r.acDepartments,
-      forms: r.acForms,
-    });
-    if (!isAdmin && !effectiveFormPerms(eff, form)[action]) continue;
+    if (!isAdmin && !personHolds(r, form, action)) continue;
     out.push({
       id: r.id,
       name: r.fullName?.trim() || r.email,
       isAdmin,
       role: r.role,
+      opensTaskBoard: personHolds(r, 'taskboard_view', 'view'),
       _team: dept !== null && r.acMainDept === dept,
     });
   }

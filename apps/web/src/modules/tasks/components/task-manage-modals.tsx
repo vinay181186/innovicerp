@@ -61,7 +61,7 @@ export function ReassignModal({
             Assigned To<span className="req">★</span>
           </label>
           <UserPicker
-            users={userOpts?.options ?? []}
+            users={(userOpts?.options ?? []).filter((u) => u.opensTaskBoard)}
             loading={isFetching}
             value={assignedTo}
             onChange={setAssignedTo}

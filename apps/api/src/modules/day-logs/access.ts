@@ -9,12 +9,28 @@
 //     Anyone else sees only their own; another's day is "not found".
 //   - Approve an edit: Super Admin, or L5 over one of the person's L2+
 //     departments. Never one's own; an Auditor never.
+//   - "Hide page" on Day Log (owner 2026-10-30): every Day Log read and write
+//     refuses the caller — checked in resolveAccess, the one door they share.
+//     People whose Day Log is hidden are left out of Team Day Logs (their
+//     waiting edits stay in Approvals so they can still be decided).
+//   - Teams Config (owner 2026-10-30, 0230): a Super Admin pairs two people;
+//     each SEES the other's day (read-only, like any non-Super viewer). A
+//     mate never manages or approves. `mates` rides in the same statement as
+//     the access (matesJson); a caller that does not read it gets none —
+//     mates only ever widen what is seen, so a missing read refuses, never leaks.
 
-import { ACCESS_DEPTS, canWriteAnything, isUnconfigured, normalizeDeptsMap } from '@innovic/shared';
+import {
+  ACCESS_DEPTS,
+  canWriteAnything,
+  effectiveFormPerms,
+  isUnconfigured,
+  normalizeDeptsMap,
+} from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { type AuthContext, type FrozenAccess, requestScope } from '../../db/with-user-context';
 import { toEffectiveAccess } from '../access-control/my-access';
+import { personHolds } from '../access-control/users-with-right';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
 export interface Viewer {
@@ -26,6 +42,8 @@ export interface Viewer {
   l5: ReadonlySet<string>;
   /** May save anything at all (not an Auditor, not unconfigured). */
   writer: boolean;
+  /** Teams Config — the other person of every live pair holding the viewer. */
+  mates: ReadonlySet<string>;
 }
 
 /**
@@ -42,6 +60,30 @@ export const accessJson = (userId: string, companyId: string): SQL => sql`(
     AND ua.deleted_at IS NULL
   LIMIT 1)`;
 
+/** The caller's Teams Config mates as ONE json array (a scalar sub-select)
+ *  — put it beside accessJson in the same statement. Only mates who are
+ *  active and not deleted; each carries its access so toMates can drop one
+ *  whose Day Log is hidden (personOpensDayLog). */
+export const matesJson = (userId: string, companyId: string): SQL => sql`(
+  SELECT COALESCE(json_agg(json_build_object('id', u.id::text,
+           'departments', COALESCE(ua.departments, '{}'::jsonb), ${personAccessJson})), '[]'::json)
+  FROM public.day_log_team_mates m
+  JOIN public.users u
+    ON u.id = CASE WHEN m.user_low_id = ${userId}::uuid THEN m.user_high_id ELSE m.user_low_id END
+   AND u.company_id = m.company_id AND u.deleted_at IS NULL AND u.is_active
+  LEFT JOIN public.user_access ua
+    ON ua.user_id = u.id AND ua.company_id = m.company_id AND ua.deleted_at IS NULL
+  WHERE m.company_id = ${companyId}::uuid AND m.deleted_at IS NULL
+    AND (m.user_low_id = ${userId}::uuid OR m.user_high_id = ${userId}::uuid))`;
+
+/** The mates whose Day Log is not hidden (a hidden one opens nothing). */
+const toMates = (json: unknown): ReadonlySet<string> =>
+  new Set(
+    (Array.isArray(json) ? (json as Array<PersonAccess & { id: string }>) : [])
+      .filter((p) => personOpensDayLog(p))
+      .map((p) => String(p.id)),
+  );
+
 /**
  * The caller's access from `row` (accessJson) — exactly what getMyAccess
  * answers: the request's memo first (ADR-229; tests pre-fill it), else the
@@ -51,7 +93,7 @@ export const accessJson = (userId: string, companyId: string): SQL => sql`(
 export async function resolveAccess(user: AuthContext, row: unknown): Promise<FrozenAccess | null> {
   if (user.role === 'admin') return null;
   const scope = requestScope(user);
-  if (scope?.myAccess) return scope.myAccess;
+  if (scope?.myAccess) return assertDayLogPage(await scope.myAccess);
   const r = (row ?? {}) as Record<string, unknown>;
   const eff = toEffectiveAccess({
     fullAccess: (r['fullAccess'] as boolean | null) ?? null,
@@ -65,7 +107,57 @@ export async function resolveAccess(user: AuthContext, row: unknown): Promise<Fr
   Object.freeze(eff.departments);
   const frozen: FrozenAccess = Object.freeze(eff);
   if (scope) scope.myAccess = Promise.resolve(frozen);
-  return frozen;
+  return assertDayLogPage(frozen);
+}
+
+/** May open the Day Log page (Day Log View, "Hide page" unticked)? Role admin
+ *  never reaches here; Full Access passes inside effectiveFormPerms. */
+export const opensDayLog = (eff: FrozenAccess): boolean =>
+  effectiveFormPerms(eff, 'daylog_view').view;
+
+/** Another person's access, as the json columns `personAccessJson` adds. */
+export interface PersonAccess {
+  role: string;
+  fullAccess: boolean | null;
+  auditor: boolean | null;
+  departments: unknown;
+  forms: unknown;
+}
+
+/** The json_build_object pairs a person row needs for `personOpensDayLog`
+ *  (aliases: u = users, ua = user_access, LEFT JOINed). */
+export const personAccessJson = sql`'role', u.role, 'fullAccess', ua.full_access,
+  'auditor', ua.auditor, 'forms', COALESCE(ua.forms, '{}'::jsonb)`;
+
+/** May this OTHER person open Day Log? Team Day Logs leaves out anyone whose
+ *  Day Log is hidden. Same rule as the caller's own check. */
+export function personOpensDayLog(p: PersonAccess): boolean {
+  return personHolds(
+    {
+      role: p.role,
+      acFullAccess: p.fullAccess,
+      acAuditor: p.auditor,
+      acDepartments: p.departments,
+      acForms: p.forms,
+    },
+    'daylog_view',
+    'view',
+  );
+}
+
+/** requireFormAccess(user, 'daylog_view', 'view') on access already read. */
+function assertDayLogPage(eff: FrozenAccess): FrozenAccess {
+  if (opensDayLog(eff)) return eff;
+  if (isUnconfigured(eff)) {
+    throw new AuthorizationError(
+      'Your account has no access configured yet. Ask an admin to set your ' +
+        'department tiers in Access Control.',
+    );
+  }
+  throw new AuthorizationError(
+    'Your access does not let you open Day Log. Ask an admin to give you a Tasks tier, ' +
+      'or to untick Hide page on Day Log in Access Control.',
+  );
 }
 
 /** requireCanWrite (lib/access.ts) on access already read — same refusals. */
@@ -82,10 +174,18 @@ export function assertCanWrite(eff: FrozenAccess | null): void {
   }
 }
 
-/** The Viewer of access already read (resolveAccess). */
-export function viewerOf(user: AuthContext, eff: FrozenAccess | null): Viewer {
+/** The Viewer of access already read (resolveAccess); `mates` = the
+ *  matesJson column of the same statement (omitted → no mates). */
+export function viewerOf(user: AuthContext, eff: FrozenAccess | null, mates?: unknown): Viewer {
   if (!eff) {
-    return { userId: user.id, isSuper: true, auditor: false, l5: new Set(), writer: true };
+    return {
+      userId: user.id,
+      isSuper: true,
+      auditor: false,
+      l5: new Set(),
+      writer: true,
+      mates: toMates(mates),
+    };
   }
   const tiers = normalizeDeptsMap(eff.departments ?? {});
   const l5 = new Set(
@@ -99,6 +199,7 @@ export function viewerOf(user: AuthContext, eff: FrozenAccess | null): Viewer {
     auditor: eff.auditor,
     l5,
     writer: canWriteAnything(eff),
+    mates: toMates(mates),
   };
 }
 
@@ -106,16 +207,24 @@ const noCompany = (): AuthorizationError =>
   new AuthorizationError('User is not assigned to a company');
 
 /** The caller's Viewer on its own — ONE statement (none for an admin or a
- *  request that already read its access). */
-export async function loadViewer(user: AuthContext): Promise<Viewer> {
-  if (user.role === 'admin' || requestScope(user)?.myAccess) {
+ *  request that already read its access, unless `withMates`: then the mates
+ *  are read, beside the access when it is not read yet — still one). */
+export async function loadViewer(
+  user: AuthContext,
+  opts: { withMates?: boolean } = {},
+): Promise<Viewer> {
+  const memo = user.role === 'admin' || !!requestScope(user)?.myAccess;
+  // A role admin is Super Admin: mates add nothing.
+  if (memo && (!opts.withMates || user.role === 'admin')) {
     return viewerOf(user, await resolveAccess(user, null));
   }
   if (!user.companyId) throw noCompany();
+  const co = user.companyId;
   const [r] = (await db.execute(
-    sql`SELECT ${accessJson(user.id, user.companyId)} AS access`,
-  )) as unknown as Array<{ access: unknown }>;
-  return viewerOf(user, await resolveAccess(user, r?.access));
+    sql`SELECT ${memo ? sql`NULL::json` : accessJson(user.id, co)} AS access,
+      ${opts.withMates ? matesJson(user.id, co) : sql`NULL::json`} AS mates`,
+  )) as unknown as Array<{ access: unknown; mates: unknown }>;
+  return viewerOf(user, await resolveAccess(user, r?.access), r?.mates);
 }
 
 /** Tiers that put a person on a Department Admin's team (above L1 viewer). */
@@ -132,7 +241,7 @@ export function canSeeUser(
   v: Viewer,
   u: { id: string; departments: Record<string, unknown> },
 ): boolean {
-  if (u.id === v.userId || v.isSuper || v.auditor) return true;
+  if (u.id === v.userId || v.isSuper || v.auditor || v.mates.has(u.id)) return true;
   return sharedTeamDepts(v, u.departments).length > 0;
 }
 
@@ -141,7 +250,8 @@ export function canManageUser(v: Viewer, u: { departments: Record<string, unknow
   return v.isSuper || sharedTeamDepts(v, u.departments).length > 0;
 }
 
-export const canSeeTeam = (v: Viewer): boolean => v.isSuper || v.auditor || v.l5.size > 0;
+export const canSeeTeam = (v: Viewer): boolean =>
+  v.isSuper || v.auditor || v.l5.size > 0 || v.mates.size > 0;
 
 /** May approve / reject this person's Day Log edits: Super Admin, or L5 of a
  *  department where the person holds L2+. Never one's own; an Auditor never. */

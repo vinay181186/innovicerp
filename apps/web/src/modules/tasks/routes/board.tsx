@@ -14,6 +14,11 @@
 // refuses view=all for anyone else regardless.
 // Day Log tabs (`?view=daylog|team|person|approvals`, `?date=`, `?user=`, `?line=`):
 // see modules/day-logs/components/board-day-log.tsx.
+// Task Board and Day Log are two pages on this one route, each with its own
+// "Hide page" switch (taskboard_view / daylog_view, canOpenPage tells them
+// apart by `?view=`). The route guard lets in whoever may open either; this
+// page then draws — and loads — only the half the person may see, and moves a
+// URL for the hidden half to the other one.
 
 import type {
   ListTasksQuery,
@@ -23,12 +28,13 @@ import type {
   TaskStatus,
   TaskView,
 } from '@innovic/shared';
-import { TASK_VIEWS } from '@innovic/shared';
+import { DAY_LOG_VIEWS, TASK_VIEWS } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { useCanWrite } from '@/components/shared/action-link';
+import { useCanOpen, useCanWrite } from '@/components/shared/action-link';
+import { useMyAccess } from '@/lib/access-control';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
@@ -48,7 +54,6 @@ import { TaskFilters, TaskTabs } from '../components/board-filters';
 import { TaskTable, type RowAction } from '../components/task-table';
 import { TodoModal } from '../components/todo-modal';
 import {
-  DAY_LOG_VIEWS,
   DayLogBoardBody,
   dayLogTabOf,
   dayLogSearchShape,
@@ -82,15 +87,46 @@ type ModalState =
 function TaskBoardPage(): React.JSX.Element {
   const routeSearch = taskBoardRoute.useSearch();
   const navigate = taskBoardRoute.useNavigate();
+  // Which of the two pages this person may see (the same rule as the menu).
+  // If the access read failed, the route guard lets the page in as before and
+  // the server judges each request — so show both halves rather than nothing.
+  const canOpen = useCanOpen();
+  const accessFailed = useMyAccess().isError;
+  const canTasks = accessFailed || canOpen('/task-board');
+  const canDayLog = accessFailed || canOpen('/task-board?view=daylog');
   const tab = routeSearch.view ?? 'inbox';
-  const dayTab = isDayLogTab(tab) ? tab : null;
+  // Day Log only → every URL shows the Day Log; Task Board only → never.
+  const dayTab = !canDayLog ? null : isDayLogTab(tab) ? tab : canTasks ? null : 'daylog';
   // On a day-log tab the task list keeps loading Inbox: the tab strip and its
   // counts come from it.
   const view: TaskView = isDayLogTab(tab) ? 'inbox' : tab;
-  const dayTabs = useDayLogBoardTabs();
+  const dayTabs = useDayLogBoardTabs(canDayLog, dayTab);
   // ADR-232/234: + Assign Task / + My To-Do are writes — hidden for an
-  // Auditor or an account nobody has set up (the server refuses them too).
-  const canWrite = useCanWrite();
+  // Auditor or an account nobody has set up (the server refuses them too) —
+  // and with the Task Board page hidden.
+  const canWrite = useCanWrite() && canTasks;
+  // A URL for the hidden page moves to the other one (replace — Back skips it).
+  const wrongDay = canDayLog && !canTasks && !isDayLogTab(tab);
+  const wrongTask = canTasks && !canDayLog && isDayLogTab(tab);
+  useEffect(() => {
+    if (wrongDay)
+      void navigate({
+        search: (prev) => ({ ...prev, view: 'daylog', task: undefined, page: 1 }),
+        replace: true,
+      });
+    else if (wrongTask)
+      void navigate({
+        search: (prev) => ({
+          ...prev,
+          view: 'inbox',
+          date: undefined,
+          user: undefined,
+          line: undefined,
+          page: 1,
+        }),
+        replace: true,
+      });
+  }, [wrongDay, wrongTask, navigate]);
 
   // Search term: URL is the source of truth; the box mirrors it and writes
   // back after 300ms of quiet (same shape as the SO / WO list).
@@ -166,12 +202,13 @@ function TaskBoardPage(): React.JSX.Element {
   // `?task=<uuid>` opens that task's detail on arrival. Lazy initial covers the
   // cold load; the effect covers a NEW ?task landing while this page is already
   // mounted (same route, no remount).
+  // Only for someone who may see the Task Board.
   const [modal, setModal] = useState<ModalState>(() =>
-    routeSearch.task ? { kind: 'view', id: routeSearch.task } : { kind: 'none' },
+    routeSearch.task && canTasks ? { kind: 'view', id: routeSearch.task } : { kind: 'none' },
   );
   useEffect(() => {
-    if (routeSearch.task) setModal({ kind: 'view', id: routeSearch.task });
-  }, [routeSearch.task]);
+    if (routeSearch.task && canTasks) setModal({ kind: 'view', id: routeSearch.task });
+  }, [routeSearch.task, canTasks]);
   const closeModal = (): void => {
     setModal({ kind: 'none' });
     // Closing the detail also drops ?task so a reload does not reopen it.
@@ -195,9 +232,9 @@ function TaskBoardPage(): React.JSX.Element {
     }),
     [view, routeSearch.search, status, priority, person, assignedBy, due, dept, sf.param, page],
   );
-  const { data, isLoading, isFetching, isError, error } = useTaskList(query);
+  const { data, isLoading, isFetching, isError, error } = useTaskList(query, canTasks);
   useClampPage(page, data?.total, gotoPage);
-  const { data: userOpts } = useTaskUserOptions();
+  const { data: userOpts } = useTaskUserOptions(canTasks);
   const users = userOpts?.options ?? [];
   const departments = useMemo(
     () =>
@@ -211,24 +248,24 @@ function TaskBoardPage(): React.JSX.Element {
   // Stamp the current user's freshly-assigned tasks as viewed, once on mount.
   const markedRef = useRef(false);
   useEffect(() => {
-    if (markedRef.current) return;
+    if (markedRef.current || !canTasks) return;
     markedRef.current = true;
     markViewed.mutate();
-  }, [markViewed]);
+  }, [markViewed, canTasks]);
 
   const onRowAction = (action: RowAction, task: TaskRow): void => {
     if (action === 'view') setModal({ kind: 'view', id: task.id });
     else setModal({ kind: 'row', action, task });
   };
 
-  if (isLoading) {
+  if (canTasks && isLoading) {
     return (
       <div className="empty-state" style={{ padding: 40 }}>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
       </div>
     );
   }
-  if (!data) {
+  if (canTasks && !data) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load tasks. Try again.'}
@@ -236,16 +273,20 @@ function TaskBoardPage(): React.JSX.Element {
     );
   }
 
-  const counts = data.counts;
-  const tabs: TaskView[] = data.isAdmin ? [...TASK_VIEWS] : TASK_VIEWS.filter((v) => v !== 'all');
-  const tabCount = (v: TaskView): number | null => data.viewCounts[v];
+  const counts = data?.counts;
+  const tabs: TaskView[] = !data
+    ? []
+    : data.isAdmin
+      ? [...TASK_VIEWS]
+      : TASK_VIEWS.filter((v) => v !== 'all');
+  const tabCount = (v: TaskView): number | null => data?.viewCounts[v] ?? null;
 
   return (
     <div>
       <ListHeader
-        title="Task Board"
-        icon="📋"
-        count={dayTab ? undefined : data.total}
+        title={canTasks ? 'Task Board' : 'Day Log'}
+        icon={canTasks ? '📋' : '📝'}
+        count={dayTab ? undefined : data?.total}
         noun="task"
         search={searchInput}
         onSearch={dayTab ? undefined : setSearchInput}
@@ -298,7 +339,7 @@ function TaskBoardPage(): React.JSX.Element {
         }
         tools={
           <>
-            {data.unreadCount > 0 ? (
+            {data && data.unreadCount > 0 ? (
               <span className="badge b-red">🔔 {data.unreadCount} new</span>
             ) : null}
             {canWrite ? (
@@ -348,7 +389,7 @@ function TaskBoardPage(): React.JSX.Element {
           line={routeSearch.line}
           onNav={goDay}
         />
-      ) : (
+      ) : data ? (
         <>
           {isError ? (
             // A refetch failed (e.g. a non-admin landing on ?view=all): keep the
@@ -385,7 +426,7 @@ function TaskBoardPage(): React.JSX.Element {
             onPage={gotoPage}
           />
         </>
-      )}
+      ) : null}
 
       {modal.kind === 'assign' ? <AssignTaskModal onClose={closeModal} /> : null}
       {modal.kind === 'todo' ? <TodoModal onClose={closeModal} /> : null}

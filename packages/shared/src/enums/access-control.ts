@@ -29,10 +29,11 @@ export const ACCESS_DEPTS = [
   // drill-downs, the activity log and 19 cross-department reports. They are
   // ordinary departments now: invisible until granted, like everything else.
   //
-  // They carry no ACCESS_FORMS keys, so the tier alone decides visibility.
-  // Grant them at L1 — a higher tier here would raise the account's derived
-  // role globally (see `roleForAccess`), which is not what "may open Reports"
-  // should mean.
+  // Reports carries no ACCESS_FORMS keys, so the tier alone decides it. Tasks
+  // has one View page row per menu link (owner 2026-10-30) so "Hide page" can
+  // take one of them away. Grant both at L1 — a higher tier here would raise
+  // the account's derived role globally (see `roleForAccess`), which is not
+  // what "may open Reports" should mean.
   { key: 'tasks', label: 'Tasks', color: '#EC4899' },
   { key: 'reports', label: 'Reports', color: '#0EA5E9' },
   { key: 'system', label: 'System', color: '#64748B' },
@@ -133,6 +134,13 @@ export const ACCESS_FORMS = [
   // (ADR-232); their ticks did nothing and were removed with Machine Op Entry
   // (ADR-234, owner E3). A stored tick for a removed key is simply ignored.
   { key: 'printtpl_edit', dept: 'system', label: 'Print Templates' },
+  // Tasks (owner 2026-10-30): one row per Tasks & Alerts page, View only —
+  // saving a task / Day Log entry is not a tick (any set-up user may). Every
+  // Tasks tier gives View, so nobody loses a page until "Hide page" is ticked.
+  { key: 'taskboard_view', dept: 'tasks', label: 'Task Board' },
+  { key: 'daylog_view', dept: 'tasks', label: 'Day Log' },
+  { key: 'alerts_view', dept: 'tasks', label: 'Alerts' },
+  { key: 'activitylog_view', dept: 'tasks', label: 'Activity Log' },
 ] as const satisfies readonly { key: string; dept: AccessDeptKey; label: string }[];
 
 export type AccessForm = (typeof ACCESS_FORMS)[number];

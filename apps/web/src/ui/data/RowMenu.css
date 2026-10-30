@@ -1,6 +1,13 @@
 /* RowMenu (ui/data/RowMenu.tsx) — the ⋯ row-action button and its menu.
  * Theme tokens only. Mock-up A of Action-Menu-and-Card-to-Table-Mockup.html. */
 
+/* RowActions (ui/layout/RowActions.tsx): the row's ⋯ / buttons, centred in
+ * their cell. A fit table with spare width holds them at the left edge
+ * instead (data-table-fit.css, `.dt-act-fill`). */
+.row-acts {
+  justify-content: center;
+}
+
 /* The ⋯ button: 26 wide, 22 high — never taller than a Compact row allows. */
 .row-menu-btn {
   display: inline-flex;

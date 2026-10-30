@@ -354,6 +354,7 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Home block: tasks assigned to the caller (ADR-250) | `My to-do` (tabs `Late` / `Today` / `Planned`) | `todo` | tasks.assigned_to = caller, status todo/in_progress | `My Tasks`, `My Work` (retired label of the old home list) |
 | Home block: the caller's own entries for an IST day (ADR-250) | `Done` (tabs `Today` / `Yesterday`) | `done` | activity_log.user_id = caller | `My Activity`, `Today's Work` |
 | Home block: pages the caller can open (ADR-044, label kept) | `Shortcuts` | `quickLinks` | dashboard_config.quick_links filtered by canOpenPage | `Quick Access`, `Quick Links` |
+| Access Control page rows of the Tasks department — one View / Hide page row per Tasks & Alerts menu link (ADR-257) | `Task Board` / `Day Log` / `Alerts` / `Activity Log` | `taskboard_view` / `daylog_view` / `alerts_view` / `activitylog_view` | user_access.forms (no column) | `Tasks` (that is the department), `Task Log`, `Audit Log` |
 | Home rows filter (ADR-250) | `My department` / `Mine` | `mine` (row flag) | created / received / responsible = caller | `All` / `Self` |
 | Home count strip entry (ADR-250) | — (one per list) | `cues[]` (`count` = the list's `total`) | the same query as its list | `KPI`, `Tile` |
 | QC Documents view: one order → POL folders → report folders → files (ADR-252) | `Dossier` | `QcDossierResponse` | GET /qc-documents/dossier | `QC Folder`, `QC Repository`, `Document Tree` |
@@ -378,6 +379,7 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Earliest Start / latest Stop of a Day Log day | `First start` / `Last stop` | `firstStart` / `lastStop` | the day's entries | `In time`, `Out time` |
 | A Day Log entry saved more than 60 min after its Stop time | `LATE` tag; count `Late entries` / `Late` | `late` / `lateCount` | derived: `created_at` vs report date + `to_time` (IST) | `Delayed`, `Backdated` |
 | What a person is doing now (Team Day Logs) | `Now` (`Working` / `On break` / `Idle` / `Not started` / `Submitted` / `Leave`) | `currentStatus` | derived from today's entries + day status | `Current Status`, `Activity` |
+| Two people who see each other's saved Day Log entries, read-only (two-way pair, set by a Super Admin; ADR-258, 0230) | `Team Mate`; the setup tab `Teams Config` | `mateId` / `DayLogTeamMate` | `day_log_team_mates` (one row per pair: `user_low_id` < `user_high_id`) | `Approval Day Log` (the tab it replaced), `Team Member`, `Buddy`, `Sees Each Other` |
 | A company non-working date (Day Log owes no time) | `Holidays` | `holidayDate` | `company_holidays.holiday_date` | `Leave` (that is one person's day) |
 
 ---

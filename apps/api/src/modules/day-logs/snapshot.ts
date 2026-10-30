@@ -12,7 +12,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 import { db } from '../../db/client';
 import { addDays } from '../dashboard/personal/util';
-import { type DayUser, accessJson, dayUserJson, toDayUser } from './access';
+import { type DayUser, accessJson, dayUserJson, matesJson, toDayUser } from './access';
 import {
   type DayHeader,
   type DayLine,
@@ -27,6 +27,8 @@ import {
 export interface DaySnapshot {
   /** The viewer's raw user_access json (resolveAccess) — null when not asked. */
   access: unknown;
+  /** The viewer's Teams Config mates json (viewerOf) — null when not asked. */
+  mates: unknown;
   target: DayUser | null;
   header: DayHeader | null;
   lines: DayLine[];
@@ -75,6 +77,7 @@ export function snapshotSql(ask: SnapshotAsk): SQL {
   return sql`
     SELECT
       ${ask.viewerId ? accessJson(ask.viewerId, co) : sql`NULL::json`} AS access,
+      ${ask.viewerId ? matesJson(ask.viewerId, co) : sql`NULL::json`} AS mates,
       ${dayUserJson(co, uid)} AS target,
       (SELECT row_to_json(h) FROM (
          SELECT ${HEADER_COLS} FROM public.daily_reports dr
@@ -96,6 +99,7 @@ export function toSnapshot(r: Record<string, unknown>): DaySnapshot {
     openOrders.set(`jwso:${id}`, code);
   return {
     access: r['access'] ?? null,
+    mates: r['mates'] ?? null,
     target: toDayUser(r['target']),
     header: r['header'] ? toHeader(r['header'] as Record<string, unknown>) : null,
     lines: toLines(r['lines']),

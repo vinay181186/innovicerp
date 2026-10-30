@@ -7,7 +7,7 @@
 import type { DayLogDetail, DayLogPersonDay, TeamDayLogResponse } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
-import { istStamp, nowChip } from './format';
+import { istStamp } from './format';
 import { sortEntries } from './sheet';
 
 export interface ExportTable {
@@ -72,32 +72,25 @@ export function personDayTable(p: DayLogPersonDay): ExportTable {
   return { columns, rows };
 }
 
-/** Team Day Logs: User · Now · First start · Last stop · Working hours ·
- *  Entries · Late. */
+/** Team Day Logs: User · First start · Last stop · Working hours · Entries
+ *  (the screen's columns — no Now / Late, owner 2026-10-30). */
 export const TEAM_COLUMNS = [
   { key: 'user', label: 'User' },
-  { key: 'current_now', label: 'Now' },
   { key: 'first_start', label: 'First start' },
   { key: 'last_stop', label: 'Last stop' },
   { key: 'work_hours', label: 'Working hours' },
   { key: 'entries', label: 'Entries' },
-  { key: 'late', label: 'Late' },
 ];
 
 export function teamTable(team: TeamDayLogResponse): ExportTable {
-  const isToday = team.date === team.today;
   return {
     columns: TEAM_COLUMNS,
     rows: team.rows.map((r) => ({
       user: r.userName,
-      current_now: [nowChip(r, isToday).label, isToday ? r.currentText : null]
-        .filter(Boolean)
-        .join(' · '),
       first_start: r.firstStart ? fmt12(r.firstStart) : '',
       last_stop: r.lastStop ? fmt12(r.lastStop) : '',
       work_hours: fmtDuration(r.workMin),
       entries: String(r.entryCount),
-      late: r.lateCount > 0 ? String(r.lateCount) : '',
     })),
   };
 }

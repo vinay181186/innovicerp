@@ -83,7 +83,8 @@ export function remindAction(
   me: string,
   ref: { type: string; id: string; display: string; navPage: string },
 ): DashAction | null {
-  const to = holders.find((h) => h.id !== me && !h.isAdmin);
+  // ADR-257: never someone whose Task Board is hidden (POST /tasks refuses them).
+  const to = holders.find((h) => h.id !== me && !h.isAdmin && h.opensTaskBoard);
   if (!to) return null;
   return {
     kind: 'remind',

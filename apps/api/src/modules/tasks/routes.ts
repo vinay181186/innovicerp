@@ -19,16 +19,27 @@ import {
   updateTaskStatusInputSchema,
 } from '@innovic/shared';
 import { z } from 'zod';
+import type { AuthContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 const nextCodeQuerySchema = z.object({ type: z.enum(TASK_TYPES).default('assigned') });
 
+// Owner 2026-10-30: "Hide page" on Task Board refuses the board's own data and
+// actions. Left OPEN on purpose: POST /tasks and the pickers it needs
+// (user-options, related-options, next-code) — tasks are assigned from GRN /
+// JC / NC / CAPA pages and the Home "Remind", by people who may not use the
+// board themselves.
+const board = (user: AuthContext): Promise<void> =>
+  requireFormAccess(user, 'taskboard_view', 'view');
+
 export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   // ── Static routes first ──
   app.get('/tasks', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const q = listTasksQuerySchema.parse(req.query);
     return service.listTasks(q, req.user);
   });
@@ -52,6 +63,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/mark-viewed', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     return service.markTasksViewed(req.user);
   });
 
@@ -65,6 +77,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/personal', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const body = createPersonalTodoInputSchema.parse(req.body);
     const result = await service.createPersonalTodo(body, req.user);
     reply.code(201);
@@ -74,12 +87,14 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   // ── Per-task routes ──
   app.get('/tasks/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     return service.getTask(id, req.user);
   });
 
   app.patch('/tasks/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     const body = updateTaskInputSchema.parse(req.body);
     return service.updateTask(id, body, req.user);
@@ -87,6 +102,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/:id/status', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     const body = updateTaskStatusInputSchema.parse(req.body);
     return service.updateTaskStatus(id, body, req.user);
@@ -94,6 +110,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/:id/complete', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     const body = completeTaskInputSchema.parse(req.body ?? {});
     return service.completeTask(id, body, req.user);
@@ -101,6 +118,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/:id/cancel', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     const body = cancelTaskInputSchema.parse(req.body ?? {});
     return service.cancelTask(id, body, req.user);
@@ -108,6 +126,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/:id/reassign', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     const body = reassignTaskInputSchema.parse(req.body);
     return service.reassignTask(id, body, req.user);
@@ -115,6 +134,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/:id/comments', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     const body = addTaskCommentInputSchema.parse(req.body);
     const result = await service.addTaskComment(id, body, req.user);
@@ -124,6 +144,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/tasks/:id/attachments', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     const body = taskAttachmentInputSchema.parse(req.body);
     const result = await service.addTaskAttachment(id, body, req.user);
@@ -133,6 +154,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/tasks/:id/history', async (req) => {
     if (!req.user) throw new AuthenticationError();
+    await board(req.user);
     const { id } = idParamSchema.parse(req.params);
     return { history: await service.getTaskHistory(id, req.user) };
   });

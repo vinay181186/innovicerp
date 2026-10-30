@@ -26,9 +26,9 @@ vi.mock('../../purchase-orders/service', () => ({
 }));
 vi.mock('../../access-control/users-with-right', () => ({
   listUsersWithRight: vi.fn(async () => [
-    { id: 'u-a', name: 'Asha', isAdmin: false, role: 'manager' },
-    { id: 'u-b', name: 'Bharat', isAdmin: false, role: 'manager' },
-    { id: 'u-c', name: 'Chetan', isAdmin: false, role: 'manager' },
+    { id: 'u-a', name: 'Asha', isAdmin: false, role: 'manager', opensTaskBoard: true },
+    { id: 'u-b', name: 'Bharat', isAdmin: false, role: 'manager', opensTaskBoard: true },
+    { id: 'u-c', name: 'Chetan', isAdmin: false, role: 'manager', opensTaskBoard: true },
   ]),
 }));
 

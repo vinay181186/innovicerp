@@ -47,19 +47,15 @@ function textLength<T>(col: DataTableColumn<T>, row: T, index: number): number {
 }
 
 /**
- * The rows past the first MEASURE_ROWS that hold the longest value of any
- * never-cut column (code / num / date / badge), so the measured width covers
- * ALL rows, not just the sample. Text columns are cut anyway and skipped.
+ * The rows past the first MEASURE_ROWS that hold the longest value of each
+ * column, so the measured width covers
+ * ALL rows, not just the sample. Text columns too: they grow to their full
+ * text (fit-layout), so a longer one past the sample would show "…" needlessly.
  */
-export function pickOutlierRows<T>(
-  rows: T[],
-  columns: DataTableColumn<T>[],
-  kinds: DataTableColumnKind[],
-): Array<MeasureRow<T>> {
+export function pickOutlierRows<T>(rows: T[], columns: DataTableColumn<T>[]): Array<MeasureRow<T>> {
   if (rows.length <= MEASURE_ROWS) return [];
   const picked = new Set<number>();
-  columns.forEach((col, ci) => {
-    if (kinds[ci] === 'text') return;
+  columns.forEach((col) => {
     const top: Array<[number, number]> = [];
     for (let ri = MEASURE_ROWS; ri < rows.length; ri += 1) {
       const row = rows[ri];
@@ -164,12 +160,7 @@ export function useFitMeasure<T>({
   const rowsVersion = useRowsVersion(rows);
   const idsKey = ids.join('|');
   const extraRows = useMemo(
-    () =>
-      pickOutlierRows(
-        rows,
-        columns,
-        ids.map((id) => kinds[id] ?? 'code'),
-      ),
+    () => pickOutlierRows(rows, columns),
     // Keyed on the rows' version and the column ids, not on identities.
     [rowsVersion, idsKey],
   );

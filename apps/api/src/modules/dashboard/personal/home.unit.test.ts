@@ -25,9 +25,9 @@ vi.mock('../../purchase-orders/service', () => ({
 }));
 vi.mock('../../access-control/users-with-right', () => ({
   listUsersWithRight: vi.fn(async () => [
-    { id: 'u-a', name: 'Asha', isAdmin: false, role: 'manager' },
-    { id: 'u-b', name: 'Bharat', isAdmin: false, role: 'manager' },
-    { id: 'u-c', name: 'Chetan', isAdmin: false, role: 'manager' },
+    { id: 'u-a', name: 'Asha', isAdmin: false, role: 'manager', opensTaskBoard: true },
+    { id: 'u-b', name: 'Bharat', isAdmin: false, role: 'manager', opensTaskBoard: true },
+    { id: 'u-c', name: 'Chetan', isAdmin: false, role: 'manager', opensTaskBoard: true },
   ]),
 }));
 
@@ -126,7 +126,7 @@ describe('list gating per tier', () => {
       navPage: '/purchase-requests/x',
     };
     const remind = blocks.remindAction(
-      [{ id: 'u2', name: 'Jinal', isAdmin: false, role: 'manager' }],
+      [{ id: 'u2', name: 'Jinal', isAdmin: false, role: 'manager', opensTaskBoard: true }],
       'me',
       ref,
     );
@@ -134,11 +134,29 @@ describe('list gating per tier', () => {
     expect(lists.filterActions(a, [remind!])).toHaveLength(1);
     // Only admins hold it, or only the caller: nobody to remind.
     expect(
-      blocks.remindAction([{ id: 'u3', name: 'Admin', isAdmin: true, role: 'manager' }], 'me', ref),
+      blocks.remindAction(
+        [{ id: 'u3', name: 'Admin', isAdmin: true, role: 'manager', opensTaskBoard: true }],
+        'me',
+        ref,
+      ),
     ).toBeNull();
     expect(
-      blocks.remindAction([{ id: 'me', name: 'Me', isAdmin: false, role: 'manager' }], 'me', ref),
+      blocks.remindAction(
+        [{ id: 'me', name: 'Me', isAdmin: false, role: 'manager', opensTaskBoard: true }],
+        'me',
+        ref,
+      ),
     ).toBeNull();
+    // ADR-257: skip a holder whose Task Board is hidden; remind the next one.
+    const next = blocks.remindAction(
+      [
+        { id: 'u4', name: 'Hidden', isAdmin: false, role: 'manager', opensTaskBoard: false },
+        { id: 'u5', name: 'Rakesh', isAdmin: false, role: 'manager', opensTaskBoard: true },
+      ],
+      'me',
+      ref,
+    );
+    expect(next?.taskFor?.userId).toBe('u5');
   });
 });
 
@@ -303,8 +321,8 @@ describe('text parts', () => {
     expect(
       blocks.withText(
         [
-          { id: 'a', name: 'A', isAdmin: false, role: 'manager' },
-          { id: 'me', name: 'Me', isAdmin: false, role: 'manager' },
+          { id: 'a', name: 'A', isAdmin: false, role: 'manager', opensTaskBoard: true },
+          { id: 'me', name: 'Me', isAdmin: false, role: 'manager', opensTaskBoard: true },
         ],
         'me',
       ),

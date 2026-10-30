@@ -451,7 +451,16 @@ export function menuGroups(
   return sec.groups
     .map((grp) => ({
       ...grp,
-      items: grp.items.filter((it) => canOpenPage(eff, isSuperAdmin, it.to)),
+      // The query string goes along: Task Board and Day Log share one route and
+      // canOpenPage tells them apart by `?view=`. Path rules ignore the query,
+      // so the department "Reports ?group=" links are judged as before.
+      items: grp.items.filter((it) =>
+        canOpenPage(
+          eff,
+          isSuperAdmin,
+          it.search ? `${it.to}?${new URLSearchParams(it.search).toString()}` : it.to,
+        ),
+      ),
     }))
     .filter((grp) => grp.items.length > 0);
 }

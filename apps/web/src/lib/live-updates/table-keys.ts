@@ -177,6 +177,14 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   // would refetch every user's Home on every save; a reply reaches the owner's
   // Home 🔔 on its 60 s poll / focus refetch instead.
   daily_reports: [dayLogKeys.all, dashboardKeys.widgets()],
+  // Teams Config (owner 2026-10-30, 0230): a pair added / removed — who may
+  // open Team Day Logs, the mates on it, their person pages, the config list.
+  day_log_team_mates: [
+    dayLogKeys.access(),
+    dayLogKeys.teamAll(),
+    dayLogKeys.teamMatesAll(),
+    dayLogKeys.personDayAll(),
+  ],
   customer_dispatches: [
     dispatchKeys.all,
     salesOrdersKeys.all,

@@ -20,7 +20,7 @@ import { canSeeFormPrice, canWrite } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { getApprovalInbox } from '../approvals/service';
-import { canSeeLink, type DashAccess, loadAccess } from './access';
+import { canSeeLink, type DashAccess, hasTick, loadAccess } from './access';
 import { getConfig } from './config-service';
 import { done, makeHolders, type OwnRows, sentForApproval, todo, waiting } from './personal/blocks';
 import { HOME_PAGE_SIZE, type ListResult, runList } from './personal/list-query';
@@ -165,8 +165,11 @@ export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise
       const wait = await waiting(tx, c, rc, holders, canRemind);
       return { sent, wait };
     }),
-    own<HomeResponse['todo']>(user, 'todo', { late: [], today: [], planned: [] }, (tx) =>
-      todo(tx, cid, user.id, today),
+    // ADR-257: no tasks on Home for someone whose Task Board is hidden.
+    own<HomeResponse['todo']>(user, 'todo', { late: [], today: [], planned: [] }, async (tx) =>
+      hasTick(a, 'taskboard_view', 'view')
+        ? todo(tx, cid, user.id, today)
+        : { late: [], today: [], planned: [] },
     ),
     own<HomeResponse['done']>(
       user,

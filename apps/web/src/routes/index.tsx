@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import type { HomeScope } from '@innovic/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCanOpen } from '@/components/shared/action-link';
 import { useMarkTasksViewed } from '@/modules/tasks/api';
 import { dashboardKeys, useHome } from '@/modules/dashboard/api';
 import { HomePage } from '@/modules/dashboard/components/home-page';
@@ -24,6 +25,8 @@ function IndexPage(): React.JSX.Element {
   const { data: home, isLoading, isError, error, dataUpdatedAt } = useHome(scope);
   const qc = useQueryClient();
   const markViewed = useMarkTasksViewed();
+  // Not for someone whose Task Board page is hidden (taskboard_view).
+  const canTasks = useCanOpen()('/task-board');
 
   // Stamp the current user's freshly-assigned tasks as viewed (legacy
   // _markTasksViewed on home render) — once per mount, and only AFTER the first
@@ -32,10 +35,10 @@ function IndexPage(): React.JSX.Element {
   const marked = useRef(false);
   const loaded = home != null;
   useEffect(() => {
-    if (!loaded || marked.current) return;
+    if (!loaded || marked.current || !canTasks) return;
     marked.current = true;
     markViewed.mutate();
-  }, [loaded, markViewed]);
+  }, [loaded, markViewed, canTasks]);
 
   if (isLoading) {
     return (

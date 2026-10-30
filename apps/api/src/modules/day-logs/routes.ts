@@ -4,12 +4,14 @@
 import type { FastifyInstance } from 'fastify';
 import {
   addDayLogEntriesInputSchema,
+  addDayLogTeamMateInputSchema,
   addDayLogEntryInputSchema,
   dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
   dayLogApproveInputSchema,
   dayLogPersonDayQuerySchema,
   dayLogRejectInputSchema,
+  dayLogTeamMatesQuerySchema,
   editDayLogReplyInputSchema,
   holidayInputSchema,
   sendDayLogReplyInputSchema,
@@ -134,5 +136,31 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.deleteHoliday(id, req.user);
+  });
+
+  // Teams Config (owner 2026-10-30) — Super Admin pairs two people, two-way.
+  app.get('/day-logs/team-mates/people', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.listTeamPeople(req.user);
+  });
+  app.get('/day-logs/team-mates', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.listTeamMates(dayLogTeamMatesQuerySchema.parse(req.query), req.user);
+  });
+
+  app.post('/day-logs/team-mates', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const result = await service.addTeamMate(
+      addDayLogTeamMateInputSchema.parse(req.body),
+      req.user,
+    );
+    reply.code(201);
+    return result;
+  });
+
+  app.delete('/day-logs/team-mates/:id', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.removeTeamMate(id, req.user);
   });
 }

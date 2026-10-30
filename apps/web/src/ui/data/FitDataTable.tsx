@@ -166,6 +166,11 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     }
   });
 
+  // Spare width once every column shows its full content (fit-layout `fill`).
+  // No data column takes it: the Action column does, with ⋯ kept at its left
+  // edge — so ⋯ sits next to the last data column and the empty space trails
+  // after it. A table with no Action column simply ends at its last column.
+  const fill = fit?.fill ?? 0;
   const nCols = visible.length + (rowActions ? 1 : 0) + (selectable ? 1 : 0);
   const hasRows = !loading && rows.length > 0;
   const wrapStyle: CSSProperties | undefined = maxHeight !== undefined ? { maxHeight } : undefined;
@@ -180,9 +185,10 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
   const canPin = (id: string) => (fitInput ? canPinFn(fitInput, id) : true);
   // Pins the data first column just after the tick-box column (see the sticky
   // re-scope in innovic-theme.css for `.dt-has-sel`).
-  const tableStyle: CSSProperties | undefined = selectable
-    ? ({ '--dt-sel-w': `${selW}px` } as CSSProperties)
-    : undefined;
+  const tableStyle: CSSProperties = {
+    ...(selectable ? ({ '--dt-sel-w': `${selW}px` } as CSSProperties) : {}),
+    ...(fit && fill > 0 && !rowActions ? { width: fit.budget - fill + selW } : {}),
+  };
 
   return (
     <div className="dt-fit-root">
@@ -213,14 +219,22 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
         className={cx('tbl-wrap', 'dt-fit-wrap', wrapClassName)}
         style={wrapStyle}
       >
-        <table className={cx(tableClass, 'dt-fit', !fit && 'dt-fit-pending')} style={tableStyle}>
+        <table
+          className={cx(
+            tableClass,
+            'dt-fit',
+            !fit && 'dt-fit-pending',
+            fill > 0 && rowActions && 'dt-act-fill',
+          )}
+          style={tableStyle}
+        >
           {fit ? (
             <colgroup>
               {selectable ? <col className="dt-sel-col" style={{ width: selW }} /> : null}
               {visible.map((k) => (
                 <col key={k} style={{ width: fit.w[k] }} />
               ))}
-              {rowActions ? <col style={{ width: actionsW }} /> : null}
+              {rowActions ? <col style={{ width: actionsW + fill }} /> : null}
             </colgroup>
           ) : null}
           <thead>

@@ -14763,3 +14763,77 @@ and only Working On kept a history (ADR-255, Text Rev).
   show the line's current Start / Stop / SO (the old values were never kept).
 - Risks: none to data — the Entry Rev is written in the same statement as the line write,
   so a change can never exist without its revision.
+
+## ADR-257: Tasks & Alerts pages get their own "Hide page" rows
+
+**Date:** 2026-10-30
+**Status:** Accepted (owner "all four task" / "go", 2026-10-30)
+
+### Context
+
+The Tasks department had no page rows, so Task Board, Day Log, Alerts and Activity Log
+showed to everyone with a Tasks tier and none could be hidden for one person. The server
+did not check any right on GET /activity-log: any signed-in user could read the whole
+company's log, menu or not.
+
+### Decision
+
+- Four View-only ACCESS_FORMS under `tasks`: `taskboard_view`, `daylog_view`,
+  `alerts_view`, `activitylog_view`. Every Tasks tier gives View, so nothing changes for
+  anyone with a Tasks tier until an admin ticks **Hide page** on that row. A login with
+  no Tasks tier (the menu already hid these pages from them) now also gets no task, Day
+  Log or Alerts data from the server. PROD 2026-10-30: every active non-admin login has a
+  Tasks tier. No migration.
+- PAGE_ACCESS uses them; Task Board and Day Log share `/task-board` and `canOpenPage`
+  tells them apart by `?view=` (`DAY_LOG_VIEWS`). The route itself opens on either.
+- The server refuses each page's own data when hidden (task list/detail and task actions,
+  every /day-logs route, /alerts*, GET /activity-log, alert e-mail digests).
+- Kept open: assigning a task from other pages and Home "Remind" (POST /tasks), and the
+  document History tab (/activity-log/history follows the document's rights).
+- Owner decision: a person whose Task Board is hidden cannot be given a task — left out of
+  the Assign To / Reassign pickers (GET /tasks/user-options still lists everyone, flagged
+  `opensTaskBoard`, because Operators and CAPA pick people from it), skipped as the Home
+  Remind target, and refused by POST /tasks.
+- Team Day Logs leaves out people whose Day Log is hidden; their waiting edits stay in
+  Approvals so they can still be decided.
+- One rule for "may this other person open page X": `personHolds`
+  (access-control/users-with-right.ts), used by the task pickers, the alert digest, Day Log
+  Team and the Remind target.
+
+### Consequences
+
+- Positive: each page can be taken away from one person; the Activity Log is no longer
+  open to every login.
+- Negative: none for existing users (default View).
+- Risks: a page hidden while open — the next request is refused by the server.
+
+## ADR-258: Day Log — Teams Config: two-way team mates who see each other's day
+
+**Date:** 2026-10-30
+**Status:** Accepted (owner approved mockup https://claude.ai/artifact/VuccP2bNkf4cPyfV7sGAbA)
+
+### Context
+Only Super Admin, Auditor and L5 Department Admins could see another person's Day Log. The owner wants
+ordinary colleagues to see each other's day ("if i put jaypal under hansraj, hansraj under jaypal, then
+both can view each other save entry"), set up from the Task menu tab that was "Approvals · Day Log".
+
+### Decision
+- New `day_log_team_mates` (0230): one row per pair, ids stored sorted, so a pair is always two-way.
+- Teams Config tab on the Task Board (view `teams`, in `DAY_LOG_VIEWS`), Super Admin only: User picker,
+  Add team mate, table Sr No / Team Mate / Dept / Added On / ⋯ Remove (no Added By, no Sees Each Other).
+- `access.ts` is still the only gate: `Viewer.mates` rides in the same statement as the caller's access;
+  `canSeeUser` / `canSeeTeam` add mates; manage / approve rights do NOT.
+- A team mate sees the person's day like a non-Super-Admin: saved entries, read-only, SO / JWSO shown,
+  no Entry Rev, no replies.
+- Team Day Logs (every viewer): the Working / Idle / Not started / Team working hours / Edits to approve
+  strip, the Now column and the Late column are removed (owner 2026-10-30).
+- "Approvals · Day Log" stays only while an old edit is waiting (none are created since ADR-256).
+
+### Alternatives Considered
+- One-way "team mates of X" (the 29-10 mockup) — rejected by the owner: pairs are two-way.
+- Department Admins also set up Teams Config — owner: Super Admin only.
+
+### Consequences
+- Positive: one table, one gate; Team Day Logs opens for a person as soon as a pair exists (live).
+- Risks: a wrong visibility rule would show a day to the wrong person — covered by team-cases tests.
+
