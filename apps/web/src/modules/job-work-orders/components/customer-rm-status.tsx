@@ -40,7 +40,6 @@ function rows(v: CustomerRm): Row[] {
 function Breakdown({ value }: { value: CustomerRm }): React.JSX.Element {
   return (
     <>
-      <div className="hover-card-title">Customer RM breakdown</div>
       <table className="hover-card-rows">
         <tbody>
           {rows(value).map((r, i) =>
@@ -49,11 +48,10 @@ function Breakdown({ value }: { value: CustomerRm }): React.JSX.Element {
                 <td colSpan={2} />
               </tr>
             ) : (
-              <tr key={r[0]}>
-                <td style={r[2] && r[1] !== 0 ? { color: r[2] } : undefined}>{r[0]}</td>
-                <td className="n" style={r[2] && r[1] !== 0 ? { color: r[2] } : undefined}>
-                  {r[1]}
-                </td>
+              // A coloured stage shows its colour only when it holds qty.
+              <tr key={r[0]} style={r[2] && r[1] !== 0 ? { color: r[2] } : undefined}>
+                <td>{r[0]}</td>
+                <td className="n">{r[1]}</td>
               </tr>
             ),
           )}
@@ -68,7 +66,7 @@ export function CustomerRmStatus({ value }: { value: CustomerRm | undefined }): 
     return <span style={{ color: 'var(--text3)' }}>—</span>;
   }
   return (
-    <HoverCard label="Customer RM breakdown" card={<Breakdown value={value} />}>
+    <HoverCard title="Customer RM breakdown" card={<Breakdown value={value} />}>
       <span style={{ color: COLOUR[value.status], fontWeight: 700 }}>
         {CUSTOMER_RM_STATUS_LABEL[value.status]}
       </span>

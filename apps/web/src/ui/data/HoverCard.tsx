@@ -11,7 +11,13 @@
 //
 // Behaviour copies RowMenu's hover mode: opens 150 ms after the pointer
 // arrives, stays while the pointer moves onto the card, closes 200 ms after it
-// leaves; focus opens it, blur / Esc close it. One card open at a time.
+// leaves; Esc closes it. Hover only, so it adds no Tab stop to every row (the
+// plain `title` it replaced had none). One card open at a time. A click inside
+// the card never reaches the row (that would open the document).
+//
+// Its portal code is a deliberate small copy of RowMenu's (same placement
+// helper, same z layer, same Esc guard): folding both into one hook would mean
+// changing RowMenu, which every list uses, for a read-only card.
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
@@ -32,11 +38,11 @@ export interface HoverCardProps {
   children: ReactNode;
   /** The card body. */
   card: ReactNode;
-  /** Spoken name of the card for screen readers. */
-  label: string;
+  /** The card's heading, shown on top and used as its spoken name. */
+  title: string;
 }
 
-export function HoverCard({ children, card, label }: HoverCardProps): ReactElement {
+export function HoverCard({ children, card, title }: HoverCardProps): ReactElement {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<CSSProperties>({ visibility: 'hidden' });
   const trigRef = useRef<HTMLSpanElement>(null);
@@ -89,20 +95,26 @@ export function HoverCard({ children, card, label }: HoverCardProps): ReactEleme
 
   useLayoutEffect(() => {
     if (!open) {
-      setPos({ visibility: 'hidden' });
+      // Same object back when already hidden, so a closed card never re-renders.
+      setPos((p) => (p.visibility === 'hidden' ? p : { visibility: 'hidden' }));
       return undefined;
     }
     place();
+    // Esc belongs to the open card. Window CAPTURE + preventDefault, as in
+    // RowMenu, so a card inside a dialog closes without closing the dialog.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      close();
     };
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, [open, place, close]);
 
@@ -111,12 +123,9 @@ export function HoverCard({ children, card, label }: HoverCardProps): ReactEleme
       <span
         ref={trigRef}
         className="hover-card-trigger"
-        tabIndex={0}
         aria-describedby={open ? cardId : undefined}
         onMouseEnter={showSoon}
         onMouseLeave={hideSoon}
-        onFocus={show}
-        onBlur={close}
       >
         {children}
       </span>
@@ -126,12 +135,15 @@ export function HoverCard({ children, card, label }: HoverCardProps): ReactEleme
               ref={cardRef}
               id={cardId}
               role="tooltip"
-              aria-label={label}
+              aria-label={title}
               className="row-menu hover-card"
               style={{ position: 'fixed', zIndex: Z_PICKER, ...pos }}
               onMouseEnter={() => window.clearTimeout(timer.current)}
               onMouseLeave={hideSoon}
+              // A portal still bubbles through the React tree: keep the row's onClick out.
+              onClick={(e) => e.stopPropagation()}
             >
+              <div className="hover-card-title">{title}</div>
               {card}
             </div>,
             document.body,

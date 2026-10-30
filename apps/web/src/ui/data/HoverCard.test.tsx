@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HoverCard } from './HoverCard';
 
-function inCell() {
+function inCell(onRow = vi.fn()) {
   render(
     <table>
       <tbody>
-        <tr>
+        <tr onClick={onRow}>
           <td>
-            <HoverCard label="Breakdown" card={<span>Waiting QC 8</span>}>
+            <HoverCard title="Breakdown" card={<span>Waiting QC 8</span>}>
               Inspection
             </HoverCard>
           </td>
@@ -48,11 +48,16 @@ describe('HoverCard', () => {
     expect(screen.getByRole('tooltip')).toBeTruthy();
   });
 
-  it('opens on keyboard focus and closes on Esc', () => {
-    const trigger = inCell();
-    fireEvent.focus(trigger);
-    expect(screen.getByRole('tooltip')).toBeTruthy();
-    fireEvent.keyDown(window, { key: 'Escape' });
+  it('closes on Esc without letting a dialog close, and a click inside never opens the row', () => {
+    const onRow = vi.fn();
+    const trigger = inCell(onRow);
+    fireEvent.mouseEnter(trigger);
+    act(() => void vi.advanceTimersByTime(150));
+    fireEvent.click(screen.getByRole('tooltip'));
+    expect(onRow).not.toHaveBeenCalled();
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => void window.dispatchEvent(esc));
+    expect(esc.defaultPrevented).toBe(true);
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });
