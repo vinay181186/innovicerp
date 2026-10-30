@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import { approvalCases } from './approval-cases';
+import { editCases } from './edit-cases';
 import { sheetCases } from './sheet-cases';
 import { textCases } from './text-cases';
 import * as service from './service';
@@ -207,5 +208,6 @@ describe('Day Log — LATE, orders, team', () => {
 });
 
 approvalCases();
+editCases();
 sheetCases();
 textCases();

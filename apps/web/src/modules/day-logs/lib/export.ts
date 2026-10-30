@@ -29,7 +29,7 @@ export const DAY_COLUMNS = [
 ];
 
 /** Column keys the print right-aligns. */
-export const DAY_NUM_KEYS = ['sr_no', 'work_hours', 'text_rev_no'] as const;
+export const DAY_NUM_KEYS = ['sr_no', 'work_hours', 'entry_rev_no'] as const;
 
 export function dayTable(day: DayLogDetail): ExportTable {
   const rows = sortEntries(day.entries).map((e, i) => ({
@@ -44,27 +44,27 @@ export function dayTable(day: DayLogDetail): ExportTable {
 }
 
 /** Team Day Logs › a person, one day: Sr No · Start Time · Stop Time ·
- *  Working Hours · (Super Admin: Text Rev No · Text Rev Date · Text Rev
- *  Time ·) SO / JWSO · Working On. */
+ *  Working Hours · (Super Admin: Entry Rev No · Entry Rev Date · Entry
+ *  Rev Time ·) SO / JWSO · Working On. */
 export function personDayTable(p: DayLogPersonDay): ExportTable {
   const rev = p.isSuperAdmin
     ? [
-        { key: 'text_rev_no', label: 'Text Rev No' },
-        { key: 'text_rev_date', label: 'Text Rev Date' },
-        { key: 'text_rev_time', label: 'Text Rev Time' },
+        { key: 'entry_rev_no', label: 'Entry Rev No' },
+        { key: 'entry_rev_date', label: 'Entry Rev Date' },
+        { key: 'entry_rev_time', label: 'Entry Rev Time' },
       ]
     : [];
   const columns = [...DAY_COLUMNS.slice(0, 4), ...rev, ...DAY_COLUMNS.slice(4)];
   const rows = sortEntries(p.entries).map((e) => {
-    const at = e.textRevNo ? istStamp(e.textRevisedAt) : null;
+    const at = e.entryRevNo ? istStamp(e.entryRevisedAt) : null;
     return {
       sr_no: String(e.srNo),
       start_time: fmt12(e.fromTime),
       stop_time: e.toTime ? fmt12(e.toTime) : '',
       work_hours: fmtDuration(e.minutes),
-      text_rev_no: e.textRevNo === null ? '' : String(e.textRevNo),
-      text_rev_date: at?.date ?? '',
-      text_rev_time: at?.time ?? '',
+      entry_rev_no: e.entryRevNo === null ? '' : String(e.entryRevNo),
+      entry_rev_date: at?.date ?? '',
+      entry_rev_time: at?.time ?? '',
       order_code: e.order?.code ?? '',
       work: e.description,
     };

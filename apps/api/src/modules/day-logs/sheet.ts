@@ -14,7 +14,6 @@ import { AppError, ValidationError } from '../../lib/errors';
 import { assertCanWrite, resolveAccess, viewerOf } from './access';
 import type { DayLine } from './day';
 import {
-  REV0_AFTER,
   type Row,
   insertSql,
   label,
@@ -23,6 +22,7 @@ import {
   nextLineNo,
   ordersOf,
   prepare,
+  revisionAfter,
   writeLines,
 } from './entry-write';
 import { dayTx, openDayLocked } from './lock';
@@ -92,7 +92,7 @@ export async function addEntries(
       h,
       user,
       insertSql(companyId, h, user, rows, nextLineNo(lines)),
-      REV0_AFTER, // ADR-255 — every row's Text Rev 0, same statement
+      revisionAfter(user.id), // ADR-255/256 — every row's Entry Rev 0, same statement
     );
     const names = rows.map((r) => `${label(r)}${r.orderCode ? ` (${r.orderCode})` : ''}`);
     await log(tx, companyId, user, h, 'CREATE', `added ${rows.length} rows: ${names.join('; ')}`);

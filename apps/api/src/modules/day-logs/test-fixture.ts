@@ -66,14 +66,14 @@ export const at = (date: string, hhmm: string): DayLogClock => {
 
 export async function wipeOwnerDays(): Promise<void> {
   const { today } = istClock();
-  // ADR-255 — the revisions / replies of those days first (their line FK has
-  // no cascade), in the same statement.
+  // ADR-255/256 — the revisions / replies of those days first (their line FK
+  // has no cascade), in the same statement.
   const days = sql`SELECT l.id FROM public.daily_report_lines l
     JOIN public.daily_reports dr ON dr.id = l.daily_report_id
     WHERE dr.user_id = ${fx.ownerBase.id}::uuid
       AND (dr.report_date < '2002-01-01'::date OR dr.report_date = ${today}::date)`;
   await db.execute(sql`
-    WITH a AS (DELETE FROM public.daily_report_line_text_revisions WHERE line_id IN (${days})),
+    WITH a AS (DELETE FROM public.daily_report_line_revisions WHERE line_id IN (${days})),
          b AS (DELETE FROM public.daily_report_line_replies WHERE line_id IN (${days}))
     SELECT 1`);
   await db.execute(sql`
@@ -103,7 +103,7 @@ export const add = (date: string, clock: DayLogClock, f: Fields = {}) =>
 export const batch = (date: string, clock: DayLogClock, rows: Fields[]) =>
   service.addEntries({ date, rows: rows.map(fields) }, owner(), clock);
 
-/** Ask for an edit of a row as loaded (§20.4 updatedAt), changing only `f`. */
+/** Edit a row as loaded (ADR-256: saved directly) (§20.4 updatedAt), changing only `f`. */
 export const edit = (e: DayLogEntry, clock: DayLogClock, f: Partial<UpdateDayLogEntryInput>) =>
   service.updateEntry(
     e.id,
@@ -124,12 +124,43 @@ export const edit = (e: DayLogEntry, clock: DayLogClock, f: Partial<UpdateDayLog
 export const work = (e: DayLogEntry, clock: DayLogClock, description: string) =>
   service.updateWork(e.id, { description, updatedAt: e.updatedAt }, owner(), clock);
 
-/** ADR-255 — a line's stored revisions, oldest first (straight from the table). */
+/** ADR-255 — a line's stored Entry Revs (number + text), oldest first. */
 export async function revisionsOf(lineId: string) {
   return (await db.execute(sql`
-    SELECT text_rev_no, description FROM public.daily_report_line_text_revisions
-    WHERE line_id = ${lineId}::uuid AND deleted_at IS NULL ORDER BY text_rev_no
-  `)) as unknown as Array<{ text_rev_no: number; description: string }>;
+    SELECT entry_rev_no, description FROM public.daily_report_line_revisions
+    WHERE line_id = ${lineId}::uuid AND deleted_at IS NULL ORDER BY entry_rev_no
+  `)) as unknown as Array<{ entry_rev_no: number; description: string }>;
+}
+
+/** ADR-256 — a line's stored Entry Revs in full, oldest first:
+ *  [rev, Working On, Start, Stop, SO id or null]. */
+export async function entryRevsOf(lineId: string) {
+  const rows = (await db.execute(sql`
+    SELECT entry_rev_no AS n, description AS d, to_char(from_time, 'HH24:MI') AS f,
+      to_char(to_time, 'HH24:MI') AS t, sales_order_id::text AS so
+    FROM public.daily_report_line_revisions
+    WHERE line_id = ${lineId}::uuid AND deleted_at IS NULL ORDER BY entry_rev_no
+  `)) as unknown as Array<{
+    n: number;
+    d: string;
+    f: string | null;
+    t: string | null;
+    so: string | null;
+  }>;
+  return rows.map((r) => [r.n, r.d, r.f, r.t, r.so]);
+}
+
+/** An edit staged the pre-ADR-256 way (pending_*), straight in the table — the
+ *  waiting edit still decided on Approvals. Returns the row as now loaded. */
+export async function stagePending(e: DayLogEntry, clock: DayLogClock, toTime: string) {
+  await db.execute(sql`
+    UPDATE public.daily_report_lines
+    SET pending_from = from_time, pending_to = ${toTime}::time, pending_description = description,
+        pending_sales_order_id = sales_order_id, pending_job_work_order_id = job_work_order_id,
+        pending_at = now(), pending_by = created_by, updated_at = now()
+    WHERE id = ${e.id}::uuid`);
+  const d = await service.getDay({ date: MON }, owner(), clock);
+  return d.entries.find((x) => x.id === e.id)!;
 }
 
 export const times = (d: DayLogDetail) => d.entries.map((e) => [e.fromTime, e.toTime]);

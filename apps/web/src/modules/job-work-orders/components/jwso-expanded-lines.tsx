@@ -4,7 +4,7 @@
 // routes/list.tsx so that file stays under the 400-line ceiling.
 //
 // Shows the line detail the list row cannot: Ln · POL · Item (CODE/REV + name) ·
-// Customer RM · Accepted (ADR-203) · Material · Drawing No. · Order Qty ·
+// Customer RM · Customer RM Status (OW-143) · Material · Drawing No. · Order Qty ·
 // Dispatched · Pending · UOM · [Rate] · Due Date · Remarks · JWSO Status. The
 // JWSO-level note (JWSO Remarks) sits below the table (the
 // retired card showed them on its meta line). No per-line Edit: it opened the
@@ -16,6 +16,7 @@ import { fmtDate } from '@/lib/date';
 import { ItemBadge, ItemThumbnailCell, ItemThumbnailHeader } from '@/components/shared/item-badge';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useJobWorkOrder } from '../api';
+import { CustomerRmStatus } from './customer-rm-status';
 
 export function JwsoExpandedLines({ jwId }: { jwId: string }): React.JSX.Element {
   const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
@@ -39,7 +40,7 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
   // the Rate column is dropped here too. Told by the server, not inferred from a
   // null money field (a null also means "no value yet").
   const priceHidden = jw.priceVisible === false;
-  // Ln · POL · thumbnail · Item (badge) · Customer RM · Accepted · Material ·
+  // Ln · POL · thumbnail · Item (badge) · Customer RM · Customer RM Status · Material ·
   // Drawing No. · Qty · Dispatched · Pending · UOM · [Rate] · Due Date ·
   // Remarks · JWSO Status.
   const cols = 16 - (priceHidden ? 1 : 0);
@@ -65,8 +66,8 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
               <ItemThumbnailHeader />
               <th>Item</th>
               <th>Customer RM</th>
-              <th className="th-num" title="Customer RM accepted by Incoming QC on this line">
-                Accepted
+              <th title="Where this line's customer RM is — hover the word for the quantities">
+                Customer RM Status
               </th>
               <th>Material</th>
               <th>Drawing No.</th>
@@ -123,7 +124,9 @@ function JwLinesTable({ jw }: { jw: JobWorkOrderDetail }): React.JSX.Element {
                         <span className="text3">—</span>
                       )}
                     </td>
-                    <td className="mono td-num">{l.rmItemCode ? l.rmAcceptedQty : '—'}</td>
+                    <td>
+                      <CustomerRmStatus value={l.customerRm} />
+                    </td>
                     <td className="text2" style={{ fontSize: 11 }}>
                       {l.material ?? '—'}
                     </td>

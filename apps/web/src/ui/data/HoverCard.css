@@ -1,0 +1,41 @@
+/* HoverCard — the box itself reuses `.row-menu` (background, border, radius,
+   shadow); these rules only set the card's own padding and the breakdown
+   table inside it. */
+.hover-card-trigger {
+  cursor: help;
+  outline-offset: 2px;
+}
+.hover-card {
+  min-width: 220px;
+  padding: var(--sp-2) var(--sp-3);
+}
+.hover-card-title {
+  font-family: var(--hfont);
+  font-weight: 800;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--blue2);
+  margin-bottom: var(--sp-1);
+}
+.hover-card-rows {
+  width: 100%;
+  border-collapse: collapse;
+}
+.hover-card-rows tr {
+  color: var(--text2);
+}
+.hover-card-rows td {
+  padding: 2px 4px;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.hover-card-rows td.n {
+  text-align: right;
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.hover-card-rows tr.sep td {
+  padding: 0;
+  border-top: 1px solid var(--border);
+}

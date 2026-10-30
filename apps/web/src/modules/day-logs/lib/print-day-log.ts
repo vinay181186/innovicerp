@@ -3,7 +3,7 @@
 // entry table (the screen's columns: Sr No · Start Time · Stop Time · Working
 // Hours · SO / JWSO · Working On — full text), a totals row from the server's
 // summary, and the "Logged by" / "Seen by (Department Admin)" line. The
-// person page (its own columns, Text Rev ones for a Super Admin only) and the
+// person page (its own columns, Entry Rev ones for a Super Admin only) and the
 // Team Day Logs table print the same way.
 
 import type { Company, DayLogDetail, DayLogPersonDay, TeamDayLogResponse } from '@innovic/shared';

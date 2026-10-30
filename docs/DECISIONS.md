@@ -14721,3 +14721,45 @@ entry, with the user told through the Home dashboard.
 - Risks: the history is only as private as the API checks — every revision read is gated
   by `isSuper` in one place.
 
+
+## ADR-256: Day Log — Start / Stop / SO-JWSO edits saved directly; ONE Entry Rev history for every save
+
+**Date:** 2026-10-30
+**Status:** Accepted (owner, 2026-10-30)
+
+### Context
+
+Owner: "if user edits start time, stop time, so/jwso no. nothing goes for approval. but
+edited things each and every must show in teams day log. same as working on text", then
+"one common, not separate, not text rev only — a rev that covers everything".
+Until now (0225) those edits were staged in `pending_*` and decided on Approvals · Day Log,
+and only Working On kept a history (ADR-255, Text Rev).
+
+### Decision
+
+- `PATCH /day-logs/entries/:id` (entries.ts `updateEntry`) writes Start / Stop / SO-JWSO
+  straight to the live columns (`hours` from From/To, `reject_reason` cleared), under the
+  day header lock, with the §20.4 `updatedAt` check and the same row checks as a new row.
+  Working On is untouched there (still text.ts, ADR-255).
+- **One history:** 0229 turns `daily_report_line_text_revisions` into
+  `daily_report_line_revisions` (`entry_rev_no`, + `from_time`, `to_time`,
+  `sales_order_id`, `job_work_order_id`). Every save that changes a line adds Entry Rev
+  max+1 = the whole line after the save, in the same statement as the line write, through
+  ONE helper (`entry-write.ts revisionAfter`, §21): new row (Rev 0), Working On edit,
+  Start / Stop / SO edit, and approval of an edit staged before this shipped. Reject adds none.
+- Team Day Logs › person (person-day.ts) returns each entry's Entry Revs in full
+  (Working On, Start, Stop, SO / JWSO with code), newest first, plus `entryRevNo` /
+  `entryRevisedAt` — Super Admin only, empty / null for anyone else. Names per NAMING.md:
+  Entry Rev No / Entry Rev Date / Entry Rev Time.
+- One `EDIT` activity row per Start / Stop / SO edit: "changed <old span> to <new span>" —
+  times and order only, never Working On (ADR-255 rule).
+- An edit staged before this shipped still waits: it blocks a new edit with "An edit is
+  already waiting for approval" until it is approved / rejected on Approvals · Day Log.
+
+### Consequences
+
+- Positive: no approval round trip; the Super Admin sees every version of an entry in one list.
+- Negative: Department Admins no longer review those edits. Revisions written before 0229
+  show the line's current Start / Stop / SO (the old values were never kept).
+- Risks: none to data — the Entry Rev is written in the same statement as the line write,
+  so a change can never exist without its revision.

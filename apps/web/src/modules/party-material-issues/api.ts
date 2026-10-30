@@ -10,6 +10,7 @@ import { apiFetch } from '@/lib/api';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
+import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { partyMaterialsKeys } from '@/modules/party-materials/api';
 import { partyStockLedgerKeys } from '@/modules/party-stock-ledger/api';
 
@@ -83,6 +84,8 @@ export function useCreatePartyMaterialIssue() {
       // status (RM AVAIL tile) and the op board must both refresh.
       void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
       void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
+      // OW-143: In Store / Issued to JC on the JWSO's Customer RM Status.
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
     },
   });
 }
@@ -113,6 +116,8 @@ export function useReturnPartyMaterialIssueToStore() {
       void qc.invalidateQueries({ queryKey: partyStockLedgerKeys.all });
       void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
       void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
+      // OW-143: In Store / Issued to JC on the JWSO's Customer RM Status.
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
     },
   });
 }

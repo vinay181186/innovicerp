@@ -35,6 +35,7 @@ import { REVISION_PATTERN } from '../lib/revision';
 import { polInputSchema } from '../lib/pol';
 import { lineRemarksInputSchema } from '../lib/line-remarks';
 import { queryBoolean } from '../lib/query-boolean';
+import { CUSTOMER_RM_STATUSES } from '../lib/customer-rm-status';
 import { SO_STATUSES } from '../enums/so-status';
 import { uomSchema } from './item';
 import { sfRawParamSchema } from './list-query';
@@ -44,6 +45,25 @@ export const jwStatusSchema = z.enum(SO_STATUSES);
 const codeRegex = /^[A-Za-z0-9._/-]+$/; // legacy jwNo allows '/'
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
+
+/** OW-143 — where the customer's own raw material is, for one JWSO line or a
+ *  whole JWSO (lib/customer-rm-status.ts is the rule). Read from Party GRN,
+ *  Incoming QC, the deviation NC, Issue to JC and Customer Material Return —
+ *  nothing stored. */
+export const customerRmSchema = z.object({
+  status: z.enum(CUSTOMER_RM_STATUSES),
+  requiredQty: z.number().int().nonnegative(),
+  receivedQty: z.number().int().nonnegative(),
+  grnPendingQty: z.number().int().nonnegative(),
+  qcPendingQty: z.number().int().nonnegative(),
+  deviatedQty: z.number().int().nonnegative(),
+  acceptedQty: z.number().int().nonnegative(),
+  /** Never clamped — a negative shows the register out of step, as on the issue screen. */
+  inStoreQty: z.number().int(),
+  issuedQty: z.number().int(),
+  returnedQty: z.number().int().nonnegative(),
+});
+export type CustomerRm = z.infer<typeof customerRmSchema>;
 
 export const jobWorkOrderLineSchema = z.object({
   id: z.string().uuid(),
@@ -97,6 +117,9 @@ export const jobWorkOrderLineSchema = z.object({
   /** ADR-203: received on this line and still waiting for Incoming QC. The
    *  Party GRN receive cap is Order Qty − Accepted − this. */
   rmWaitingQcQty: z.number().int().nonnegative().default(0),
+  /** OW-143 — this line's customer RM status + breakdown. Only the detail
+   *  read fills it (the write-back shapes leave it out). */
+  customerRm: customerRmSchema.optional(),
   /** ADR-203: true once any downstream document (Job Card, plan, Party GRN,
    *  issue, return, invoice) uses this line — item / UOM / BOM are then locked
    *  and the line cannot be removed. Drives the edit form's locks. */
@@ -150,6 +173,9 @@ export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
   /** ADR-203: customer material QC-ACCEPTED across this JWSO's lines
    *  (Σ party_grn_lines.accepted_qty by jw_line_id). Rejected pieces never count. */
   partyReceivedQty: z.number().int().nonnegative(),
+  /** OW-143 — the JWSO's customer RM status (the rule on the sum of its lines).
+   *  Only the detail read fills it. */
+  customerRm: customerRmSchema.optional(),
   lines: z.array(jobWorkOrderLineSchema),
   /** ADR-243 — the same money roll-up as the SO (soTotalsSchema). Null when
    *  prices are hidden from the viewer. Only the detail read fills it. */
@@ -197,6 +223,8 @@ export const jobWorkOrderListItemSchema = z.object({
   /** ADR-203: customer material the lines need = Σ order qty of lines that
    *  have a customer RM (1 RM piece per finished part, owner D1). */
   rmRequiredQty: z.number().int().nonnegative().default(0),
+  /** OW-143 — the JWSO's customer RM status (the rule on the sum of its lines). */
+  customerRm: customerRmSchema.optional(),
 });
 export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 

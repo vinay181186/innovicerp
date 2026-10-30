@@ -1,9 +1,13 @@
-// Day Log — Working On edits, text revisions and Super Admin replies
-// (ADR-255, owner 2026-10-29).
-//   - The owner edits Working On DIRECTLY (no approval). Every changed save
-//     keeps the earlier text as a revision: Text Rev 0 = first save, +1 per
-//     changed save. The owner is never shown any revision fact.
-//   - Start / Stop / SO edits still go for approval (day-log.ts, unchanged).
+// Day Log — direct edits, the entry's revisions and Super Admin replies
+// (ADR-255, owner 2026-10-29; ADR-256, 2026-10-30).
+//   - The owner edits Working On DIRECTLY (no approval). The owner is never
+//     shown any revision fact.
+//   - ADR-256 (owner 2026-10-30): Start / Stop / SO-JWSO edits are ALSO saved
+//     directly (no approval), and ONE common history covers every edit: each
+//     Entry Rev (0 = first save, +1 per changed save of ANY field) keeps the
+//     whole entry — Working On, Start, Stop, SO / JWSO — as it was saved.
+//     Edits already waiting when this shipped are still decided on
+//     Approvals · Day Log (an approval adds an Entry Rev too).
 //   - A Super Admin (Full Access / role admin) sees every revision and may
 //     reply on an entry — many replies, each editable. The owner sees the
 //     replies (latest text) and an unread mark until the entry is opened.
@@ -55,14 +59,19 @@ export const dayLogAdminReplySchema = dayLogOwnReplySchema.omit({ unread: true }
 });
 export type DayLogAdminReply = z.infer<typeof dayLogAdminReplySchema>;
 
-/** One saved version of an entry's Working On. */
-export const dayLogTextRevisionSchema = z.object({
+/** ADR-256 — one saved version of an entry (Entry Rev): the whole entry as
+ *  it was then. Old revisions saved before ADR-256 carry the entry's Start /
+ *  Stop / SO as they were when ADR-256 shipped. */
+export const dayLogEntryRevisionSchema = z.object({
   /** 0 = first save. */
-  textRevNo: z.number().int().nonnegative(),
+  entryRevNo: z.number().int().nonnegative(),
   description: z.string(),
+  fromTime: z.string().nullable(),
+  toTime: z.string().nullable(),
+  order: dayLogOrderSchema.nullable(),
   savedAt: z.string(),
 });
-export type DayLogTextRevision = z.infer<typeof dayLogTextRevisionSchema>;
+export type DayLogEntryRevision = z.infer<typeof dayLogEntryRevisionSchema>;
 
 /** One entry on the person page (Team Day Logs › a person, one day). */
 export const dayLogPersonDayEntrySchema = z.object({
@@ -74,12 +83,12 @@ export const dayLogPersonDayEntrySchema = z.object({
   minutes: z.number().int(),
   order: dayLogOrderSchema.nullable(),
   description: z.string(),
-  /** Super Admin only (null for anyone else). */
-  textRevNo: z.number().int().nonnegative().nullable(),
-  /** When the latest revision was saved; null at Text Rev 0 or not Super Admin. */
-  textRevisedAt: z.string().nullable(),
-  /** Newest first. Empty unless Super Admin. */
-  revisions: z.array(dayLogTextRevisionSchema),
+  /** Entry Rev No — Super Admin only (null for anyone else). */
+  entryRevNo: z.number().int().nonnegative().nullable(),
+  /** When the latest Entry Rev was saved; null at Entry Rev 0 or not Super Admin. */
+  entryRevisedAt: z.string().nullable(),
+  /** Every Entry Rev, newest first. Empty unless Super Admin. */
+  revisions: z.array(dayLogEntryRevisionSchema),
   /** Oldest first. Empty unless Super Admin. */
   replies: z.array(dayLogAdminReplySchema),
 });
@@ -92,8 +101,10 @@ export const dayLogPersonDaySchema = z.object({
   date: z.string(),
   /** Server's IST today (the date picker's max). */
   today: z.string(),
-  /** Super Admin: sees revisions and may reply. */
+  /** Super Admin: sees every Entry Rev — on their own day too (ADR-256). */
   isSuperAdmin: z.boolean(),
+  /** Super Admin on someone else's day: sees the replies and may reply. */
+  canReply: z.boolean(),
   entries: z.array(dayLogPersonDayEntrySchema),
 });
 export type DayLogPersonDay = z.infer<typeof dayLogPersonDaySchema>;

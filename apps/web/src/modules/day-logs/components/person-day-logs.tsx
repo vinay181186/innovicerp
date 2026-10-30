@@ -2,13 +2,14 @@
 // Header: ← Team Day Logs, the name, the department, a date box (max today;
 // opens on the team date, else today) and Print / Export. Then the day's
 // entries on the FIT table: Sr No · Start Time · Stop Time · Working Hours ·
-// Text Rev No · Text Rev Date · Text Rev Time · Working On (one line). The
-// three Text Rev columns are a Super Admin's only (the server sends them null
-// to anyone else). ▸ opens, for a Super Admin, every Working On version with
-// a word diff (LEFT) and the replies with Send reply (RIGHT); for anyone
-// else the full text only. Search (Working On, SO / JWSO — and every earlier
-// Text Rev for a Super Admin) and the ADR-200 Sort & Filter ▾ run in the
-// browser: the whole day is loaded.
+// Entry Rev No · Entry Rev Date · Entry Rev Time · Working On (one line). The
+// three Entry Rev columns are a Super Admin's only (the server sends them null
+// to anyone else). ▸ opens, for a Super Admin, every saved version of the
+// entry — one Entry Rev per changed save of Working On, Start Time, Stop Time
+// or SO / JWSO (ADR-256) — with what changed (LEFT) and the replies with
+// Send reply (RIGHT); for anyone else the full text only. Search (Working On, SO / JWSO — and every earlier
+// Entry Rev's Working On for a Super Admin) and the ADR-200 Sort & Filter ▾
+// run in the browser: the whole day is loaded.
 
 import type { DayLogPersonDay, DayLogPersonDayEntry } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
@@ -32,10 +33,10 @@ import '../day-log-sheet.css';
 
 type Entry = DayLogPersonDayEntry;
 
-const REV_IDS = ['textRevNo', 'textRevDate', 'textRevTime'];
+const REV_IDS = ['entryRevNo', 'entryRevDate', 'entryRevTime'];
 
 function columns(): DataTableColumn<Entry>[] {
-  const revAt = (r: Entry) => (r.textRevNo ? istStamp(r.textRevisedAt) : null);
+  const revAt = (r: Entry) => (r.entryRevNo ? istStamp(r.entryRevisedAt) : null);
   return [
     { id: 'srNo', header: 'Sr No', kind: 'code', className: 'mono', render: (r) => r.srNo },
     {
@@ -64,25 +65,25 @@ function columns(): DataTableColumn<Entry>[] {
       filterValue: (r) => r.minutes,
     },
     {
-      id: 'textRevNo',
-      header: 'Text Rev No',
+      id: 'entryRevNo',
+      header: 'Entry Rev No',
       kind: 'num',
       align: 'right',
       className: 'mono',
-      render: (r) => r.textRevNo ?? '—',
-      filterValue: (r) => r.textRevNo,
+      render: (r) => r.entryRevNo ?? '—',
+      filterValue: (r) => r.entryRevNo,
     },
     {
-      id: 'textRevDate',
-      header: 'Text Rev Date',
+      id: 'entryRevDate',
+      header: 'Entry Rev Date',
       kind: 'date',
       className: 'mono',
       render: (r) => revAt(r)?.date ?? '—',
-      filterValue: (r) => (r.textRevNo ? r.textRevisedAt : null),
+      filterValue: (r) => (r.entryRevNo ? r.entryRevisedAt : null),
     },
     {
-      id: 'textRevTime',
-      header: 'Text Rev Time',
+      id: 'entryRevTime',
+      header: 'Entry Rev Time',
       kind: 'date',
       className: 'mono',
       render: (r) => revAt(r)?.time ?? '—',
@@ -118,6 +119,14 @@ function PersonExpand({ r, p }: { r: Entry; p: DayLogPersonDay }): React.JSX.Ele
       <div className="dl-expand">
         <span className="dl-xl">Working On</span>
         <div className="dl-full">{r.description}</div>
+      </div>
+    );
+  }
+  // A Super Admin's own day: the versions only — nobody replies to themself.
+  if (!p.canReply) {
+    return (
+      <div className="dl-expand">
+        <PersonRevisions revisions={r.revisions} />
       </div>
     );
   }
@@ -212,7 +221,7 @@ export function PersonDayLogs({
         onChange={setTerm}
         placeholder={
           p.isSuperAdmin
-            ? 'Search Working On (every Text Rev), SO / JWSO…'
+            ? 'Search Working On (every Entry Rev), SO / JWSO…'
             : 'Search Working On, SO / JWSO…'
         }
         shown={shown.length}

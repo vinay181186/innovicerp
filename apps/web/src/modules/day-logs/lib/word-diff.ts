@@ -1,5 +1,5 @@
 // Word diff between two Working On texts (ADR-255, Team Day Logs › person,
-// Super Admin): "Changed from Text Rev n-1:" shows the newer text with the
+// Super Admin): "Changed from Entry Rev n-1:" (Working On) shows the newer text with the
 // removed words struck out and the added words underlined. Pure — no React.
 //
 // Tokens are the words AND the whitespace between them (split on /(\s+)/),

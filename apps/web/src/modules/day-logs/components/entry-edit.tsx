@@ -3,11 +3,12 @@
 //                   A DIRECT save (PATCH /day-logs/entries/:id/work), no
 //                   approval and no mark of any kind on the row. Save is off
 //                   while the box is empty or unchanged.
-//   EditTimesForm — ⋯ "Edit times / SO": Start, Stop, SO / JWSO with "Send for
-//                   approval" / Cancel. NOT applied: staged until a Department
-//                   Admin approves (PATCH /day-logs/entries/:id). Working On is
-//                   shown read-only; the current text is sent (the server
-//                   ignores it there).
+//   EditTimesForm — ⋯ "Edit times / SO": Start, Stop, SO / JWSO with Save /
+//                   Cancel. A DIRECT save too (ADR-256, PATCH
+//                   /day-logs/entries/:id) — no approval; a Super Admin sees
+//                   every change on Team Day Logs. Working On is shown
+//                   read-only; the current text is sent (the server ignores it
+//                   there).
 // Both carry the updatedAt the entry had when the edit opened (§20.4).
 
 import type { DayLogEntry, DayLogOrder, UpdateDayLogEntryInput } from '@innovic/shared';
@@ -184,12 +185,9 @@ export function EditTimesForm({
       </div>
       <span className="dl-xl">Working On</span>
       <div className="dl-full text3">{e.description}</div>
-      <div className="dl-note">
-        Changed times / SO go for approval — the entry keeps its old values until approved.
-      </div>
       <Buttons
-        label="Send for approval"
-        busyLabel="Sending…"
+        label="Save"
+        busyLabel="Saving…"
         busy={busy}
         off={false}
         onSave={() => void send()}

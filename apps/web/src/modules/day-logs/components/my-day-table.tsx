@@ -1,8 +1,9 @@
 // My Day Log — the day's SAVED entries on the FIT table (ADR-199, ADR-255):
 // Sr No · Start Time · Stop Time · Working Hours · SO / JWSO · Working On (one
 // line; 🔔 while a reply is unread) · ⋯. A row click or ▸ opens the entry
-// (entry-expand.tsx). ⋯ "Edit Working on" saves directly; ⋯ "Edit times / SO"
-// goes for approval (⏳ beside the Stop Time while it waits). `line` (the
+// (entry-expand.tsx). ⋯ "Edit Working on" and ⋯ "Edit times / SO" both save
+// directly (ADR-255/256). ⏳ beside the Stop Time only for an OLD times / SO
+// edit still waiting from before ADR-256 (decided on Approvals · Day Log). `line` (the
 // ?line= of a Home notification) opens that entry and scrolls to it.
 // Search (Working On, SO / JWSO) and the ADR-200 Sort & Filter ▾ run in the
 // browser — the whole day is loaded. Rows come in Start Time order and keep
@@ -182,9 +183,7 @@ export function MyDayTable({
               onMode={(m) => setMode(r.id, m)}
               onTimesSent={() => {
                 setMode(r.id, 'view');
-                onMessage(
-                  'Times / SO edit sent for approval — the entry keeps its old values until it is approved.',
-                );
+                onMessage('Saved.');
               }}
             />
           ) : null
@@ -195,14 +194,15 @@ export function MyDayTable({
             key: 'edit-work',
             label: 'Edit Working on',
             icon: 'pencil',
-            hidden: !canWrite,
+            // Old Break / Others rows cannot be edited (server rule).
+            hidden: !canWrite || r.kind !== 'work',
             onSelect: () => openIn(r.id, 'work'),
           },
           {
             key: 'edit-times',
             label: 'Edit times / SO',
             icon: 'pencil',
-            hidden: !canWrite,
+            hidden: !canWrite || r.kind !== 'work',
             disabledReason: r.pending ? 'Waiting for approval' : undefined,
             onSelect: () => openIn(r.id, 'times'),
           },

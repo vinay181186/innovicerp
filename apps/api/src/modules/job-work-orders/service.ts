@@ -30,6 +30,10 @@ import {
   normalizeRevision,
   revisionBackwardsMessage,
   revisionGoesBackwards,
+  sumCustomerRmQty,
+  customerRmLine,
+  customerRmTotal,
+  type CustomerRmQty,
 } from '@innovic/shared';
 import {
   clients,
@@ -84,6 +88,7 @@ import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JWSO_SF_COLUMNS } from './sf-columns';
 import { partyCommittedQtySql } from '../party-grn/service';
+import { customerRmByJw } from './customer-rm';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -283,47 +288,6 @@ function uuidList(ids: readonly string[]) {
   );
 }
 
-/** ADR-203 rule 9: customer material QC-ACCEPTED per JWSO line
- *  (Σ party_grn_lines.accepted_qty by jw_line_id, live GRN + live GRN line).
- *  Rejected pieces never count. */
-async function rmAcceptedByLine(
-  tx: DbTransaction,
-  lineIds: readonly string[],
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  if (lineIds.length === 0) return out;
-  const rows = (await tx.execute(sql`
-    SELECT gl.jw_line_id AS "lineId", COALESCE(SUM(gl.accepted_qty), 0)::int AS qty
-      FROM public.party_grn_lines gl
-      JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
-     WHERE gl.jw_line_id IN (${uuidList(lineIds)}) AND gl.deleted_at IS NULL
-     GROUP BY gl.jw_line_id
-  `)) as unknown as Array<{ lineId: string; qty: number }>;
-  for (const r of rows) out.set(r.lineId, Number(r.qty));
-  return out;
-}
-
-/** ADR-203: customer material received on each JWSO line and still WAITING
- *  for Incoming QC (same rule as party-grn isPendingQc). Part of the Party GRN
- *  receive cap, so the New Party GRN form shows it. */
-async function rmWaitingQcByLine(
-  tx: DbTransaction,
-  lineIds: readonly string[],
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  if (lineIds.length === 0) return out;
-  const rows = (await tx.execute(sql`
-    SELECT gl.jw_line_id AS "lineId", COALESCE(SUM(gl.received_qty), 0)::int AS qty
-      FROM public.party_grn_lines gl
-      JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
-     WHERE gl.jw_line_id IN (${uuidList(lineIds)}) AND gl.deleted_at IS NULL
-       AND gl.qc_at IS NULL AND gl.accepted_qty = 0 AND gl.rejected_qty = 0
-     GROUP BY gl.jw_line_id
-  `)) as unknown as Array<{ lineId: string; qty: number }>;
-  for (const r of rows) out.set(r.lineId, Number(r.qty));
-  return out;
-}
-
 /** party_materials id → its PM-#### code (the customer-material register). */
 async function partyMaterialCodes(
   tx: DbTransaction,
@@ -474,10 +438,7 @@ export async function listJobWorkOrders(
       LEFT JOIN (
         SELECT job_work_order_id,
           COUNT(*) AS line_count, SUM(order_qty) AS total_qty,
-          SUM(returned_qty) AS dispatched_qty, MIN(due_date) AS earliest_due,
-          -- ADR-203 (owner D1): 1 RM piece per finished part, so the material
-          -- needed is the order qty of the lines that have a customer RM.
-          SUM(order_qty) FILTER (WHERE rm_item_id IS NOT NULL) AS rm_required_qty
+          SUM(returned_qty) AS dispatched_qty, MIN(due_date) AS earliest_due
         FROM public.job_work_order_lines
         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
         GROUP BY job_work_order_id
@@ -493,16 +454,6 @@ export async function listJobWorkOrders(
           AND jc.recovery_kind IS NULL
         GROUP BY l.job_work_order_id
       ) jca ON jca.job_work_order_id = jw.id
-      -- ADR-203: customer material QC-ACCEPTED on this JWSO's live lines
-      -- (Σ party_grn_lines.accepted_qty by jw_line_id). Rejected never counts.
-      LEFT JOIN (
-        SELECT l.job_work_order_id, SUM(gl.accepted_qty) AS party_received_qty
-        FROM public.party_grn_lines gl
-        JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
-        JOIN public.job_work_order_lines l ON l.id = gl.jw_line_id AND l.deleted_at IS NULL
-        WHERE gl.deleted_at IS NULL AND l.company_id = ${companyId}::uuid
-        GROUP BY l.job_work_order_id
-      ) pg ON pg.job_work_order_id = jw.id
       WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
         ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag} ${receivableFrag} ${sfFrag}`;
 
@@ -517,9 +468,7 @@ export async function listJobWorkOrders(
         COALESCE(jca.jc_qty, 0)::int AS "jcQty",
         agg.earliest_due::text AS "earliestDueDate",
         jw.status, jw.cancel_reason AS "cancelReason", jw.remarks,
-        jw.client_material_qty::text AS "clientMaterialQty",
-        COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty",
-        COALESCE(agg.rm_required_qty, 0)::int AS "rmRequiredQty"
+        jw.client_material_qty::text AS "clientMaterialQty"
       ${fromWhere}
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
@@ -529,6 +478,23 @@ export async function listJobWorkOrders(
     const total = Number((totalRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    // OW-143: Customer RM status per JWSO — ONE read for the whole page. The
+    // Party GRN picker (receivable) never shows it, so it skips the read.
+    if (input.receivable !== true) {
+      const rmRows = await customerRmByJw(
+        tx,
+        companyId,
+        itemsOut.map((i) => i.jwId),
+      );
+      const byJw = new Map<string, CustomerRmQty[]>();
+      for (const r of rmRows) byJw.set(r.jwId, [...(byJw.get(r.jwId) ?? []), r.qty]);
+      for (const item of itemsOut) {
+        const rm = customerRmTotal(byJw.get(item.jwId) ?? [], item.status === 'cancelled');
+        item.customerRm = rm;
+        item.partyReceivedQty = rm.acceptedQty;
+        item.rmRequiredQty = rm.requiredQty;
+      }
+    }
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -550,6 +516,7 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     cancelReason: (r['cancelReason'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
     clientMaterialQty: (r['clientMaterialQty'] as string | null) ?? null,
+    // OW-143: both filled from customerRm after the page read (0 for the picker).
     partyReceivedQty: Number(r['partyReceivedQty'] ?? 0),
     rmRequiredQty: Number(r['rmRequiredQty'] ?? 0),
   };
@@ -604,7 +571,7 @@ async function loadJobWorkOrderDetail(
   if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
   const lineIds = lineRows.map((l) => l.id);
 
-  const [codeMap, pmCodes, accepted, waitingQc, usage] = await Promise.all([
+  const [codeMap, pmCodes, rmRows, usage] = await Promise.all([
     // Order items and RM items share the items table — one lookup serves both.
     resolveItemCodesById(
       tx,
@@ -616,17 +583,24 @@ async function loadJobWorkOrderDetail(
       lineRows.map((l) => l.partyMaterialId),
       companyId,
     ),
-    rmAcceptedByLine(tx, lineIds),
-    rmWaitingQcByLine(tx, lineIds),
+    // OW-143: every Customer RM figure per line in one read (customer-rm.ts).
+    customerRmByJw(tx, companyId, [id]),
     jwLineUsage(tx, lineIds),
   ]);
+  const rmByLine = new Map(rmRows.map((r) => [r.lineId, r.qty]));
+  const cancelled = header.status === 'cancelled';
+  const rmTotal = customerRmTotal(
+    rmRows.map((r) => r.qty),
+    cancelled,
+  );
   // ADR-203 rule 9: Σ accepted by jw_line_id over THIS JWSO's live lines.
-  const partyReceivedQty = lineIds.reduce((a, lid) => a + (accepted.get(lid) ?? 0), 0);
+  const partyReceivedQty = rmTotal.acceptedQty;
 
   const headerOut = toJobWorkOrder(header);
   return {
     ...(showMoney ? headerOut : hideJwHeaderMoney(headerOut)),
     partyReceivedQty,
+    customerRm: rmTotal,
     // ADR-243 — the same roll-up as the SO; null when prices are hidden.
     totals: showMoney
       ? await orderTotals(tx, companyId, {
@@ -638,13 +612,15 @@ async function loadJobWorkOrderDetail(
         })
       : null,
     lines: lineRows.map((l) => {
+      const rmQty = rmByLine.get(l.id) ?? sumCustomerRmQty([]);
       const line = toJobWorkOrderLine(l, codeMap, {
         partyMaterialCode: l.partyMaterialId ? (pmCodes.get(l.partyMaterialId) ?? null) : null,
-        rmAcceptedQty: accepted.get(l.id) ?? 0,
-        rmWaitingQcQty: waitingQc.get(l.id) ?? 0,
+        rmAcceptedQty: rmQty.acceptedQty,
+        rmWaitingQcQty: rmQty.qcPendingQty,
         inUse: usage.has(l.id),
       });
-      return showMoney ? line : hideJwLineMoney(line);
+      const withRm = { ...line, customerRm: customerRmLine(rmQty, cancelled) };
+      return showMoney ? withRm : hideJwLineMoney(withRm);
     }),
   };
 }

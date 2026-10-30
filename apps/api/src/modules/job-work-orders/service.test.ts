@@ -301,6 +301,9 @@ describe('job-work-orders service', () => {
     // ADR-203: both lines have a customer RM → 1 RM piece per finished part.
     expect(row?.rmRequiredQty).toBe(10);
     expect(row?.partyReceivedQty).toBe(0);
+    // OW-143: nothing received yet → Customer RM 'awaited', all 10 still due.
+    expect(row?.customerRm?.status).toBe('awaited');
+    expect(row?.customerRm?.grnPendingQty).toBe(10);
     expect(row?.jcQty).toBe(0);
   });
 

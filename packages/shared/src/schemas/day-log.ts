@@ -277,10 +277,10 @@ export type AddDayLogEntryInput = z.infer<typeof addDayLogEntryInputSchema>;
 export const updateDayLogEntryInputSchema = entryRules(
   z.object({
     ...entryFields,
-    /** §20.4 — the entry's updatedAt as loaded. A Start / Stop / SO edit of
-     *  a SAVED row is not applied: it is staged for approval (pending).
-     *  ADR-255: `description` is IGNORED here (the screen sends the current
-     *  text) — Working On changes only through updateDayLogWorkInputSchema. */
+    /** §20.4 — the entry's updatedAt as loaded. ADR-256: a Start / Stop / SO
+     *  edit of a SAVED row is applied at once (no approval) and adds an Entry
+     *  Rev. ADR-255: `description` is IGNORED here (the screen sends the
+     *  current text) — Working On changes only through updateDayLogWorkInputSchema. */
     updatedAt: z.string(),
   }),
 );
