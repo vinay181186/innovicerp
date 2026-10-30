@@ -19,6 +19,7 @@ import {
   accessJson,
   dayUserJson,
   deptLabelOf,
+  matesJson,
   resolveAccess,
   toDayUser,
   viewerOf,
@@ -61,10 +62,12 @@ export async function getPersonDay(
     AND dr.report_date = ${date}::date AND dr.deleted_at IS NULL`;
   const [r] = (await db.execute(sql`
     SELECT ${accessJson(user.id, companyId)} AS access,
+      ${matesJson(user.id, companyId)} AS mates,
       ${dayUserJson(companyId, query.userId)} AS target,
       ${linesJson(companyId, day)} AS lines
   `)) as unknown as Array<Record<string, unknown>>;
-  const v = viewerOf(user, await resolveAccess(user, r?.['access']));
+  // A Teams Config mate is not a Super Admin: no revisions, no replies.
+  const v = viewerOf(user, await resolveAccess(user, r?.['access']), r?.['mates']);
   const target = visibleUser(v, toDayUser(r?.['target']));
   const lines = toLines(r?.['lines']).filter((l) => l.fromTime);
   const nowMin = date === clock.today ? clock.nowMin : undefined;

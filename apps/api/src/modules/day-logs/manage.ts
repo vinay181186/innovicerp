@@ -28,7 +28,7 @@ export async function getDay(
   const targetId = query.userId ?? user.id;
   const own = targetId === user.id;
   const snap = await readSnapshot({ companyId, viewerId: user.id, targetId, date, replies: own });
-  const v = viewerOf(user, await resolveAccess(user, snap.access));
+  const v = viewerOf(user, await resolveAccess(user, snap.access), snap.mates);
   const target = visibleUser(v, snap.target);
   if (!own && v.isSuper && snap.lines.length > 0) {
     const [r] = (await db.execute(

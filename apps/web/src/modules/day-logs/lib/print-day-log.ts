@@ -118,11 +118,7 @@ export function printTeamDayLogs(
 ): boolean {
   const t = teamTable(team);
   const head = `<tr><td class="k">Date</td><td colspan="${t.columns.length - 1}">${esc(fmtDate(team.date))}</td></tr>`;
-  const html = wrap(
-    company,
-    'Team Day Logs',
-    head + grid(t, ['work_hours', 'entries', 'late'], ['user']),
-  );
+  const html = wrap(company, 'Team Day Logs', head + grid(t, ['work_hours', 'entries'], ['user']));
   const name = `Team Day Logs ${team.date}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
 }

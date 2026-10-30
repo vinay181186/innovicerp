@@ -100,7 +100,7 @@ function TaskBoardPage(): React.JSX.Element {
   // On a day-log tab the task list keeps loading Inbox: the tab strip and its
   // counts come from it.
   const view: TaskView = isDayLogTab(tab) ? 'inbox' : tab;
-  const dayTabs = useDayLogBoardTabs(canDayLog);
+  const dayTabs = useDayLogBoardTabs(canDayLog, dayTab);
   // ADR-232/234: + Assign Task / + My To-Do are writes — hidden for an
   // Auditor or an account nobody has set up (the server refuses them too) —
   // and with the Task Board page hidden.

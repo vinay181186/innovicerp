@@ -4,7 +4,9 @@
 // entries on the FIT table: Sr No · Start Time · Stop Time · Working Hours ·
 // Entry Rev No · Entry Rev Date · Entry Rev Time · Working On (one line). The
 // three Entry Rev columns are a Super Admin's only (the server sends them null
-// to anyone else). ▸ opens, for a Super Admin, every saved version of the
+// to anyone else). Anyone else (a Dept Admin, or a team mate a Super Admin
+// paired on Teams Config) sees SO / JWSO there instead, as on My Day Log
+// (owner 2026-10-30) — read-only: no ⋯, no add, no replies. ▸ opens, for a Super Admin, every saved version of the
 // entry — one Entry Rev per changed save of Working On, Start Time, Stop Time
 // or SO / JWSO (ADR-256) — with what changed (LEFT) and the replies with
 // Send reply (RIGHT); for anyone else the full text only. Search (Working On, SO / JWSO — and every earlier
@@ -34,6 +36,8 @@ import '../day-log-sheet.css';
 type Entry = DayLogPersonDayEntry;
 
 const REV_IDS = ['entryRevNo', 'entryRevDate', 'entryRevTime'];
+/** Shown to anyone but a Super Admin, in the Entry Rev columns' place. */
+const ORDER_ID = 'order';
 
 function columns(): DataTableColumn<Entry>[] {
   const revAt = (r: Entry) => (r.entryRevNo ? istStamp(r.entryRevisedAt) : null);
@@ -63,6 +67,14 @@ function columns(): DataTableColumn<Entry>[] {
       className: 'mono fw-700',
       render: (r) => fmtDuration(r.minutes),
       filterValue: (r) => r.minutes,
+    },
+    {
+      id: ORDER_ID,
+      header: 'SO / JWSO',
+      kind: 'code',
+      className: 'td-code',
+      render: (r) => r.order?.code ?? '—',
+      filterValue: (r) => r.order?.code ?? '',
     },
     {
       id: 'entryRevNo',
@@ -175,7 +187,9 @@ export function PersonDayLogs({
         ),
       )
     : rows;
-  const cols = columns().filter((c) => p.isSuperAdmin || !REV_IDS.includes(c.id ?? ''));
+  const cols = columns().filter((c) =>
+    p.isSuperAdmin ? c.id !== ORDER_ID : !REV_IDS.includes(c.id ?? ''),
+  );
   const toggle = (id: string): void =>
     setOpen((s) => {
       const next = new Set(s);

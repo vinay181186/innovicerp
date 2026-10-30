@@ -8,6 +8,7 @@ import { ConflictError, ValidationError } from '../../lib/errors';
 import { approvalCases } from './approval-cases';
 import { editCases } from './edit-cases';
 import { sheetCases } from './sheet-cases';
+import { teamCases } from './team-cases';
 import { textCases } from './text-cases';
 import * as service from './service';
 import {
@@ -211,3 +212,4 @@ approvalCases();
 editCases();
 sheetCases();
 textCases();
+teamCases();

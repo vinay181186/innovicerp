@@ -2,26 +2,7 @@
 // server's `summary` / row figures carry every number the user is judged by;
 // these only turn loaded data into chips, date labels and a ticking clock.
 
-import type { TeamDayLogRow } from '@innovic/shared';
-import { DAY_LOG_CURRENT_STATUS_LABELS, fmt12, hhmmToMin } from '@innovic/shared';
-
-/** Team Day Logs "Now" chip. Today: Working / Idle / Not started; a past
- *  day: Logged / No entries. (Older statuses fall back on the entry count.) */
-export function nowChip(
-  r: Pick<TeamDayLogRow, 'currentStatus' | 'entryCount'>,
-  isToday: boolean,
-): { cls: string; label: string } {
-  if (!isToday) {
-    return r.entryCount > 0
-      ? { cls: 'b-green', label: 'Logged' }
-      : { cls: 'b-grey', label: 'No entries' };
-  }
-  if (r.currentStatus === 'working')
-    return { cls: 'b-blue', label: DAY_LOG_CURRENT_STATUS_LABELS.working };
-  if (r.currentStatus === 'not_started' || r.entryCount === 0)
-    return { cls: 'b-grey', label: DAY_LOG_CURRENT_STATUS_LABELS.not_started };
-  return { cls: 'b-orange', label: DAY_LOG_CURRENT_STATUS_LABELS.idle };
-}
+import { fmt12, hhmmToMin } from '@innovic/shared';
 
 /** Calendar day ± n, "YYYY-MM-DD" (UTC arithmetic, so no DST/zone drift). */
 export function shiftDate(date: string, n: number): string {

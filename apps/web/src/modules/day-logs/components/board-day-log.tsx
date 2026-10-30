@@ -1,12 +1,16 @@
 // The Day Log's tabs on the Task Board (owner 2026-10-26): "My Day Log"
 // (everyone), "Team Day Logs" (only when GET /day-logs/access says
-// canSeeTeam) and "Approvals · Day Log (N)" (only when it says canApprove,
-// §20.5; owner 2026-10-27). They are not task views — shared TASK_VIEWS stays as
-// it is — so the board accepts these keys in its own `view` param and draws
-// this body instead of the task table.
+// canSeeTeam — a Dept / Super Admin, or anyone a Super Admin gave team mates),
+// "Teams Config" (only when it says canManageTeams — Super Admin; owner
+// 2026-10-30) and "Approvals · Day Log (N)" (only when it says canApprove AND
+// N > 0: since ADR-256 no new Day Log approvals are raised, so the tab stays
+// only while old waiting edits are left to decide; §20.5). They are not task
+// views — shared TASK_VIEWS stays as it is — so the board accepts these keys in
+// its own `view` param and draws this body instead of the task table.
 //   view=daylog&date=&line=    my day (line = the entry to open, ADR-255)
 //   view=team&date=            the team table for a day
 //   view=person&user=&date=    one person's day (Team tab stays lit)
+//   view=teams                 Teams Config — who sees whose Day Log
 //   view=approvals              Day Log edits waiting for the caller's approval
 
 import { DAY_LOG_VIEWS } from '@innovic/shared';
@@ -16,9 +20,10 @@ import { DayLogApprovals } from './day-log-approvals';
 import { DayLogTab } from './day-log-tab';
 import { PersonDayLogs } from './person-day-logs';
 import { TeamDayLogsTab } from './team-day-logs-tab';
+import { TeamsConfig } from './teams-config';
 
 /** The tabs drawn on the strip. */
-export const DAY_LOG_TABS = ['daylog', 'team', 'approvals'] as const;
+export const DAY_LOG_TABS = ['daylog', 'team', 'teams', 'approvals'] as const;
 export type DayLogTabKey = (typeof DAY_LOG_TABS)[number];
 /** Every `view` the day log answers (the person page has no tab of its own) —
  *  the shared DAY_LOG_VIEWS, which page access reads too (daylog_view). */
@@ -27,6 +32,7 @@ export type DayLogViewKey = (typeof DAY_LOG_VIEWS)[number];
 const LABELS: Record<DayLogTabKey, string> = {
   daylog: 'My Day Log',
   team: 'Team Day Logs',
+  teams: 'Teams Config',
   approvals: 'Approvals · Day Log',
 };
 
@@ -53,23 +59,36 @@ export function dayLogTabOf(v: DayLogViewKey): DayLogTabKey {
   return v === 'person' ? 'team' : v;
 }
 
-/** The tabs to draw: Team / Approvals only for whoever the server lets see
- *  them; Approvals carries its waiting count. `enabled` false (Day Log page
- *  hidden for this person) → no tabs and no request. */
-export function useDayLogBoardTabs(enabled = true): { key: DayLogTabKey; label: string }[] {
+/** The tabs to draw: Team / Teams Config / Approvals only for whoever the
+ *  server lets see them. Approvals carries its waiting count and is drawn
+ *  while that count is above 0 — and also while it is loading or failed (a
+ *  failed read must never look like "nothing waiting"), and while the
+ *  caller is ON it (`current`), so deciding the last edit does not pull the
+ *  lit tab away. `enabled` false (Day Log page hidden for this person) → no
+ *  tabs and no request. */
+export function useDayLogBoardTabs(
+  enabled = true,
+  current?: DayLogViewKey | null,
+): { key: DayLogTabKey; label: string }[] {
   const access = useDayLogAccess(enabled);
   const canApprove = enabled && Boolean(access.data?.canApprove);
   const approvals = useDayLogApprovals(canApprove);
+  const waiting = approvals.data?.rows.length ?? 0;
   const shown: Record<DayLogTabKey, boolean> = {
     daylog: true,
     team: Boolean(access.data?.canSeeTeam),
-    approvals: canApprove,
+    teams: Boolean(access.data?.canManageTeams),
+    approvals:
+      canApprove &&
+      (approvals.isLoading || approvals.isError || waiting > 0 || current === 'approvals'),
   };
   if (!enabled) return [];
   return DAY_LOG_TABS.filter((t) => shown[t]).map((key) => ({
     key,
     label:
-      key === 'approvals' ? `${LABELS[key]} (${approvals.data?.rows.length ?? 0})` : LABELS[key],
+      key === 'approvals'
+        ? `${LABELS[key]} (${approvals.isError ? '!' : approvals.isLoading ? '…' : waiting})`
+        : LABELS[key],
   }));
 }
 
@@ -104,12 +123,12 @@ export function DayLogBoardBody({
     );
   }
   if (tab === 'approvals') return <DayLogApprovals />;
+  if (tab === 'teams') return <TeamsConfig />;
   if (tab === 'team' || tab === 'person') {
     return (
       <TeamDayLogsTab
         date={date}
         onDate={(d) => onNav({ date: d })}
-        onApprovals={() => onNav({ view: 'approvals', user: undefined })}
         onOpenPerson={(u, d) => onNav({ view: 'person', user: u, date: d, line: undefined })}
       />
     );

@@ -19,6 +19,7 @@ import {
   canSeeTeam,
   canSeeUser,
   deptLabelOf,
+  matesJson,
   type PersonAccess,
   personAccessJson,
   personOpensDayLog,
@@ -45,6 +46,7 @@ export async function getTeam(
   // lines and the holiday — judged in memory.
   const [r] = (await db.execute(sql`
     SELECT ${accessJson(user.id, companyId)} AS access,
+      ${matesJson(user.id, companyId)} AS mates,
       (SELECT COALESCE(json_agg(json_build_object(
                 'id', u.id::text, 'name', COALESCE(u.full_name, u.email), 'main_dept', ua.main_dept,
                 'departments', COALESCE(ua.departments, '{}'::jsonb), ${personAccessJson})
@@ -65,14 +67,16 @@ export async function getTeam(
       )} AS lines,
       ${holidaysJson(companyId, date, date)} AS holidays
   `)) as unknown as Array<Record<string, unknown>>;
-  const v = viewerOf(user, await resolveAccess(user, r?.['access']));
+  const v = viewerOf(user, await resolveAccess(user, r?.['access']), r?.['mates']);
   if (!canSeeTeam(v)) {
     throw new AuthorizationError("Only a Department Admin can see the team's Day Logs");
   }
   const wide = v.isSuper || v.auditor;
 
   // Team by RIGHTS: everyone (Super Admin / Auditor), else people holding
-  // L2+ in a department the viewer is L5 of (canSeeUser — one rule).
+  // L2+ in a department the viewer is L5 of, plus the viewer's Teams Config
+  // mates (canSeeUser — one rule). The viewer's own row stays for an L5 (as
+  // before); someone who is here only through mates sees just the mates.
   const all = (r?.['people'] ?? []) as Array<
     PersonAccess & {
       id: string;
@@ -83,7 +87,11 @@ export async function getTeam(
   >;
   const people = all
     // Owner 2026-10-30: a person whose Day Log is hidden is not on the team.
-    .filter((p) => (wide || canSeeUser(v, p)) && personOpensDayLog(p))
+    .filter(
+      (p) =>
+        (wide || (canSeeUser(v, p) && (p.id !== v.userId || v.l5.size > 0))) &&
+        personOpensDayLog(p),
+    )
     .map((p) => ({ ...p, team: wide ? [] : sharedTeamDepts(v, p.departments) }));
   const headers = (r?.['headers'] ?? []) as Array<{
     id: string;

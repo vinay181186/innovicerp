@@ -7368,6 +7368,49 @@ export const companyHolidays = pgTable(
   ],
 ).enableRLS();
 
+// Day Log Teams Config (0230): ONE row per two-way pair, ids stored sorted.
+// No client write policy — the API (BYPASSRLS) checks Super Admin.
+export const dayLogTeamMates = pgTable(
+  'day_log_team_mates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userLowId: uuid('user_low_id')
+      .notNull()
+      .references(() => users.id),
+    userHighId: uuid('user_high_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('day_log_team_mates_sorted_chk', sql`${t.userLowId} < ${t.userHighId}`),
+    uniqueIndex('day_log_team_mates_pair_uq')
+      .on(t.companyId, t.userLowId, t.userHighId)
+      .where(sql`${t.deletedAt} is null`),
+    index('day_log_team_mates_high_idx')
+      .on(t.companyId, t.userHighId)
+      .where(sql`${t.deletedAt} is null`),
+    // Own pairs only — who-sees-whom is not company-wide data.
+    pgPolicy('day_log_team_mates_own_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (user_low_id = current_user_id() OR user_high_id = current_user_id())`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Dashboard: per-user home layout preference (migration 0052) ───────────
 // Mirror of legacy db.dashboardConfig = [{userId, widgets:[keys], quickLinks:
 // [pages]}]. widgets/quick_links are ordered lists of UI keys (layout

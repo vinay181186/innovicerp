@@ -17,6 +17,9 @@ import type {
   Holiday,
   HolidayInput,
   DayLogRejectInput,
+  DayLogTeamMatesResponse,
+  DayLogTeamPeopleResponse,
+  AddDayLogTeamMateInput,
   SendDayLogReplyInput,
   TeamDayLogResponse,
   UpdateDayLogEntryInput,
@@ -36,10 +39,21 @@ export const dayLogKeys = {
   all: ['day-logs'] as const,
   access: () => [...dayLogKeys.all, 'access'] as const,
   day: (q: DayQuery) => [...dayLogKeys.all, 'day', q.date ?? '', q.userId ?? ''] as const,
-  team: (date: string) => [...dayLogKeys.all, 'team', date] as const,
+  /** Every day of the Team Day Logs table (prefix of `team`). */
+  teamAll: () => [...dayLogKeys.all, 'team'] as const,
+  team: (date: string) => [...dayLogKeys.teamAll(), date] as const,
+  /** Team Day Logs › a person, every day (prefix of `personDay`). */
+  personDayAll: () => [...dayLogKeys.all, 'person-day'] as const,
   /** Team Day Logs › a person, one day (ADR-255). */
   personDay: (userId: string, date: string) =>
-    [...dayLogKeys.all, 'person-day', userId, date] as const,
+    [...dayLogKeys.personDayAll(), userId, date] as const,
+  /** Teams Config: every user's team mates (prefix of `teamMates`). */
+  teamMatesAll: () => [...dayLogKeys.all, 'team-mates'] as const,
+  /** Teams Config: the chosen user's team mates (owner 2026-10-30). */
+  teamMates: (userId: string) => [...dayLogKeys.teamMatesAll(), userId] as const,
+  /** Teams Config pickers' people (under teamMatesAll, so every refresh of the
+   *  team mates re-reads it too). */
+  teamPeople: () => [...dayLogKeys.teamMatesAll(), 'people'] as const,
   orders: (search: string) => [...dayLogKeys.all, 'order-options', search] as const,
   holidays: () => [...dayLogKeys.all, 'holidays'] as const,
   approvals: () => [...dayLogKeys.all, 'approvals'] as const,
@@ -130,6 +144,25 @@ export function useDayLogApprovals(enabled = true) {
     queryFn: () => apiFetch<DayLogApprovalsResponse>('/day-logs/approvals'),
     refetchOnWindowFocus: true,
     enabled,
+  });
+}
+
+/** Teams Config: the chosen user's team mates (Super Admin only). */
+/** Teams Config pickers: active users whose Day Log is not hidden (Super Admin). */
+export function useDayLogTeamPeople(enabled: boolean) {
+  return useQuery<DayLogTeamPeopleResponse>({
+    queryKey: dayLogKeys.teamPeople(),
+    queryFn: () => apiFetch<DayLogTeamPeopleResponse>('/day-logs/team-mates/people'),
+    enabled,
+  });
+}
+
+export function useDayLogTeamMates(userId: string | null) {
+  return useQuery<DayLogTeamMatesResponse>({
+    queryKey: dayLogKeys.teamMates(userId ?? ''),
+    queryFn: () =>
+      apiFetch<DayLogTeamMatesResponse>(`/day-logs/team-mates${qs({ userId: userId ?? '' })}`),
+    enabled: Boolean(userId),
   });
 }
 
@@ -290,5 +323,48 @@ export function useRemoveHoliday() {
   return useMutation<unknown, Error, string>({
     mutationFn: (id) => apiFetch(`/day-logs/holidays/${id}`, { method: 'DELETE' }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
+  });
+}
+
+/** After a Teams Config write: the pair lists, who may open Team Day Logs
+ *  (access), the Team Day Logs table and the person pages it gates. */
+function useAfterTeamWrite(): () => void {
+  const qc = useQueryClient();
+  return () => {
+    for (const queryKey of [
+      dayLogKeys.teamMatesAll(),
+      dayLogKeys.access(),
+      dayLogKeys.teamAll(),
+      dayLogKeys.personDayAll(),
+    ]) {
+      void qc.invalidateQueries({ queryKey });
+    }
+  };
+}
+
+/** Teams Config › + Add: pair two people (two-way). One click = one pair
+ *  (`saveKey`, ADR-172); 409 when they are already paired. */
+export function useAddDayLogTeamMate(saveKey?: SaveKey) {
+  const after = useAfterTeamWrite();
+  return useMutation<unknown, Error, AddDayLogTeamMateInput>({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch('/day-logs/team-mates', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: after,
+  });
+}
+
+/** Teams Config › ⋯ Remove team mate (the pair row id); 409 when already removed. */
+export function useRemoveDayLogTeamMate() {
+  const after = useAfterTeamWrite();
+  return useMutation<unknown, Error, string>({
+    mutationFn: (id) => apiFetch(`/day-logs/team-mates/${id}`, { method: 'DELETE' }),
+    // Removed, or someone removed it first (409): re-read either way.
+    onSettled: after,
   });
 }

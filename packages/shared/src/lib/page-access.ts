@@ -271,7 +271,7 @@ export function pageRuleFor(href: string): PageRule | undefined {
 }
 
 /** The Task Board route's `?view=` values that show the Day Log, not tasks. */
-export const DAY_LOG_VIEWS = ['daylog', 'team', 'person', 'approvals'] as const;
+export const DAY_LOG_VIEWS = ['daylog', 'team', 'person', 'approvals', 'teams'] as const;
 
 /** Task Board and Day Log are one route ('/task-board'). A URL with a Day Log
  *  `?view=` is the Day Log page; any other is the Task Board page. */

@@ -14806,3 +14806,34 @@ company's log, menu or not.
   open to every login.
 - Negative: none for existing users (default View).
 - Risks: a page hidden while open — the next request is refused by the server.
+
+## ADR-258: Day Log — Teams Config: two-way team mates who see each other's day
+
+**Date:** 2026-10-30
+**Status:** Accepted (owner approved mockup https://claude.ai/artifact/VuccP2bNkf4cPyfV7sGAbA)
+
+### Context
+Only Super Admin, Auditor and L5 Department Admins could see another person's Day Log. The owner wants
+ordinary colleagues to see each other's day ("if i put jaypal under hansraj, hansraj under jaypal, then
+both can view each other save entry"), set up from the Task menu tab that was "Approvals · Day Log".
+
+### Decision
+- New `day_log_team_mates` (0230): one row per pair, ids stored sorted, so a pair is always two-way.
+- Teams Config tab on the Task Board (view `teams`, in `DAY_LOG_VIEWS`), Super Admin only: User picker,
+  Add team mate, table Sr No / Team Mate / Dept / Added On / ⋯ Remove (no Added By, no Sees Each Other).
+- `access.ts` is still the only gate: `Viewer.mates` rides in the same statement as the caller's access;
+  `canSeeUser` / `canSeeTeam` add mates; manage / approve rights do NOT.
+- A team mate sees the person's day like a non-Super-Admin: saved entries, read-only, SO / JWSO shown,
+  no Entry Rev, no replies.
+- Team Day Logs (every viewer): the Working / Idle / Not started / Team working hours / Edits to approve
+  strip, the Now column and the Late column are removed (owner 2026-10-30).
+- "Approvals · Day Log" stays only while an old edit is waiting (none are created since ADR-256).
+
+### Alternatives Considered
+- One-way "team mates of X" (the 29-10 mockup) — rejected by the owner: pairs are two-way.
+- Department Admins also set up Teams Config — owner: Super Admin only.
+
+### Consequences
+- Positive: one table, one gate; Team Day Logs opens for a person as soon as a pair exists (live).
+- Risks: a wrong visibility rule would show a day to the wrong person — covered by team-cases tests.
+

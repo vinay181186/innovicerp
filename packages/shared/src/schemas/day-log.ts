@@ -536,5 +536,49 @@ export const dayLogAccessSchema = z.object({
   /** May approve other people's Day Log edits (Dept Admin / Super Admin). */
   canApprove: z.boolean(),
   canManageHolidays: z.boolean(),
+  /** May set up Teams Config — who sees whose Day Log (Super Admin only). */
+  canManageTeams: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
+
+// Teams Config (owner 2026-10-30): a Super Admin pairs two people; the pair is
+// TWO-WAY — each sees the other's saved Day Log entries, read-only, the way
+// that person sees their own My Day Log (no Entry Rev, no replies, no edit).
+// One row per pair (day_log_team_mates, 0230).
+
+export const dayLogTeamMatesQuerySchema = z.object({ userId: z.string().uuid() });
+export type DayLogTeamMatesQuery = z.infer<typeof dayLogTeamMatesQuerySchema>;
+
+/** One team mate of the chosen user (the pair's other person). */
+export const dayLogTeamMateSchema = z.object({
+  /** The pair row — what Remove sends back. */
+  id: z.string().uuid(),
+  mateId: z.string().uuid(),
+  mateName: z.string(),
+  mateDeptLabel: z.string().nullable(),
+  /** When the pair was added (ISO). */
+  addedAt: z.string(),
+});
+export type DayLogTeamMate = z.infer<typeof dayLogTeamMateSchema>;
+
+export const dayLogTeamMatesResponseSchema = z.object({
+  userId: z.string().uuid(),
+  rows: z.array(dayLogTeamMateSchema),
+});
+export type DayLogTeamMatesResponse = z.infer<typeof dayLogTeamMatesResponseSchema>;
+
+/** The people a Super Admin may pair: active users whose Day Log is not hidden. */
+export const dayLogTeamPeopleResponseSchema = z.object({
+  rows: z.array(
+    z.object({ id: z.string().uuid(), name: z.string(), deptLabel: z.string().nullable() }),
+  ),
+});
+export type DayLogTeamPeopleResponse = z.infer<typeof dayLogTeamPeopleResponseSchema>;
+
+export const addDayLogTeamMateInputSchema = z
+  .object({ userId: z.string().uuid(), mateId: z.string().uuid() })
+  .refine((v) => v.userId !== v.mateId, {
+    message: 'A person always sees their own Day Log — pick someone else.',
+    path: ['mateId'],
+  });
+export type AddDayLogTeamMateInput = z.infer<typeof addDayLogTeamMateInputSchema>;

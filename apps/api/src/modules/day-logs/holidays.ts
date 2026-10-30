@@ -11,8 +11,13 @@ import { dmy } from './rules';
 import { requireCompany } from './writes';
 
 export async function getAccess(user: AuthContext): Promise<DayLogAccess> {
-  const v = await loadViewer(user);
-  return { canSeeTeam: canSeeTeam(v), canApprove: canApproveAny(v), canManageHolidays: v.isSuper };
+  const v = await loadViewer(user, { withMates: true });
+  return {
+    canSeeTeam: canSeeTeam(v),
+    canApprove: canApproveAny(v),
+    canManageHolidays: v.isSuper,
+    canManageTeams: v.isSuper && !v.auditor,
+  };
 }
 
 // ── Holidays ────────────────────────────────────────────────────────────────

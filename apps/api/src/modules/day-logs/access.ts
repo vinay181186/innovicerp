@@ -13,6 +13,11 @@
 //     refuses the caller — checked in resolveAccess, the one door they share.
 //     People whose Day Log is hidden are left out of Team Day Logs (their
 //     waiting edits stay in Approvals so they can still be decided).
+//   - Teams Config (owner 2026-10-30, 0230): a Super Admin pairs two people;
+//     each SEES the other's day (read-only, like any non-Super viewer). A
+//     mate never manages or approves. `mates` rides in the same statement as
+//     the access (matesJson); a caller that does not read it gets none —
+//     mates only ever widen what is seen, so a missing read refuses, never leaks.
 
 import {
   ACCESS_DEPTS,
@@ -37,6 +42,8 @@ export interface Viewer {
   l5: ReadonlySet<string>;
   /** May save anything at all (not an Auditor, not unconfigured). */
   writer: boolean;
+  /** Teams Config — the other person of every live pair holding the viewer. */
+  mates: ReadonlySet<string>;
 }
 
 /**
@@ -52,6 +59,30 @@ export const accessJson = (userId: string, companyId: string): SQL => sql`(
   WHERE ua.user_id = ${userId}::uuid AND ua.company_id = ${companyId}::uuid
     AND ua.deleted_at IS NULL
   LIMIT 1)`;
+
+/** The caller's Teams Config mates as ONE json array (a scalar sub-select)
+ *  — put it beside accessJson in the same statement. Only mates who are
+ *  active and not deleted; each carries its access so toMates can drop one
+ *  whose Day Log is hidden (personOpensDayLog). */
+export const matesJson = (userId: string, companyId: string): SQL => sql`(
+  SELECT COALESCE(json_agg(json_build_object('id', u.id::text,
+           'departments', COALESCE(ua.departments, '{}'::jsonb), ${personAccessJson})), '[]'::json)
+  FROM public.day_log_team_mates m
+  JOIN public.users u
+    ON u.id = CASE WHEN m.user_low_id = ${userId}::uuid THEN m.user_high_id ELSE m.user_low_id END
+   AND u.company_id = m.company_id AND u.deleted_at IS NULL AND u.is_active
+  LEFT JOIN public.user_access ua
+    ON ua.user_id = u.id AND ua.company_id = m.company_id AND ua.deleted_at IS NULL
+  WHERE m.company_id = ${companyId}::uuid AND m.deleted_at IS NULL
+    AND (m.user_low_id = ${userId}::uuid OR m.user_high_id = ${userId}::uuid))`;
+
+/** The mates whose Day Log is not hidden (a hidden one opens nothing). */
+const toMates = (json: unknown): ReadonlySet<string> =>
+  new Set(
+    (Array.isArray(json) ? (json as Array<PersonAccess & { id: string }>) : [])
+      .filter((p) => personOpensDayLog(p))
+      .map((p) => String(p.id)),
+  );
 
 /**
  * The caller's access from `row` (accessJson) — exactly what getMyAccess
@@ -143,10 +174,18 @@ export function assertCanWrite(eff: FrozenAccess | null): void {
   }
 }
 
-/** The Viewer of access already read (resolveAccess). */
-export function viewerOf(user: AuthContext, eff: FrozenAccess | null): Viewer {
+/** The Viewer of access already read (resolveAccess); `mates` = the
+ *  matesJson column of the same statement (omitted → no mates). */
+export function viewerOf(user: AuthContext, eff: FrozenAccess | null, mates?: unknown): Viewer {
   if (!eff) {
-    return { userId: user.id, isSuper: true, auditor: false, l5: new Set(), writer: true };
+    return {
+      userId: user.id,
+      isSuper: true,
+      auditor: false,
+      l5: new Set(),
+      writer: true,
+      mates: toMates(mates),
+    };
   }
   const tiers = normalizeDeptsMap(eff.departments ?? {});
   const l5 = new Set(
@@ -160,6 +199,7 @@ export function viewerOf(user: AuthContext, eff: FrozenAccess | null): Viewer {
     auditor: eff.auditor,
     l5,
     writer: canWriteAnything(eff),
+    mates: toMates(mates),
   };
 }
 
@@ -167,16 +207,24 @@ const noCompany = (): AuthorizationError =>
   new AuthorizationError('User is not assigned to a company');
 
 /** The caller's Viewer on its own — ONE statement (none for an admin or a
- *  request that already read its access). */
-export async function loadViewer(user: AuthContext): Promise<Viewer> {
-  if (user.role === 'admin' || requestScope(user)?.myAccess) {
+ *  request that already read its access, unless `withMates`: then the mates
+ *  are read, beside the access when it is not read yet — still one). */
+export async function loadViewer(
+  user: AuthContext,
+  opts: { withMates?: boolean } = {},
+): Promise<Viewer> {
+  const memo = user.role === 'admin' || !!requestScope(user)?.myAccess;
+  // A role admin is Super Admin: mates add nothing.
+  if (memo && (!opts.withMates || user.role === 'admin')) {
     return viewerOf(user, await resolveAccess(user, null));
   }
   if (!user.companyId) throw noCompany();
+  const co = user.companyId;
   const [r] = (await db.execute(
-    sql`SELECT ${accessJson(user.id, user.companyId)} AS access`,
-  )) as unknown as Array<{ access: unknown }>;
-  return viewerOf(user, await resolveAccess(user, r?.access));
+    sql`SELECT ${memo ? sql`NULL::json` : accessJson(user.id, co)} AS access,
+      ${opts.withMates ? matesJson(user.id, co) : sql`NULL::json`} AS mates`,
+  )) as unknown as Array<{ access: unknown; mates: unknown }>;
+  return viewerOf(user, await resolveAccess(user, r?.access), r?.mates);
 }
 
 /** Tiers that put a person on a Department Admin's team (above L1 viewer). */
@@ -193,7 +241,7 @@ export function canSeeUser(
   v: Viewer,
   u: { id: string; departments: Record<string, unknown> },
 ): boolean {
-  if (u.id === v.userId || v.isSuper || v.auditor) return true;
+  if (u.id === v.userId || v.isSuper || v.auditor || v.mates.has(u.id)) return true;
   return sharedTeamDepts(v, u.departments).length > 0;
 }
 
@@ -202,7 +250,8 @@ export function canManageUser(v: Viewer, u: { departments: Record<string, unknow
   return v.isSuper || sharedTeamDepts(v, u.departments).length > 0;
 }
 
-export const canSeeTeam = (v: Viewer): boolean => v.isSuper || v.auditor || v.l5.size > 0;
+export const canSeeTeam = (v: Viewer): boolean =>
+  v.isSuper || v.auditor || v.l5.size > 0 || v.mates.size > 0;
 
 /** May approve / reject this person's Day Log edits: Super Admin, or L5 of a
  *  department where the person holds L2+. Never one's own; an Auditor never. */
