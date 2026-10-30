@@ -101,8 +101,10 @@ export const dayLogPersonDaySchema = z.object({
   date: z.string(),
   /** Server's IST today (the date picker's max). */
   today: z.string(),
-  /** Super Admin: sees revisions and may reply. */
+  /** Super Admin: sees every Entry Rev — on their own day too (ADR-256). */
   isSuperAdmin: z.boolean(),
+  /** Super Admin on someone else's day: sees the replies and may reply. */
+  canReply: z.boolean(),
   entries: z.array(dayLogPersonDayEntrySchema),
 });
 export type DayLogPersonDay = z.infer<typeof dayLogPersonDaySchema>;

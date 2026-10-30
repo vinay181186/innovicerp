@@ -122,6 +122,14 @@ function PersonExpand({ r, p }: { r: Entry; p: DayLogPersonDay }): React.JSX.Ele
       </div>
     );
   }
+  // A Super Admin's own day: the versions only — nobody replies to themself.
+  if (!p.canReply) {
+    return (
+      <div className="dl-expand">
+        <PersonRevisions revisions={r.revisions} />
+      </div>
+    );
+  }
   return (
     <div className="dl-expand dl-panes">
       <PersonRevisions revisions={r.revisions} />

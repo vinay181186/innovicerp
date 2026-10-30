@@ -69,9 +69,11 @@ export async function getPersonDay(
   const lines = toLines(r?.['lines']).filter((l) => l.fromTime);
   const nowMin = date === clock.today ? clock.nowMin : undefined;
 
-  // A Super Admin on their OWN day is the owner there: no revision fact
-  // reaches an entry's owner, and nobody replies on their own entry.
-  const admin = v.isSuper && target.id !== v.userId;
+  // A Super Admin sees every Entry Rev, their OWN entries included (owner
+  // 2026-10-30, ADR-256). Nobody replies on their own entry, so the replies
+  // (and the reply box) are for someone else's day only.
+  const admin = v.isSuper;
+  const canReply = admin && target.id !== v.userId;
   let revs = new Map<string, RevRow[]>();
   let replies = new Map<string, Array<{ lineId: string; reply: DayLogAdminReply }>>();
   if (admin && lines.length > 0) {
@@ -111,6 +113,7 @@ export async function getPersonDay(
     date,
     today: clock.today,
     isSuperAdmin: admin,
+    canReply,
     // linesJson is in time order (Start, then line_no) — Sr No follows it.
     entries: lines.map((l, i) => {
       const lr = admin ? (revs.get(l.id) ?? []) : [];
@@ -133,7 +136,7 @@ export async function getPersonDay(
           order,
           savedAt,
         })),
-        replies: admin ? (replies.get(l.id) ?? []).map((q) => q.reply) : [],
+        replies: canReply ? (replies.get(l.id) ?? []).map((q) => q.reply) : [],
       };
     }),
   };

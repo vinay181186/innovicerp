@@ -155,6 +155,13 @@ export function textCases(): void {
         replies: [],
         description: 'v1',
       });
+      expect(s.canReply).toBe(true);
+      // ADR-256 — a Super Admin on their OWN day sees every Entry Rev, but
+      // no replies and no reply box (nobody replies to themself).
+      const own = await personDay(ownerAsSuper());
+      expect([own.isSuperAdmin, own.canReply]).toEqual([true, false]);
+      expect(own.entries[0]!.revisions.map((r) => r.entryRevNo)).toEqual([1, 0]);
+      expect(own.entries[0]!.replies).toEqual([]);
     });
 
     it('a non-Super Admin cannot reply; nobody replies on their own entry', async () => {
