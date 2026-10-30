@@ -182,10 +182,10 @@ export function RowActions({
 
   return (
     <div
+      className="row-acts"
       style={{
         display: 'flex',
         gap: 'var(--sp-1)',
-        justifyContent: 'center',
         alignItems: 'center',
         flexWrap: 'nowrap',
       }}

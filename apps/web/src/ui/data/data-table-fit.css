@@ -57,6 +57,9 @@
 .innovic-table.tbl-grid.dt-fit.dt-act-fill > tbody > tr > td.dt-k-actions {
   text-align: left;
 }
+.innovic-table.tbl-grid.dt-fit.dt-act-fill > tbody > tr > td.dt-k-actions > .row-acts {
+  justify-content: flex-start;
+}
 
 /* R1 — every row one line; text cut with "…". Headers are never narrower
    than their measured width, so `clip` never actually cuts one. */
