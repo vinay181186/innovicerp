@@ -13,35 +13,13 @@ import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
+import { CustomerRmStatus } from './customer-rm-status';
 
 // Sort & Filter (server mode): the JWSO status tick list — stored code + label.
 const STATUS_OPTIONS = Object.entries(SO_STATUS_LABEL).map(([value, label]) => ({
   value,
   label,
 }));
-
-/** Customer-material status as coloured text: customer RM QC-accepted across
- *  the lines (`partyReceivedQty`) vs what the lines need (`rmRequiredQty` —
- *  1 RM piece per finished part on lines that have a Customer RM, ADR-203). */
-function MaterialCell({
-  received,
-  expected,
-}: {
-  received: number;
-  expected: number;
-}): React.JSX.Element {
-  if (expected > 0 && received >= expected) {
-    return <span style={{ color: 'var(--green2)', fontWeight: 700 }}>✓ Accepted</span>;
-  }
-  if (received > 0) {
-    return (
-      <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
-        ◑ Accepted {received} of {expected}
-      </span>
-    );
-  }
-  return <span style={{ color: 'var(--red2)', fontWeight: 700 }}>✕ None accepted</span>;
-}
 
 /** `today` (IST) drives the overdue colour on the Due column — a JWSO still open
  *  past its earliest due date is late. */
@@ -178,7 +156,7 @@ export function jwsoListColumns(
       id: 'customer_material',
       header: 'Customer Material',
       nowrap: true,
-      render: (jw) => <MaterialCell received={jw.partyReceivedQty} expected={jw.rmRequiredQty} />,
+      render: (jw) => <CustomerRmStatus value={jw.customerRm} />,
     },
     {
       id: 'due',

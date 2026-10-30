@@ -45,7 +45,7 @@ import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel
 import { OrderCancelledBanner } from '@/modules/sales-orders/components/order-cancelled-banner';
 import { useJobWorkOrder } from '../api';
 import { DeleteJwsoModal } from '../components/delete-jwso-modal';
-import { JwMaterialStatusBadge } from '../components/jw-material-status';
+import { CustomerRmStatus } from '../components/customer-rm-status';
 import { ShortCloseJwLineModal } from '../components/short-close-jw-line-modal';
 
 /** `uploadFailed` — set by New / Edit JWSO when the JWSO saved but a picked
@@ -144,9 +144,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const showLineMenu =
     canShortCloseAction || (detail?.lines ?? []).some((l) => Boolean(l.drawingFilePath));
 
-  // ADR-203: customer material is per LINE now. Required = Σ order qty of the
-  // lines that have a Customer RM (1 RM piece per finished part — the same rule
-  // the list's rmRequiredQty uses); received = QC-accepted across the lines.
+  // ADR-203: Required = Σ order qty of the lines that have a Customer RM (1 RM
+  // piece per finished part, as the list's rmRequiredQty); received = QC-accepted.
   const rmRequiredTotal = detail.lines
     .filter((l) => Boolean(l.rmItemId))
     .reduce((s, l) => s + l.orderQty, 0);
@@ -171,10 +170,13 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const goJwInvoice = (): void =>
     void navigate({ to: '/invoices', search: { tab: 'jw', jw: detail.id } });
   // The most likely next step is the one real button; the other two sit in the
-  // Actions menu. Material still short → receive it; every line dispatched →
-  // bill it; otherwise the job is in work → JW DC.
-  const materialShort =
-    rmRequiredTotal > 0 ? detail.partyReceivedQty < rmRequiredTotal : detail.partyReceivedQty === 0;
+  // Actions menu. Material still due (OW-143 server figure; old rule only if
+  // absent) → receive it; every line dispatched → bill it; otherwise → JW DC.
+  const materialShort = detail.customerRm
+    ? detail.customerRm.grnPendingQty > 0
+    : rmRequiredTotal > 0
+      ? detail.partyReceivedQty < rmRequiredTotal
+      : detail.partyReceivedQty === 0;
   const allDispatched =
     detail.lines.length > 0 && detail.lines.every((l) => l.returnedQty >= l.orderQty);
   const nextSteps = [
@@ -187,8 +189,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     nextSteps.find((n) => n.key === primaryKey && n.allowed) ?? nextSteps.find((n) => n.allowed);
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
-  // Customer material QC-accepted across the lines (Σ Party GRN accepted) —
-  // the source of truth for the badge and the summary.
+  // Customer RM QC-accepted across the lines (Σ Party GRN accepted) — the summary.
   const partyReceivedTotal = detail.partyReceivedQty;
   // Money hidden for L1 Viewers: the API nulls the JWSO's GST % and line rates
   // together, so a null GST % is the single signal to drop ₹ here.
@@ -226,7 +227,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         badges={
           <>
             <SoStatusBadge status={detail.status} draft={isDraft} />
-            <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={rmRequiredTotal} />
+            <CustomerRmStatus value={detail.customerRm} />
           </>
         }
         actions={
@@ -375,11 +376,10 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 {/* Image · CODE/REV · Part name in one badge cell (user decision
                     2026-09-21) — the former separate Part name column folded in. */}
                 <th>Item</th>
-                {/* ADR-203: the line's customer raw material (`<code>-RM`) and
-                    how much of it Incoming QC has accepted on this line. */}
+                {/* ADR-203 / OW-143: the line's customer RM and where it is. */}
                 <th>Customer RM</th>
-                <th className="th-num" title="Customer RM accepted by Incoming QC on this line">
-                  Accepted
+                <th title="Where this line's customer RM is — hover the word for the quantities">
+                  Customer RM Status
                 </th>
                 <th>Material</th>
                 <th>Drawing</th>
@@ -730,7 +730,9 @@ function LineRow(props: {
           <span className="text3">—</span>
         )}
       </td>
-      <td className="mono td-num">{l.rmItemCode ? l.rmAcceptedQty : '—'}</td>
+      <td>
+        <CustomerRmStatus value={l.customerRm} />
+      </td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>

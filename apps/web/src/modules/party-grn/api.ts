@@ -13,6 +13,7 @@ import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
 import { incomingQcKeys } from '@/modules/incoming-qc/api';
+import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 
 export const partyGrnKeys = {
@@ -94,6 +95,8 @@ export function useCreatePartyGrn(saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Party material stocks changed
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
+      // OW-143: the JWSO's Customer RM Status moves.
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
     },
   });
 }
@@ -150,6 +153,7 @@ export function useUpdatePartyGrn(id: string, saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
       // A changed Received Qty moves party-material stocks.
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
     },
   });
 }
@@ -172,7 +176,7 @@ export function useQcPartyGrn() {
       // Accepted qty enters the register; JWSO lines show rmAcceptedQty.
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
       void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
-      void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
       // ADR-251: the line leaves the Incoming QC / QC Call Register queue and
       // the home dashboard's QC row.
       void qc.invalidateQueries({ queryKey: incomingQcKeys.all });

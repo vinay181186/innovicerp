@@ -30,6 +30,7 @@ import {
   normalizeRevision,
   revisionBackwardsMessage,
   revisionGoesBackwards,
+  sumCustomerRmQty,
 } from '@innovic/shared';
 import {
   clients,
@@ -84,6 +85,7 @@ import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JWSO_SF_COLUMNS } from './sf-columns';
 import { partyCommittedQtySql } from '../party-grn/service';
+import { customerRmByJw, toCustomerRm } from './customer-rm';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -281,47 +283,6 @@ function uuidList(ids: readonly string[]) {
     ids.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
-}
-
-/** ADR-203 rule 9: customer material QC-ACCEPTED per JWSO line
- *  (Σ party_grn_lines.accepted_qty by jw_line_id, live GRN + live GRN line).
- *  Rejected pieces never count. */
-async function rmAcceptedByLine(
-  tx: DbTransaction,
-  lineIds: readonly string[],
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  if (lineIds.length === 0) return out;
-  const rows = (await tx.execute(sql`
-    SELECT gl.jw_line_id AS "lineId", COALESCE(SUM(gl.accepted_qty), 0)::int AS qty
-      FROM public.party_grn_lines gl
-      JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
-     WHERE gl.jw_line_id IN (${uuidList(lineIds)}) AND gl.deleted_at IS NULL
-     GROUP BY gl.jw_line_id
-  `)) as unknown as Array<{ lineId: string; qty: number }>;
-  for (const r of rows) out.set(r.lineId, Number(r.qty));
-  return out;
-}
-
-/** ADR-203: customer material received on each JWSO line and still WAITING
- *  for Incoming QC (same rule as party-grn isPendingQc). Part of the Party GRN
- *  receive cap, so the New Party GRN form shows it. */
-async function rmWaitingQcByLine(
-  tx: DbTransaction,
-  lineIds: readonly string[],
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  if (lineIds.length === 0) return out;
-  const rows = (await tx.execute(sql`
-    SELECT gl.jw_line_id AS "lineId", COALESCE(SUM(gl.received_qty), 0)::int AS qty
-      FROM public.party_grn_lines gl
-      JOIN public.party_grn g ON g.id = gl.party_grn_id AND g.deleted_at IS NULL
-     WHERE gl.jw_line_id IN (${uuidList(lineIds)}) AND gl.deleted_at IS NULL
-       AND gl.qc_at IS NULL AND gl.accepted_qty = 0 AND gl.rejected_qty = 0
-     GROUP BY gl.jw_line_id
-  `)) as unknown as Array<{ lineId: string; qty: number }>;
-  for (const r of rows) out.set(r.lineId, Number(r.qty));
-  return out;
 }
 
 /** party_materials id → its PM-#### code (the customer-material register). */
@@ -529,6 +490,16 @@ export async function listJobWorkOrders(
     const total = Number((totalRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    // OW-143: Customer RM status per JWSO — ONE read for the whole page.
+    const rmRows = await customerRmByJw(
+      tx,
+      companyId,
+      itemsOut.map((i) => i.jwId),
+    );
+    for (const item of itemsOut) {
+      const qty = sumCustomerRmQty(rmRows.filter((r) => r.jwId === item.jwId).map((r) => r.qty));
+      item.customerRm = toCustomerRm(qty, item.status === 'cancelled');
+    }
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -604,7 +575,7 @@ async function loadJobWorkOrderDetail(
   if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
   const lineIds = lineRows.map((l) => l.id);
 
-  const [codeMap, pmCodes, accepted, waitingQc, usage] = await Promise.all([
+  const [codeMap, pmCodes, rmRows, usage] = await Promise.all([
     // Order items and RM items share the items table — one lookup serves both.
     resolveItemCodesById(
       tx,
@@ -616,17 +587,21 @@ async function loadJobWorkOrderDetail(
       lineRows.map((l) => l.partyMaterialId),
       companyId,
     ),
-    rmAcceptedByLine(tx, lineIds),
-    rmWaitingQcByLine(tx, lineIds),
+    // OW-143: every Customer RM figure per line in one read (customer-rm.ts).
+    customerRmByJw(tx, companyId, [id]),
     jwLineUsage(tx, lineIds),
   ]);
+  const rmByLine = new Map(rmRows.map((r) => [r.lineId, r.qty]));
+  const cancelled = header.status === 'cancelled';
+  const rmTotal = sumCustomerRmQty(rmRows.map((r) => r.qty));
   // ADR-203 rule 9: Σ accepted by jw_line_id over THIS JWSO's live lines.
-  const partyReceivedQty = lineIds.reduce((a, lid) => a + (accepted.get(lid) ?? 0), 0);
+  const partyReceivedQty = rmTotal.acceptedQty;
 
   const headerOut = toJobWorkOrder(header);
   return {
     ...(showMoney ? headerOut : hideJwHeaderMoney(headerOut)),
     partyReceivedQty,
+    customerRm: toCustomerRm(rmTotal, cancelled),
     // ADR-243 — the same roll-up as the SO; null when prices are hidden.
     totals: showMoney
       ? await orderTotals(tx, companyId, {
@@ -638,13 +613,15 @@ async function loadJobWorkOrderDetail(
         })
       : null,
     lines: lineRows.map((l) => {
+      const rmQty = rmByLine.get(l.id) ?? sumCustomerRmQty([]);
       const line = toJobWorkOrderLine(l, codeMap, {
         partyMaterialCode: l.partyMaterialId ? (pmCodes.get(l.partyMaterialId) ?? null) : null,
-        rmAcceptedQty: accepted.get(l.id) ?? 0,
-        rmWaitingQcQty: waitingQc.get(l.id) ?? 0,
+        rmAcceptedQty: rmQty.acceptedQty,
+        rmWaitingQcQty: rmQty.qcPendingQty,
         inUse: usage.has(l.id),
       });
-      return showMoney ? line : hideJwLineMoney(line);
+      const withRm = { ...line, customerRm: toCustomerRm(rmQty, cancelled) };
+      return showMoney ? withRm : hideJwLineMoney(withRm);
     }),
   };
 }

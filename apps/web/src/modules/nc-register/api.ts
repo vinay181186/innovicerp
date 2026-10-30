@@ -16,6 +16,7 @@ import type {
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
+import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { opEntryKeys } from '@/modules/op-entry/api';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
@@ -222,6 +223,8 @@ function useInvalidateNcCascade(id: string) {
     // Prefix of every `opEntryKeys.jcOps(q)` key, whatever the query was.
     void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
     void qc.invalidateQueries({ queryKey: deliveryChallansKeys.all });
+    // OW-143: a decided Party GRN deviation NC moves the JWSO's Customer RM Status.
+    void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
   };
 }
 

@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 
 export const customerMaterialReturnKeys = {
   all: ['customer-material-returns'] as const,
@@ -87,7 +88,7 @@ function invalidateAfterWrite(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: ['party-materials'] });
   void qc.invalidateQueries({ queryKey: ['party-grn'] });
   void qc.invalidateQueries({ queryKey: ['party-stock-ledger'] });
-  void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
+  void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
 }
 
 export function useCreateCustomerMaterialReturn(saveKey?: SaveKey) {
