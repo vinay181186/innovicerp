@@ -76,12 +76,15 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   '/approvals': OPEN, // lists only what the caller may approve
   '/reports': OPEN, // server canSeeReport
   '/reports/$slug': OPEN,
-  '/task-board': OPEN,
-  '/daily-task-reports': OPEN,
-  '/alerts': OPEN,
-  '/alerts/$code': OPEN,
-  '/alerts/config': OPEN, // page edits only for Super Admin (owner D3)
-  '/activity-log': OPEN,
+  // Tasks & Alerts (owner 2026-10-30): one View row each, so "Hide page" works.
+  // Task Board and Day Log share one route; the route opens on either tick and
+  // canOpenPage tells the two apart by `?view=` (taskBoardViewRule).
+  '/task-board': { anyOf: [v('taskboard_view'), v('daylog_view')] },
+  '/daily-task-reports': v('daylog_view'), // retired; redirects to Day Log
+  '/alerts': v('alerts_view'),
+  '/alerts/$code': v('alerts_view'),
+  '/alerts/config': v('alerts_view'), // page edits only for Super Admin (owner D3)
+  '/activity-log': v('activitylog_view'),
   '/print-templates': OPEN, // editing needs Print Templates Edit, checked on the page
   '/op-log': OPEN,
   '/so-overview': OPEN,
@@ -267,6 +270,17 @@ export function pageRuleFor(href: string): PageRule | undefined {
   return p ? PAGE_ACCESS[p] : undefined;
 }
 
+/** The Task Board route's `?view=` values that show the Day Log, not tasks. */
+export const DAY_LOG_VIEWS = ['daylog', 'team', 'person', 'approvals'] as const;
+
+/** Task Board and Day Log are one route ('/task-board'). A URL with a Day Log
+ *  `?view=` is the Day Log page; any other is the Task Board page. */
+export function taskBoardViewRule(view: string | null | undefined): PageTick {
+  return (DAY_LOG_VIEWS as readonly string[]).includes(view ?? '')
+    ? v('daylog_view')
+    : v('taskboard_view');
+}
+
 /** May this person open this URL? The one question the menu, every next-step
  *  link and the route guard ask. */
 export function canOpenPage(
@@ -276,6 +290,10 @@ export function canOpenPage(
 ): boolean {
   const rule = pageRuleFor(href);
   if (!rule) return isSuperAdmin;
+  if (pagePattern(href) === '/task-board') {
+    const view = new URLSearchParams(href.split('?')[1]?.split('#')[0] ?? '').get('view');
+    return meetsPageRule(eff, isSuperAdmin, taskBoardViewRule(view));
+  }
   return meetsPageRule(eff, isSuperAdmin, rule);
 }
 

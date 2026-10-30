@@ -126,9 +126,13 @@ const OFF_FIELD: Record<Action, keyof FormPerms> = {
 // (requireFormAccess), so "No create/edit/approve" is actually enforced; and the
 // sidebar links + list/detail routes carry the Hide-page guard. Purchase / Store
 // / QC / Production first (phase 1), then Sales / Planning / Design / Finance
-// once their write endpoints were gated (phase 2). The only ACCESS_DEPTS not here
-// are the non-form sections (tasks, reports, system).
+// once their write endpoints were gated (phase 2). Tasks (owner 2026-10-30): its
+// four pages (Task Board, Day Log, Alerts, Activity Log) are view-only rows whose
+// "Hide page" is server-gated; without it here the tier-given View box is locked
+// and the page could never be hidden. The only ACCESS_DEPTS not here are the
+// non-form sections (reports, system).
 const OFF_SWITCH_DEPTS: readonly string[] = [
+  'tasks',
   'purchase',
   'store',
   'qc',

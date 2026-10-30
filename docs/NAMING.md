@@ -354,6 +354,7 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Home block: tasks assigned to the caller (ADR-250) | `My to-do` (tabs `Late` / `Today` / `Planned`) | `todo` | tasks.assigned_to = caller, status todo/in_progress | `My Tasks`, `My Work` (retired label of the old home list) |
 | Home block: the caller's own entries for an IST day (ADR-250) | `Done` (tabs `Today` / `Yesterday`) | `done` | activity_log.user_id = caller | `My Activity`, `Today's Work` |
 | Home block: pages the caller can open (ADR-044, label kept) | `Shortcuts` | `quickLinks` | dashboard_config.quick_links filtered by canOpenPage | `Quick Access`, `Quick Links` |
+| Access Control page rows of the Tasks department — one View / Hide page row per Tasks & Alerts menu link (ADR-257) | `Task Board` / `Day Log` / `Alerts` / `Activity Log` | `taskboard_view` / `daylog_view` / `alerts_view` / `activitylog_view` | user_access.forms (no column) | `Tasks` (that is the department), `Task Log`, `Audit Log` |
 | Home rows filter (ADR-250) | `My department` / `Mine` | `mine` (row flag) | created / received / responsible = caller | `All` / `Self` |
 | Home count strip entry (ADR-250) | — (one per list) | `cues[]` (`count` = the list's `total`) | the same query as its list | `KPI`, `Tile` |
 | QC Documents view: one order → POL folders → report folders → files (ADR-252) | `Dossier` | `QcDossierResponse` | GET /qc-documents/dossier | `QC Folder`, `QC Repository`, `Document Tree` |

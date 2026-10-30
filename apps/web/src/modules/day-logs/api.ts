@@ -57,11 +57,12 @@ function qs(params: Record<string, string | undefined>): string {
 
 // ── Reads ──
 
-export function useDayLogAccess() {
+export function useDayLogAccess(enabled = true) {
   return useQuery<DayLogAccess>({
     queryKey: dayLogKeys.access(),
     queryFn: () => apiFetch<DayLogAccess>('/day-logs/access'),
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 

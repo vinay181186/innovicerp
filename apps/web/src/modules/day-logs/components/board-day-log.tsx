@@ -9,6 +9,7 @@
 //   view=person&user=&date=    one person's day (Team tab stays lit)
 //   view=approvals              Day Log edits waiting for the caller's approval
 
+import { DAY_LOG_VIEWS } from '@innovic/shared';
 import { z } from 'zod';
 import { useDayLogAccess, useDayLogApprovals } from '../api';
 import { DayLogApprovals } from './day-log-approvals';
@@ -19,8 +20,8 @@ import { TeamDayLogsTab } from './team-day-logs-tab';
 /** The tabs drawn on the strip. */
 export const DAY_LOG_TABS = ['daylog', 'team', 'approvals'] as const;
 export type DayLogTabKey = (typeof DAY_LOG_TABS)[number];
-/** Every `view` the day log answers (the person page has no tab of its own). */
-export const DAY_LOG_VIEWS = ['daylog', 'team', 'person', 'approvals'] as const;
+/** Every `view` the day log answers (the person page has no tab of its own) —
+ *  the shared DAY_LOG_VIEWS, which page access reads too (daylog_view). */
 export type DayLogViewKey = (typeof DAY_LOG_VIEWS)[number];
 
 const LABELS: Record<DayLogTabKey, string> = {
@@ -53,16 +54,18 @@ export function dayLogTabOf(v: DayLogViewKey): DayLogTabKey {
 }
 
 /** The tabs to draw: Team / Approvals only for whoever the server lets see
- *  them; Approvals carries its waiting count. */
-export function useDayLogBoardTabs(): { key: DayLogTabKey; label: string }[] {
-  const access = useDayLogAccess();
-  const canApprove = Boolean(access.data?.canApprove);
+ *  them; Approvals carries its waiting count. `enabled` false (Day Log page
+ *  hidden for this person) → no tabs and no request. */
+export function useDayLogBoardTabs(enabled = true): { key: DayLogTabKey; label: string }[] {
+  const access = useDayLogAccess(enabled);
+  const canApprove = enabled && Boolean(access.data?.canApprove);
   const approvals = useDayLogApprovals(canApprove);
   const shown: Record<DayLogTabKey, boolean> = {
     daylog: true,
     team: Boolean(access.data?.canSeeTeam),
     approvals: canApprove,
   };
+  if (!enabled) return [];
   return DAY_LOG_TABS.filter((t) => shown[t]).map((key) => ({
     key,
     label:

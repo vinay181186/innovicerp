@@ -47,6 +47,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { type PersonAccessRow, personHolds } from '../access-control/users-with-right';
 import { emitActivityLog } from '../activity-log/service';
 import {
   type NameMap,
@@ -134,18 +135,50 @@ async function loadVisibleTask(
   return t;
 }
 
+// The user_access columns read alongside a user row, so "may this person open
+// Task Board?" is answered in the same query (never one read per person).
+const accessCols = {
+  role: users.role,
+  acFullAccess: userAccess.fullAccess,
+  acAuditor: userAccess.auditor,
+  acDepartments: userAccess.departments,
+  acForms: userAccess.forms,
+};
+
+function userAccessJoin(companyId: string) {
+  return and(
+    eq(userAccess.userId, users.id),
+    eq(userAccess.companyId, companyId),
+    isNull(userAccess.deletedAt),
+  );
+}
+
+/** Owner 2026-10-30: a person whose Task Board is hidden ("Hide page" on Task
+ *  Board) never receives a task. Same answer as the page guard: role admin /
+ *  Full Access always open, everyone else by the effective matrix. */
+function opensTaskBoard(r: PersonAccessRow): boolean {
+  return personHolds(r, 'taskboard_view', 'view');
+}
+
 async function loadAssignee(
   tx: DbTransaction,
   companyId: string,
   assignedTo: string,
 ): Promise<{ id: string; name: string }> {
   const rows = await tx
-    .select({ id: users.id, name: users.fullName, isActive: users.isActive })
+    .select({ id: users.id, name: users.fullName, isActive: users.isActive, ...accessCols })
     .from(users)
+    .leftJoin(userAccess, userAccessJoin(companyId))
     .where(and(eq(users.id, assignedTo), eq(users.companyId, companyId), isNull(users.deletedAt)))
     .limit(1);
   const u = rows[0];
   if (!u || !u.isActive) throw new NotFoundError('Assignee not found in this company');
+  if (!opensTaskBoard(u)) {
+    throw new ValidationError(
+      `${u.name?.trim() || 'This person'} cannot open Task Board — ask an admin to untick ` +
+        'Hide page (or give them a Tasks tier).',
+    );
+  }
   return { id: u.id, name: u.name ?? '' };
 }
 
@@ -823,23 +856,24 @@ export async function listUserOptions(user: AuthContext): Promise<TaskUserOption
       .select({
         id: users.id,
         name: users.fullName,
-        role: users.role,
         isActive: users.isActive,
         mainDept: userAccess.mainDept,
+        ...accessCols,
       })
       .from(users)
-      .leftJoin(
-        userAccess,
-        and(
-          eq(userAccess.userId, users.id),
-          eq(userAccess.companyId, companyId),
-          isNull(userAccess.deletedAt),
-        ),
-      )
+      .leftJoin(userAccess, userAccessJoin(companyId))
       .where(and(eq(users.companyId, companyId), isNull(users.deletedAt)))
       .orderBy(asc(users.fullName));
+    // ADR-257: every active user (Operators / CAPA pick people from this list
+    // too); `opensTaskBoard` tells the assignee pickers who may get a task.
     return rows
       .filter((r) => r.isActive)
-      .map((r) => ({ id: r.id, name: r.name ?? '', role: r.role, mainDept: r.mainDept ?? null }));
+      .map((r) => ({
+        id: r.id,
+        name: r.name ?? '',
+        role: r.role,
+        mainDept: r.mainDept ?? null,
+        opensTaskBoard: opensTaskBoard(r),
+      }));
   });
 }

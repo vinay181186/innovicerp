@@ -271,5 +271,7 @@ export const taskUserOptionSchema = z.object({
   name: z.string(),
   role: z.string().nullable(),
   mainDept: z.string().nullable(),
+  /** May be given a task — Task Board not hidden (ADR-257). */
+  opensTaskBoard: z.boolean(),
 });
 export type TaskUserOption = z.infer<typeof taskUserOptionSchema>;

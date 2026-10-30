@@ -9,12 +9,23 @@
 //     Anyone else sees only their own; another's day is "not found".
 //   - Approve an edit: Super Admin, or L5 over one of the person's L2+
 //     departments. Never one's own; an Auditor never.
+//   - "Hide page" on Day Log (owner 2026-10-30): every Day Log read and write
+//     refuses the caller — checked in resolveAccess, the one door they share.
+//     People whose Day Log is hidden are left out of Team Day Logs (their
+//     waiting edits stay in Approvals so they can still be decided).
 
-import { ACCESS_DEPTS, canWriteAnything, isUnconfigured, normalizeDeptsMap } from '@innovic/shared';
+import {
+  ACCESS_DEPTS,
+  canWriteAnything,
+  effectiveFormPerms,
+  isUnconfigured,
+  normalizeDeptsMap,
+} from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { type AuthContext, type FrozenAccess, requestScope } from '../../db/with-user-context';
 import { toEffectiveAccess } from '../access-control/my-access';
+import { personHolds } from '../access-control/users-with-right';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
 export interface Viewer {
@@ -51,7 +62,7 @@ export const accessJson = (userId: string, companyId: string): SQL => sql`(
 export async function resolveAccess(user: AuthContext, row: unknown): Promise<FrozenAccess | null> {
   if (user.role === 'admin') return null;
   const scope = requestScope(user);
-  if (scope?.myAccess) return scope.myAccess;
+  if (scope?.myAccess) return assertDayLogPage(await scope.myAccess);
   const r = (row ?? {}) as Record<string, unknown>;
   const eff = toEffectiveAccess({
     fullAccess: (r['fullAccess'] as boolean | null) ?? null,
@@ -65,7 +76,57 @@ export async function resolveAccess(user: AuthContext, row: unknown): Promise<Fr
   Object.freeze(eff.departments);
   const frozen: FrozenAccess = Object.freeze(eff);
   if (scope) scope.myAccess = Promise.resolve(frozen);
-  return frozen;
+  return assertDayLogPage(frozen);
+}
+
+/** May open the Day Log page (Day Log View, "Hide page" unticked)? Role admin
+ *  never reaches here; Full Access passes inside effectiveFormPerms. */
+export const opensDayLog = (eff: FrozenAccess): boolean =>
+  effectiveFormPerms(eff, 'daylog_view').view;
+
+/** Another person's access, as the json columns `personAccessJson` adds. */
+export interface PersonAccess {
+  role: string;
+  fullAccess: boolean | null;
+  auditor: boolean | null;
+  departments: unknown;
+  forms: unknown;
+}
+
+/** The json_build_object pairs a person row needs for `personOpensDayLog`
+ *  (aliases: u = users, ua = user_access, LEFT JOINed). */
+export const personAccessJson = sql`'role', u.role, 'fullAccess', ua.full_access,
+  'auditor', ua.auditor, 'forms', COALESCE(ua.forms, '{}'::jsonb)`;
+
+/** May this OTHER person open Day Log? Team Day Logs leaves out anyone whose
+ *  Day Log is hidden. Same rule as the caller's own check. */
+export function personOpensDayLog(p: PersonAccess): boolean {
+  return personHolds(
+    {
+      role: p.role,
+      acFullAccess: p.fullAccess,
+      acAuditor: p.auditor,
+      acDepartments: p.departments,
+      acForms: p.forms,
+    },
+    'daylog_view',
+    'view',
+  );
+}
+
+/** requireFormAccess(user, 'daylog_view', 'view') on access already read. */
+function assertDayLogPage(eff: FrozenAccess): FrozenAccess {
+  if (opensDayLog(eff)) return eff;
+  if (isUnconfigured(eff)) {
+    throw new AuthorizationError(
+      'Your account has no access configured yet. Ask an admin to set your ' +
+        'department tiers in Access Control.',
+    );
+  }
+  throw new AuthorizationError(
+    'Your access does not let you open Day Log. Ask an admin to give you a Tasks tier, ' +
+      'or to untick Hide page on Day Log in Access Control.',
+  );
 }
 
 /** requireCanWrite (lib/access.ts) on access already read — same refusals. */

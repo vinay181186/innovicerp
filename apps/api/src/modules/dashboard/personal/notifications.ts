@@ -370,7 +370,10 @@ export async function buildNotifications(
   approvals: ApprovalInboxResponse | null,
 ): Promise<{ items: DashNote[]; unseen: number; seenAt: string | null }> {
   const seenAt = await readSeenAt(tx, c.cid, me);
-  const replyNotes = (await readDayLogReplies(tx, c.cid, me)).map(dayLogReplyNote);
+  // Owner 2026-10-30: Day Log hidden ("Hide page") → no Day Log reply notes.
+  const replyNotes = hasTick(a, 'daylog_view', 'view')
+    ? (await readDayLogReplies(tx, c.cid, me)).map(dayLogReplyNote)
+    : [];
   const rules = rulesFor(a);
   if (rules.length === 0) return { items: replyNotes, unseen: replyNotes.length, seenAt };
 

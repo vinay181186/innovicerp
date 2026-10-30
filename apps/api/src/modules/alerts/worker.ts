@@ -31,12 +31,13 @@
 // file without spinning up Redis / Resend connections.
 
 import { NC_STATUS_LABELS } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import {
   alertConfig as alertConfigTable,
   alertDeliveries,
   alertSubscriptions,
+  userAccess,
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -44,6 +45,7 @@ import { sendAlertDigest } from '../../lib/email';
 import { env } from '../../lib/env';
 import { fmtDate, isIsoDateLike } from '../../lib/format-date';
 import { logger } from '../../lib/logger';
+import { personHolds } from '../access-control/users-with-right';
 import { ALERTS, type RegisteredAlert } from './registry';
 
 interface SubscriberRow {
@@ -81,11 +83,30 @@ async function loadSubscribers(): Promise<SubscriberRow[]> {
       fullName: users.fullName,
       role: users.role,
       isActive: users.isActive,
+      acFullAccess: userAccess.fullAccess,
+      acAuditor: userAccess.auditor,
+      acDepartments: userAccess.departments,
+      acForms: userAccess.forms,
     })
     .from(alertSubscriptions)
     .innerJoin(users, sql`${users.id} = ${alertSubscriptions.userId}`)
+    .leftJoin(
+      userAccess,
+      and(
+        eq(userAccess.userId, alertSubscriptions.userId),
+        eq(userAccess.companyId, alertSubscriptions.companyId),
+        isNull(userAccess.deletedAt),
+      ),
+    )
     .where(sql`${users.isActive} = true`);
-  return rows as SubscriberRow[];
+  // Owner 2026-10-30: no digest for someone whose Alerts page is hidden — the
+  // same rule as the page guard (role admin always, else the effective matrix).
+  return rows
+    .filter((r) => personHolds(r, 'alerts_view', 'view'))
+    .map(
+      ({ acFullAccess: _f, acAuditor: _a, acDepartments: _d, acForms: _m, ...sub }) =>
+        sub as SubscriberRow,
+    );
 }
 
 async function loadConfig(): Promise<Map<string, boolean>> {

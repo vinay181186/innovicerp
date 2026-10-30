@@ -61,8 +61,9 @@ function toQuery(q: ListTasksQuery): string {
 
 // ── Reads ──
 
-export function useTaskList(query: ListTasksQuery) {
+export function useTaskList(query: ListTasksQuery, enabled = true) {
   return useQuery<ListTasksResponse>({
+    enabled,
     queryKey: taskKeys.list(query),
     queryFn: () => apiFetch<ListTasksResponse>(`/tasks${toQuery(query)}`),
     staleTime: 15_000,

@@ -6,7 +6,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { isUniqueViolation } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { canApproveAny, canSeeTeam, loadViewer } from './access';
+import { accessJson, canApproveAny, canSeeTeam, loadViewer, resolveAccess } from './access';
 import { dmy } from './rules';
 import { requireCompany } from './writes';
 
@@ -20,13 +20,19 @@ export async function getAccess(user: AuthContext): Promise<DayLogAccess> {
 export async function listHolidays(user: AuthContext): Promise<{ holidays: Holiday[] }> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const rows = (await tx.execute(sql`
-      SELECT id::text AS id, to_char(holiday_date, 'YYYY-MM-DD') AS date, name
-      FROM public.company_holidays
-      WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-      ORDER BY holiday_date
-    `)) as unknown as Holiday[];
-    return { holidays: rows.map((r) => ({ id: r.id, date: r.date, name: r.name })) };
+    // Day Log's own calendar: the caller's access rides in the same statement
+    // so "Hide page" on Day Log refuses it too (resolveAccess).
+    const [r] = (await tx.execute(sql`
+      SELECT ${accessJson(user.id, companyId)} AS access,
+        (SELECT COALESCE(json_agg(json_build_object(
+                  'id', id::text, 'date', to_char(holiday_date, 'YYYY-MM-DD'), 'name', name)
+                ORDER BY holiday_date), '[]'::json)
+         FROM public.company_holidays
+         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL) AS holidays
+    `)) as unknown as Array<{ access: unknown; holidays: Holiday[] | null }>;
+    await resolveAccess(user, r?.access);
+    const rows = r?.holidays ?? [];
+    return { holidays: rows.map((h) => ({ id: h.id, date: h.date, name: h.name })) };
   });
 }
 

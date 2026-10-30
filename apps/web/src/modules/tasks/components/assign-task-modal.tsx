@@ -58,7 +58,8 @@ export function AssignTaskModal({
   const create = useCreateTask();
   const { data: next } = useNextTaskCode('assigned');
   const { data: userOpts, isFetching: usersLoading } = useTaskUserOptions();
-  const users = userOpts?.options ?? [];
+  // ADR-257: only people who may be given a task (Task Board not hidden).
+  const users = (userOpts?.options ?? []).filter((u) => u.opensTaskBoard);
 
   const [title, setTitle] = useState(suggestedTitle ?? '');
   const [description, setDescription] = useState('');

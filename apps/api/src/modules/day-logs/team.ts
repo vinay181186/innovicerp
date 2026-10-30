@@ -19,6 +19,9 @@ import {
   canSeeTeam,
   canSeeUser,
   deptLabelOf,
+  type PersonAccess,
+  personAccessJson,
+  personOpensDayLog,
   resolveAccess,
   sharedTeamDepts,
   viewerOf,
@@ -44,7 +47,7 @@ export async function getTeam(
     SELECT ${accessJson(user.id, companyId)} AS access,
       (SELECT COALESCE(json_agg(json_build_object(
                 'id', u.id::text, 'name', COALESCE(u.full_name, u.email), 'main_dept', ua.main_dept,
-                'departments', COALESCE(ua.departments, '{}'::jsonb))
+                'departments', COALESCE(ua.departments, '{}'::jsonb), ${personAccessJson})
               ORDER BY COALESCE(u.full_name, u.email)), '[]'::json)
        FROM public.users u
        LEFT JOIN public.user_access ua
@@ -70,14 +73,17 @@ export async function getTeam(
 
   // Team by RIGHTS: everyone (Super Admin / Auditor), else people holding
   // L2+ in a department the viewer is L5 of (canSeeUser — one rule).
-  const all = (r?.['people'] ?? []) as Array<{
-    id: string;
-    name: string;
-    main_dept: string | null;
-    departments: Record<string, unknown>;
-  }>;
+  const all = (r?.['people'] ?? []) as Array<
+    PersonAccess & {
+      id: string;
+      name: string;
+      main_dept: string | null;
+      departments: Record<string, unknown>;
+    }
+  >;
   const people = all
-    .filter((p) => wide || canSeeUser(v, p))
+    // Owner 2026-10-30: a person whose Day Log is hidden is not on the team.
+    .filter((p) => (wide || canSeeUser(v, p)) && personOpensDayLog(p))
     .map((p) => ({ ...p, team: wide ? [] : sharedTeamDepts(v, p.departments) }));
   const headers = (r?.['headers'] ?? []) as Array<{
     id: string;
