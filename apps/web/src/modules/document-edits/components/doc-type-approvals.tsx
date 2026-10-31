@@ -10,7 +10,7 @@
 //   • row ✓ / ✗   — approveRow approves ALL the request's still-pending changes,
 //                    rejectRow rejects them all with one reason (bug 1 + bug 2
 //                    instant-lock live in the shell).
-//   • ▸ detail    — the before → after of every change, with per-field ✓ / ✗ for
+//   • row click   — the before → after of every change, with per-field ✓ / ✗ for
 //                    a multi-field edit so an approver can still split a request.
 //
 // Reuses the shipped look: .badge / .tag chip classes and tokens, no invented
@@ -63,6 +63,8 @@ function columns(): DataTableColumn<DocumentEditRow>[] {
       header: 'Doc No.',
       className: 'mono fw-700',
       // Opens the document / master itself (doc-edit-link.tsx, one entry per type).
+      // Its own click — never also the row's open/close of the change list.
+      stopRowClick: true,
       render: (r) => <DocEditLink row={r} />,
     },
     {
@@ -115,8 +117,8 @@ export function EditApprovalTab({
 }): React.JSX.Element {
   const [view, setView] = useState<ApprovalView>('pending');
   const [term, setTerm] = useState('');
-  // Which request rows are expanded (the fit engine's ▸ drives this through
-  // onToggleExpanded). renderExpanded returns null for a collapsed row.
+  // Which request rows are expanded (a row click toggles it). renderExpanded
+  // returns null for a collapsed row.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // The one per-field change whose Reject reason dialog is open (expander split).
   const [rejectingChange, setRejectingChange] = useState<{
@@ -343,7 +345,9 @@ export function EditApprovalTab({
         emptyDecided={view === 'approved' ? 'No approved edits yet.' : 'No rejected edits yet.'}
         emptyNoMatch="No edit requests match."
         renderExpanded={renderExpanded}
-        onToggleExpanded={toggleExpanded}
+        // No ▸ on list rows (owner 2026-10-31): a row click opens / closes its
+        // field-by-field change list with the per-change ✓ / ✗.
+        onRowClick={toggleExpanded}
         canAct={() => canDecide}
         approveRow={async (r) => {
           await decide.mutateAsync({

@@ -36,6 +36,7 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnList } from '../api';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
 import { PARTY_GRN_HIDDEN_COLUMNS, partyGrnColumns } from '../components/party-grn-columns';
+import { EditPartyGrnModal } from '../components/edit-party-grn-modal';
 import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
@@ -106,6 +107,10 @@ function PartyGrnListPage(): React.JSX.Element {
   );
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
   const [qcRow, setQcRow] = useState<PartyGrnListItem | null>(null);
+  // No detail page and no ▸ (owner 2026-10-31) — Edit opens from the row ⋯.
+  // The id only: the modal reads the LIVE row, so a refetch (another user's QC
+  // or Cancel) reaches it, as it did when Edit sat in the details panel.
+  const [editId, setEditId] = useState<string | null>(null);
   // Preview / Download PDF (use-party-grn-print.ts) — on every row, since
   // printing follows View.
   const partyGrnPrint = usePartyGrnPrint();
@@ -131,8 +136,10 @@ function PartyGrnListPage(): React.JSX.Element {
   const summary = data?.summary ?? { totalGrns: 0, totalReceived: 0, today: 0 };
   const rows = data?.items ?? [];
   const columns = useMemo(() => partyGrnColumns(), []);
+  const editRow = editId ? (rows.find((r) => r.id === editId) ?? null) : null;
 
-  // ▸ expand — the per-line QC split loads lazily inside PartyGrnExpand.
+  // Row details (row click or ⋯ Show details) — the per-line QC split loads
+  // lazily inside PartyGrnExpand.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {
@@ -246,9 +253,9 @@ function PartyGrnListPage(): React.JSX.Element {
             />
           ) : (
             // THE shared FIT table (ADR-199). First column (GRN No.) is pinned.
-            // There is no detail page for a party GRN, so a row is not clickable;
-            // the ▸ reveals the per-line QC split, Received By / Remarks and the
-            // receipt's History. Cancelled GRNs are listed too (ADR-235,
+            // There is no detail page for a party GRN: a row click (or ⋯ Show
+            // details) opens the per-line QC split, Received By / Remarks and the
+            // receipt's History; ⋯ Edit changes a line still waiting for QC. Cancelled GRNs are listed too (ADR-235,
             // includeCancelled) under the cancelled wash; their ⋯ offers only
             // Preview / Download PDF. Live rows add Incoming QC (ADR-203,
             // qc_incoming entry, only while a line waits) and Cancel Party GRN.
@@ -264,8 +271,24 @@ function PartyGrnListPage(): React.JSX.Element {
                 emptyText={term || sf.filtering ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
                 rowClassName={(g) => (isPartyGrnCancelled(g) ? ROW_TINT.cancelled : undefined)}
                 renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
-                onToggleExpanded={(g) => toggleExpand(g.id)}
+                onRowClick={(g) => toggleExpand(g.id)}
                 rowMenu={(g) => [
+                  {
+                    key: 'toggle-details',
+                    label: expanded.has(g.id) ? 'Hide details' : 'Show details',
+                    icon: 'chevron-down',
+                    onSelect: () => toggleExpand(g.id),
+                  },
+                  {
+                    // The Edit right, a line still waiting for Incoming QC, not
+                    // Cancelled. The modal itself opens only lines nobody has
+                    // inspected (isQcUntouched); the header stays editable.
+                    key: 'edit',
+                    label: 'Edit',
+                    icon: 'pencil',
+                    hidden: !perms.edit || g.qcPendingLines <= 0 || isPartyGrnCancelled(g),
+                    onSelect: () => setEditId(g.id),
+                  },
                   {
                     key: 'preview',
                     label: 'Preview',
@@ -323,6 +346,9 @@ function PartyGrnListPage(): React.JSX.Element {
             />
           ) : null}
           {qcRow && canQc ? <PartyGrnQcModal row={qcRow} onClose={() => setQcRow(null)} /> : null}
+          {editRow && perms.edit ? (
+            <EditPartyGrnModal row={editRow} onClose={() => setEditId(null)} />
+          ) : null}
         </>
       )}
     </div>
